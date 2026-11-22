@@ -1,314 +1,773 @@
-<!-- Application catalogue: the owner supplies the list, selected record, forms and operations. -->
+<!-- List-detail toggle template: Applications catalogue using official SDK data components. -->
 <style>
-  [v-cloak] { display: none; }
-  .apps { display: flex; flex-direction: column; gap: var(--spacing-md); padding-bottom: var(--spacing-4xl); }
-  .apps-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--spacing-sm); }
-  .apps-title { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); line-height: 1.5; }
-  .apps-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--spacing-sm); }
-  .apps-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .apps-toolbar .apps-search { width: 260px; max-width: 100%; }
-  .apps-count { margin-inline-start: auto; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
-  .apps-name { display: flex; align-items: center; gap: var(--spacing-sm); min-width: 0; }
-  .apps-name-text { display: flex; flex-direction: column; min-width: 0; border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
-  .apps-name-text:focus-visible { box-shadow: var(--focus-ring); }
-  .apps-directory { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-md); }
-  .apps-name-text strong { font-weight: var(--font-semibold); }
-  .apps-name-text small { color: var(--sdk-text-color-secondary); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .apps-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
-  .apps-error { margin: 0; color: var(--sdk-color-danger-text); font-size: var(--text-sm); line-height: 1.6; }
-  .apps-ok { margin: 0; color: var(--sdk-color-success-text); font-size: var(--text-sm); line-height: 1.6; }
-  .apps-card { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md); border: 1px solid var(--ui-divider); border-radius: var(--radius-md); }
-  .apps-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .apps-card-title { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
-  .apps-section-title { margin: 0; font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
-  .apps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--spacing-sm) var(--spacing-md); }
-  .apps-field { min-width: 0; }
-  .apps-field dt { margin: 0 0 calc(var(--spacing-xs) / 2); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
-  .apps-field dd { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-sm); line-height: 1.6; word-break: break-word; }
-  .apps-field dd code { font-size: var(--text-xs); background: var(--ui-fill-tertiary); padding: 0 var(--spacing-xs); border-radius: var(--radius-xs); }
-  .apps-locales { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); }
-  .apps-locales span { color: var(--sdk-text-color-regular); font-size: var(--text-sm); word-break: break-word; }
-  .apps-other-languages { border-block-start: 1px solid var(--ui-divider); padding-block-start: var(--spacing-sm); }
-  .apps-other-languages summary { color: var(--brand-link); cursor: pointer; font-size: var(--text-sm); }
-  .apps-mono { font-family: var(--font-mono); font-size: var(--text-xs); word-break: break-all; }
-  .apps-inline-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); }
-  .apps-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--spacing-sm); }
-  .apps-span { grid-column: 1 / -1; }
-  .apps-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .apps-link { color: var(--brand-link); font-size: var(--text-xs); }
-  .apps-sheet { border-color: var(--ui-border); box-shadow: var(--elevation-panel); }
-  .apps-confirm { border-color: var(--sdk-color-danger-light-5); }
-  .apps-list-icon { display: inline-flex; vertical-align: middle; color: var(--sdk-text-color-regular); }
-  .apps-list .el-table__cell, .apps-entry-table .el-table__cell { padding-inline: var(--spacing-xs) !important; }
-  .apps-list .cell, .apps-entry-table .cell { padding-inline: var(--spacing-xs); word-break: normal; overflow-wrap: break-word; }
-  .apps-entry-panel-id { display: block; max-inline-size: 100%; overflow: hidden; text-align: start; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
-  .apps-list .el-tag { padding-inline: var(--spacing-xs); }
+  [v-cloak] {
+    display: none;
+  }
+
+  .tpl-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 24rem;
+    min-width: 0;
+    border: 1px solid var(--sdk-border-color-lighter);
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    overflow: hidden;
+  }
+
+  .tpl-list-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--sdk-bg-color);
+  }
+
+  .tpl-list-slot {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .tpl-detail-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--sdk-bg-color);
+  }
+
+  .tpl-detail-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--sdk-border-color-lighter);
+  }
+
+  .tpl-back-btn {
+    flex: 0 0 auto;
+  }
+
+  .tpl-head-sep {
+    flex: 0 0 auto;
+    width: 1px;
+    height: 1.25rem;
+    background: var(--sdk-border-color-lighter);
+  }
+
+  .tpl-header-main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .tpl-create-title {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+    line-height: 1.4;
+  }
+
+  .tpl-detail-tabs {
+    flex: 0 0 auto;
+    padding: 0 var(--spacing-lg);
+    border-bottom: 1px solid var(--sdk-border-color-lighter);
+  }
+
+  .tpl-tabs .el-tabs__header {
+    margin: 0;
+  }
+
+  .tpl-tabs .el-tabs__nav-wrap::after {
+    display: none;
+  }
+
+  .tpl-detail-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--spacing-lg) var(--spacing-lg) 0;
+  }
+
+  .tpl-detail-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    max-width: 48rem;
+    min-width: 0;
+    padding-bottom: var(--spacing-lg);
+  }
+
+  .tpl-detail-wide {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+    padding-bottom: var(--spacing-lg);
+  }
+
+  .apps-summary .sdk-object-summary-title {
+    display: none;
+  }
+
+  .apps-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+
+  .apps-bar-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .apps-muted {
+    margin: 0;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+  }
+
+  .apps-error {
+    margin: 0;
+    color: var(--sdk-color-danger-text);
+    font-size: var(--text-sm);
+  }
+
+  .apps-mono {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
+  .apps-panel-cell {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    min-width: 0;
+  }
+
+  .apps-panel-id {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--brand-link);
+    cursor: pointer;
+    border: 0;
+    padding: 0;
+    background: none;
+    text-align: start;
+  }
+
+  .apps-panel-id:hover {
+    text-decoration: underline;
+  }
+
+  .apps-row-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    white-space: nowrap;
+  }
+
+  .apps-row-editor {
+    padding: var(--spacing-md);
+    margin: var(--spacing-xs) 0;
+    border: 1px solid var(--sdk-border-color-lighter);
+    border-radius: var(--radius-sm);
+    background: var(--sdk-fill-color-lighter);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .apps-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .apps-form-span {
+    grid-column: 1 / -1;
+  }
+
+  .apps-editor-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+  }
+
+  .apps-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: var(--spacing-sm) var(--spacing-md);
+    margin: 0;
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color-lighter);
+    border-radius: var(--radius-sm);
+    background: var(--sdk-fill-color-extra-light);
+  }
+
+  .apps-meta-grid dt {
+    margin: 0 0 var(--spacing-xs);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .apps-meta-grid dd {
+    margin: 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-sm);
+    overflow-wrap: break-word;
+  }
+
+  .apps-assets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    gap: var(--spacing-lg);
+    min-width: 0;
+  }
+
+  .apps-assets-box {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color-lighter);
+    border-radius: var(--radius-sm);
+    min-width: 0;
+  }
+
+  .apps-assets-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+
+  .apps-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+  }
+
+  @media (max-width: 48rem) {
+    .tpl-detail-header {
+      flex-wrap: wrap;
+      padding: var(--spacing-sm) var(--spacing-md);
+    }
+
+    .tpl-detail-tabs {
+      padding: 0 var(--spacing-md);
+    }
+
+    .tpl-detail-body {
+      padding: var(--spacing-md);
+    }
+  }
 </style>
-<div id="app" v-cloak>
-  <section class="apps shell-dock-room">
 
-    <div v-if="mode === 'list'" class="apps-directory" ref="listRegion">
-      <div class="apps-toolbar">
-        <sdk-input class="apps-search" v-model="searchText" clearable placeholder="搜索应用名称或 ID" aria-label="搜索应用" @input="scheduleSearch"></sdk-input>
-        <sdk-radio-group :model-value="scope" aria-label="范围" @change="setScope">
-          <sdk-radio-button value="visible">全部可见</sdk-radio-button>
-          <sdk-radio-button value="maintainable">我能维护的</sdk-radio-button>
-        </sdk-radio-group>
-        <sdk-select :model-value="sort" :aria-label="t('sort.label')" style="width: 132px" @change="setSort">
-          <sdk-option value="id" :label="t('sort.id')"></sdk-option>
-          <sdk-option value="name" :label="t('sort.name')"></sdk-option>
-          <sdk-option value="updated" :label="t('sort.updated')"></sdk-option>
-        </sdk-select>
-        <sdk-select :model-value="pageSize" aria-label="每页条数" style="width: 110px" @change="setSize">
-          <sdk-option :value="10" label="10 条/页"></sdk-option>
-          <sdk-option :value="20" label="20 条/页"></sdk-option>
-          <sdk-option :value="50" label="50 条/页"></sdk-option>
-        </sdk-select>
-        <span class="apps-count">{{ rows.length }} 条{{ pageIndex > 1 ? ' · 第 ' + pageIndex + ' 页' : '' }}{{ nextCursor ? ' · 还有更多' : '' }}</span>
-      </div>
-
-      <p class="apps-error" v-if="listError" role="alert">{{ listError }}</p>
-
-      <sdk-table class="apps-list" v-sdk-loading="catalogue.status === 'loading'" :data="rows" row-key="primaryKey" @row-click="openRow">
-        <sdk-table-column :label="rows[0]?.fieldLabels?.icon ?? '图标'" width="56">
-          <template #default="{ row }">
-            <span class="apps-list-icon" :title="row.fields.icon">
-              <component :is="appIcon(row.fields.icon)" :size="16" aria-hidden="true"></component>
-            </span>
-          </template>
-        </sdk-table-column>
-        <sdk-table-column :label="rows[0]?.fieldLabels?.names ?? '名称'" min-width="160">
-          <template #default="{ row }">
-            <button class="apps-name-text" type="button" @click.stop="openRow(row)">
-              <strong>{{ row.label }}</strong>
-              <small v-if="secondaryName(row.fields.names.values)">{{ secondaryName(row.fields.names.values) }}</small>
-            </button>
-          </template>
-        </sdk-table-column>
-        <sdk-table-column :label="rows[0]?.fieldLabels?.source ?? '来源'" width="96">
-          <template #default="{ row }">
-            <sdk-tag size="small" :type="row.tones.source === 'default' ? 'primary' : row.tones.source">{{ row.fields.source }}</sdk-tag>
-          </template>
-        </sdk-table-column>
-        <sdk-table-column :label="rows[0]?.fieldLabels?.maintenance ?? '维护权限'" width="156">
-          <template #default="{ row }">{{ row.fields.maintenance }}</template>
-        </sdk-table-column>
-        <sdk-table-column :label="rows[0]?.fieldLabels?.entryCount ?? '入口数'" width="104">
-          <template #default="{ row }">{{ row.fields.entryCount }}</template>
-        </sdk-table-column>
-        <template #empty>
-          <span>{{ catalogue.status === 'loading' ? '正在读取…' : (listError ? '读取失败' : '没有符合条件的应用') }}</span>
+<div id="app" v-cloak style="height: 100%; min-height: 0;">
+  <div class="tpl-shell">
+    <!-- Directory view: kept alive with v-show to preserve scroll position and cursor pages. -->
+    <section v-show="mode === 'list'" class="tpl-list-pane">
+      <projection slot="catalogue" class="tpl-list-slot">
+        <template #filters>
+          <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="small"></sdk-segmented>
+          <sdk-select
+            v-model="sortModel"
+            size="small"
+            style="width: 10.5rem;"
+            :aria-label="t('sort.label')"
+          >
+            <sdk-option value="id" :label="t('sort.id')"></sdk-option>
+            <sdk-option value="name" :label="t('sort.name')"></sdk-option>
+            <sdk-option value="updated" :label="t('sort.updated')"></sdk-option>
+          </sdk-select>
         </template>
-      </sdk-table>
+      </projection>
+    </section>
 
-      <div class="apps-foot">
-        <sdk-button :disabled="isFirstPage" @click="firstPage">回到第一页</sdk-button>
-        <sdk-button :disabled="isFirstPage" @click="previousPage">{{ t('list.prev') }}</sdk-button>
-        <sdk-button :disabled="!nextCursor" @click="nextPage">下一页</sdk-button>
-        <span class="apps-hint">翻页由属主的游标决定：下一页读的是当前这页之后的那一段。</span>
-      </div>
-      <p class="apps-hint">不能显示的入口不会让应用消失：应用照样列在这里，它的入口由属主决定给谁看。</p>
-    </div>
-
-    <template v-else-if="mode === 'detail'">
-      <header class="apps-head">
-        <div>
-          <h1 class="apps-title">{{ app ? app.label : '一张应用' }}</h1>
-        </div>
-        <div class="apps-actions">
-          <sdk-button @click="backToList">返回列表</sdk-button>
-          <sdk-button v-if="app" type="primary" @click="openApplication">打开应用</sdk-button>
-        </div>
-      </header>
-
-      <p class="apps-hint" v-if="record.status === 'loading'">正在读取这张应用…</p>
-      <p class="apps-hint" v-else-if="record.status === 'awaiting'">从列表里选一张应用。</p>
-      <p class="apps-hint" v-else-if="record.status === 'empty'">这张应用已经不在了。</p>
-      <p class="apps-error" v-else-if="record.status === 'forbidden'" role="alert">你没有权限看这张应用。</p>
-      <p class="apps-error" v-else-if="record.status === 'error'" role="alert">{{ record.message }}</p>
-
-      <template v-if="app">
-        <p class="apps-error" v-if="actionError" role="alert">{{ actionError }}</p>
-        <p class="apps-ok" v-if="actionNote">{{ actionNote }}</p>
-
-        <div class="apps-card">
-          <div class="apps-card-head">
-            <h2 class="apps-section-title">身份</h2>
-            <span class="apps-count" v-if="app.fields.canMaintain">
-              <span class="apps-inline-actions">
-                <sdk-button size="small" @click="formSection = 'identity'">编辑身份</sdk-button>
-              </span>
-            </span>
-          </div>
-          <dl class="apps-grid">
-            <div class="apps-field">
-              <dt>{{ app.fieldLabels.source }}</dt>
-              <dd>{{ app.fields.source }}</dd>
-            </div>
-            <div class="apps-field">
-              <dt>{{ app.fieldLabels.maintenance }}</dt>
-              <dd>{{ permissionSummary(app.fields) }}</dd>
-            </div>
-            <div class="apps-field">
-              <dt>入口</dt>
-              <dd><code>{{ app.fields.path }}</code><span v-if="app.fields.home"> · {{ app.fieldLabels.home }} {{ app.fields.home }}</span></dd>
-            </div>
-          </dl>
-          <p class="apps-hint" v-if="app.subtitle">{{ app.subtitle }}</p>
-          <details class="apps-other-languages">
-            <summary>其他语言与技术信息</summary>
-            <dl class="apps-grid">
-              <div class="apps-field" v-if="localeRows(app.fields.names.values).length > 1">
-                <dt>其他语言名称</dt>
-                <dd class="apps-locales">
-                  <span v-for="item in localeRows(app.fields.names.values).slice(1)" :key="item.key">{{ item.key }}：{{ item.value }}</span>
-                </dd>
-              </div>
-              <div class="apps-field" v-if="localeRows(app.fields.descriptions.values).length > 1">
-                <dt>其他语言说明</dt>
-                <dd class="apps-locales">
-                  <span v-for="item in localeRows(app.fields.descriptions.values).slice(1)" :key="item.key">{{ item.key }}：{{ item.value }}</span>
-                </dd>
-              </div>
-              <div class="apps-field">
-                <dt>{{ app.fieldLabels.id }}</dt><dd><code>{{ app.primaryKey }}</code></dd>
-              </div>
-              <div class="apps-field">
-                <dt>图标键</dt><dd><code>{{ app.fields.icon }}</code></dd>
-              </div>
-              <div class="apps-field" v-if="app.fields.renderer">
-                <dt>{{ app.fieldLabels.renderer }}</dt><dd><code>{{ app.fields.renderer }}</code></dd>
-              </div>
-            </dl>
-          </details>
-          <div class="apps-inline-actions">
-            <sdk-button size="small" text @click="openClassCatalogue">查看所属类</sdk-button>
-            <span class="apps-hint" v-if="classLinkNote">{{ classLinkNote }}</span>
-          </div>
-        </div>
-
-        <div class="apps-card">
-          <div class="apps-card-head">
-            <h2 class="apps-section-title">入口</h2>
-            <span class="apps-count apps-inline-actions">
-              <template v-if="app.fields.canEditEntries">
-                <sdk-button size="small" @click="startAddEntry">添加入口</sdk-button>
-                <sdk-button size="small" @click="formSection = 'entries'">编辑入口表</sdk-button>
-              </template>
-              <span class="apps-hint" v-else-if="app.fields.sourceKind !== 'builtin'">这张应用的入口由属主按它的发布方式维护，这里不能改。</span>
-            </span>
-          </div>
-          <p class="apps-hint" v-if="!app.fields.canMaintain">你只能看到自己有权限进的入口，属主已经把其余的裁掉了。</p>
-          <sdk-table class="apps-entry-table" v-sdk-loading="entries.status === 'loading'" :data="entryData?.panelUses ?? []" row-key="id" size="small" scrollbar-always-on>
-            <sdk-table-column label="菜单名" min-width="120">
-              <template #default="{ row }">{{ localizedText(row.names) || row.pageKey }}</template>
-            </sdk-table-column>
-            <sdk-table-column label="地址" min-width="135">
-              <template #default="{ row }"><span class="apps-mono">{{ row.path }}</span></template>
-            </sdk-table-column>
-            <sdk-table-column label="面板" min-width="140">
-              <template #default="{ row }">
-                <sdk-button size="small" text class="apps-link apps-entry-panel-id" :title="row.panelId" @click="inspectPanel(row.panelId)">{{ row.panelId }}</sdk-button>
-                <sdk-button size="small" text @click="openPanelCatalogue(row.panelId)">面板目录</sdk-button>
-              </template>
-            </sdk-table-column>
-            <sdk-table-column label="传入值" min-width="92">
-              <template #default="{ row }"><span class="apps-mono">{{ inputsText(row.inputs) }}</span></template>
-            </sdk-table-column>
-            <sdk-table-column label="组与顺序" min-width="86">
-              <template #default="{ row }">{{ groupText(row.groupKey) }}</template>
-            </sdk-table-column>
-            <sdk-table-column label="准入" min-width="106">
-              <template #default="{ row }">{{ accessText(row.access) }}</template>
-            </sdk-table-column>
-            <sdk-table-column label="默认智能体" min-width="102">
-              <template #default="{ row }">{{ agentText(row.defaultAgent) }}</template>
-            </sdk-table-column>
-            <sdk-table-column label="操作" width="90" v-if="app.fields.canEditEntries">
-              <template #default="{ row }">
-                <span class="apps-inline-actions">
-                  <sdk-button size="small" text @click.stop="startEditEntry(row)">编辑</sdk-button>
-                  <sdk-button size="small" text type="danger" @click.stop="removeEntry(row)">删除</sdk-button>
-                </span>
-              </template>
-            </sdk-table-column>
-            <template #empty>
-              <span v-if="entries.status === 'error'" role="alert">{{ entries.message }}</span>
-              <span v-else-if="entries.status === 'forbidden'">{{ t('entries.forbidden') }}</span>
-              <span v-else-if="entries.status === 'loading'">{{ t('entries.loading') }}</span>
-              <span v-else>这张应用还没有入口。</span>
-            </template>
-          </sdk-table>
-          <dl class="apps-grid" v-if="entryData?.theme || app.fields.framePanel">
-            <div class="apps-field" v-if="app.fields.framePanel">
-              <dt>{{ app.fieldLabels.framePanel }}</dt>
-              <dd><code>{{ app.fields.framePanel.label }}</code></dd>
-            </div>
-            <div class="apps-field" v-if="entryData?.theme">
-              <dt>主题</dt>
-              <dd class="apps-mono">{{ themeText(entryData.theme) }}</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div class="apps-card">
-          <div class="apps-card-head">
-            <h2 class="apps-section-title">用到的面板和投影</h2>
-            <span class="apps-hint">由入口引用的面板、以及面板成员引用的投影得出。</span>
-          </div>
-          <dl class="apps-grid">
-            <div class="apps-field">
-              <dt>面板（{{ usedPanels.length }}）</dt>
-              <dd class="apps-inline-actions">
-                <sdk-button v-for="panelId in usedPanels" :key="panelId" size="small" @click="inspectPanel(panelId)">{{ panelId }}</sdk-button>
-                <span v-if="!usedPanels.length">—</span>
-              </dd>
-            </div>
-            <div class="apps-field">
-              <dt>投影{{ inspectedPanelId ? '（' + inspectedPanelId + ' 的成员）' : '' }}</dt>
-              <dd class="apps-inline-actions">
-                <template v-if="inspectedPanelId">
-                  <sdk-button v-for="member in inspectedMembers" :key="member.className + ':' + member.primaryKey" size="small" text class="apps-mono"
-                    @click="openMemberCatalogue(member)">{{ member.primaryKey }}</sdk-button>
-                  <span v-if="panelInfo.status === 'loading'">正在读面板成员…</span>
-                  <span v-else-if="panelInfo.status === 'error'" class="apps-error">{{ panelInfo.message }}</span>
-                  <span v-else-if="!inspectedMembers.length && panelInfo.status === 'ready'">这个面板没有用投影。</span>
-                </template>
-                <span v-else>选一个上面的面板，看它由哪些投影组成。</span>
-              </dd>
-            </div>
-          </dl>
-        </div>
-
-        <div class="apps-card" v-if="app.fields.canMaintain || app.fields.canGrant">
-          <div class="apps-card-head">
-            <h2 class="apps-section-title">维护与授权</h2>
-          </div>
-          <div class="apps-inline-actions">
-            <sdk-button v-if="app.fields.canMaintain" size="small" type="danger" @click="removeApplication">删除这张应用</sdk-button>
-            <sdk-button v-if="app.fields.canGrant" size="small" @click="openGrant">授予或撤销使用授权</sdk-button>
-            <span class="apps-hint" v-if="app.fields.sourceKind === 'builtin'">内置应用随平台维护，这里不提供改动。</span>
-          </div>
-          <div v-if="app.fields.canGrant">
-            <p v-if="grants.status === 'error'" class="apps-error" role="alert">{{ grants.message }}</p>
-            <p v-else-if="grants.status === 'forbidden'" class="apps-error" role="alert">{{ t('grants.forbidden') }}</p>
-            <p v-else-if="grants.status !== 'ready'" class="apps-hint">{{ t('grants.loading') }}</p>
-            <template v-else>
-              <p class="apps-hint">{{ t(grants.value.shared ? 'grants.shared' : 'grants.private') }}</p>
-              <sdk-button size="small" :disabled="busy" @click="shareApplication(!grants.value.shared)">
-                {{ t(grants.value.shared ? 'grants.shareOff' : 'grants.shareOn') }}
+    <!-- Detail / Create view -->
+    <section v-if="mode !== 'list'" class="tpl-detail-pane">
+      <div class="tpl-detail-header">
+        <sdk-button text size="small" class="tpl-back-btn" @click="back">
+          &#8249; {{ t('action.back') }}
+        </sdk-button>
+        <span class="tpl-head-sep" aria-hidden="true"></span>
+        <div class="tpl-header-main">
+          <h2 v-if="mode === 'create'" class="tpl-create-title">{{ t('action.create') }}</h2>
+          <projection v-else slot="header" @done="onHeaderDone">
+            <template #actions>
+              <sdk-button v-if="appPath" type="primary" size="small" @click="openApplication">
+                {{ t('action.openApp') }}
               </sdk-button>
+            </template>
+          </projection>
+        </div>
+      </div>
+
+      <!-- Create mode body -->
+      <div v-if="mode === 'create'" ref="detailBodyRef" class="tpl-detail-body">
+        <div class="tpl-detail-content">
+          <projection slot="save" @saved="onCreated" @cancel="onCancelCreate"></projection>
+        </div>
+      </div>
+
+      <!-- Detail mode tabs + scrollable body -->
+      <template v-else>
+        <div class="tpl-detail-tabs">
+          <sdk-tabs v-model="tabModel" class="tpl-tabs">
+            <sdk-tab-pane name="identity" :label="t('tab.identity')"></sdk-tab-pane>
+            <sdk-tab-pane name="entries" :label="t('tab.entries')"></sdk-tab-pane>
+            <sdk-tab-pane name="assets" :label="t('tab.assets')"></sdk-tab-pane>
+            <sdk-tab-pane v-if="app && app.fields.canGrant" name="grants" :label="t('tab.grants')"></sdk-tab-pane>
+          </sdk-tabs>
+        </div>
+
+        <div ref="detailBodyRef" class="tpl-detail-body">
+          <!-- Tab 1: Basics -->
+          <div v-if="tabModel === 'identity'" class="tpl-detail-content">
+            <projection
+              v-if="app && app.fields.canMaintain"
+              slot="save"
+              @saved="onSaved"
+            ></projection>
+            <projection
+              v-else-if="app"
+              slot="summary"
+              class="apps-summary"
+              @navigate="onNavigateReference"
+            ></projection>
+          </div>
+
+          <!-- Tab 2: Entries -->
+          <div v-else-if="tabModel === 'entries'" class="tpl-detail-wide">
+            <div class="apps-bar">
+              <span class="apps-muted">
+                {{ t('entries.count', { count: entryRows.length }) }}
+              </span>
+              <div v-if="app && app.fields.canEditEntries" class="apps-bar-group">
+                <sdk-button
+                  v-if="!entriesBulkMode"
+                  size="small"
+                  type="primary"
+                  @click="startAddEntry"
+                >
+                  {{ t('entries.add') }}
+                </sdk-button>
+                <sdk-button size="small" @click="entriesBulkMode = !entriesBulkMode">
+                  {{ entriesBulkMode ? t('entries.backToList') : t('entries.bulkEdit') }}
+                </sdk-button>
+              </div>
+            </div>
+
+            <div v-if="entriesBulkMode && app && app.fields.canEditEntries" class="tpl-detail-content">
+              <projection slot="entriesForm" @saved="onEntriesFormSaved"></projection>
+            </div>
+
+            <template v-else>
+              <!-- Inline create block at top of entries list -->
+              <div v-if="addingEntry" ref="addEntryRef" class="apps-row-editor">
+                <sdk-form label-position="top" size="small">
+                  <div class="apps-form-grid">
+                    <sdk-form-item :label="t('entries.id')">
+                      <sdk-input v-model="entryDraft.id" placeholder="use-manage"></sdk-input>
+                    </sdk-form-item>
+                    <sdk-form-item :label="t('entries.pageKey')">
+                      <sdk-input v-model="entryDraft.pageKey" placeholder="app-manage"></sdk-input>
+                    </sdk-form-item>
+                    <sdk-form-item :label="t('entries.panelId')">
+                      <sdk-input v-model="entryDraft.panelId" placeholder="panel-id"></sdk-input>
+                    </sdk-form-item>
+                    <sdk-form-item :label="t('entries.path')">
+                      <sdk-input v-model="entryDraft.path" placeholder="/applications/app-id/page"></sdk-input>
+                    </sdk-form-item>
+                    <sdk-form-item :label="t('entries.nameZh')">
+                      <sdk-input v-model="entryDraft.nameZh"></sdk-input>
+                    </sdk-form-item>
+                    <sdk-form-item :label="t('entries.nameEn')">
+                      <sdk-input v-model="entryDraft.nameEn"></sdk-input>
+                    </sdk-form-item>
+                    <sdk-form-item :label="t('entries.group')">
+                      <sdk-select
+                        v-model="entryDraft.groupKey"
+                        clearable
+                        filterable
+                        allow-create
+                        default-first-option
+                        :placeholder="t('entries.groupNone')"
+                        style="width: 100%"
+                      >
+                        <sdk-option
+                          v-for="group in groupChoices"
+                          :key="group.key"
+                          :value="group.key"
+                          :label="group.label"
+                        ></sdk-option>
+                      </sdk-select>
+                    </sdk-form-item>
+                    <sdk-form-item :label="t('entries.access')">
+                      <sdk-select v-model="entryDraft.accessKind" style="width: 100%">
+                        <sdk-option value="domain-member" :label="t('entries.accessDomain')"></sdk-option>
+                        <sdk-option value="permissionCode" :label="t('entries.accessPermission')"></sdk-option>
+                      </sdk-select>
+                    </sdk-form-item>
+                    <sdk-form-item
+                      v-if="entryDraft.accessKind === 'permissionCode'"
+                      :label="t('entries.permissionCode')"
+                      class="apps-form-span"
+                    >
+                      <sdk-input v-model="entryDraft.permissionCode"></sdk-input>
+                    </sdk-form-item>
+                    <sdk-form-item :label="t('entries.agent')">
+                      <sdk-select v-model="entryDraft.agentKind" style="width: 100%">
+                        <sdk-option value="none" :label="t('entries.agentNone')"></sdk-option>
+                        <sdk-option value="id" :label="t('entries.agentId')"></sdk-option>
+                        <sdk-option value="preset" :label="t('entries.agentPreset')"></sdk-option>
+                      </sdk-select>
+                    </sdk-form-item>
+                    <sdk-form-item
+                      v-if="entryDraft.agentKind !== 'none'"
+                      :label="entryDraft.agentKind === 'preset' ? t('entries.agentPresetLabel') : t('entries.agentIdLabel')"
+                    >
+                      <sdk-input v-model="entryDraft.agentValue"></sdk-input>
+                    </sdk-form-item>
+                    <sdk-form-item :label="t('entries.inputs')" class="apps-form-span">
+                      <sdk-input
+                        v-model="entryDraft.inputsText"
+                        type="textarea"
+                        :rows="2"
+                        placeholder='{"frameState": "..."}'
+                      ></sdk-input>
+                    </sdk-form-item>
+                  </div>
+                </sdk-form>
+                <p v-if="entryError" class="apps-error" role="alert">{{ entryError }}</p>
+                <div class="apps-editor-foot">
+                  <sdk-button size="small" @click="cancelEntryEdit">{{ t('action.cancel') }}</sdk-button>
+                  <sdk-button size="small" type="primary" :loading="busy" @click="submitEntry(false)">
+                    {{ t('entries.add') }}
+                  </sdk-button>
+                </div>
+              </div>
+
+              <!-- Entries table with single-row inline expand -->
+              <sdk-table
+                v-sdk-loading="entries.status === 'loading'"
+                :data="entryRows"
+                row-key="id"
+                :expand-row-keys="expandedEntryKeys"
+                size="small"
+                @expand-change="onEntryExpandChange"
+              >
+                <sdk-table-column type="expand" width="40">
+                  <template #default="{ row }">
+                    <div class="apps-row-editor" :data-entry-row="row.id">
+                      <template v-if="app && app.fields.canEditEntries && expandedEntryId === row.id">
+                        <sdk-form label-position="top" size="small">
+                          <div class="apps-form-grid">
+                            <sdk-form-item :label="t('entries.id')">
+                              <sdk-input v-model="entryDraft.id" disabled></sdk-input>
+                            </sdk-form-item>
+                            <sdk-form-item :label="t('entries.pageKey')">
+                              <sdk-input v-model="entryDraft.pageKey"></sdk-input>
+                            </sdk-form-item>
+                            <sdk-form-item :label="t('entries.panelId')">
+                              <sdk-input v-model="entryDraft.panelId"></sdk-input>
+                            </sdk-form-item>
+                            <sdk-form-item :label="t('entries.path')">
+                              <sdk-input v-model="entryDraft.path"></sdk-input>
+                            </sdk-form-item>
+                            <sdk-form-item :label="t('entries.nameZh')">
+                              <sdk-input v-model="entryDraft.nameZh"></sdk-input>
+                            </sdk-form-item>
+                            <sdk-form-item :label="t('entries.nameEn')">
+                              <sdk-input v-model="entryDraft.nameEn"></sdk-input>
+                            </sdk-form-item>
+                            <sdk-form-item :label="t('entries.group')">
+                              <sdk-select
+                                v-model="entryDraft.groupKey"
+                                clearable
+                                filterable
+                                allow-create
+                                default-first-option
+                                :placeholder="t('entries.groupNone')"
+                                style="width: 100%"
+                              >
+                                <sdk-option
+                                  v-for="group in groupChoices"
+                                  :key="group.key"
+                                  :value="group.key"
+                                  :label="group.label"
+                                ></sdk-option>
+                              </sdk-select>
+                            </sdk-form-item>
+                            <sdk-form-item :label="t('entries.access')">
+                              <sdk-select v-model="entryDraft.accessKind" style="width: 100%">
+                                <sdk-option value="domain-member" :label="t('entries.accessDomain')"></sdk-option>
+                                <sdk-option value="permissionCode" :label="t('entries.accessPermission')"></sdk-option>
+                              </sdk-select>
+                            </sdk-form-item>
+                            <sdk-form-item
+                              v-if="entryDraft.accessKind === 'permissionCode'"
+                              :label="t('entries.permissionCode')"
+                              class="apps-form-span"
+                            >
+                              <sdk-input v-model="entryDraft.permissionCode"></sdk-input>
+                            </sdk-form-item>
+                            <sdk-form-item :label="t('entries.agent')">
+                              <sdk-select v-model="entryDraft.agentKind" style="width: 100%">
+                                <sdk-option value="none" :label="t('entries.agentNone')"></sdk-option>
+                                <sdk-option value="id" :label="t('entries.agentId')"></sdk-option>
+                                <sdk-option value="preset" :label="t('entries.agentPreset')"></sdk-option>
+                              </sdk-select>
+                            </sdk-form-item>
+                            <sdk-form-item
+                              v-if="entryDraft.agentKind !== 'none'"
+                              :label="entryDraft.agentKind === 'preset' ? t('entries.agentPresetLabel') : t('entries.agentIdLabel')"
+                            >
+                              <sdk-input v-model="entryDraft.agentValue"></sdk-input>
+                            </sdk-form-item>
+                            <sdk-form-item :label="t('entries.inputs')" class="apps-form-span">
+                              <sdk-input v-model="entryDraft.inputsText" type="textarea" :rows="2"></sdk-input>
+                            </sdk-form-item>
+                          </div>
+                        </sdk-form>
+                        <p v-if="entryError" class="apps-error" role="alert">{{ entryError }}</p>
+                        <div class="apps-editor-foot">
+                          <sdk-button size="small" @click="collapseEntry">{{ t('action.cancel') }}</sdk-button>
+                          <sdk-button size="small" type="primary" :loading="busy" @click="submitEntry(true)">
+                            {{ t('action.save') }}
+                          </sdk-button>
+                        </div>
+                      </template>
+                      <dl v-else class="apps-meta-grid">
+                        <div>
+                          <dt>{{ t('entries.id') }}</dt>
+                          <dd class="apps-mono">{{ row.id }}</dd>
+                        </div>
+                        <div>
+                          <dt>{{ t('entries.pageKey') }}</dt>
+                          <dd class="apps-mono">{{ row.pageKey }}</dd>
+                        </div>
+                        <div>
+                          <dt>{{ t('entries.panelId') }}</dt>
+                          <dd class="apps-mono">{{ row.panelId }}</dd>
+                        </div>
+                        <div>
+                          <dt>{{ t('entries.path') }}</dt>
+                          <dd class="apps-mono">{{ row.path }}</dd>
+                        </div>
+                        <div>
+                          <dt>{{ t('entries.access') }}</dt>
+                          <dd>{{ accessText(row.access) }}</dd>
+                        </div>
+                        <div>
+                          <dt>{{ t('entries.agent') }}</dt>
+                          <dd>{{ agentText(row.defaultAgent) }}</dd>
+                        </div>
+                        <div>
+                          <dt>{{ t('entries.inputs') }}</dt>
+                          <dd class="apps-mono">{{ inputsText(row.inputs) }}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </template>
+                </sdk-table-column>
+
+                <sdk-table-column :label="t('entries.col.name')" min-width="130">
+                  <template #default="{ row }">{{ localizedText(row.names) || row.pageKey }}</template>
+                </sdk-table-column>
+
+                <sdk-table-column :label="t('entries.col.path')" min-width="180">
+                  <template #default="{ row }"><span class="apps-mono">{{ row.path }}</span></template>
+                </sdk-table-column>
+
+                <sdk-table-column :label="t('entries.col.panel')" min-width="210">
+                  <template #default="{ row }">
+                    <div class="apps-panel-cell">
+                      <button
+                        type="button"
+                        class="apps-panel-id"
+                        :title="row.panelId"
+                        @click.stop="inspectPanelAndOpenTab(row.panelId)"
+                      >
+                        {{ row.panelId }}
+                      </button>
+                      <sdk-button size="small" link @click.stop="openPanelCatalogue(row.panelId)">
+                        {{ t('entries.viewPanel') }}
+                      </sdk-button>
+                    </div>
+                  </template>
+                </sdk-table-column>
+
+                <sdk-table-column :label="t('entries.col.group')" width="110">
+                  <template #default="{ row }">{{ groupText(row.groupKey) }}</template>
+                </sdk-table-column>
+
+                <sdk-table-column :label="t('entries.col.access')" width="130">
+                  <template #default="{ row }">{{ accessText(row.access) }}</template>
+                </sdk-table-column>
+
+                <sdk-table-column :label="t('entries.col.actions')" width="132" fixed="right">
+                  <template #default="{ row }">
+                    <div class="apps-row-actions">
+                      <sdk-button
+                        size="small"
+                        link
+                        type="primary"
+                        :aria-label="(expandedEntryId === row.id ? t('action.close') : (app && app.fields.canEditEntries ? t('entries.edit') : t('entries.expand'))) + ' ' + (localizedText(row.names) || row.pageKey)"
+                        @click.stop="toggleEntryRow(row)"
+                      >
+                        {{ expandedEntryId === row.id ? t('action.close') : (app && app.fields.canEditEntries ? t('entries.edit') : t('entries.expand')) }}
+                      </sdk-button>
+                      <sdk-button
+                        v-if="app && app.fields.canEditEntries"
+                        size="small"
+                        link
+                        type="danger"
+                        :disabled="busy"
+                        @click.stop="removeEntry(row)"
+                      >
+                        {{ t('action.delete') }}
+                      </sdk-button>
+                    </div>
+                  </template>
+                </sdk-table-column>
+
+                <template #empty>
+                  <span v-if="entries.status === 'error'" class="apps-error" role="alert">{{ entries.message }}</span>
+                  <span v-else-if="entries.status === 'forbidden'">{{ t('entries.forbidden') }}</span>
+                  <span v-else-if="entries.status === 'loading'">{{ t('entries.loading') }}</span>
+                  <span v-else>{{ t('entries.empty') }}</span>
+                </template>
+              </sdk-table>
+
+              <dl v-if="entryData && (entryData.theme || (app && app.fields.framePanel))" class="apps-meta-grid">
+                <div v-if="app && app.fields.framePanel">
+                  <dt>{{ t('entries.framePanel') }}</dt>
+                  <dd class="apps-mono">{{ app.fields.framePanel.label }}</dd>
+                </div>
+                <div v-if="entryData.theme">
+                  <dt>{{ t('entries.theme') }}</dt>
+                  <dd class="apps-mono">{{ themeText(entryData.theme) }}</dd>
+                </div>
+              </dl>
+            </template>
+          </div>
+
+          <!-- Tab 3: Panels & Projections -->
+          <div v-else-if="tabModel === 'assets'" class="tpl-detail-wide">
+            <div class="apps-assets-grid">
+              <div class="apps-assets-box">
+                <h3 class="apps-assets-title">{{ t('assets.panels', { count: usedPanels.length }) }}</h3>
+                <div v-if="usedPanels.length" class="apps-chip-list">
+                  <sdk-button
+                    v-for="panelId in usedPanels"
+                    :key="panelId"
+                    size="small"
+                    :type="inspectedPanelId === panelId ? 'primary' : 'default'"
+                    @click="inspectPanel(panelId)"
+                  >
+                    {{ panelId }}
+                  </sdk-button>
+                </div>
+                <p v-else class="apps-muted">{{ t('assets.noPanels') }}</p>
+              </div>
+
+              <div class="apps-assets-box">
+                <h3 class="apps-assets-title">
+                  {{ inspectedPanelId ? t('assets.projectionsOf', { panel: inspectedPanelId }) : t('assets.projections') }}
+                </h3>
+                <template v-if="inspectedPanelId">
+                  <p v-if="panelInfo.status === 'loading'" class="apps-muted">{{ t('assets.loading') }}</p>
+                  <p v-else-if="panelInfo.status === 'error'" class="apps-error" role="alert">{{ panelInfo.message }}</p>
+                  <div v-else-if="inspectedMembers.length" class="apps-chip-list">
+                    <sdk-button
+                      v-for="member in inspectedMembers"
+                      :key="member.className + ':' + member.primaryKey"
+                      size="small"
+                      @click="openMemberCatalogue(member)"
+                    >
+                      {{ member.primaryKey }}
+                    </sdk-button>
+                  </div>
+                  <p v-else-if="panelInfo.status === 'ready'" class="apps-muted">{{ t('assets.none') }}</p>
+                </template>
+                <p v-else class="apps-muted">{{ t('assets.selectHint') }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 4: Permissions & Sharing -->
+          <div v-else-if="tabModel === 'grants'" class="tpl-detail-wide">
+            <sdk-alert
+              v-if="grants.status === 'forbidden' || (app && !app.fields.canGrant)"
+              type="info"
+              :closable="false"
+              :title="t('grants.forbidden')"
+            ></sdk-alert>
+            <p v-else-if="grants.status === 'error'" class="apps-error" role="alert">{{ grants.message }}</p>
+            <p v-else-if="grants.status !== 'ready'" class="apps-muted">{{ t('grants.loading') }}</p>
+            <template v-else>
+              <div class="apps-bar">
+                <div class="apps-bar-group">
+                  <sdk-tag size="small" :type="grants.value.shared ? 'success' : 'info'">
+                    {{ t(grants.value.shared ? 'grants.shared' : 'grants.private') }}
+                  </sdk-tag>
+                  <sdk-button size="small" :disabled="busy" @click="shareApplication(!grants.value.shared)">
+                    {{ t(grants.value.shared ? 'grants.shareOff' : 'grants.shareOn') }}
+                  </sdk-button>
+                </div>
+                <sdk-button size="small" type="primary" @click="openGrantDialog">
+                  {{ t('grants.add') }}
+                </sdk-button>
+              </div>
+
               <sdk-table :data="grants.value.grants" size="small" :empty-text="t('grants.none')">
-                <sdk-table-column :label="t('grants.kind')">
+                <sdk-table-column :label="t('grants.kind')" width="140">
                   <template #default="{ row }">{{ t('grants.' + row.principalKind) }}</template>
                 </sdk-table-column>
-                <sdk-table-column prop="principalId" :label="t('grants.id')"></sdk-table-column>
-                <sdk-table-column :label="t('grants.verb')">
-                  <template #default="{ row }">{{ t('grants.' + row.verb) }}</template>
-                </sdk-table-column>
-                <sdk-table-column :label="t('grants.actions')">
+                <sdk-table-column :label="t('grants.id')" min-width="200">
                   <template #default="{ row }">
-                    <sdk-button v-if="row.principalKind !== 'domain'" link :disabled="busy" @click="revokeExistingGrant(row)">{{ t('grants.revoke') }}</sdk-button>
+                    <span>{{ row.principalName || row.principalId }}</span>
+                  </template>
+                </sdk-table-column>
+                <sdk-table-column :label="t('grants.verb')" width="120">
+                  <template #default="{ row }">
+                    <sdk-tag size="small" :type="row.verb === 'edit' ? 'warning' : 'info'">
+                      {{ t('grants.' + row.verb) }}
+                    </sdk-tag>
+                  </template>
+                </sdk-table-column>
+                <sdk-table-column :label="t('grants.actions')" width="100" fixed="right">
+                  <template #default="{ row }">
+                    <sdk-button
+                      v-if="row.principalKind !== 'domain'"
+                      size="small"
+                      link
+                      type="danger"
+                      :disabled="busy"
+                      @click="revokeExistingGrant(row)"
+                    >
+                      {{ t('grants.revoke') }}
+                    </sdk-button>
                   </template>
                 </sdk-table-column>
               </sdk-table>
@@ -316,142 +775,47 @@
           </div>
         </div>
       </template>
-    </template>
+    </section>
 
-    <template v-else-if="mode === 'create'">
-      <header class="apps-head">
-        <div>
-          <h1 class="apps-title">新建应用</h1>
-          <p class="apps-sub">表单由应用目录（属主）声明，字段与校验都在它那里；保存后新应用出现在列表里，不会覆盖同 ID 的应用。</p>
-        </div>
-        <div class="apps-actions">
-          <sdk-button @click="backToList">取消</sdk-button>
-        </div>
-      </header>
-      <p class="apps-error" v-if="actionError" role="alert">{{ actionError }}</p>
-    </template>
-
-    <div class="apps-card apps-sheet" v-show="mode === 'create' || formSection === 'identity'">
-      <div v-if="mode !== 'create'" class="apps-card-head"><h2 class="apps-section-title">编辑身份</h2></div>
-      <projection slot="save" @saved="finishForm" @discarded="discardForm"></projection>
-    </div>
-
-    <div class="apps-card apps-sheet" v-show="formSection === 'entries'">
-      <div class="apps-card-head"><h2 class="apps-section-title">编辑入口表</h2></div>
-      <projection slot="entriesForm" @saved="finishForm" @discarded="closeForm"></projection>
-    </div>
-
-    <div class="apps-card apps-sheet" v-if="entryOpen">
-      <div class="apps-card-head">
-        <h2 class="apps-section-title">{{ entryEditing ? '编辑入口' : '添加入口' }}</h2>
-        <span class="apps-hint">地址以 / 开头、不带问号井号空白；页面键在本域内唯一。</span>
-      </div>
-      <sdk-form label-position="top">
-        <div class="apps-form-grid">
-          <sdk-form-item label="入口 ID">
-            <sdk-input v-model="entry.id" :disabled="entryEditing" placeholder="本应用内唯一，如 use-manage"></sdk-input>
-          </sdk-form-item>
-          <sdk-form-item label="面板 ID">
-            <sdk-input v-model="entry.panelId" placeholder="如 panel-ontology-applications"></sdk-input>
-          </sdk-form-item>
-          <sdk-form-item label="地址">
-            <sdk-input v-model="entry.path" placeholder="/applications/<应用 ID>/<页面>"></sdk-input>
-          </sdk-form-item>
-          <sdk-form-item label="页面键">
-            <sdk-input v-model="entry.pageKey" placeholder="本域内唯一，留空用入口 ID"></sdk-input>
-          </sdk-form-item>
-          <sdk-form-item label="菜单名 · zh-CN">
-            <sdk-input v-model="entry.nameZh"></sdk-input>
-          </sdk-form-item>
-          <sdk-form-item label="菜单名 · en">
-            <sdk-input v-model="entry.nameEn"></sdk-input>
-          </sdk-form-item>
-          <sdk-form-item label="组">
-            <sdk-select v-model="entry.groupKey" clearable filterable allow-create default-first-option placeholder="不分组" style="width: 100%">
-              <sdk-option v-for="group in groupChoices" :key="group.key" :value="group.key" :label="group.label"></sdk-option>
-            </sdk-select>
-          </sdk-form-item>
-          <sdk-form-item label="准入">
-            <sdk-select v-model="entry.accessKind" style="width: 100%">
-              <sdk-option value="domain-member" label="本域成员都能进"></sdk-option>
-              <sdk-option value="permissionCode" label="只给一个权限码"></sdk-option>
-            </sdk-select>
-          </sdk-form-item>
-          <sdk-form-item label="权限码" v-if="entry.accessKind === 'permissionCode'" class="apps-span">
-            <sdk-input v-model="entry.permissionCode" placeholder="本应用声明过的权限码"></sdk-input>
-          </sdk-form-item>
-          <sdk-form-item label="默认智能体">
-            <sdk-select v-model="entry.agentKind" style="width: 100%">
-              <sdk-option value="none" label="通用助手"></sdk-option>
-              <sdk-option value="id" label="按智能体 ID"></sdk-option>
-              <sdk-option value="preset" label="按预置类型"></sdk-option>
-            </sdk-select>
-          </sdk-form-item>
-          <sdk-form-item :label="entry.agentKind === 'preset' ? '预置类型' : '智能体 ID'" v-if="entry.agentKind !== 'none'">
-            <sdk-input v-model="entry.agentValue"></sdk-input>
-          </sdk-form-item>
-          <sdk-form-item label="传入值（JSON 对象，可选）" class="apps-span">
-            <sdk-input v-model="entry.inputsText" type="textarea" :rows="3" placeholder='{"frameState": "..."}'></sdk-input>
-          </sdk-form-item>
-        </div>
+    <!-- Grant parameter dialog -->
+    <sdk-dialog v-model="grantOpen" :title="t('grants.dialogTitle')" width="420px" destroy-on-close>
+      <sdk-form label-position="top" size="small">
+        <sdk-form-item :label="t('grants.kind')">
+          <sdk-select v-model="grantDraft.principalKind" style="width: 100%">
+            <sdk-option value="principal" :label="t('grants.principal')"></sdk-option>
+            <sdk-option value="role" :label="t('grants.role')"></sdk-option>
+          </sdk-select>
+        </sdk-form-item>
+        <sdk-form-item :label="t('grants.id')">
+          <sdk-input v-model="grantDraft.principalId" :placeholder="t('grants.recipientPlaceholder')"></sdk-input>
+        </sdk-form-item>
+        <sdk-form-item :label="t('grants.verb')">
+          <sdk-select v-model="grantDraft.verb" style="width: 100%">
+            <sdk-option value="use" :label="t('grants.use')"></sdk-option>
+            <sdk-option value="edit" :label="t('grants.edit')"></sdk-option>
+          </sdk-select>
+        </sdk-form-item>
       </sdk-form>
-      <p class="apps-error" v-if="entryError" role="alert">{{ entryError }}</p>
-      <div class="apps-inline-actions">
-        <sdk-button size="small" @click="entryOpen = false">取消</sdk-button>
-        <sdk-button size="small" type="primary" :loading="busy" @click="submitEntry">{{ entryEditing ? '保存入口' : '添加入口' }}</sdk-button>
-      </div>
-    </div>
+      <p v-if="grantError" class="apps-error" role="alert">{{ grantError }}</p>
+      <template #footer>
+        <sdk-button size="small" @click="grantOpen = false">{{ t('action.cancel') }}</sdk-button>
+        <sdk-button size="small" type="primary" :loading="busy" @click="submitGrant">
+          {{ t('grants.grantAction') }}
+        </sdk-button>
+      </template>
+    </sdk-dialog>
 
-    <div class="apps-card apps-sheet" v-if="grantOpen">
-      <div class="apps-card-head">
-        <h2 class="apps-section-title">使用授权</h2>
-        <span class="apps-hint">授权由治理属主判：这里只把你的意思交给它。</span>
-      </div>
-      <sdk-form label-position="top">
-        <div class="apps-form-grid">
-          <sdk-form-item label="授给谁">
-            <sdk-select v-model="grant.principalKind" style="width: 100%">
-              <sdk-option value="principal" label="一个人"></sdk-option>
-              <sdk-option value="role" label="一个角色"></sdk-option>
-            </sdk-select>
-          </sdk-form-item>
-          <sdk-form-item :label="grant.principalKind === 'role' ? '角色 ID' : '用户 ID'">
-            <sdk-input v-model="grant.principalId" placeholder="平台里的 ID"></sdk-input>
-          </sdk-form-item>
-          <sdk-form-item label="哪一种">
-            <sdk-select v-model="grant.verb" style="width: 100%">
-              <sdk-option value="use" label="使用"></sdk-option>
-              <sdk-option value="edit" label="维护"></sdk-option>
-            </sdk-select>
-          </sdk-form-item>
-        </div>
-      </sdk-form>
-      <p class="apps-error" v-if="grantError" role="alert">{{ grantError }}</p>
-      <div class="apps-inline-actions">
-        <sdk-button size="small" @click="grantOpen = false">取消</sdk-button>
-        <sdk-button size="small" :loading="busy" @click="submitGrant(true)">撤销</sdk-button>
-        <sdk-button size="small" type="primary" :loading="busy" @click="submitGrant(false)">授予</sdk-button>
-      </div>
-    </div>
-
-    <div class="apps-card apps-sheet apps-confirm" v-if="confirmState.open">
-      <p class="apps-hint">{{ confirmState.message }}</p>
-      <div class="apps-inline-actions">
-        <sdk-button size="small" @click="confirmState.open = false">取消</sdk-button>
-        <sdk-button size="small" type="danger" :loading="busy" @click="confirmRemove">确认</sdk-button>
-      </div>
-    </div>
-
+    <!-- Non-rendering data and write-operation slots (lazy-mounted per active tab) -->
     <div hidden>
-      <projection slot="catalogue"></projection>
-      <projection slot="record"></projection>
-      <projection slot="deleteApp"></projection>
-      <projection slot="grant"></projection>
-    <projection slot="share"></projection>
-      <projection slot="addEntry"></projection>
-      <projection slot="updateEntry"></projection>
-      <projection slot="deleteEntry"></projection>
-      <projection slot="panelInfo"></projection>
+      <projection v-if="mode === 'detail'" slot="record"></projection>
+      <projection v-if="mode === 'detail' && (tabModel === 'entries' || tabModel === 'assets')" slot="entriesRead"></projection>
+      <projection v-if="mode === 'detail' && tabModel === 'grants'" slot="grantsRead"></projection>
+      <projection v-if="mode === 'detail' && tabModel === 'assets'" slot="panelInfo"></projection>
+      <projection v-if="mode === 'detail'" slot="addEntry"></projection>
+      <projection v-if="mode === 'detail'" slot="updateEntry"></projection>
+      <projection v-if="mode === 'detail'" slot="deleteEntry"></projection>
+      <projection v-if="mode === 'detail'" slot="grant"></projection>
+      <projection v-if="mode === 'detail'" slot="share"></projection>
     </div>
-  </section>
+  </div>
 </div>
