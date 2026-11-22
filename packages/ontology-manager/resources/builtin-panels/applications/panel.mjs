@@ -60,6 +60,7 @@ const Applications = {
     const selected = computed(() => values.value.selected ?? null);
     const catalogue = usePanelData("catalogue", "rows");
     const record = usePanelData("record", "record");
+    const entries = usePanelData("record", "entries");
     const panelInfo = usePanelData("panelInfo", "panel");
     const grants = usePanelData("record", "grants");
 
@@ -79,6 +80,7 @@ const Applications = {
     const rows = computed(() => (catalogue.value.status === "ready" ? catalogue.value.value.rows ?? [] : []));
     const nextCursor = computed(() => (catalogue.value.status === "ready" ? catalogue.value.value.nextCursor ?? null : null));
     const app = computed(() => (record.value.status === "ready" ? record.value.value : null));
+    const entryData = computed(() => (entries.value.status === "ready" ? entries.value.value : null));
 
     const searchText = ref(values.value.search ?? "");
     const scope = computed(() => values.value.scope ?? "visible");
@@ -110,7 +112,7 @@ const Applications = {
     }, { flush: "post" });
 
     watch(rows, (list) => {
-      instance.nameObjects(APPLICATION, list.map((row) => ({ primaryKey: row.id, label: localizedText(row.names) || row.id })));
+      instance.nameObjects(APPLICATION, list.map(({ primaryKey, label }) => ({ primaryKey, label })));
     }, { immediate: true });
 
     watch(() => values.value.search, (value) => {
@@ -161,7 +163,7 @@ const Applications = {
       actionNote.value = "";
       classLinkNote.value = "";
       creating.value = false;
-      instance.state.set("selected", { className: APPLICATION, primaryKey: row.id });
+      instance.state.set("selected", { className: APPLICATION, primaryKey: row.primaryKey });
     }
 
     function backToList() {
@@ -202,14 +204,14 @@ const Applications = {
       }
     }
 
-    const target = computed(() => (app.value ? { kind: "object", objectType: APPLICATION, primaryKey: app.value.id } : null));
+    const target = computed(() => (app.value ? { kind: "object", objectType: APPLICATION, primaryKey: app.value.primaryKey } : null));
 
 
     async function openApplication() {
       if (!app.value) return;
       actionError.value = "";
       try {
-        await navigate(app.value.entry.path);
+        await navigate(app.value.fields.path);
       } catch (reason) {
         actionError.value = `打不开这个应用：${reason instanceof Error ? reason.message : String(reason)}`;
       }
@@ -242,7 +244,7 @@ const Applications = {
     );
 
     const usedPanels = computed(() => {
-      const ids = (app.value?.panelUses ?? []).map((use) => use.panelId);
+      const ids = (entryData.value?.panelUses ?? []).map((use) => use.panelId);
       return [...new Set(ids)];
     });
     const inspectedPanelId = computed(() => values.value.inspectedPanel?.primaryKey ?? "");
@@ -267,7 +269,7 @@ const Applications = {
 
     function groupText(groupKey) {
       if (!groupKey) return "—";
-      const group = (app.value?.groups ?? []).find((item) => item.key === groupKey);
+      const group = (entryData.value?.groups ?? []).find((item) => item.key === groupKey);
       return group ? `${localizedText(group.names) || group.key} · ${group.sort}` : groupKey;
     }
 
@@ -277,7 +279,7 @@ const Applications = {
       if (current.canMaintain) parts.push("改身份、删除");
       if (current.canEditEntries) parts.push("改入口");
       if (current.canGrant) parts.push("授权");
-      return parts.length ? parts.join("、") : "只能看";
+      return parts.length ? parts.join("、") : current.maintenance;
     }
 
     const formSection = ref(null);
@@ -309,7 +311,7 @@ const Applications = {
       accessKind: "domain-member", permissionCode: "", agentKind: "none", agentValue: "", inputsText: "",
     });
 
-    const groupChoices = computed(() => (app.value?.groups ?? []).map((group) => ({
+    const groupChoices = computed(() => (entryData.value?.groups ?? []).map((group) => ({
       key: group.key, label: `${localizedText(group.names) || group.key} · ${group.sort}`,
     })));
 
@@ -332,7 +334,7 @@ const Applications = {
     function startAddEntry() {
       fillEntry(null);
       entry.pageKey = "";
-      entry.path = app.value ? `${app.value.entry.path}/` : "";
+      entry.path = app.value ? `${app.value.fields.path}/` : "";
       entryEditing.value = false;
       entryError.value = "";
       entryOpen.value = true;
@@ -406,7 +408,7 @@ const Applications = {
 
     async function removeApplication() {
       if (!app.value) return;
-      askConfirm(`删除应用「${localizedText(app.value.names) || app.value.id}」？删除后它的入口一起消失，不能撤回。`, doRemoveApplication);
+      askConfirm(`删除应用「${app.value.label}」？删除后它的入口一起消失，不能撤回。`, doRemoveApplication);
     }
 
     async function doRemoveApplication() {
@@ -503,7 +505,7 @@ const Applications = {
     }, { immediate: true });
 
     return {
-      t, APPLICATION, catalogue, record, grants, panelInfo, selected, rows, nextCursor, app, appIcon, mode, creating, busy,
+      t, APPLICATION, catalogue, record, entries, entryData, grants, panelInfo, selected, rows, nextCursor, app, appIcon, mode, creating, busy,
       searchText, scope, sort, pageSize, pageIndex, isFirstPage, listError, actionError, actionNote, classLinkNote,
       listRegion, scheduleSearch, setScope, setSort, setSize, nextPage, previousPage, firstPage, openRow, backToList, createdApplication,
       openApplication, openClassCatalogue, openPanelCatalogue, openMemberCatalogue, usedPanels, inspectedPanelId, inspectedMembers,

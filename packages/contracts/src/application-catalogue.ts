@@ -30,7 +30,8 @@ const applicationCatalogueEntrySchema = z.object({
 
 export const applicationCatalogueEntriesSchema = applicationPanelUsesResponseSchema.extend({
   entry: applicationCatalogueEntrySchema,
-});
+  groups: applicationMetadataSchema.shape.groups.optional(),
+}).merge(applicationPanelUsesManagementSchema.pick({ framePanelId: true, theme: true }).partial());
 
 export const applicationCatalogueRecordSchema = summary
   .merge(applicationCatalogueEntriesSchema.pick({ entry: true, panelUses: true }))

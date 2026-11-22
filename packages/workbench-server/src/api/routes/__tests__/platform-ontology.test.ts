@@ -85,7 +85,8 @@ describe("platform-ontology HTTP routes", () => {
     const application = schema.objectTypes.find((item) => item.id === APPLICATION);
     expect(application?.definition).toBeTruthy();
     expect(application?.properties?.length).toBeGreaterThan(0);
-    expect(application?.reads?.query?.result).toBe("applicationCatalogue");
+    expect(application?.reads?.query?.result).toBe("panelRecordQuery");
+    expect(application?.reads?.record?.result).toBe("panelRecord");
     expect(application?.operations?.some((op) => op.id === `${APPLICATION}.save`)).toBe(true);
 
     const startRes = await fetch(`${base}/api/platform-ontology/start`);

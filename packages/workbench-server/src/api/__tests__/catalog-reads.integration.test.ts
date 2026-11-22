@@ -319,9 +319,13 @@ it("reports an unreadable panel beside healthy results without losing its stored
 });
 
 it("dispatches application reads from current PostgreSQL records and preserves the complete table when an executor changes it", async () => {
-  expect(await readCatalogue("apps")).toMatchObject({ rows: [{ id: applicationId }] });
-  expect(await readCatalogue("appRecord")).toMatchObject({ id: applicationId, canMaintain: false, panelUses: [publicUse] });
-  expect(await readCatalogue("appEntries")).toEqual({ applicationId, entry, panelUses: [publicUse] });
+  expect(await readCatalogue("apps")).toMatchObject({
+    rows: [{ primaryKey: applicationId, className: APPLICATION, fields: { canMaintain: false, entryCount: 1 } }],
+  });
+  expect(await readCatalogue("appRecord")).toMatchObject({
+    primaryKey: applicationId, className: APPLICATION, fields: { canMaintain: false, path: entry.path },
+  });
+  expect(await readCatalogue("appEntries")).toMatchObject({ applicationId, entry, panelUses: [publicUse], groups: [] });
 
   const actor = { owner, credentials: viewer };
   const executor = { owner, credentials: { token: "executor" } };
