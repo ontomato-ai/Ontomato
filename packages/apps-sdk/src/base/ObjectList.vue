@@ -12,6 +12,7 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { appIcon } from "@ontomato/platform-shell";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { paramValues, readParams } from "../panel/direct";
@@ -94,9 +95,12 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "emptyText",
   "emptyHint",
   "noMatchText",
+  "searchPlaceholder",
+  "pagination",
+  "pageSizes",
+  "showChevron",
   "creatingRow",
   "searchable",
-  "searchPlaceholder",
   "groupBy",
   "groupEmptyLabel",
   "localFilters",
@@ -170,6 +174,17 @@ const props = withDefaults(
     emptyHint?: string;
     /** Optional panel message key for what a narrowed empty list (no search/filter match) says. */
     noMatchText?: string;
+    /** Optional panel message key for the search input placeholder; defaults to `platform.listSearchPlaceholder`. */
+    searchPlaceholder?: string;
+    /**
+     * Pagination control style for cursor-paged reads: `"auto"` (default) keeps numeric pages in `page` mode and Load
+     * more in `cursor` mode; `"pages"` uses a cursor stack with Previous / Next page controls and page-size selector.
+     */
+    pagination?: "auto" | "pages" | "load-more";
+    /** Selectable page sizes offered in the pagination footer when `pagination === "pages"` and the read accepts `size` or `page`. */
+    pageSizes?: readonly number[];
+    /** Whether selectable table rows render a subtle trailing chevron (`>`) column. */
+    showChevron?: boolean;
     /** Controls visibility of the top `#create-row` inline form block; omitted, shown whenever `#create-row` has content. */
     creatingRow?: boolean;
     /**
@@ -179,8 +194,6 @@ const props = withDefaults(
      * provides the search box) while still reading the bound `search` state.
      */
     searchable?: boolean;
-    /** Optional panel message key for the built-in search input placeholder. */
-    searchPlaceholder?: string;
     /**
      * Record field key used to group filtered rows under collapsible section headers showing each group's label and
      * real-time filtered count (groups with zero matching rows are omitted). Works across list, table, and card layouts.
@@ -206,9 +219,12 @@ const props = withDefaults(
     emptyText: undefined,
     emptyHint: undefined,
     noMatchText: undefined,
+    searchPlaceholder: undefined,
+    pagination: "auto",
+    pageSizes: () => [10, 20, 50],
+    showChevron: false,
     creatingRow: undefined,
     searchable: undefined,
-    searchPlaceholder: undefined,
     groupBy: undefined,
     groupEmptyLabel: undefined,
     localFilters: undefined,
@@ -287,7 +303,14 @@ const canSearch = computed(
   () => props.searchable !== false && (hasServerSearch || (isLocalSearchActive.value && !isFixedLiteral("search"))),
 );
 const canCheck = Boolean(slotOutputState(panel.manifest, member.key, "checked"));
-const effectivePageSize = computed(() => (props.pageSize > 0 ? props.pageSize : 20));
+const canSelect = Boolean(slotOutputState(panel.manifest, member.key, "selected"));
+const usesCursorPages = computed(() => pageMode === "cursor" && props.pagination === "pages");
+const activePageSize = ref(props.pageSize > 0 ? props.pageSize : 20);
+watch(() => props.pageSize, (next) => {
+  if (next > 0) activePageSize.value = next;
+});
+const effectivePageSize = computed(() => activePageSize.value);
+const cursorStack = ref<readonly (string | null)[]>([null]);
 
 const searchParam = !isFixedLiteral("search") ? useMemberParam(paramNameOf("search")) : null;
 const cursorParam = pageMode === "cursor" ? useMemberParam(paramNameOf("cursor")) : null;
@@ -339,6 +362,7 @@ if (pageMode === "page" && pageParam && !isAuthoredParam("page")) {
 function resetPaging() {
   if (currentPage.value !== 1) currentPage.value = 1;
   cursorBatches.value = [];
+  cursorStack.value = [null];
   loadingMore.value = false;
   pendingAppendCursor = null;
   if (pageMode === "cursor" && cursorParam && !isAuthoredParam("cursor") && cursorParam.value.value !== null) {
@@ -370,8 +394,9 @@ const rowDetailMember = computed(() => listRowDetailMemberFor(panel.manifest, me
 function listColumnMember(columnKey: string): string | null {
   return listColumnMembers.value.get(columnKey) ?? null;
 }
+const showRowChevron = computed(() => Boolean(props.showChevron) && isTable.value && canSelect && !rowDetailMember.value);
 const tableColumnCount = computed(
-  () => (rowDetailMember.value ? 1 : 0) + (canCheck ? 1 : 0) + (props.columns?.length ?? 0),
+  () => (rowDetailMember.value ? 1 : 0) + (canCheck ? 1 : 0) + (props.columns?.length ?? 0) + (showRowChevron.value ? 1 : 0),
 );
 const scrollContainerRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
@@ -587,7 +612,7 @@ watch(
 );
 
 const rawRows = computed<readonly PlatformObjectRecord[]>(() => {
-  if (pageMode === "cursor" && cursorBatches.value.length > 0) {
+  if (pageMode === "cursor" && !usesCursorPages.value && cursorBatches.value.length > 0) {
     const seen = new Set<string>();
     const merged: PlatformObjectRecord[] = [];
     for (const batch of cursorBatches.value) {
@@ -776,12 +801,20 @@ const paginationItems = computed<readonly PaginationItem[]>(() => {
 
 const footerReady = computed(
   () =>
-    (datumState.value.status === "ready" && queryStatus.value === "ok" && rows.value.length > 0)
+    (datumState.value.status === "ready" && queryStatus.value === "ok" && (rows.value.length > 0 || (isTable.value && usesCursorPages.value)))
     || (loadingMore.value && rows.value.length > 0),
 );
 const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.value : effectiveHasTotal.value));
 const footerTotal = computed(() => (loadingMore.value ? lastKnownTotal.value : total.value));
 const showFooterTotal = computed(() => footerReady.value && footerHasTotal.value);
+
+const showPageSizeSelect = computed(
+  () =>
+    usesCursorPages.value
+    && footerReady.value
+    && Boolean(sizeParam && isWritableParam("size"))
+    && (props.pageSizes?.length ?? 0) > 0,
+);
 
 const showPageControls = computed(
   () =>
@@ -790,14 +823,21 @@ const showPageControls = computed(
     && ((footerHasTotal.value && footerTotal.value > effectivePageSize.value) || currentPage.value > 1),
 );
 
+const showCursorPageControls = computed(
+  () => usesCursorPages.value && footerReady.value,
+);
+
 const showLoadMore = computed(
   () =>
     pageMode === "cursor"
+    && !usesCursorPages.value
     && footerReady.value
     && (loadingMore.value || nextCursor.value !== undefined || currentPage.value > 1),
 );
 
-const showFooter = computed(() => showFooterTotal.value || showPageControls.value || showLoadMore.value);
+const showFooter = computed(
+  () => showFooterTotal.value || showPageControls.value || showCursorPageControls.value || showLoadMore.value,
+);
 
 const showToolbar = computed(
   () =>
@@ -898,9 +938,6 @@ const dataStateLabels = useDataStateLabels(
   () => (props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty")),
   () => resolvedEmptyHint.value || undefined,
   () => (props.noMatchText ? panel.t(props.noMatchText) : t("platform.dataNoMatch")),
-);
-const resolvedSearchPlaceholder = computed(() =>
-  props.searchPlaceholder ? panel.t(props.searchPlaceholder) : t("platform.listSearchPlaceholder"),
 );
 const isStickyCheckBar = computed(() => !isTable.value && !isCards.value && !canSearch.value && canCheck);
 
@@ -1053,6 +1090,14 @@ function goPage(nextPage: number) {
   }
 }
 
+const searchPlaceholderText = computed(() =>
+  props.searchPlaceholder ? panel.t(props.searchPlaceholder) : t("platform.listSearchPlaceholder"),
+);
+const tablePreservesEmpty = computed(() => isTable.value && listResult.value.status === "empty");
+const tableDataResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(() =>
+  tablePreservesEmpty.value ? { status: "ready", value: [] } : listResult.value,
+);
+
 function loadMore() {
   if (pageMode !== "cursor" || !cursorParam || nextCursor.value === undefined || loadingMore.value) return;
   const targetCursor = nextCursor.value;
@@ -1060,6 +1105,40 @@ function loadMore() {
   loadingMore.value = true;
   currentPage.value += 1;
   cursorParam.set(targetCursor);
+}
+
+function goCursorNext() {
+  if (!usesCursorPages.value || !cursorParam || nextCursor.value === undefined) return;
+  const targetCursor = nextCursor.value;
+  pendingScrollToTop = true;
+  cursorStack.value = [...cursorStack.value, targetCursor];
+  currentPage.value = cursorStack.value.length;
+  cursorParam.set(targetCursor);
+}
+
+function goCursorPrev() {
+  if (!usesCursorPages.value || !cursorParam || cursorStack.value.length <= 1) return;
+  const nextStack = cursorStack.value.slice(0, -1);
+  pendingScrollToTop = true;
+  cursorStack.value = nextStack;
+  currentPage.value = nextStack.length;
+  cursorParam.set(nextStack[nextStack.length - 1] ?? null);
+}
+
+function onPageSizeChange(event: Event) {
+  const next = Number((event.target as HTMLSelectElement).value);
+  if (!Number.isFinite(next) || next <= 0 || next === activePageSize.value) return;
+  activePageSize.value = next;
+  pendingScrollToTop = true;
+  cursorStack.value = [null];
+  cursorBatches.value = [];
+  currentPage.value = 1;
+  if (pageMode === "cursor") {
+    cursorParam?.set(null);
+    sizeParam?.set(next);
+  } else if (pageMode === "page") {
+    pageParam?.set({ number: 1, size: next });
+  }
 }
 
 const rowElements = new Map<string, HTMLElement>();
@@ -1497,15 +1576,20 @@ watch(someVisibleChecked, () => {
 <template>
   <div class="sdk-object-list" :class="{ 'sdk-object-list-compact': !isTable && !isCards }">
     <div v-if="showToolbar" class="sdk-object-list-toolbar" :class="{ 'sdk-object-list-toolbar-sticky': isStickyCheckBar }">
-      <input
-        v-if="canSearch"
-        type="search"
-        class="sdk-object-list-search"
-        :value="searchText"
-        :placeholder="resolvedSearchPlaceholder"
-        :aria-label="resolvedSearchPlaceholder"
-        @input="onSearchInput"
-      />
+      <div v-if="canSearch" class="sdk-object-list-search-wrap">
+        <svg class="sdk-object-list-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <input
+          type="search"
+          class="sdk-object-list-search"
+          :value="searchText"
+          :placeholder="searchPlaceholderText"
+          :aria-label="searchPlaceholderText"
+          @input="onSearchInput"
+        />
+      </div>
       <div v-if="$slots.filters" class="sdk-object-list-filters">
         <slot name="filters"></slot>
       </div>
@@ -1555,7 +1639,7 @@ watch(someVisibleChecked, () => {
       <span class="sdk-object-list-status-label">{{ queryStatusLabel }}</span>
       <span v-if="queryReason" class="sdk-object-list-status-reason">{{ queryReason }}</span>
     </p>
-    <data-state v-else :result="listResult" :labels="dataStateLabels">
+    <data-state v-else :result="tableDataResult" :labels="dataStateLabels">
       <div
         v-if="isTable"
         ref="scrollContainerRef"
@@ -1579,9 +1663,17 @@ watch(someVisibleChecked, () => {
                 />
               </th>
               <th v-for="column in columns" :key="column.key" :class="columnFit.get(column.key)">{{ columnLabel(column) }}</th>
+              <th v-if="showRowChevron" class="sdk-object-list-chevron-col" aria-hidden="true"></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody v-if="tablePreservesEmpty" class="sdk-object-list-empty-body">
+            <tr class="sdk-object-list-empty-row">
+              <td :colspan="tableColumnCount" class="sdk-object-list-empty-cell">
+                <data-state :result="listResult" :labels="dataStateLabels" />
+              </td>
+            </tr>
+          </tbody>
+          <tbody v-else>
             <tr v-if="isVirtualized && virtualTopPadding > 0" class="sdk-object-list-virtual-spacer-row" aria-hidden="true">
               <td :colspan="tableColumnCount" class="sdk-object-list-virtual-spacer-cell" :style="{ height: `${virtualTopPadding}px` }"></td>
             </tr>
@@ -1682,18 +1774,28 @@ watch(someVisibleChecked, () => {
                       </template>
                     </span>
                     <template v-else-if="column.kind === 'time'">{{ fieldValue(entry.row, column.key) !== '' ? timeText(fieldValue(entry.row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
-                    <div v-else class="sdk-object-list-cell">
-                      <span class="sdk-object-list-cell-main">
-                        <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
-                          <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                        </template>
+                    <div v-else class="sdk-object-list-cell" :class="{ 'has-icon': Boolean(column.iconKey && fieldValue(entry.row, column.iconKey)) }">
+                      <span v-if="column.iconKey && fieldValue(entry.row, column.iconKey)" class="sdk-object-list-cell-icon" aria-hidden="true">
+                        <component :is="appIcon(fieldValue(entry.row, column.iconKey))" :size="16" :stroke-width="1.75" />
                       </span>
-                      <span v-if="column.subtitleKey && fieldValue(entry.row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
-                        <template v-for="(part, index) in cellSegments(entry.row, column.subtitleKey, '')" :key="index">
-                          <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                        </template>
-                      </span>
+                      <div class="sdk-object-list-cell-text">
+                        <span class="sdk-object-list-cell-main">
+                          <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                            <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                          </template>
+                        </span>
+                        <span v-if="column.subtitleKey && fieldValue(entry.row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
+                          <template v-for="(part, index) in cellSegments(entry.row, column.subtitleKey, '')" :key="index">
+                            <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                          </template>
+                        </span>
+                      </div>
                     </div>
+                  </td>
+                  <td v-if="showRowChevron" class="sdk-object-list-chevron-col" aria-hidden="true">
+                    <svg class="sdk-object-list-row-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M6 3.5 10.5 8 6 12.5" />
+                    </svg>
                   </td>
                 </tr>
                 <tr
@@ -2036,10 +2138,21 @@ watch(someVisibleChecked, () => {
       </ul>
     </data-state>
 
-    <nav v-if="showFooter" class="sdk-object-list-pagination sdk-object-list-footer">
+    <nav v-if="showFooter" class="sdk-object-list-pagination sdk-object-list-footer" :class="{ 'is-paged-footer': showCursorPageControls }">
       <span v-if="showFooterTotal" class="sdk-object-list-count sdk-object-list-page-total" role="status">
         {{ t("platform.listTotal", { count: footerTotal }) }}
       </span>
+      <select
+        v-if="showPageSizeSelect"
+        class="sdk-object-list-page-size"
+        :value="effectivePageSize"
+        :aria-label="t('platform.listPerPage', { size: effectivePageSize })"
+        @change="onPageSizeChange"
+      >
+        <option v-for="option in pageSizes" :key="option" :value="option">
+          {{ t("platform.listPerPage", { size: option }) }}
+        </option>
+      </select>
       <template v-if="showPageControls">
         <button
           type="button"
@@ -2074,6 +2187,27 @@ watch(someVisibleChecked, () => {
           @click="goPage(currentPage + 1)"
         >
           {{ t("platform.listNextPage") }}
+        </button>
+      </template>
+      <template v-else-if="showCursorPageControls">
+        <button
+          type="button"
+          class="sdk-object-list-btn sdk-object-list-prev sdk-object-list-page-arrow"
+          :disabled="currentPage <= 1"
+          :aria-label="t('platform.listPrevPage')"
+          @click="goCursorPrev"
+        >
+          ‹
+        </button>
+        <span class="sdk-object-list-page-current" aria-current="page">{{ currentPage }}</span>
+        <button
+          type="button"
+          class="sdk-object-list-btn sdk-object-list-next sdk-object-list-page-arrow"
+          :disabled="nextCursor === undefined"
+          :aria-label="t('platform.listNextPage')"
+          @click="goCursorNext"
+        >
+          ›
         </button>
       </template>
       <button
@@ -2165,6 +2299,20 @@ watch(someVisibleChecked, () => {
   background: transparent;
   position: static;
 }
+.sdk-object-list-search-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 260px;
+  min-width: 160px;
+  max-width: 100%;
+}
+.sdk-object-list-search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--el-text-color-placeholder);
+  pointer-events: none;
+}
 .sdk-object-list-search {
   background: var(--el-bg-color);
   border: 0;
@@ -2172,11 +2320,10 @@ watch(someVisibleChecked, () => {
   box-shadow: 0 0 0 1px var(--ui-divider) inset;
   box-sizing: border-box;
   color: var(--el-text-color-primary);
-  flex: 1 1 160px;
+  width: 100%;
   font-size: var(--text-sm);
   height: var(--control-height);
-  min-width: 120px;
-  padding: 0 var(--spacing-md);
+  padding: 0 var(--spacing-md) 0 30px;
   transition: box-shadow var(--transition-fast);
 }
 .sdk-object-list-search::placeholder {
@@ -2242,6 +2389,9 @@ watch(someVisibleChecked, () => {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  border: 1px solid var(--sdk-border-color, var(--ui-border));
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color);
 }
 .sdk-object-list-table {
   border-collapse: collapse;
@@ -2264,10 +2414,9 @@ watch(someVisibleChecked, () => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A long text column takes the room the others leave, down to a readable minimum, and ends in an ellipsis. */
+/* A long text column truncates cleanly without crushing sibling columns to the right edge. */
 .sdk-object-list-table .sdk-object-list-col-shrink {
-  width: 100%;
-  max-width: 0;
+  max-width: 28rem;
   min-width: 12em;
 }
 .sdk-object-list-col-shrink :is(.sdk-object-list-cell-main, .sdk-object-list-cell-sub, .sdk-object-ref-link) {
@@ -2281,7 +2430,7 @@ watch(someVisibleChecked, () => {
   min-width: 12em;
 }
 .sdk-object-list-table th {
-  background: var(--el-bg-color);
+  background: var(--sdk-fill-color, var(--ui-fill-tertiary));
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
@@ -2292,6 +2441,31 @@ watch(someVisibleChecked, () => {
 }
 .sdk-object-list-table td {
   height: var(--table-row-height, 40px);
+  padding-block: 8px;
+}
+.sdk-object-list-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.sdk-object-list-table tbody tr.sdk-object-list-empty-row {
+  cursor: default;
+}
+.sdk-object-list-table tbody tr.sdk-object-list-empty-row:hover {
+  background: transparent;
+}
+.sdk-object-list-empty-cell {
+  padding: var(--spacing-2xl) var(--spacing-md);
+  text-align: center;
+  white-space: normal;
+}
+.sdk-object-list-chevron-col {
+  width: 28px;
+  padding-inline: 0 var(--spacing-sm) !important;
+  text-align: right;
+}
+.sdk-object-list-row-chevron {
+  display: inline-block;
+  vertical-align: middle;
+  color: var(--el-text-color-placeholder);
 }
 .sdk-object-list-table tbody tr {
   cursor: pointer;
@@ -2366,8 +2540,26 @@ watch(someVisibleChecked, () => {
 }
 .sdk-object-list-cell {
   display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.sdk-object-list-cell-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+}
+.sdk-object-list-cell-text {
+  display: flex;
   flex-direction: column;
-  gap: calc(var(--spacing-xs) / 2);
+  gap: 2px;
+  min-width: 0;
+}
+.sdk-object-list-cell-main {
+  color: var(--el-text-color-primary);
+  font-weight: var(--font-medium);
 }
 .sdk-object-list-select-all {
   align-items: center;
@@ -2629,7 +2821,7 @@ watch(someVisibleChecked, () => {
   display: flex;
   flex: 0 0 auto;
   flex-wrap: wrap;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
   justify-content: flex-end;
   padding-top: var(--spacing-xs);
 }
@@ -2643,6 +2835,33 @@ watch(someVisibleChecked, () => {
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   margin-right: auto;
+}
+.sdk-object-list-pagination.is-paged-footer .sdk-object-list-page-total {
+  margin-right: 0;
+}
+.sdk-object-list-page-size {
+  height: var(--control-height-sm);
+  padding: 0 var(--spacing-sm);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.sdk-object-list-page-arrow {
+  min-width: var(--control-height-sm);
+  padding: 0 var(--spacing-xs);
+  border-color: transparent;
+  font-size: var(--text-base);
+}
+.sdk-object-list-page-current {
+  min-width: 24px;
+  text-align: center;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--el-text-color-primary);
+  font-variant-numeric: tabular-nums;
 }
 .sdk-object-list-page-num {
   min-width: var(--control-height-sm);

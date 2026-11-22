@@ -7,6 +7,7 @@ import {
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { APPLICATION, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
+import { applicationPanelUseSchema } from "@ontomato/contracts/product-panels";
 import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
 import { config } from "../../config/application";
 import { resolveLocale, tForLocale } from "../../i18n";
@@ -21,7 +22,10 @@ const cataloguePath = `${applicationPath}/catalogue`;
 export const applicationDraftIdSchema = z.string().regex(/^app-[a-z0-9-]+$/);
 const createPath = /^\/platform\/applications\/(app-[a-z0-9-]+)\/panel-uses\?create=true$/;
 type FormParams = Partial<Pick<ApplicationCatalogueFormRequest, "values" | "changedField">>;
-type EditFormParams = FormParams & { section: Exclude<ApplicationCatalogueFormRequest["section"], "create"> };
+type EditFormParams = FormParams & {
+  section: Exclude<ApplicationCatalogueFormRequest["section"], "create">;
+  entryId?: string;
+};
 const ownerSuccessSchema = z.object({ success: z.literal(true) });
 const ownerData = <T>(text: string, schema: z.ZodType<T>) =>
   schema.parse(ownerSuccessSchema.extend({ data: z.unknown() }).parse(JSON.parse(text)).data);
@@ -57,6 +61,8 @@ export function toApplicationPanelRecord(
     sourceKind: row.source,
     source: word(row.source),
     maintenance: word(row.canMaintain ? "maintainable" : "readOnly"),
+    owner: row.ownerName ?? (row.source === "builtin" ? word("platformOwner") : ""),
+    ...(row.updatedAt !== undefined && { updatedAt: row.updatedAt }),
   };
   const fieldLabels: NonNullable<PanelRecord["fieldLabels"]> = {
     id: word("id"),
@@ -66,6 +72,8 @@ export function toApplicationPanelRecord(
     source: word("source"),
     maintenance: word("maintenance"),
     entryCount: word("entryCount"),
+    owner: word("owner"),
+    ...(row.updatedAt !== undefined && { updatedAt: word("updatedAt") }),
   };
   if ("entry" in row) {
     const { path, home, renderer } = row.entry;
@@ -148,10 +156,19 @@ async function defaultAgentChoices(domainId: string, locale?: string): Promise<P
 
 /** The application owner declares each entry's default agent as a select without options; its options are the agent owner's. */
 async function withDefaultAgentChoices(description: PanelFormDescription, choices: () => Promise<PanelFormOption[]>) {
+  const isAgent = (field: PanelFormField) => field.path === "/defaultAgent" && field.control.kind === "select";
+  const topAgent = description.fields.find(isAgent);
+  if (topAgent) {
+    const options = await choices();
+    return {
+      ...description,
+      fields: description.fields.map((field): PanelFormField =>
+        isAgent(field) && field.control.kind === "select" ? { ...field, control: { ...field.control, options } } : field),
+    };
+  }
   const entries = description.fields.find(field => field.path === "/panelUses");
   if (entries?.control.kind !== "object-array") return description;
   const control = entries.control;
-  const isAgent = (field: PanelFormField) => field.path === "/defaultAgent" && field.control.kind === "select";
   if (!control.itemFields.some(isAgent)) return description;
   const options = await choices();
   const itemFields = control.itemFields.map((field): PanelFormField =>
@@ -166,8 +183,12 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
     withDefaultAgentChoices(await client.form(input), () => defaultAgentChoices(owner.domainId, viewer.locale));
   return {
     async query(params: Record<string, unknown>) {
-      const { rows, nextCursor } = await query(params);
-      return { rows: rows.map(row => toApplicationPanelRecord(row, viewer.locale)), ...(nextCursor !== undefined && { nextCursor }) };
+      const { rows, total, nextCursor } = await query(params);
+      return {
+        rows: rows.map(row => toApplicationPanelRecord(row, viewer.locale)),
+        ...(total !== undefined && { total }),
+        ...(nextCursor !== undefined && { nextCursor }),
+      };
     },
     async record(primaryKey: string) {
       return toApplicationPanelRecord(await record(primaryKey), viewer.locale);
@@ -178,14 +199,18 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
       const { grants } = await readProductGrantRecords(primaryKey, viewer);
       return { grants, shared: grants.some(grant => grant.principalKind === "domain" && grant.verb === "use") };
     },
-    async form(primaryKey: string, { section, values, changedField = null }: EditFormParams) {
+    async form(primaryKey: string, { section, entryId, values, changedField = null }: EditFormParams) {
       const target = { kind: "object", objectType: APPLICATION, primaryKey } as const;
-      const schema = section === "identity" ? applicationIdentityUpdateSchema : applicationEntriesUpdateSchema;
+      const schema = section === "identity"
+        ? applicationIdentityUpdateSchema
+        : section === "entry"
+          ? applicationPanelUseSchema
+          : applicationEntriesUpdateSchema;
       if (values !== undefined && !schema.safeParse(values).success) {
-        const current = await form({ section, target, changedField: null });
+        const current = await form({ section, ...(entryId !== undefined && { entryId }), target, changedField: null });
         values = { ...current.values, ...values };
       }
-      return form({ section, target, values, changedField });
+      return form({ section, ...(entryId !== undefined && { entryId }), target, values, changedField });
     },
     async createForm({ values, changedField = null }: FormParams) {
       const { id, ...formValues } = values ?? {};

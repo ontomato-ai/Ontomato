@@ -17,7 +17,13 @@ public class ProductGrantController {
     public ProductGrantController(ProductGrantService grants,WorkbenchServiceAuthentication authentication){this.grants=grants;this.authentication=authentication;}
     @PostMapping("/product-governance/check") public Object check(@RequestBody Map<String,Object> body){return Map.of("allowed",grants.allowed(text(body,"id"),text(body,"verb")));}
     @PostMapping("/product-governance/resources") public Object resources(@RequestBody Map<String,Object> body){return Map.of("ids",grants.resources(text(body,"verb")));}
-    @PostMapping("/product-governance/grants") public Object grants(@RequestBody Map<String,Object> body){return Map.of("grants",grants.grants(text(body,"id")));}
+    @PostMapping("/product-governance/grants") public Object grants(@RequestBody Map<String,Object> body){return Map.of("grants",grants.grantViews(text(body,"id")));}
+    @PostMapping("/product-governance/principals") public Object principals(@RequestBody Map<String,Object> body){
+        String kind = text(body, "kind");
+        String keyword = body.get("keyword") instanceof String value ? value : "";
+        int limit = body.get("limit") instanceof Number value ? value.intValue() : 50;
+        return Map.of("options", grants.searchPrincipals(kind, keyword, limit));
+    }
     @PostMapping(SERVICE_RESOURCES_PATH) public Object serviceResources(HttpServletRequest request,@RequestBody Map<String,Object> body){authentication.authenticate(request);return Map.of("ids",grants.resourcesFor(text(body,"domainId"),text(body,"userId"),text(body,"verb")));}
     @PostMapping("/product-governance/share") public Object share(@RequestBody Map<String,Object> body){if(!(body.get("shared") instanceof Boolean shared))throw new IllegalArgumentException("Expected sharing intent");grants.share(text(body,"id"),shared);return Map.of("success",true);}
     @PostMapping(REGISTER_PATH) public Object register(HttpServletRequest request,@RequestBody Map<String,Object> body){

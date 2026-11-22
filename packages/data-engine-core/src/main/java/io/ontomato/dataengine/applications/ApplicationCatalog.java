@@ -127,7 +127,8 @@ public class ApplicationCatalog {
                     "groups", JSON.parseArray(row.getString("groups"), Group.class),
                     "permissions", JSON.parseArray(row.getString("declaration_permissions"), Permission.class),
                     "panelSettings", JSON.parseObject(row.getString("panel_settings")));
-                if (includeUpdatedAt) app.put("updatedAt", row.getObject("updated_at", OffsetDateTime.class).toInstant());
+                var updated = row.getObject("updated_at", OffsetDateTime.class);
+                if (updated != null) app.put("updatedAt", updated.toInstant());
                 return app;
             });
     }
@@ -211,25 +212,41 @@ public class ApplicationCatalog {
         var after = cursor == null ? null : parseCatalogueCursor(cursor, sort, cursorType);
         var keyword = search.strip().toLowerCase(Locale.ROOT);
         var rows = new ArrayList<JSONObject>();
-        var apps = loadApplications("updated".equals(sort)).stream()
+        var apps = loadApplications(true).stream()
             .filter(app -> app.getString("domainId") == null || inDomain(app, user)).toList();
         var pageKeys = new BuiltinPageKeys(apps);
         var ordered = apps.stream().filter(app -> matchesCatalogue(app, keyword))
             .map(app -> new CatalogueRow(app, new CatalogueKey(app.getString("id"),
-                "name".equals(sort) ? catalogueName(app, locale) : null, (Instant) app.get("updatedAt"))))
-            .filter(row -> after == null || order.compare(row.key(), after) > 0)
+                "name".equals(sort) ? catalogueName(app, locale) : null,
+                app.get("updatedAt") instanceof Instant ts ? ts : Instant.EPOCH)))
             .sorted(Comparator.comparing(CatalogueRow::key, order)).toList();
-        CatalogueKey last = null;
+        var matched = new ArrayList<CatalogueRow>();
+        var maintainFlags = new ArrayList<Boolean>();
         for (var row : ordered) {
             var app = row.app();
             boolean maintain = canMaintainCatalogue(app, user);
             if (!maintain && ("maintainable".equals(scope) || !canEnter(app, user))) continue;
+            matched.add(row);
+            maintainFlags.add(maintain);
+        }
+        int total = matched.size();
+        var ownerIds = matched.stream()
+            .map(r -> r.app().getString("ownerUserId"))
+            .filter(id -> id != null && !id.isBlank())
+            .distinct().toList();
+        var ownerNames = grants.principalNames(user.getDomainId(), ownerIds);
+        CatalogueKey last = null;
+        for (int i = 0; i < matched.size(); i++) {
+            var row = matched.get(i);
+            if (after != null && order.compare(row.key(), after) <= 0) continue;
+            var app = row.app();
+            boolean maintain = maintainFlags.get(i);
             if (rows.size() == size)
-                return JSONObject.of("rows", rows, "nextCursor", catalogueCursor(last, sort, cursorType));
-            rows.add(catalogueSummary(app, user, maintain, catalogueEntries(app, user, maintain, pageKeys).size()));
+                return JSONObject.of("rows", rows, "total", total, "nextCursor", catalogueCursor(last, sort, cursorType));
+            rows.add(catalogueSummary(app, user, maintain, catalogueEntries(app, user, maintain, pageKeys).size(), ownerNames));
             last = row.key();
         }
-        return JSONObject.of("rows", rows);
+        return JSONObject.of("rows", rows, "total", total);
     }
 
     private static String catalogueName(JSONObject app, Locale locale) {
@@ -279,13 +296,22 @@ public class ApplicationCatalog {
     }
 
     public JSONObject catalogueRecord(String id, User user) {
+        return catalogueRecord(id, user, Locale.ENGLISH);
+    }
+
+    public JSONObject catalogueRecord(String id, User user, Locale locale) {
         var apps = all();
-        var app = require(apps, id);
+        var app = apps.stream().filter(a -> id.equals(a.getString("id"))).findFirst()
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, ApplicationCatalogueForm.notFoundMessage(locale)));
         boolean maintain = canMaintainCatalogue(app, user);
         if (!maintain && !canEnter(app, user))
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Application not found");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, ApplicationCatalogueForm.notFoundMessage(locale));
         var uses = catalogueEntries(app, user, maintain, new BuiltinPageKeys(apps));
-        var result = catalogueSummary(app, user, maintain, uses.size());
+        var ownerId = app.getString("ownerUserId");
+        var ownerNames = ownerId != null && !ownerId.isBlank()
+            ? grants.principalNames(user.getDomainId(), List.of(ownerId))
+            : Map.<String, String>of();
+        var result = catalogueSummary(app, user, maintain, uses.size(), ownerNames);
         result.put("entry", publicEntry(app));
         result.put("panelUses", uses);
         var groups = app.getList("groups", Group.class);
@@ -309,13 +335,20 @@ public class ApplicationCatalog {
         return isPanelSkillApplication(app) ? visiblePanelUses(app, user, pageKeys) : List.of();
     }
 
-    private JSONObject catalogueSummary(JSONObject app, User user, boolean maintain, int entryCount) {
+    private JSONObject catalogueSummary(JSONObject app, User user, boolean maintain, int entryCount, Map<String, String> ownerNames) {
         var id = app.getString("id");
         boolean builtin = app.getString("domainId") == null;
-        return JSONObject.of("id", id, "names", app.getJSONObject("names"), "descriptions", app.getJSONObject("descriptions"),
+        var summary = JSONObject.of("id", id, "names", app.getJSONObject("names"), "descriptions", app.getJSONObject("descriptions"),
             "icon", app.getString("icon"), "source", builtin ? "builtin" : "domain", "canMaintain", maintain,
             "canGrant", !builtin && grants.allowedFor(user.getDomainId(), user.getId(), id, "edit"),
             "canEditEntries", maintain && panelManaged(app), "entryCount", entryCount);
+        if (app.get("updatedAt") instanceof Instant ts) summary.put("updatedAt", ts.toString());
+        var ownerId = app.getString("ownerUserId");
+        if (!builtin && ownerId != null && !ownerId.isBlank()) {
+            var resolved = ownerNames.get(ownerId);
+            summary.put("ownerName", resolved != null && !resolved.isBlank() ? resolved : ownerId);
+        }
+        return summary;
     }
 
     private static boolean matchesCatalogue(JSONObject app, String keyword) {
@@ -354,6 +387,12 @@ public class ApplicationCatalog {
                 if (!panelManaged(app)) throw bad("Only panel applications can edit their entry table");
                 var pageKeys = new BuiltinPageKeys(apps);
                 yield form.entries(app, request.values(),
+                    key -> pageKeys.conflict(key, user.getDomainId(), app.getString("id")));
+            }
+            case "entry" -> {
+                if (!panelManaged(app)) throw bad("Only panel applications can edit their entry table");
+                var pageKeys = new BuiltinPageKeys(apps);
+                yield form.entry(app, request.entryId(), request.values(),
                     key -> pageKeys.conflict(key, user.getDomainId(), app.getString("id")));
             }
             default -> throw bad("Unknown application catalogue form section");
@@ -894,6 +933,9 @@ public class ApplicationCatalog {
                     "product", old == null ? "apps" : old.getString("rail"), old == null ? "business" : old.getString("category"),
                     old == null ? 100 : old.getIntValue("sort"), entry, entryAccess, null, null, declaration, settings.json());
                 access.declare(require(id), declaration, old == null);
+                if (old == null && body.shared() != null) {
+                    grants.share(id, Boolean.TRUE.equals(body.shared()));
+                }
             }
             return JSONObject.of("applicationId", id, "entry", entry, "panelUses", uses);
         });

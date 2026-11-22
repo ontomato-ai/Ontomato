@@ -20,6 +20,7 @@ final class ApplicationCatalogueForm {
     private static final String DOMAIN_MEMBER = ApplicationCatalog.DOMAIN_MEMBER_ENTRY;
     private static final JSONObject STRING = PanelFormFields.schema("string");
     private static final JSONObject OBJECT = PanelFormFields.schema("object");
+    private static final JSONObject BOOLEAN = PanelFormFields.schema("boolean");
     private static final JSONObject INTEGER = PanelFormFields.schema("integer");
     private static final JSONObject STRING_MAP = JSONObject.of("type", "object", "additionalProperties", STRING);
     private static final JSONObject STRING_ARRAY = PanelFormFields.arraySchema(STRING);
@@ -56,10 +57,15 @@ final class ApplicationCatalogueForm {
     private final ResourceBundle copy;
 
     ApplicationCatalogueForm(Locale requested) {
-        var language = Locale.forLanguageTag(requested.getLanguage());
-        locale = LOCALES.contains(requested) ? requested : LOCALES.contains(language) ? language : Locale.ENGLISH;
+        var language = Locale.forLanguageTag(requested == null ? "en" : requested.getLanguage());
+        locale = requested != null && LOCALES.contains(requested) ? requested
+            : LOCALES.contains(language) ? language : Locale.ENGLISH;
         copy = ResourceBundle.getBundle("application_catalogue_form", locale,
             ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_PROPERTIES));
+    }
+
+    static String notFoundMessage(Locale requested) {
+        return new ApplicationCatalogueForm(requested).copy.getString("error.notFound");
     }
 
     JSONObject identity(JSONObject app, JSONObject draft) {
@@ -88,10 +94,40 @@ final class ApplicationCatalogueForm {
             APPLICATIONS + id + "/panel-uses", "saveEntries", registrationSchema(false));
     }
 
+    JSONObject entry(JSONObject app, String entryId, JSONObject draft, Function<String, String> conflicts) {
+        var id = app.getString("id");
+        var root = ApplicationCatalog.assignedPanelRoot(id);
+        var uses = app.getList("panelUses", ApplicationPanelUse.class);
+        boolean isNew = entryId == null || entryId.isBlank() || "__new__".equals(entryId);
+        ApplicationPanelUse existingUse = isNew ? null : uses.stream()
+            .filter(u -> entryId.equals(u.id())).findFirst()
+            .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, copy.getString("error.entryNotFound")));
+        JSONObject values;
+        List<ObjectNode> errors;
+        if (draft == null) {
+            if (existingUse != null) {
+                values = JSONObject.from(existingUse);
+                var savedErrors = new PanelFormErrors();
+                validatePageKey(existingUse.pageKey(), "/pageKey", conflicts, savedErrors);
+                errors = savedErrors.list();
+            } else {
+                values = JSONObject.of("id", "", "pageKey", "", "panelId", "", "path", root + "/",
+                    "access", JSONObject.of("kind", DOMAIN_MEMBER));
+                errors = List.of();
+            }
+        } else {
+            values = draft;
+            errors = singleEntryErrors(id, draft, app, conflicts);
+        }
+        var itemFields = singleEntryFields(entryAccessOptions(id, app.get("permissions")), !isNew);
+        return describe(itemFields, values, errors, APPLICATIONS + id + "/panel-uses", "saveEntry", USE_SCHEMA);
+    }
+
     JSONObject create(String id, JSONObject draft, Function<String, String> conflicts) {
         var values = draft == null ? JSONObject.of(
             "declaration", JSONObject.of("names", new JSONObject(), "descriptions", new JSONObject(),
                 "icon", "pages", "groups", List.of(), "permissions", List.of()),
+            "shared", false,
             "entry", JSONObject.of("path", ApplicationCatalog.assignedPanelRoot(id), "renderer", "panels"),
             "entryAccess", List.of(DOMAIN_MEMBER), "panelUses", List.of()) : draft;
         var permissions = values.get("declaration") instanceof Map<?, ?> declaration ? declaration.get("permissions") : null;
@@ -101,6 +137,10 @@ final class ApplicationCatalogueForm {
         metadata.add(permissionsField(id));
         fields.addFirst(field("/declaration", "identity", PanelFormFields.object(metadata, null), DECLARATION_SCHEMA, true));
         fields.add(field("/entryAccess", "applicationAccess", PanelFormFields.stringArray(), STRING_ARRAY, true));
+        fields.add(field("/shared", "initialGrant", PanelFormFields.select(JSONArray.of(
+            PanelFormFields.option(false, copy.getString("initialGrant.private")),
+            PanelFormFields.option(true, copy.getString("initialGrant.domain")))),
+            BOOLEAN, false, "initialGrant.help"));
         return describe(fields, values, draft == null ? List.of() : entryErrors(id, draft, null, conflicts),
             APPLICATIONS + id + "/panel-uses?create=true", "create", registrationSchema(true));
     }
@@ -163,6 +203,24 @@ final class ApplicationCatalogueForm {
         return options;
     }
 
+    private JSONArray singleEntryFields(JSONArray accessOptions, boolean idReadOnly) {
+        var inputs = field("/inputs", "inputs", PanelFormFields.code("json"), INPUTS, false);
+        inputs.put("advanced", true);
+        var entryIdField = PanelFormFields.field("/id", copy.getString("entryId"), PanelFormFields.text(false), STRING,
+            true, idReadOnly, null, null, false);
+        return JSONArray.of(
+            entryIdField,
+            field("/pageKey", "pageKey", PanelFormFields.text(false), STRING, true),
+            field("/path", "address", PanelFormFields.text(false), STRING, true),
+            field("/panelId", "panelId", PanelFormFields.text(false), STRING, true),
+            field("/names", "menuNames", localizedText(List.of(), false), STRING_MAP, false),
+            field("/descriptions", "entryDescriptions", localizedText(List.of(), true), STRING_MAP, false),
+            field("/groupKey", "menuGroup", PanelFormFields.text(false), STRING, false),
+            field("/access", "entryAccess", PanelFormFields.select(accessOptions), ACCESS, true),
+            field("/defaultAgent", "defaultAgent", PanelFormFields.select(new JSONArray()), DEFAULT_AGENT, false),
+            inputs);
+    }
+
     private JSONArray entryFields(String id, JSONArray accessOptions) {
         var inputs = field("/inputs", "inputs", PanelFormFields.code("json"), INPUTS, false);
         inputs.put("advanced", true);
@@ -196,9 +254,11 @@ final class ApplicationCatalogueForm {
     }
 
     private static JSONObject registrationSchema(boolean create) {
-        return objectSchema(JSONObject.of("entry", ENTRY_SCHEMA, "panelUses", PanelFormFields.arraySchema(USE_SCHEMA),
+        var props = JSONObject.of("entry", ENTRY_SCHEMA, "panelUses", PanelFormFields.arraySchema(USE_SCHEMA),
             "entryAccess", STRING_ARRAY, "declaration", DECLARATION_SCHEMA,
-            "framePanelId", STRING, "theme", OBJECT, "delivery", OBJECT),
+            "framePanelId", STRING, "theme", OBJECT, "delivery", OBJECT);
+        if (create) props.put("shared", BOOLEAN);
+        return objectSchema(props,
             create ? List.of("entry", "panelUses", "entryAccess", "declaration") : List.of("entry", "panelUses"));
     }
 
@@ -290,6 +350,48 @@ final class ApplicationCatalogueForm {
             if (!(permission.get("sort") instanceof Integer))
                 errors.invalidObject(row + "/sort", "Expected an integer sort order");
         }
+    }
+
+    static List<ObjectNode> singleEntryErrors(String id, JSONObject use, JSONObject app, Function<String, String> conflicts) {
+        var errors = new PanelFormErrors();
+        var root = ApplicationCatalog.assignedPanelRoot(id);
+        for (var key : List.of("id", "panelId"))
+            errors.requiredString(use, key, "/" + key);
+        var pageKey = errors.requiredString(use, "pageKey", "/pageKey");
+        if (pageKey != null) validatePageKey(pageKey, "/pageKey", conflicts, errors);
+        if (use.containsKey("names")) {
+            var names = errors.requiredObject(use, "names", "/names");
+            if (names != null) {
+                if (names.isEmpty()) errors.required("/names", "At least one localized name is required");
+                validateTranslations(names, "/names", true, errors);
+            }
+        }
+        if (use.containsKey("descriptions")) {
+            var descriptions = errors.requiredObject(use, "descriptions", "/descriptions");
+            if (descriptions != null) {
+                if (descriptions.isEmpty()) errors.required("/descriptions", "At least one localized description is required");
+                for (var description : descriptions.entrySet()) {
+                    if (!(description.getValue() instanceof String text) || ApplicationPanelUse.blankDescription(text))
+                        errors.invalidObject("/descriptions/" + PanelFormFields.pointer(description.getKey()), "Expected a nonblank description");
+                }
+            }
+        }
+        validatePath(use, "/path", root, errors);
+        var access = errors.requiredObject(use, "access", "/access");
+        if (access != null && (access.size() != 1 || !(DOMAIN_MEMBER.equals(access.get("kind"))
+            || access.get("permissionCode") instanceof String code && ApplicationCatalog.ownsPermissionCode(id, code))))
+            errors.invalidOption("/access", "Use domain-member or a declared permission of this application");
+        if (!errors.isEmpty()) return errors.list();
+        try {
+            var canonical = ApplicationPanelUse.canonical(List.of(use.toJavaObject(ApplicationPanelUse.class)));
+            var codes = app.getList("permissions", ApplicationCatalog.Permission.class).stream()
+                .map(ApplicationCatalog.Permission::code).collect(Collectors.toSet());
+            ApplicationCatalog.validateUsePermissions(canonical, codes);
+            ApplicationCatalog.validateUseGroups(canonical, app.getList("groups", ApplicationCatalog.Group.class));
+        } catch (ResponseStatusException | JSONException error) {
+            errors.invalidObject("/id", error);
+        }
+        return errors.list();
     }
 
     private static void validateUses(String id, JSONObject values, String root, JSONObject declaration,
