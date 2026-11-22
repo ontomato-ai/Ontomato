@@ -7,7 +7,7 @@ export const baseComponents = {
   FileUploadControl: () => import("./base/FileUploadControl.vue").then(module => module.default),
   SegmentedControl: () => import("./base/SegmentedControl.vue").then(module => module.default),
   GraphCanvas: () => import("@ontomato/foundation-ui/graph").then(module => module.GraphCanvas),
-  G6GraphCanvas: () => import("@ontomato/foundation-ui/graph/g6").then(module => module.G6GraphCanvas),
+  InteractiveGraphCanvas: () => import("@ontomato/foundation-ui/graph/g6").then(module => module.G6GraphCanvas),
   OntologyGraph: () => import("./base/OntologyGraph.vue").then(module => module.default),
   TwoPaneLayout: () => import("./base/TwoPaneLayout.vue").then(module => module.default),
   SectionGroup: () => import("./base/SectionGroup.vue").then(module => module.default),

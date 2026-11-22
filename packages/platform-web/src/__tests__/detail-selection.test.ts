@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import { ACTION, AGENT_DEFINITION, FUNCTION, OBJECT_TYPE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import { DETAIL_SELECTIONS, detailSelectionAddress } from "../detail-selection";
 
 /*
@@ -33,6 +33,14 @@ it("opens a function's detail address as the functions panel with the function s
   });
   expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: { creating: true } });
   expect(open("/ontology/assets/functions")).toBeNull();
+});
+
+it("opens a metric view's detail address as the metric views panel with that metric selected, and the old creation address as its blank form", () => {
+  expect(open("/ontology/assets/metrics/mv%201?back=products")).toEqual({
+    path: "/ontology/assets/metrics", state: { selected: { className: METRIC_VIEW, primaryKey: "mv 1" } },
+  });
+  expect(open("/ontology/assets/metrics/new")).toEqual({ path: "/ontology/assets/metrics", state: { creating: true } });
+  expect(open("/ontology/assets/metrics")).toBeNull();
 });
 
 

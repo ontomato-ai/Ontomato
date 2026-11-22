@@ -1,0 +1,246 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:MetricView"
+        },
+        "deepLink": true
+      },
+      "checked": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:MetricView"
+          }
+        },
+        "default": []
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": true
+      }
+    },
+    "members": {
+      "list": {
+        "component": "ObjectList",
+        "type": "platform:MetricView",
+        "data": {
+          "rows": "query"
+        },
+        "state": {
+          "selected": "selected",
+          "checked": "checked",
+          "search": "search"
+        },
+        "config": {
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "metricViews.columnName",
+              "subtitleKey": "subtitle"
+            },
+            {
+              "key": "function"
+            },
+            {
+              "key": "origin"
+            },
+            {
+              "key": "status",
+              "kind": "tag"
+            },
+            {
+              "key": "createdBy"
+            },
+            {
+              "key": "reviewedBy"
+            },
+            {
+              "key": "modified",
+              "kind": "time"
+            }
+          ],
+          "pageSize": 20,
+          "emptyText": "metricViews.empty"
+        },
+        "name": "指标目录",
+        "description": "按名称和描述搜索的指标目录，显示名称、描述、关联函数、来源、状态、创建人、审核人与更新时间。",
+        "id": "builtin-product-37b7a15d-5e96-4375-a4b5-9515b99e7a9f"
+      },
+      "record": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "name": "当前指标摘要",
+        "description": "选中指标的标题和存在状态。",
+        "id": "builtin-product-70685f91-0d45-4ee3-aa69-26a9aef2eeda"
+      },
+      "definition": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:MetricView.save",
+        "name": "指标定义",
+        "description": "指标的名称、描述、状态、匹配问题、函数逻辑（查询包、列标签、逻辑说明与旧格式只读代码）及参数绑定。",
+        "id": "builtin-product-1d856c95-d8b9-4ade-bed9-88f912283c8c"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "target": "selected",
+        "operation": "metricViews.delete",
+        "config": {
+          "type": "danger"
+        },
+        "name": "删除指标",
+        "description": "删除选中的指标，确认中说明会连带删掉它的绑定。",
+        "id": "builtin-product-de1377ff-5e28-476a-a2fb-3bdaf9a9bbd1"
+      },
+      "publishStatus": {
+        "component": "PanelData",
+        "type": "platform:MetricView",
+        "target": "checked",
+        "operation": "metricViews.setStatus",
+        "name": "批量改发布状态",
+        "description": "把勾选的指标一次改成待审核、已发布或未使用。",
+        "id": "builtin-product-6193e673-ac00-48a5-88e7-7fe7312f7256"
+      },
+      "trial": {
+        "component": "PanelData",
+        "operation": "metricViews.test",
+        "draft": "definition",
+        "name": "测试当前定义",
+        "description": "用正在编辑的定义试跑，返回 Markdown 结果。",
+        "id": "builtin-product-1dd3cb27-6f98-478c-a4ab-3ca886dc09fd"
+      },
+      "trialJson": {
+        "component": "PanelData",
+        "operation": "metricViews.testExecute",
+        "draft": "definition",
+        "name": "测试并返回 JSON",
+        "description": "用正在编辑的定义试跑，返回原始 JSON 结果及截断提示。",
+        "id": "builtin-product-7832c137-74da-4234-9789-7873351308d0"
+      }
+    },
+    "commands": {
+      "newMetric": {
+        "labelKey": "metricViews.new",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "selected": {
+                "literal": null
+              },
+              "creating": {
+                "literal": true
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "metricViews.new": "New Metric View",
+        "metricViews.back": "Back to Metric Views",
+        "metricViews.empty": "No metric views found",
+        "metricViews.saved": "Metric view saved",
+        "metricViews.columnName": "Metric View",
+        "metricViews.batchStatus": "Set publication status",
+        "metricViews.batchApply": "Update status",
+        "metricViews.batchDone": "{done} of {total} updated",
+        "metricViews.batchRefused": "The owner refused: {message}",
+        "metricViews.batchCancelled": "Nothing was changed: confirmation was cancelled.",
+        "metricViews.batchUnknown": "The result is unknown: {message}",
+        "metricViews.result": "Updated",
+        "metricViews.status.PENDING_REVIEW": "Pending review",
+        "metricViews.status.PUBLISHED": "Published",
+        "metricViews.status.UNUSED": "Unused",
+        "metricViews.test": "Test",
+        "metricViews.testTitle": "Metric view test",
+        "metricViews.testHint": "The test runs with the current draft and parameter values and does not save changes.",
+        "metricViews.testJsonHint": "Enter JSON values: \"text\", 12, null, or [1, 2]. Samples are hints only.",
+        "metricViews.testSource": "Choose a binding",
+        "metricViews.testExplicit": "Explicit parameters",
+        "metricViews.testBinding": "Binding: {name}",
+        "metricViews.testBindingUnnamed": "Binding {index}",
+        "metricViews.testNoParameters": "This query package declares no parameters.",
+        "metricViews.testMarkdown": "Test and generate Markdown",
+        "metricViews.testJson": "Test and return JSON",
+        "metricViews.testMarkdownTab": "Markdown test",
+        "metricViews.testJsonTab": "JSON test",
+        "metricViews.testPreview": "Preview",
+        "metricViews.testSourceTab": "Source",
+        "metricViews.testPlaceholder": "Test results will appear here",
+        "metricViews.testJsonPlaceholder": "Tests can run after publishing; results will appear here",
+        "metricViews.testNoResult": "No result returned",
+        "metricViews.testTruncated": "The result is truncated: at most {rows} rows were read.",
+        "metricViews.testInvalidValue": "Invalid JSON value for parameter {name}",
+        "metricViews.testFailed": "Test execution failed: {message}",
+        "metricViews.testNoDraft": "Open or create a metric first: the test runs the definition this page is editing.",
+        "metricViews.close": "Close"
+      },
+      "zh-CN": {
+        "metricViews.new": "新建指标视图",
+        "metricViews.back": "返回指标视图",
+        "metricViews.empty": "未找到指标视图",
+        "metricViews.saved": "指标视图已保存",
+        "metricViews.columnName": "指标视图",
+        "metricViews.batchStatus": "目标发布状态",
+        "metricViews.batchApply": "批量修改状态",
+        "metricViews.batchDone": "{total} 项中已修改 {done} 项",
+        "metricViews.batchRefused": "属主拒绝：{message}",
+        "metricViews.batchCancelled": "未做修改：已取消确认。",
+        "metricViews.batchUnknown": "结果不明：{message}",
+        "metricViews.result": "已修改",
+        "metricViews.status.PENDING_REVIEW": "待审核",
+        "metricViews.status.PUBLISHED": "已发布",
+        "metricViews.status.UNUSED": "未使用",
+        "metricViews.test": "测试",
+        "metricViews.testTitle": "指标视图测试",
+        "metricViews.testHint": "测试会使用当前草稿和参数值执行，不会保存修改。",
+        "metricViews.testJsonHint": "按 JSON 填值，例如：\"文字\"、12、null 或 [1, 2]；示例仅供参考。",
+        "metricViews.testSource": "选择绑定",
+        "metricViews.testExplicit": "填写执行参数",
+        "metricViews.testBinding": "绑定：{name}",
+        "metricViews.testBindingUnnamed": "绑定 {index}",
+        "metricViews.testNoParameters": "当前查询包未声明参数。",
+        "metricViews.testMarkdown": "测试并生成 Markdown",
+        "metricViews.testJson": "测试并返回 JSON",
+        "metricViews.testMarkdownTab": "Markdown 测试",
+        "metricViews.testJsonTab": "JSON 测试",
+        "metricViews.testPreview": "预览",
+        "metricViews.testSourceTab": "源码",
+        "metricViews.testPlaceholder": "测试结果将在这里显示",
+        "metricViews.testJsonPlaceholder": "发布后可执行测试，结果将在这里显示",
+        "metricViews.testNoResult": "无返回结果",
+        "metricViews.testTruncated": "结果被截断：最多读到 {rows} 行。",
+        "metricViews.testInvalidValue": "参数 {name} 不是有效的 JSON 值",
+        "metricViews.testFailed": "测试执行失败：{message}",
+        "metricViews.testNoDraft": "先打开或新建一个指标：测试使用的是这一页正在编辑的定义。",
+        "metricViews.close": "关闭"
+      }
+    }
+  }
+}

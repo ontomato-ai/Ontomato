@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const name = z.string().min(1);
-const componentPortSchema = z.object({
+export const componentPortSchema = z.object({
   name,
   type: z.string(),
   description: z.string(),
@@ -10,7 +10,7 @@ const componentPropSchema = componentPortSchema.extend({
   required: z.boolean(),
   default: z.string().optional(),
 });
-const componentConfigSchema = z.array(componentPropSchema);
+export const componentConfigSchema = z.array(componentPropSchema);
 /** Use named entries, or a single optional "*" entry for all datum names declared by a projection. */
 export const componentDataSchema = <Result extends z.ZodTypeAny>(result: Result) => z.record(name, z.object({
   results: z.array(result).min(1),

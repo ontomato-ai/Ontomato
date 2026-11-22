@@ -868,7 +868,7 @@ it("uses the authorized frame root for its record, snapshot, member reads, neste
     ...panel, manifest: { state: {}, members: {}, commands: {} },
   });
   expect(content.status, await content.text()).toBe(200);
-  const theme = { light: { "--el-color-primary": "#123456" } };
+  const theme = { light: { "--sdk-color-primary": "#123456" } };
   const frame = await request("PUT", `product-panels/${frameHostPanelId}`, {
     ...panel, theme, manifest: {
       state: { term: { type: { kind: "scalar", type: "string" }, personal: true } }, commands: {},

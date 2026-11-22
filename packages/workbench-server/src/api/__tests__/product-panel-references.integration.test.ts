@@ -244,7 +244,7 @@ it("reads a selected nested panel or projection and freezes its actual publisher
     componentId: "@ontomato/sdk:OperationButton", inputs: { agent: agentPort }, outputs: {}, config: { operation: "remove" },
     data: {}, operations: { remove: { operation: { kind: "PlatformOperation", id: DELETE_AGENT }, target: { input: "agent" } } },
   });
-  const theme = { dark: { "--el-color-primary": "#3758ca" } };
+  const theme = { dark: { "--sdk-color-primary": "#3758ca" } };
   for (const id of [child, alternate]) {
     await save(`product-panels/${id}`, {
       ...(id === child && { theme }),

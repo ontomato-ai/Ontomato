@@ -141,10 +141,10 @@ it("rejects a frame state input without a frame and preserves typed literal wiri
 it("checks theme values in the application registration preflight with the design-token catalogue", async () => {
   const request = { domainId: owner.domainId, uses: [], delivery: { panels: [], projections: [] } };
   await expect(validateApplicationPanelReferences({
-    ...request, theme: { light: { "--el-color-primary": "#498", "--radius-md": "8px" }, dark: { "--elevation-panel": "overlay" } },
+    ...request, theme: { light: { "--sdk-color-primary": "#498", "--radius-md": "8px" }, dark: { "--elevation-panel": "overlay" } },
   })).resolves.toBeUndefined();
   for (const [name, value] of [
-    ["--unpublished-token", "#fff"], ["--el-color-primary", "url(/color)"],
+    ["--unpublished-token", "#fff"], ["--el-color-primary", "#498"], ["--sdk-color-primary", "url(/color)"],
     ["--radius-md", "-2px"], ["--radius-md", "calc(2px + 2px)"], ["--elevation-panel", "0 8px #000"],
   ]) {
     await expect(validateApplicationPanelReferences({

@@ -2,7 +2,7 @@ import type { RouteLocation } from "vue-router";
 import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, AGENT_DEFINITION, FUNCTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -104,6 +104,14 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     use: platformRoutes.functions.path,
     state: ({ id }): Record<string, PanelStateValue> =>
       id === "new" ? { creating: true } : { selected: { className: FUNCTION, primaryKey: id! } },
+  },
+  // The metric views page: a metric's detail selects it; the old page's `new` opens the owner's blank form, as the
+  // page's own "New Metric View" command does.
+  {
+    path: platformRoutes.metric.path,
+    use: platformRoutes.metrics.path,
+    state: ({ id }): Record<string, PanelStateValue> =>
+      id === "new" ? { creating: true } : { selected: { className: METRIC_VIEW, primaryKey: id! } },
   },
 ];
 

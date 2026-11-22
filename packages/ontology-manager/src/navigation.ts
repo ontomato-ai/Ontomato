@@ -109,7 +109,6 @@ const pages = [
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
-  page(managerPaths.metrics, "nav.metrics", ChartColumn, "assets", MODELING, "metrics"),
   page(managerPaths.products, "platform.productAssets", Shapes, "assets", MODELING, "products"),
 ];
 
@@ -120,6 +119,7 @@ const pages = [
  */
 const entries: readonly { path: string; icon: Component; count?: keyof OntologyResourceCounts }[] = [
   { path: managerPaths.knowledge, icon: BookOpen },
+  { path: managerPaths.metrics, icon: ChartColumn },
   { path: managerPaths.functions, icon: SquareFunction },
   { path: managerPaths.actions, icon: MousePointerClick },
   { path: managerPaths.capabilityMap, icon: Share2 },

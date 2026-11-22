@@ -28,8 +28,14 @@ describe("brand generation", () => {
       const c = ossBrand[mode];
       const p = brandProperties(ossBrand, mode);
       // The primary ladder is primary mixed with surface at 30/50/70/80%; status soft fills are 10% status over surface.
-      for (const step of [3, 5, 7, 8]) expect(p[`--el-color-primary-light-${step}`]).toBe(mix(c.primary, c.surface, step / 10));
+      for (const step of [3, 5, 7, 8]) {
+        expect(p[`--el-color-primary-light-${step}`]).toBe(mix(c.primary, c.surface, step / 10));
+        expect(p[`--sdk-color-primary-light-${step}`]).toBe(mix(c.primary, c.surface, step / 10));
+      }
       expect(p["--el-color-danger-light-9"]).toBe(mix(c.danger, c.surface, 0.9));
+      expect(p["--sdk-color-danger-light-9"]).toBe(mix(c.danger, c.surface, 0.9));
+      expect(p["--sdk-bg-color"]).toBe(c.surface);
+      expect(p["--sdk-text-color-primary"]).toBe(c.ink);
       // Tags and plain buttons use their own tint, mixed the same way.
       expect(p["--brand-primary-tint"]).toBe(mix(c.primary, c.surface, 0.9));
     }
