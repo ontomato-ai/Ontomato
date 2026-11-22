@@ -1065,4 +1065,144 @@ describe("platform-ontology composite query", () => {
       expect.objectContaining({ relationKind: "panel.provides-skill", status: "refused", edgeCount: 0 }),
     ]);
   });
+
+  it("retains builtin projection and child panel edges even though domain product grants exclude builtin IDs", async () => {
+    const builtinProjRow = {
+      id: "builtin-product-map-graph",
+      definition: {
+        name: "Capability Map Graph",
+        description: "",
+        visibility: "platform",
+        componentId: "@ontomato/sdk:ObjectList",
+        inputs: {},
+        outputs: {},
+        data: {
+          rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} },
+        },
+        config: {},
+      },
+    };
+    const builtinChildPanelRow = {
+      id: "builtin-product-child-panel",
+      definition: {
+        name: "Builtin Child Panel",
+        description: "",
+        visibility: "platform",
+        content: { html: "<div></div>", module: "export default {};" },
+        manifest: { state: {}, members: {}, commands: {} },
+      },
+    };
+    const builtinParentPanelRow = {
+      id: "builtin-product-parent-panel",
+      definition: {
+        name: "Builtin Parent Panel",
+        description: "",
+        visibility: "platform",
+        content: { html: "<section></section>", module: "export default {};" },
+        manifest: {
+          state: {},
+          members: {
+            graph: { target: { projectionId: "builtin-product-map-graph" } },
+            child: { target: { panelId: "builtin-product-child-panel" } },
+          },
+          commands: {},
+        },
+      },
+    };
+    const domainPanelUsingBuiltinRow = {
+      id: "panel-domain-using-builtin",
+      definition: {
+        name: "Domain Panel Using Builtin",
+        description: "",
+        visibility: "domain",
+        content: { html: "<section></section>", module: "export default {};" },
+        manifest: {
+          state: {},
+          members: {
+            builtinGraph: { target: { projectionId: "builtin-product-map-graph" } },
+            builtinChild: { target: { panelId: "builtin-product-child-panel" } },
+            ungrantedDomainProj: { target: { projectionId: "proj-not-granted" } },
+            ungrantedDomainPanel: { target: { panelId: "panel-not-granted" } },
+          },
+          commands: {},
+        },
+      },
+    };
+
+    vi.mocked(grantedProductIds).mockResolvedValue(["panel-domain-using-builtin"]);
+    pgQueryMock.mockImplementation(async (sql: string) => {
+      if (sql.includes("product_projections")) return { rows: [builtinProjRow] };
+      if (sql.includes("product_panels")) {
+        return { rows: [builtinParentPanelRow, builtinChildPanelRow, domainPanelUsingBuiltinRow] };
+      }
+      return { rows: [] };
+    });
+
+    const parentNeighbors = platformOntologyNeighborsResponseSchema.parse(
+      await readPlatformOntologyNeighbors(owner, credentials, {
+        node: { className: "platform:ProductPanel", primaryKey: "builtin-product-parent-panel" },
+        relationKinds: ["panel.contains-projection", "panel.contains-panel"],
+      }),
+    );
+
+    expect(parentNeighbors.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationKind: "panel.contains-projection",
+          direction: "outgoing",
+          from: { className: "platform:ProductPanel", primaryKey: "builtin-product-parent-panel" },
+          to: { className: "platform:ProductProjection", primaryKey: "builtin-product-map-graph" },
+        }),
+        expect.objectContaining({
+          relationKind: "panel.contains-panel",
+          direction: "outgoing",
+          from: { className: "platform:ProductPanel", primaryKey: "builtin-product-parent-panel" },
+          to: { className: "platform:ProductPanel", primaryKey: "builtin-product-child-panel" },
+        }),
+      ]),
+    );
+    expect(parentNeighbors.edges).toHaveLength(2);
+
+    const domainPanelNeighbors = platformOntologyNeighborsResponseSchema.parse(
+      await readPlatformOntologyNeighbors(owner, credentials, {
+        node: { className: "platform:ProductPanel", primaryKey: "panel-domain-using-builtin" },
+        relationKinds: ["panel.contains-projection", "panel.contains-panel"],
+      }),
+    );
+    expect(domainPanelNeighbors.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationKind: "panel.contains-projection",
+          direction: "outgoing",
+          from: { className: "platform:ProductPanel", primaryKey: "panel-domain-using-builtin" },
+          to: { className: "platform:ProductProjection", primaryKey: "builtin-product-map-graph" },
+        }),
+        expect.objectContaining({
+          relationKind: "panel.contains-panel",
+          direction: "outgoing",
+          from: { className: "platform:ProductPanel", primaryKey: "panel-domain-using-builtin" },
+          to: { className: "platform:ProductPanel", primaryKey: "builtin-product-child-panel" },
+        }),
+      ]),
+    );
+    expect(domainPanelNeighbors.edges).toHaveLength(2);
+
+    const incomingFromProjection = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: "platform:ProductProjection", primaryKey: "builtin-product-map-graph" },
+      relationKinds: ["panel.contains-projection"],
+    });
+    expect(incomingFromProjection.edges.map((e) => e.from.primaryKey).sort()).toEqual([
+      "builtin-product-parent-panel",
+      "panel-domain-using-builtin",
+    ]);
+
+    const incomingFromChild = await readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: "platform:ProductPanel", primaryKey: "builtin-product-child-panel" },
+      relationKinds: ["panel.contains-panel"],
+    });
+    expect(incomingFromChild.edges.map((e) => e.from.primaryKey).sort()).toEqual([
+      "builtin-product-parent-panel",
+      "panel-domain-using-builtin",
+    ]);
+  });
 });
