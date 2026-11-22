@@ -3,7 +3,7 @@ import { BUILD_TEST_SDK_CAPABILITY } from "../contracts/src/build-tests.ts";
 // current.json and one release directory with the browser modules, the stylesheet, the docs, the examples and the Node
 // module a check of panel sources runs. A platform serves the one release it ships at `/apps-sdk/current/`. The source
 // facts come from the image builder in APPS_SDK_BUILD (scripts/workbench/build-images.mjs).
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -16,6 +16,7 @@ import { panelAppearance } from "./panel-appearance.mjs";
 import { writePackageComponentsRelease } from "./package-components-release.mjs";
 import { sdkChunks } from "./sdk-chunks.mjs";
 import { catalogueMarkdown, checkCatalogue, componentMetadata, componentPorts, referenceMarkdown } from "./reference.mjs";
+import { buildUiCatalogue } from "./ui-catalogue.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -196,13 +197,15 @@ async function main() {
   mkdirSync(join(outDir, "docs"), { recursive: true });
   writeFileSync(join(outDir, "docs/index.md"), render(readFileSync(join(HERE, "resources/docs/index.md"), "utf8"), version));
   const components = componentMetadata({ tsconfig: join(HERE, "tsconfig.json"), source: join(HERE, "src/catalogue.ts") });
-  const publicEntries = ENTRIES.filter((entry) => entry.specifier.startsWith("@ontomato/"));
+  // `@ontomato/sdk/ui` publishes the data-free UI primitives documented under `uiPrimitives` and `uiDirectives`.
+  const publicEntries = ENTRIES.filter((entry) => entry.specifier.startsWith("@ontomato/") && entry.specifier !== "@ontomato/sdk/ui");
   checkCatalogue(publicEntries, components, HERE, join(HERE, "tsconfig.json"));
   // Each component's meaning, configuration and data are its declaration's; its ports are read from its source, as the
   // reference reads them. The configuration a projection sets is the component's props, kept apart from the inputs a
   // placement supplies at run time. The contract's own schema accepts the catalogue before it ships, so a component this
   // version cannot describe, or a datum naming a read result no owner registers, fails the build rather than the reader.
   const ports = componentPorts({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: publicEntries });
+  const { uiPrimitives, uiDirectives, themeTokens } = buildUiCatalogue();
   const catalogue = check.appsSdkComponentCatalogSchema.parse({
     version,
     components: components.map(({ metadata }) => {
@@ -210,19 +213,20 @@ async function main() {
       // A component with no props sets nothing: it declares no configuration rather than an empty one.
       return { ...metadata, ...(declared.props.length ? { config: declared.props } : {}), ports: declared };
     }),
+    uiPrimitives,
+    uiDirectives,
+    themeTokens,
   });
   writeFileSync(join(outDir, "components.json"), `${JSON.stringify(catalogue, null, 2)}\n`);
   // The document reads the catalogue as it ships: each component's data, configuration and events beside its meaning.
-  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, catalogue.components), version));
+  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, catalogue), version));
   writeFileSync(join(outDir, "docs/reference.md"), [
     `# @ontomato/sdk ${version}: reference`,
     "",
     "Generated from the sources of this version. Start with [index.md](index.md).",
     "",
-    referenceMarkdown({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: ENTRIES.filter((entry) => entry.specifier.startsWith("@ontomato/")) }),
+    referenceMarkdown({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: publicEntries }),
   ].join("\n"));
-  // Element Plus's own metadata of the installed version: every component's props, events and slots.
-  cpSync(require.resolve("element-plus/web-types.json"), join(outDir, "docs/element-plus.web-types.json"));
   mkdirSync(join(outDir, "examples"));
   for (const name of readdirSync(join(HERE, "resources/examples")))
     writeFileSync(join(outDir, "examples", name), render(readFileSync(join(HERE, "resources/examples", name), "utf8"), version));

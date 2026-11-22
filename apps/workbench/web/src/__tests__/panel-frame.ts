@@ -147,21 +147,21 @@ export const framedTasksPanelHtml = `<style>
 </style>
 <div id="app" class="panel" v-cloak>
   <aside class="side">
-    <el-card shadow="never">
+    <sdk-card shadow="never">
       <template #header>Scheduled tasks</template>
       <projection slot="tasks"></projection>
-    </el-card>
+    </sdk-card>
   </aside>
   <section class="main">
-    <el-card shadow="never">
+    <sdk-card shadow="never">
       <template #header>Selected task</template>
       <projection slot="summary"></projection>
-    </el-card>
-    <el-card shadow="never">
+    </sdk-card>
+    <sdk-card shadow="never">
       <template #header>Task</template>
       <projection slot="form"></projection>
       <projection slot="run"></projection>
-    </el-card>
+    </sdk-card>
   </section>
 </div>
 `;

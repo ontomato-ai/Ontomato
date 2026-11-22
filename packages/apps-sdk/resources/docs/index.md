@@ -17,11 +17,10 @@ release there: every page and panel runs on the release of the platform that sho
 | `sdk.json` | The version, the product, the module files, the stylesheet, the check module and the versions of the libraries |
 | `docs/index.md` | This guide |
 | `docs/reference.md` | The API of every `@ontomato/sdk` module, generated from their sources |
-| `components.json`, `docs/components.md` | Base components and their ports for this exact SDK |
+| `components.json`, `docs/components.md` | Base components, UI primitives (`uiPrimitives`), UI directives (`uiDirectives`) and theme tokens (`themeTokens`) for this exact SDK |
 | `node/panel-check.mjs` | The platform's own declarations of panel sources, as one Node module: a check of a panel's declaration and projections before it is registered runs these |
 | `node/package-components.mjs` | The standalone Node tool that generates a component package's catalogue from its declared components and Vue source |
-| `docs/element-plus.web-types.json` | Element Plus's own metadata for every component of the bundled version: attributes, events, slots |
-| `examples/basic.html` | Platform context, Element Plus, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
+| `examples/basic.html` | Platform context, SDK UI primitives, a chart in the platform's theme, a Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame |
 | `examples/metric-action.html` | A published MetricView in a table and a chart, or its result as read-only JSON, the selected row as page context, then an Action through its form and a fresh read through the template ref of `<metric-view-data>` |
 | `examples/chat.html` | A conversation with one of the platform's agents |
 | `examples/product-asset.html` | Embed and reload an existing shared product asset in a custom app |
@@ -35,9 +34,9 @@ import (see "Compose a panel").
 | Import | Content |
 | --- | --- |
 | `vue` | Vue, the build with the template compiler; the only Vue of the page |
-| `element-plus` | Element Plus, complete: the default export installs every component, the named exports include `ElMessage`, `ElMessageBox` and `ElLoading` |
 | `echarts` | ECharts, complete, for the helpers an option uses: `import * as echarts from "echarts"`. Draw with `<e-chart>` |
 | `@ontomato/sdk` | `connectAppContext()`, the MetricView and Action clients, and `<metric-view-data>` |
+| `@ontomato/sdk/ui` | Data-free UI primitives (`SdkButton`, `SdkInput`, `SdkDialog`, …) and directives (`vSdkLoading`, `vSdkInfiniteScroll`, `vSdkPopover`) |
 | `@ontomato/sdk/chart` | `EChart`, `<e-chart>`: the chart the platform draws its own charts with |
 | `@ontomato/sdk/markdown` | `MarkdownView`, `<markdown-view>`: Markdown as the platform reads it |
 | `@ontomato/sdk/form` | `FormFields`, `<form-fields>`: a form as its owner declares it, such as an Action's, and `formFieldKey` |
@@ -50,7 +49,7 @@ import (see "Compose a panel").
 The chart, Markdown, form, code and preview components are the ones the platform's own pages use, so an app looks and
 behaves like them. Import each module where the page needs it; a page loads only the modules it imports.
 
-The versions of Vue, Element Plus and ECharts are in `sdk.json`. Use only these modules: the page must not load
+The versions of Vue and ECharts are in `sdk.json`. Use only these modules: the page must not load
 scripts, styles or fonts from the internet, because many installations have no internet access.
 
 ## Compose a panel
@@ -227,21 +226,21 @@ container: it adds the room after the container's content, and adds nothing when
 
 ```html
 <div id="app" v-cloak>
-  <el-button type="primary" @click="count++">Clicked {{ count }} times</el-button>
+  <sdk-button type="primary" @click="count++">Clicked {{ count }} times</sdk-button>
 </div>
 <script type="module">
   import { createApp, ref } from "vue";
-  import ElementPlus from "element-plus";
   import { connectAppContext } from "@ontomato/sdk";
+  import { SdkButton } from "@ontomato/sdk/ui";
 
   const context = await connectAppContext();
-  createApp({ setup: () => ({ count: ref(0) }) }).use(ElementPlus).use(context).mount("#app");
+  createApp({ components: { SdkButton }, setup: () => ({ count: ref(0) }) }).use(context).mount("#app");
 </script>
 ```
 
 Templates written in HTML follow the browser's rules before Vue reads them:
 
-- Close every component tag: `<el-table-column prop="name"></el-table-column>`, never `<el-table-column />`.
+- Close every component tag: `<sdk-table-column prop="name"></sdk-table-column>`, never `<sdk-table-column />`.
 - Write component names, attributes and events in kebab-case: `<metric-view-data :metric-view-id="id">`,
   `@row-click="select"`.
 - Bind everything that is not a plain string with `:`, such as numbers, booleans, arrays, objects and functions.
@@ -261,13 +260,13 @@ Import `ProductAsset` from `@ontomato/sdk` and register it in the Vue app's `com
 
 Product embedding is live-only. A build-test preview rejects the mount before rendering, so it cannot fall back to real data; use authoring commands for asset changes and a published app for embedding verification. `context.mountProductAsset(element, id)` is the equivalent imperative API and returns a disposer that must run before removing its container.
 
-`await connectAppContext()` connects the page to the shell through a transferred message port. New published source apps run in an opaque sandbox and cannot read the shell's DOM or credentials. Call it once before creating the Vue app. The synchronous `createAppContext()` remains for compatible same-origin previews. `app.use(context)` installs the platform's words, Element Plus's language and the
+`await connectAppContext()` connects the page to the shell through a transferred message port. New published source apps run in an opaque sandbox and cannot read the shell's DOM or credentials. Call it once before creating the Vue app. The synchronous `createAppContext()` remains for compatible same-origin previews. `app.use(context)` installs the platform's words, the UI primitives' language and the
 `<metric-view-data>` component.
 
 - `context.locale` and `context.theme` follow the platform while the app is open. The SDK keeps `<html lang>` and the
-  `dark` class of `<html>` in step, and Element Plus, `<markdown-view>` and `<code-editor>` follow both. Use Element
-  Plus's CSS variables, such as `var(--el-bg-color)` and `var(--el-text-color-primary)`, for your own styles, so they
-  follow too.
+  `dark` class of `<html>` in step, and SDK UI primitives, `<markdown-view>` and `<code-editor>` follow both. Use the
+  SDK's theme CSS variables, such as `var(--sdk-bg-color)` and `var(--sdk-text-color-primary)`, for your own styles, so
+  they follow too.
 - `context.chartTheme` is the theme the platform's own charts are drawn in, for the mode it shows now: give it to every
   `<e-chart>` and the chart follows the platform's light and dark themes.
 - `context.user` is the signed-in user, for display only. It is `null` in the open-source edition.
@@ -344,10 +343,10 @@ invalid text fails that read with the platform's error message.
 ```html
 <metric-view-data ref="orders" :metric-view-id="metricViewId" :parameters="{ region }"
   v-slot="{ data, loading, error }">
-  <el-alert v-if="error" type="error" :title="error.message" :closable="false"></el-alert>
-  <el-table v-else v-loading="loading" :data="data ?? []">
-    <el-table-column prop="name" label="Name"></el-table-column>
-  </el-table>
+  <sdk-alert v-if="error" type="error" :title="error.message" :closable="false"></sdk-alert>
+  <sdk-table v-else v-sdk-loading="loading" :data="data ?? []">
+    <sdk-table-column prop="name" label="Name"></sdk-table-column>
+  </sdk-table>
 </metric-view-data>
 ```
 
@@ -386,7 +385,7 @@ draws them as the platform's own pages do. Do not build the inputs yourself.
    `parameters: { orderId: "SO-1001" }` to start fields with values the page already knows, such as the selected row's
    key, and `readOnlyParameters: ["orderId"]` for those the reader sees but does not change; give the same names to
    `<form-fields>` as `read-only`.
-2. Draw the fields inside `<el-form label-position="top">` and keep what they hold as the page's state: `input` gives a
+2. Draw the fields inside `<sdk-form label-position="top">` and keep what they hold as the page's state: `input` gives a
    field's key and its new text, `choose` the field and the chosen value.
 3. On submit, `context.actions.form({ id, values })`, with the same `parameters` and `readOnlyParameters` as on opening,
    answers what the fields hold: either `errors`, each naming its field by a pointer such as `/values/quantity`
@@ -394,12 +393,12 @@ draws them as the platform's own pages do. Do not build the inputs yourself.
 4. With `parameters`, `context.actions.execute({ id, parameters })` executes the Action.
 
 ```html
-<el-form label-position="top" @submit.prevent="submit">
+<sdk-form label-position="top" @submit.prevent="submit">
   <form-fields :fields="fields" :values="values" :errors="errors" :disabled="busy" choose-placeholder="Choose"
     @input="(key, value) => (values[key] = value)" @choose="(field, value) => (values[field.key] = value)">
   </form-fields>
-  <el-button type="primary" native-type="submit" :loading="busy">Execute</el-button>
-</el-form>
+  <sdk-button type="primary" native-type="submit" :loading="busy">Execute</sdk-button>
+</sdk-form>
 ```
 
 ```js
@@ -505,10 +504,10 @@ JSON value, editable or read-only; never a textarea or a `<pre>`.
 
 `@ontomato/sdk/preview` shows content as the platform previews files.
 
-`<table-preview>` draws a table of text cells, `{ columns, rows }`, with Element Plus: cells keep their spaces and line
+`<table-preview>` draws a table of text cells, `{ columns, rows }`, with the SDK table primitive: cells keep their spaces and line
 breaks, and columns of numbers align right. `parseCsv(text)` reads a CSV text into such a table, its first record as
 the columns, and `parseCsv(text, "\t")` reads TSV. Given `page-size`, the rows come a page at a time with the total
-beside the pager. Other attributes, such as `max-height` and `empty-text`, go to the Element Plus table.
+beside the pager. Other attributes, such as `max-height` and `empty-text`, go to the underlying `<sdk-table>`.
 
 ```html
 <table-preview :table="table" :page-size="20"></table-preview>
@@ -577,12 +576,13 @@ the platform's language. Give the panel's container a height; the panel fills it
 together. `<agent-shell>` is the platform's full conversation page with its column of conversations; see
 `docs/reference.md` for both.
 
-## Element Plus
+## SDK UI primitives
 
-`app.use(ElementPlus)` registers every component under its `el-` tag. For the attributes, events and slots of a
-component, look up its tag, such as `el-table`, in `docs/element-plus.web-types.json`; it describes exactly the
-bundled version. Messages and dialogs come from the named exports: `ElMessage.success("Saved")`,
-`ElMessageBox.confirm(...)`.
+Panel templates (`panel.html`) register every supported UI primitive under its `<sdk-*>` tag and directive under
+`v-sdk-*` (`v-sdk-loading`, `v-sdk-infinite-scroll`, `v-sdk-popover`) automatically. Custom components import them from
+`@ontomato/sdk/ui` (`SdkButton`, `SdkTable`, `vSdkLoading`, …). For the exact list of supported tags, props, events,
+slots, directives and `--sdk-*` theme tokens of this version, read `components.json` (`uiPrimitives`, `uiDirectives`,
+`themeTokens`) or `docs/components.md`. For toast notifications inside panels, use `usePanelContext().notify()`.
 
 ## Versions
 

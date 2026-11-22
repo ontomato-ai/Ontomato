@@ -3,40 +3,40 @@
   .attrs-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .attrs-toolbar .attrs-search { width: 260px; max-width: 100%; }
   .attrs-toolbar .attrs-owner { width: 220px; max-width: 100%; }
-  .attrs-search-icon { color: var(--el-text-color-placeholder); }
-  .attrs-count { color: var(--el-text-color-secondary); font-size: var(--text-sm); }
-  .attrs-table { overflow: auto; border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); }
+  .attrs-search-icon { color: var(--sdk-text-color-placeholder); }
+  .attrs-count { color: var(--sdk-text-color-secondary); font-size: var(--text-sm); }
+  .attrs-table { overflow: auto; border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--sdk-bg-color); }
   .attrs-group { border-bottom: 1px solid var(--ui-divider); }
   .attrs-group:last-child { border-bottom: 0; }
   .attrs-row { display: grid; grid-template-columns: minmax(10.5rem, 1.35fr) minmax(7.5rem, 1fr) minmax(5.5rem, 0.75fr) 4.5rem 4.5rem 1.25rem;
     column-gap: var(--spacing-md); align-items: center; padding: var(--spacing-sm) var(--spacing-md);
-    border-bottom: 1px solid var(--ui-divider); font-size: var(--text-sm); color: var(--el-text-color-regular); }
+    border-bottom: 1px solid var(--ui-divider); font-size: var(--text-sm); color: var(--sdk-text-color-regular); }
   .attrs-group > .attrs-row { border-bottom: 0; }
-  .attrs-row.head { background: var(--ui-fill-tertiary); color: var(--el-text-color-secondary); font-size: var(--text-xs); font-weight: var(--font-semibold); }
+  .attrs-row.head { background: var(--ui-fill-tertiary); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); font-weight: var(--font-semibold); }
   .attrs-row.item { cursor: pointer; }
   .attrs-row.item:hover { background: var(--ui-fill-tertiary); }
   .attrs-row.item.active { background: var(--ui-fill-secondary); }
-  .attrs-chevron { color: var(--el-text-color-tertiary); justify-self: end; }
+  .attrs-chevron { color: var(--sdk-text-color-placeholder); justify-self: end; }
   .attrs-name strong, .attrs-name small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .attrs-name strong { color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
-  .attrs-name small { margin-top: var(--spacing-xs); color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .attrs-name strong { color: var(--sdk-text-color-primary); font-weight: var(--font-semibold); }
+  .attrs-name small { margin-top: var(--spacing-xs); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
   .attrs-link { justify-self: start; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: transparent;
     color: var(--brand-link); font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
   .attrs-link:hover { text-decoration: underline; }
-  .attrs-state { padding: var(--spacing-lg); color: var(--el-text-color-secondary); font-size: var(--text-sm); margin: 0; }
+  .attrs-state { padding: var(--spacing-lg); color: var(--sdk-text-color-secondary); font-size: var(--text-sm); margin: 0; }
   .attrs-inline-editor { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg);
-    border-top: 1px solid var(--ui-divider); background: var(--el-fill-color-lighter, var(--ui-fill-tertiary)); }
+    border-top: 1px solid var(--ui-divider); background: var(--sdk-fill-color-lighter, var(--ui-fill-tertiary)); }
   .attrs-fallback-card { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md);
-    border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); }
+    border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--sdk-bg-color); }
   .attrs-editor-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
-  .attrs-editor-head h3 { margin: 0; font-size: var(--text-base); color: var(--el-text-color-primary); }
-  .attrs-editor-head small { display: block; color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .attrs-editor-head h3 { margin: 0; font-size: var(--text-base); color: var(--sdk-text-color-primary); }
+  .attrs-editor-head small { display: block; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
   .attrs-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .attrs-spacer { flex: 1; }
-  .attrs-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: var(--el-overlay-color-lighter); }
+  .attrs-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: var(--sdk-overlay-color-lighter); }
   .attrs-modal-card { width: min(32.5rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); display: flex; flex-direction: column; gap: var(--spacing-md);
-    padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--el-bg-color-overlay, var(--el-bg-color)); box-shadow: var(--el-box-shadow); overflow: hidden; }
-  .attrs-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
+    padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--sdk-bg-color-overlay, var(--sdk-bg-color)); box-shadow: var(--elevation-overlay); overflow: hidden; }
+  .attrs-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
   .attrs-modal-body { overflow-y: auto; min-height: 0; }
   @container (max-width: 44rem) {
     .attrs-row { grid-template-columns: minmax(9rem, 1.4fr) minmax(6rem, 1fr) minmax(5rem, 0.8fr) 1.25rem; }
@@ -52,17 +52,17 @@
 <div id="app">
   <section class="attrs">
     <div class="attrs-toolbar">
-      <el-input class="attrs-search" :model-value="search" :placeholder="t('attr.search')" clearable
+      <sdk-input class="attrs-search" :model-value="search" :placeholder="t('attr.search')" clearable
         @update:model-value="setSearch">
         <template #prefix>
           <svg class="attrs-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
         </template>
-      </el-input>
-      <el-select class="attrs-owner" :model-value="className" :placeholder="t('attr.allTypes')" clearable filterable
+      </sdk-input>
+      <sdk-select class="attrs-owner" :model-value="className" :placeholder="t('attr.allTypes')" clearable filterable
         @update:model-value="setClassName">
-        <el-option v-for="type in types" :key="type.primaryKey" :value="type.primaryKey"
-          :label="`${type.label} (${type.primaryKey})`"></el-option>
-      </el-select>
+        <sdk-option v-for="type in types" :key="type.primaryKey" :value="type.primaryKey"
+          :label="`${type.label} (${type.primaryKey})`"></sdk-option>
+      </sdk-select>
       <span v-if="countText !== null" class="attrs-count">{{ t("attr.count", { count: countText }) }}</span>
     </div>
 
@@ -73,13 +73,13 @@
           <h3>{{ detail.status === 'ready' ? detail.value.label : t("attr.editing") }}</h3>
           <small v-if="detail.status === 'ready'">{{ detail.value.subtitle }}</small>
         </div>
-        <el-button text @click="closeEditor">{{ t("attr.close") }}</el-button>
+        <sdk-button text @click="closeEditor">{{ t("attr.close") }}</sdk-button>
       </div>
       <div class="attrs-actions" :key="selectedKey">
         <projection slot="setPrimaryKey" v-show="!isPrimaryKey"></projection>
-        <el-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
-          <span><el-button disabled>{{ t("attr.setPrimaryKey") }}</el-button></span>
-        </el-tooltip>
+        <sdk-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
+          <span><sdk-button disabled>{{ t("attr.setPrimaryKey") }}</sdk-button></span>
+        </sdk-tooltip>
         <projection slot="remove"></projection>
       </div>
       <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
@@ -96,7 +96,7 @@
       </div>
       <p v-if="rowsData.status === 'loading'" class="attrs-state" role="status">{{ t("attr.loading") }}</p>
       <p v-else-if="rowsData.status === 'forbidden'" class="attrs-state">{{ t("attr.forbidden") }}</p>
-      <el-alert v-else-if="rowsData.status === 'error'" type="error" :title="rowsData.message" :closable="false"></el-alert>
+      <sdk-alert v-else-if="rowsData.status === 'error'" type="error" :title="rowsData.message" :closable="false"></sdk-alert>
       <template v-else>
         <div v-for="row in visibleRows" :key="row.primaryKey" class="attrs-group">
           <div class="attrs-row item" :class="{ active: isSelected(row) }"
@@ -118,17 +118,17 @@
           <div v-if="isSelected(row) && !creating" class="attrs-inline-editor">
             <div class="attrs-actions" :key="selectedKey">
               <projection slot="setPrimaryKey" v-show="!isPrimaryKey"></projection>
-              <el-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
-                <span><el-button disabled>{{ t("attr.setPrimaryKey") }}</el-button></span>
-              </el-tooltip>
+              <sdk-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
+                <span><sdk-button disabled>{{ t("attr.setPrimaryKey") }}</sdk-button></span>
+              </sdk-tooltip>
               <projection slot="remove"></projection>
               <span class="attrs-spacer"></span>
-              <el-button size="small" text @click="closeEditor">{{ t("attr.close") }}</el-button>
+              <sdk-button size="small" text @click="closeEditor">{{ t("attr.close") }}</sdk-button>
             </div>
             <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
           </div>
         </div>
-        <el-empty v-if="visibleRows.length === 0" :description="t('attr.empty')"></el-empty>
+        <sdk-empty v-if="visibleRows.length === 0" :description="t('attr.empty')"></sdk-empty>
       </template>
     </div>
 
@@ -137,7 +137,7 @@
       <div class="attrs-modal-card">
         <div class="attrs-modal-head">
           <span>{{ t("attr.creating") }}</span>
-          <el-button text size="small" @click="closeEditor">{{ t("attr.close") }}</el-button>
+          <sdk-button text size="small" @click="closeEditor">{{ t("attr.close") }}</sdk-button>
         </div>
         <div class="attrs-modal-body">
           <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>

@@ -10,6 +10,7 @@ test("a release's public files keep the names hosted pages link", () => {
     "element-plus": "element-plus.js",
     echarts: "echarts.js",
     "@ontomato/sdk": "sdk.js",
+    "@ontomato/sdk/ui": "ui.js",
     "@ontomato/sdk/chart": "chart.js",
     "@ontomato/sdk/markdown": "markdown.js",
     "@ontomato/sdk/form": "form.js",
