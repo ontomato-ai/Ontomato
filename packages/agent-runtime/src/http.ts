@@ -602,14 +602,13 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
         req.query.path === undefined
           ? undefined
           : z.string().parse(req.query.path);
-      res.json({
-        artifacts: await runtime.store.resolveArtifacts(
-          ctx.scope,
-          id,
-          target,
-          atSeq,
-        ),
-      });
+      const checkOtherRuns = z.literal("true").optional().parse(req.query.checkOtherRuns);
+      const artifacts = await runtime.store.resolveArtifacts(ctx.scope, id, target, atSeq);
+      const samePathInAnotherRun = checkOtherRuns && target !== undefined && atSeq === undefined
+        && !artifacts.some(artifact => artifact.runId === id)
+        ? await runtime.store.hasArtifactInAnotherRun(ctx.scope, id, target)
+        : undefined;
+      res.json({ artifacts, ...(samePathInAnotherRun && { samePathInAnotherRun }) });
     }),
   );
   app.get(

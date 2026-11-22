@@ -22,7 +22,14 @@ it("says a draft whose run is gone in words", () => {
 
 it("says a draft whose file is not there in words", () => {
   expect(words(answered("PAGE_DRAFT_NOT_FOUND", "Page draft not found")))
-    .toBe(`The draft ${FILE} cannot be used: the conversation that wrote this draft has no such file. The page opens without it.`);
+    .toBe(`The draft ${FILE} cannot be used because the linked run has no such file. The page opens without it.`);
+});
+
+it("tells the reader how to recover a draft found in a different run of this conversation", () => {
+  const failure = answered("PAGE_DRAFT_NOT_FOUND", "Page draft not found");
+  const payload = { ...failure.payload, details: { samePathInAnotherRun: true } };
+  expect(words(Object.assign(failure, { payload })))
+    .toBe(`The linked run has no draft ${FILE}. Another run in this conversation has the file. Ask the agent to send the link from that run. The page opens without the draft.`);
 });
 
 it("says a draft the reader may not read in words", () => {

@@ -25,10 +25,14 @@ vi.mock("../../infrastructure/agent-runtime/client", async (importOriginal) => {
   const file = (id: string) => state.files.find((candidate) => candidate.id === id)!;
   class RuntimeClient {
     async request(path: string) {
-      const run = /^\/v1\/runs\/([^/]+)\/artifacts\?path=(.+)$/.exec(path);
+      const request = new URL(path, "http://runtime");
+      const run = /^\/v1\/runs\/([^/]+)\/artifacts$/.exec(request.pathname);
       if (!run) return metadata(file(/^\/v1\/artifacts\/([^/]+)$/.exec(path)![1]!));
-      const at = decodeURIComponent(run[2]!);
-      return { artifacts: state.files.filter((candidate) => candidate.runId === run[1] && candidate.path === at).map(metadata) };
+      const at = request.searchParams.get("path");
+      const artifacts = state.files.filter((candidate) => candidate.runId === run[1] && candidate.path === at).map(metadata);
+      const samePathInAnotherRun = request.searchParams.get("checkOtherRuns") === "true" && !artifacts.length
+        && state.files.some(candidate => candidate.sessionId === sessionId && candidate.runId !== run[1] && candidate.path === at);
+      return { artifacts, ...(samePathInAnotherRun && { samePathInAnotherRun }) };
     }
     async bytes(path: string) {
       return Buffer.from(JSON.stringify(file(/^\/v1\/artifacts\/([^/]+)\/content$/.exec(path)![1]!).draft));
@@ -53,6 +57,8 @@ installWorkbenchIdentity({
 
 const DRAFT = "outputs/drafts/agent.page-draft.json";
 const sessionId = randomUUID(), runId = randomUUID(), updateRunId = randomUUID(), invalidRunId = randomUUID();
+const emptyRunId = randomUUID();
+const outsideDraft = "outputs/drafts/outside.page-draft.json";
 const createDraft = { pageKey: "agent-settings", operation: "agent.create", target: { objectType: "platform:AgentDefinition" }, form: { name: "New analyst" } };
 const updateDraft = { pageKey: "ontology", operation: "objectType.update",
   target: { objectType: "platform:ObjectType", id: "owner:table/one" }, form: { displayName: "Renamed" } };
@@ -71,10 +77,11 @@ beforeAll(async () => {
   await ensureAssistantSchema(state.pool);
   await ensureAssistantPageDraftCreationsSchema(state.pool);
   await state.pool.query(`INSERT INTO "${state.schema}".assistant_sessions (id,domain_id,owner_id,agent_id) VALUES ($1,'domain','alice',$2)`, [sessionId, randomUUID()]);
-  for (const [seq, run] of [runId, updateRunId, invalidRunId, ...invalidTargets.map(item => item.run)].entries())
+  for (const [seq, run] of [emptyRunId, runId, updateRunId, invalidRunId, ...invalidTargets.map(item => item.run)].entries())
     await state.pool.query(`INSERT INTO "${state.schema}".assistant_turns (id,session_id,request_seq,input_hash) VALUES ($1,$2,$3,'hash')`, [run, sessionId, seq]);
   state.files.push({ id: randomUUID(), sessionId, runId, path: DRAFT, draft: createDraft });
   state.files.push({ id: randomUUID(), sessionId, runId: updateRunId, path: DRAFT, draft: updateDraft });
+  state.files.push({ id: randomUUID(), sessionId: randomUUID(), runId: randomUUID(), path: outsideDraft, draft: createDraft });
 
   state.files.push({ id: randomUUID(), sessionId, runId: invalidRunId, path: DRAFT,
     draft: { pageKey: "ontology", operation: "objectType.create", target: { objectType: "platform:ObjectType" }, form: { "/className": "bin" } },
@@ -105,8 +112,8 @@ afterAll(async () => {
   await state.pool!.end();
 });
 
-const read = (run: string, user = "alice") =>
-  fetch(`${base}/${run}/page-draft?${new URLSearchParams({ path: DRAFT })}`, { headers: { "x-user": user } });
+const read = (run: string, user = "alice", path = DRAFT) =>
+  fetch(`${base}/${run}/page-draft?${new URLSearchParams({ path })}`, { headers: { "x-user": user } });
 const record = (run: string, id: string, user = "alice") =>
   fetch(`${base}/${run}/page-draft/created`, {
     method: "POST", headers: { "Content-Type": "application/json", "x-user": user }, body: JSON.stringify({ path: DRAFT, id }),
@@ -115,6 +122,22 @@ const rows = async () =>
   (await state.pool!.query(`SELECT session_id,run_id,path,created_id FROM "${state.schema}".assistant_page_draft_creations`)).rows;
 
 describe("what a create draft created", () => {
+  it("hints that the same draft path exists in another owned run without loading it", async () => {
+    const missing = await read(emptyRunId);
+    expect(missing.status).toBe(404);
+    const body = await missing.json();
+    expect(body.error.code).toBe("PAGE_DRAFT_NOT_FOUND");
+    expect(body.details).toEqual({ samePathInAnotherRun: true });
+    expect(JSON.stringify(body)).not.toContain(runId);
+
+    const outside = await read(emptyRunId, "alice", outsideDraft);
+    expect(outside.status).toBe(404);
+    expect(await outside.json()).not.toHaveProperty("details");
+    const denied = await read(emptyRunId, "bob");
+    expect(denied.status).toBe(404);
+    expect(await denied.json()).not.toHaveProperty("details");
+  });
+
   it("is recorded once, read with the draft, the same again accepted and another refused", async () => {
     expect(await (await read(runId)).json()).toEqual(createDraft);
 
