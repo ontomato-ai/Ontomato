@@ -29,7 +29,8 @@ export default defineComponent({
       const dark = useDarkMode();
       useAppTheme(place, () => declaration.theme, () => (dark.value ? "dark" : "light"));
     }
-    return () => h("div", { ref: place, "data-member": props.slot }, [
+    const isCurrentEntry = Boolean(declaration && "fromPlatform" in declaration.target);
+    return () => h("div", { ref: place, "data-member": props.slot, ...(isCurrentEntry ? { class: "sdk-current-entry-slot" } : {}) }, [
       cloneVNode(mount.member(props.slot, slots), Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name)))),
     ]);
   },

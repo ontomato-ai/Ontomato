@@ -19,6 +19,9 @@ it("defines the room under the composer once, and both composers read it", () =>
   const page = style("../components/PageComposer.vue").split(".page-ask {")[1]!.split("}")[0]!;
   const beside = style("../components/ShellPagePane.vue").split(".pane-dock {")[1]!.split("}")[0]!;
   for (const rules of [conversation, page, beside]) expect(rules).toMatch(/padding:[^;]*var\(--shell-composer-foot\);/);
+  // The page's composer stands in the flex column under the content box rather than floating sticky over it.
+  expect(page).toMatch(/flex-shrink:\s*0;/);
+  expect(page).not.toMatch(/position:\s*sticky;/);
   // Folded, its round button keeps the same room under it.
   const unfold = [...style("../components/ShellComposer.vue").matchAll(/\n\.composer-unfold \{([^}]*)\}/g)].map((rule) => rule[1]).join("");
   expect(unfold).toMatch(/bottom: var\(--shell-composer-foot\);/);

@@ -231,7 +231,9 @@ const headerLabels = computed(() => ({
 .platform-page-body.own-frame {
   padding: 0;
 }
-.platform-page-body.browser-workspace {
+.platform-page-body.browser-workspace,
+.platform-page-body:has(> .panel-application-area),
+.platform-page-body:has(> .panel-host) {
   padding: 0;
   overflow: hidden;
 }

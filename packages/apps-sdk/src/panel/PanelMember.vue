@@ -106,3 +106,28 @@ const labels = useDataStateLabels();
     <template v-for="(_, name) in $slots" #[name]="scope"><slot :name="name" v-bind="scope ?? {}"></slot></template>
   </component>
 </template>
+
+<style>
+/*
+ * Zero-specificity height propagation through `<current-entry>` and nested panel wrappers: when the enclosing frame or
+ * parent panel gives the member a definite height, the placed entry or nested panel fills it; when the enclosing place
+ * has indefinite height, percentage height resolves to auto so the child falls back to its own min-height or content.
+ */
+:where(.sdk-current-entry-slot),
+:where(.sdk-panel-member-nested),
+:where(.sdk-current-entry) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+:where(.sdk-panel-member-nested > [data-panel-bare-root]) {
+  display: contents;
+}
+:where(.sdk-panel-member-nested > [data-panel-instance]),
+:where(.sdk-panel-member-nested > [data-panel-bare-root] > *) {
+  flex-shrink: 0;
+}
+</style>

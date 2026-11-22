@@ -283,6 +283,9 @@ export function codedPanelTarget(html: string): CodedPanelTarget & { css: string
   const { template, rootAttributes, css } = splitCodedPanelHtml(html);
   const element = globalThis.document.createElement("div");
   for (const [name, value] of Object.entries(rootAttributes)) element.setAttribute(name, value);
+  // A bare `#app` mount wrapper (neither class nor inline style) is transparent to layout so the panel's own root
+  // sits directly inside the definite-height content box.
+  if (!("class" in rootAttributes) && !("style" in rootAttributes)) element.dataset.panelBareRoot = "";
   return { element, template, css };
 }
 

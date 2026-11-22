@@ -155,9 +155,7 @@ onBeforeUnmount(() => withdraw?.());
  * above its own — one value for both, so it takes as little of the page as it can.
  */
 .page-ask {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
+  flex-shrink: 0;
   width: min(760px, 100%);
   margin-inline: auto;
   padding: var(--spacing-sm) 0 var(--shell-composer-foot);

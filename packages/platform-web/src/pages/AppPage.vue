@@ -58,6 +58,9 @@ withDefaults(
   padding-block: var(--page-content-gap) var(--spacing-xl);
   container: platform-page / inline-size;
 }
+.app-page-foot {
+  flex-shrink: 0;
+}
 .app-page > .app-navigation-header {
   padding-block: var(--spacing-xs);
   border-bottom: 0;
