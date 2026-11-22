@@ -192,6 +192,7 @@ describe("confirmDanger and unified unsaved-changes confirmation", () => {
       "Unsaved changes",
       expect.objectContaining({
         type: "warning",
+        closeOnHashChange: false,
         confirmButtonClass: "el-button--danger",
         cancelButtonClass: "ontomato-danger-confirm-cancel",
         autofocus: false,

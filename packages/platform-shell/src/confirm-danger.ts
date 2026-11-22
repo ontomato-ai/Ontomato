@@ -18,6 +18,9 @@ export function confirmDanger(
   const cancelButtonClass = [CANCEL_CLASS, options.cancelButtonClass].filter(Boolean).join(" ");
   const result = ElMessageBox.confirm(message, title, {
     type: "warning",
+    // Hash-router browser Back fires `hashchange` right after `popstate`; Element Plus's default `closeOnHashChange`
+    // calls `doClose()` without emitting an action, hiding the prompt and leaving its Promise unsettled forever.
+    closeOnHashChange: false,
     ...options,
     confirmButtonClass,
     cancelButtonClass,
