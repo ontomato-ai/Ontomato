@@ -169,8 +169,9 @@ it("runs run-now through the owner's operation for the selected task, and says w
   setOutcome({ kind: "success", data: started, message: "已开始运行", affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } });
   button.click();
   await vi.waitFor(() => expect(prepared).toEqual([["run.runNow", { call: { target: { kind: "object", ...{ objectType: SCHEDULED_TASK, primaryKey: "t-1" } }, input: {} } }]]));
-  const said = () => element.querySelector(".sdk-operation-button [data-outcome=success]")?.textContent;
-  await vi.waitFor(() => expect(said()).toBe("已开始运行"));
+  // Said in the platform's message, where it outlasts the button.
+  const said = () => [...document.querySelectorAll(".el-message")].map((message) => message.textContent?.trim());
+  await vi.waitFor(() => expect(said()).toContain("已开始运行"));
   // What the write returned is the owner's record of it, never laid out for the reader.
   expect(element.querySelector(".sdk-operation-result")).toBeNull();
   expect(element.textContent).not.toContain("run-1");
@@ -179,7 +180,7 @@ it("runs run-now through the owner's operation for the selected task, and says w
   setOutcome({ kind: "success", data: started, affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } });
   await vi.waitFor(() => expect(button.disabled).toBe(false));
   button.click();
-  await vi.waitFor(() => expect(said()).toBe("Done"));
+  await vi.waitFor(() => expect(said()).toContain("Done"));
   expect(element.querySelector(".sdk-operation-result")).toBeNull();
 });
 

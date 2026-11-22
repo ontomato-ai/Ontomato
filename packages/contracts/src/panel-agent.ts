@@ -13,7 +13,7 @@ import { ontologyElementRefSchema } from "./ontology-element-ref";
 import { EXECUTE_OBJECT_ACTION } from "./platform-object-types";
 import { applicationFrameSourceSchema, panelUseRefSchema } from "./product-panels";
 import { pageDraftSchema } from "./page-draft";
-import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
+import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 
 const key = z.string().min(1).max(200);
 
@@ -101,6 +101,13 @@ export const panelHumanOperationIntentParamsSchema = z.object({ intentId: runtim
 /** The host dispatches the frozen intent once after confirmation. */
 export const dispatchPanelHumanOperationIntentRequestSchema = dispatchPanelOperationIntentRequestSchema;
 
+const rejectedFormFields = {
+  errors: z.array(formFieldErrorSchema).optional(),
+  /** Acknowledged values, keyed by field pointer, when a save stopped after already saving some fields. */
+  savedFields: z.record(formFieldErrorSchema.shape.field, runtimeJsonValueSchema).optional(),
+  affected: panelOperationAffectedSchema.optional(),
+};
+
 const singleOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("success"),
@@ -112,10 +119,11 @@ const singleOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("refusal"), code: key, message: z.string(), details: runtimeJsonObjectSchema.optional(),
     /** Field validation failures use the same pointers and codes as form reads. */
-    errors: z.array(formFieldErrorSchema).optional(),
+    ...rejectedFormFields,
   }).strict(),
   z.object({
     kind: z.literal("failure"), code: key, message: z.string(), details: runtimeJsonObjectSchema.optional(),
+    ...rejectedFormFields,
   }).strict(),
   /** A dispatch with no authoritative answer is never released for redispatch. */
   z.object({ kind: z.literal("unknown"), message: z.string() }).strict(),

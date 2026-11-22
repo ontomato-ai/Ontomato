@@ -1,5 +1,5 @@
 import {
-  applicationCatalogueScopeSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
+  applicationCatalogueScopeSchema, applicationCatalogueSortSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
 } from "./product-catalog-query";
 import { z } from "zod";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
@@ -92,6 +92,7 @@ export const panelReadParameterSchemas = {
   productSort: productCatalogQuerySchema.shape.sort.removeDefault(),
   productTemplate: productPanelCatalogQuerySchema.shape.template.unwrap(),
   applicationScope: applicationCatalogueScopeSchema,
+  applicationSort: applicationCatalogueSortSchema,
   applicationFormSection: applicationFormSectionSchema.exclude(["create"]),
   formValues: formValuesSchema,
   panelFormValues: panelFormValuesSchema,
@@ -110,6 +111,8 @@ export const panelReadParameterSchemas = {
   cursor: z.string(),
   scheduledRunId: runtimeIdSchema,
   size: positiveInteger,
+  auditLogBusiness: z.enum(["BKNOWLEDGE", "BTERM", "BEXAMPLE", "SCHEMA", "ANALYSIS"]),
+  auditLogOperation: z.enum(["ADD", "UPD", "DEL"]),
   knowledgeCountField: z.literal("status"),
   knowledgeStatus: z.enum(["all", "pending", "approved"]),
   feedbackCountField: z.enum(["sourceType", "rating"]),
@@ -133,6 +136,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "className":
     case "cursor":
     case "scheduledRunId":
+    case "auditLogBusiness":
+    case "auditLogOperation":
     case "knowledgeCountField":
     case "knowledgeStatus":
     case "feedbackCountField":
@@ -142,6 +147,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "productScope":
     case "productSort":
     case "applicationScope":
+    case "applicationSort":
     case "applicationFormSection":
       return input?.kind === "scalar" && input.type === "string";
     case "productTemplate":

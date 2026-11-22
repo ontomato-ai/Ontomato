@@ -13,6 +13,9 @@ import type { AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
+import { generalSettingsOperations } from "../admin/general-settings-panel";
+import { builderModelOperations } from "../app-builder/panel-model";
+import { diagnosisModelOperations } from "../ops-diagnosis/panel-model";
 import { feedbackExportOperation } from "../admin/feedback-panel-reads";
 import { m6ServerOperations } from "../action/panel-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
@@ -77,6 +80,12 @@ export type PanelWriteServerOperation = ServerOperation & (
     kind: "action";
     targetInput: string;
     targetLabel(host: PanelOperationHost, target: PanelRecordTarget): Promise<string>;
+    /**
+     * The owner's sentence for one call it completed, naming what it acted on by the target's `targetLabel`
+     * ("Function “Refund” deleted"), in the host's language. The platform reads the name before the call runs (a delete
+     * leaves nothing to read after) and gives the sentence as the success's message, for the reader and an agent.
+     */
+    done?(host: PanelOperationHost, name: string): string;
   } & (
     { batch: false } |
     { batch: true; executeBatch(host: PanelOperationHost, calls: readonly PanelBatchCalls[number][], intentId: string): Promise<PanelOperationOutcome> }
@@ -108,6 +117,9 @@ export type PanelServerOperation = PanelWriteServerOperation | PanelReadServerOp
 const registrations: readonly PanelServerOperation[] = [
   ...scheduledTaskServerOperations,
   ...agentDefinitionOperations,
+  ...generalSettingsOperations,
+  ...builderModelOperations,
+  ...diagnosisModelOperations,
   ...m5ServerOperations,
   ...m6ServerOperations,
   ...m7ServerOperations,

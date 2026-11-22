@@ -250,9 +250,31 @@ await mountPanel({
       }
     }
 
-    // A selection clears the path it replaced, so the canvas shows what the reader chose, not both.
+    // Selecting an object type or relation highlights its neighbourhood and dims unrelated nodes and edges, matching the
+    // original graph explorer; clearing selection restores any active search/filter highlight.
     watch([selectedObject, selectedRelation], ([object, relation]) => {
-      if ((object || relation) && !search.value.trim() && filter.value === "all") clearHighlight();
+      if (object) {
+        pathMessage.value = "";
+        const edges = drawableRelations.value.filter(
+          (item) => item.fromclass === object.className || item.toclass === object.className,
+        );
+        const nodes = new Set([object.className]);
+        for (const edge of edges) {
+          nodes.add(edge.fromclass);
+          nodes.add(edge.toclass);
+        }
+        highlight([...nodes], edges.map((edge) => edge.relationship));
+        return;
+      }
+      if (relation) {
+        pathMessage.value = "";
+        highlight(
+          [relation.fromclass, relation.toclass].filter((className) => objectNames.value.has(className)),
+          [relation.relationship],
+        );
+        return;
+      }
+      highlightBrowsed();
     });
 
     // The agent names the selected object by the owner's label, not by its key alone.

@@ -218,7 +218,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OperationButton",
     role: "control",
     meaning:
-      "The button of one operation its projection names (`config.operation`, the projection's local name for it): it shows the owner's label and runs it on the object, or the checked objects, its target input holds.",
+      "The button of one operation its projection names (`config.operation`, the projection's local name for it): it shows the owner's label and runs it on the object, or the checked objects, its target input holds. A single write done is said in the platform's message in the owner's words, naming what it acted on (the button often goes with what it deleted); a batch is reported beside the button item by item; a refusal or failure stays beside it. The page hears every outcome as the `done` event. What a write removed is let go of by the panel: a selection holding it is cleared and a checked list drops it.",
     effects: "Runs the named operation as the reader, as its owner admits it now.",
     bindsElement: ["PlatformOperation:*"],
     // The button reads no datum: its operation is the projection's, described by its owner as admitted now.
@@ -466,7 +466,8 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "by", "changedField", "className", "cursor", "defaultAppId", "keyword", "layers", "limit", "node", "page", "path", "rating", "relationKinds",
+          "business", "by", "changedField", "className", "cursor", "defaultAppId", "keyword", "layers", "limit", "node",
+          "operation", "page", "path", "rating", "relationKinds",
           "runId", "scope", "search", "section", "size", "sort", "source", "sourceType", "status", "template", "type", "values",
         ],
       },

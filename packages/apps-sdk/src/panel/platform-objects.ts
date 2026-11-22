@@ -135,6 +135,7 @@ export class PlatformObjectRefusal extends Error {
     message: string,
     readonly fields: Readonly<Record<string, string>>,
     options?: { cause?: unknown },
+    readonly savedFields: Readonly<Record<string, RuntimeJsonValue>> = {},
   ) {
     super(message, options);
     this.name = "PlatformObjectRefusal";

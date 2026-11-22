@@ -6,7 +6,8 @@
  */
 export type DataStateResult<T = unknown> =
   | { status: "ready"; value: T }
-  | { status: "empty" }
+  /** `narrowed`: the reader narrowed the read (a search, a filter), so nothing matched rather than nothing is there. */
+  | { status: "empty"; narrowed?: true }
   /** `retry`, when given, reads the datum again (a read the platform never answered, say). */
   | { status: "error"; message: string; retry?: () => void }
   | { status: "forbidden" }
@@ -16,6 +17,8 @@ export type DataStateResult<T = unknown> =
 /** The words of the states the owner does not word itself, in the reader's language, from the caller's messages. */
 export interface DataStateLabels {
   empty: string;
+  /** A read the reader narrowed found nothing: say nothing matches, so they widen it. */
+  noMatch: string;
   forbidden: string;
   /** A selection the datum needs is missing: say what to do, not that nothing was found. */
   awaiting: string;
