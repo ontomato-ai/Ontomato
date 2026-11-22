@@ -18,6 +18,8 @@ export interface PlatformPageAction {
   primary?: boolean;
   /** A destructive action (delete). */
   danger?: boolean;
+  /** Keep a destructive action visible inline in the header bar (used by full-width detail views) instead of overflowing into More. */
+  inline?: boolean;
   disabled?: boolean;
   loading?: boolean;
   onClick(): void;

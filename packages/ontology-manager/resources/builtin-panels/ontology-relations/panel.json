@@ -68,7 +68,8 @@
         "config": {
           "type": "danger",
           "plain": true,
-          "icon": "trash"
+          "icon": "trash",
+          "placement": "header"
         },
         "id": "builtin-product-655a5639-5fd3-4e29-9192-096597b6a77d"
       }

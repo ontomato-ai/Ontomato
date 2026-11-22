@@ -95,9 +95,10 @@ const shownPage = computed<PlatformShownPage | null>(() => {
   if (heading.value) {
     return {
       title: heading.value.title,
-      description: heading.value.description ?? (page?.descriptionKey ? t(page.descriptionKey) : null),
+      description: heading.value.backLabel ? null : (heading.value.description ?? (page?.descriptionKey ? t(page.descriptionKey) : null)),
       named: true,
       back: heading.value.back,
+      backLabel: heading.value.backLabel,
       externalLink: heading.value.externalLink,
     };
   }

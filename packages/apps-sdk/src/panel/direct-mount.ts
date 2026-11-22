@@ -85,6 +85,8 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       ...(run.currentEntry ? { currentEntry: run.currentEntry } : {}),
       ...(run.frameState ? { frameState: run.frameState } : {}),
       ...(run.headerDraft ? { reportHeaderDraft: run.headerDraft } : {}),
+      ...(run.detailHeader ? { reportDetailHeader: run.detailHeader } : {}),
+      ...(run.headerActions ? { reportHeaderActions: run.headerActions } : {}),
       ...(run.registerBackHandler ? { registerBackHandler: run.registerBackHandler } : {}),
       ...(run.confirmLeaveUnsaved ? { confirmLeaveUnsaved: () => (instance.dirty() ? run.confirmLeaveUnsaved!() : Promise.resolve(true)) } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),

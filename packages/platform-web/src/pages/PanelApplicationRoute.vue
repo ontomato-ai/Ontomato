@@ -2,7 +2,7 @@
 import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, usePageHeading, useUnsavedChanges, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView, type PlatformPageHeading } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, usePageHeading, useUnsavedChanges, type DirectPanelRun, type PanelDetailHeader, type PanelHostLabels, type PanelHostPort, type PanelInstanceView, type PlatformPageHeading } from "@ontomato/platform-shell";
 import { applicationPanelAddress, panelAddress, panelAddressState, panelUsePath, parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
@@ -108,6 +108,8 @@ interface KeptPage {
   context: PageContext | null;
   /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
+  /** Full-width detail view heading published by the panel to replace the catalog header with a single detail bar. */
+  detailHeader: PanelDetailHeader | null;
   /** Which page skill a message beside it reaches, as its instance's latest read for it answered; null until one has. */
   pageSkill: PageSkillContext | null;
   /** Shown again and not yet through its checks: what it reaches is passed on only once they have confirmed it. */
@@ -463,6 +465,15 @@ if (!props.navigate)
  * from, or to the application's root when the page was opened directly. Beside a conversation, the conversation draws both.
  */
 const heading = computed<PlatformPageHeading | null>(() => {
+  const detail = shownPage.value?.detailHeader;
+  if (detail) {
+    return {
+      title: detail.title,
+      back: detail.onBack,
+      backLabel: detail.backLabel,
+      externalLink: opened.value,
+    };
+  }
   const title = shownPage.value?.context?.label || pageName.value;
   if (!title) return null;
   const description = pageDescription.value;
@@ -496,6 +507,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     reported: panelAddress(pageAddress.value, requestedState.value),
     context: null,
     dirty: false,
+    detailHeader: null,
     pageSkill: null,
     rechecking: false,
     lastShown: ++showings,
@@ -555,6 +567,10 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   page.dirty = dirty;
   if (page === shownPage.value) emit("display-dirty", dirty);
 }
+
+function reportDetailHeader(page: KeptPage, detail: PanelDetailHeader | null) {
+  page.detailHeader = detail;
+}
 </script>
 
 <template>
@@ -597,6 +613,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
             @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
             @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
             @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
+            @detail-header="(detail: PanelDetailHeader | null) => reportDetailHeader(page, detail)"
             @context="(context: PageContext) => reportContext(page, context)"
             @reopened="markReopened(page)"
             @withdrawn="withdraw(page)"
@@ -634,6 +651,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
           @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
           @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
+          @detail-header="(detail: PanelDetailHeader | null) => reportDetailHeader(page, detail)"
           @context="(context: PageContext) => reportContext(page, context)"
           @reopened="markReopened(page)"
           @withdrawn="withdraw(page)"

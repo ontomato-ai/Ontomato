@@ -52,8 +52,14 @@ const props = withDefaults(
     plain?: boolean;
     /** Optional leading icon on the button (`trash` for destructive removal). */
     icon?: "trash";
+    /**
+     * Where the button is rendered: `inline` (default) draws the button in place; `header` hands the action to the
+     * enclosing platform page header (falling back to inline when no header host is present) while keeping dialogs and
+     * error/result feedback mounted here.
+     */
+    placement?: "inline" | "header";
   }>(),
-  { type: "default", plain: false, icon: undefined },
+  { type: "default", plain: false, icon: undefined, placement: "inline" },
 );
 
 const emit = defineEmits<{
@@ -141,14 +147,35 @@ function onTriggerClick() {
   if (!descriptor.value || !ready.value) return;
   trigger(props.operation, descriptor.value);
 }
+
+const usesHeaderPlacement = computed(() => props.placement === "header" && panel.registerHeaderAction !== undefined);
+watch(usesHeaderPlacement, (inHeader, _previous, onCleanup) => {
+  if (!inHeader || !panel.registerHeaderAction) return;
+  const stop = panel.registerHeaderAction(slot.slot, () => (
+    !pending.value && descriptor.value
+      ? {
+          id: slot.slot,
+          label: label.value,
+          icon: props.icon,
+          primary: props.type === "primary",
+          danger: props.type === "danger",
+          inline: props.plain,
+          disabled: !ready.value,
+          loading: running.value,
+          onClick: onTriggerClick,
+        }
+      : null
+  ));
+  onCleanup(stop);
+}, { immediate: true });
 </script>
 
 <template>
   <div class="sdk-operation-button">
-    <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
+    <data-state v-if="!usesHeaderPlacement && pending" :result="pending" :labels="labels"></data-state>
     <!-- A removal is drawn quiet unless `plain` requests a tinted bordered button; the owner still decides and confirms it. -->
     <el-button
-      v-else
+      v-else-if="!usesHeaderPlacement"
       :type="type"
       :plain="plain"
       :text="type === 'danger' && !plain"

@@ -2,8 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
-import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
-import { Plus, RefreshCw, X as CloseIcon } from "lucide-vue-next";
+import { usePanelInstance, type PanelDetailHeader, type PanelDetailHeaderAction, type PanelHostLabels, type PanelHostPort } from "./panel-host";
+import { Plus, RefreshCw, Save, Trash2, X as CloseIcon } from "lucide-vue-next";
 import { ElAlert, ElButton } from "element-plus";
 import { hasPageActions, usePageActions, type PlatformPageAction } from "./page-actions";
 import { confirmDanger } from "./confirm-danger";
@@ -87,6 +87,8 @@ const emit = defineEmits<{
   "display-address": [input: DisplayPageAddressInput];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
+  /** A full-width detail view's replacement heading and actions for the enclosing page header, or null in default mode. */
+  "detail-header": [header: PanelDetailHeader | null];
   /** Shown again, the page passed its checks: its frame may ask again and its objects are being read again. */
   reopened: [];
   /** Shown again, the page is no longer its application's: its use relation was withdrawn or bound elsewhere. */
@@ -185,6 +187,7 @@ watch(view.pageContext, (context) => context && emit("context", context));
 watch(view.address, (address) => emit("display-address", { kind: "state", address }));
 watch(view.displayLoad, (load) => emit("display-loaded", load));
 watch(view.dirty, (dirty) => emit("display-dirty", dirty), { flush: "sync", immediate: true });
+watch(view.detailHeader, (header) => emit("detail-header", header), { flush: "sync", immediate: true });
 
 // The instance's operations reach the header like any page's: one description, one handler, for a person and an agent.
 // A click reaches the frame, which runs it with the person's own credential; the state the operation targets decides
@@ -208,6 +211,25 @@ const commands = computed<PlatformPageAction[]>(() => {
   const refresh: PlatformPageAction[] = Object.keys(shown.panel.manifest.members).length
     ? [{ id: "refresh", label: props.labels.refresh, icon: RefreshCw, iconOnly: true, onClick: () => view.refresh(null) }]
     : [];
+  const detailIcon = (icon: PanelDetailHeaderAction["icon"]) => (
+    icon === "trash" ? Trash2 : icon === "save" ? Save : icon === "plus" ? Plus : undefined
+  );
+  const mapDetailAction = (action: PanelDetailHeaderAction): PlatformPageAction => ({
+    id: action.id,
+    label: action.label,
+    icon: detailIcon(action.icon),
+    primary: action.primary,
+    danger: action.danger,
+    inline: action.inline,
+    disabled: action.disabled,
+    loading: action.loading,
+    onClick: () => action.onClick(),
+  });
+  if (view.detailHeader.value) {
+    const memberActions = view.headerActions.value.map(mapDetailAction);
+    const detailActions = (view.detailHeader.value.actions ?? []).map(mapDetailAction);
+    return [...refresh, ...memberActions, ...detailActions];
+  }
   // A command setting a field this entry gives the panel would be undone at once: the entry's value stands.
   const setsWired = (id: string) => {
     const action = shown.panel.manifest.commands[id]?.do;

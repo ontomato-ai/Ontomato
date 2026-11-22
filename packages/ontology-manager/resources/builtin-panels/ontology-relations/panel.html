@@ -259,6 +259,13 @@
   .relations-missing {
     padding: var(--spacing-2xl) var(--page-gutter);
   }
+  .relations-header-op-host:empty,
+  .relations-header-op-host:has(> .sdk-operation-button:empty) {
+    display: none;
+  }
+  .relations-header-op-host {
+    padding-inline: var(--page-gutter);
+  }
   .relations-create-body .sdk-owner-form,
   .relations-create-body .sdk-owner-form-inner {
     height: auto;
@@ -348,9 +355,9 @@
       </div>
     </div>
 
-    <!-- Detail view: matches original OntologyRelationDetail with back bar, basic info card, and object connections card. -->
+    <!-- Detail view: platform header draws the single bar (back + title + delete + save); local bar is fallback for headerless previews. -->
     <div v-else class="relations-detail">
-      <header class="relations-titlebar">
+      <header v-if="!hasHeaderHost" class="relations-titlebar">
         <sdk-button text @click="backToCatalog">
           <svg class="relations-back-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
           <span>返回关系类型</span>
@@ -366,6 +373,10 @@
           </sdk-button>
         </div>
       </header>
+      <!-- When the platform header hosts the Delete button, keep the remove member mounted for confirmation dialogs and error feedback. -->
+      <div v-if="hasHeaderHost && detail.status === 'ready'" class="relations-header-op-host">
+        <projection slot="remove"></projection>
+      </div>
       <p v-if="detail.status === 'loading'" class="relations-note" role="status">正在读取这条关系类型…</p>
       <p v-else-if="detail.status === 'forbidden'" class="relations-note relations-failure">当前账号无权读取这条关系类型。</p>
       <div v-else-if="detail.status !== 'ready'" class="relations-missing">

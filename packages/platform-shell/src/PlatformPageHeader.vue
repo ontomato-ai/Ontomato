@@ -62,11 +62,11 @@ const partitionedActions = computed(() => {
   let primaryAssigned = false;
 
   for (const action of list) {
-    if (action.danger) {
+    if (action.danger && !action.inline) {
       dangerFromActions.push(action);
       continue;
     }
-    const isPrimary = !isIconTool(action) && action.primary === true && !primaryAssigned;
+    const isPrimary = !isIconTool(action) && !action.danger && action.primary === true && !primaryAssigned;
     if (isPrimary) primaryAssigned = true;
     visible.push({ action, primary: isPrimary });
   }
@@ -144,6 +144,7 @@ watch(moreOpen, (open, _previous, onCleanup) => {
         <button v-if="backLabel" type="button" class="page-back" @click="emit('back')">
           <ArrowLeft :size="16" aria-hidden="true" /><span>{{ backLabel }}</span>
         </button>
+        <span v-if="backLabel && title" class="page-back-divider" aria-hidden="true" />
         <h1 v-if="title" class="page-title">{{ title }}</h1>
         <p v-if="description" class="page-description">{{ description }}</p>
       </div>
@@ -167,7 +168,7 @@ watch(moreOpen, (open, _previous, onCleanup) => {
             v-else
             type="button"
             class="action"
-            :class="primary ? 'primary' : 'secondary'"
+            :class="action.danger ? 'danger' : primary ? 'primary' : 'secondary'"
             :disabled="action.disabled || action.loading"
             :aria-busy="action.loading || undefined"
             @click="action.onClick()"
@@ -352,13 +353,22 @@ watch(moreOpen, (open, _previous, onCleanup) => {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--el-text-color-secondary);
+  color: var(--el-text-color-regular);
   font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   cursor: pointer;
 }
 .page-back:hover,
 .page-back:focus-visible {
   color: var(--el-color-primary);
+}
+.page-back-divider {
+  align-self: center;
+  flex-shrink: 0;
+  width: 1px;
+  height: 20px;
+  background: var(--el-border-color);
 }
 .page-actions {
   display: flex;
@@ -421,12 +431,14 @@ watch(moreOpen, (open, _previous, onCleanup) => {
   background: var(--el-color-primary-dark-2);
 }
 .action.danger {
-  border: 1px solid var(--el-border-color-dark);
-  background: var(--el-bg-color);
+  border: 1px solid var(--el-color-danger-light-5, var(--el-color-danger));
+  background: var(--el-color-danger-light-9, var(--el-bg-color));
   color: var(--el-color-danger);
 }
 .action.danger:not(:disabled):hover {
-  background: var(--el-color-danger-light-9);
+  border-color: var(--el-color-danger);
+  background: var(--el-color-danger);
+  color: var(--on-primary, #fff);
 }
 .action:disabled {
   cursor: not-allowed;
