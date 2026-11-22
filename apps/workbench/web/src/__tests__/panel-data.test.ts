@@ -416,3 +416,64 @@ it("shows a read the platform could not answer as the datum's failure, with the 
   await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("error: Service unavailable"));
   (await mount).dispose();
 });
+
+it("exposes a retry callback when memberContext fails to load a projection and recovers on retry", async () => {
+  let shouldFail = true;
+  let attempts = 0;
+  const element = document.createElement("div");
+  document.body.append(element);
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const module = panelModuleFor({
+    mounted, element,
+    template: `<p class="task">{{ shown }}</p><button class="retry" @click="retry">retry</button>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest: {
+      state: manifest.state,
+      members: { task: manifest.members.task! },
+      commands: {},
+    },
+    run: directRun({
+      pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: chosen("t-1") },
+      failed: (reason) => { throw reason; },
+    }),
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: {
+      request: async () => {
+        attempts += 1;
+        if (shouldFail) throw new Error("Projection store temporarily unreachable");
+        return Response.json({ projection: taskData });
+      },
+    },
+    use: { applicationId: "app-tasks", useId: "tasks" },
+    expandPageComposer: noOperations.expandPageComposer, confirmOperation: noOperations.confirmOperation,
+    navigate: noOperations.navigate, nested: noOperations.nested,
+    read: async (request): Promise<ProductPanelReadResponse> => {
+      if (request.operations) return { status: "ready", value: {} as never };
+      return { status: "ready", value: record("t-1") as never };
+    },
+  });
+  await module.mountPanel({
+    setup() {
+      const task = module.usePanelData("task", "record");
+      return {
+        shown: computed(() => {
+          if (task.value.status === "error") return `error(${typeof task.value.retry}): ${task.value.message}`;
+          if (task.value.status === "ready") return `ready: ${(task.value.value as { label: string }).label}`;
+          return task.value.status;
+        }),
+        retry: () => {
+          if (task.value.status === "error") task.value.retry?.();
+        },
+      };
+    },
+  });
+  await vi.waitFor(() =>
+    expect(element.querySelector(".task")?.textContent).toContain("error(function): Member 'task': Projection store temporarily unreachable"),
+  );
+  shouldFail = false;
+  element.querySelector<HTMLButtonElement>(".retry")!.click();
+  await vi.waitFor(() => expect(element.querySelector(".task")?.textContent).toBe("ready: Task t-1"));
+  expect(attempts).toBe(2);
+  (await mount).dispose();
+});

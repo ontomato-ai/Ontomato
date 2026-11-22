@@ -69,8 +69,11 @@ function mountDirect(
     initial?: Record<string, unknown>;
     messages?: Record<string, Record<string, string>>;
     members?: readonly string[];
+    locale?: string;
+    i18nMessages?: Record<string, Record<string, unknown>>;
   } = {},
 ) {
+  const activeLocale = options.locale ?? "en";
   const memberKeys = options.members ?? Object.keys(manifest.members);
   const reads: Read[] = [];
   const instance = createDirectPanelInstance(manifest, {
@@ -79,7 +82,7 @@ function mountDirect(
     label: () => "Object list test",
     initial: options.initial as never,
     recordDraftCreated: async () => {},
-    text: createPanelText(options.messages ?? {}, ref("en"), "en"),
+    text: createPanelText(options.messages ?? {}, ref(activeLocale), "en"),
     ...noOperations,
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
@@ -91,7 +94,7 @@ function mountDirect(
   document.body.appendChild(element);
   const app = createApp({
     setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, { instance, member, key: member }))),
-  }).use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
+  }).use(createI18n({ legacy: false, locale: activeLocale, messages: (options.i18nMessages ?? { en: publicEn }) as never })).use(ElementPlus);
   app.mount(element);
   cleanup = () => {
     app.unmount();
@@ -1364,4 +1367,484 @@ it("outputs all matching references when the list read does not page", async () 
     { className: SCHEDULED_TASK, primaryKey: "t-2" },
   ]));
   expect(reads).toHaveLength(1);
+});
+
+it("renders all 6 PanelRecordFieldValue types in ObjectList and ObjectSummary with localized booleans, references, arrays, and highlights", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "universal-table": {
+      ...meta,
+      id: "universal-table",
+      name: "Universal records",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {
+        selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        owner: { kind: "object", objectType: USER },
+        navigate: { kind: "object", objectType: ROLE },
+      },
+      config: {
+        columns: [
+          { key: "title", labelKey: "cols.title" },
+          { key: "score", labelKey: "cols.score" },
+          { key: "enabled", labelKey: "cols.enabled" },
+          { key: "archived", labelKey: "cols.archived" },
+          { key: "owner", labelKey: "cols.owner" },
+          { key: "meta", labelKey: "cols.meta" },
+          { key: "related", labelKey: "cols.related" },
+        ],
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+    "universal-summary": {
+      ...meta,
+      id: "universal-summary",
+      name: "Universal summary",
+      componentId: "@ontomato/sdk:ObjectSummary",
+      inputs: { item: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      outputs: {
+        owner: { kind: "object", objectType: USER },
+        navigate: { kind: "object", objectType: ROLE },
+      },
+      config: { fields: ["title", "score", "enabled", "archived", "owner", "meta", "related"] },
+      data: { record: { source: { object: { input: "item" } }, read: "record", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
+      focusedOwner: { type: { kind: "object", objectType: USER } },
+      navigatedRole: { type: { kind: "object", objectType: ROLE } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "universal-table" },
+        outputs: {
+          selected: { state: "selected" },
+          owner: { state: "focusedOwner" },
+          navigate: { state: "navigatedRole" },
+        },
+      },
+      summary: {
+        target: { projectionId: "universal-summary" },
+        inputs: { item: { state: "selected" } },
+        outputs: {
+          owner: { state: "focusedOwner" },
+          navigate: { state: "navigatedRole" },
+        },
+      },
+    },
+    commands: {},
+  });
+  const universalRecord = {
+    primaryKey: "k-uni",
+    label: "Revenue policy",
+    fields: {
+      title: { kind: "localized" as const, values: { "zh-CN": "营收口径", en: "Revenue definition" } },
+      score: 0,
+      enabled: true,
+      archived: false,
+      owner: { kind: "reference" as const, className: USER, primaryKey: "u-1", label: "Alice" },
+      meta: { kind: "json" as const, value: { version: 2, strict: true } },
+      related: [
+        "finance",
+        42,
+        false,
+        { kind: "reference" as const, className: ROLE, primaryKey: "r-1", label: "Auditor" },
+      ],
+    },
+    highlights: {
+      title: [{ start: 0, end: 2 }],
+      owner: [{ start: 0, end: 3 }],
+    },
+  };
+
+  const zhMessages = {
+    "zh-CN": {
+      ...publicEn,
+      platform: { ...publicEn.platform, booleanTrue: "是", booleanFalse: "否" },
+    },
+  };
+  const { instance, element } = mountDirect(
+    manifest,
+    projections,
+    (request) => ready(request.dataName === "rows" ? { rows: [universalRecord], total: 1 } : universalRecord),
+    {
+      locale: "zh-CN",
+      i18nMessages: zhMessages,
+      messages: {
+        en: {
+          "cols.title": "Title",
+          "cols.score": "Score",
+          "cols.enabled": "Enabled",
+          "cols.archived": "Archived",
+          "cols.owner": "Owner",
+          "cols.meta": "Meta",
+          "cols.related": "Related",
+        },
+      },
+    },
+  );
+
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody td")).toHaveLength(7));
+  const cells = [...element.querySelectorAll<HTMLElement>("tbody td")];
+  // 1. localized with highlight
+  expect(cells[0]!.textContent?.trim()).toBe("营收口径");
+  expect(cells[0]!.querySelector("mark")?.textContent).toBe("营收");
+  // 2. number 0 (must not fall back to empty dash)
+  expect(cells[1]!.textContent?.trim()).toBe("0");
+  // 3-4. localized booleans
+  expect(cells[2]!.textContent?.trim()).toBe("是");
+  expect(cells[3]!.textContent?.trim()).toBe("否");
+  // 5. reference with highlight -> routes to named `owner` output
+  const ownerBtn = cells[4]!.querySelector<HTMLButtonElement>(".sdk-object-ref-link")!;
+  expect(ownerBtn.textContent?.trim()).toBe("Alice");
+  expect(ownerBtn.querySelector("mark")?.textContent).toBe("Ali");
+  ownerBtn.click();
+  await vi.waitFor(() => expect(instance.state.values.value.focusedOwner).toEqual({ className: USER, primaryKey: "u-1" }));
+  // 6. json payload summary
+  expect(cells[5]!.textContent?.trim()).toBe('{"version":2,"strict":true}');
+  // 7. mixed array: scalar tags (including localized boolean) + clickable reference -> routes to `navigate`
+  const arrayTags = [...cells[6]!.querySelectorAll(".sdk-object-list-tag")].map((el) => el.textContent?.trim());
+  expect(arrayTags).toEqual(["finance", "42", "否"]);
+  const relatedRefBtn = cells[6]!.querySelector<HTMLButtonElement>(".sdk-object-ref-link")!;
+  expect(relatedRefBtn.textContent?.trim()).toBe("Auditor");
+  relatedRefBtn.click();
+  await vi.waitFor(() => expect(instance.state.values.value.navigatedRole).toEqual({ className: ROLE, primaryKey: "r-1" }));
+
+  // Select row to inspect ObjectSummary rendering of the same 6 universal field types
+  element.querySelector<HTMLTableRowElement>("tbody tr")!.click();
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-summary dd")).toHaveLength(7));
+  const summaryValues = [...element.querySelectorAll<HTMLElement>(".sdk-object-summary dd")];
+  expect(summaryValues[0]!.textContent?.trim()).toBe("营收口径");
+  expect(summaryValues[0]!.querySelector("mark")?.textContent).toBe("营收");
+  expect(summaryValues[1]!.textContent?.trim()).toBe("0");
+  expect(summaryValues[2]!.textContent?.trim()).toBe("是");
+  expect(summaryValues[3]!.textContent?.trim()).toBe("否");
+  expect(summaryValues[4]!.querySelector<HTMLButtonElement>(".sdk-object-ref-link")?.textContent?.trim()).toBe("Alice");
+  expect(summaryValues[5]!.textContent?.trim()).toBe('{"version":2,"strict":true}');
+  expect([...summaryValues[6]!.querySelectorAll(".sdk-object-summary-tag")].map((el) => el.textContent?.trim())).toEqual([
+    "finance", "42", "否",
+  ]);
+  expect(summaryValues[6]!.querySelector<HTMLButtonElement>(".sdk-object-ref-link")?.textContent?.trim()).toBe("Auditor");
+});
+
+it("resolves heterogeneous className row identity via panelRecordObjectRef and renders universal fields in compact list without [object Object]", async () => {
+  const unionType = { kind: "object-union" as const, objectTypes: [ACTION, WORKFLOW] as [string, ...string[]] };
+  const projections: Record<string, DirectProjection> = {
+    "mixed-list": {
+      ...meta,
+      id: "mixed-list",
+      name: "Mixed items",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {
+        selected: unionType,
+      },
+      config: {
+        statusField: "status",
+        subtitleField: "summary",
+        tagsField: "badges",
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: ACTION } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: unionType, deepLink: true },
+    },
+    members: {
+      list: {
+        target: { projectionId: "mixed-list" },
+        outputs: { selected: { state: "selected" } },
+      },
+    },
+    commands: {},
+  });
+  const rows = [
+    {
+      primaryKey: "a-1",
+      className: ACTION,
+      label: "Approve order",
+      fields: {
+        status: { kind: "localized" as const, values: { en: "Active" } },
+        summary: { kind: "localized" as const, values: { en: "Approves pending orders" } },
+        badges: ["v2", true],
+      },
+      tones: { status: "success" as const },
+    },
+    {
+      primaryKey: "w-1",
+      className: WORKFLOW,
+      label: "Fulfill order",
+      fields: {
+        status: false,
+        summary: { kind: "json" as const, value: { steps: 3 } },
+        badges: ["auto"],
+      },
+    },
+  ];
+  const { instance, element } = mountDirect(manifest, projections, () => ready(rows));
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list [role='option']")).toHaveLength(2));
+  expect(element.textContent).not.toContain("[object Object]");
+
+  const items = [...element.querySelectorAll<HTMLButtonElement>(".sdk-object-list [role='option']")];
+  expect(items[0]!.querySelector(".sdk-object-list-item-head .sdk-object-list-tag")?.textContent?.trim()).toBe("Active");
+  expect(items[0]!.querySelector(".sdk-object-list-item-sub")?.textContent?.trim()).toBe("Approves pending orders");
+  expect([...items[0]!.querySelectorAll(".sdk-object-list-item-tags .sdk-object-list-tag")].map((el) => el.textContent?.trim())).toEqual([
+    "v2", "Yes",
+  ]);
+  expect(items[1]!.querySelector(".sdk-object-list-item-head .sdk-object-list-tag")?.textContent?.trim()).toBe("No");
+  expect(items[1]!.querySelector(".sdk-object-list-item-sub")?.textContent?.trim()).toBe('{"steps":3}');
+
+  // Selecting each heterogeneous row writes its own `className` and registers owner labels under that className.
+  items[1]!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: WORKFLOW, primaryKey: "w-1" }));
+  expect(instance.pageContext.value.selection[0]?.label).toContain("Fulfill order");
+
+  items[0]!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: ACTION, primaryKey: "a-1" }));
+  expect(instance.pageContext.value.selection[0]?.label).toContain("Approve order");
+});
+
+it("renders layout='cards' with columns, status, tags, selection, keyboard activation, and checkboxes", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "cards-list": {
+      ...meta,
+      id: "cards-list",
+      name: "Knowledge cards",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {
+        selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        checked: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+        navigate: { kind: "object", objectType: USER },
+      },
+      config: {
+        layout: "cards",
+        statusField: "status",
+        subtitleField: "summary",
+        tagsField: "topics",
+        columns: [
+          { key: "owner", labelKey: "cols.owner" },
+          { key: "updatedAt", labelKey: "cols.updatedAt", kind: "time", timeFormat: "date" },
+        ],
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
+      checked: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+      navigated: { type: { kind: "object", objectType: USER } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "cards-list" },
+        outputs: { selected: { state: "selected" }, checked: { state: "checked" }, navigate: { state: "navigated" } },
+      },
+    },
+    commands: {},
+  });
+  const ts = "2026-11-18T09:15:30.000Z";
+  const rows = [
+    {
+      primaryKey: "k-1",
+      label: "Pricing guide",
+      fields: {
+        status: "Published",
+        summary: "How tiers are calculated",
+        owner: { kind: "reference" as const, className: USER, primaryKey: "u-9", label: "Dana" },
+        updatedAt: ts,
+        topics: ["sales", "billing"],
+      },
+      tones: { status: "success" as const },
+    },
+    {
+      primaryKey: "k-2",
+      label: "Discount rules",
+      fields: {
+        status: "Draft",
+        summary: "Approval limits",
+        owner: { kind: "reference" as const, className: USER, primaryKey: "u-10", label: "Evan" },
+        updatedAt: ts,
+        topics: ["finance"],
+      },
+      tones: { status: "warning" as const },
+    },
+  ];
+  const { instance, element } = mountDirect(manifest, projections, () => ready({ rows, total: rows.length }), {
+    messages: { en: { "cols.owner": "Owner", "cols.updatedAt": "Updated" } },
+  });
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-card")).toHaveLength(2));
+  expect(element.querySelector("table")).toBeNull();
+  const cards = [...element.querySelectorAll<HTMLElement>(".sdk-object-list-card")];
+  expect(cards[0]!.getAttribute("tabindex")).toBe("0");
+  expect(cards[0]!.querySelector(".sdk-object-list-card-title")?.textContent?.trim()).toBe("Pricing guide");
+  expect(cards[0]!.querySelector(".sdk-object-list-card-sub")?.textContent?.trim()).toBe("How tiers are calculated");
+  expect(cards[0]!.querySelector(".sdk-object-list-card-head .sdk-object-list-tag")?.textContent?.trim()).toBe("Published");
+  expect([...cards[0]!.querySelectorAll(".sdk-object-list-card-tags .sdk-object-list-tag")].map((el) => el.textContent?.trim())).toEqual([
+    "sales", "billing",
+  ]);
+  const expectedDate = new Date(ts).toLocaleDateString("en", { year: "numeric", month: "2-digit", day: "2-digit" });
+  expect(cards[0]!.querySelectorAll(".sdk-object-list-card-field-value")[1]?.textContent?.trim()).toBe(expectedDate);
+
+  // Reference link inside card navigates without selecting the card.
+  cards[0]!.querySelector<HTMLButtonElement>(".sdk-object-ref-link")!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.navigated).toEqual({ className: USER, primaryKey: "u-9" }));
+  expect(instance.state.values.value.selected).toBeNull();
+
+  // Checkbox inside card toggles checked without selecting the card.
+  const checkbox = cards[0]!.querySelector<HTMLInputElement>(".sdk-object-list-card-check")!;
+  checkbox.click();
+  await vi.waitFor(() => expect(instance.state.values.value.checked).toEqual([knowledge("k-1")]));
+  expect(instance.state.values.value.selected).toBeNull();
+
+  // Clicking card selects it and highlights with .chosen + aria-selected="true".
+  cards[0]!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-1")));
+  expect(cards[0]!.classList.contains("chosen")).toBe(true);
+  expect(cards[0]!.getAttribute("aria-selected")).toBe("true");
+
+  // Keyboard navigation + Enter activates the second card.
+  cards[0]!.focus();
+  cards[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+  expect(document.activeElement).toBe(cards[1]);
+  cards[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-2")));
+});
+
+it("formats kind='time' columns according to timeFormat ('datetime' and 'date') while keeping full local time in title", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "time-table": {
+      ...meta,
+      id: "time-table",
+      name: "Timed items",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: {
+        columns: [
+          { key: "createdAt", labelKey: "cols.datetime", kind: "time", timeFormat: "datetime" },
+          { key: "publishedAt", labelKey: "cols.date", kind: "time", timeFormat: "date" },
+        ],
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {},
+    members: { list: { target: { projectionId: "time-table" } } },
+    commands: {},
+  });
+  const stamp = "2026-11-22T06:05:09.000Z";
+  const rows = [
+    { primaryKey: "k-t1", label: "Item 1", fields: { createdAt: stamp, publishedAt: stamp } },
+    { primaryKey: "k-t2", label: "Item 2", fields: { createdAt: "invalid-ts", publishedAt: "" } },
+  ];
+  const { element } = mountDirect(manifest, projections, () => ready({ rows, total: rows.length }), {
+    messages: { en: { "cols.datetime": "Exact time", "cols.date": "Date" } },
+  });
+
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody td")).toHaveLength(4));
+  const cells = [...element.querySelectorAll<HTMLElement>("tbody td")];
+  const parsed = new Date(stamp);
+  expect(cells[0]!.textContent?.trim()).toBe(parsed.toLocaleString("en", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }));
+  expect(cells[0]!.title).toBe(parsed.toLocaleString("en"));
+  expect(cells[1]!.textContent?.trim()).toBe(parsed.toLocaleDateString("en", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }));
+  expect(cells[1]!.title).toBe(parsed.toLocaleString("en"));
+  expect(cells[2]!.textContent?.trim()).toBe("invalid-ts");
+  expect(cells[2]!.title).toBe("");
+  expect(cells[3]!.textContent?.trim()).toBe("—");
+});
+
+it("renders total count, clickable numeric page jump buttons, and ellipsis folding in pageMode='page'", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "paged-objects": {
+      ...meta,
+      id: "paged-objects",
+      name: "Paged objects",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { type: { kind: "scalar", type: "string" } },
+      outputs: {},
+      config: { pageSize: 10 },
+      data: {
+        objects: {
+          source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
+          read: "objects",
+          params: { type: { input: "type" } },
+        },
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selectedType: { type: { kind: "scalar", type: "string" } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "paged-objects" },
+        inputs: { type: { state: "selectedType" } },
+      },
+    },
+    commands: {},
+  });
+
+  const { element, reads } = mountDirect(
+    manifest,
+    projections,
+    (request) => {
+      const page = (request.runtimeParams?.page as { number: number; size: number } | undefined)?.number ?? 1;
+      return ready({
+        status: "ok",
+        type: USER,
+        layer: "governance",
+        page,
+        pageSize: 10,
+        total: 120,
+        items: [{ node: { className: USER, primaryKey: `u-${page}` }, label: `User page ${page}` }],
+      });
+    },
+    { initial: { selectedType: USER } },
+  );
+
+  // Page 1 of 12: [1, 2, …, 12] + total count
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-pagination")).not.toBeNull());
+  expect(element.querySelector(".sdk-object-list-page-total")?.textContent?.trim()).toBe("120 items");
+  const pageButtons = () => [...element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-page-num")];
+  expect(pageButtons().map((btn) => btn.textContent?.trim())).toEqual(["1", "2", "12"]);
+  expect(pageButtons()[0]!.getAttribute("aria-current")).toBe("page");
+  expect(pageButtons()[0]!.classList.contains("active")).toBe(true);
+  expect(element.querySelectorAll(".sdk-object-list-page-ellipsis")).toHaveLength(1);
+
+  // Jump directly to page 12
+  pageButtons()[2]!.click();
+  await vi.waitFor(() => expect(reads.at(-1)?.runtimeParams?.page).toEqual({ number: 12, size: 10 }));
+  await vi.waitFor(() => expect(element.textContent).toContain("User page 12"));
+  expect(pageButtons().map((btn) => btn.textContent?.trim())).toEqual(["1", "11", "12"]);
+  expect(pageButtons()[2]!.getAttribute("aria-current")).toBe("page");
+  expect(element.querySelectorAll(".sdk-object-list-page-ellipsis")).toHaveLength(1);
+
+  // Jump to page 11 -> [1, …, 10, 11, 12]
+  pageButtons()[1]!.click();
+  await vi.waitFor(() => expect(reads.at(-1)?.runtimeParams?.page).toEqual({ number: 11, size: 10 }));
+  await vi.waitFor(() => expect(pageButtons().map((btn) => btn.textContent?.trim())).toEqual(["1", "10", "11", "12"]));
+  expect(pageButtons()[2]!.getAttribute("aria-current")).toBe("page");
+
+  // Jump to page 10 -> [1, …, 9, 10, 11, 12] (trailing ellipsis collapses when window reaches 11)
+  pageButtons()[1]!.click();
+  await vi.waitFor(() => expect(reads.at(-1)?.runtimeParams?.page).toEqual({ number: 10, size: 10 }));
+  await vi.waitFor(() => expect(pageButtons().map((btn) => btn.textContent?.trim())).toEqual(["1", "9", "10", "11", "12"]));
+  expect(element.querySelectorAll(".sdk-object-list-page-ellipsis")).toHaveLength(1);
+
+  // Jump to page 9 -> [1, …, 8, 9, 10, …, 12] (both ellipses shown)
+  pageButtons()[1]!.click();
+  await vi.waitFor(() => expect(reads.at(-1)?.runtimeParams?.page).toEqual({ number: 9, size: 10 }));
+  await vi.waitFor(() => expect(pageButtons().map((btn) => btn.textContent?.trim())).toEqual(["1", "8", "9", "10", "12"]));
+  expect(element.querySelectorAll(".sdk-object-list-page-ellipsis")).toHaveLength(2);
 });

@@ -207,6 +207,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     // The upload control runs its operation through the platform's upload contract, in a frame and in the platform's page.
     assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwrite-on")?.required, false);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
+    const listLayout = declared.get("ObjectList").config.find(prop => prop.name === "layout");
+    assert.equal(listLayout?.required, false);
+    assert.match(listLayout?.type ?? "", /cards/);
     const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitle-lines");
     assert.equal(subtitleLines?.required, false);
     assert.match(subtitleLines?.type ?? "", /number/);

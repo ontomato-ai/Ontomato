@@ -12,6 +12,7 @@ import {
   type PanelFormDescription,
   type PanelFormRequest,
   type PanelFormSaveInput,
+  type PanelRecordFieldValue,
 } from "@ontomato/contracts/panel-projection";
 import { registerHandler, type RegisteredHandler } from "./handlers";
 import { stateChildObject, stateObject, type PanelFieldValue } from "./state";
@@ -55,16 +56,14 @@ export interface PlatformObjectRecord {
   label: string;
   /** Optional secondary line under the label (for example a description or highlighted excerpt). */
   subtitle?: string;
-  /** What a summary or list column may show: the owner's own fields, by name, as text. */
-  fields: Readonly<Record<string, string>>;
+  /** What a summary or list column may show: the owner's own fields, by name, as typed record field values. */
+  fields: Readonly<Record<string, PanelRecordFieldValue>>;
   /** Optional owner-supplied display names by field key (used by ObjectSummary and ObjectList headers without labelKey). */
   fieldLabels?: Readonly<Record<string, string>>;
   /** Optional semantic tones by field name, used when a field renders as a status tag. */
   tones?: Readonly<Record<string, PlatformFieldTone>>;
   /** Optional tag lists by field name, rendered as tags. */
   tags?: Readonly<Record<string, readonly string[]>>;
-  /** Optional clickable object references by field name, emitted through the navigate port. */
-  references?: Readonly<Record<string, PlatformFieldReference>>;
   /** Optional highlight ranges by field name (or `"label"` / `"subtitle"`), half-open `[start, end)`. */
   highlights?: Readonly<Record<string, readonly TextHighlightRange[]>>;
 }

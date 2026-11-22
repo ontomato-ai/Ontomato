@@ -504,6 +504,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           readRevisions.set(member, projection.revision);
           return projection;
         }).catch((reason: unknown) => {
+          if (projections.get(member) === found) projections.delete(member);
           // Whether the reader may use it, or it is there at all, is what the member says in its place, as it is.
           if (reason instanceof PanelMemberUnavailable) throw reason;
           const message = reason instanceof Error ? reason.message : String(reason);
@@ -536,8 +537,15 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         : chosen === "objectDetail" || (chosen !== undefined && "panelId" in chosen)
           ? placePanel(member, scope)
           : placeProjection(member, scope);
-      members.set(member, { scope, placing });
-      return placing;
+      const tracked = placing.catch((reason: unknown) => {
+        if (members.get(member)?.placing === tracked) {
+          scope.stop();
+          members.delete(member);
+        }
+        throw reason;
+      });
+      members.set(member, { scope, placing: tracked });
+      return tracked;
     },
     memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs): MemberData {
       const own = () => instance.ownParams(member);
