@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { DataState, type DataStateResult } from "../index";
 
-const labels = { empty: "Nothing here", forbidden: "No permission", awaiting: "Choose one first", retry: "Read again" };
+const labels = {
+  empty: "Nothing here", noMatch: "Nothing matches", forbidden: "No permission", awaiting: "Choose one first", retry: "Read again",
+};
 const show = (result: DataStateResult<{ name: string }>) =>
   mount(DataState, { props: { result, labels }, slots: { default: "<b>{{ params.value.name }}</b>" } });
 
@@ -25,6 +27,19 @@ describe("DataState", () => {
     await error.find("button").trigger("click");
     expect(error.find("button").text()).toBe("Read again");
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  // An empty answer is a quiet picture and one line, not a large illustration; a read the reader narrowed (a search, a
+  // filter) says nothing matches, so the reader knows to widen it rather than that there is nothing at all.
+  it("says an empty answer with a small quiet icon, and tells a narrowed read that found nothing from an empty one", () => {
+    const empty = show({ status: "empty" });
+    expect(empty.find('[data-state="empty"]').attributes("data-empty")).toBe("none");
+    expect(empty.find("svg").attributes()).toMatchObject({ width: "40", height: "40", "aria-hidden": "true" });
+    expect(empty.text()).toBe("Nothing here");
+    const narrowed = show({ status: "empty", narrowed: true });
+    expect(narrowed.find('[data-state="empty"]').attributes("data-empty")).toBe("no-match");
+    expect(narrowed.find("svg").exists()).toBe(true);
+    expect(narrowed.text()).toBe("Nothing matches");
   });
 
   it("asks for the missing selection instead of saying nothing was found", () => {
