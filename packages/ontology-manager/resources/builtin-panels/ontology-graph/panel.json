@@ -91,7 +91,8 @@
               "sumField": "attributeCount"
             }
           ]
-        }
+        },
+        "id": "builtin-product-86cab742-cb91-4178-af0d-fe9c6a25c6d6"
       },
       "relationsCount": {
         "component": "ObjectCount",
@@ -101,7 +102,8 @@
         },
         "config": {
           "labelKey": "og.count.relations"
-        }
+        },
+        "id": "builtin-product-f98a5689-2abf-4364-8993-f870eae5969d"
       },
       "pathFromPicker": {
         "component": "ReferencePicker",
@@ -116,7 +118,8 @@
           "placeholderKey": "og.path.from",
           "clearable": true,
           "size": "small"
-        }
+        },
+        "id": "builtin-product-e0609e2d-d8dd-4f38-841d-cdfaee5b39d9"
       },
       "pathToPicker": {
         "component": "ReferencePicker",
@@ -131,7 +134,8 @@
           "placeholderKey": "og.path.to",
           "clearable": true,
           "size": "small"
-        }
+        },
+        "id": "builtin-product-f2e3fe20-9b83-4972-9b26-a9215b2d2639"
       },
       "objectList": {
         "component": "ObjectList",
@@ -148,7 +152,8 @@
           "subtitleField": "className",
           "searchable": false,
           "emptyText": "og.empty.objects"
-        }
+        },
+        "id": "builtin-product-2ac807b2-c68d-4273-8fde-8af725d33e25"
       },
       "relationList": {
         "component": "ObjectList",
@@ -164,7 +169,8 @@
           "layout": "list",
           "searchable": false,
           "emptyText": "og.empty.relations"
-        }
+        },
+        "id": "builtin-product-c69605b5-3315-47eb-ad08-c3ec8ceb4648"
       },
       "graph": {
         "component": "ObjectGraph",
@@ -206,7 +212,8 @@
         },
         "config": {
           "subtitleField": "className"
-        }
+        },
+        "id": "builtin-product-2069308d-16cb-46d0-a2d5-fee6883bb2ed"
       },
       "objectSummary": {
         "component": "ObjectSummary",
@@ -215,10 +222,12 @@
           "record": "record"
         },
         "config": {
+          "showTitle": false,
           "fields": [
             "classDesc"
           ]
-        }
+        },
+        "id": "builtin-product-f66a3e83-9e47-43a3-9b1a-650ef4f268ca"
       },
       "objectAttributes": {
         "component": "ObjectList",
@@ -239,7 +248,8 @@
           "statusField": "type",
           "searchable": false,
           "emptyText": "og.empty.attributes"
-        }
+        },
+        "id": "builtin-product-8e02d32c-ca7e-4235-b54c-4509815ade00"
       },
       "objectRelations": {
         "component": "ObjectList",
@@ -261,14 +271,16 @@
           "layout": "list",
           "searchable": false,
           "emptyText": "og.empty.objectRelations"
-        }
+        },
+        "id": "builtin-product-22e93bc3-18d0-412d-b403-6180b2c38cd6"
       },
       "relationHeader": {
         "component": "ObjectHeader",
         "target": "relation",
         "data": {
           "record": "record"
-        }
+        },
+        "id": "builtin-product-7a360f7f-8a81-415b-8a2e-54db548d93bc"
       },
       "relationSummary": {
         "component": "ObjectSummary",
@@ -277,6 +289,7 @@
           "record": "record"
         },
         "config": {
+          "showTitle": false,
           "fields": [
             "fromObject",
             "toObject",
@@ -284,7 +297,8 @@
             "toField",
             "desc"
           ]
-        }
+        },
+        "id": "builtin-product-c86b3a65-a8c0-45ee-93ab-b5a319e1d0e1"
       }
     },
     "commands": {}
