@@ -21,7 +21,7 @@
         }
       },
       "detail": {
-        "component": "PanelData",
+        "component": "ObjectSummary",
         "target": "selected",
         "data": {
           "record": "record"

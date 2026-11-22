@@ -18,8 +18,8 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 For a management page, start with the [complete example and wiring recipes](references/management-pages.md) or run `panel scaffold`.
 
-1. Use `panel type <type-id>` for the owner's reads and operations. Use `sdk read docs/components.md` for each component's data, configuration, outputs and events in the current SDK. Inspect existing projections and application uses. Reuse existing records and ask the owner for any missing business capability or named read.
-2. Write the Vue panel source. Declare its projections and public typed state in `panel.json` as `{manifest, content?}`. Use `recipes.md` for the assistant's common tasks and optional `content.messages` for translations. Give page-header actions a named entry in `manifest.commands`. Use Vue state and event handlers for component-driven interactions.
+1. Inspect the owner's reads and operations with `panel type <type-id>` and compare their result shapes with the official component data ports in `sdk read docs/components.md`. If an owner read does not match the component's data port, address that gap on the owner or shared-record side rather than rendering business fields in the panel.
+2. Follow the lookup order: start with the official component's default rendering, add `config` for common variations, and write a focused component only as a last resort when a block, column or field still cannot be configured. Write the Vue panel for layout, typed public state in `panel.json` (`{manifest, content?}`), visibility, navigation, `recipes.md`, optional `content.messages`, and `manifest.commands`. Do not render business fields from a data port in `panel.html` or use third-party UI library tags/imports directly.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
