@@ -140,7 +140,7 @@ const panelReadResults = [
   z.object({ status: z.literal("ready"), value: runtimeJsonValueSchema }).strict(),
   z.object({ status: z.literal("empty") }).strict(),
   z.object({ status: z.literal("error"), message: z.string().min(1) }).strict(),
-  z.object({ status: z.literal("forbidden") }).strict(),
+  z.object({ status: z.literal("forbidden"), reason: z.string().min(1).optional() }).strict(),
 ] as const;
 export const productPanelReadResponseSchema = z.discriminatedUnion("status", panelReadResults);
 export type ProductPanelReadResponse = z.infer<typeof productPanelReadResponseSchema>;

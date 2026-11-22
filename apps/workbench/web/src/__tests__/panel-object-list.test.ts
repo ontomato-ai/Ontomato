@@ -1,4 +1,6 @@
 /* eslint-disable vue/one-component-per-file */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { computed, createApp, defineComponent, h, nextTick, provide, ref } from "vue";
 import { createI18n } from "vue-i18n";
@@ -508,11 +510,15 @@ it("infers cursor pagination and runtime search from query signature, resetting 
   expect(reads[0]!.runtimeParams).toEqual({ size: 2 });
   expect(element.querySelector(".sdk-object-list-count")?.textContent).toContain("3");
 
-  // Next page sends runtimeParams { cursor: "page-2", size: 2 }.
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
-  await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(1));
+  // Load more sends runtimeParams { cursor: "page-2", size: 2 } and appends page 2 to the existing rows.
+  const loadMoreBtn = element.querySelector<HTMLButtonElement>(".sdk-object-list-load-more")!;
+  expect(loadMoreBtn.textContent?.trim()).toBe(publicEn.platform.listLoadMore);
+  expect(loadMoreBtn.disabled).toBe(false);
+  loadMoreBtn.click();
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(3));
   expect(reads).toHaveLength(2);
   expect(reads[1]!.runtimeParams).toEqual({ cursor: "page-2", size: 2 });
+  expect(element.querySelector<HTMLButtonElement>(".sdk-object-list-load-more")!.disabled).toBe(true);
 
   // Typing search resets cursor to page 1 and triggers ONE read carrying runtimeParams { search: "beta", size: 2 }.
   const searchInput = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
@@ -522,7 +528,8 @@ it("infers cursor pagination and runtime search from query signature, resetting 
   await nextTick();
   expect(reads).toHaveLength(3);
   expect(reads[2]!.runtimeParams).toEqual({ search: "beta", size: 2 });
-  await vi.waitFor(() => expect(element.querySelector("tbody tr td")?.textContent?.trim()).toBe("Beta rule"));
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(1));
+  expect(element.querySelector("tbody tr td")?.textContent?.trim()).toBe("Beta rule");
 
   // Clicking the row selects k-2 and does not toggle off on repeated click.
   element.querySelector<HTMLTableRowElement>("tbody tr")!.click();
@@ -690,10 +697,12 @@ it("infers checkboxes from outputs.checked, freezes visible rows on select-all, 
     { kind: BUSINESS_KNOWLEDGE, id: "k-1", label: `Rule 1 (${BUSINESS_KNOWLEDGE} k-1)` },
   ]);
 
-  // Navigating to page 2 and checking k-3 unions with already-checked items from page 1.
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
-  await vi.waitFor(() => expect(element.querySelector("tbody tr td:nth-child(2)")?.textContent?.trim()).toBe("Rule 3"));
-  element.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')!.click();
+  // Loading more appends page 2 rows and checking k-3 unions with already-checked items from page 1.
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-load-more")!.click();
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(4));
+  const checkboxesAfterLoad = [...element.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')];
+  expect(checkboxesAfterLoad.map((box) => box.checked)).toEqual([true, true, false, false]);
+  checkboxesAfterLoad[2]!.click();
   await nextTick();
   expect(instance.state.values.value.checkedKnowledge).toEqual([knowledge("k-1"), knowledge("k-2"), knowledge("k-3")]);
 
@@ -707,7 +716,7 @@ it("infers checkboxes from outputs.checked, freezes visible rows on select-all, 
   instance.state.set("checkedKnowledge", [knowledge("k-4")]);
   await nextTick();
   const rowBoxes = [...element.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')];
-  expect(rowBoxes.map((box) => box.checked)).toEqual([false, true]);
+  expect(rowBoxes.map((box) => box.checked)).toEqual([false, false, false, true]);
   expect(element.querySelector<HTMLInputElement>('thead input[type="checkbox"]')!.indeterminate).toBe(true);
 
   // Wrong objectType inside list state is rejected by checkPanelValue.
@@ -1133,7 +1142,12 @@ it("tells an empty list from a search that matched nothing", async () => {
   search.value = "nothing like it";
   search.dispatchEvent(new Event("input", { bubbles: true }));
   await vi.waitFor(() => expect(state()?.dataset.empty).toBe("no-match"));
-  expect(state()!.textContent?.trim()).toBe(publicEn.platform.dataNoMatch);
+  expect(state()!.querySelector(".fui-data-state-message")?.textContent?.trim()).toBe(publicEn.platform.dataNoMatch);
+  const clearBtn = state()!.querySelector<HTMLButtonElement>(".fui-data-state-clear");
+  expect(clearBtn?.textContent?.trim()).toBe(publicEn.platform.clearFilters);
+  clearBtn!.click();
+  await vi.waitFor(() => expect(element.querySelector("tbody tr td")?.textContent?.trim()).toBe("Revenue"));
+  expect(search.value).toBe("");
 });
 
 it("activates table rows from the keyboard without colliding with inner checkboxes or links", async () => {
@@ -1303,14 +1317,17 @@ it("outputs listed references for the current batch (current page when paged, al
   expect(instance.deepLink()).toEqual({});
   expect(instance.pageContext.value.selection).toEqual([]);
 
-  // While page 2 is still loading, listed retains page 1's refs instead of flickering to [].
-  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
+  // While page 2 is still loading via Load more, listed retains page 1's refs instead of flickering to [].
+  const loadMoreBtn = element.querySelector<HTMLButtonElement>(".sdk-object-list-load-more")!;
+  loadMoreBtn.click();
   await vi.waitFor(() => expect(deferredPage2).not.toBeNull());
+  expect(loadMoreBtn.disabled).toBe(true);
+  expect(loadMoreBtn.getAttribute("aria-busy")).toBe("true");
   expect(instance.state.values.value.listed).toEqual([knowledge("k-1"), knowledge("k-2")]);
 
-  // Once page 2 settles, listed updates to page 2's refs.
+  // Once page 2 settles, listed appends page 2's refs so it matches the loaded batch.
   deferredPage2!(ready({ rows: [allRows[2]!], total: 3 }));
-  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([knowledge("k-3")]));
+  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([knowledge("k-1"), knowledge("k-2"), knowledge("k-3")]));
   expect(reads).toHaveLength(2);
 
   // Narrowing to zero matches clears listed to [].
@@ -1847,4 +1864,482 @@ it("renders total count, clickable numeric page jump buttons, and ellipsis foldi
   await vi.waitFor(() => expect(reads.at(-1)?.runtimeParams?.page).toEqual({ number: 9, size: 10 }));
   await vi.waitFor(() => expect(pageButtons().map((btn) => btn.textContent?.trim())).toEqual(["1", "8", "9", "10", "12"]));
   expect(element.querySelectorAll(".sdk-object-list-page-ellipsis")).toHaveLength(2);
+});
+
+it("applies single-line vs two-line list row density, fixed table height tokens, and left-total/right-pager footer layout", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "single-line-list": {
+      ...meta,
+      id: "single-line-list",
+      name: "Single line",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: { statusField: "status" },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+    "two-line-list": {
+      ...meta,
+      id: "two-line-list",
+      name: "Two line",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: { subtitleField: "summary", statusField: "status" },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      a: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      b: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    },
+    members: {
+      single: { target: { projectionId: "single-line-list" }, outputs: { selected: { state: "a" } } },
+      twoLine: { target: { projectionId: "two-line-list" }, outputs: { selected: { state: "b" } } },
+    },
+    commands: {},
+  });
+
+  const { element } = mountDirect(manifest, projections, () => ready({
+    rows: [
+      { primaryKey: "k-1", label: "Order", fields: { status: "Active", summary: "Customer purchase order" }, tones: { status: "success" } },
+    ],
+    total: 1,
+  }));
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-items")).toHaveLength(2));
+  const [singleUl, twoLineUl] = [...element.querySelectorAll<HTMLElement>(".sdk-object-list-items")];
+  expect(singleUl!.dataset.rowDensity).toBe("single");
+  expect(singleUl!.querySelector(".sdk-object-list-item-btn")?.classList.contains("sdk-object-list-item-two-line")).toBe(false);
+  expect(twoLineUl!.dataset.rowDensity).toBe("two-line");
+  expect(twoLineUl!.querySelector(".sdk-object-list-item-btn")?.classList.contains("sdk-object-list-item-two-line")).toBe(true);
+
+  // Total count is shown in the fixed bottom footer whenever the owner returns `total`, even on a single page.
+  const footers = [...element.querySelectorAll<HTMLElement>(".sdk-object-list-footer")];
+  expect(footers).toHaveLength(2);
+  expect(footers[0]!.querySelector(".sdk-object-list-page-total")?.textContent?.trim()).toBe("1 items");
+
+  // Verify paradigm CSS tokens for row heights and table heights.
+  const repoRoot = resolve(import.meta.dirname, "../../../../..");
+  const objectListSource = readFileSync(
+    resolve(repoRoot, "packages/apps-sdk/src/base/ObjectList.vue"),
+    "utf8",
+  );
+  expect(objectListSource).toContain("min-height: var(--list-row-height, 44px);");
+  expect(objectListSource).toContain("min-height: var(--list-row-two-line-height, 60px);");
+  expect(objectListSource).toContain("height: var(--table-head-height, 36px);");
+  expect(objectListSource).toContain("height: var(--table-row-height, 40px);");
+});
+
+it("scrolls the selected row into view when primaryKey changes and tolerates environments without scrollIntoView", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "scroll-list": {
+      ...meta,
+      id: "scroll-list",
+      name: "Scrollable",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: {},
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: { selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true } },
+    members: { list: { target: { projectionId: "scroll-list" }, outputs: { selected: { state: "selected" } } } },
+    commands: {},
+  });
+
+  const { instance, element } = mountDirect(manifest, projections, () => ready({
+    rows: [
+      { primaryKey: "k-1", label: "First", fields: {} },
+      { primaryKey: "k-2", label: "Second", fields: {} },
+      { primaryKey: "k-3", label: "Third", fields: {} },
+    ],
+    total: 3,
+  }));
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-row")).toHaveLength(3));
+  const rowEls = [...element.querySelectorAll<HTMLElement>(".sdk-object-list-row")];
+  const spy2 = vi.fn();
+  rowEls[1]!.scrollIntoView = spy2;
+
+  instance.state.set("selected", knowledge("k-2"));
+  await vi.waitFor(() => expect(spy2).toHaveBeenCalledWith({ block: "nearest" }));
+
+  // Missing scrollIntoView (e.g. JSDOM) must not throw.
+  Object.defineProperty(rowEls[2]!, "scrollIntoView", { value: undefined, configurable: true });
+  expect(() => instance.state.set("selected", knowledge("k-3"))).not.toThrow();
+  await nextTick();
+  expect(rowEls[2]!.classList.contains("chosen")).toBe(true);
+});
+
+it("clears search and optional filter parameters back to page 1 from the narrowed empty state, supports emptyHint, and shows forbidden reasons", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "filtered-list": {
+      ...meta,
+      id: "filtered-list",
+      name: "Filtered",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        status: { kind: "scalar", type: "string" },
+        search: { kind: "scalar", type: "string" },
+      },
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: { emptyHint: "empty.hint", pageSize: 2 },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
+          read: "query",
+          params: { status: { input: "status" }, search: { input: "search" } },
+        },
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      statusFilter: { type: { kind: "scalar", type: "string" } },
+      keyword: { type: { kind: "scalar", type: "string" } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "filtered-list" },
+        inputs: { status: { state: "statusFilter" }, search: { state: "keyword" } },
+        outputs: { selected: { state: "selected" } },
+      },
+    },
+    commands: {},
+  });
+
+  let mode: "empty" | "normal" | "forbidden-reason" | "forbidden-default" = "empty";
+  const allRows = [
+    { primaryKey: "k-1", label: "Alpha", fields: { status: "active" } },
+    { primaryKey: "k-2", label: "Beta", fields: { status: "draft" } },
+  ];
+
+  const { instance, element, reads } = mountDirect(
+    manifest,
+    projections,
+    (request) => {
+      if (mode === "forbidden-reason") return { status: "forbidden", reason: "Requires ontology maintainer role" };
+      if (mode === "forbidden-default") return { status: "forbidden" };
+      if (mode === "empty") return ready({ rows: [], total: 0 });
+      const search = typeof request.inputs.search === "string" ? request.inputs.search.toLowerCase() : "";
+      const status = typeof request.inputs.status === "string" ? request.inputs.status : "";
+      const matched = allRows.filter(
+        (row) => (!search || row.label.toLowerCase().includes(search)) && (!status || row.fields.status === status),
+      );
+      return ready({ rows: matched, total: matched.length });
+    },
+    { messages: { en: { "empty.hint": "Click New in the header to create one" } } },
+  );
+
+  // Un-narrowed empty shows emptyHint and no Clear filters button.
+  await vi.waitFor(() => expect(element.querySelector('[data-state="empty"]')?.getAttribute("data-empty")).toBe("none"));
+  expect(element.querySelector(".fui-data-state-hint")?.textContent?.trim()).toBe("Click New in the header to create one");
+  expect(element.querySelector(".fui-data-state-clear")).toBeNull();
+
+  // Switch to normal data and apply both search + status filter so nothing matches.
+  mode = "normal";
+  instance.state.set("statusFilter", "archived");
+  instance.state.set("keyword", "ghost");
+  await vi.waitFor(() => expect(element.querySelector('[data-state="empty"]')?.getAttribute("data-empty")).toBe("no-match"));
+  expect(element.querySelector(".fui-data-state-hint")).toBeNull();
+
+  // Clicking Clear filters resets search, optional filter params, and paging in one read.
+  const readsBeforeClear = reads.length;
+  element.querySelector<HTMLButtonElement>(".fui-data-state-clear")!.click();
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-row")).toHaveLength(2));
+  expect(reads.length).toBe(readsBeforeClear + 1);
+  expect(instance.state.values.value.keyword).toBeNull();
+  expect(instance.state.values.value.statusFilter).toBeNull();
+  expect(reads.at(-1)?.runtimeParams?.cursor).toBeUndefined();
+
+  // Forbidden with owner-supplied reason displays that reason; without reason falls back to platform.dataForbidden.
+  mode = "forbidden-reason";
+  instance.state.set("keyword", "check-reason");
+  await vi.waitFor(() => expect(element.querySelector('[data-state="forbidden"]')).not.toBeNull());
+  expect(element.querySelector(".fui-data-state-message")?.textContent?.trim()).toBe("Requires ontology maintainer role");
+
+  mode = "forbidden-default";
+  instance.state.set("keyword", "check-default");
+  await vi.waitFor(() => expect(element.querySelector(".fui-data-state-message")?.textContent?.trim()).toBe(publicEn.platform.dataForbidden));
+});
+
+it("renders #filters, #batch-actions, #toolbar-actions, and #create-row inline create block", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "slotted-list": {
+      ...meta,
+      id: "slotted-list",
+      name: "Slotted",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {
+        selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        checked: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      },
+      config: {},
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      checked: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "slotted-list" },
+        outputs: { selected: { state: "selected" }, checked: { state: "checked" } },
+      },
+    },
+    commands: {},
+  });
+
+  const showCreate = ref(false);
+  const batchClicked = vi.fn();
+  const instance = createDirectPanelInstance(manifest, {
+    pageKey: "slotted-list-test",
+    url: () => "/panels/slotted-list",
+    label: () => "Slotted list test",
+    recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"),
+    ...noOperations,
+    readProjection: async (id) => projections[id]!,
+    read: async () => ready({
+      rows: [
+        { primaryKey: "k-1", label: "First item", fields: {} },
+        { primaryKey: "k-2", label: "Second item", fields: {} },
+      ],
+      total: 2,
+    }),
+  });
+  const element = document.createElement("div");
+  document.body.appendChild(element);
+  const app = createApp({
+    setup: () => () => h(
+      PanelMember,
+      { instance, member: "list" },
+      {
+        filters: () => h("span", { class: "test-filter-chip" }, "Status: All"),
+        "batch-actions": (scope: { checked: readonly unknown[]; clear: () => void }) =>
+          h("button", { class: "test-batch-btn", onClick: () => { batchClicked(scope.checked.length); scope.clear(); } }, `Delete (${scope.checked.length})`),
+        "toolbar-actions": () => h("button", { class: "test-add-btn", onClick: () => { showCreate.value = true; } }, "Add item"),
+        "create-row": () => (showCreate.value ? h("div", { class: "test-create-form" }, "New item form") : null),
+      },
+    ),
+  }).use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
+  app.mount(element);
+  cleanup = () => {
+    app.unmount();
+    element.remove();
+  };
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-row")).toHaveLength(2));
+  expect(element.querySelector(".sdk-object-list-filters .test-filter-chip")?.textContent).toBe("Status: All");
+  expect(element.querySelector(".sdk-object-list-toolbar-actions .test-add-btn")?.textContent).toBe("Add item");
+  // `#create-row` is hidden while its slot returns no renderable content.
+  expect(element.querySelector(".sdk-object-list-create-row")).toBeNull();
+  // `#batch-actions` is hidden until at least one row is checked.
+  expect(element.querySelector(".sdk-object-list-batch-actions")).toBeNull();
+
+  // Checking a row reveals `#batch-actions` in the toolbar with `{ checked, clear }`.
+  element.querySelector<HTMLInputElement>(".sdk-object-list-row-check")!.click();
+  await vi.waitFor(() => expect(element.querySelector(".test-batch-btn")?.textContent).toBe("Delete (1)"));
+  element.querySelector<HTMLButtonElement>(".test-batch-btn")!.click();
+  await nextTick();
+  expect(batchClicked).toHaveBeenCalledWith(1);
+  expect(element.querySelector(".sdk-object-list-batch-actions")).toBeNull();
+
+  // Clicking "+ Add item" opens the inline `#create-row` block above the list.
+  element.querySelector<HTMLButtonElement>(".test-add-btn")!.click();
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-create-row .test-create-form")?.textContent).toBe("New item form"));
+});
+
+it("enforces exact fallbackToFirst semantics across initial load, filter change, create/cancel, and refresh", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "fallback-list": {
+      ...meta,
+      id: "fallback-list",
+      name: "Fallback list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { status: { kind: "scalar", type: "string" } },
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: { fallbackToFirst: true },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      status: { type: { kind: "scalar", type: "string" }, default: "all" },
+      creating: { type: { kind: "scalar", type: "boolean" }, default: false },
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "fallback-list" },
+        inputs: { status: { state: "status" } },
+        outputs: { selected: { state: "selected" } },
+      },
+    },
+    commands: {},
+  });
+
+  const allEntries = [
+    { primaryKey: "k-1", label: "Alpha Approved", fields: { status: "approved" }, status: "approved" },
+    { primaryKey: "k-2", label: "Beta Pending", fields: { status: "pending" }, status: "pending" },
+  ];
+  let readCount = 0;
+
+  const { instance, element } = mountDirect(manifest, projections, (request) => {
+    readCount += 1;
+    const status = typeof request.inputs.status === "string" ? request.inputs.status : "all";
+    const search = typeof request.runtimeParams?.search === "string" ? request.runtimeParams.search.trim().toLowerCase() : "";
+    const filtered = allEntries
+      .filter((entry) => status === "all" || entry.status === status)
+      .filter((entry) => !search || entry.label.toLowerCase().includes(search))
+      .map(({ status: _s, ...row }) => row);
+    return ready({ rows: filtered, total: filtered.length });
+  });
+
+  // (a) Initial load selects first item when nothing is selected and no draft is active.
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-1")));
+
+  // (b) Changing filter so current selection disappears selects the new first item.
+  instance.state.set("status", "pending");
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-2")));
+
+  // (b) Changing search so no items match clears selection to null.
+  const searchInput = element.querySelector<HTMLInputElement>('input[type="search"]')!;
+  searchInput.value = "nonexistent";
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toBeNull());
+
+  // Clearing search while currently unselected must NOT auto-select.
+  searchInput.value = "";
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
+  expect(instance.state.values.value.selected).toBeNull();
+
+  // Manually select k-2, then enter create mode (clear selected to null) and refresh -> MUST stay null.
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-2")));
+
+  instance.state.set("creating", true);
+  instance.state.set("selected", null);
+  await nextTick();
+  const beforeCreateRefresh = readCount;
+  instance.refresh({ objects: [], objectTypes: [BUSINESS_KNOWLEDGE] });
+  await vi.waitFor(() => expect(readCount).toBeGreaterThan(beforeCreateRefresh));
+  await nextTick();
+  expect(instance.state.values.value.selected).toBeNull();
+
+  // Cancel create mode (selected remains null) and refresh -> STILL must NOT re-select.
+  instance.state.set("creating", false);
+  await nextTick();
+  const beforeCancelRefresh = readCount;
+  instance.refresh({ objects: [], objectTypes: [BUSINESS_KNOWLEDGE] });
+  await vi.waitFor(() => expect(readCount).toBeGreaterThan(beforeCancelRefresh));
+  await nextTick();
+  expect(instance.state.values.value.selected).toBeNull();
+});
+
+it("does not auto-select on subsequent refresh when initial list load was empty", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "initially-empty-list": {
+      ...meta,
+      id: "initially-empty-list",
+      name: "Initially empty list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: { fallbackToFirst: true },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "initially-empty-list" },
+        outputs: { selected: { state: "selected" } },
+      },
+    },
+    commands: {},
+  });
+
+  let rows: Array<{ primaryKey: string; label: string; fields: Record<string, never> }> = [];
+  const { instance, element } = mountDirect(manifest, projections, () => ready({ rows, total: rows.length }));
+
+  await vi.waitFor(() => expect(element.querySelector(".fui-data-state-empty")).not.toBeNull());
+  expect(instance.state.values.value.selected).toBeNull();
+
+  rows = [{ primaryKey: "k-1", label: "Added later", fields: {} }];
+  instance.refresh({ objects: [], objectTypes: [BUSINESS_KNOWLEDGE] });
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
+  expect(instance.state.values.value.selected).toBeNull();
+});
+
+it("scrolls the list scroll container back to top when switching pages", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "paged-scroll-objects": {
+      ...meta,
+      id: "paged-scroll-objects",
+      name: "Paged objects",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { type: { kind: "scalar", type: "string" } },
+      outputs: {},
+      config: { pageSize: 10 },
+      data: {
+        objects: {
+          source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
+          read: "objects",
+          params: { type: { input: "type" } },
+        },
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selectedType: { type: { kind: "scalar", type: "string" } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "paged-scroll-objects" },
+        inputs: { type: { state: "selectedType" } },
+      },
+    },
+    commands: {},
+  });
+
+  const { element } = mountDirect(
+    manifest,
+    projections,
+    (request) => {
+      const page = (request.runtimeParams?.page as { number: number; size: number } | undefined)?.number ?? 1;
+      return ready({
+        status: "ok",
+        type: USER,
+        layer: "governance",
+        page,
+        pageSize: 10,
+        total: 30,
+        items: [{ node: { className: USER, primaryKey: `u-${page}` }, label: `User page ${page}` }],
+      });
+    },
+    { initial: { selectedType: USER } },
+  );
+
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-items")).not.toBeNull());
+  const container = element.querySelector<HTMLElement>(".sdk-object-list-items")!;
+  container.scrollTop = 240;
+  expect(container.scrollTop).toBe(240);
+
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
+  await vi.waitFor(() => expect(element.textContent).toContain("User page 2"));
+  await vi.waitFor(() => expect(container.scrollTop).toBe(0));
 });

@@ -130,7 +130,7 @@ The result type is `type MemberDataState =
 | `ready` | `value` |
 | `empty` |  |
 | `error` | `message` |
-| `forbidden` |  |
+| `forbidden` | `reason` |
 | `loading` |  |
 
 A datum in `error` also carries `retry()`, which reads it again: offer it beside the message. When the platform never
