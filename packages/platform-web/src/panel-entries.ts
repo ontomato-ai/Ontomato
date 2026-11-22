@@ -33,6 +33,16 @@ export function servePanelEntries(router: Router): void {
 }
 
 /**
+ * Opens the entries the catalog lists, after reading it once where a first answer found none: a page can be asked for
+ * before the shell has read the catalog (the rail reads it), and an address that exists must not be called missing
+ * because nobody had looked yet.
+ */
+export async function readAndServePanelEntries(router: Router): Promise<void> {
+  await useApplicationCatalog().refresh();
+  servePanelEntries(router);
+}
+
+/**
  * The platform's last route: an address no page of its own serves. It draws nothing and redirects nowhere by itself —
  * `panelEntryGuard` decides where such an address goes, so a landing that is itself such an address (a deployment's
  * start page that a panel has taken over) cannot send the router round in a loop.
