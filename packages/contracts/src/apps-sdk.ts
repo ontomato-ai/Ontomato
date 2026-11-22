@@ -2,6 +2,7 @@ import { z } from "zod";
 import { directPanelPortTypeSchema } from "./panel-manifest";
 import { panelReadResultIdSchema } from "./panel-operations";
 import { directProjectionInputTypeSchema } from "./panel-projection";
+import { SDK_UI_ENTRY_SPECIFIER } from "./sdk-ui-map";
 import { workspacePathSchema } from "./workspaces";
 
 /** Written by the image build beside its exact SDK version directory. */
@@ -101,9 +102,41 @@ export const appsSdkComponentCatalogEntrySchema = z.object({
 }).strict();
 export type AppsSdkComponentCatalogEntry = z.infer<typeof appsSdkComponentCatalogEntrySchema>;
 
+/** Public UI primitive entry declared by the SDK itself (no third-party library names exposed). */
+export const appsSdkUiPrimitiveEntrySchema = z.object({
+  tag: z.string().regex(/^sdk-[a-z][a-z0-9-]*$/u, "Expected an sdk-* template tag"),
+  exportName: z.string().regex(/^Sdk[A-Z][A-Za-z0-9]*$/u, "Expected an Sdk* export name"),
+  module: z.literal(SDK_UI_ENTRY_SPECIFIER),
+  description: z.string().optional(),
+  props: componentConfigSchema,
+  events: z.array(componentPortSchema),
+  slots: z.array(componentPortSchema),
+}).strict();
+export type AppsSdkUiPrimitiveEntry = z.infer<typeof appsSdkUiPrimitiveEntrySchema>;
+
+/** Public UI directive exposed under `v-sdk-*` and `@ontomato/sdk/ui`. */
+export const appsSdkUiDirectiveEntrySchema = z.object({
+  name: z.string().regex(/^v-sdk-[a-z][a-z0-9-]*$/u, "Expected a v-sdk-* directive name"),
+  exportName: z.string().regex(/^vSdk[A-Z][A-Za-z0-9]*$/u, "Expected a vSdk* directive export name"),
+  module: z.literal(SDK_UI_ENTRY_SPECIFIER),
+  description: z.string().min(1),
+}).strict();
+export type AppsSdkUiDirectiveEntry = z.infer<typeof appsSdkUiDirectiveEntrySchema>;
+
+/** Author-facing CSS custom property declared by the SDK theme token catalogue. */
+export const appsSdkThemeTokenEntrySchema = z.object({
+  name: z.string().regex(/^--[a-z][a-z0-9-]*$/u, "Expected a CSS custom property name"),
+  kind: z.enum(["color", "length", "elevation", "font", "shadow"]),
+  overridable: z.boolean(),
+}).strict();
+export type AppsSdkThemeTokenEntry = z.infer<typeof appsSdkThemeTokenEntrySchema>;
+
 /** The generated components.json for one release. */
 export const appsSdkComponentCatalogSchema = z.object({
   version: appsSdkBuildSchema.shape.version,
   components: z.array(appsSdkComponentCatalogEntrySchema),
+  uiPrimitives: z.array(appsSdkUiPrimitiveEntrySchema).optional(),
+  uiDirectives: z.array(appsSdkUiDirectiveEntrySchema).optional(),
+  themeTokens: z.array(appsSdkThemeTokenEntrySchema).optional(),
 }).strict();
 export type AppsSdkComponentCatalog = z.infer<typeof appsSdkComponentCatalogSchema>;

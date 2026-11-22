@@ -30,7 +30,7 @@ const COMPONENT_LABELS = {
   AgentChatPanel: "对话面板",
   AgentShell: "对话外壳",
   GraphCanvas: "图谱画布",
-  G6GraphCanvas: "交互图谱",
+  InteractiveGraphCanvas: "交互图谱",
   OntologyGraph: "本体图谱",
   ObjectRelations: "关系列表",
   PathTree: "路径树",
