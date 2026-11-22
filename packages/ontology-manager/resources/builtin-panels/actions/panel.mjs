@@ -28,6 +28,14 @@ const EFFECT_GROUPS = [
 ];
 const GROUP_OF_KIND = new Map(EFFECT_GROUPS.flatMap(group => group.kinds.map(kind => [kind, group.key])));
 
+/** The colour each segment kind is drawn in, as the original page's explanation legend had them. */
+const KIND_COLORS = {
+  QUERY: "#1d4ed8", CREATE_OBJECT: "#047857", UPDATE_OBJECT: "#065f46", DELETE_OBJECT: "#b91c1c",
+  CREATE_EDGE: "#4d7c0f", DELETE_EDGE: "#c2410c", APPEND_VECTOR: "#0e7490", UPDATE_VECTOR: "#155e75",
+  DELETE_VECTOR: "#be123c", COMPUTE: "#6d28d9", EXTERNAL_CALL: "#b45309", BRANCH: "#a16207",
+  LOOP: "#a16207", TRY_CATCH: "#7e22ce", ERROR_HANDLING: "#991b1b", CUSTOM: "#4b5563",
+};
+
 /** Nested code segments flattened with their depth; a branch's or a try's children follow their parent. */
 function flattenSegments(list, depth, out) {
   for (const segment of Array.isArray(list) ? list : []) {
@@ -198,6 +206,47 @@ const ActionsCatalog = {
     const affects = computed(() => definition.value?.affects ?? []);
     const parameters = computed(() => definition.value?.parameters ?? []);
     const conditions = computed(() => definition.value?.submissionCriteria?.conditions ?? []);
+    /** How the owner joins its submission conditions; the page says it between the rows as the original page did. */
+    const conditionJoin = computed(() => String(definition.value?.submissionCriteria?.operator ?? "").toUpperCase() === "OR"
+      ? text("or") : text("and"));
+    /** Checks the owner could not express as a condition, each with the reason it gave. */
+    const customChecks = computed(() => (definition.value?.submissionCriteria?.unrepresentable ?? [])
+      .filter((item) => item && (item.description || item.reason)));
+
+    /**
+     * A text split where parameter names occur, so a reader can click one and be taken to the parameter table: the
+     * derived assignments and conditions name parameters by name alone. Longest name first, so a name never splits
+     * inside a longer one.
+     */
+    const parameterPattern = computed(() => {
+      const names = parameters.value.map((parameter) => parameter.name).filter(Boolean)
+        .sort((left, right) => right.length - left.length)
+        .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+      return names.length ? new RegExp(`\\b(${names.join("|")})\\b`, "g") : null;
+    });
+    function textParts(value) {
+      const whole = typeof value === "string" ? value : json(value);
+      const pattern = parameterPattern.value;
+      if (!pattern || !whole) return [{ text: whole, parameter: null }];
+      const parts = [];
+      let last = 0;
+      pattern.lastIndex = 0;
+      for (const match of whole.matchAll(pattern)) {
+        if (match.index > last) parts.push({ text: whole.slice(last, match.index), parameter: null });
+        parts.push({ text: match[0], parameter: match[0] });
+        last = match.index + match[0].length;
+      }
+      if (last < whole.length) parts.push({ text: whole.slice(last), parameter: null });
+      return parts;
+    }
+    /** Takes the reader to the parameter's row and marks it for a moment, as the original page did. */
+    function locateParameter(name) {
+      const row = typeof document === "undefined" ? null : document.querySelector(`[data-parameter-row="${name}"]`);
+      if (!row) return;
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+      row.classList.add("is-hit");
+      window.setTimeout(() => row.classList.remove("is-hit"), 1400);
+    }
     const effectGroups = computed(() => {
       const buckets = new Map();
       for (const effect of definition.value?.effects ?? []) {
@@ -242,6 +291,68 @@ const ActionsCatalog = {
     /** The form's code differs from the code the explanation was written for: the explanation is stale. */
     const explanationStale = computed(() =>
       formCode.value !== undefined && typeof explanation.value?.code === "string" && explanation.value.code !== formCode.value);
+
+    /** The kinds this explanation uses, each once, in the order they first appear. */
+    const presentKinds = computed(() => {
+      const seen = new Map();
+      for (const segment of segments.value) if (!seen.has(segment.kind)) seen.set(segment.kind, segment.kindLabel);
+      return [...seen].map(([kind, label]) => ({ kind, label, color: KIND_COLORS[kind] ?? KIND_COLORS.CUSTOM }));
+    });
+    function kindColor(kind) {
+      return KIND_COLORS[kind] ?? KIND_COLORS.CUSTOM;
+    }
+
+    /** Which segments the reader opened; a segment's detail is drawn only then. */
+    const openSegments = ref({});
+    function segmentOpen(segment) {
+      return openSegments.value[segment.id] === true;
+    }
+    function toggleSegment(segment) {
+      openSegments.value = { ...openSegments.value, [segment.id]: !segmentOpen(segment) };
+    }
+
+    /**
+     * The structured content of one explained part, as the original page's segment details showed it: what it reads or
+     * writes, its assignments and conditions, and where its object ids come from. Only what the segment carries.
+     */
+    function segmentDetails(segment) {
+      const rows = [];
+      const add = (label, value) => {
+        if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) return;
+        rows.push({ label, text: typeof value === "string" ? value : json(value) });
+      };
+      add("segClass", segment.class);
+      add("segSourceClass", segment.sourceClass);
+      add("segTargetClass", segment.targetClass);
+      add("relation", segment.relation);
+      add("fields", (segment.assignments ?? []).map((item) => `${item.field} ← ${item.valueFrom}`).join(" · "));
+      add("checks", segment.conditions);
+      add("segObjectFrom", segment.objectIdFrom);
+      add("segSourceFrom", segment.sourceObjectIdFrom);
+      add("segTargetFrom", segment.targetObjectIdFrom);
+      add("segTextFrom", segment.textFrom);
+      add("segFileFrom", segment.fileIdFrom);
+      const filters = segment.filters ?? null;
+      const objects = Array.isArray(filters?.objects) ? filters.objects : [];
+      if (objects.length) {
+        add("segObjects", objects.map((object) => [object.alias, object.class].filter(Boolean).join(" · ")).join(" | "));
+        for (const object of objects) {
+          if (object.conditions) add("checks", [object.alias, json(object.conditions)].filter(Boolean).join(": "));
+        }
+      }
+      const relations = Array.isArray(filters?.relationship) ? filters.relationship : [];
+      if (relations.length) {
+        add("relation", relations.map((item) => `${item.from} —${item.type}→ ${item.to}`).join(" | "));
+      }
+      const output = segment.output ?? null;
+      if (output && Array.isArray(output.fields) && output.fields.length) {
+        add("segOutputFields", output.fields.map((item) => (typeof item === "string" ? item : json(item))).join(" · "));
+      }
+      add("segGroupBy", output?.group_by);
+      add("segSortBy", output?.sort);
+      add("segLimit", output?.limit);
+      return rows;
+    }
 
     const activeSegmentId = ref(null);
     const activeSegment = computed(() => segments.value.find((segment) => segment.id === activeSegmentId.value) ?? null);
@@ -333,8 +444,10 @@ const ActionsCatalog = {
       record, recordLabel, recordStatus, recordOrigin, systemAction,
       definitionRead, declaredTarget, affects, parameters, conditions, effectGroups,
       effectLine, effectFields, effectChecks, conditionText,
+      conditionJoin, customChecks, textParts, locateParameter,
       explanationRead, explanationStale, hasExplanation, codeLines, segments, activeSegmentId, activeRange,
       pickLine, pickSegment, meaning, codeBox,
+      presentKinds, kindColor, segmentOpen, toggleSegment, segmentDetails,
     };
   },
 };
