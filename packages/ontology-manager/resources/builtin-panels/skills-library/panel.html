@@ -123,8 +123,8 @@
         <p v-else-if="record.status === 'forbidden'" class="skills-hint">{{ t("panel.recordForbidden") }}</p>
         <p v-else-if="record.status === 'error'" class="skills-hint" role="alert">{{ record.message }}</p>
         <p v-else-if="record.status !== 'ready'" class="skills-hint" role="status">{{ t("panel.loading") }}</p>
-        <template v-else>
-          <div class="detail-head">
+        <template v-if="selected">
+          <div v-show="record.status === 'ready'" class="detail-head">
             <div class="detail-meta">
               <div class="detail-title">
                 <h2 class="detail-name" :title="skill.name">{{ skill.name }}</h2>
@@ -137,7 +137,7 @@
               <projection slot="remove" @done="onDeleted"></projection>
             </div>
           </div>
-          <div class="package">
+          <div v-show="record.status === 'ready'" class="package">
             <div class="package-tree">
               <projection slot="tree"></projection>
             </div>

@@ -17,6 +17,7 @@ import type {
   PlatformOntologyTypeCount,
 } from "@ontomato/contracts/platform-ontology";
 import { matchesObjectType, objectUnionTypes, panelPlacementSchema } from "@ontomato/contracts/panel-manifest";
+import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import {
   platformObjectTypes,
   type PlatformRelationKindDeclaration,
@@ -1155,7 +1156,7 @@ async function evaluateRelationKind(
       for (const panel of panelsRes.data) {
         const { projectionIds } = extractPanelContainedIds(panel);
         for (const projectionId of projectionIds) {
-          if (!grantsRes.data.has(projectionId)) continue;
+          if (!isBuiltinProductId(projectionId) && !grantsRes.data.has(projectionId)) continue;
           if (
             (node.className === PRODUCT_PANEL && panel.id === node.primaryKey) ||
             (node.className === PRODUCT_PROJECTION && projectionId === node.primaryKey)
@@ -1186,7 +1187,9 @@ async function evaluateRelationKind(
       for (const panel of panelsRes.data) {
         const { panelIds } = extractPanelContainedIds(panel, objectDetailMappings);
         for (const childPanelId of panelIds) {
-          if (childPanelId === panel.id || !grantsRes.data.has(childPanelId)) continue;
+          if (childPanelId === panel.id || (!isBuiltinProductId(childPanelId) && !grantsRes.data.has(childPanelId))) {
+            continue;
+          }
           if (panel.id === node.primaryKey || childPanelId === node.primaryKey) {
             edges.push({
               from: { className: PRODUCT_PANEL, primaryKey: panel.id },

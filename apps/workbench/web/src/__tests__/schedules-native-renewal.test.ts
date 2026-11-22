@@ -19,12 +19,14 @@ import { catalogFixture } from "../../../../../packages/platform-web/src/__tests
 import source from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.json";
 import html from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.html?raw";
 import module from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.mjs?raw";
-import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot } from "./panel-frame";
+import { humanIntents, installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot } from "./panel-frame";
 
 const application = catalogFixture().find(app => app.id === "schedules")!;
 const use = application.panelUses![0]!;
 const id = "00000000-0000-4000-8000-000000000001";
 const operationId = "renew.renewCredential";
+const deleteOperation = "opDelete.delete";
+const deleteMessage = "Task “Nightly test” deleted";
 const taskId = "10000000-0000-4000-8000-000000000001";
 const runId = "20000000-0000-4000-8000-000000000001";
 const run = { ...examples.runs.find(item => item.response.status === "completed")!.response, id: runId, taskId };
@@ -95,6 +97,19 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
   router.beforeEach(panelEntryGuard(router));
   const historyReads: Array<string | null> = [];
   let checkHistory = false;
+  const writes = humanIntents((operation) => operation === deleteOperation
+    ? { kind: "success", message: deleteMessage, data: { id: taskId } }
+    : { kind: "success", data: {} }, undefined, {
+    admitted(member, inputs) {
+      if (member === "opDelete" && inputs.task) return {
+        delete: {
+          kind: "action", handlerRef: "platform:ScheduledTask.delete", effect: "write", label: "Delete task", batch: false,
+          target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {},
+        },
+      };
+      return {};
+    },
+  });
   const sent = installPlatform(request => {
     const { path } = request;
     if (path === "/api/data-query/platform/applications/schedules/panel-uses")
@@ -104,6 +119,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
     if (path.startsWith("/api/product-projections/")) return Response.json({ projection: projections.get(path.split("/").at(-1)!) });
     if (path === "/api/product-panels/read") {
       const body = request.body as ProductPanelReadRequest;
+      if ("operations" in body && body.memberPath[0].member === "opDelete") return writes(request)!;
       if ("operations" in body) return Response.json({ status: "ready", value: body.memberPath[0].member === "renew" ? {
         renewCredential: {
           kind: "action", label: "Renew background credential", handlerRef: "schedules.renewCredential",
@@ -113,6 +129,10 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       switch (body.dataName) {
         case "rows": return Response.json({ status: "ready", value: [row, pausedRow, ...otherApplications] });
         case "record": return Response.json({ status: "ready", value: row });
+        case "form": return Response.json({ status: "ready", value: {
+          fields: [], values: {}, errors: [], revision: 1,
+          save: { method: "PUT", path: `/scheduled-tasks/${taskId}`, bodySchema: {}, draftOperation: "platform:ScheduledTask.save" },
+        } });
         case "runs": {
           if (!checkHistory) return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });
           const cursor = body.runtimeParams?.cursor === "older" ? "older" : null;
@@ -129,12 +149,16 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
     }
     if (path === "/api/panel-operations/intents") {
       if (refused) return Response.json({ error: { code: "DEPENDENCY_UNAVAILABLE", message: "Credential service unavailable" } }, { status: 503 });
+      if ((request.body as { operationId: string }).operationId === deleteOperation) return writes(request)!;
       return Response.json({ intentId: id, operationId, label: "Renew background credential", confirmation: { kind: "none" } });
     }
     if (path === `/api/panel-operation-intents/${id}`)
       return Response.json({ intentId: id, operationId, label: "Renew background credential", confirmation: { kind: "none" } });
     if (path === `/api/panel-operations/intents/${id}/dispatch`)
       return Response.json({ kind: "dispatched", intentId: id, outcome: { kind: "success", data: {} } });
+    if (path.startsWith("/api/panel-operation-intents/") || path.startsWith("/api/panel-operations/intents/")) {
+      return writes(request) ?? nothingAt(request);
+    }
     return nothingAt(request);
   }, router);
   useApplicationCatalog().applications.value = catalogFixture();
@@ -228,6 +252,13 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       await vi.waitFor(() => expect(element.querySelectorAll(`.runs ${linked}`)).toHaveLength(1));
       expect(element.querySelectorAll(".runs [data-run]")).toHaveLength(2);
       expect(element.querySelector(`${linked} .details`)?.textContent).toContain("Earlier run result");
+      element.querySelector<HTMLButtonElement>('[data-action="delete"]')!.click();
+      await vi.waitFor(() => expect(sent).toContainEqual(expect.objectContaining({
+        path: "/api/panel-operations/intents",
+        body: { applicationId: "schedules", useId: use.id, operationId: deleteOperation,
+          call: { target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: taskId }, input: { revision: 1 } } },
+      })));
+      await vi.waitFor(() => expect([...document.querySelectorAll(".el-message__content")].map(item => item.textContent)).toContain(deleteMessage));
     }
   } finally {
     app.unmount();

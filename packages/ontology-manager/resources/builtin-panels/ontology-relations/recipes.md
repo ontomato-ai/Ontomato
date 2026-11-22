@@ -26,4 +26,4 @@
 
 ## 去别处
 
-两端的类在详情里可以点开：打开 `/ontology/objects/<类名>` 就是对象类型页。面板里不要自己拼别的平台地址——领域模型的其它页面由各自的入口负责。
+两端的类在详情里可以点开：打开对象类型页 `/ontology/objects`，`state` 为 `{"selected":{"className":"platform:ObjectType","primaryKey":"<类名>"}}`。面板里不要自己拼别的平台地址——领域模型的其它页面由各自的入口负责。

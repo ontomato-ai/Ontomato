@@ -26,13 +26,18 @@ function formatAuthoringViolations(violations) {
   return violations.map(v => `${v.file}:${v.line}:${v.column}: ${v.message}`).join("\n");
 }
 
-async function checkPanelAuthoringSources({ directory, files, descriptorFile, theme, html, module, checks }) {
+async function checkPanelAuthoringSources({
+  directory, files, descriptorFile, theme, html, module, checks, strictParadigm = false,
+}) {
   const violations = [];
+  const authoringOptions = strictParadigm ? { strictParadigm: true } : undefined;
   if (theme && checks.checkAuthoringTheme) {
     violations.push(...checks.checkAuthoringTheme(theme, descriptorFile));
   }
   if (html !== undefined && checks.checkAuthoringTemplate) {
-    violations.push(...checks.checkAuthoringTemplate(html, resolve(directory, "panel.html")));
+    violations.push(...(authoringOptions
+      ? checks.checkAuthoringTemplate(html, resolve(directory, "panel.html"), authoringOptions)
+      : checks.checkAuthoringTemplate(html, resolve(directory, "panel.html"))));
   }
   if (module !== undefined && checks.checkAuthoringScript) {
     violations.push(...await checks.checkAuthoringScript(module, resolve(directory, "panel.mjs")));
@@ -40,13 +45,20 @@ async function checkPanelAuthoringSources({ directory, files, descriptorFile, th
   if (checks.checkAuthoringStyles) {
     for (const name of files.filter(entry => entry.endsWith(".css")).sort()) {
       const cssFile = resolve(directory, name);
-      violations.push(...checks.checkAuthoringStyles(await readFile(cssFile, "utf8"), cssFile));
+      const css = await readFile(cssFile, "utf8");
+      violations.push(...(authoringOptions
+        ? checks.checkAuthoringStyles(css, cssFile, 0, css, authoringOptions)
+        : checks.checkAuthoringStyles(css, cssFile)));
     }
   }
   if (violations.length) throw new Error(formatAuthoringViolations(violations));
 }
 
-export async function checkBuiltinPanelSource(directory, checks, { assignIds = false, builtinEntryIds } = {}) {
+export async function checkBuiltinPanelSource(
+  directory,
+  checks,
+  { assignIds = false, builtinEntryIds, strictParadigm = false } = {},
+) {
   if (!checks.builtinProductIdSchema) throw new Error("Use an SDK release that supports platform product IDs");
   const registrationFile = resolve(directory, "registration.json");
   const { panels } = await readJson(registrationFile);
@@ -124,6 +136,7 @@ export async function checkBuiltinPanelSource(directory, checks, { assignIds = f
     html: sourceTexts["panel.html"],
     module: sourceTexts["panel.mjs"],
     checks,
+    strictParadigm,
   });
 
   const assigned = new Map();
@@ -218,7 +231,9 @@ async function expandInlineProjections(descriptorFile, manifest, panel, checks, 
   return { manifest: { ...definition, state, members: Object.fromEntries(placements) }, inline, charts };
 }
 
-async function workspaceDefinition(directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent) {
+async function workspaceDefinition(
+  directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent, strictParadigm = false,
+) {
   const descriptorFile = resolve(directory, "panel.json");
   const source = await readFile(descriptorFile, "utf8");
   const document = parseJson(descriptorFile, source);
@@ -261,6 +276,7 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
       html: result.data.content.html,
       module: result.data.content.module,
       checks,
+      strictParadigm,
     });
 
     return { definition: result.data, inline: expanded.inline, charts: expanded.charts, descriptorFile, document, source };
@@ -346,7 +362,9 @@ function checkProjectionData(id, projection, component, checks, placements = [])
   }
 }
 
-async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent) {
+async function readPanelWorkspace(
+  directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent, strictParadigm = false,
+) {
   const files = await readdir(directory);
   const path = materialPath ?? (files.includes("registration.json") ? resolve(directory, "registration.json") : undefined);
   const material = path === undefined ? {} : await readJson(path);
@@ -355,7 +373,13 @@ async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring
     if (typeof panel.id !== "string" || panel.id.length === 0) throw new Error(`${path}: panel ID is required`);
     requireDomainProductId(`${path}: panel ID ${panel.id}`, panel.id, checks);
   }
-  return { material, panel, ...await workspaceDefinition(directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent) };
+  return {
+    material,
+    panel,
+    ...await workspaceDefinition(
+      directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent, strictParadigm,
+    ),
+  };
 }
 
 const projectionRecordMetadata = new Set([
@@ -445,12 +469,17 @@ export async function registerPanelWorkspace(directory, materialPath, checks, cl
   return result;
 }
 
-export async function checkPanelWorkspace(directory, { checks, catalogue, version, digest, typeTable, lookup, findChartSource, materialPath, loadPackage, loadDomainComponent }) {
+export async function checkPanelWorkspace(directory, {
+  checks, catalogue, version, digest, typeTable, lookup, findChartSource, materialPath, loadPackage, loadDomainComponent,
+  strictParadigm = false,
+}) {
   if (catalogue.version !== version) {
     throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
   }
   const loadAuthoring = typeTable && (() => ({ catalogue, typeTable }));
-  const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent);
+  const workspace = await readPanelWorkspace(
+    directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent, strictParadigm,
+  );
   const { manifest } = workspace.definition;
   const material = workspace.inline.length || workspace.charts.size ? await workspaceRegistration(workspace) : workspace.material;
   const records = new Map(

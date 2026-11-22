@@ -141,7 +141,7 @@ async function preview(state: Record<string, unknown>, respond: typeof owners | 
 const fieldItem = (path: string) => document.querySelector(`.panel-host-coded [data-field="${path}"]`);
 const node = (id: string) => document.querySelector<SVGGElement>(`.panel-host-coded [data-node-id="${id}"]`)!;
 const formSave = () => [...document.querySelectorAll<HTMLButtonElement>(".panel-host-coded .sdk-owner-form-actions button")]
-  .find(button => button.textContent?.trim() === "Save")!;
+  .find(button => button.textContent?.trim() === "Save" || button.textContent?.trim() === "Create")!;
 const reads = (sent: Sent[]) => sent.filter(request => request.path === "/api/product-panels/read").map(request => request.body as Read);
 
 const PREVIEW_REFUSAL = "A panel preview runs no operations; they run in the panel's application";
@@ -269,7 +269,22 @@ it("waits for the new form before showing reference values and puts Save after a
   });
   try {
     await vi.waitFor(() => expect(fieldItem("/skills")?.textContent).toContain("SQL"), { timeout: 5000 });
+    // Edit mode hides the save bar while clean; once edited, Save appears after all fields.
+    const name = fieldItem("/name")!.querySelector("input")!;
+    name.value = "e2e-agent-settings-edited";
+    name.dispatchEvent(new Event("input"));
+    await nextTick();
     expect(fieldItem("/classNames")!.compareDocumentPosition(formSave()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Discard the edit before navigating to create mode so navigation does not prompt for unsaved changes.
+    [...document.querySelectorAll<HTMLButtonElement>(".panel-host-coded .sdk-owner-form-actions button")]
+      .find(button => button.textContent?.trim() === "Discard")!.click();
+    const box = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>(".el-message-box");
+      if (!found) throw new Error("No confirm dialog");
+      return found;
+    });
+    [...box.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.trim() === "Discard")!.click();
+    await vi.waitFor(() => expect(document.querySelector(".panel-host-coded .sdk-owner-form-actions")).toBeNull());
     await router.push(panelAddress(previewPath, { mode: "create" }));
     await vi.waitFor(() => expect(reads(sent).some(read => read.dataName === "createForm")).toBe(true));
     expect(fieldItem("/modelSelection/modelId")).toBeNull();

@@ -57,4 +57,45 @@ class PanelFormFieldsTest {
     assertThrows(IllegalArgumentException.class,
         () -> PanelFormFields.withSubmitted(saved(), new JSONObject(), List.of("name")));
   }
+
+  @Test
+  void buildsAnObjectControlWithVariants() {
+    JSONArray common = JSONArray.of(PanelFormFields.field(
+        "/mode", "Mode",
+        PanelFormFields.select(JSONArray.of(
+            PanelFormFields.option("none", "None"),
+            PanelFormFields.option("rule", "Rule"),
+            PanelFormFields.option("agent", "Agent"))),
+        PanelFormFields.schema("string"), true, false, null, null, false));
+    JSONObject variants = JSONObject.of(
+        "rule", JSONArray.of(PanelFormFields.field(
+            "/ruleId", "Rule", PanelFormFields.text(false), PanelFormFields.schema("string"),
+            true, false, null, null, false)),
+        "agent", JSONArray.of(PanelFormFields.field(
+            "/agentId", "Agent", PanelFormFields.text(false), PanelFormFields.schema("string"),
+            true, false, null, null, false)));
+
+    JSONObject withDefault = PanelFormFields.object(common, JSONObject.of("mode", "none"), "/mode", variants);
+    assertEquals("object", withDefault.getString("kind"));
+    assertEquals("none", withDefault.getJSONObject("defaultObject").getString("mode"));
+    assertEquals("/mode", withDefault.getString("variantBy"));
+    assertEquals(common, withDefault.getJSONArray("fields"));
+    assertEquals(variants, withDefault.getJSONObject("variants"));
+
+    JSONObject withoutDefault = PanelFormFields.object(common, null, "/mode", variants);
+    assertFalse(withoutDefault.containsKey("defaultObject"));
+    assertEquals("/mode", withoutDefault.getString("variantBy"));
+
+    JSONObject plain = PanelFormFields.object(common, null, null, null);
+    assertFalse(plain.containsKey("variantBy"));
+    assertFalse(plain.containsKey("variants"));
+  }
+
+  @Test
+  void refusesIncompleteOrMalformedObjectVariants() {
+    JSONArray fields = new JSONArray();
+    assertThrows(IllegalArgumentException.class, () -> PanelFormFields.object(fields, null, "/mode", null));
+    assertThrows(IllegalArgumentException.class, () -> PanelFormFields.object(fields, null, null, new JSONObject()));
+    assertThrows(IllegalArgumentException.class, () -> PanelFormFields.object(fields, null, "mode", new JSONObject()));
+  }
 }

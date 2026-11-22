@@ -91,6 +91,7 @@
   --control-height-lg: 40px;
   --nav-row-height: 32px;
   --list-row-height: 44px;
+  --list-row-two-line-height: 60px;
   --table-head-height: 36px;
   --table-row-height: 40px;
   --table-row-compact-height: 32px;
@@ -126,6 +127,14 @@
   --shell-list-panel: 264px;
   --shell-inspector: 320px;
   --shell-content-max: 960px;
+  /* Unified page paradigm layout dimensions and container-width breakpoints. */
+  --pane-list-width: 300px;
+  --pane-narrow-breakpoint: 680px;
+  --workbench-aside-width: 240px;
+  --workbench-detail-width: 320px;
+  --workbench-narrow-breakpoint: 880px;
+  --detail-header-padding: var(--spacing-md) var(--page-section-padding);
+  --detail-footer-padding: var(--spacing-sm) var(--page-section-padding);
 
   /* ---- Motion ---- */
   --transition-fast: 120ms cubic-bezier(0.2, 0, 0, 1); /* hover, press */

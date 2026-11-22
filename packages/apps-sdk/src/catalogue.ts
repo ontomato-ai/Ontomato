@@ -239,12 +239,23 @@ export const components: readonly ComponentMetadata[] = [
     data: { record: { results: ["panelRecord"], required: true } },
   }),
   defineComponentMeta({
+    componentId: "ObjectHeader",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectHeader",
+    role: "presentation",
+    meaning:
+      "Draws a detail header with object name (`record.label` or `title`), one-line subtitle (`subtitleField` or `subtitle`), status badge (`statusField` paired with `record.tones`, or `status` + `statusTone`), and right-side actions. When mounted as a projection member with declared `operations`, exposes at most two regular operations inline, moves additional regular operations into the More menu, and always places delete/danger operations last in the More menu using the platform's shared dispatch and confirmation path. Also works standalone with `title`/`subtitle` and `#actions` (such as create-mode headers).",
+    effects: "Reads the bound object's `record` datum when declared and runs projection operations through the platform coordinator.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: { record: { results: ["panelRecord"], required: false } },
+  }),
+  defineComponentMeta({
     componentId: "ObjectForm",
     module: "@ontomato/sdk/base",
     exportName: "ObjectForm",
     role: "control",
     meaning:
-      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults, non-blocking warnings), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, offers a retry button when a form read fails, and takes an agent's draft for its object. Hidden owner fields have no control. Fields declaring `defaultValue` (including `null`) show a Reset to default control that restores a deep copy of the default into the draft without saving immediately, disabled while already at default, read-only, or saving. Fields declaring `warning` render non-blocking warning guidance under the control without blocking Save. Set `config.layout` to `rows` (default `stacked`) for a settings-row layout (label and help left, control/error/warning middle, Reset to default right, stacking cleanly in narrow containers). Set `config.actions` to `header` (default `footer`) to hide the sticky bottom action bar and hand Save, Discard, and the unsaved marker to the enclosing page header (falling back to the footer when no header host is present). Link a reference picker (or a graph choosing a list) to its owner field through `formField`: the form draws it in that field's place, so the owner's order and sections hold; a reference without one is shown as unavailable to edit. An owner may group its fields into `sections` (each a title and a hint, in order); the form draws them one after another with a list of them beside. It says when it holds unsaved changes and asks before Discard throws them away. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It tells the page `saved` (with the object) and `discarded`, and asks the reader before the panel moves it off unsaved changes.",
+      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults, non-blocking warnings), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, offers a retry button when a form read fails, and takes an agent's draft for its object. Hidden owner fields have no control. Fields declaring `defaultValue` (including `null`) show a Reset to default control that restores a deep copy of the default into the draft without saving immediately, disabled while already at default, read-only, or saving. Fields declaring `warning` render non-blocking warning guidance under the control without blocking Save. Set `config.layout` to `rows` (default `stacked`) for a settings-row layout (label and help left, control/error/warning middle, Reset to default right, stacking cleanly in narrow containers). Set `config.actions` to `header` (default `footer`) to hide the sticky bottom action bar and hand Save, Discard, and the unsaved marker to the enclosing page header (falling back to the footer when no header host is present). With footer actions, an edit form hides the save bar while clean or when all non-hidden fields are read-only, and reveals it pinned at the foot once edited with a count of modified fields alongside Discard and Save; a create form keeps Cancel and Create pinned at the foot and emits `cancel` after resetting (confirming first if edited). Link a reference picker (or a graph choosing a list) to its owner field through `formField`: the form draws it in that field's place, so the owner's order and sections hold; a reference without one is shown as unavailable to edit. An owner may group its fields into `sections` (each a title and a hint, in order); the form draws them one after another with a list of them beside. It asks before Discard throws unsaved changes away. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It tells the page `saved` (with the object), `discarded`, and `cancel`, and asks the reader before the panel moves it off unsaved changes.",
     effects: "Reads the owner's form and saves through the owner's own interface; it saves through the owner's form save its projection names.",
     bindsElement: ["PlatformObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
@@ -260,7 +271,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OperationButton",
     role: "control",
     meaning:
-      "The button of one operation its projection names (`config.operation`, the projection's local name for it): it shows the owner's label and runs it on the object, or the checked objects, its target input holds. A single write done is said in the platform's message in the owner's words, naming what it acted on (the button often goes with what it deleted); a batch is reported beside the button item by item; a refusal or failure stays beside it. The page hears every outcome as the `done` event. What a write removed is let go of by the panel: a selection holding it is cleared and a checked list drops it.",
+      "The button of one operation its projection names (`config.operation`, the projection's local name for it): it shows the owner's label and runs it on the object, or the checked objects, its target input holds. When the owner declares editable `inputSchema.properties` (and the operation is neither a file upload nor a read bound to a form draft or `readOperationInputs`), clicking the button opens a parameter dialog to collect and validate those inputs before running; operations without editable parameters run directly. A single write done is said in the platform's message in the owner's words, naming what it acted on (the button often goes with what it deleted); a batch is reported beside the button item by item; a refusal or failure stays beside it. The page hears every outcome as the `done` event. What a write removed is let go of by the panel: a selection holding it is cleared and a checked list drops it.",
     effects: "Runs the named operation as the reader, as its owner admits it now.",
     bindsElement: ["PlatformOperation:*"],
     // The button reads no datum: its operation is the projection's, described by its owner as admitted now.
@@ -425,7 +436,15 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "TwoPaneLayout",
     role: "presentation",
     meaning:
-      "Lays out two panes of one page side by side in one bordered block, the first at the platform's list width and the second taking the rest, stacking them where the panel is too narrow for both. When given a definite height it fills that box with each pane scrolling independently; when stacked or left without a definite height, the panes flow naturally. It binds nothing.",
+      "List-detail layout in one bordered block: side-by-side (`mode: 'split'`, left pane at `--pane-list-width`) or full-width alternating (`mode: 'switch'`), automatically switching to full-width alternating when its own container width is at or below `--pane-narrow-breakpoint` (680px). Fills definite container height with independent pane scrolling, keeps `#aside` DOM alive across switches to preserve scroll position and filters, scrolls `#default` back to top when `selectionKey` changes, provides fixed `#header`, `#tabs`, and `#footer` regions plus `#empty` placeholder, and omits `selected` to preserve legacy always-visible two-pane usage. It binds nothing.",
+  }),
+  defineComponentMeta({
+    componentId: "WorkbenchLayout",
+    module: "@ontomato/sdk/base",
+    exportName: "WorkbenchLayout",
+    role: "presentation",
+    meaning:
+      "Three-pane workbench layout for graph and canvas pages: collapsible left `#aside` (`--workbench-aside-width`), full-height center canvas (`#default`), and selection-driven right detail pane (`--workbench-detail-width`) with fixed `#detail-header`, `#detail-tabs`, scrollable `#detail` (resets scroll to top on `selectionKey` change), and `#detail-footer`. Below `--workbench-narrow-breakpoint` (880px), the canvas stays full width while both side panes become mutually exclusive floating overlays (at most one open at a time). It binds nothing.",
   }),
   defineComponentMeta({
     componentId: "SectionGroup",

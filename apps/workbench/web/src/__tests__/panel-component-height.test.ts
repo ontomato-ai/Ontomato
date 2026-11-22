@@ -568,8 +568,14 @@ it("renders ObjectForm with a scrollable body and sibling pinned actions bar", a
   await vi.waitFor(() => expect(host.querySelector(".sdk-owner-form-body")).not.toBeNull(), { timeout: 4000 });
   const inner = host.querySelector(".sdk-owner-form-inner")!;
   const body = inner.querySelector(".sdk-owner-form-body")!;
-  const actions = inner.querySelector(".sdk-owner-form-actions")!;
   expect(body.querySelector('[data-field="/name"]')).not.toBeNull();
+  // Edit mode hides the save bar while clean; once modified, the pinned actions bar appears as a sibling of body.
+  expect(inner.querySelector(".sdk-owner-form-actions")).toBeNull();
+  const input = body.querySelector<HTMLInputElement>('[data-field="/name"] input')!;
+  input.value = "Nightly v2";
+  input.dispatchEvent(new Event("input"));
+  await vi.waitFor(() => expect(inner.querySelector(".sdk-owner-form-actions")).not.toBeNull());
+  const actions = inner.querySelector(".sdk-owner-form-actions")!;
   expect(actions.parentElement).toBe(inner);
   expect(body.contains(actions)).toBe(false);
 });
@@ -624,7 +630,10 @@ it("declares the height-fill and default-height CSS contract across member wrapp
   const twoPaneCss = readRepoFile("packages/apps-sdk/src/base/TwoPaneLayout.vue");
   expect(twoPaneCss).toMatch(/\.sdk-two-pane\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
   expect(twoPaneCss).toMatch(/\.sdk-two-pane-block\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);/s);
-  expect(twoPaneCss).toMatch(/@container\s*\(max-width:\s*640px\)\s*\{[^}]*grid-template-rows:\s*auto;/s);
+  expect(twoPaneCss).toMatch(/\.sdk-two-pane-block\[data-legacy-stacked="true"\]\s*\{[^}]*grid-template-rows:\s*auto;/s);
+
+  const workbenchCss = readRepoFile("packages/apps-sdk/src/base/WorkbenchLayout.vue");
+  expect(workbenchCss).toMatch(/\.sdk-workbench\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
 
   for (const file of [
     "packages/apps-sdk/src/base/SegmentedControl.vue",

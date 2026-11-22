@@ -31,7 +31,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD } from "./platform-object-types";
 import {
-  ACTION, AGENT_DEFINITION, ATTRIBUTE, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, USER,
+  ACTION, AGENT_DEFINITION, ATTRIBUTE, DELETE_ACTION, DELETE_AGENT, DELETE_FUNCTION, DELETE_METRIC_VIEW, DELETE_TRIGGER, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SET_ACTION_STATUS, SET_METRIC_VIEW_STATUS, SET_TRIGGER_STATUS, TEST_EXECUTE_METRIC_VIEW, TEST_METRIC_VIEW, TRIGGER, USER, WORKFLOW,
   RUN_NOW, SCHEDULED_TASK, bindingKey, chartProjectionLookupRead, chartProjectionSourcePath, chartProjectionSourceSends, clientSends, panelClientReads,
 } from "./panel-client-requests";
 import {
@@ -47,8 +47,12 @@ import { pageSelectionSchema } from "./page-context";
 import { pageDraftSchema } from "./page-draft";
 import { findPanelFormOption, panelFormObjectSelectError } from "./form-fields";
 import {
-  panelFormDescriptionSchema, panelFormFieldSchema, panelFormFrequencyValueSchema, panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
-  panelObjectListColumnSchema, panelStateOperation, projectionBindingKeys, projectionOperation, projectionOperationTargetMatches, projectionPorts,
+  panelFormDescriptionSchema, panelFormFieldSchema, panelFormFrequencyValueSchema,
+  panelFormObjectActiveFields, panelFormObjectActiveVariant, panelFormObjectAllFields,
+  panelFormRequestSchema, panelFormSaveInputSchema, panelFormTimeValueSchema,
+  panelObjectListColumnSchema, panelStateOperation, projectionBindingKeys, projectionOperation,
+  projectionOperationTargetMatches, projectionPorts, pruneInactivePanelFormVariants,
+  type PanelFormField, type PanelFormObjectControl, type PanelFormValues,
 } from "./panel-projection";
 import { platformTaskFrequencySchema } from "./platform-schedules";
 import {
@@ -1567,6 +1571,28 @@ test("Action definition reads and writes use distinct exact binding requests", (
   assert.ok(!clientSends([status], "POST", "", "/action/setStatus"));
 });
 
+test("Trigger definition reads, writes and Workflow minimal list use exact binding requests", () => {
+  const definitions = binding(TRIGGER);
+  const deletion = bindingKey({ kind: "PlatformOperation", id: DELETE_TRIGGER });
+  const status = bindingKey({ kind: "PlatformOperation", id: SET_TRIGGER_STATUS });
+  const workflows = binding(WORKFLOW);
+  for (const path of ["/trigger/queryList", "/trigger/queryById", "/trigger/form"]) {
+    assert.ok(panelClientReads(definitions).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test(path)));
+    assert.ok(clientSends([definitions], "POST", "/data-query", path));
+  }
+  assert.ok(clientSends([definitions], "POST", "/data-query", "/trigger/save"));
+  assert.ok(!panelClientReads(definitions).some(read => read.path.test("/trigger/save")));
+  assert.ok(!clientSends([definitions], "POST", "/data-query", "/trigger/delete"));
+  assert.ok(clientSends([deletion], "POST", "/data-query", "/trigger/delete", { id: "tr-1" }));
+  assert.ok(clientSends([status], "POST", "/data-query", "/trigger/status", { id: "tr-1", status: "PUBLISHED" }));
+  assert.ok(!clientSends([status], "POST", "", "/trigger/status"));
+  assert.ok(panelClientReads(workflows).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test("/workflow/query")));
+  assert.ok(clientSends([workflows], "POST", "/data-query", "/workflow/query"));
+  assert.ok(!clientSends([workflows], "POST", "/data-query", "/workflow/save"));
+  assert.deepEqual(Object.keys(platformObjectTypes[WORKFLOW].reads ?? {}), ["list"]);
+  assert.deepEqual(platformObjectTypes[TRIGGER].operations, [`${TRIGGER}.save`, SET_TRIGGER_STATUS, DELETE_TRIGGER]);
+});
+
 test("a panel operation descriptor admits exactly the three use and operation query keys", () => {
   const bindings = [bindingKey({ kind: "PlatformOperation", id: "schedules.runNow" })];
   const path = "/panel-operations/descriptor";
@@ -2747,4 +2773,278 @@ test("panel form fields accept an optional non-empty warning message", async () 
   };
   assert.equal(panelFormFieldSchema.parse({ ...baseField, warning: "Changes affect all new sessions." }).warning, "Changes affect all new sessions.");
   assert.equal(panelFormFieldSchema.safeParse({ ...baseField, warning: "" }).success, false);
+});
+
+test("object form fields declare discriminated variants, validate invariants, and prune inactive values recursively", () => {
+  const opt = (value: string | number, label: string, disabled = false) => ({
+    value, label, description: null, disabled, disabledReason: disabled ? "Unavailable" : null,
+  });
+  const textField = (path: string, label: string): PanelFormField => ({
+    ...editableField, path, label, valueSchema: { type: "string" }, control: { kind: "text" },
+  });
+
+  const handoffControl: PanelFormObjectControl = {
+    kind: "object",
+    defaultObject: { kind: "none" },
+    fields: [{
+      ...editableField, path: "/kind", label: "Handoff kind", valueSchema: { type: "string", enum: ["none", "webhook", "queue"] },
+      control: { kind: "select", options: [opt("none", "None"), opt("webhook", "Webhook"), opt("queue", "Queue")] },
+    }],
+    variantBy: "/kind",
+    variants: {
+      none: [],
+      webhook: [textField("/url", "Webhook URL")],
+      queue: [textField("/topic", "Queue topic")],
+    },
+  };
+
+  const executorValueSchema: PanelFormValues = {
+    oneOf: [
+      { type: "object", properties: { mode: { const: "none" } }, required: ["mode"], additionalProperties: false },
+      {
+        type: "object",
+        properties: {
+          mode: { const: "rule" },
+          ruleId: { type: "string" },
+          target: { type: "string" },
+          extra: { type: "object", properties: { expr: { type: "string" } } },
+        },
+        required: ["mode", "ruleId"],
+        additionalProperties: false,
+      },
+      {
+        type: "object",
+        properties: {
+          mode: { const: "agent" },
+          agentId: { type: "string" },
+          target: { type: "string" },
+          handoff: { type: "object" },
+        },
+        required: ["mode", "agentId"],
+        additionalProperties: false,
+      },
+    ],
+  };
+
+  const executorControl: PanelFormObjectControl = {
+    kind: "object",
+    defaultObject: { mode: "none" },
+    fields: [
+      {
+        ...editableField, path: "/mode", label: "Execution mode",
+        valueSchema: { type: "string", enum: ["none", "rule", "agent"] },
+        control: { kind: "select", options: [opt("none", "None"), opt("rule", "Rule"), opt("agent", "Agent", true)] },
+      },
+      textField("/note", "Note"),
+    ],
+    variantBy: "/mode",
+    variants: {
+      // "none" intentionally omitted to verify omitted option means no extra fields.
+      rule: [
+        textField("/ruleId", "Rule"),
+        textField("/target", "Rule target"),
+        textField("/extra/expr", "Expression"),
+      ],
+      agent: [
+        textField("/agentId", "Agent"),
+        textField("/target", "Agent target"),
+        { ...editableField, path: "/handoff", label: "Handoff", valueSchema: { type: "object" }, control: handoffControl },
+      ],
+    },
+  };
+
+  const executorField: PanelFormField = {
+    ...editableField, path: "/executor", label: "Executor", valueSchema: executorValueSchema, control: executorControl,
+  };
+  const stepsField: PanelFormField = {
+    ...editableField, path: "/steps", label: "Steps", valueSchema: { type: "array" },
+    control: {
+      kind: "object-array", itemKeyPath: "/id", defaultItem: { id: "s1", executor: { mode: "none" } },
+      itemFields: [textField("/id", "ID"), executorField],
+    },
+  };
+
+  const form = {
+    fields: [stepsField, executorField],
+    values: {
+      steps: [{ id: "s1", executor: { mode: "rule", ruleId: "r-1" } }],
+      executor: { mode: "none" },
+    },
+    errors: [],
+    save: ownerSave,
+  };
+  assert.deepEqual(panelFormDescriptionSchema.parse(form), form);
+
+  // Numeric scalar select options work and distinguish number from string at runtime.
+  const versionField = panelFormFieldSchema.parse({
+    ...editableField, path: "/versioned", label: "Versioned", valueSchema: { type: "object" },
+    control: {
+      kind: "object",
+      fields: [{
+        ...editableField, path: "/version", label: "Version", valueSchema: { type: "number" },
+        control: { kind: "select", options: [opt(1, "V1"), opt(2, "V2")] },
+      }],
+      variantBy: "/version",
+      variants: { "1": [textField("/legacy", "Legacy")], "2": [textField("/modern", "Modern")] },
+    },
+  });
+  assert.equal(versionField.control.kind, "object");
+  assert.equal(panelFormObjectActiveVariant(versionField.control, { version: 1 }), "1");
+  assert.equal(panelFormObjectActiveVariant(versionField.control, { version: "1" }), undefined);
+  assert.deepEqual(
+    panelFormObjectActiveFields(versionField.control, { version: 2 }).map(field => field.path),
+    ["/version", "/modern"],
+  );
+
+  // Pure helpers: all fields, active variant, active fields.
+  assert.deepEqual(
+    panelFormObjectAllFields(executorControl).map(field => field.path),
+    ["/mode", "/note", "/ruleId", "/target", "/extra/expr", "/agentId", "/target", "/handoff"],
+  );
+  assert.equal(panelFormObjectActiveVariant(executorControl, { mode: "none" }), "none");
+  assert.deepEqual(
+    panelFormObjectActiveFields(executorControl, { mode: "none" }).map(field => field.path),
+    ["/mode", "/note"],
+  );
+  assert.deepEqual(
+    panelFormObjectActiveFields(executorControl, { mode: "rule" }).map(field => field.path),
+    ["/mode", "/note", "/ruleId", "/target", "/extra/expr"],
+  );
+  assert.deepEqual(
+    panelFormObjectActiveFields(executorControl, { mode: "agent" }).map(field => field.path),
+    ["/mode", "/note", "/agentId", "/target", "/handoff"],
+  );
+  assert.equal(panelFormObjectActiveVariant(executorControl, { mode: "unknown" }), undefined);
+  assert.equal(panelFormObjectActiveVariant(executorControl, null), undefined);
+  assert.deepEqual(
+    panelFormObjectActiveFields(executorControl, null).map(field => field.path),
+    ["/mode", "/note"],
+  );
+
+  // Recursive pruning strips inactive variant values without mutating the edit draft.
+  const draft: PanelFormValues = {
+    steps: [
+      {
+        id: "s1",
+        executor: {
+          mode: "agent",
+          note: "keep",
+          ownerMeta: "preserve-undeclared",
+          ruleId: "stale-rule",
+          target: "shared-agent-target",
+          extra: { expr: "x > 1" },
+          agentId: "agent-1",
+          handoff: { kind: "webhook", url: "https://example.invalid/hook", topic: "stale-topic" },
+        },
+      },
+      {
+        id: "s2",
+        executor: {
+          mode: "none",
+          ruleId: "stale-rule",
+          agentId: "stale-agent",
+          target: "stale-target",
+          extra: { expr: "stale-expr", keptSibling: "keep" },
+          handoff: { kind: "queue", topic: "stale-topic" },
+        },
+      },
+      { id: "s3", executor: null },
+      { id: "s4" },
+    ],
+    executor: { mode: "rule", ruleId: "r-2", agentId: "stale-agent", untouchedEmpty: {} },
+  };
+  const snapshot = JSON.stringify(draft);
+  const pruned = pruneInactivePanelFormVariants([stepsField, executorField], draft);
+  assert.equal(JSON.stringify(draft), snapshot);
+  assert.deepEqual(pruned, {
+    steps: [
+      {
+        id: "s1",
+        executor: {
+          mode: "agent",
+          note: "keep",
+          ownerMeta: "preserve-undeclared",
+          target: "shared-agent-target",
+          agentId: "agent-1",
+          handoff: { kind: "webhook", url: "https://example.invalid/hook" },
+        },
+      },
+      {
+        id: "s2",
+        executor: {
+          mode: "none",
+          extra: { keptSibling: "keep" },
+        },
+      },
+      { id: "s3", executor: null },
+      { id: "s4" },
+    ],
+    executor: { mode: "rule", ruleId: "r-2", untouchedEmpty: {} },
+  });
+
+  // Invariant rejections in superRefine.
+  const invalidControls: unknown[] = [
+    // Incomplete variant declarations.
+    { kind: "object", fields: executorControl.fields, variantBy: "/mode" },
+    { kind: "object", fields: executorControl.fields, variants: { rule: [textField("/ruleId", "Rule")] } },
+    // Missing or non-select discriminator.
+    { kind: "object", fields: executorControl.fields, variantBy: "/missing", variants: {} },
+    { kind: "object", fields: executorControl.fields, variantBy: "/note", variants: {} },
+    // Multi-select or allowCreate select discriminator.
+    {
+      kind: "object",
+      fields: [{ ...editableField, path: "/mode", label: "Mode", valueSchema: { type: "array" },
+        control: { kind: "select", multiple: true, options: [opt("rule", "Rule")] } }],
+      variantBy: "/mode", variants: { rule: [] },
+    },
+    {
+      kind: "object",
+      fields: [{ ...editableField, path: "/mode", label: "Mode", valueSchema: { type: "string" },
+        control: { kind: "select", allowCreate: true, options: [opt("rule", "Rule")] } }],
+      variantBy: "/mode", variants: { rule: [] },
+    },
+    // Object-valued select discriminator.
+    {
+      kind: "object",
+      fields: [{ ...editableField, path: "/mode", label: "Mode", valueSchema: { type: "object" },
+        control: { kind: "select", options: [{ value: { kind: "rule" }, label: "Rule", description: null, disabled: false, disabledReason: null }] } }],
+      variantBy: "/mode", variants: {},
+    },
+    // Ambiguous scalar option keys ("1" vs 1).
+    {
+      kind: "object",
+      fields: [{ ...editableField, path: "/mode", label: "Mode", valueSchema: { type: ["string", "number"] },
+        control: { kind: "select", options: [opt(1, "Num 1"), opt("1", "Str 1")] } }],
+      variantBy: "/mode", variants: { "1": [] },
+    },
+    // Undeclared variant key and reserved prototype key.
+    { ...executorControl, variants: { manual: [textField("/owner", "Owner")] } },
+    { ...executorControl, variants: { constructor: [textField("/owner", "Owner")] } },
+    // Conflict with discriminator, common field, or ancestor/descendant of common field.
+    { ...executorControl, variants: { rule: [textField("/mode", "Duplicate mode")] } },
+    { ...executorControl, variants: { rule: [textField("/note", "Duplicate note")] } },
+    { ...executorControl, variants: { rule: [textField("/note/detail", "Nested under common")] } },
+    // Duplicate or overlapping paths within one variant.
+    { ...executorControl, variants: { rule: [textField("/ruleId", "A"), textField("/ruleId", "B")] } },
+    { ...executorControl, variants: { rule: [textField("/cfg", "A"), textField("/cfg/x", "B")] } },
+  ];
+  for (const invalid of invalidControls) {
+    assert.equal(panelFormFieldSchema.safeParse({ ...executorField, control: invalid }).success, false);
+  }
+
+  // Recursive validation catches invalid variant inside object-array row and inside another variant's nested object.
+  const badNested = { ...executorControl, variants: { bogus: [] } };
+  assert.equal(panelFormFieldSchema.safeParse({
+    ...stepsField,
+    control: { ...stepsField.control, itemFields: [{ ...executorField, control: badNested }] },
+  }).success, false);
+  assert.equal(panelFormFieldSchema.safeParse({
+    ...executorField,
+    control: {
+      ...executorControl,
+      variants: {
+        agent: [{ ...editableField, path: "/handoff", label: "Handoff", valueSchema: { type: "object" }, control: badNested }],
+      },
+    },
+  }).success, false);
 });

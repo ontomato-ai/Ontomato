@@ -3,7 +3,7 @@ import {
 } from "./product-catalog-query";
 import { z } from "zod";
 import { componentIdSchema } from "./product-record-id";
-import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
+import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
 import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
@@ -611,10 +611,17 @@ const arrayControl = z.object({
   itemKeyPath: fieldPath.optional(),
 }).strict();
 
+const variantKey = z.string().min(1).refine(
+  value => !["__proto__", "constructor", "prototype"].includes(value),
+  "Reserved key",
+);
+
 const objectControl = z.object({
   kind: z.literal("object"),
   /** Initial value when explicitly added. Removing an object writes null. */
   defaultObject: runtimeJsonObjectSchema.optional(),
+  /** Relative JSON Pointer to a fixed-option scalar select in `fields` whose value chooses the active variant. */
+  variantBy: fieldPath.optional(),
 }).strict();
 
 const fieldShape = z.object({
@@ -638,35 +645,286 @@ const fieldShape = z.object({
   ),
 }).strict();
 
+export type PanelFormObjectControl = z.infer<typeof objectControl> & {
+  fields: PanelFormField[];
+  /** Additional child fields per option of `variantBy`; options with no extra fields may be omitted or empty. */
+  variants?: Record<string, PanelFormField[]>;
+};
+
 export type PanelFormField = z.infer<typeof fieldShape> & {
   control:
     | z.infer<(typeof simpleControls)[number]>
     | (z.infer<typeof arrayControl> & { itemFields: PanelFormField[] })
-    | (z.infer<typeof objectControl> & { fields: PanelFormField[] });
+    | PanelFormObjectControl;
 };
 
+function fieldPathsOverlap(left: string, right: string): boolean {
+  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+}
+
 const childFields = z.array(z.lazy((): z.ZodType<PanelFormField> => panelFormFieldSchema));
+const variantFieldsMap = z.record(variantKey, childFields);
 const controlSchema = z.discriminatedUnion("kind", [
   ...simpleControls,
   // Row paths are relative. Edits, refreshes and errors address the current absolute paths.
-  arrayControl.extend({ itemFields: childFields }),
+  arrayControl.extend({ itemFields: childFields }).strict(),
   // Child paths are relative to the object. An untouched, omitted object stays absent.
-  objectControl.extend({ fields: childFields }),
+  objectControl.extend({
+    fields: childFields,
+    variants: variantFieldsMap.optional(),
+  }).strict(),
 ]);
 
 export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema }).superRefine(({ control }, ctx) => {
-  if (control.kind !== "select" || !control.options.some(option => typeof option.value === "object")) return;
-  if (control.allowCreate)
+  if (control.kind === "select") {
+    if (!control.options.some(option => typeof option.value === "object")) return;
+    if (control.allowCreate)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "allowCreate"],
+        message: "An object-valued select only accepts its declared options",
+      });
+    if (control.options.some(option => typeof option.value !== "object"))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "options"],
+        message: "All options of an object-valued select must be objects",
+      });
+    return;
+  }
+  if (control.kind !== "object") return;
+  const { variantBy, variants } = control;
+  if (variantBy === undefined && variants === undefined) return;
+  if (variantBy === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom, path: ["control", "allowCreate"],
-      message: "An object-valued select only accepts its declared options",
+      code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
+      message: "Object control with variants must define variantBy",
     });
-  if (control.options.some(option => typeof option.value !== "object"))
+    return;
+  }
+  if (variants === undefined) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom, path: ["control", "options"],
-      message: "All options of an object-valued select must be objects",
+      code: z.ZodIssueCode.custom, path: ["control", "variants"],
+      message: "Object control with variantBy must define variants",
     });
+    return;
+  }
+
+  const discriminators = control.fields.filter(field => field.path === variantBy);
+  const discriminator = discriminators[0];
+  if (discriminators.length !== 1 || !discriminator || discriminator.control.kind !== "select") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
+      message: `variantBy '${variantBy}' must point to a unique select field in fields`,
+    });
+    return;
+  }
+  const select = discriminator.control;
+  if (select.multiple) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
+      message: `variantBy '${variantBy}' cannot point to a multi-select field`,
+    });
+    return;
+  }
+  if (select.allowCreate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
+      message: `variantBy '${variantBy}' cannot point to an allowCreate select field`,
+    });
+    return;
+  }
+  if (select.options.some(option => typeof option.value !== "string" && typeof option.value !== "number")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
+      message: `variantBy '${variantBy}' select options must be scalar values`,
+    });
+    return;
+  }
+  const optionKeys = new Set<string>();
+  for (const option of select.options) {
+    const key = String(option.value);
+    if (optionKeys.has(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "variantBy"],
+        message: `variantBy '${variantBy}' select options must have unique scalar values`,
+      });
+      return;
+    }
+    optionKeys.add(key);
+  }
+
+  const commonPaths = control.fields.map(field => field.path);
+  for (const [key, variantFields] of Object.entries(variants)) {
+    if (!optionKeys.has(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "variants", key],
+        message: `Variant '${key}' does not match any option of '${variantBy}'`,
+      });
+    }
+    const seen: string[] = [];
+    for (let index = 0; index < variantFields.length; index++) {
+      const childPath = variantFields[index]!.path;
+      const commonConflict = commonPaths.find(common => fieldPathsOverlap(common, childPath));
+      if (commonConflict !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom, path: ["control", "variants", key, index, "path"],
+          message: `Variant '${key}' field '${childPath}' conflicts with common field '${commonConflict}'`,
+        });
+      }
+      const duplicateConflict = seen.find(previous => fieldPathsOverlap(previous, childPath));
+      if (duplicateConflict !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom, path: ["control", "variants", key, index, "path"],
+          message: `Variant '${key}' field '${childPath}' conflicts with '${duplicateConflict}'`,
+        });
+      }
+      seen.push(childPath);
+    }
+  }
 });
+
+function pointerTokens(path: string): string[] {
+  return path.split("/").slice(1).map(token => token.replaceAll("~1", "/").replaceAll("~0", "~"));
+}
+
+function isPlainJsonObject(value: RuntimeJsonValue | undefined): value is PanelFormValues {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readPointerValue(node: RuntimeJsonValue | undefined, path: string): RuntimeJsonValue | undefined {
+  let current = node;
+  for (const token of pointerTokens(path)) {
+    if (!isPlainJsonObject(current) || !Object.prototype.propertyIsEnumerable.call(current, token)) return undefined;
+    current = current[token];
+  }
+  return current;
+}
+
+function writePointerValue(object: PanelFormValues, path: string, value: RuntimeJsonValue): PanelFormValues {
+  const tokens = pointerTokens(path);
+  const update = (node: RuntimeJsonValue | undefined, index: number): RuntimeJsonValue => {
+    if (index === tokens.length) return value;
+    const token = tokens[index]!;
+    const current = isPlainJsonObject(node) ? node : {};
+    return { ...current, [token]: update(current[token], index + 1) };
+  };
+  return update(object, 0) as PanelFormValues;
+}
+
+function deletePointerValue(
+  object: PanelFormValues,
+  path: string,
+  activePaths: readonly string[],
+): PanelFormValues {
+  const tokens = pointerTokens(path);
+  const remove = (
+    node: PanelFormValues,
+    index: number,
+    prefix: string,
+  ): { next: PanelFormValues; removed: boolean } => {
+    const token = tokens[index]!;
+    if (!Object.prototype.propertyIsEnumerable.call(node, token)) return { next: node, removed: false };
+    if (index === tokens.length - 1) {
+      const { [token]: _, ...rest } = node;
+      return { next: rest, removed: true };
+    }
+    const child = node[token];
+    if (!isPlainJsonObject(child)) return { next: node, removed: false };
+    const escaped = token.replaceAll("~", "~0").replaceAll("/", "~1");
+    const childPath = `${prefix}/${escaped}`;
+    const result = remove(child, index + 1, childPath);
+    if (!result.removed) return { next: node, removed: false };
+    if (Object.keys(result.next).length === 0 && !activePaths.includes(childPath)) {
+      const { [token]: _, ...rest } = node;
+      return { next: rest, removed: true };
+    }
+    return { next: { ...node, [token]: result.next }, removed: true };
+  };
+  return remove(object, 0, "").next;
+}
+
+/** Every declared child field of an object control, including fields from every declared variant. */
+export function panelFormObjectAllFields(control: PanelFormObjectControl): readonly PanelFormField[] {
+  if (!control.variants) return control.fields;
+  const variantFields = Object.values(control.variants).flat();
+  return variantFields.length > 0 ? [...control.fields, ...variantFields] : control.fields;
+}
+
+/** The active variant key for an object control's current value, or undefined when none matches a declared option. */
+export function panelFormObjectActiveVariant(
+  control: PanelFormObjectControl,
+  value: RuntimeJsonValue | undefined,
+): string | undefined {
+  if (!control.variantBy || !control.variants || !isPlainJsonObject(value)) return undefined;
+  const discriminator = control.fields.find(field => field.path === control.variantBy);
+  if (!discriminator || discriminator.control.kind !== "select") return undefined;
+  const current = readPointerValue(value, control.variantBy);
+  if (typeof current !== "string" && typeof current !== "number") return undefined;
+  const matched = discriminator.control.options.find(option => option.value === current);
+  return matched === undefined ? undefined : String(matched.value);
+}
+
+/** The child fields active for an object control's current value: common fields plus the active variant's fields. */
+export function panelFormObjectActiveFields(
+  control: PanelFormObjectControl,
+  value: RuntimeJsonValue | undefined,
+): readonly PanelFormField[] {
+  const variant = panelFormObjectActiveVariant(control, value);
+  if (variant === undefined || !control.variants) return control.fields;
+  const extra = control.variants[variant];
+  return extra && extra.length > 0 ? [...control.fields, ...extra] : control.fields;
+}
+
+function pruneObjectControl(control: PanelFormObjectControl, value: PanelFormValues): PanelFormValues {
+  let next = value;
+  const activeFields = panelFormObjectActiveFields(control, next);
+  if (control.variants) {
+    const activeVariant = panelFormObjectActiveVariant(control, next);
+    const activePaths = activeFields.map(field => field.path);
+    for (const [key, variantFields] of Object.entries(control.variants)) {
+      if (key === activeVariant) continue;
+      for (const field of variantFields) {
+        if (activePaths.some(activePath => fieldPathsOverlap(activePath, field.path))) continue;
+        next = deletePointerValue(next, field.path, activePaths);
+      }
+    }
+  }
+  return pruneFieldsObject(activeFields, next);
+}
+
+function pruneFieldsObject(fields: readonly PanelFormField[], values: PanelFormValues): PanelFormValues {
+  let next = values;
+  for (const field of fields) {
+    const { control } = field;
+    if (control.kind !== "object" && control.kind !== "object-array") continue;
+    const current = readPointerValue(next, field.path);
+    if (control.kind === "object") {
+      if (!isPlainJsonObject(current)) continue;
+      const pruned = pruneObjectControl(control, current);
+      if (pruned !== current) next = writePointerValue(next, field.path, pruned);
+    } else if (Array.isArray(current)) {
+      let changed = false;
+      const prunedRows = current.map(row => {
+        if (!isPlainJsonObject(row)) return row;
+        const pruned = pruneFieldsObject(control.itemFields, row);
+        if (pruned !== row) changed = true;
+        return pruned;
+      });
+      if (changed) next = writePointerValue(next, field.path, prunedRows);
+    }
+  }
+  return next;
+}
+
+/**
+ * Return a copy of `values` with inactive object-variant field values stripped, recursively across nested objects,
+ * active variant subfields, and object-array rows. Local edit drafts keep inactive values; submits send pruned values.
+ */
+export function pruneInactivePanelFormVariants(
+  fields: readonly PanelFormField[],
+  values: PanelFormValues,
+): PanelFormValues {
+  return pruneFieldsObject(fields, values);
+}
 
 /** The client's native owner request. The form's binding supplies the body mapping to that owner's existing schema. */
 const formSaveRequestSchema = z.object({

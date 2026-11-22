@@ -64,7 +64,13 @@ await mountPanel({
       instance.state.setState({ creating: false, createIn: null });
     };
     const yes = value => value === "true";
-    const openOwner = row => context.navigate(`/ontology/objects/${encodeURIComponent(ownerOf(row))}`);
+    // Open the object types panel directly with its deep-linkable `selected` state rather than the retired detail path.
+    const openOwner = row => {
+      const owner = ownerOf(row);
+      if (!owner) return;
+      const state = JSON.stringify({ selected: { className: "platform:ObjectType", primaryKey: owner } });
+      void context.navigate(`/ontology/objects?${new globalThis.URLSearchParams({ state })}`).catch(() => undefined);
+    };
 
     // When the selected attribute leaves the owner's list (it was deleted), the page lets go of it.
     let lastList = null;

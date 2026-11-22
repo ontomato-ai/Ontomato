@@ -83,8 +83,11 @@ await mountPanel({
     function onDiscarded() {
       setCreating(false);
     }
+    // Open the object types panel directly with its deep-linkable `selected` state rather than the retired detail path.
     function openType(className) {
-      if (className) void navigate(`/ontology/objects/${encodeURIComponent(className)}`);
+      if (!className) return;
+      const state = JSON.stringify({ selected: { className: "platform:ObjectType", primaryKey: className } });
+      void navigate(`/ontology/objects?${new globalThis.URLSearchParams({ state })}`).catch(() => undefined);
     }
 
     // A draft the assistant wrote opens the form it names: a create draft for a new relation, otherwise that relation's.

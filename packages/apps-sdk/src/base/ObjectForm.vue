@@ -81,6 +81,8 @@ const emit = defineEmits<{
   saved: [object: { className: string; primaryKey: string }];
   /** The reader discarded the changes the form held. */
   discarded: [];
+  /** The reader cancelled creating a new object. */
+  cancel: [];
 }>();
 defineSlots<{
   /** Projections that edit this form's fields, drawn with the current owner values before Save and Discard. */
@@ -218,6 +220,25 @@ const dirty = computed(() => opened.value !== null
 const submitted = shallowRef<ReadonlySet<string>>(new Set());
 /** Whether the form has something to save or discard: changed values, a received draft, or fields set on purpose. */
 const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot || submitted.value.size > 0);
+/** Whether the form is creating a new object (`createForm`, no existing object selected). */
+const isCreate = computed(() => target.value?.kind === "draft");
+/** Whether every non-hidden field in the owner's form description is read-only. */
+const allReadOnly = computed(() => drawn.value.length > 0 && drawn.value.every((field) => field.readOnly));
+/**
+ * Count of distinct top-level fields modified in this draft (union of draft-marked `changed`, reader-edited
+ * `submitted`, and unparseable `invalid` fields), guaranteed >= 1 whenever `canSettle` is true.
+ */
+const changedCount = computed(() => {
+  const paths = new Set<string>([...changed.value, ...submitted.value]);
+  for (const path of Object.keys(invalid.value)) {
+    const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
+    paths.add(described ? described.path : path);
+  }
+  if (paths.size === 0 && opened.value) {
+    for (const path of changedPaths(fields.value, opened.value.values, values.value)) paths.add(path);
+  }
+  return paths.size > 0 ? paths.size : (canSettle.value ? 1 : 0);
+});
 
 /** A draft this form took, for the target it addresses, shown once the form is on that target. */
 let held: HeldMemberDraft | null = null;
@@ -551,16 +572,20 @@ useProjectionForm({
   discard,
 });
 
-function discard() {
+function resetDraft(reopenWhenUnfieldedRefusal: boolean) {
   const refused = refusal.value;
-  const reopen = refused instanceof PlatformObjectRefusal &&
+  const reopen = reopenWhenUnfieldedRefusal && refused instanceof PlatformObjectRefusal &&
     Object.keys(refused.fields).length === 0 && Object.keys(refused.savedFields).length === 0;
   held = null;
   heldRefusal = null;
-  adopt(ownerOpened.value!);
-  emit("discarded");
+  if (ownerOpened.value) adopt(ownerOpened.value);
   if (reopen) load(target.value);
   void panel.instance.settleDraft(slot.slot).catch(showRefusal);
+}
+
+function discard() {
+  resetDraft(true);
+  emit("discarded");
 }
 
 /** The reader's Discard: what they have not saved is thrown away only once they say so (原页面对照《智能体设置》). */
@@ -569,6 +594,21 @@ async function confirmDiscard() {
     confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
   }).then(() => true, () => false);
   if (confirmed) discard();
+}
+
+/**
+ * The reader's Cancel on a create form: asks before throwing away edits when dirty, otherwise resets immediately
+ * and tells the page `cancel`.
+ */
+async function cancelCreate() {
+  if (canSettle.value) {
+    const confirmed = await ElMessageBox.confirm(t("platform.formDiscardConfirm"), t("platform.cancel"), {
+      confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
+    }).then(() => true, () => false);
+    if (!confirmed) return;
+  }
+  resetDraft(false);
+  emit("cancel");
 }
 
 async function saveFromForm() {
@@ -707,6 +747,20 @@ watch(usesHeaderActions, (inHeader, _previous, onCleanup) => {
   onCleanup(stop);
 }, { immediate: true });
 
+/**
+ * Bottom action bar visibility:
+ * - Hidden when the enclosing page header carries the draft (`actions: "header"`).
+ * - Always pinned in create mode (`Cancel` / `Create`).
+ * - Never shown on an all-read-only edit form with no pending changes.
+ * - On an edit form, appears only once there are changes to settle (`Discard` / `Save`).
+ */
+const showActionBar = computed(() => {
+  if (usesHeaderActions.value) return false;
+  if (isCreate.value) return true;
+  if (allReadOnly.value && !canSettle.value) return false;
+  return canSettle.value;
+});
+
 /** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
 </script>
@@ -760,10 +814,18 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
           <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
         </div>
       </div>
-      <div v-if="!usesHeaderActions" class="sdk-owner-form-actions">
-        <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">{{ t("platform.unsavedChanges") }}</span>
-        <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
-        <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
+      <div v-if="showActionBar" class="sdk-owner-form-actions">
+        <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">
+          {{ t("platform.formChangedCount", { count: changedCount }, changedCount) }}
+        </span>
+        <template v-if="isCreate">
+          <el-button :disabled="saving" @click="cancelCreate">{{ t("platform.cancel") }}</el-button>
+          <el-button type="primary" :disabled="asking" :loading="saving" @click="saveFromForm">{{ t("platform.create") }}</el-button>
+        </template>
+        <template v-else>
+          <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
+          <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
+        </template>
       </div>
     </el-form>
     </data-state>
