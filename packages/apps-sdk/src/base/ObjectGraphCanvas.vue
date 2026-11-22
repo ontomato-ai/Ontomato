@@ -3,11 +3,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
+import type { PageHighlight } from "@ontomato/contracts/page-context";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { G6GraphCanvas, layoutByRelations, type GraphCanvasPoint, type GraphCanvasTone, type GraphCanvasViewport, type LayoutRoom } from "@ontomato/foundation-ui/graph/g6";
+import { usePanelContext } from "../panel/context";
 import { useMember, useMemberParam } from "../panel/member";
 import { savePanelFile } from "../panel/save-file";
 import { useGraphRecords, type EdgeEndsConfig } from "./object-graph-data";
+import { findDirectedGraphPath } from "./object-graph-path";
 
 /**
  * The graph as a page draws it (the ontology graph, visual modeling): the owner's node and edge records on the platform's
@@ -26,6 +29,7 @@ const props = withDefaults(defineProps<{
 }>(), { editable: undefined });
 
 const { t } = useI18n();
+const { instance } = usePanelContext();
 const member = useMember();
 const nodeCategory = props.nodeCategory ?? member.projection.config.nodeCategory;
 if (nodeCategory !== undefined && typeof nodeCategory !== "string") throw new Error(`The projection in member '${member.key}' names nodeCategory with no JSON Pointer`);
@@ -63,6 +67,8 @@ const connectTo = useMemberParam("connectTo");
 const positions = useMemberParam("positions");
 const highlightedNodes = useMemberParam("highlightedNodes");
 const highlightedEdges = useMemberParam("highlightedEdges");
+const pathFrom = useMemberParam("pathFrom");
+const pathTo = useMemberParam("pathTo");
 const zoom = useMemberParam("zoom");
 
 type Positions = Record<string, GraphCanvasPoint>;
@@ -90,21 +96,156 @@ const layout = computed(() => layoutByRelations(resolved.value.nodes, resolved.v
 /** The chosen object's key, when the state holds one of this type. */
 const keyOf = (value: RuntimeJsonValue | null, type: string) =>
   value !== null && typeof value === "object" && !Array.isArray(value) && value.className === type ? [String(value.primaryKey)] : [];
+/** A node key from either an object reference of `nodeType` or a plain non-empty node identifier. */
+const endpointKeyOf = (value: RuntimeJsonValue | null, type: string): string | null => {
+  if (typeof value === "string" && value.length) return value;
+  return keyOf(value, type)[0] ?? null;
+};
 /** The keys of the objects of this type a list state holds. */
 const keysOf = (value: RuntimeJsonValue | null, type: string) => new Set(Array.isArray(value) ? value.flatMap((item) => keyOf(item, type)) : []);
 const selectedNodes = computed(() => keyOf(selectedNode.value.value, nodeType));
 const selectedEdges = computed(() => keyOf(selectedEdge.value.value, edgeType));
 
-const highlighted = computed(() => ({ nodes: keysOf(highlightedNodes.value.value, nodeType), edges: keysOf(highlightedEdges.value.value, edgeType) }));
-/** With anything highlighted, what is stands out and the rest fades; otherwise every element is plain. */
-const toneOf = (keys: ReadonlySet<string>, id: string): GraphCanvasTone | undefined =>
-  highlighted.value.nodes.size || highlighted.value.edges.size ? (keys.has(id) ? "accent" : "muted") : undefined;
+// Keep owner labels registered on the panel instance so pageContext names graph selections and endpoints clearly.
+watch(
+  () => resolved.value.nodes,
+  (nodes) => {
+    if (nodes.length) instance.nameObjects(nodeType, nodes.map((node) => ({ primaryKey: node.id, label: node.label })));
+  },
+  { immediate: true },
+);
+watch(
+  () => resolved.value.links,
+  (links) => {
+    if (links.length) instance.nameObjects(edgeType, links.map((edge) => ({ primaryKey: edge.id, label: edge.label || edge.id })));
+  },
+  { immediate: true },
+);
+
+const searchHighlighted = computed(() => ({
+  nodes: keysOf(highlightedNodes.value.value, nodeType),
+  edges: keysOf(highlightedEdges.value.value, edgeType),
+}));
+const pathResult = computed(() =>
+  resolved.value.loading || resolved.value.error
+    ? { status: "idle" as const }
+    : findDirectedGraphPath(
+        resolved.value.nodes,
+        resolved.value.links,
+        endpointKeyOf(pathFrom.value.value, nodeType),
+        endpointKeyOf(pathTo.value.value, nodeType),
+      ),
+);
+const pathNodeSet = computed(() => (pathResult.value.status === "idle" ? new Set<string>() : new Set(pathResult.value.nodeIds)));
+const pathEdgeSet = computed(() => (pathResult.value.status === "idle" ? new Set<string>() : new Set(pathResult.value.edgeIds)));
+/** Distinguishes an active directed path query from search highlights (and from an unhighlighted canvas). */
+const highlightKind = computed<"path" | "search" | "none">(() => {
+  if (pathResult.value.status !== "idle") return "path";
+  if (searchHighlighted.value.nodes.size || searchHighlighted.value.edges.size) return "search";
+  return "none";
+});
+/**
+ * Path queries use the distinct `path` tone when a path is found (and leave nodes plain when none is found so no
+ * misleading highlight appears); search hits use `accent`, dimming everything else.
+ */
+const nodeToneOf = (id: string): GraphCanvasTone | undefined => {
+  if (highlightKind.value === "path") {
+    if (pathResult.value.status === "found" || pathResult.value.status === "same-node") {
+      return pathNodeSet.value.has(id) ? "path" : "muted";
+    }
+    return undefined;
+  }
+  if (highlightKind.value === "search") return searchHighlighted.value.nodes.has(id) ? "accent" : "muted";
+  return undefined;
+};
+const edgeToneOf = (id: string): GraphCanvasTone | undefined => {
+  if (highlightKind.value === "path") {
+    if (pathResult.value.status === "found" || pathResult.value.status === "same-node") {
+      return pathEdgeSet.value.has(id) ? "path" : "muted";
+    }
+    return undefined;
+  }
+  if (highlightKind.value === "search") return searchHighlighted.value.edges.has(id) ? "accent" : "muted";
+  return undefined;
+};
+
+const pathTrail = computed(() =>
+  pathResult.value.status === "found" ? pathResult.value.nodes.map((node) => node.label).join(" → ") : "",
+);
+const pathHopsLabel = computed(() => {
+  if (pathResult.value.status !== "found") return "";
+  return t("platform.graphPathHops", { n: pathResult.value.hops }, pathResult.value.hops);
+});
+const pathBannerText = computed(() => {
+  const result = pathResult.value;
+  if (result.status === "idle") return "";
+  if (result.status === "same-node") return t("platform.graphPathSameNode", { node: result.from.label });
+  if (result.status === "found") {
+    return t("platform.graphPathSummary", {
+      from: result.from.label,
+      to: result.to.label,
+      hops: pathHopsLabel.value,
+      path: pathTrail.value,
+    });
+  }
+  return resolved.value.edgesNotice
+    ? t("platform.graphPathNotFoundVisible", { from: result.from.label, to: result.to.label })
+    : t("platform.graphPathNotFound", { from: result.from.label, to: result.to.label });
+});
+
+const searchHighlightItems = computed(() => {
+  const nodeLabels = new Map(resolved.value.nodes.map((node) => [node.id, node.label]));
+  const edgeLabels = new Map(resolved.value.links.map((edge) => [edge.id, edge.label || edge.id]));
+  return [
+    ...[...searchHighlighted.value.nodes].map((id) => ({ kind: nodeType, id, label: nodeLabels.get(id) ?? id })),
+    ...[...searchHighlighted.value.edges].map((id) => ({ kind: edgeType, id, label: edgeLabels.get(id) ?? id })),
+  ];
+});
+const searchBannerSummary = computed(() => {
+  const items = searchHighlightItems.value;
+  if (!items.length) return "";
+  const preview = items.slice(0, 5).map((item) => item.label).join(", ");
+  return t("platform.graphSearchMatchesSummary", {
+    count: items.length,
+    items: items.length > 5 ? `${preview}…` : preview,
+  });
+});
+
+const reportedHighlight = computed<PageHighlight | null>(() => {
+  if (resolved.value.loading || resolved.value.error) return null;
+  if (highlightKind.value === "path" && pathResult.value.status !== "idle") {
+    const result = pathResult.value;
+    const partialNotice = resolved.value.edgesNotice;
+    return {
+      kind: "path",
+      summary: pathBannerText.value,
+      from: { kind: nodeType, id: result.from.id, label: result.from.label },
+      to: { kind: nodeType, id: result.to.id, label: result.to.label },
+      found: result.status === "found" || result.status === "same-node",
+      ...(result.hops !== null ? { hops: result.hops } : {}),
+      nodes: result.nodes.map((node) => ({ kind: nodeType, id: node.id, label: node.label })),
+      edges: result.edges.map((edge) => ({ kind: edgeType, id: edge.id, label: edge.label })),
+      ...(partialNotice ? { partialEdges: true, partialNotice } : {}),
+    };
+  }
+  if (highlightKind.value === "search" && searchHighlightItems.value.length) {
+    return {
+      kind: "search",
+      summary: searchBannerSummary.value,
+      items: searchHighlightItems.value,
+      ...(resolved.value.edgesNotice ? { partialEdges: true } : {}),
+    };
+  }
+  return null;
+});
+const stopReportingHighlight = instance.reportHighlight(member.key, reportedHighlight);
+onBeforeUnmount(stopReportingHighlight);
 
 /** Every node where the reader put it, else where its relations place it. */
 const drawnNodes = computed(() => resolved.value.nodes.map((node) => ({
-  ...node, ...layout.value.positions.get(node.id), ...saved.value[node.id], tone: toneOf(highlighted.value.nodes, node.id),
+  ...node, ...layout.value.positions.get(node.id), ...saved.value[node.id], tone: nodeToneOf(node.id),
 })));
-const drawnEdges = computed(() => resolved.value.links.map((edge) => ({ ...edge, tone: toneOf(highlighted.value.edges, edge.id) })));
+const drawnEdges = computed(() => resolved.value.links.map((edge) => ({ ...edge, tone: edgeToneOf(edge.id) })));
 
 const choose = (param: typeof selectedNode, type: string, ids: readonly string[]) =>
   param.set(ids.length ? { className: type, primaryKey: ids[0]! } as unknown as RuntimeJsonValue : null);
@@ -181,7 +322,7 @@ async function download() {
 </script>
 
 <template>
-  <div ref="element" class="sdk-object-graph-canvas">
+  <div ref="element" class="sdk-object-graph-canvas" :data-graph-highlight-kind="highlightKind">
     <el-skeleton v-if="resolved.loading" :rows="4" animated></el-skeleton>
     <p v-else-if="resolved.error" class="sdk-object-graph-canvas-error" role="alert">{{ resolved.error }}</p>
     <el-empty v-else-if="!resolved.nodes.length" :description="t('platform.graphEmpty')" :image-size="48"></el-empty>
@@ -208,6 +349,28 @@ async function download() {
         @viewport="viewed"
         @resized="resized"
       />
+      <div
+        v-if="highlightKind === 'path' && pathResult.status !== 'idle'"
+        class="sdk-object-graph-canvas-highlight sdk-object-graph-canvas-path"
+        :class="`status-${pathResult.status}`"
+        role="status"
+        data-graph-path-banner
+        :data-graph-path-status="pathResult.status"
+        :data-graph-path-hops="pathResult.hops ?? undefined"
+      >
+        <span class="sdk-object-graph-canvas-highlight-badge">{{ t("platform.graphPathHighlightLabel") }}</span>
+        <span v-if="pathResult.status === 'found'" class="sdk-object-graph-canvas-path-hops">{{ pathHopsLabel }}</span>
+        <span class="sdk-object-graph-canvas-highlight-text">{{ pathResult.status === "found" ? pathTrail : pathBannerText }}</span>
+      </div>
+      <div
+        v-else-if="highlightKind === 'search'"
+        class="sdk-object-graph-canvas-highlight sdk-object-graph-canvas-search"
+        role="status"
+        data-graph-search-banner
+      >
+        <span class="sdk-object-graph-canvas-highlight-badge">{{ t("platform.graphSearchHighlightLabel") }}</span>
+        <span class="sdk-object-graph-canvas-highlight-text">{{ searchBannerSummary }}</span>
+      </div>
       <div v-if="partial || resolved.edgesNotice" class="sdk-object-graph-canvas-notices">
         <p v-if="resolved.edgesNotice" class="sdk-object-graph-canvas-edge-notice" role="status" data-graph-edges-notice>
           {{ resolved.edgesNotice }}
@@ -264,6 +427,50 @@ async function download() {
   margin: 0;
   color: var(--el-color-danger-text);
   font-size: var(--text-sm);
+}
+.sdk-object-graph-canvas-highlight {
+  position: absolute;
+  inset-block-start: var(--spacing-sm);
+  inset-inline-start: var(--spacing-sm);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: calc(100% - 220px);
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+.sdk-object-graph-canvas-path {
+  border: 1px solid var(--el-color-warning-light-5);
+  color: var(--el-text-color-primary);
+}
+.sdk-object-graph-canvas-path .sdk-object-graph-canvas-highlight-badge {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+  font-weight: 600;
+}
+.sdk-object-graph-canvas-path-hops {
+  color: var(--el-color-warning-dark-2);
+  font-weight: 600;
+}
+.sdk-object-graph-canvas-search {
+  border: 1px solid var(--el-color-primary-light-5);
+  color: var(--el-text-color-primary);
+}
+.sdk-object-graph-canvas-search .sdk-object-graph-canvas-highlight-badge {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.sdk-object-graph-canvas-highlight-text {
+  color: var(--el-text-color-regular);
 }
 .sdk-object-graph-canvas-notices {
   position: absolute;

@@ -21,6 +21,7 @@ export {
   pageLineAddress,
   pageMoved,
   pageSelectionSchema,
+  pageHighlightSchema,
   pageContextSchema,
   samePageAddress,
   writtenText,
@@ -28,6 +29,7 @@ export {
   type FileContext,
   type FileLinePrompt,
   type PageContext,
+  type PageHighlight,
   type PageLinePrompts,
   type PageSelection,
 } from "@ontomato/contracts/page-context";
