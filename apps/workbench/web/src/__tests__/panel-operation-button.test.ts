@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE } from "@ontomato/contracts/platform-object-types";
+import { BUSINESS_KNOWLEDGE, DELETE_KNOWLEDGE, EXPORT_SKILL, SKILL } from "@ontomato/contracts/platform-object-types";
 import type { PanelOperationDescriptor } from "../../../../../packages/apps-sdk/src/panel/human-operations";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
@@ -22,8 +22,10 @@ import { randomId } from "@ontomato/contracts/random-id";
 
 const APPLICATION = "app-knowledge";
 const knowledge = (primaryKey: string) => ({ objectType: BUSINESS_KNOWLEDGE, primaryKey });
+const skill = (primaryKey: string) => ({ objectType: SKILL, primaryKey });
 const entry = { kind: "object", objectType: BUSINESS_KNOWLEDGE } as const;
 const entries = { kind: "list", items: entry } as const;
+const skillEntry = { kind: "object", objectType: SKILL } as const;
 const record = (id: string, inputs: ProductProjection["inputs"]): ProductProjection => ({
   domainId: "domain-1", ownerId: "owner-1", revision: 1, createdAt: "2026-11-19T00:00:00.000Z",
   updatedAt: "2026-11-19T00:00:00.000Z", editable: false, visibility: "domain",
@@ -34,15 +36,22 @@ const record = (id: string, inputs: ProductProjection["inputs"]): ProductProject
 const projections: Record<string, ProductProjection> = {
   "knowledge-remove": record("knowledge-remove", { entry }),
   "knowledge-remove-all": record("knowledge-remove-all", { entry: entries }),
+  "skill-export": {
+    ...record("skill-export", { skill: skillEntry }),
+    config: { operation: "export" },
+    operations: { export: { operation: { kind: "PlatformOperation", id: EXPORT_SKILL }, target: { input: "skill" } } },
+  },
 };
 const manifest = definePanel({
   state: {
     selectedKnowledge: { type: entry },
     checkedKnowledge: { type: entries },
+    selectedSkill: { type: skillEntry },
   },
   members: {
     remove: { target: { projectionId: "knowledge-remove" }, inputs: { entry: { state: "selectedKnowledge" } } },
     removeAll: { target: { projectionId: "knowledge-remove-all" }, inputs: { entry: { state: "checkedKnowledge" } } },
+    export: { target: { projectionId: "skill-export" }, inputs: { skill: { state: "selectedSkill" } } },
   },
   commands: {},
 });
@@ -62,6 +71,10 @@ const descriptions: Record<string, PanelOperationDescriptor> = {
   "removeAll.delete": {
     kind: "action", handlerRef: DELETE_KNOWLEDGE, label: "Delete all", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {},
     batch: true, inspectImpact: { handlerRef: "knowledge.delete.impact" },
+  },
+  "export.export": {
+    kind: "action", handlerRef: EXPORT_SKILL, label: "Export", effect: "read", target: { source: "input", input: "skill" }, inputSchema: {}, resultSchema: {},
+    batch: false,
   },
 };
 const deleted = { kind: "success", data: {}, affected: { objects: [knowledge("a")], objectTypes: [BUSINESS_KNOWLEDGE] } };
@@ -87,8 +100,19 @@ function coordinator() {
     // A member's operations, as the owner admits them: the delete, by the projection's name for it.
     if (request.method === "POST" && request.path === "/api/product-panels/read") {
       const { memberPath } = request.body as { operations: true; memberPath: { member: string }[] };
-      const described = descriptions[`${memberPath.at(-1)!.member}.delete`]!;
-      return Response.json({ status: "ready", value: { delete: unavailable ? { ...described, unavailable } : described } });
+      const member = memberPath.at(-1)!.member;
+      const opName = member === "export" ? "export" : "delete";
+      const described = descriptions[`${member}.${opName}`]!;
+      return Response.json({ status: "ready", value: { [opName]: unavailable ? { ...described, unavailable } : described } });
+    }
+    if (request.method === "POST" && request.path === "/api/panel-operations/read") {
+      const body = request.body as { call: { target: { primaryKey: string } } };
+      return new Response(new Uint8Array([80, 75, 5, 6]), {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${body.call.target.primaryKey}.zip"`,
+        },
+      });
     }
     if (request.method === "POST" && request.path === "/api/panel-operations/intents") {
       const body = request.body as { operationId: string; calls?: { target: { primaryKey: string } }[] };
@@ -220,5 +244,33 @@ it("shows an operation its owner would refuse now as off, with the owner's reaso
     expect(writes(sent)).toEqual([]);
   } finally {
     unavailable = null;
+  }
+});
+
+it("runs a target-only read operation without readOperationInputs, saves the file, and clears the receipt on target change", async () => {
+  const prevCreate = URL.createObjectURL;
+  const prevRevoke = URL.revokeObjectURL;
+  URL.createObjectURL = vi.fn(() => "blob:mock-export");
+  URL.revokeObjectURL = vi.fn();
+  const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  try {
+    const { context, sent } = await open({ selectedSkill: { className: SKILL, primaryKey: "growth-rate-calc" } }, "export");
+    await click(0);
+    await vi.waitFor(() => {
+      const fileText = buttonOf(0).querySelector(".sdk-operation-file")?.textContent;
+      if (!fileText) throw new Error(`Expected .sdk-operation-file, got: ${buttonOf(0).textContent}`);
+      expect(fileText).toContain("growth-rate-calc.zip");
+    });
+    expect(sent.filter((request) => request.path === "/api/panel-operations/read").map((request) => request.body)).toEqual([{
+      applicationId: APPLICATION, useId: use.id, operationId: "export.export",
+      call: { target: { kind: "object", ...skill("growth-rate-calc") }, input: {} },
+    }]);
+    context.instance.state.set("selectedSkill", { className: SKILL, primaryKey: "echarts" });
+    await nextTick();
+    expect(buttonOf(0).querySelector(".sdk-operation-file")).toBeNull();
+  } finally {
+    anchorClick.mockRestore();
+    URL.createObjectURL = prevCreate;
+    URL.revokeObjectURL = prevRevoke;
   }
 });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
@@ -104,6 +104,12 @@ const checkedState = computed(() => (batch.value ? targetState.value : null));
 const checkedObjects = computed(() => (checkedState.value === null ? [] : stateObjects(values.value[checkedState.value])));
 const checkedTargets = computed(() =>
   checkedObjects.value.map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey })));
+const targetKey = computed(() => (target.value?.kind === "object" ? `${target.value.objectType}:${target.value.primaryKey}` : null));
+watch(targetKey, () => {
+  failure.value = null;
+  read.value = null;
+  receipt.value = null;
+});
 const ready = computed(() => {
   // The owner lists it but would refuse it now: the button is off, and says why beside it.
   if (!descriptor.value || running.value || descriptor.value.unavailable) return false;
@@ -120,8 +126,16 @@ async function run() {
   try {
     if (described.effect === "read") {
       const { target: owned } = described;
-      const draft = owned.source === "draft" ? panel.instance.forms.handle(owned.slot)!.values.value : {};
-      const input = readOperationInput(panel.instance, slot.slot, props.operation, draft);
+      const hasDeclaredInputs = panel.manifest.members[slot.slot]?.readOperationInputs?.[props.operation] !== undefined;
+      // Trial runs bind a draft or declared readOperationInputs; object-targeted exports take an empty input object.
+      const input = owned.source === "draft" || hasDeclaredInputs
+        ? readOperationInput(
+            panel.instance,
+            slot.slot,
+            props.operation,
+            owned.source === "draft" ? panel.instance.forms.handle(owned.slot)!.values.value : {},
+          )
+        : {};
       read.value = await panel.instance.readOperation(operationId.value, { target: target.value, input });
       return;
     }
