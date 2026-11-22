@@ -245,7 +245,10 @@ it("fits a graph no smaller than names stay readable at, and then shows the part
   calls.length = 0;
   // It says whether the whole graph is in view, for its caller to tell the reader when it is not.
   expect(await fit({ minZoom: 0.85, around: "n1" })).toBe(true);
-  expect(steps()).toEqual([["fitView", 0.9], ["fitCenter", null]]);
+  // The zoom it reaches is set again as a zoom, not left as fitView's step from the last one: G6 5.1 holds names at
+  // their size by the last zoom it was told, and reads fitView's step as a zoom (seen on 3000, 2026-11-22: names drawn
+  // at 7 pixels once a fit followed another).
+  expect(steps()).toEqual([["fitView", 0.9], ["zoomTo", 0.9], ["fitCenter", null]]);
 
   // One that would shrink below it is shown at that size, around the node given.
   view.fitted = 0.3;
@@ -283,7 +286,7 @@ it("fits a graph whose names keep their size no smaller than its names stay apar
   view.fitted = 0.5;
   calls.length = 0;
   expect(await fit({ keepNames: true })).toBe(true);
-  expect(steps()).toEqual([["fitView", 0.5], ["fitCenter", null]]);
+  expect(steps()).toEqual([["fitView", 0.5], ["zoomTo", 0.5], ["fitCenter", null]]);
 
   view.fitted = 0.2;
   calls.length = 0;
