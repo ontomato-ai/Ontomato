@@ -696,6 +696,12 @@ describe("ObjectForm settings parity", () => {
       }),
     });
     fallbackApp.use(i18n()).use(ElementPlus).mount(fallbackEl);
+    await vi.waitFor(() => expect(fallbackEl.querySelector<HTMLInputElement>('[data-field="/lang"] input')).not.toBeNull());
+    // Edit mode hides the footer action bar while clean, and reveals it once modified.
+    expect(fallbackEl.querySelector(".sdk-owner-form-actions")).toBeNull();
+    const fallbackInput = fallbackEl.querySelector<HTMLInputElement>('[data-field="/lang"] input')!;
+    fallbackInput.value = "fr";
+    fallbackInput.dispatchEvent(new Event("input"));
     await vi.waitFor(() => expect(fallbackEl.querySelector(".sdk-owner-form-actions")).not.toBeNull());
     fallbackApp.unmount();
   });

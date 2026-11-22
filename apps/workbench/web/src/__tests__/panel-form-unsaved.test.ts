@@ -78,7 +78,7 @@ it("says a form has unsaved changes, and asks before discarding them", async () 
   const name = element.querySelector<HTMLInputElement>('[data-field="/name"] input')!;
   name.value = "Orders 2";
   name.dispatchEvent(new Event("input"));
-  await vi.waitFor(() => expect(unsaved()).toBe("Unsaved changes"));
+  await vi.waitFor(() => expect(unsaved()).toBe("1 change"));
   const discard = () => [...element.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].find((button) => button.textContent?.trim() === "Discard")!.click();
   const dialog = () => document.querySelector<HTMLElement>(".el-message-box");
   // Kept: the reader goes on editing.
@@ -87,7 +87,7 @@ it("says a form has unsaved changes, and asks before discarding them", async () 
   [...dialog()!.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Keep editing")!.click();
   await vi.waitFor(() => expect(dialog()?.style.display ?? "none").toBe("none"));
   expect(name.value).toBe("Orders 2");
-  expect(unsaved()).toBe("Unsaved changes");
+  expect(unsaved()).toBe("1 change");
   // Discarded: back to what the owner holds.
   discard();
   await vi.waitFor(() => expect(dialog()?.style.display).not.toBe("none"));

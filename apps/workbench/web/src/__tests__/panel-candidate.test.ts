@@ -172,7 +172,7 @@ it("reads only through Node as the candidate, and runs no operation: a save is r
     input.value = "Preview agent";
     input.dispatchEvent(new Event("input"));
     await nextTick();
-    const save = [...element.querySelectorAll<HTMLButtonElement>("[data-member='definition'] button")].find(button => button.textContent?.trim() === "Save")!;
+    const save = [...element.querySelectorAll<HTMLButtonElement>("[data-member='definition'] button")].find(button => button.textContent?.trim() === "Create")!;
     save.click();
     await vi.waitFor(() => expect(element.querySelector("[data-member='definition']")?.textContent).toContain("A panel preview runs no operations"));
     // What the preview sent: the candidate, its projections and Node's read entry, as the reader; no owner was asked
@@ -226,8 +226,8 @@ it("reads the candidate again when the author comes back, and waits for an unsav
     await vi.waitFor(() => expect(reads()).toHaveLength(3));
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(element.querySelector(".panel-host-coded > *")).toBe(shown);
-    // Discarded: the changed candidate is drawn.
-    [...element.querySelectorAll<HTMLButtonElement>("[data-member='definition'] button")].find(button => button.textContent?.trim() === "Discard")!.click();
+    // Cancelled create draft: the changed candidate is drawn.
+    [...element.querySelectorAll<HTMLButtonElement>("[data-member='definition'] button")].find(button => button.textContent?.trim() === "Cancel")!.click();
     await confirmDiscard();
     await vi.waitFor(() => expect(element.querySelector(".panel-host-coded > .changed")).not.toBeNull());
     expect(formal(sent)).toEqual([]);

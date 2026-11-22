@@ -568,8 +568,14 @@ it("renders ObjectForm with a scrollable body and sibling pinned actions bar", a
   await vi.waitFor(() => expect(host.querySelector(".sdk-owner-form-body")).not.toBeNull(), { timeout: 4000 });
   const inner = host.querySelector(".sdk-owner-form-inner")!;
   const body = inner.querySelector(".sdk-owner-form-body")!;
-  const actions = inner.querySelector(".sdk-owner-form-actions")!;
   expect(body.querySelector('[data-field="/name"]')).not.toBeNull();
+  // Edit mode hides the save bar while clean; once modified, the pinned actions bar appears as a sibling of body.
+  expect(inner.querySelector(".sdk-owner-form-actions")).toBeNull();
+  const input = body.querySelector<HTMLInputElement>('[data-field="/name"] input')!;
+  input.value = "Nightly v2";
+  input.dispatchEvent(new Event("input"));
+  await vi.waitFor(() => expect(inner.querySelector(".sdk-owner-form-actions")).not.toBeNull());
+  const actions = inner.querySelector(".sdk-owner-form-actions")!;
   expect(actions.parentElement).toBe(inner);
   expect(body.contains(actions)).toBe(false);
 });
