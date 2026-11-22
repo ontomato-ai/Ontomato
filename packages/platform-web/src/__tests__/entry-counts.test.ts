@@ -16,7 +16,9 @@ beforeEach(async () => {
   vi.resetModules();
   ({ entryCount, entryCountsChanged } = await import("../entry-counts"));
 });
-afterEach(() => request.mockReset());
+afterEach(() => {
+  request.mockReset();
+});
 
 const use = (id: string, count?: ApplicationPanelUse["count"]): ApplicationPanelUse => ({
   id, pageKey: id, panelId: `panel-${id}`, path: `/ontology/${id}`, access: { kind: "domain-member" }, ...count ? { count } : {},
