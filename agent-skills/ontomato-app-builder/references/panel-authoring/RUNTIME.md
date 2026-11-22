@@ -185,6 +185,13 @@ In the current direct runtime, an open command reports that the SDK opens no ent
 For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
 from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
 
+The host renders the page header solely from declared metadata (title, description, back control, `manifest.commands`,
+and Refresh) and never places business data there; render counts and summaries inside panel content via the owning
+component. Below the header and above the bottom composer, every entry (full page, beside a conversation, or inside a
+custom frame's current-entry slot) receives a definite-height content box. Style panels against that box with normal
+CSS (natural stacking, or filling the box with inner scrolling and a `rem`/`px` `min-height` with no upper cap) rather
+than CSS viewport units (`vh`, `vw`, `dvh`, etc.), and use `<sdk-dialog>` / `<sdk-drawer>` for overlays.
+
 The generated page skill's Panel commands section gives the assistant the address or operation for each command.
 `do.set` opens the current entry with the changed deep-linkable fields in `state`. `do.invoke` calls the listed
 owner operation. `do.open` follows the indicated destination address. Use a declared operation ID for `/operate`.
