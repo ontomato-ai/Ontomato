@@ -97,13 +97,13 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     state: ({ id }): Record<string, PanelStateValue> =>
       id === "new" ? {} : { selected: { className: ACTION, primaryKey: id! } },
   },
-  // The functions page: a function's detail selects it; the old page's `new` opens the catalog, whose own button starts a
-  // new function.
+  // The functions page: a function's detail selects it; the old page's `new` opens the owner's blank form, as the page's
+  // own "New function" command does.
   {
     path: platformRoutes.function.path,
     use: platformRoutes.functions.path,
     state: ({ id }): Record<string, PanelStateValue> =>
-      id === "new" ? {} : { selected: { className: FUNCTION, primaryKey: id! } },
+      id === "new" ? { creating: true } : { selected: { className: FUNCTION, primaryKey: id! } },
   },
 ];
 
