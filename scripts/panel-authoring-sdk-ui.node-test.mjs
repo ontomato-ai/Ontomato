@@ -146,7 +146,7 @@ test("every shipped builtin panel passes checkBuiltinPanelSource with zero third
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   }));
-  assert.ok(result.checked >= 17, `Expected at least 17 builtin panels checked, got ${result.checked}`);
+  assert.ok(result.checked >= 18, `Expected at least 18 builtin panels checked, got ${result.checked}`);
 });
 
 test("every published --sdk-* and platform theme token is backed by design-tokens brand properties or foundation CSS", () => {
