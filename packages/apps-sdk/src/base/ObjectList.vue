@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Comment, Fragment, Text, computed, nextTick, ref, useSlots, watch, type VNode } from "vue";
+import { Comment, Fragment, Text, computed, nextTick, onBeforeUnmount, ref, useSlots, watch, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelChildObjectIdentity } from "@ontomato/contracts/panel-manifest";
@@ -20,12 +20,28 @@ import type {
   PlatformFieldReference,
   PlatformGraphStatus,
   PlatformObjectRecord,
+  TextHighlightRange,
 } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
 import { listColumnMembersFor, listRowDetailMemberFor } from "../panel/row-member";
 import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
 import ListRowMember from "./ListRowMember.vue";
+import {
+  buildObjectListGroups,
+  findLocalHighlightRanges,
+  isLocalFilterValueActive,
+  matchesLocalFieldFilter,
+  matchesLocalSearch,
+  type ObjectListGroup,
+} from "./object-list-local";
 import type { ObjectListColumn, ObjectListRef } from "./object-list-types";
+import {
+  buildVirtualGridBands,
+  computeScrollTopForIndex,
+  computeVirtualWindow,
+  VIRTUAL_OVERSCAN,
+  VIRTUAL_ROW_THRESHOLD,
+} from "./object-list-virtual";
 import {
   displayFieldText,
   isRecordReference,
@@ -39,6 +55,49 @@ import { textHighlightSegments } from "./text-highlight";
 import { useDataStateLabels } from "./data-state-labels";
 
 type ObjectListSelection = ObjectListRef | PanelChildObjectIdentity;
+
+type FlatListItem =
+  | {
+      readonly kind: "group";
+      readonly key: string;
+      readonly groupKey: string;
+      readonly label: string;
+      readonly count: number;
+      readonly collapsed: boolean;
+    }
+  | {
+      readonly kind: "row";
+      readonly key: string;
+      readonly row: PlatformObjectRecord;
+      readonly rowIndex: number;
+    };
+
+const RESERVED_MEMBER_INPUTS = new Set([
+  "selected",
+  "checked",
+  "listed",
+  "search",
+  "value",
+  "cursor",
+  "size",
+  "page",
+  "layout",
+  "columns",
+  "statusField",
+  "tagsField",
+  "subtitleField",
+  "subtitleLines",
+  "pageSize",
+  "fallbackToFirst",
+  "toggleable",
+  "emptyText",
+  "emptyHint",
+  "creatingRow",
+  "searchable",
+  "groupBy",
+  "groupEmptyLabel",
+  "localFilters",
+]);
 
 interface ParsedListData {
   readonly rows: readonly PlatformObjectRecord[];
@@ -103,6 +162,24 @@ const props = withDefaults(
     emptyHint?: string;
     /** Controls visibility of the top `#create-row` inline form block; omitted, shown whenever `#create-row` has content. */
     creatingRow?: boolean;
+    /**
+     * Enables zero-request local search when the owner's read does not page (`pageMode === "none"`) and declares no
+     * server `search` parameter. Omitted, local search is enabled automatically whenever the member binds `search`
+     * input or output state; set to `false` to hide the list's search input while still filtering by a bound `search`.
+     */
+    searchable?: boolean;
+    /**
+     * Record field key used to group filtered rows under collapsible section headers showing each group's label and
+     * real-time filtered count (groups with zero matching rows are omitted). Works across list, table, and card layouts.
+     */
+    groupBy?: string;
+    /** Optional panel message key for the group heading of records whose `groupBy` field is missing or empty; defaults to `"—"`. */
+    groupEmptyLabel?: string;
+    /**
+     * Optional field-equality filters applied locally on unpaged lists without issuing additional reads. Non-read panel
+     * inputs bound on the member also filter locally by matching field key.
+     */
+    localFilters?: Readonly<Record<string, unknown>>;
   }>(),
   {
     layout: "auto",
@@ -115,6 +192,10 @@ const props = withDefaults(
     emptyText: undefined,
     emptyHint: undefined,
     creatingRow: undefined,
+    searchable: undefined,
+    groupBy: undefined,
+    groupEmptyLabel: undefined,
+    localFilters: undefined,
   },
 );
 
@@ -176,21 +257,49 @@ function paramNameOf(name: string): string {
   return mapped && "input" in mapped ? mapped.input : name;
 }
 
-const canSearch = "search" in signatureParams && !isFixedLiteral("search");
+const hasServerSearch = "search" in signatureParams && !isFixedLiteral("search");
 const pageMode: "cursor" | "page" | "none" = "cursor" in signatureParams
   ? "cursor"
   : "page" in signatureParams
     ? "page"
     : "none";
+const searchStateBound = Boolean(placement.inputs?.search || placement.outputs?.search);
+const isLocalSearchActive = computed(
+  () => !hasServerSearch && pageMode === "none" && (props.searchable === true || searchStateBound),
+);
+const canSearch = computed(
+  () => hasServerSearch || (isLocalSearchActive.value && props.searchable !== false && !isFixedLiteral("search")),
+);
 const canCheck = Boolean(slotOutputState(panel.manifest, member.key, "checked"));
 const effectivePageSize = computed(() => (props.pageSize > 0 ? props.pageSize : 20));
 
-const searchParam = canSearch ? useMemberParam(paramNameOf("search")) : null;
+const searchParam = !isFixedLiteral("search") ? useMemberParam(paramNameOf("search")) : null;
 const cursorParam = pageMode === "cursor" ? useMemberParam(paramNameOf("cursor")) : null;
 const sizeParam = pageMode === "cursor" && "size" in signatureParams ? useMemberParam(paramNameOf("size")) : null;
 const pageParam = pageMode === "page" ? useMemberParam(paramNameOf("page")) : null;
 const selectedParam = useMemberParam("selected");
 const checkedParam = useMemberParam("checked");
+
+const datumMappedInputNames = new Set(
+  Object.values(datum.params).flatMap((mapped) => ("input" in mapped ? [mapped.input] : [])),
+);
+const localFilterParamEntries = pageMode === "none"
+  ? Object.keys(placement.inputs ?? {})
+      .filter((key) =>
+        !(key in signatureParams)
+        && !(key in datum.params)
+        && !datumMappedInputNames.has(key)
+        && !RESERVED_MEMBER_INPUTS.has(key),
+      )
+      .map((key) => ({
+        key,
+        param: useMemberParam(key),
+        writable: isWritableParam(key),
+      }))
+  : [];
+const localFiltersInputParam = pageMode === "none" && placement.inputs?.localFilters && isWritableParam("localFilters")
+  ? useMemberParam("localFilters")
+  : null;
 
 const currentPage = ref(1);
 interface CursorBatch {
@@ -249,11 +358,63 @@ const tableColumnCount = computed(
   () => (rowDetailMember.value ? 1 : 0) + (canCheck ? 1 : 0) + (props.columns?.length ?? 0),
 );
 const scrollContainerRef = ref<HTMLElement | null>(null);
+const scrollTop = ref(0);
+const viewportHeight = ref(0);
+const containerWidth = ref(0);
+const measuredHeights = new Map<string, number>();
+const measuredDetailHeights = new Map<string, number>();
+const measureTick = ref(0);
+
+function recordMeasuredHeight(map: Map<string, number>, key: string, height: number) {
+  if (height <= 0) return;
+  const previous = map.get(key);
+  if (previous !== undefined && Math.abs(previous - height) <= 1) return;
+  map.set(key, height);
+  measureTick.value += 1;
+}
+
+function onContainerScroll(event: Event) {
+  const el = event.currentTarget as HTMLElement | null;
+  if (!el) return;
+  scrollTop.value = el.scrollTop;
+  if (el.clientHeight !== viewportHeight.value) viewportHeight.value = el.clientHeight;
+  if (el.clientWidth !== containerWidth.value) containerWidth.value = el.clientWidth;
+}
+
+let containerResizeObserver: ResizeObserver | null = null;
+watch(
+  scrollContainerRef,
+  (el) => {
+    containerResizeObserver?.disconnect();
+    containerResizeObserver = null;
+    if (!el) return;
+    viewportHeight.value = el.clientHeight;
+    containerWidth.value = el.clientWidth;
+    if (typeof ResizeObserver !== "undefined") {
+      containerResizeObserver = new ResizeObserver(() => {
+        viewportHeight.value = el.clientHeight;
+        containerWidth.value = el.clientWidth;
+      });
+      containerResizeObserver.observe(el);
+    }
+  },
+  { flush: "post" },
+);
+
+onBeforeUnmount(() => {
+  containerResizeObserver?.disconnect();
+  containerResizeObserver = null;
+});
+
 const expandedKey = ref<string | null>(null);
 const detailElements = new Map<string, HTMLElement>();
 function setDetailElement(key: string, element: unknown) {
-  if (element instanceof HTMLElement) detailElements.set(key, element);
-  else detailElements.delete(key);
+  if (element instanceof HTMLElement) {
+    detailElements.set(key, element);
+    if (element.offsetHeight > 0) recordMeasuredHeight(measuredDetailHeights, key, element.offsetHeight);
+  } else {
+    detailElements.delete(key);
+  }
 }
 function isRowExpanded(row: PlatformObjectRecord): boolean {
   return expandedKey.value === rowIdentityKey(row);
@@ -355,12 +516,12 @@ const parsedData = computed<ParsedListData>(() => {
   }
   if (Array.isArray(value)) {
     const items = value as unknown as readonly PlatformObjectRecord[];
-    return { rows: items, total: items.length, hasTotal: canSearch || pageMode !== "none", diagnostics: [], status: "ok" };
+    return { rows: items, total: items.length, hasTotal: hasServerSearch || pageMode !== "none", diagnostics: [], status: "ok" };
   }
   const queryResult = value as unknown as PanelRecordQuery;
   const items = queryResult.rows as unknown as readonly PlatformObjectRecord[];
   const hasTotal = queryResult.total !== undefined
-    || ((canSearch || pageMode !== "none") && currentPage.value === 1 && queryResult.nextCursor === undefined);
+    || ((hasServerSearch || pageMode !== "none") && currentPage.value === 1 && queryResult.nextCursor === undefined);
   return {
     rows: items,
     total: queryResult.total ?? items.length,
@@ -406,7 +567,7 @@ watch(
   { immediate: true, flush: "sync" },
 );
 
-const rows = computed<readonly PlatformObjectRecord[]>(() => {
+const rawRows = computed<readonly PlatformObjectRecord[]>(() => {
   if (pageMode === "cursor" && cursorBatches.value.length > 0) {
     const seen = new Set<string>();
     const merged: PlatformObjectRecord[] = [];
@@ -422,7 +583,56 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => {
   }
   return parsedData.value.rows;
 });
-const total = computed(() => parsedData.value.total);
+
+const searchText = computed<string>(() => {
+  const raw = searchParam?.value.value;
+  return typeof raw === "string" ? raw : "";
+});
+const normalizedLocalQuery = computed(() =>
+  isLocalSearchActive.value ? searchText.value.trim().toLowerCase() : "",
+);
+const activeLocalFieldFilters = computed<readonly (readonly [string, unknown])[]>(() => {
+  if (pageMode !== "none") return [];
+  const entries = new Map<string, unknown>();
+  for (const { key, param } of localFilterParamEntries) {
+    const val = param.value.value;
+    if (isLocalFilterValueActive(val)) entries.set(key, val);
+  }
+  const inputMap = localFiltersInputParam?.value.value;
+  if (inputMap && typeof inputMap === "object" && !Array.isArray(inputMap)) {
+    for (const [key, val] of Object.entries(inputMap as Record<string, unknown>)) {
+      if (isLocalFilterValueActive(val)) entries.set(key, val);
+    }
+  }
+  if (props.localFilters) {
+    for (const [key, val] of Object.entries(props.localFilters)) {
+      if (isLocalFilterValueActive(val)) entries.set(key, val);
+    }
+  }
+  return [...entries.entries()];
+});
+const hasActiveLocalFilter = computed(
+  () => pageMode === "none" && (normalizedLocalQuery.value !== "" || activeLocalFieldFilters.value.length > 0),
+);
+
+const rows = computed<readonly PlatformObjectRecord[]>(() => {
+  if (!hasActiveLocalFilter.value) return rawRows.value;
+  const query = normalizedLocalQuery.value;
+  const filters = activeLocalFieldFilters.value;
+  const fallbackClassName = activeType.value ?? objectType;
+  return rawRows.value.filter((row) => {
+    if (query !== "" && !matchesLocalSearch(row, query, locale.value, t)) return false;
+    for (const [fieldKey, expected] of filters) {
+      if (!matchesLocalFieldFilter(row, fieldKey, expected, fallbackClassName, locale.value, t)) return false;
+    }
+    return true;
+  });
+});
+
+const total = computed(() => (hasActiveLocalFilter.value ? rows.value.length : parsedData.value.total));
+const effectiveHasTotal = computed(
+  () => parsedData.value.hasTotal || (pageMode === "none" && (canSearch.value || hasActiveLocalFilter.value)),
+);
 const nextCursor = computed(() => parsedData.value.nextCursor);
 const queryStatus = computed(() => parsedData.value.status);
 const diagnostics = computed(() => parsedData.value.diagnostics);
@@ -466,11 +676,6 @@ const allVisibleChecked = computed(
 const someVisibleChecked = computed(
   () => !allVisibleChecked.value && rows.value.some((row) => checkedIdentityKeys.value.has(rowIdentityKey(row))),
 );
-
-const searchText = computed<string>(() => {
-  const raw = searchParam?.value.value;
-  return typeof raw === "string" ? raw : "";
-});
 
 const effectiveLayout = computed<"list" | "table" | "cards">(() => {
   if (props.layout === "cards") return "cards";
@@ -555,7 +760,7 @@ const footerReady = computed(
     (datumState.value.status === "ready" && queryStatus.value === "ok" && rows.value.length > 0)
     || (loadingMore.value && rows.value.length > 0),
 );
-const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.value : parsedData.value.hasTotal));
+const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.value : effectiveHasTotal.value));
 const footerTotal = computed(() => (loadingMore.value ? lastKnownTotal.value : total.value));
 const showFooterTotal = computed(() => footerReady.value && footerHasTotal.value);
 
@@ -577,7 +782,7 @@ const showFooter = computed(() => showFooterTotal.value || showPageControls.valu
 
 const showToolbar = computed(
   () =>
-    canSearch
+    canSearch.value
     || Boolean(slots.filters)
     || Boolean(slots["toolbar-actions"])
     || (canCheck && (!isTable.value || checkedRefs.value.length > 0)),
@@ -610,18 +815,23 @@ const queryStatusLabel = computed(() => {
 });
 
 /**
- * Whether the reader narrowed the read: their search, or a value the panel's state gives one of its other optional
- * filter parameters (a status filter, a category). An empty answer to a narrowed read says nothing matches and offers
- * Clear filters, rather than saying there is nothing at all.
+ * Whether the reader narrowed the read: their search (server or local), a value the panel's state gives one of its
+ * optional filter parameters, or any active local field filter. An empty answer to a narrowed list says nothing
+ * matches and offers Clear filters, rather than saying there is nothing at all.
  */
-const narrowed = computed(() => searchText.value !== "" || nonPagingParamNames.some((name) => {
-  if (name === "search" || isFixedLiteral(name) || requiredParamNames.has(name)) return false;
-  const value = currentParams.value[name];
-  return value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && value.length === 0);
-}));
+const narrowed = computed(
+  () =>
+    ((hasServerSearch || isLocalSearchActive.value) && searchText.value !== "")
+    || activeLocalFieldFilters.value.length > 0
+    || nonPagingParamNames.some((name) => {
+      if (name === "search" || isFixedLiteral(name) || requiredParamNames.has(name)) return false;
+      const value = currentParams.value[name];
+      return value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && value.length === 0);
+    }),
+);
 
 function clearFilters() {
-  if (searchParam && isWritableParam("search") && searchParam.value.value !== null) {
+  if ((hasServerSearch || isLocalSearchActive.value) && searchParam && isWritableParam("search") && searchParam.value.value !== null) {
     searchParam.set(null);
   }
   for (const param of clearableFilterParams) {
@@ -629,6 +839,16 @@ function clearFilters() {
     if (value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0)) {
       param.set(null);
     }
+  }
+  for (const { param, writable } of localFilterParamEntries) {
+    if (!writable) continue;
+    const value = param.value.value;
+    if (isLocalFilterValueActive(value)) {
+      param.set(null);
+    }
+  }
+  if (localFiltersInputParam && localFiltersInputParam.value.value !== null) {
+    localFiltersInputParam.set(null);
   }
   resetPaging();
   emit("clear-filters");
@@ -660,7 +880,9 @@ const dataStateLabels = useDataStateLabels(
   () => resolvedEmptyHint.value || undefined,
 );
 
-const ownerFieldLabels = computed<Readonly<Record<string, string>>>(() => rows.value[0]?.fieldLabels ?? {});
+const ownerFieldLabels = computed<Readonly<Record<string, string>>>(
+  () => rawRows.value[0]?.fieldLabels ?? rows.value[0]?.fieldLabels ?? {},
+);
 
 function columnLabel(column: ObjectListColumn): string {
   if (column.labelKey) return panel.t(column.labelKey);
@@ -738,9 +960,9 @@ watch(
       publishListed([]);
       return;
     }
-    const listed = rows.value;
+    const allLoaded = rawRows.value;
     const byType = new Map<string, { primaryKey: string; label: string }[]>();
-    for (const item of listed) {
+    for (const item of allLoaded) {
       const itemType = rowClassName(item);
       let bucket = byType.get(itemType);
       if (!bucket) {
@@ -750,10 +972,12 @@ watch(
       bucket.push(item);
     }
     for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
+    const listed = rows.value;
     publishListed(listed);
     applyFallback(listed);
     if (pendingScrollToTop) {
       pendingScrollToTop = false;
+      scrollTop.value = 0;
       void nextTick(() => {
         if (scrollContainerRef.value) scrollContainerRef.value.scrollTop = 0;
       });
@@ -761,6 +985,33 @@ watch(
   },
   { immediate: true },
 );
+
+const localFilterSignature = computed(() => {
+  if (pageMode !== "none") return "";
+  return JSON.stringify([
+    isLocalSearchActive.value ? searchText.value : null,
+    localFilterParamEntries.map(({ key, param }) => [key, param.value.value ?? null]),
+    localFiltersInputParam?.value.value ?? null,
+    props.localFilters ?? null,
+  ]);
+});
+
+if (pageMode === "none") {
+  watch(
+    localFilterSignature,
+    (next, prev) => {
+      if (next === prev || !initialLoadDone) return;
+      if (datumState.value.status !== "ready" || parsedData.value.status !== "ok") return;
+      scrollTop.value = 0;
+      if (scrollContainerRef.value) scrollContainerRef.value.scrollTop = 0;
+      pendingFilterFallback = true;
+      const listed = rows.value;
+      publishListed(listed);
+      applyFallback(listed);
+    },
+    { flush: "sync" },
+  );
+}
 
 function onSearchInput(event: Event) {
   if (!searchParam) return;
@@ -789,8 +1040,210 @@ function loadMore() {
 
 const rowElements = new Map<string, HTMLElement>();
 function setRowElement(key: string, element: unknown) {
-  if (element instanceof HTMLElement) rowElements.set(key, element);
-  else rowElements.delete(key);
+  if (element instanceof HTMLElement) {
+    rowElements.set(key, element);
+    if (element.offsetHeight > 0) recordMeasuredHeight(measuredHeights, key, element.offsetHeight);
+  } else {
+    rowElements.delete(key);
+  }
+}
+
+function setGroupHeaderElement(key: string, element: unknown) {
+  if (element instanceof HTMLElement && element.offsetHeight > 0) {
+    recordMeasuredHeight(measuredHeights, key, element.offsetHeight);
+  }
+}
+
+/** Grouping (`groupBy`) over the already-filtered rows, with collapsible headers and real-time filtered counts. */
+const isGrouped = computed(() => Boolean(props.groupBy && props.groupBy.trim() !== ""));
+const collapsedGroups = ref<ReadonlySet<string>>(new Set());
+function toggleGroupCollapsed(groupKey: string) {
+  const next = new Set(collapsedGroups.value);
+  if (next.has(groupKey)) next.delete(groupKey);
+  else next.add(groupKey);
+  collapsedGroups.value = next;
+}
+watch(() => props.groupBy, () => {
+  collapsedGroups.value = new Set();
+});
+
+const resolvedGroupEmptyLabel = computed(() => (props.groupEmptyLabel ? panel.t(props.groupEmptyLabel) : "—"));
+const groups = computed<readonly ObjectListGroup[]>(() =>
+  isGrouped.value
+    ? buildObjectListGroups(
+        rows.value,
+        props.groupBy!.trim(),
+        activeType.value ?? objectType,
+        locale.value,
+        t,
+        resolvedGroupEmptyLabel.value,
+      )
+    : [],
+);
+
+const rowGroupKeyByIdentity = computed(() => {
+  const map = new Map<string, string>();
+  if (!isGrouped.value) return map;
+  for (const group of groups.value) {
+    for (const row of group.rows) {
+      map.set(rowIdentityKey(row), group.key);
+    }
+  }
+  return map;
+});
+
+const flatItems = computed<readonly FlatListItem[]>(() => {
+  if (!isGrouped.value) {
+    return rows.value.map((row, rowIndex) => ({
+      kind: "row" as const,
+      key: rowIdentityKey(row),
+      row,
+      rowIndex,
+    }));
+  }
+  const items: FlatListItem[] = [];
+  let rowIndex = 0;
+  for (const group of groups.value) {
+    const collapsed = collapsedGroups.value.has(group.key);
+    items.push({
+      kind: "group",
+      key: `group\u0000${group.key}`,
+      groupKey: group.key,
+      label: group.label,
+      count: group.count,
+      collapsed,
+    });
+    if (collapsed) continue;
+    for (const row of group.rows) {
+      items.push({
+        kind: "row",
+        key: rowIdentityKey(row),
+        row,
+        rowIndex,
+      });
+      rowIndex += 1;
+    }
+  }
+  return items;
+});
+
+const navigableRows = computed<readonly PlatformObjectRecord[]>(() =>
+  flatItems.value
+    .filter((item): item is Extract<FlatListItem, { kind: "row" }> => item.kind === "row")
+    .map((item) => item.row),
+);
+
+/** Windowed rendering for large unpaged lists (> VIRTUAL_ROW_THRESHOLD items). */
+const isVirtualized = computed(() => pageMode === "none" && flatItems.value.length > VIRTUAL_ROW_THRESHOLD);
+
+watch([effectiveLayout, () => props.groupBy], () => {
+  measuredHeights.clear();
+  measuredDetailHeights.clear();
+  measureTick.value += 1;
+});
+
+function estimatedItemHeight(item: FlatListItem): number {
+  if (item.kind === "group") {
+    return measuredHeights.get(item.key) ?? 32;
+  }
+  const baseDefault = isCards.value ? 160 : isTable.value ? 40 : (listHasTwoLines.value ? 64 : 48);
+  const measured = measuredHeights.get(item.key);
+  const expanded = expandedKey.value === item.key;
+  if (isTable.value) {
+    const rowHeight = measured ?? baseDefault;
+    return expanded ? rowHeight + (measuredDetailHeights.get(item.key) ?? 200) : rowHeight;
+  }
+  if (measured !== undefined) return measured;
+  return expanded ? baseDefault + 200 : baseDefault;
+}
+
+const flatHeights = computed<readonly number[]>(() => {
+  void measureTick.value;
+  return flatItems.value.map(estimatedItemHeight);
+});
+
+const linearVirtual = computed(() =>
+  isVirtualized.value && !isCards.value
+    ? computeVirtualWindow(flatHeights.value, scrollTop.value, viewportHeight.value, VIRTUAL_OVERSCAN)
+    : null,
+);
+
+const cardsColumns = computed(() =>
+  containerWidth.value > 0 ? Math.max(1, Math.floor((containerWidth.value + 12) / (260 + 12))) : 1,
+);
+
+const cardVirtual = computed(() => {
+  if (!isVirtualized.value || !isCards.value) return null;
+  const bands = buildVirtualGridBands(
+    flatItems.value.map((item) => item.kind),
+    flatHeights.value,
+    cardsColumns.value,
+  );
+  const window = computeVirtualWindow(
+    bands.map((band) => band.height),
+    scrollTop.value,
+    viewportHeight.value,
+    VIRTUAL_OVERSCAN,
+  );
+  const startItemIndex = bands[window.startIndex]?.startItemIndex ?? 0;
+  const endItemIndex = window.endIndex > 0 ? (bands[window.endIndex - 1]?.endItemIndex ?? flatItems.value.length) : 0;
+  return { bands, window, startItemIndex, endItemIndex };
+});
+
+const renderedItems = computed<readonly FlatListItem[]>(() => {
+  if (!isVirtualized.value) return flatItems.value;
+  if (cardVirtual.value) {
+    return flatItems.value.slice(cardVirtual.value.startItemIndex, cardVirtual.value.endItemIndex);
+  }
+  if (linearVirtual.value) {
+    return flatItems.value.slice(linearVirtual.value.startIndex, linearVirtual.value.endIndex);
+  }
+  return flatItems.value;
+});
+
+const virtualTopPadding = computed(() =>
+  cardVirtual.value?.window.topPadding ?? linearVirtual.value?.topPadding ?? 0,
+);
+const virtualBottomPadding = computed(() =>
+  cardVirtual.value?.window.bottomPadding ?? linearVirtual.value?.bottomPadding ?? 0,
+);
+
+function ensureRowInVirtualWindow(identity: string): boolean {
+  if (!isVirtualized.value) return false;
+  const itemIndex = flatItems.value.findIndex((item) => item.kind === "row" && item.key === identity);
+  if (itemIndex < 0) return false;
+
+  let targetScrollTop = scrollTop.value;
+  let alreadyRendered = false;
+  if (cardVirtual.value) {
+    alreadyRendered = itemIndex >= cardVirtual.value.startItemIndex && itemIndex < cardVirtual.value.endItemIndex;
+    const bandIndex = cardVirtual.value.bands.findIndex(
+      (band) => itemIndex >= band.startItemIndex && itemIndex < band.endItemIndex,
+    );
+    if (bandIndex >= 0) {
+      targetScrollTop = computeScrollTopForIndex(
+        cardVirtual.value.window.offsets,
+        bandIndex,
+        scrollTop.value,
+        viewportHeight.value,
+      );
+    }
+  } else if (linearVirtual.value) {
+    alreadyRendered = itemIndex >= linearVirtual.value.startIndex && itemIndex < linearVirtual.value.endIndex;
+    targetScrollTop = computeScrollTopForIndex(
+      linearVirtual.value.offsets,
+      itemIndex,
+      scrollTop.value,
+      viewportHeight.value,
+    );
+  }
+
+  if (targetScrollTop !== scrollTop.value || !alreadyRendered) {
+    scrollTop.value = targetScrollTop;
+    if (scrollContainerRef.value) scrollContainerRef.value.scrollTop = targetScrollTop;
+    return true;
+  }
+  return false;
 }
 
 let lastScrolledIdentity: string | null = null;
@@ -804,7 +1257,23 @@ watch(
     if (identity === lastScrolledIdentity) return;
     if (!listed.some((row) => rowIdentityKey(row) === identity)) return;
     lastScrolledIdentity = identity;
+
+    // Auto-expand the containing group if the selected item is inside a collapsed group.
+    const containingGroup = rowGroupKeyByIdentity.value.get(identity);
+    if (containingGroup !== undefined && collapsedGroups.value.has(containingGroup)) {
+      const next = new Set(collapsedGroups.value);
+      next.delete(containingGroup);
+      collapsedGroups.value = next;
+    }
+
+    const jumped = ensureRowInVirtualWindow(identity);
     void nextTick(() => {
+      if (jumped) {
+        ensureRowInVirtualWindow(identity);
+        if (scrollContainerRef.value && scrollContainerRef.value.scrollTop !== scrollTop.value) {
+          scrollContainerRef.value.scrollTop = scrollTop.value;
+        }
+      }
       const target = rowElements.get(identity);
       if (target && typeof target.scrollIntoView === "function") {
         target.scrollIntoView({ block: "nearest" });
@@ -816,6 +1285,7 @@ watch(
 
 watch(expandedKey, (key) => {
   if (!key) return;
+  ensureRowInVirtualWindow(key);
   void nextTick(() => {
     const target = detailElements.get(key) ?? rowElements.get(key);
     if (target && typeof target.scrollIntoView === "function") {
@@ -839,6 +1309,50 @@ function choose(row: PlatformObjectRecord) {
   setSelected(next);
 }
 
+function focusRowByIdentity(identity: string, mode: "table" | "cards" | "list") {
+  const scrolled = ensureRowInVirtualWindow(identity);
+  const focusNow = () => {
+    const rowEl = rowElements.get(identity);
+    if (!rowEl) return false;
+    const focusable = mode === "list"
+      ? rowEl.querySelector<HTMLElement>(".sdk-object-list-item-btn") ?? rowEl
+      : rowEl;
+    focusable.focus();
+    return true;
+  };
+  if (!scrolled && focusNow()) return;
+  void nextTick(() => {
+    focusNow();
+  });
+}
+
+function navigateRowFocus(
+  row: PlatformObjectRecord,
+  event: KeyboardEvent,
+  mode: "table" | "cards" | "list",
+): boolean {
+  const list = navigableRows.value;
+  if (list.length === 0) return false;
+  const identity = rowIdentityKey(row);
+  const index = list.findIndex((item) => rowIdentityKey(item) === identity);
+  if (index < 0) return false;
+
+  let nextIndex = -1;
+  if (event.key === "ArrowDown" || (mode === "cards" && event.key === "ArrowRight")) {
+    if (index + 1 < list.length) nextIndex = index + 1;
+  } else if (event.key === "ArrowUp" || (mode === "cards" && event.key === "ArrowLeft")) {
+    if (index - 1 >= 0) nextIndex = index - 1;
+  } else if (event.key === "Home") {
+    nextIndex = 0;
+  } else if (event.key === "End") {
+    nextIndex = list.length - 1;
+  }
+  if (nextIndex < 0) return false;
+  event.preventDefault();
+  focusRowByIdentity(rowIdentityKey(list[nextIndex]!), mode);
+  return true;
+}
+
 /**
  * Keyboard activation and row-to-row focus movement for table rows: only handles keys when the row itself holds
  * focus so checkboxes, reference links and other interactive controls inside a cell keep their own keys.
@@ -851,18 +1365,7 @@ function onRowKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
     choose(row);
     return;
   }
-  const current = event.currentTarget as HTMLElement;
-  const dataRows = Array.from(current.parentElement?.querySelectorAll<HTMLElement>(":scope > tr[data-row-item='true']") ?? []);
-  const index = dataRows.indexOf(current);
-  let target: HTMLElement | null = null;
-  if (event.key === "ArrowDown") target = dataRows[index + 1] ?? null;
-  else if (event.key === "ArrowUp") target = dataRows[index - 1] ?? null;
-  else if (event.key === "Home") target = dataRows[0] ?? null;
-  else if (event.key === "End") target = dataRows[dataRows.length - 1] ?? null;
-  if (target) {
-    event.preventDefault();
-    target.focus();
-  }
+  navigateRowFocus(row, event, "table");
 }
 
 /** Keyboard activation and neighbour focus movement for cards without colliding with inner checkboxes or reference links. */
@@ -874,16 +1377,14 @@ function onCardKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
     choose(row);
     return;
   }
-  const current = event.currentTarget as HTMLElement;
-  let target: Element | null = null;
-  if (event.key === "ArrowDown" || event.key === "ArrowRight") target = current.nextElementSibling;
-  else if (event.key === "ArrowUp" || event.key === "ArrowLeft") target = current.previousElementSibling;
-  else if (event.key === "Home") target = current.parentElement?.firstElementChild ?? null;
-  else if (event.key === "End") target = current.parentElement?.lastElementChild ?? null;
-  if (target instanceof HTMLElement) {
-    event.preventDefault();
-    target.focus();
-  }
+  navigateRowFocus(row, event, "cards");
+}
+
+/** Keyboard focus movement for compact list items, supporting grouped and virtualized lists smoothly. */
+function onListItemKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
+  if (event.target !== event.currentTarget) return;
+  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  navigateRowFocus(row, event, "list");
 }
 
 function toggleChecked(row: PlatformObjectRecord, checked: boolean) {
@@ -940,10 +1441,24 @@ function referenceField(row: PlatformObjectRecord, key: string): PanelRecordRefe
   return isRecordReference(raw) ? raw : null;
 }
 
+function highlightRangesFor(row: PlatformObjectRecord, key: string, text: string): readonly TextHighlightRange[] | undefined {
+  const ownerRanges = row.highlights?.[key];
+  if (ownerRanges?.length) return ownerRanges;
+  if (normalizedLocalQuery.value !== "") {
+    const localRanges = findLocalHighlightRanges(text, normalizedLocalQuery.value);
+    if (localRanges.length > 0) return localRanges;
+  }
+  return undefined;
+}
+
+function textSegmentsFor(row: PlatformObjectRecord, key: string, text: string) {
+  return textHighlightSegments(text, highlightRangesFor(row, key, text));
+}
+
 function cellSegments(row: PlatformObjectRecord, key: string, empty = "—") {
   const text = fieldValue(row, key);
   if (text === "") return [{ text: empty, hit: false }];
-  return textHighlightSegments(text, row.highlights?.[key]);
+  return textSegmentsFor(row, key, text);
 }
 
 function selectAllCheckboxRef(element: unknown) {
@@ -1012,7 +1527,13 @@ watch(someVisibleChecked, () => {
       <span v-if="queryReason" class="sdk-object-list-status-reason">{{ queryReason }}</span>
     </p>
     <data-state v-else :result="listResult" :labels="dataStateLabels">
-      <div v-if="isTable" ref="scrollContainerRef" class="sdk-object-list-table-wrap">
+      <div
+        v-if="isTable"
+        ref="scrollContainerRef"
+        class="sdk-object-list-table-wrap"
+        :data-virtualized="isVirtualized ? 'true' : undefined"
+        @scroll="onContainerScroll"
+      >
         <table class="sdk-object-list-table">
           <thead>
             <tr>
@@ -1032,61 +1553,253 @@ watch(someVisibleChecked, () => {
             </tr>
           </thead>
           <tbody>
-            <template v-for="row in rows" :key="rowIdentityKey(row)">
+            <tr v-if="isVirtualized && virtualTopPadding > 0" class="sdk-object-list-virtual-spacer-row" aria-hidden="true">
+              <td :colspan="tableColumnCount" class="sdk-object-list-virtual-spacer-cell" :style="{ height: `${virtualTopPadding}px` }"></td>
+            </tr>
+            <template v-for="entry in renderedItems" :key="entry.key">
               <tr
-                :ref="(el) => setRowElement(rowIdentityKey(row), el)"
-                tabindex="0"
-                data-row-item="true"
-                :aria-selected="rowIdentityKey(row) === chosenIdentity"
-                :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
-                @click="choose(row)"
-                @keydown="onRowKeydown(row, $event)"
+                v-if="entry.kind === 'group'"
+                :ref="(el) => setGroupHeaderElement(entry.key, el)"
+                class="sdk-object-list-group-row"
+                :data-group-key="entry.groupKey"
               >
-                <td v-if="rowDetailMember" class="sdk-object-list-expand-col" @click.stop>
+                <td :colspan="tableColumnCount" class="sdk-object-list-group-cell">
                   <button
                     type="button"
-                    class="sdk-object-list-expand-btn"
-                    :aria-expanded="isRowExpanded(row)"
-                    :aria-label="rowExpandAriaLabel(row)"
-                    @click="toggleRowExpanded(row)"
+                    class="sdk-object-list-group-btn"
+                    :aria-expanded="!entry.collapsed"
+                    @click="toggleGroupCollapsed(entry.groupKey)"
                   >
-                    <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(row) }" aria-hidden="true">▸</span>
+                    <span class="sdk-object-list-expand-icon" :class="{ expanded: !entry.collapsed }" aria-hidden="true">▸</span>
+                    <span class="sdk-object-list-group-label">{{ entry.label }}</span>
+                    <span class="sdk-object-list-group-count">{{ entry.count }}</span>
                   </button>
                 </td>
-                <td v-if="canCheck" class="sdk-object-list-check-col" @click.stop>
-                  <input
-                    type="checkbox"
-                    :aria-label="row.label"
-                    :checked="checkedIdentityKeys.has(rowIdentityKey(row))"
-                    @change="toggleChecked(row, ($event.target as HTMLInputElement).checked)"
-                  />
-                </td>
-                <td
-                  v-for="column in columns"
-                  :key="column.key"
-                  :class="columnFit.get(column.key)"
-                  :title="listColumnMember(column.key) ? undefined : cellTitle(row, column)"
+              </tr>
+              <template v-else>
+                <tr
+                  :ref="(el) => setRowElement(entry.key, el)"
+                  tabindex="0"
+                  data-row-item="true"
+                  :aria-selected="entry.key === chosenIdentity"
+                  :class="{ chosen: entry.key === chosenIdentity }"
+                  @click="choose(entry.row)"
+                  @keydown="onRowKeydown(entry.row, $event)"
                 >
+                  <td v-if="rowDetailMember" class="sdk-object-list-expand-col" @click.stop>
+                    <button
+                      type="button"
+                      class="sdk-object-list-expand-btn"
+                      :aria-expanded="isRowExpanded(entry.row)"
+                      :aria-label="rowExpandAriaLabel(entry.row)"
+                      @click="toggleRowExpanded(entry.row)"
+                    >
+                      <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(entry.row) }" aria-hidden="true">▸</span>
+                    </button>
+                  </td>
+                  <td v-if="canCheck" class="sdk-object-list-check-col" @click.stop>
+                    <input
+                      type="checkbox"
+                      :aria-label="entry.row.label"
+                      :checked="checkedIdentityKeys.has(entry.key)"
+                      @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
+                    />
+                  </td>
+                  <td
+                    v-for="column in columns"
+                    :key="column.key"
+                    :class="columnFit.get(column.key)"
+                    :title="listColumnMember(column.key) ? undefined : cellTitle(entry.row, column)"
+                  >
+                    <list-row-member
+                      v-if="listColumnMember(column.key)"
+                      :member-key="listColumnMember(column.key)!"
+                      kind="listColumn"
+                      :row="entry.row"
+                      :fallback-class-name="activeType ?? objectType"
+                      :host-runtime-params="hostRuntimeParams"
+                    ></list-row-member>
+                    <button
+                      v-else-if="referenceField(entry.row, column.key)"
+                      type="button"
+                      class="sdk-object-ref-link"
+                      @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
+                    >
+                      <template v-for="(part, index) in textSegmentsFor(entry.row, column.key, referenceDisplayLabel(referenceField(entry.row, column.key)!))" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </button>
+                    <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
+                      <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
+                        <button
+                          v-if="isRecordReference(item)"
+                          type="button"
+                          class="sdk-object-ref-link"
+                          @click.stop="navigateTo(toFieldReference(item), column.key)"
+                        >
+                          {{ referenceDisplayLabel(item) }}
+                        </button>
+                        <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                      </template>
+                      <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
+                    </span>
+                    <span
+                      v-else-if="column.kind === 'tag' && fieldValue(entry.row, column.key) !== ''"
+                      class="sdk-object-list-tag"
+                      :data-tone="entry.row.tones?.[column.key] ?? 'default'"
+                    >
+                      <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </span>
+                    <template v-else-if="column.kind === 'time'">{{ fieldValue(entry.row, column.key) !== '' ? timeText(fieldValue(entry.row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
+                    <div v-else class="sdk-object-list-cell">
+                      <span class="sdk-object-list-cell-main">
+                        <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                          <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                        </template>
+                      </span>
+                      <span v-if="column.subtitleKey && fieldValue(entry.row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
+                        <template v-for="(part, index) in cellSegments(entry.row, column.subtitleKey, '')" :key="index">
+                          <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                        </template>
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+                <tr
+                  v-if="rowDetailMember && isRowExpanded(entry.row)"
+                  :ref="(el) => setDetailElement(entry.key, el)"
+                  class="sdk-object-list-detail-row"
+                >
+                  <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell">
+                    <list-row-member
+                      :member-key="rowDetailMember"
+                      kind="listRowDetail"
+                      :row="entry.row"
+                      :fallback-class-name="activeType ?? objectType"
+                      :host-runtime-params="hostRuntimeParams"
+                    ></list-row-member>
+                  </td>
+                </tr>
+              </template>
+            </template>
+            <tr v-if="isVirtualized && virtualBottomPadding > 0" class="sdk-object-list-virtual-spacer-row" aria-hidden="true">
+              <td :colspan="tableColumnCount" class="sdk-object-list-virtual-spacer-cell" :style="{ height: `${virtualBottomPadding}px` }"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        v-else-if="isCards"
+        ref="scrollContainerRef"
+        role="listbox"
+        class="sdk-object-list-cards"
+        :data-virtualized="isVirtualized ? 'true' : undefined"
+        @scroll="onContainerScroll"
+      >
+        <div
+          v-if="isVirtualized && virtualTopPadding > 0"
+          class="sdk-object-list-virtual-spacer sdk-object-list-card-spacer"
+          aria-hidden="true"
+          :style="{ height: `${virtualTopPadding}px` }"
+        ></div>
+        <template v-for="entry in renderedItems" :key="entry.key">
+          <div
+            v-if="entry.kind === 'group'"
+            :ref="(el) => setGroupHeaderElement(entry.key, el)"
+            role="presentation"
+            class="sdk-object-list-group-header sdk-object-list-card-group-header"
+            :data-group-key="entry.groupKey"
+          >
+            <button
+              type="button"
+              class="sdk-object-list-group-btn"
+              :aria-expanded="!entry.collapsed"
+              @click="toggleGroupCollapsed(entry.groupKey)"
+            >
+              <span class="sdk-object-list-expand-icon" :class="{ expanded: !entry.collapsed }" aria-hidden="true">▸</span>
+              <span class="sdk-object-list-group-label">{{ entry.label }}</span>
+              <span class="sdk-object-list-group-count">{{ entry.count }}</span>
+            </button>
+          </div>
+          <article
+            v-else
+            :ref="(el) => setRowElement(entry.key, el)"
+            role="option"
+            tabindex="0"
+            class="sdk-object-list-card"
+            :aria-selected="entry.key === chosenIdentity"
+            :class="{ chosen: entry.key === chosenIdentity }"
+            @click="choose(entry.row)"
+            @keydown="onCardKeydown(entry.row, $event)"
+          >
+            <div class="sdk-object-list-card-head">
+              <button
+                v-if="rowDetailMember"
+                type="button"
+                class="sdk-object-list-expand-btn"
+                :aria-expanded="isRowExpanded(entry.row)"
+                :aria-label="rowExpandAriaLabel(entry.row)"
+                @click.stop="toggleRowExpanded(entry.row)"
+              >
+                <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(entry.row) }" aria-hidden="true">▸</span>
+              </button>
+              <input
+                v-if="canCheck"
+                type="checkbox"
+                class="sdk-object-list-card-check"
+                :aria-label="entry.row.label"
+                :checked="checkedIdentityKeys.has(entry.key)"
+                @click.stop
+                @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
+              />
+              <span class="sdk-object-list-card-title">
+                <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
+                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                </template>
+              </span>
+              <span
+                v-if="statusField && fieldValue(entry.row, statusField) !== ''"
+                class="sdk-object-list-tag"
+                :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+              >{{ fieldValue(entry.row, statusField) }}</span>
+            </div>
+            <p
+              v-if="fieldValue(entry.row, summaryKey) !== ''"
+              class="sdk-object-list-card-sub"
+              :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
+              :style="{ WebkitLineClamp: subtitleLines }"
+            >
+              <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
+                <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+              </template>
+            </p>
+            <dl v-if="columns?.length" class="sdk-object-list-card-fields">
+              <template v-for="column in columns" :key="column.key">
+                <dt class="sdk-object-list-card-field-label">{{ columnLabel(column) }}</dt>
+                <dd class="sdk-object-list-card-field-value" :title="listColumnMember(column.key) ? undefined : cellTitle(entry.row, column)">
                   <list-row-member
                     v-if="listColumnMember(column.key)"
                     :member-key="listColumnMember(column.key)!"
                     kind="listColumn"
-                    :row="row"
+                    :row="entry.row"
                     :fallback-class-name="activeType ?? objectType"
                     :host-runtime-params="hostRuntimeParams"
                   ></list-row-member>
                   <button
-                    v-else-if="referenceField(row, column.key)"
+                    v-else-if="referenceField(entry.row, column.key)"
                     type="button"
                     class="sdk-object-ref-link"
-                    @click.stop="navigateTo(toFieldReference(referenceField(row, column.key)!), column.key)"
+                    @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
                   >
-                    <template v-for="(part, index) in textHighlightSegments(referenceDisplayLabel(referenceField(row, column.key)!), row.highlights?.[column.key])" :key="index">
+                    <template v-for="(part, index) in textSegmentsFor(entry.row, column.key, referenceDisplayLabel(referenceField(entry.row, column.key)!))" :key="index">
                       <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                     </template>
                   </button>
-                  <span v-else-if="Array.isArray(rawRecordField(row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
-                    <template v-for="(item, itemIndex) in recordFieldArrayItems(row, column.key)" :key="itemIndex">
+                  <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
+                    <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
                       <button
                         v-if="isRecordReference(item)"
                         type="button"
@@ -1097,280 +1810,193 @@ watch(someVisibleChecked, () => {
                       </button>
                       <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
                     </template>
-                    <template v-if="!recordFieldArrayItems(row, column.key).length">{{ columnEmpty(column) }}</template>
+                    <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
                   </span>
                   <span
-                    v-else-if="column.kind === 'tag' && fieldValue(row, column.key) !== ''"
+                    v-else-if="column.kind === 'tag' && fieldValue(entry.row, column.key) !== ''"
                     class="sdk-object-list-tag"
-                    :data-tone="row.tones?.[column.key] ?? 'default'"
+                    :data-tone="entry.row.tones?.[column.key] ?? 'default'"
                   >
-                    <template v-for="(part, index) in cellSegments(row, column.key, columnEmpty(column))" :key="index">
+                    <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
                       <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                     </template>
                   </span>
-                  <template v-else-if="column.kind === 'time'">{{ fieldValue(row, column.key) !== '' ? timeText(fieldValue(row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
-                  <div v-else class="sdk-object-list-cell">
-                    <span class="sdk-object-list-cell-main">
-                      <template v-for="(part, index) in cellSegments(row, column.key, columnEmpty(column))" :key="index">
-                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                      </template>
-                    </span>
-                    <span v-if="column.subtitleKey && fieldValue(row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
-                      <template v-for="(part, index) in cellSegments(row, column.subtitleKey, '')" :key="index">
-                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                      </template>
-                    </span>
-                  </div>
-                </td>
-              </tr>
-              <tr
-                v-if="rowDetailMember && isRowExpanded(row)"
-                :ref="(el) => setDetailElement(rowIdentityKey(row), el)"
-                class="sdk-object-list-detail-row"
-              >
-                <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell">
-                  <list-row-member
-                    :member-key="rowDetailMember"
-                    kind="listRowDetail"
-                    :row="row"
-                    :fallback-class-name="activeType ?? objectType"
-                    :host-runtime-params="hostRuntimeParams"
-                  ></list-row-member>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-
-      <div v-else-if="isCards" ref="scrollContainerRef" role="listbox" class="sdk-object-list-cards">
-        <article
-          v-for="row in rows"
-          :key="rowIdentityKey(row)"
-          :ref="(el) => setRowElement(rowIdentityKey(row), el)"
-          role="option"
-          tabindex="0"
-          class="sdk-object-list-card"
-          :aria-selected="rowIdentityKey(row) === chosenIdentity"
-          :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
-          @click="choose(row)"
-          @keydown="onCardKeydown(row, $event)"
-        >
-          <div class="sdk-object-list-card-head">
-            <button
-              v-if="rowDetailMember"
-              type="button"
-              class="sdk-object-list-expand-btn"
-              :aria-expanded="isRowExpanded(row)"
-              :aria-label="rowExpandAriaLabel(row)"
-              @click.stop="toggleRowExpanded(row)"
-            >
-              <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(row) }" aria-hidden="true">▸</span>
-            </button>
-            <input
-              v-if="canCheck"
-              type="checkbox"
-              class="sdk-object-list-card-check"
-              :aria-label="row.label"
-              :checked="checkedIdentityKeys.has(rowIdentityKey(row))"
-              @click.stop
-              @change="toggleChecked(row, ($event.target as HTMLInputElement).checked)"
-            />
-            <span class="sdk-object-list-card-title">
-              <template v-for="(part, index) in textHighlightSegments(row.label, row.highlights?.label)" :key="index">
-                <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  <template v-else-if="column.kind === 'time'">{{ fieldValue(entry.row, column.key) !== '' ? timeText(fieldValue(entry.row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
+                  <template v-else>
+                    <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                      <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                    </template>
+                  </template>
+                </dd>
               </template>
-            </span>
-            <span
-              v-if="statusField && fieldValue(row, statusField) !== ''"
-              class="sdk-object-list-tag"
-              :data-tone="row.tones?.[statusField] ?? 'default'"
-            >{{ fieldValue(row, statusField) }}</span>
-          </div>
-          <p
-            v-if="fieldValue(row, summaryKey) !== ''"
-            class="sdk-object-list-card-sub"
-            :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
-            :style="{ WebkitLineClamp: subtitleLines }"
-          >
-            <template v-for="(part, index) in textHighlightSegments(fieldValue(row, summaryKey), row.highlights?.[summaryKey])" :key="index">
-              <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-            </template>
-          </p>
-          <dl v-if="columns?.length" class="sdk-object-list-card-fields">
-            <template v-for="column in columns" :key="column.key">
-              <dt class="sdk-object-list-card-field-label">{{ columnLabel(column) }}</dt>
-              <dd class="sdk-object-list-card-field-value" :title="listColumnMember(column.key) ? undefined : cellTitle(row, column)">
-                <list-row-member
-                  v-if="listColumnMember(column.key)"
-                  :member-key="listColumnMember(column.key)!"
-                  kind="listColumn"
-                  :row="row"
-                  :fallback-class-name="activeType ?? objectType"
-                  :host-runtime-params="hostRuntimeParams"
-                ></list-row-member>
+            </dl>
+            <div v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-card-tags">
+              <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
                 <button
-                  v-else-if="referenceField(row, column.key)"
+                  v-if="isRecordReference(item)"
                   type="button"
                   class="sdk-object-ref-link"
-                  @click.stop="navigateTo(toFieldReference(referenceField(row, column.key)!), column.key)"
+                  @click.stop="navigateTo(toFieldReference(item), tagsField)"
                 >
-                  <template v-for="(part, index) in textHighlightSegments(referenceDisplayLabel(referenceField(row, column.key)!), row.highlights?.[column.key])" :key="index">
-                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                  </template>
+                  {{ referenceDisplayLabel(item) }}
                 </button>
-                <span v-else-if="Array.isArray(rawRecordField(row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
-                  <template v-for="(item, itemIndex) in recordFieldArrayItems(row, column.key)" :key="itemIndex">
-                    <button
-                      v-if="isRecordReference(item)"
-                      type="button"
-                      class="sdk-object-ref-link"
-                      @click.stop="navigateTo(toFieldReference(item), column.key)"
-                    >
-                      {{ referenceDisplayLabel(item) }}
-                    </button>
-                    <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
-                  </template>
-                  <template v-if="!recordFieldArrayItems(row, column.key).length">{{ columnEmpty(column) }}</template>
-                </span>
-                <span
-                  v-else-if="column.kind === 'tag' && fieldValue(row, column.key) !== ''"
-                  class="sdk-object-list-tag"
-                  :data-tone="row.tones?.[column.key] ?? 'default'"
-                >
-                  <template v-for="(part, index) in cellSegments(row, column.key, columnEmpty(column))" :key="index">
-                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                  </template>
-                </span>
-                <template v-else-if="column.kind === 'time'">{{ fieldValue(row, column.key) !== '' ? timeText(fieldValue(row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
-                <template v-else>
-                  <template v-for="(part, index) in cellSegments(row, column.key, columnEmpty(column))" :key="index">
-                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                  </template>
-                </template>
-              </dd>
-            </template>
-          </dl>
-          <div v-if="tagsField && recordFieldArrayItems(row, tagsField).length" class="sdk-object-list-card-tags">
-            <template v-for="(item, itemIndex) in recordFieldArrayItems(row, tagsField)" :key="itemIndex">
-              <button
-                v-if="isRecordReference(item)"
-                type="button"
-                class="sdk-object-ref-link"
-                @click.stop="navigateTo(toFieldReference(item), tagsField)"
-              >
-                {{ referenceDisplayLabel(item) }}
-              </button>
-              <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
-            </template>
-          </div>
-          <div
-            v-if="rowDetailMember && isRowExpanded(row)"
-            :ref="(el) => setDetailElement(rowIdentityKey(row), el)"
-            class="sdk-object-list-card-detail"
-            @click.stop
-          >
-            <list-row-member
-              :member-key="rowDetailMember"
-              kind="listRowDetail"
-              :row="row"
-              :fallback-class-name="activeType ?? objectType"
-              :host-runtime-params="hostRuntimeParams"
-            ></list-row-member>
-          </div>
-        </article>
+                <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+              </template>
+            </div>
+            <div
+              v-if="rowDetailMember && isRowExpanded(entry.row)"
+              :ref="(el) => setDetailElement(entry.key, el)"
+              class="sdk-object-list-card-detail"
+              @click.stop
+            >
+              <list-row-member
+                :member-key="rowDetailMember"
+                kind="listRowDetail"
+                :row="entry.row"
+                :fallback-class-name="activeType ?? objectType"
+                :host-runtime-params="hostRuntimeParams"
+              ></list-row-member>
+            </div>
+          </article>
+        </template>
+        <div
+          v-if="isVirtualized && virtualBottomPadding > 0"
+          class="sdk-object-list-virtual-spacer sdk-object-list-card-spacer"
+          aria-hidden="true"
+          :style="{ height: `${virtualBottomPadding}px` }"
+        ></div>
       </div>
 
-      <ul v-else ref="scrollContainerRef" role="listbox" class="sdk-object-list-items" :data-row-density="listHasTwoLines ? 'two-line' : 'single'">
+      <ul
+        v-else
+        ref="scrollContainerRef"
+        role="listbox"
+        class="sdk-object-list-items"
+        :data-row-density="listHasTwoLines ? 'two-line' : 'single'"
+        :data-virtualized="isVirtualized ? 'true' : undefined"
+        @scroll="onContainerScroll"
+      >
         <li
-          v-for="row in rows"
-          :key="rowIdentityKey(row)"
-          :ref="(el) => setRowElement(rowIdentityKey(row), el)"
-          class="sdk-object-list-row"
-          :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
-        >
-          <div class="sdk-object-list-row-main">
+          v-if="isVirtualized && virtualTopPadding > 0"
+          class="sdk-object-list-virtual-spacer"
+          aria-hidden="true"
+          :style="{ height: `${virtualTopPadding}px` }"
+        ></li>
+        <template v-for="entry in renderedItems" :key="entry.key">
+          <li
+            v-if="entry.kind === 'group'"
+            :ref="(el) => setGroupHeaderElement(entry.key, el)"
+            role="presentation"
+            class="sdk-object-list-group-header"
+            :data-group-key="entry.groupKey"
+          >
             <button
-              v-if="rowDetailMember"
               type="button"
-              class="sdk-object-list-expand-btn sdk-object-list-row-expand"
-              :aria-expanded="isRowExpanded(row)"
-              :aria-label="rowExpandAriaLabel(row)"
-              @click.stop="toggleRowExpanded(row)"
+              class="sdk-object-list-group-btn"
+              :aria-expanded="!entry.collapsed"
+              @click="toggleGroupCollapsed(entry.groupKey)"
             >
-              <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(row) }" aria-hidden="true">▸</span>
+              <span class="sdk-object-list-expand-icon" :class="{ expanded: !entry.collapsed }" aria-hidden="true">▸</span>
+              <span class="sdk-object-list-group-label">{{ entry.label }}</span>
+              <span class="sdk-object-list-group-count">{{ entry.count }}</span>
             </button>
-            <input
-              v-if="canCheck"
-              type="checkbox"
-              class="sdk-object-list-row-check"
-              :aria-label="row.label"
-              :checked="checkedIdentityKeys.has(rowIdentityKey(row))"
-              @change="toggleChecked(row, ($event.target as HTMLInputElement).checked)"
-            />
-            <button
-              type="button"
-              role="option"
-              class="sdk-object-list-item-btn"
-              :data-row-density="listHasTwoLines ? 'two-line' : 'single'"
-              :aria-selected="rowIdentityKey(row) === chosenIdentity"
-              :class="{ chosen: rowIdentityKey(row) === chosenIdentity, 'sdk-object-list-item-two-line': listHasTwoLines }"
-              @click="choose(row)"
-            >
-              <span class="sdk-object-list-item-head">
-                <span class="sdk-object-list-item-label">
-                  <template v-for="(part, index) in textHighlightSegments(row.label, row.highlights?.label)" :key="index">
+          </li>
+          <li
+            v-else
+            :ref="(el) => setRowElement(entry.key, el)"
+            class="sdk-object-list-row"
+            :class="{ chosen: entry.key === chosenIdentity }"
+          >
+            <div class="sdk-object-list-row-main">
+              <button
+                v-if="rowDetailMember"
+                type="button"
+                class="sdk-object-list-expand-btn sdk-object-list-row-expand"
+                :aria-expanded="isRowExpanded(entry.row)"
+                :aria-label="rowExpandAriaLabel(entry.row)"
+                @click.stop="toggleRowExpanded(entry.row)"
+              >
+                <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(entry.row) }" aria-hidden="true">▸</span>
+              </button>
+              <input
+                v-if="canCheck"
+                type="checkbox"
+                class="sdk-object-list-row-check"
+                :aria-label="entry.row.label"
+                :checked="checkedIdentityKeys.has(entry.key)"
+                @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
+              />
+              <button
+                type="button"
+                role="option"
+                class="sdk-object-list-item-btn"
+                :data-row-density="listHasTwoLines ? 'two-line' : 'single'"
+                :aria-selected="entry.key === chosenIdentity"
+                :class="{ chosen: entry.key === chosenIdentity, 'sdk-object-list-item-two-line': listHasTwoLines }"
+                @click="choose(entry.row)"
+                @keydown="onListItemKeydown(entry.row, $event)"
+              >
+                <span class="sdk-object-list-item-head">
+                  <span class="sdk-object-list-item-label">
+                    <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
+                      <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                    </template>
+                  </span>
+                  <span
+                    v-if="statusField && fieldValue(entry.row, statusField) !== ''"
+                    class="sdk-object-list-tag"
+                    :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                  >{{ fieldValue(entry.row, statusField) }}</span>
+                </span>
+                <span
+                  v-if="fieldValue(entry.row, summaryKey) !== ''"
+                  class="sdk-object-list-item-sub"
+                  :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
+                  :style="{ WebkitLineClamp: subtitleLines }"
+                >
+                  <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                   </template>
                 </span>
-                <span
-                  v-if="statusField && fieldValue(row, statusField) !== ''"
-                  class="sdk-object-list-tag"
-                  :data-tone="row.tones?.[statusField] ?? 'default'"
-                >{{ fieldValue(row, statusField) }}</span>
-              </span>
-              <span
-                v-if="fieldValue(row, summaryKey) !== ''"
-                class="sdk-object-list-item-sub"
-                :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
-                :style="{ WebkitLineClamp: subtitleLines }"
-              >
-                <template v-for="(part, index) in textHighlightSegments(fieldValue(row, summaryKey), row.highlights?.[summaryKey])" :key="index">
-                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                </template>
-              </span>
-              <span v-if="tagsField && recordFieldArrayItems(row, tagsField).length" class="sdk-object-list-item-tags">
-                <template v-for="(item, itemIndex) in recordFieldArrayItems(row, tagsField)" :key="itemIndex">
-                  <span
-                    v-if="isRecordReference(item)"
-                    role="link"
-                    tabindex="0"
-                    class="sdk-object-ref-link"
-                    @click.stop="navigateTo(toFieldReference(item), tagsField)"
-                    @keydown.enter.stop.prevent="navigateTo(toFieldReference(item), tagsField)"
-                  >
-                    {{ referenceDisplayLabel(item) }}
-                  </span>
-                  <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
-                </template>
-              </span>
-            </button>
-          </div>
-          <div
-            v-if="rowDetailMember && isRowExpanded(row)"
-            :ref="(el) => setDetailElement(rowIdentityKey(row), el)"
-            class="sdk-object-list-row-detail"
-            @click.stop
-          >
-            <list-row-member
-              :member-key="rowDetailMember"
-              kind="listRowDetail"
-              :row="row"
-              :fallback-class-name="activeType ?? objectType"
-              :host-runtime-params="hostRuntimeParams"
-            ></list-row-member>
-          </div>
-        </li>
+                <span v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-item-tags">
+                  <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
+                    <span
+                      v-if="isRecordReference(item)"
+                      role="link"
+                      tabindex="0"
+                      class="sdk-object-ref-link"
+                      @click.stop="navigateTo(toFieldReference(item), tagsField)"
+                      @keydown.enter.stop.prevent="navigateTo(toFieldReference(item), tagsField)"
+                    >
+                      {{ referenceDisplayLabel(item) }}
+                    </span>
+                    <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                  </template>
+                </span>
+              </button>
+            </div>
+            <div
+              v-if="rowDetailMember && isRowExpanded(entry.row)"
+              :ref="(el) => setDetailElement(entry.key, el)"
+              class="sdk-object-list-row-detail"
+              @click.stop
+            >
+              <list-row-member
+                :member-key="rowDetailMember"
+                kind="listRowDetail"
+                :row="entry.row"
+                :fallback-class-name="activeType ?? objectType"
+                :host-runtime-params="hostRuntimeParams"
+              ></list-row-member>
+            </div>
+          </li>
+        </template>
+        <li
+          v-if="isVirtualized && virtualBottomPadding > 0"
+          class="sdk-object-list-virtual-spacer"
+          aria-hidden="true"
+          :style="{ height: `${virtualBottomPadding}px` }"
+        ></li>
       </ul>
     </data-state>
 
@@ -1963,5 +2589,88 @@ mark {
   border-radius: var(--radius-xs);
   color: inherit;
   padding: 0 calc(var(--spacing-xs) / 4);
+}
+.sdk-object-list-group-header {
+  flex: 0 0 auto;
+  list-style: none;
+  margin-top: var(--spacing-xs);
+}
+.sdk-object-list-group-header:first-child {
+  margin-top: 0;
+}
+.sdk-object-list-card-group-header {
+  grid-column: 1 / -1;
+}
+.sdk-object-list-table tbody tr.sdk-object-list-group-row {
+  background: var(--ui-fill-quaternary);
+  cursor: default;
+}
+.sdk-object-list-table tbody tr.sdk-object-list-group-row:hover {
+  background: var(--ui-fill-tertiary);
+}
+.sdk-object-list-table td.sdk-object-list-group-cell {
+  height: auto;
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+.sdk-object-list-group-btn {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  display: flex;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  gap: var(--spacing-xs);
+  min-height: var(--control-height-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  text-align: left;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  width: 100%;
+}
+.sdk-object-list-group-btn:hover {
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-primary);
+}
+.sdk-object-list-group-btn:focus-visible {
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+.sdk-object-list-group-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sdk-object-list-group-count {
+  background: var(--ui-fill-tertiary);
+  border-radius: var(--radius-xs);
+  color: var(--el-text-color-secondary);
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-xs);
+  padding: 0 var(--spacing-xs);
+}
+.sdk-object-list-virtual-spacer {
+  flex: 0 0 auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+.sdk-object-list-card-spacer {
+  grid-column: 1 / -1;
+}
+.sdk-object-list-table tbody tr.sdk-object-list-virtual-spacer-row,
+.sdk-object-list-table tbody tr.sdk-object-list-virtual-spacer-row:hover {
+  background: transparent;
+  cursor: default;
+}
+.sdk-object-list-table td.sdk-object-list-virtual-spacer-cell {
+  border-bottom: 0;
+  padding: 0;
 }
 </style>
