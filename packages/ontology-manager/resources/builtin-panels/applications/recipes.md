@@ -17,7 +17,7 @@
 - 当前这一张：`record` 成员的 `record` 读（`selected` 就是它读的对象）。要确认某个字段现在是什么，用它，不要凭上下文猜。
 - 它用到的面板：`panelUses[].panelId`；点一个面板会把面板引用写进面板状态 `inspectedPanel`，`panelInfo` 成员的 `record` 读
   拿 `platform:ProductPanel` 的这一条，成员里 `target.projectionId` 就是它用到的投影。
-- 详情里的“查看所属类”“面板目录”是平台自己的页面（`/ontology/classes/platform:Application`、`/ontology/panels`（随链接选中该面板））。
+- “查看所属类”打开能力图谱（`/ontology/assets/capability-map`）的类型列表，深链状态为 `{"mode":"type","view":"list","selectedType":"platform:Application"}`。“面板目录”打开 `/ontology/panels` 并选中该面板。
 
 ## 起草改动
 
