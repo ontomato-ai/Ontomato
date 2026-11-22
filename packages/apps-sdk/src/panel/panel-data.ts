@@ -5,10 +5,10 @@ import { readerDataState } from "./member";
 import { directMountKey } from "./direct-projection";
 
 /*
- * Data the panel's own code draws (big main's ruling, 2026-11-20): a member the panel declares, whose projection (a
- * `PanelData` one, or any other) names the data, read the way every member's data is — through the platform's one read
- * entry, by the projection's read, its mappings and the object it needs — and handed to the page's code to draw in its
- * own way. The author names the member and the datum; nothing about the read itself is written in the page.
+ * Declared member data a panel reads for coordination: a member the panel declares, whose projection (a `PanelData`
+ * member or any other) names the data, read through the platform's one read entry by the projection's read, its
+ * mappings and the object it needs. Prefer a component's own outputs when available, and do not use this hook to
+ * render business fields in a panel template; business fields belong in an official or custom component.
  *
  * It is read again when the panel state the member binds changes and when an operation reports what it shows changed;
  * a datum whose object or required parameter has no value waits, unread. Values the code gives itself (a page, a
@@ -19,6 +19,9 @@ import { directMountKey } from "./direct-projection";
  * One datum of one member, kept current while the calling component is mounted. Call it in a component's setup,
  * before any `await`.
  *
+ * - Use this hook for panel coordination (such as deciding visibility, navigation or follow-up state when no component
+ *   output already carries the value). Do not use it to render business fields in the panel template; render business
+ *   data through an official component, its configuration, or a dedicated component.
  * - `member` is a member the panel declares; `name` is a datum its projection names under `data.<name>`. The read, its
  *   mappings and the object it needs are the projection's: nothing about the read is written in the page.
  * - The member's inputs come from the panel state its placement binds; the datum is read again whenever that state

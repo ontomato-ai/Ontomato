@@ -1,11 +1,10 @@
 import { computed, ref, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
     const { instance } = usePanelContext();
     const selected = computed(() => instance.state.values.value.selected);
-    const detail = usePanelData("detail", "record");
     const mode = ref("view");
     watch(instance.draft, draft => {
       if (draft) mode.value = "edit";
@@ -14,6 +13,6 @@ await mountPanel({
       instance.state.set("selected", null);
       mode.value = "edit";
     };
-    return { selected, detail, mode, newAgent };
+    return { selected, mode, newAgent };
   },
 });

@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-metric-views",
+      "input": {
+        "name": "指标视图",
+        "description": "维护业务指标定义、参数绑定与测试，批量修改发布状态"
+      }
+    }
+  ]
+}
