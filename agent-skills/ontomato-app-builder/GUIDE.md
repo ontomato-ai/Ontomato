@@ -2,7 +2,7 @@
 
 Follow the [Product Layer and Application Composition Standard](references/app-standard/references/standard.md) and the current SDK guide. Use current product records. Keep business logic and permission checks with the resource owners. Use the deployment, domain and authorized business scope already established with the user. Obtain technical names, IDs, parameters and relationships from the platform through its discovery commands and owner interfaces.
 
-Start with the [Vue panel skill and complete example](references/panel-authoring/SKILL.md). When planning how to
+Start with the [Vue panel skill](references/panel-authoring/SKILL.md) and choose a matching [page template](references/templates/README.md). When planning how to
 bring an existing application onto the platform, use the [application decomposition skill](references/app-standard/SKILL.md).
 
 ## Connection and workspace
@@ -16,10 +16,10 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 ## Panels and application uses
 
-For a management page, start with the [complete example and wiring recipes](references/management-pages.md) or run `panel scaffold`.
+For a management page, pick a [page template](references/templates/README.md), read the [management page wiring recipes](references/management-pages.md), or run `panel scaffold`.
 
 1. Inspect the owner's reads and operations with `panel type <type-id>` and compare their result shapes with the official component data ports in `sdk read docs/components.md`. If an owner read does not match the component's data port, address that gap on the owner or shared-record side rather than rendering business fields in the panel.
-2. Follow the lookup order: start with the official component's default rendering, add `config` for common variations, and write a focused small component only as a last resort when a single column (`listColumn`), row detail (`listRowDetail`), or form field (`formField`) still cannot be configured. Write layout in the Vue panel using normal HTML, CSS, and Vue (not layout components), with typed public state in `panel.json` (`{manifest, content?, theme?, template?}`), visibility, navigation, `recipes.md`, optional `content.messages`, and `manifest.commands`. Use `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` theme tokens, and `usePanelContext().notify()` for panel chrome, and `usePanelNarrow` / `usePanelBack` for container-width switching and guarded Back/Escape. Do not render business fields from a data port (`PanelData` / `usePanelData` or inline `defineComponent`) in `panel.html` / `panel.mjs`, and never write `el-*` tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
+2. Follow the lookup order: start with the official component's default rendering, add `config` for common variations (such as `ObjectForm` `config.actions: "footer"|"header"|"create-only"|"none"`, `ObjectSummary` `config.showTitle`, or `OperationButton` `config.placement: "header"`), and write a focused small component only as a last resort when a single column (`listColumn`), row detail (`listRowDetail`), or form field (`formField`) still cannot be configured. Write layout in the Vue panel using normal HTML, CSS, and Vue (not layout components), with typed public state in `panel.json` (`{manifest, content?, theme?, template?}`), visibility, navigation, `recipes.md`, optional `content.messages`, and `manifest.commands` (with optional `icon: "plus"`). Use `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` theme tokens, and `usePanelContext().notify()` for panel chrome; use `usePanelDetailHeader` for single-bar full-width detail headers, `usePanelBack` for browser Back / Escape / unsaved-changes confirmation, and `usePanelNarrow` / `@container` for container-width adaptation. Do not render business fields from a data port (`PanelData` / `usePanelData` or inline `defineComponent`) in `panel.html` / `panel.mjs`, and never write `el-*` tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 

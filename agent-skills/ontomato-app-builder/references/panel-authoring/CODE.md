@@ -18,7 +18,7 @@ Declare named page-header commands in `manifest.commands`. Give each command a `
 action. Fields changed by a `do.set` command need `deepLink: true` so the assistant can open the same state.
 Use `recipes.md` for tasks the assistant needs to know how to do.
 
-Use the required `panel.mjs` to mount the Vue page as in the [agent directory module](../../examples/vue-agent-directory/panel.mjs).
+Use the required `panel.mjs` to mount the Vue page as in the [catalog-detail template module](../templates/catalog-detail-dialog/panel.mjs).
 The platform runs panels directly. Read [runtime imports and setup](RUNTIME.md#imports-and-application-icons)
 and the current SDK guide with `node "$SKILL/ontomato.mjs" sdk read docs/index.md`. For component behavior,
 configuration and ports, use `sdk read docs/components.md`. The repository's
@@ -41,18 +41,22 @@ Panels do not know where they are hosted — full page, beside a conversation, o
 against the box given to them, never the browser window.
 
 - **Host content box.** Every entry receives a definite-height content box from below the page header to the bottom edge
-  of the page, with **no host padding** (outer spacing is controlled by the panel's CSS). Its height tracks window
-  resizes and banners; taller content scrolls inside the box while the header stays fixed. **The bottom composer floats
-  over the page and does not occupy content-box height.** Full page, beside-conversation, and a custom frame's
-  current-entry slot share this exact contract. The panel root mounts directly inside that box (with no
-  indeterminate-height wrapper between them), so filling it works with normal CSS.
-- **Layout belongs in the panel, not in layout components.** Write split panes, tabs, drawers, and workbenches with
-  normal HTML, CSS, and Vue inside `panel.html` / `panel.mjs` using platform design tokens (`--pane-list-width`,
-  `--pane-narrow-breakpoint`, `--spacing-*`, `--ui-divider`). Do not use legacy layout components (`TwoPaneLayout`,
+  of the page, with **no host padding or outer card frame** (outer gutter is controlled by the panel's CSS, e.g.
+  `--page-gutter`). Its height tracks window resizes and banners; taller content scrolls inside the box while the header
+  stays fixed. **The bottom composer floats over the page and does not occupy content-box height** — add bottom scroll
+  room such as `calc(var(--page-content-gap) + 56px)` on scrollable views so bottom controls stay clear when scrolled to
+  the end. Full page, beside-conversation, and a custom frame's current-entry slot share this exact contract. The panel
+  root mounts directly inside that box (with no indeterminate-height wrapper between them), so filling it works with
+  normal CSS.
+- **Layout belongs in the panel, not in layout components.** Write catalog tables, full-width detail cards, split panes,
+  tabs, and workbenches with normal HTML, CSS, and Vue inside `panel.html` / `panel.mjs` using platform design tokens
+  (`--page-gutter`, `--page-content-gap`, `--pane-list-width`, `--pane-narrow-breakpoint`, `--spacing-*`, `--ui-divider`).
+  Start from the matching [page template](../templates/README.md). Do not use legacy layout components (`TwoPaneLayout`,
   `WorkbenchLayout`), which are being removed. To switch layout at narrow widths (including when hosted beside a
-  conversation), observe the panel's own container width with [`usePanelNarrow`](RUNTIME.md#usepanelnarrow) rather than
-  `window.innerWidth` or `@media` viewport queries. To wire browser Back, Escape, and the host's unified
-  unsaved-changes confirmation when leaving a narrow detail or sub-view, use [`usePanelBack`](RUNTIME.md#usepanelback).
+  conversation), use CSS `@container` or [`usePanelNarrow`](RUNTIME.md#usepanelnarrow) rather than `window.innerWidth`
+  or `@media` viewport queries. To render a single platform header on full-width detail views, use
+  [`usePanelDetailHeader`](RUNTIME.md#usepaneldetailheader). To wire browser Back, Escape, and the host's unified
+  unsaved-changes confirmation when leaving a detail view or sub-view, use [`usePanelBack`](RUNTIME.md#usepanelback).
 - **Two normal-CSS height patterns (no extra manifest declaration):**
   - **Flow / stack naturally:** Let content take its natural height and let the content box scroll. Use this for lists,
     forms, and long pages — write nothing special.
@@ -82,7 +86,8 @@ Use only the Ontomato SDK's own interface controls for panel chrome that does no
   `uiDirectives`, `themeTokens`). Rely on that SDK manifest rather than assuming undocumented third-party APIs.
 - **Script imports.**
   - In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel` (`mountPanel`, `usePanelContext`, `usePanelBack`,
-    `usePanelNarrow`, `usePanelData`, `usePanelOperation`, `savePanelFile`, `draftTarget`, `appIcon`).
+    `usePanelDetailHeader`, `usePanelNarrow`, `usePanelData`, `usePanelOperation`, `savePanelFile`, `draftTarget`,
+    `appIcon`).
   - In custom component packages, import `Sdk*` controls and `vSdk*` directives from `@ontomato/sdk/ui`.
   - In domain-registered components (`component.mjs`), export Vue component options (`export default { ... }`) and
     import only `vue` and `@ontomato/sdk/panel` (`useMember`, `useMemberData`, `useMemberOperations`,
@@ -511,7 +516,12 @@ platform handles the request, impact details and confirmation. For agent calls a
 An `ObjectForm` projection binds one owner operation whose kind is `form.save`. The component sends `call.input`
 with `values`, the `revision` from the owner form when present, and `submittedFields` as JSON Pointer strings.
 Fields omitted from `submittedFields` remain unchanged.
-A custom save button calls [`usePanelOperation(...).run()`](RUNTIME.md#usepaneloperation) on the mounted form's save operation to submit the values it holds.
+To trigger save from a custom detail-header button (such as `usePanelDetailHeader`), check `instance.forms.dirty()` and
+call `instance.forms.submit("form")` (or read `instance.forms.handle("form")?.busy.value` for loading state).
+Set `config.actions` to `"footer"` (default, non-overlapping bottom bar), `"header"` (host header Save/Discard),
+`"create-only"` (Cancel/Create bar only in create mode when edit Save lives in the detail header), or `"none"`.
+`ObjectForm` automatically renders word counters for schema `maxLength` fields and disables dependent select fields when
+the owner declares `disabledWhenEmpty`.
 
 A populated object input edits that record. An empty input opens creation when the owner supports it and the
 projection has the same type's `createForm` read. The successful create selects the returned object.
@@ -519,13 +529,14 @@ projection has the same type's `createForm` read. The successful create selects 
 For child creation, use `ObjectForm.config.fixedFields` as shown in the current SDK guide
 (`sdk read docs/components.md`). The owner validates these read-only field values at each save.
 
-Keep the form mounted with `v-show` so it can receive drafts while the detail is open. The example watches
-`instance.draft` to open the editor once its form has accepted a draft. Switch back to view mode on `saved` or
-`discarded`. The save event carries the saved object as `{className, primaryKey}`. A failed save keeps the editor open.
+The SDK evaluates incoming drafts against declared form members even before `ObjectForm` mounts, so you can mount
+`<projection slot="form">` conditionally inside a detail view or create `<sdk-dialog>` (`v-if`) and watch
+`instance.draft` to open the target detail view or create dialog. The `saved` event carries the saved object as
+`{className, primaryKey}`. A failed save keeps the form open.
 
 ```html
-<projection slot="form" v-show="editing || creating"
-  @saved="closeEditor" @discarded="closeEditor"></projection>
+<projection v-if="createDialog" slot="form"
+  @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"></projection>
 ```
 
 Keep `recipes.md` for page-specific business guidance. Use this section as the single reference for the draft format.
@@ -539,7 +550,7 @@ JSON Pointer is a nested path (for example `/modelConfig/modelId`), organize `fo
 
 ```json
 {
-  "pageKey": "example-vue-agent-directory-manage",
+  "pageKey": "app-template-catalog-detail",
   "operation": "platform:AgentDefinition.save",
   "target": {"objectType": "platform:AgentDefinition", "id": "<selected agent ID>"},
   "form": {
@@ -617,8 +628,9 @@ a built-in page, retain its existing default-agent behavior.
 For an application delivery list, declare only extra `packages`, `agents` and `skills`. The platform derives the
 panel and projection dependencies from registered uses.
 
-Use the [agent directory example](../../examples/vue-agent-directory/panel.html) for the complete layout and owner
-form wiring. Give your own panel and use their own IDs. The example opens at `/applications/app-example-vue-agent-directory/manage`.
+Use the [catalog-detail template](../templates/catalog-detail-dialog/panel.html) for the complete layout, detail header,
+and owner form wiring. Give your own panel and use their own IDs. The template opens at
+`/applications/app-template-catalog-detail/manage`.
 Exercise the page and run the [assistant check](SKILL.md#check-the-assistant-from-the-page).
 
 ## When a panel looks wrong
@@ -641,8 +653,8 @@ error for a Vue or module failure. Keep the browser's storage and cookies intact
   then the form's `POST /api/product-panels/read`. Match the producing run and artifact, the entry's
   `pageKey`, the target's `objectType` and optional owner ID, and the owner's `save.draftOperation`.
   A successful draft read confirms that the artifact loaded. Follow the form read's response to see whether
-  the owner accepted the proposal. Keep the form
-  mounted while waiting for `instance.draft`.
+  the owner accepted the proposal, and verify that `watch(instance.draft, ...)` opens the detail view or create dialog
+  for that draft.
 
 A field or path named by `panel check` points to the material to fix. For a rejected request, use its response
 to distinguish missing records, denied access and invalid values. If the registered material matches the

@@ -74,6 +74,7 @@ export function managementPanel(type, checks, typeTable, {
     const shareSearch = search && reads.record.parameterMode === "fixed" && Object.hasOwn(reads.record.params, "search");
     members.detail = {
       component: "ObjectSummary", target: "selected", data: { record: "record" },
+      config: { showTitle: false },
       ...(shareSearch && { state: { search: "search" } }),
     };
   }
@@ -85,6 +86,7 @@ export function managementPanel(type, checks, typeTable, {
     commands.create = {
       labelKey: "command.new",
       primary: true,
+      icon: "plus",
       do: { set: { fields: { creating: { literal: true }, selected: { literal: null } } } },
     };
   }
@@ -93,95 +95,212 @@ export function managementPanel(type, checks, typeTable, {
       component: "ObjectForm", target: "selected",
       data: { form: "form", ...(create && { createForm: "createForm" }) },
       operation: save.id,
+      config: { actions: create ? "create-only" : "none" },
     };
   }
-  const buttonKeys = buttons.map(({ operation, batch }, index) => {
+  const singleButtons = [];
+  const batchButtons = [];
+  buttons.forEach(({ operation, batch }, index) => {
     const key = `${batch ? "batch" : "action"}${index + 1}`;
-    members[key] = { component: "OperationButton", operation: operation.id, target: batch ? "checked" : "selected" };
-    return key;
+    members[key] = {
+      component: "OperationButton",
+      operation: operation.id,
+      target: batch ? "checked" : "selected",
+      ...(!batch && { config: { placement: "header" } }),
+    };
+    if (batch) batchButtons.push(key);
+    else singleButtons.push(key);
   });
+
   const member = (key, attrs = "") => `<projection slot="${key}"${attrs}></projection>`;
-  const controls = [...(tabs ? [member("tabs")] : []), ...buttonKeys.map(key => member(key))];
-  const details = [
-    ...(members.detail ? [member("detail", ' v-if="selected"')] : []),
-    ...(edit ? [member("form", create ? ' v-show="selected || creating" @saved="stopCreating" @discarded="stopCreating"' : ' v-show="selected"')] : []),
-  ];
+  const toolbarControls = [...(tabs ? [member("tabs")] : []), ...batchButtons.map(key => member(key))];
+  const hasDetail = Boolean(members.detail || edit || singleButtons.length);
+  const twoCards = Boolean(members.detail && edit);
+
   const html = [
     "<style>",
-    "  .management { display: flex; flex-direction: column; height: 100%; min-height: 24rem; }",
-    ...(controls.length ? ["  .management-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--ui-divider); }"] : []),
-    "  .management-body { display: grid; flex: 1; min-height: 0; }",
-    ...(details.length ? [
-      "  .management-columns { grid-template-columns: minmax(0, var(--pane-list-width, 300px)) minmax(0, 1fr); }",
-      "  .management-columns.is-narrow { grid-template-columns: minmax(0, 1fr); }",
-      "  .management-list, .management-detail { min-height: 0; overflow: auto; padding: var(--spacing-md); }",
-      "  .management-columns:not(.is-narrow) .management-list { border-right: 1px solid var(--ui-divider); }",
-      "  .management-detail { display: flex; flex-direction: column; gap: var(--spacing-md); }",
-      "  .management-back { align-self: flex-start; }",
-    ] : ["  .management-list { min-height: 0; overflow: auto; padding: var(--spacing-md); }"]),
+    "  .catalog-page { display: flex; flex-direction: column; min-width: 0; min-height: 100%; container: catalog-page / inline-size; }",
+    "  .catalog-view { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px); }",
+    ...(toolbarControls.length ? ["  .catalog-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }"] : []),
+    ...(hasDetail ? [
+      "  .detail-view { display: flex; flex-direction: column; min-width: 0; min-height: 100%; }",
+      "  .detail-titlebar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); min-height: var(--page-header-height, 56px); padding: var(--spacing-sm) var(--page-gutter); border-bottom: 1px solid var(--sdk-border-color, var(--ui-border)); box-sizing: border-box; }",
+      "  .detail-divider { width: 1px; height: 22px; background: var(--sdk-border-color, var(--ui-border)); }",
+      "  .detail-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sdk-text-color-primary); font-size: var(--text-sm); font-weight: var(--font-semibold); }",
+      "  .detail-spacer { flex: 1; }",
+      "  .detail-actions { display: inline-flex; align-items: center; gap: var(--spacing-sm); flex-shrink: 0; }",
+      ...(singleButtons.length ? [
+        "  .detail-header-op-host { padding-inline: var(--page-gutter); }",
+        "  .detail-header-op-host:empty, .detail-header-op-host:has(> .sdk-operation-button:empty) { display: none; }",
+      ] : []),
+      `  .detail-body { display: grid; grid-template-columns: ${twoCards ? "minmax(320px, 0.85fr) minmax(420px, 1.15fr)" : "minmax(0, 1fr)"}; gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px); align-items: stretch; }`,
+      "  .detail-card { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--page-section-padding, var(--spacing-lg)); border: 1px solid var(--sdk-border-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--sdk-bg-color); }",
+      "  .detail-card h2 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); }",
+      ...(create ? [
+        "  .create-dialog-body .sdk-owner-form, .create-dialog-body .sdk-owner-form-inner { height: auto; }",
+        "  .create-dialog-body .sdk-owner-form-body { overflow: visible; }",
+      ] : []),
+      "  @container catalog-page (max-width: 850px) { .detail-body { grid-template-columns: minmax(0, 1fr); } .detail-divider { display: none; } }",
+    ] : []),
     "</style>",
     '<div id="app">',
-    `  <section${details.length ? ' ref="rootRef"' : ""} class="management">`,
-    ...(controls.length ? ['    <div class="management-toolbar">', ...controls.map(control => `      ${control}`), "    </div>"] : []),
-    `    <div class="management-body${details.length ? ' management-columns" :class="{ \'is-narrow\': narrow }"' : '"'}>`,
-    `      <div class="management-list"${details.length ? ' v-show="!narrow || !hasDetail"' : ""}>`,
-    `        ${member("list", create ? ' @update:selected="stopCreating"' : "")}`,
-    "      </div>",
-    ...(details.length ? [
-      '      <div class="management-detail" v-show="!narrow || hasDetail">',
-      '        <div v-if="narrow && hasDetail" class="management-back">',
-      '          <sdk-button size="small" @click="back">{{ t("action.back") }}</sdk-button>',
-      "        </div>",
-      ...details.map(detail => `        ${detail}`),
-      "      </div>",
-    ] : []),
+    '  <section class="catalog-page">',
+    `    <div${hasDetail ? ' v-if="!selectedKey"' : ""} class="catalog-view">`,
+    ...(toolbarControls.length ? ['      <div class="catalog-toolbar">', ...toolbarControls.map(control => `        ${control}`), "      </div>"] : []),
+    `      ${member("list", create ? ' @update:selected="stopCreating"' : "")}`,
     "    </div>",
+    ...(hasDetail ? [
+      '    <div v-else class="detail-view">',
+      '      <header v-if="!hasHeaderHost" class="detail-titlebar">',
+      '        <sdk-button text @click="back">{{ t("detail.back") }}</sdk-button>',
+      '        <span class="detail-divider" aria-hidden="true"></span>',
+      '        <span class="detail-title">{{ selectedTitle }}</span>',
+      '        <span class="detail-spacer"></span>',
+      ...(singleButtons.length || edit ? [
+        '        <div class="detail-actions">',
+        ...singleButtons.map(key => `          ${member(key)}`),
+        ...(edit ? ['          <sdk-button type="primary" :loading="saving" :disabled="!canSave" @click="saveDetail">{{ t("detail.save") }}</sdk-button>'] : []),
+        "        </div>",
+      ] : []),
+      "      </header>",
+      ...(singleButtons.length ? [
+        '      <div v-if="hasHeaderHost" class="detail-header-op-host">',
+        ...singleButtons.map(key => `        ${member(key)}`),
+        "      </div>",
+      ] : []),
+      '      <div class="detail-body">',
+      ...(edit ? [
+        '        <section class="detail-card">',
+        '          <h2>{{ t("detail.basicInfo") }}</h2>',
+        `          ${member("form", ' @saved="onSaved" @discarded="onDiscarded"')}`,
+        "        </section>",
+      ] : []),
+      ...(members.detail ? [
+        '        <section class="detail-card">',
+        '          <h2>{{ t("detail.overview") }}</h2>',
+        `          ${member("detail")}`,
+        "        </section>",
+      ] : []),
+      "      </div>",
+      "    </div>",
+    ] : []),
+    ...(create ? [
+      '    <sdk-dialog v-model="createDialog" :title="t(\'dialog.createTitle\')" width="540px" append-to-body destroy-on-close>',
+      '      <div class="create-dialog-body">',
+      `        ${member("form", ' v-if="createDialog" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"')}`,
+      "      </div>",
+      "    </sdk-dialog>",
+    ] : []),
     "  </section>",
     "</div>",
     "",
   ].join("\n");
-  const module = details.length ? [
-    `import { computed, ref${create ? ", watch" : ""} } from "vue";`,
-    'import { mountPanel, usePanelBack, usePanelContext, usePanelNarrow } from "@ontomato/sdk/panel";',
+
+  const module = hasDetail ? [
+    `import { computed${edit ? ", watch" : ""} } from "vue";`,
+    'import { mountPanel, usePanelBack, usePanelContext, usePanelDetailHeader } from "@ontomato/sdk/panel";',
+    "",
+    `const TYPE = ${JSON.stringify(type)};`,
     "",
     "await mountPanel({",
     "  setup() {",
-    "    const { instance } = usePanelContext();",
-    "    const rootRef = ref(null);",
-    "    const narrow = usePanelNarrow(rootRef);",
+    "    const { instance, t } = usePanelContext();",
     "    const selected = computed(() => instance.state.values.value.selected);",
+    '    const selectedKey = computed(() => (selected.value ? selected.value.primaryKey : ""));',
+    "    const selectedTitle = computed(() => {",
+    "      const key = selectedKey.value;",
+    '      if (!key) return "";',
+    "      const match = instance.pageContext.value.selection.find(item => item.id === key);",
+    "      return match?.label || key;",
+    "    });",
     ...(create ? [
-      "    const creating = computed(() => Boolean(instance.state.values.value.creating));",
-      "    const hasDetail = computed(() => Boolean(selected.value || creating.value));",
-      "    watch(instance.draft, draft => {",
-      '      if (draft && !selected.value && !creating.value) instance.state.set("creating", true);',
-      "    }, { immediate: true });",
+      "    const creating = computed(() => instance.state.values.value.creating === true);",
+      "    const createDialog = computed({",
+      "      get: () => creating.value && !selectedKey.value,",
+      "      set: value => {",
+      "        if (!value && creating.value) cancelCreate();",
+      "      },",
+      "    });",
       "    function stopCreating() {",
       '      if (creating.value) instance.state.set("creating", false);',
       "    }",
-      "    function closeDetail() {",
-      "      instance.state.setState({ selected: null, creating: false });",
+      "    function cancelCreate() {",
+      "      instance.state.setState({ creating: false, selected: null });",
       "    }",
-      "    const { back } = usePanelBack(() => narrow.value && hasDetail.value, closeDetail);",
-      "    return { rootRef, narrow, selected, creating, hasDetail, stopCreating, back };",
-    ] : [
-      "    const hasDetail = computed(() => Boolean(selected.value));",
-      "    function closeDetail() {",
-      '      instance.state.set("selected", null);',
+    ] : []),
+    ...(edit ? [
+      '    const formHandle = computed(() => instance.forms.handle("form"));',
+      "    const saving = computed(() => Boolean(formHandle.value?.busy.value));",
+      "    const canSave = computed(() => Boolean(formHandle.value) && !saving.value);",
+      "    async function saveDetail() {",
+      "      if (!canSave.value || !instance.forms.dirty()) return;",
+      "      try {",
+      '        await instance.forms.submit("form");',
+      "      } catch {",
+      "        // ObjectForm renders the owner's validation or refusal message inline on the form.",
+      "      }",
       "    }",
-      "    const { back } = usePanelBack(() => narrow.value && hasDetail.value, closeDetail);",
-      "    return { rootRef, narrow, selected, hasDetail, back };",
-    ]),
+      "    function onSaved(saved) {",
+      ...(create ? ['      instance.state.set("creating", false);'] : []),
+      '      instance.state.set("selected", { className: saved.className || TYPE, primaryKey: saved.primaryKey });',
+      "    }",
+      "    function onDiscarded() {",
+      ...(create ? ['      instance.state.set("creating", false);'] : []),
+      "    }",
+      "    watch(instance.draft, draft => {",
+      "      if (!draft) return;",
+      "      if (draft.target?.id) {",
+      ...(create ? ['        instance.state.set("creating", false);'] : []),
+      '        if (draft.target.id !== selectedKey.value) instance.state.set("selected", { className: TYPE, primaryKey: draft.target.id });',
+      ...(create ? [
+        "      } else {",
+        "        instance.state.setState({ creating: true, selected: null });",
+      ] : []),
+      "      }",
+      "    }, { immediate: true });",
+    ] : []),
+    "    function backToCatalog() {",
+    ...(create ? ["      instance.state.setState({ selected: null, creating: false });"] : ['      instance.state.set("selected", null);']),
+    "    }",
+    "    const { back } = usePanelBack(() => Boolean(selectedKey.value), backToCatalog, { pushHistory: true });",
+    "    const hasHeaderHost = usePanelDetailHeader(() => (",
+    "      selectedKey.value",
+    "        ? {",
+    '            backLabel: t("detail.back"),',
+    "            title: selectedTitle.value,",
+    "            onBack: () => void back(),",
+    ...(edit ? [
+      "            actions: [{",
+      '              id: "save",',
+      '              label: t("detail.save"),',
+      '              icon: "save",',
+      "              primary: true,",
+      "              disabled: !canSave.value,",
+      "              loading: saving.value,",
+      "              onClick: () => void saveDetail(),",
+      "            }],",
+    ] : ["            actions: [],"]),
+    "          }",
+    "        : null",
+    "    ));",
+    `    return { ${[
+      "selectedKey", "selectedTitle", "hasHeaderHost", "back",
+      ...(create ? ["createDialog", "stopCreating", "cancelCreate"] : []),
+      ...(edit ? ["saving", "canSave", "saveDetail", "onSaved", "onDiscarded"] : []),
+    ].join(", ")} };`,
     "  },",
     "});",
     "",
   ].join("\n") : 'import { mountPanel } from "@ontomato/sdk/panel";\n\nawait mountPanel({});\n';
+
   const manifest = { state, members, commands };
   checks.panelAuthoringManifestSchema.parse(manifest);
   const messages = {
     "panel.name": title,
-    ...(create && { "command.new": "New" }),
-    ...(details.length && { "action.back": "Back" }),
+    ...(create && { "command.new": `New ${title}`, "dialog.createTitle": `New ${title}` }),
+    ...(hasDetail && { "detail.back": `Back to ${title}` }),
+    ...(edit && { "detail.save": "Save", "detail.basicInfo": "Basic information" }),
+    ...(members.detail && { "detail.overview": "Overview" }),
   };
   const content = { messages: { en: messages } };
   const entry = `/applications/${id}`;

@@ -33,6 +33,9 @@
         "target": "selected",
         "data": {
           "record": "record"
+        },
+        "config": {
+          "showTitle": false
         }
       },
       "form": {
@@ -42,13 +45,17 @@
           "form": "form",
           "createForm": "createForm"
         },
-        "operation": "platform:AgentDefinition.save"
+        "operation": "platform:AgentDefinition.save",
+        "config": {
+          "actions": "create-only"
+        }
       }
     },
     "commands": {
       "create": {
         "labelKey": "command.new",
         "primary": true,
+        "icon": "plus",
         "do": {
           "set": {
             "fields": {
@@ -67,11 +74,13 @@
   "content": {
     "messages": {
       "en": {
-        "panel.name": "Agent directory",
-        "command.new": "New agent",
-        "action.edit": "Edit",
-        "action.back": "Back",
-        "empty.prompt": "Select an agent or create one."
+        "panel.name": "Agent Definition",
+        "command.new": "New Agent Definition",
+        "dialog.createTitle": "New Agent Definition",
+        "detail.back": "Back to Agent Definition",
+        "detail.save": "Save",
+        "detail.basicInfo": "Basic information",
+        "detail.overview": "Overview"
       }
     }
   }
