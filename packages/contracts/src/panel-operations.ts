@@ -1,3 +1,4 @@
+import { componentDeclarationSchema } from "./component-declaration";
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelDownloadReceiptSchema } from "./panel-download";
@@ -86,7 +87,7 @@ export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorS
 });
 
 const sdkComponentDefinitionSchema: z.ZodType<z.infer<typeof runtimeJsonObjectSchema>> =
-  z.lazy(() => appsSdkComponentCatalogEntrySchema);
+  z.lazy(() => z.union([appsSdkComponentCatalogEntrySchema, componentDeclarationSchema]));
 
 /** Result schema identifiers used by the registered read declarations. */
 export const panelReadResultSchemas = {

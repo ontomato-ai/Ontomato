@@ -1,3 +1,4 @@
+import { loadDomainComponent } from "./domain-component";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import {
   applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelPageSkillContextResponseSchema, productPanelResponseSchema, productPanelSchema,
@@ -420,6 +421,7 @@ async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTa
     [panelModuleSpecifiers.vue]: Vue as unknown as Record<string, unknown>,
     [panelModuleSpecifiers.sdk]: panelModuleFor({
       ...options,
+      loadDomainComponent,
       element: target.element,
       template: target.template,
       install(app) {

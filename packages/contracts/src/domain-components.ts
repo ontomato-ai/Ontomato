@@ -1,19 +1,15 @@
 import { z } from "zod";
 import { componentDeclarationSchema } from "./component-declaration";
-import { DOMAIN_COMPONENT_PREFIX, isDomainComponentId, productCurrentIdParamsSchema } from "./product-record-id";
+import { domainComponentIdSchema, domainComponentSourceSchema } from "./domain-component-runtime";
+import { productCurrentIdParamsSchema } from "./product-record-id";
 
 export const DOMAIN_COMPONENTS_PATH = "/api/domain-components";
 
-export const domainComponentIdSchema = componentDeclarationSchema.shape.componentId
-  .max(200).refine(isDomainComponentId, `Expected a component ID beginning with ${DOMAIN_COMPONENT_PREFIX}`);
+export { domainComponentRuntimeSchema, type DomainComponentRuntime } from "./domain-component-runtime";
 export const domainComponentParamsSchema = z.object({ id: domainComponentIdSchema }).strict();
 
 const id = productCurrentIdParamsSchema.shape.id;
 const revision = z.number().int().positive();
-export const domainComponentSourceSchema = z.object({
-  template: z.string().refine(value => value.trim().length > 0, "A Vue template is required"),
-  module: z.string().optional(),
-}).strict();
 
 const declaration = componentDeclarationSchema.extend({ componentId: domainComponentIdSchema });
 export const domainComponentInputSchema = z.object({
@@ -48,11 +44,3 @@ export const domainComponentUsedBySchema = z.object({
   hiddenProjectionCount: z.number().int().nonnegative(),
   hiddenPanelCount: z.number().int().nonnegative(),
 }).strict();
-
-export const domainComponentRuntimeSchema = z.object({
-  domainId: id,
-  componentId: domainComponentIdSchema,
-  revision,
-  source: domainComponentSourceSchema,
-}).strict();
-export type DomainComponentRuntime = z.infer<typeof domainComponentRuntimeSchema>;

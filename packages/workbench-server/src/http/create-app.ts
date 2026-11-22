@@ -1,3 +1,5 @@
+import { DOMAIN_COMPONENTS_PATH } from "@ontomato/contracts/domain-components";
+import { domainComponentsRouter } from "../api/routes/domain-components";
 import { governanceWindowsRouter, assistantInternalRouter } from "../api/routes/governance";
 import { agentChannelRouter } from "../api/routes/agent-channel";
 import { createHealthRouter } from "../api/routes/health";
@@ -231,6 +233,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/product-assets", productAssetsRouter);
   app.use("/api/object-details", objectDetailsRouter);
   app.use("/api", panelOperationsRouter);
+  app.use(DOMAIN_COMPONENTS_PATH, domainComponentsRouter);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", createChartProjectionsRouter(createChartProjectionService(dashboardChartSources)));
   app.use("/api/product-projections", productProjectionsRouter);

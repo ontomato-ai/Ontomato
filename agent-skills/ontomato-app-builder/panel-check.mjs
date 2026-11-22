@@ -101,13 +101,18 @@ export async function checkBuiltinPanelSource(directory, checks, { assignIds = f
   return { panelId, assigned: Object.fromEntries(assigned) };
 }
 
+function domainComponentId(componentId) {
+  return componentId.startsWith("domain-component:");
+}
+
 function componentPackageName(componentId) {
+  if (domainComponentId(componentId)) return undefined;
   const separator = componentId.indexOf(":");
   const name = separator > 0 ? componentId.slice(0, separator) : undefined;
   return name === "@ontomato/sdk" ? undefined : name;
 }
 
-async function expandInlineProjections(manifest, panel, checks, loadAuthoring, loadPackage) {
+async function expandInlineProjections(manifest, panel, checks, loadAuthoring, loadPackage, loadDomainComponent) {
   const declared = Object.entries(manifest?.members ?? {}).filter(([, member]) => member?.component !== undefined);
   if (!declared.length) return { manifest, inline: [], charts: new Map() };
   for (const [member, item] of declared) {
@@ -124,6 +129,8 @@ async function expandInlineProjections(manifest, panel, checks, loadAuthoring, l
   const components = [
     ...checks.appsSdkComponentCatalogSchema.parse(catalogue).components,
     ...installed.flatMap(release => release?.components ?? []),
+    ...(await Promise.all([...new Set(declared.map(([, member]) => member.component).filter(domainComponentId))]
+      .map(id => loadDomainComponent?.(id)))).filter(Boolean),
   ];
   const inline = [];
   const charts = new Map();
@@ -144,7 +151,7 @@ async function expandInlineProjections(manifest, panel, checks, loadAuthoring, l
   return { manifest: { ...definition, state, members: Object.fromEntries(placements) }, inline, charts };
 }
 
-async function workspaceDefinition(directory, files, checks, panel, loadAuthoring, loadPackage) {
+async function workspaceDefinition(directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent) {
   const descriptorFile = resolve(directory, "panel.json");
   const source = await readFile(descriptorFile, "utf8");
   const document = parseJson(descriptorFile, source);
@@ -152,7 +159,7 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
     throw new Error(`${descriptorFile}: expected an object with a manifest`);
   }
   const { content = {}, manifest, ...descriptor } = document;
-  const expanded = await expandInlineProjections(manifest, panel, checks, loadAuthoring, loadPackage);
+  const expanded = await expandInlineProjections(manifest, panel, checks, loadAuthoring, loadPackage, loadDomainComponent);
   if (content === null || typeof content !== "object" || Array.isArray(content) ||
       Object.keys(content).some(key => key !== "messages")) {
     throw new Error(`${descriptorFile}: content only accepts messages`);
@@ -239,7 +246,7 @@ function checkProjectionData(id, projection, component, checks) {
   }
 }
 
-async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring, loadPackage) {
+async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent) {
   const files = await readdir(directory);
   const path = materialPath ?? (files.includes("registration.json") ? resolve(directory, "registration.json") : undefined);
   const material = path === undefined ? {} : await readJson(path);
@@ -248,7 +255,7 @@ async function readPanelWorkspace(directory, checks, materialPath, loadAuthoring
     if (typeof panel.id !== "string" || panel.id.length === 0) throw new Error(`${path}: panel ID is required`);
     requireDomainProductId(`${path}: panel ID ${panel.id}`, panel.id, checks);
   }
-  return { material, panel, ...await workspaceDefinition(directory, files, checks, panel, loadAuthoring, loadPackage) };
+  return { material, panel, ...await workspaceDefinition(directory, files, checks, panel, loadAuthoring, loadPackage, loadDomainComponent) };
 }
 
 const projectionRecordMetadata = new Set([
@@ -304,8 +311,8 @@ async function workspaceRegistration({ panel, inline, material, definition }, cl
   return { ...material, projections, panels: [{ ...panel, input: { ...input, ...definition } }] };
 }
 
-export async function registerPanelWorkspace(directory, materialPath, checks, client, onRegistered, loadAuthoring, loadPackage) {
-  const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring, loadPackage);
+export async function registerPanelWorkspace(directory, materialPath, checks, client, onRegistered, loadAuthoring, loadPackage, loadDomainComponent) {
+  const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent);
   const material = await workspaceRegistration(workspace, client, checks);
   const { document, descriptorFile, source, inline, charts } = workspace;
   if (charts.size) {
@@ -338,12 +345,12 @@ export async function registerPanelWorkspace(directory, materialPath, checks, cl
   return result;
 }
 
-export async function checkPanelWorkspace(directory, { checks, catalogue, version, digest, typeTable, lookup, findChartSource, materialPath, loadPackage }) {
+export async function checkPanelWorkspace(directory, { checks, catalogue, version, digest, typeTable, lookup, findChartSource, materialPath, loadPackage, loadDomainComponent }) {
   if (catalogue.version !== version) {
     throw new Error(`Expected SDK catalogue ${version}, found ${catalogue.version}`);
   }
   const loadAuthoring = typeTable && (() => ({ catalogue, typeTable }));
-  const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring, loadPackage);
+  const workspace = await readPanelWorkspace(directory, checks, materialPath, loadAuthoring, loadPackage, loadDomainComponent);
   const { manifest } = workspace.definition;
   const material = workspace.inline.length || workspace.charts.size ? await workspaceRegistration(workspace) : workspace.material;
   const records = new Map(
@@ -391,11 +398,13 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
     } else if (kind === "projection") {
       const packageName = componentPackageName(record.componentId);
       const release = packageName && await loadPackage?.(packageName);
-      const component = release
-        ? release.components.find(entry => entry.componentId === record.componentId)
-        : components.get(record.componentId);
+      const component = domainComponentId(record.componentId)
+        ? await loadDomainComponent?.(record.componentId)
+        : release
+          ? release.components.find(entry => entry.componentId === record.componentId)
+          : components.get(record.componentId);
       if (!component) {
-        throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable SDK component ${record.componentId}`);
+        throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable component ${record.componentId}`);
       }
       checkProjectionData(id, record, component, checks);
       if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);

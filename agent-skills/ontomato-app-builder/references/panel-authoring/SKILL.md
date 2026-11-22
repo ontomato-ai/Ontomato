@@ -80,3 +80,9 @@ For a read-only page, verify the read and any declared read operations. Mark dra
 applicable. Candidate availability and page skill behavior are verified through the input box and its results.
 
 Use the [Vue authoring guide](CODE.md) for panel sources, owner operations, forms and draft links.
+
+### Registering a component in the current domain
+
+Keep `component.json` (name, visibility, and component declaration), `component.html` (Vue template), and an optional `component.mjs` (default export of Vue component options) together. The module can use the member's declared ports through `@ontomato/sdk/panel`. Register with `node ontomato.mjs component register <directory>`. It writes the assigned `componentId` into `component.json`. Use that full ID in a projection's `componentId` or an inline member's `component`.
+
+Run `component read <id>` to inspect the current declaration, source and revision. To update it, pass that revision to `component register <directory> --revision <number>`. Deliver the same source files and register them in the target domain with the saved ID.

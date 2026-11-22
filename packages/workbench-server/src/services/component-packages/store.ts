@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  COMPONENT_PACKAGE_INCOMPATIBLE,
+  COMPONENT_PACKAGE_INCOMPATIBLE, componentPackageNameSchema,
   componentPackageResponseSchema, componentPackageUpgradeErrorSchema,
   type ComponentPackageResponse, type ComponentPackageUpgradeError,
 } from "@ontomato/contracts/component-packages";
@@ -33,6 +33,26 @@ export async function readComponentPackage(name: string) {
     throw error;
   }
   return componentPackageResponseSchema.parse(JSON.parse(text));
+}
+
+export async function listComponentPackages() {
+  let directories;
+  try {
+    directories = await readdir(runtimeDataDir("component-packages"), { withFileTypes: true });
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return [];
+    throw error;
+  }
+  const names = directories.flatMap(entry => {
+    if (!entry.isDirectory()) return [];
+    try {
+      const name = componentPackageNameSchema.safeParse(decodeURIComponent(entry.name));
+      return name.success ? [name.data] : [];
+    } catch {
+      return [];
+    }
+  });
+  return (await Promise.all(names.sort().map(readComponentPackage))).filter(release => release !== null);
 }
 
 const activations = new Map<string, Promise<void>>();

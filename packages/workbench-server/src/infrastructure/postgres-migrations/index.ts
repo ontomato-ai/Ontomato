@@ -1,3 +1,4 @@
+import { ensureDomainComponentsSchema } from "./20261122-domain-components/schema";
 import { ensurePanelOperationsSchema } from "./20261118-panel-operations/schema";
 import { ensurePanelOperationUploadsSchema } from "./20261122-panel-operation-uploads/schema";
 import { ensureAgentExecutionSchema } from "./20261117-agent-execution/schema";
@@ -105,6 +106,7 @@ type MigrationRegistration = {
 
 export const POSTGRES_MIGRATION_REGISTRY: MigrationRegistration[] = [
   { directory: "20261118-panel-operations", ensureSchema: ensurePanelOperationsSchema },
+  { directory: "20261122-domain-components", ensureSchema: ensureDomainComponentsSchema },
   { directory: "20261122-panel-operation-uploads", ensureSchema: ensurePanelOperationUploadsSchema },
   { directory: "20261112-product-assets", ensureSchema: ensureProductAssetsSchema },
   { directory: "20261118-product-panels", ensureSchema: ensureProductPanelsSchema },

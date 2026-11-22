@@ -43,7 +43,7 @@ function namespaceModule(key: string, namespace: Readonly<Record<string, unknown
  * Runs a panel's module once, with its bare imports naming `modules`. It resolves when the module has run — a panel's
  * module awaits its `mountPanel` — and refuses one that imports anything the platform does not give it.
  */
-export async function runPanelModule(source: string, modules: PanelModules): Promise<void> {
+export async function runPanelModule(source: string, modules: PanelModules): Promise<Record<string, unknown>> {
   const imports = await panelModuleImports(source);
   const run = `panel-${++instances}`;
   const specifiers = Object.values(panelModuleSpecifiers);
@@ -62,7 +62,7 @@ export async function runPanelModule(source: string, modules: PanelModules): Pro
       last = entry.end;
     }
     rewritten += source.slice(last);
-    await import(/* @vite-ignore */ `data:text/javascript;charset=utf-8,${encodeURIComponent(rewritten)}`);
+    return await import(/* @vite-ignore */ `data:text/javascript;charset=utf-8,${encodeURIComponent(rewritten)}#${run}`);
   } finally {
     for (const specifier of specifiers) evaluating.delete(`${run}:${specifier}`);
   }

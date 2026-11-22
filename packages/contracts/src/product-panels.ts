@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { domainComponentRuntimeSchema } from "./domain-components";
+import { domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
