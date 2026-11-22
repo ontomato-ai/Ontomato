@@ -27,6 +27,9 @@ export const panelObjectListColumnSchema = z.object({
   kind: z.enum(["text", "tag", "tags", "reference", "time"]).optional().describe(
     "A time column displays the owner's ISO time string in the reader's language and local time zone, with the full time in its title. Sorting and filtering use the original string.",
   ),
+  timeFormat: z.enum(["relative", "datetime", "date"]).optional().describe(
+    "How a time column formats its timestamp: 'relative' (default) shows relative time for recent dates, 'datetime' shows full local date and time, and 'date' shows local date.",
+  ),
   subtitleKey: z.string().min(1).optional(),
   emptyKey: panelMessageKeySchema.optional(),
   wrap: z.boolean().optional().describe("Allow text in this column to wrap onto multiple lines. Defaults to false."),

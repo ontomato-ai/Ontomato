@@ -65,8 +65,7 @@ export function usePanelData(
   const shown = shallowRef<ComputedRef<MemberDataState> | null>(null);
   const failure = shallowRef<Error | null>(null);
   let reading: EffectScope | undefined;
-  // Read from the member as the instance holds it, and again from its newer definition when that changes.
-  watch(() => instance.projectionVersion(member), () => {
+  const load = () => {
     reading?.stop();
     const current = reading = scope.run(() => effectScope())!;
     shown.value = null;
@@ -79,10 +78,12 @@ export function usePanelData(
     }).catch((reason: unknown) => {
       if (current === reading) failure.value = reason instanceof Error ? reason : new Error(String(reason));
     });
-  }, { immediate: true });
+  };
+  // Read from the member as the instance holds it, and again from its newer definition when that changes.
+  watch(() => instance.projectionVersion(member), load, { immediate: true });
 
   return readerDataState(computed(() => {
-    if (failure.value) return { status: "error", message: failure.value.message };
+    if (failure.value) return { status: "error", message: failure.value.message, retry: load };
     return shown.value?.value ?? { status: "loading" };
   }));
 }

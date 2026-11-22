@@ -31,8 +31,18 @@ function objectOf(data: DirectProjectionData, inputs: MemberInputs) {
 }
 
 /** What a record read declares of a module's record: the owner's identity, label, fields and their names. */
-function panelRecord({ primaryKey, label, subtitle, fields, fieldLabels }: PlatformObjectRecord) {
-  return { primaryKey, label, ...(subtitle === undefined ? {} : { subtitle }), fields, ...(fieldLabels === undefined ? {} : { fieldLabels }) };
+function panelRecord({ primaryKey, className, label, subtitle, fields, fieldLabels, tones, tags, highlights }: PlatformObjectRecord) {
+  return {
+    primaryKey,
+    ...(className === undefined ? {} : { className }),
+    label,
+    ...(subtitle === undefined ? {} : { subtitle }),
+    fields,
+    ...(fieldLabels === undefined ? {} : { fieldLabels }),
+    ...(tones === undefined ? {} : { tones }),
+    ...(tags === undefined ? {} : { tags }),
+    ...(highlights === undefined ? {} : { highlights }),
+  };
 }
 
 /** The form a type's module describes: an object's, or the type's create form (a draft) when the datum reads the type. */

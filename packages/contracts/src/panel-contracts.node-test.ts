@@ -1381,6 +1381,11 @@ test("list column headers come from owner fields or from panel message keys", ()
   const panelColumn = { key: "notes", labelKey: "list.notes", emptyKey: "list.noNotes" };
   assert.deepEqual(panelObjectListColumnSchema.parse(ownerField), ownerField);
   assert.deepEqual(panelObjectListColumnSchema.parse(panelColumn), panelColumn);
+  for (const timeFormat of ["relative", "datetime", "date"] as const) {
+    const timeColumn = { key: "createdAt", kind: "time" as const, timeFormat };
+    assert.deepEqual(panelObjectListColumnSchema.parse(timeColumn), timeColumn);
+  }
+  assert.equal(panelObjectListColumnSchema.safeParse({ key: "createdAt", kind: "time", timeFormat: "iso" }).success, false);
   assert.equal(panelObjectListColumnSchema.safeParse({ ...ownerField, label: "Status" }).success, false);
   assert.equal(panelObjectListColumnSchema.safeParse({ ...panelColumn, empty: "No notes" }).success, false);
 });

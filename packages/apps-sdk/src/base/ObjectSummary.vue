@@ -2,10 +2,19 @@
 import { projectionElement } from "../panel/projection-element";
 import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMemberData } from "../panel/member";
 import type { PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
+import {
+  displayFieldText,
+  isRecordReference,
+  recordFieldArrayItems,
+  referenceDisplayLabel,
+  scalarFieldText,
+  toFieldReference,
+} from "./record-field";
 import { textHighlightSegments } from "./text-highlight";
 import { useDataStateLabels } from "./data-state-labels";
 
@@ -29,7 +38,7 @@ const emit = defineEmits<{
   navigate: [reference: PlatformFieldReference, fieldName: string];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const objectType = projectionElement(slot.projection).id;
@@ -42,17 +51,23 @@ const record = computed<PlatformObjectRecord | null>(() =>
 const shown = computed(() => {
   const fields = record.value?.fields ?? {};
   const tags = record.value?.tags ?? {};
-  const references = record.value?.references ?? {};
-  const present = (name: string) => name in fields || name in tags || name in references;
-  return (props.fields ?? Object.keys(fields)).filter(present);
+  const present = (name: string) => name in fields || name in tags;
+  const keys = props.fields ?? [...new Set([...Object.keys(fields), ...Object.keys(tags)])];
+  return keys.filter(present);
 });
 
 const result = computed(() => recordData.value as DataStateResult<PlatformObjectRecord>);
 const labels = useDataStateLabels();
 
 watch(record, (found) => {
-  if (found) panel.instance.nameObjects(found.className ?? objectType, [found]);
+  if (!found) return;
+  const ref = panelRecordObjectRef(found, objectType);
+  panel.instance.nameObjects(ref.className, [found]);
 }, { immediate: true });
+
+function fieldText(current: PlatformObjectRecord, name: string): string {
+  return displayFieldText(current.fields[name], locale.value, t);
+}
 
 /** A reference the reader followed is handed over at the output named for its field, or at `navigate`. */
 function navigateTo(reference: PlatformFieldReference, fieldName: string) {
@@ -76,29 +91,39 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
             <dt>{{ current.fieldLabels?.[name] ?? name }}</dt>
             <dd>
               <button
-                v-if="current.references?.[name]"
+                v-if="isRecordReference(current.fields[name])"
                 type="button"
                 class="sdk-object-ref-link"
-                @click="navigateTo(current.references[name]!, name)"
+                @click="navigateTo(toFieldReference(current.fields[name]!), name)"
               >
-                <template v-for="(part, index) in textHighlightSegments(current.references[name]!.label, current.highlights?.[name])" :key="index">
+                <template v-for="(part, index) in textHighlightSegments(referenceDisplayLabel(current.fields[name]!), current.highlights?.[name])" :key="index">
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                 </template>
               </button>
+              <span v-else-if="recordFieldArrayItems(current, name).length" class="sdk-object-summary-tags">
+                <template v-for="(item, itemIndex) in recordFieldArrayItems(current, name)" :key="itemIndex">
+                  <button
+                    v-if="isRecordReference(item)"
+                    type="button"
+                    class="sdk-object-ref-link"
+                    @click="navigateTo(toFieldReference(item), name)"
+                  >
+                    {{ referenceDisplayLabel(item) }}
+                  </button>
+                  <span v-else class="sdk-object-summary-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                </template>
+              </span>
               <span
-                v-else-if="current.tones?.[name] && current.fields[name]"
+                v-else-if="current.tones?.[name] && fieldText(current, name) !== ''"
                 class="sdk-object-summary-tag"
                 :data-tone="current.tones[name]"
               >
-                <template v-for="(part, index) in textHighlightSegments(current.fields[name]!, current.highlights?.[name])" :key="index">
+                <template v-for="(part, index) in textHighlightSegments(fieldText(current, name), current.highlights?.[name])" :key="index">
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                 </template>
               </span>
-              <span v-else-if="current.tags?.[name]?.length" class="sdk-object-summary-tags">
-                <span v-for="tag in current.tags[name]" :key="tag" class="sdk-object-summary-tag" data-tone="info">{{ tag }}</span>
-              </span>
-              <span v-else-if="current.fields[name]" class="sdk-object-summary-text">
-                <template v-for="(part, index) in textHighlightSegments(current.fields[name]!, current.highlights?.[name])" :key="index">
+              <span v-else-if="fieldText(current, name) !== ''" class="sdk-object-summary-text">
+                <template v-for="(part, index) in textHighlightSegments(fieldText(current, name), current.highlights?.[name])" :key="index">
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                 </template>
               </span>

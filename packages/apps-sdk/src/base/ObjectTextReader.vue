@@ -130,7 +130,9 @@ const shownPage = computed(() => page.value && {
 
 /** One object's whole text, as the `record` datum holds it. */
 const wholeText = computed(() =>
-  recordData?.value.status === "ready" ? (recordData.value.value as unknown as PlatformObjectRecord).fields[props.textField] ?? "" : null);
+  recordData?.value.status === "ready"
+    ? panelRecordFieldText((recordData.value.value as unknown as PlatformObjectRecord).fields[props.textField], locale.value)
+    : null);
 const labels = useDataStateLabels();
 </script>
 

@@ -6,7 +6,9 @@ import type { PanelChildObjectIdentity } from "@ontomato/contracts/panel-manifes
 import {
   authoredReadParameterSource,
   directReadDeclaration,
+  panelRecordObjectRef,
   type PanelRecordQuery,
+  type PanelRecordReferenceFieldValue,
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
@@ -22,6 +24,15 @@ import type {
 import { projectionElement } from "../panel/projection-element";
 import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
 import type { ObjectListColumn, ObjectListRef } from "./object-list-types";
+import {
+  displayFieldText,
+  isRecordReference,
+  rawRecordField,
+  recordFieldArrayItems,
+  referenceDisplayLabel,
+  scalarFieldText,
+  toFieldReference,
+} from "./record-field";
 import { textHighlightSegments } from "./text-highlight";
 import { useDataStateLabels } from "./data-state-labels";
 
@@ -46,6 +57,12 @@ interface ParsedListData {
  */
 const props = withDefaults(
   defineProps<{
+    /**
+     * How records are arranged: `"auto"` (default) draws a table when `columns` is given and a compact list otherwise;
+     * `"list"` forces the compact list, `"table"` draws the table when `columns` is given, and `"cards"` draws a
+     * responsive card grid showing label, subtitle, status, tags and any configured `columns`.
+     */
+    layout?: "auto" | "list" | "table" | "cards";
     /**
      * The table's columns, each a field of the owner's records (`key`, its header `labelKey`, and how it is drawn); absent,
      * the list is compact: each item shows its label, then `statusField`, `subtitleField` and `tagsField` as configured.
@@ -79,6 +96,7 @@ const props = withDefaults(
     emptyText?: string;
   }>(),
   {
+    layout: "auto",
     columns: undefined,
     statusField: undefined,
     tagsField: undefined,
@@ -269,8 +287,12 @@ const queryStatus = computed(() => parsedData.value.status);
 const diagnostics = computed(() => parsedData.value.diagnostics);
 const queryReason = computed(() => parsedData.value.reason);
 
+function rowSelectionValue(row: PlatformObjectRecord): ObjectListRef {
+  return panelRecordObjectRef(row, activeType.value ?? objectType);
+}
+
 function rowClassName(row: PlatformObjectRecord): string {
-  return row.className ?? activeType.value ?? objectType;
+  return rowSelectionValue(row).className;
 }
 
 function refKey(refValue: ObjectListRef): string {
@@ -281,10 +303,6 @@ function selectionIdentity(value: ObjectListSelection | null): string | null {
   if (!value) return null;
   if ("parent" in value) return `child\u0000${value.parent.objectType}\u0000${value.parent.primaryKey}\u0000${value.primaryKey}`;
   return refKey(value);
-}
-
-function rowSelectionValue(row: PlatformObjectRecord): ObjectListRef {
-  return { className: rowClassName(row), primaryKey: row.primaryKey };
 }
 
 function rowIdentityKey(row: PlatformObjectRecord): string {
@@ -313,13 +331,19 @@ const searchText = computed<string>(() => {
   return typeof raw === "string" ? raw : "";
 });
 
-const isTable = computed(() => Boolean(props.columns?.length));
+const effectiveLayout = computed<"list" | "table" | "cards">(() => {
+  if (props.layout === "cards") return "cards";
+  if (props.layout === "list") return "list";
+  return props.columns?.length ? "table" : "list";
+});
+const isTable = computed(() => effectiveLayout.value === "table");
+const isCards = computed(() => effectiveLayout.value === "cards");
 
 /** From this many characters a text column shrinks to the table's room and ends in an ellipsis rather than set its width. */
 const LONG_TEXT = 24;
 /** A column's text in a row, as the cell shows it. */
 function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string {
-  return row.references?.[column.key]?.label ?? fieldValue(row, column.key);
+  return fieldValue(row, column.key);
 }
 /**
  * How a column is laid out, with no width of its own: one line at its own width by default, so a short value never
@@ -331,11 +355,29 @@ const columnFit = computed(() => new Map((props.columns ?? []).map((column) => [
     : (column.kind === undefined || column.kind === "text" || column.kind === "reference") && rows.value.some((row) => columnText(row, column).length > LONG_TEXT)
       ? "sdk-object-list-col-shrink" : ""])));
 /**
- * A time column's owner value (an ISO time) as the platform shows a time in a list, so neighbouring times keep their
- * order: in the reader's language and time zone, recent ones relative, then by clock time and date. A value that is no
- * time is shown as it is.
+ * Format a time column's ISO value in the reader's locale and time zone: relative by default (`formatListTime`), or
+ * full local date-time (`datetime`) / local date (`date`). A value that is no time is shown as it is.
  */
-function timeText(value: string): string {
+function timeText(value: string, timeFormat?: ObjectListColumn["timeFormat"]): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  if (timeFormat === "datetime") {
+    return parsed.toLocaleString(locale.value, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+  if (timeFormat === "date") {
+    return parsed.toLocaleDateString(locale.value, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  }
   return formatListTime(value) || value;
 }
 /** The text a cell's title gives in full: a long text column's whole text, or a time column's whole local time. */
@@ -347,6 +389,24 @@ function cellTitle(row: PlatformObjectRecord, column: ObjectListColumn): string 
   return columnFit.value.get(column.key) === "sdk-object-list-col-shrink" ? columnText(row, column) : undefined;
 }
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / effectivePageSize.value)));
+
+type PaginationItem = number | "ellipsis";
+
+const showNumericPages = computed(() => pageMode === "page" && parsedData.value.hasTotal);
+
+const paginationItems = computed<readonly PaginationItem[]>(() => {
+  const pages = totalPages.value;
+  if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1);
+  const current = currentPage.value;
+  const items: PaginationItem[] = [1];
+  const windowStart = Math.max(2, current - 1);
+  const windowEnd = Math.min(pages - 1, current + 1);
+  if (windowStart > 2) items.push("ellipsis");
+  for (let page = windowStart; page <= windowEnd; page += 1) items.push(page);
+  if (windowEnd < pages - 1) items.push("ellipsis");
+  items.push(pages);
+  return items;
+});
 
 const showCount = computed(
   () =>
@@ -548,6 +608,27 @@ function onRowKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
   }
 }
 
+/** Keyboard activation and neighbour focus movement for cards without colliding with inner checkboxes or reference links. */
+function onCardKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
+  if (event.target !== event.currentTarget) return;
+  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+    event.preventDefault();
+    choose(row);
+    return;
+  }
+  const current = event.currentTarget as HTMLElement;
+  let target: Element | null = null;
+  if (event.key === "ArrowDown" || event.key === "ArrowRight") target = current.nextElementSibling;
+  else if (event.key === "ArrowUp" || event.key === "ArrowLeft") target = current.previousElementSibling;
+  else if (event.key === "Home") target = current.parentElement?.firstElementChild ?? null;
+  else if (event.key === "End") target = current.parentElement?.lastElementChild ?? null;
+  if (target instanceof HTMLElement) {
+    event.preventDefault();
+    target.focus();
+  }
+}
+
 function toggleChecked(row: PlatformObjectRecord, checked: boolean) {
   const identity = rowIdentityKey(row);
   if (checked) {
@@ -584,14 +665,17 @@ function navigateTo(reference: PlatformFieldReference, columnKey: string) {
 const summaryKey = computed(() => props.subtitleField ?? "subtitle");
 
 function fieldValue(row: PlatformObjectRecord, key: string): string {
-  if (key === "label") return row.label;
-  if (key === "subtitle") return row.subtitle ?? "";
-  return row.fields[key] ?? "";
+  return displayFieldText(rawRecordField(row, key), locale.value, t);
+}
+
+function referenceField(row: PlatformObjectRecord, key: string): PanelRecordReferenceFieldValue | null {
+  const raw = rawRecordField(row, key);
+  return isRecordReference(raw) ? raw : null;
 }
 
 function cellSegments(row: PlatformObjectRecord, key: string, empty = "—") {
   const text = fieldValue(row, key);
-  if (!text) return [{ text: empty, hit: false }];
+  if (text === "") return [{ text: empty, hit: false }];
   return textHighlightSegments(text, row.highlights?.[key]);
 }
 
@@ -701,17 +785,31 @@ watch(someVisibleChecked, () => {
                 :title="cellTitle(row, column)"
               >
                 <button
-                  v-if="(column.kind === 'reference' || row.references?.[column.key]) && row.references?.[column.key]"
+                  v-if="referenceField(row, column.key)"
                   type="button"
                   class="sdk-object-ref-link"
-                  @click.stop="navigateTo(row.references[column.key]!, column.key)"
+                  @click.stop="navigateTo(toFieldReference(referenceField(row, column.key)!), column.key)"
                 >
-                  <template v-for="(part, index) in textHighlightSegments(row.references[column.key]!.label, row.highlights?.[column.key])" :key="index">
+                  <template v-for="(part, index) in textHighlightSegments(referenceDisplayLabel(referenceField(row, column.key)!), row.highlights?.[column.key])" :key="index">
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                   </template>
                 </button>
+                <span v-else-if="Array.isArray(rawRecordField(row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
+                  <template v-for="(item, itemIndex) in recordFieldArrayItems(row, column.key)" :key="itemIndex">
+                    <button
+                      v-if="isRecordReference(item)"
+                      type="button"
+                      class="sdk-object-ref-link"
+                      @click.stop="navigateTo(toFieldReference(item), column.key)"
+                    >
+                      {{ referenceDisplayLabel(item) }}
+                    </button>
+                    <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                  </template>
+                  <template v-if="!recordFieldArrayItems(row, column.key).length">{{ columnEmpty(column) }}</template>
+                </span>
                 <span
-                  v-else-if="column.kind === 'tag' && fieldValue(row, column.key)"
+                  v-else-if="column.kind === 'tag' && fieldValue(row, column.key) !== ''"
                   class="sdk-object-list-tag"
                   :data-tone="row.tones?.[column.key] ?? 'default'"
                 >
@@ -719,23 +817,14 @@ watch(someVisibleChecked, () => {
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                   </template>
                 </span>
-                <template v-else-if="column.kind === 'time'">{{ fieldValue(row, column.key) ? timeText(fieldValue(row, column.key)) : columnEmpty(column) }}</template>
-                <span v-else-if="column.kind === 'tags'" class="sdk-object-list-item-tags">
-                  <span
-                    v-for="tag in row.tags?.[column.key] ?? []"
-                    :key="tag"
-                    class="sdk-object-list-tag"
-                    data-tone="info"
-                  >{{ tag }}</span>
-                  <template v-if="!(row.tags?.[column.key]?.length)">{{ columnEmpty(column) }}</template>
-                </span>
+                <template v-else-if="column.kind === 'time'">{{ fieldValue(row, column.key) !== '' ? timeText(fieldValue(row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
                 <div v-else class="sdk-object-list-cell">
                   <span class="sdk-object-list-cell-main">
                     <template v-for="(part, index) in cellSegments(row, column.key, columnEmpty(column))" :key="index">
                       <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                     </template>
                   </span>
-                  <span v-if="column.subtitleKey && fieldValue(row, column.subtitleKey)" class="sdk-object-list-cell-sub">
+                  <span v-if="column.subtitleKey && fieldValue(row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
                     <template v-for="(part, index) in cellSegments(row, column.subtitleKey, '')" :key="index">
                       <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                     </template>
@@ -745,6 +834,111 @@ watch(someVisibleChecked, () => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-else-if="isCards" role="listbox" class="sdk-object-list-cards">
+        <article
+          v-for="row in rows"
+          :key="rowIdentityKey(row)"
+          role="option"
+          tabindex="0"
+          class="sdk-object-list-card"
+          :aria-selected="rowIdentityKey(row) === chosenIdentity"
+          :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
+          @click="choose(row)"
+          @keydown="onCardKeydown(row, $event)"
+        >
+          <div class="sdk-object-list-card-head">
+            <input
+              v-if="canCheck"
+              type="checkbox"
+              class="sdk-object-list-card-check"
+              :aria-label="row.label"
+              :checked="checkedIdentityKeys.has(rowIdentityKey(row))"
+              @click.stop
+              @change="toggleChecked(row, ($event.target as HTMLInputElement).checked)"
+            />
+            <span class="sdk-object-list-card-title">
+              <template v-for="(part, index) in textHighlightSegments(row.label, row.highlights?.label)" :key="index">
+                <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+              </template>
+            </span>
+            <span
+              v-if="statusField && fieldValue(row, statusField) !== ''"
+              class="sdk-object-list-tag"
+              :data-tone="row.tones?.[statusField] ?? 'default'"
+            >{{ fieldValue(row, statusField) }}</span>
+          </div>
+          <p
+            v-if="fieldValue(row, summaryKey) !== ''"
+            class="sdk-object-list-card-sub"
+            :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
+            :style="{ WebkitLineClamp: subtitleLines }"
+          >
+            <template v-for="(part, index) in textHighlightSegments(fieldValue(row, summaryKey), row.highlights?.[summaryKey])" :key="index">
+              <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+            </template>
+          </p>
+          <dl v-if="columns?.length" class="sdk-object-list-card-fields">
+            <template v-for="column in columns" :key="column.key">
+              <dt class="sdk-object-list-card-field-label">{{ columnLabel(column) }}</dt>
+              <dd class="sdk-object-list-card-field-value" :title="cellTitle(row, column)">
+                <button
+                  v-if="referenceField(row, column.key)"
+                  type="button"
+                  class="sdk-object-ref-link"
+                  @click.stop="navigateTo(toFieldReference(referenceField(row, column.key)!), column.key)"
+                >
+                  <template v-for="(part, index) in textHighlightSegments(referenceDisplayLabel(referenceField(row, column.key)!), row.highlights?.[column.key])" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </button>
+                <span v-else-if="Array.isArray(rawRecordField(row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
+                  <template v-for="(item, itemIndex) in recordFieldArrayItems(row, column.key)" :key="itemIndex">
+                    <button
+                      v-if="isRecordReference(item)"
+                      type="button"
+                      class="sdk-object-ref-link"
+                      @click.stop="navigateTo(toFieldReference(item), column.key)"
+                    >
+                      {{ referenceDisplayLabel(item) }}
+                    </button>
+                    <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                  </template>
+                  <template v-if="!recordFieldArrayItems(row, column.key).length">{{ columnEmpty(column) }}</template>
+                </span>
+                <span
+                  v-else-if="column.kind === 'tag' && fieldValue(row, column.key) !== ''"
+                  class="sdk-object-list-tag"
+                  :data-tone="row.tones?.[column.key] ?? 'default'"
+                >
+                  <template v-for="(part, index) in cellSegments(row, column.key, columnEmpty(column))" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </span>
+                <template v-else-if="column.kind === 'time'">{{ fieldValue(row, column.key) !== '' ? timeText(fieldValue(row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
+                <template v-else>
+                  <template v-for="(part, index) in cellSegments(row, column.key, columnEmpty(column))" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </template>
+              </dd>
+            </template>
+          </dl>
+          <div v-if="tagsField && recordFieldArrayItems(row, tagsField).length" class="sdk-object-list-card-tags">
+            <template v-for="(item, itemIndex) in recordFieldArrayItems(row, tagsField)" :key="itemIndex">
+              <button
+                v-if="isRecordReference(item)"
+                type="button"
+                class="sdk-object-ref-link"
+                @click.stop="navigateTo(toFieldReference(item), tagsField)"
+              >
+                {{ referenceDisplayLabel(item) }}
+              </button>
+              <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+            </template>
+          </div>
+        </article>
       </div>
 
       <ul v-else role="listbox" class="sdk-object-list-items">
@@ -777,13 +971,13 @@ watch(someVisibleChecked, () => {
                 </template>
               </span>
               <span
-                v-if="statusField && row.fields[statusField]"
+                v-if="statusField && fieldValue(row, statusField) !== ''"
                 class="sdk-object-list-tag"
                 :data-tone="row.tones?.[statusField] ?? 'default'"
-              >{{ row.fields[statusField] }}</span>
+              >{{ fieldValue(row, statusField) }}</span>
             </span>
             <span
-              v-if="fieldValue(row, summaryKey)"
+              v-if="fieldValue(row, summaryKey) !== ''"
               class="sdk-object-list-item-sub"
               :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
               :style="{ WebkitLineClamp: subtitleLines }"
@@ -792,13 +986,20 @@ watch(someVisibleChecked, () => {
                 <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
               </template>
             </span>
-            <span v-if="tagsField && row.tags?.[tagsField]?.length" class="sdk-object-list-item-tags">
-              <span
-                v-for="tag in row.tags[tagsField]"
-                :key="tag"
-                class="sdk-object-list-tag"
-                data-tone="info"
-              >{{ tag }}</span>
+            <span v-if="tagsField && recordFieldArrayItems(row, tagsField).length" class="sdk-object-list-item-tags">
+              <template v-for="(item, itemIndex) in recordFieldArrayItems(row, tagsField)" :key="itemIndex">
+                <span
+                  v-if="isRecordReference(item)"
+                  role="link"
+                  tabindex="0"
+                  class="sdk-object-ref-link"
+                  @click.stop="navigateTo(toFieldReference(item), tagsField)"
+                  @keydown.enter.stop.prevent="navigateTo(toFieldReference(item), tagsField)"
+                >
+                  {{ referenceDisplayLabel(item) }}
+                </span>
+                <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+              </template>
             </span>
           </button>
         </li>
@@ -806,6 +1007,9 @@ watch(someVisibleChecked, () => {
     </data-state>
 
     <nav v-if="showPagination" class="sdk-object-list-pagination">
+      <span v-if="showNumericPages" class="sdk-object-list-page-total">
+        {{ t("platform.listTotal", { count: total }) }}
+      </span>
       <button
         type="button"
         class="sdk-object-list-btn sdk-object-list-prev"
@@ -814,7 +1018,22 @@ watch(someVisibleChecked, () => {
       >
         {{ t("platform.listPrevPage") }}
       </button>
-      <span class="sdk-object-list-page-info">
+      <template v-if="showNumericPages">
+        <template v-for="(item, index) in paginationItems" :key="item === 'ellipsis' ? `ellipsis-${index}` : item">
+          <span v-if="item === 'ellipsis'" class="sdk-object-list-page-ellipsis" aria-hidden="true">…</span>
+          <button
+            v-else
+            type="button"
+            class="sdk-object-list-btn sdk-object-list-page-num"
+            :class="{ active: item === currentPage }"
+            :aria-current="item === currentPage ? 'page' : undefined"
+            @click="goPage(item)"
+          >
+            {{ item }}
+          </button>
+        </template>
+      </template>
+      <span v-else class="sdk-object-list-page-info">
         {{ parsedData.hasTotal ? t("platform.listPagination", { page: currentPage, pages: totalPages }) : currentPage }}
       </span>
       <button
@@ -1085,12 +1304,109 @@ watch(someVisibleChecked, () => {
   background: var(--el-color-danger-light-9);
   color: var(--el-color-danger-text);
 }
-.sdk-object-list-pagination {
+.sdk-object-list-cards {
+  display: grid;
+  gap: var(--spacing-md);
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.sdk-object-list-card {
+  background: var(--sdk-bg-color);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  color: var(--sdk-text-color-primary);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+.sdk-object-list-card:hover {
+  background: var(--ui-fill-tertiary);
+}
+.sdk-object-list-card.chosen {
+  background: var(--ui-fill-secondary);
+  border-color: var(--sdk-color-primary);
+}
+.sdk-object-list-card:focus-visible {
+  outline: 2px solid var(--brand-link);
+  outline-offset: 2px;
+}
+.sdk-object-list-card-head {
   align-items: center;
   display: flex;
   gap: var(--spacing-sm);
+}
+.sdk-object-list-card-check {
+  flex: 0 0 auto;
+}
+.sdk-object-list-card-title {
+  flex: 1 1 auto;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-sm);
+  min-width: 0;
+  word-break: break-word;
+}
+.sdk-object-list-card-sub {
+  color: var(--sdk-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  margin: 0;
+}
+.sdk-object-list-card-fields {
+  display: grid;
+  font-size: var(--text-xs);
+  gap: var(--spacing-xs) var(--spacing-md);
+  grid-template-columns: auto 1fr;
+  margin: 0;
+}
+.sdk-object-list-card-field-label {
+  color: var(--sdk-text-color-secondary);
+}
+.sdk-object-list-card-field-value {
+  color: var(--sdk-text-color-regular);
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
+}
+.sdk-object-list-card-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.sdk-object-list-pagination {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
   justify-content: flex-end;
   padding-top: var(--spacing-xs);
+}
+.sdk-object-list-page-total {
+  color: var(--sdk-text-color-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  margin-right: auto;
+}
+.sdk-object-list-page-num {
+  min-width: var(--control-height-sm);
+  padding: 0 var(--spacing-sm);
+}
+.sdk-object-list-page-num.active {
+  background: var(--sdk-color-primary);
+  border-color: var(--sdk-color-primary);
+  color: var(--sdk-bg-color);
+  font-weight: var(--font-semibold);
+}
+.sdk-object-list-page-num.active:hover:not(:disabled) {
+  background: var(--sdk-color-primary);
+}
+.sdk-object-list-page-ellipsis {
+  color: var(--sdk-text-color-secondary);
+  font-size: var(--text-sm);
+  padding: 0 var(--spacing-xs);
+  user-select: none;
 }
 .sdk-object-list-diagnostics {
   color: var(--el-color-warning-text);
