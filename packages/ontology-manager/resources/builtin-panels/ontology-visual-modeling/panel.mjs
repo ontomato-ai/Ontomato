@@ -38,6 +38,15 @@ await mountPanel({
       if (edge && !stillListed(graphEdges, edge.primaryKey)) instance.state.set("selectedEdge", null);
     });
 
+    // A line drawn with Shift from one node to another hands the page both ends: that is a new relation, so the owner's
+    // create form opens with them filled in. Opening it from the header clears them first, which leaves this alone.
+    watch(
+      () => [values.value.connectFrom, values.value.connectTo],
+      ([from, to]) => {
+        if (from && to && values.value.dialog !== "relation") instance.state.set("dialog", "relation");
+      },
+    );
+
     const openClassDialog = () => instance.state.set("dialog", "class");
     const openRelationDialog = () => {
       instance.state.setState({ dialog: "relation", connectFrom: null, connectTo: null });

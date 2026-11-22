@@ -128,6 +128,34 @@ it("draws a large addition in bounded batches, every edge after both its ends, a
   wrapper.unmount();
 });
 
+// Shift and drag on an editable canvas draws a relation, not a move (visual modeling acceptance, 2026-11-22). G6 5.1.0
+// hands both behaviours' `enable` the event with its `shiftKey` (checked in a browser against G6 itself and this canvas:
+// the line is drawn and `connect` emitted); its own drag end still fires for the node the line started from, which moved
+// nowhere and is not the caller's to keep where it is.
+it("draws a relation with Shift on an editable canvas and moves the node without it, saying nothing of a move for a relation", async () => {
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(2), layout: { type: "preset" }, editable: true } });
+  await flushPromises();
+  const behaviors = view.options.behaviors as any[];
+  const dragging = behaviors.find((behavior) => behavior.type === "drag-element");
+  const drawing = behaviors.find((behavior) => behavior.type === "create-edge");
+  expect([dragging.enable({ shiftKey: false }), drawing.enable({ shiftKey: false })]).toEqual([true, false]);
+  expect([dragging.enable({ shiftKey: true }), drawing.enable({ shiftKey: true })]).toEqual([false, true]);
+  drawing.onCreate({ source: "n0", target: "n1" });
+  expect(wrapper.emitted("connect")).toEqual([["n0", "n1"]]);
+  // The drag that drew it ends on the node it started from: no move.
+  handlers["node:dragstart"]({ target: { id: "n0" }, shiftKey: true });
+  handlers["node:dragend"]({ target: { id: "n0" }, shiftKey: true });
+  expect(wrapper.emitted("move")).toBeUndefined();
+  // A plain drag still moves.
+  handlers["node:dragstart"]({ target: { id: "n0" }, shiftKey: false });
+  handlers["node:dragend"]({ target: { id: "n0" }, shiftKey: false });
+  expect(wrapper.emitted("move")).toHaveLength(1);
+  // Not editable, Shift draws nothing and drags as ever.
+  await wrapper.setProps({ editable: false });
+  expect([dragging.enable({ shiftKey: true }), drawing.enable({ shiftKey: true })]).toEqual([true, false]);
+  wrapper.unmount();
+});
+
 it("changes only what changed, and keeps a dragged node where it was let go until its caller moves it", async () => {
   const nodes = placed(3);
   const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes, layout: { type: "preset" } } });

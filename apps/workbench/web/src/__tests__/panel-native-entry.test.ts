@@ -172,6 +172,26 @@ it("hands a draft linked at a built-in entry's original address to its panel, pa
   }
 });
 
+it("reads the catalog once before calling an address a page's code asks for missing", async () => {
+  // A page asks from a native start page: nothing has read the catalog yet, so no entry is known.
+  installPlatform((request) => {
+    if (request.path === "/api/data-query/platform/applications")
+      return Response.json({ success: true, data: catalogWith([components]) });
+    return answer(request);
+  });
+  const { router, app } = await open("/home");
+  try {
+    expect(useApplicationCatalog().applications.value).toEqual([]);
+    await panelNavigator(router)("/ontology/components");
+    expect(router.currentRoute.value.path).toBe("/ontology/components");
+    // Read once for the ask that failed, not for every ask.
+    await panelNavigator(router)("/home");
+    expect(useApplicationCatalog().applications.value.map((application) => application.id)).toContain("ontology");
+  } finally {
+    app.unmount();
+  }
+});
+
 it("lets a page open another page's entry before either has been visited", async () => {
   // The ontology graph's "go to modeling": a panel asks for the address of an entry the reader has not opened yet.
   installPlatform(answer);
