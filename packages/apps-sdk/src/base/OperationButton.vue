@@ -2,12 +2,15 @@
 import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { readOperationInput } from "../panel/read-operation-input";
+import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
+import { operationInputFields } from "./operation-input-schema";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember, useMemberOperations } from "../panel/member";
 import { stateObject, stateObjects } from "../panel/state";
@@ -112,7 +115,23 @@ const targetKey = computed(() => (
     ? JSON.stringify(member.inputs.value)
     : target.value?.kind === "object" ? `${target.value.objectType}:${target.value.primaryKey}` : null
 ));
+const inputDialogOpen = ref(false);
+const hasDeclaredReadInputs = computed(() =>
+  panel.manifest.members[slot.slot]?.readOperationInputs?.[props.operation] !== undefined);
+/**
+ * Editable parameter fields declared by the owner's `inputSchema.properties`.
+ * Absent for file-upload actions, draft/readOperationInputs-bound reads, and keys already bound by `operation.params`.
+ */
+const inputFields = computed(() => {
+  const described = descriptor.value;
+  if (!described || described.upload) return [];
+  if (described.effect === "read" && (described.target.source === "draft" || hasDeclaredReadInputs.value)) return [];
+  const boundParams = new Set(Object.keys(slot.projection.operations?.[props.operation]?.params ?? {}));
+  return operationInputFields(described.inputSchema, boundParams);
+});
+
 watch(targetKey, () => {
+  inputDialogOpen.value = false;
   failure.value = null;
   read.value = null;
   receipt.value = null;
@@ -125,7 +144,16 @@ const ready = computed(() => {
   return descriptor.value.target.source !== "input" || target.value !== null;
 });
 
-async function run() {
+function onTriggerClick() {
+  if (inputFields.value.length > 0) {
+    failure.value = null;
+    inputDialogOpen.value = true;
+    return;
+  }
+  void run({});
+}
+
+async function run(providedInput: Record<string, RuntimeJsonValue> = {}) {
   const described = descriptor.value!;
   running.value = true;
   failure.value = null;
@@ -137,25 +165,24 @@ async function run() {
         throw new Error(`Row operation '${props.operation}' must be a write operation`);
       }
       const { target: owned } = described;
-      const hasDeclaredInputs = panel.manifest.members[slot.slot]?.readOperationInputs?.[props.operation] !== undefined;
-      // Trial runs bind a draft or declared readOperationInputs; object-targeted exports take an empty input object.
-      const input = owned.source === "draft" || hasDeclaredInputs
+      // Trial runs bind a draft or declared readOperationInputs; unbound reads pass user-provided parameters (or {}).
+      const input = owned.source === "draft" || hasDeclaredReadInputs.value
         ? readOperationInput(
             panel.instance,
             slot.slot,
             props.operation,
             owned.source === "draft" ? panel.instance.forms.handle(owned.slot)!.values.value : {},
           )
-        : {};
+        : providedInput;
       read.value = await panel.instance.readOperation(operationId.value, { target: target.value, input });
       return;
     }
     const answer = rowOperation
-      ? await rowOperation.run(props.operation)
+      ? await rowOperation.run(props.operation, providedInput)
       : await (() => {
-          const [first, ...rest] = checkedTargets.value.map((object) => ({ target: object, input: {} }));
+          const [first, ...rest] = checkedTargets.value.map((object) => ({ target: object, input: providedInput }));
           return panel.instance.writeOperation(
-            operationId.value, first ? { calls: [first, ...rest] } : { call: { target: target.value, input: {} } },
+            operationId.value, first ? { calls: [first, ...rest] } : { call: { target: target.value, input: providedInput } },
           );
         })();
     if (answer.decision === "cancel") return;
@@ -204,7 +231,15 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
     <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
     <!-- A removal is drawn quiet, as the platform's header draws one: danger in its colour, not a solid block; off, it
          is plainly off. The owner still decides what it does and confirms it. -->
-    <el-button v-else :type="type" :text="type === 'danger'" :loading="running" :disabled="!ready" @click="run">{{ label }}</el-button>
+    <el-button v-else :type="type" :text="type === 'danger'" :loading="running" :disabled="!ready" @click="onTriggerClick">{{ label }}</el-button>
+    <operation-input-dialog
+      v-if="inputFields.length > 0"
+      v-model="inputDialogOpen"
+      :title="descriptor?.label"
+      :fields="inputFields"
+      :busy="running"
+      @confirm="run"
+    ></operation-input-dialog>
     <p v-if="!pending && descriptor?.unavailable" class="sdk-operation-unavailable">{{ descriptor.unavailable.reason }}</p>
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <operation-result v-if="read" :result="read"></operation-result>
