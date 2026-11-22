@@ -15,7 +15,7 @@ import {
   type PanelUseRef, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
-import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { assistantService } from "../assistant/service";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -314,10 +314,12 @@ function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOut
 
   const successes = items.flatMap(({ outcome }) => outcome.kind === "success" && outcome.affected ? [outcome.affected] : []);
   if (!successes.length) return { kind: "batch", items };
-  const objects = new Map(successes.flatMap(({ objects }) => objects.map(target =>
-    [JSON.stringify([target.objectType, target.primaryKey]), target] as const)));
+  const once = (targets: PanelObjectIdentity[]) => [...new Map(targets.map(target =>
+    [JSON.stringify([target.objectType, target.primaryKey]), target] as const)).values()];
+  const objects = once(successes.flatMap(({ objects }) => objects));
+  const removed = once(successes.flatMap(({ removed }) => removed ?? []));
   const objectTypes = new Set(successes.flatMap(affected => affected.objectTypes));
-  return { kind: "batch", items, affected: { objects: [...objects.values()], objectTypes: [...objectTypes] } };
+  return { kind: "batch", items, affected: { objects, objectTypes: [...objectTypes], ...(removed.length && { removed }) } };
 }
 export async function operatePanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, input: CreatePanelOperationIntentRequest, initiatorName: string): Promise<PanelOperateResponse> {
   const run = await runForOwner(owner,runId);
@@ -434,6 +436,11 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
 async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationHost, intent: PanelOperationIntent,
   handler: PanelWriteServerOperation, prepared: CheckedInvocation, draft?: Awaited<ReturnType<typeof verifyCreationDraft>>,
 ) {
+  // The name the owner's completion sentence gives, read while the target is still there; a target that cannot be read
+  // fails here, before anything is claimed or written.
+  const done = handler.kind === "action" && handler.done && "call" in prepared
+    ? handler.done(host, await handler.targetLabel(host, prepared.target as PanelRecordTarget))
+    : undefined;
   if (!await store.claim(owner, intent)) return;
   const id = intent.intentId;
   let outcome: PanelOperationOutcome;
@@ -442,6 +449,7 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
       outcome = batchOutcome(await prepared.owner.executeBatch(host, prepared.calls, id), prepared.calls);
     } else {
       outcome = await handler.execute(host, prepared.target, prepared.call.input, id);
+      if (done !== undefined && outcome.kind === "success" && outcome.message === undefined) outcome = { ...outcome, message: done };
       if (prepared.target.kind === "draft" && handler.kind === "form.save" && outcome.kind === "success") {
         const created = handler.create!.createdObject(outcome.data);
         if (draft) await assistantService.recordPageDraftCreated(draft.sessionId, draft.runId, draft.path, created.primaryKey, owner);

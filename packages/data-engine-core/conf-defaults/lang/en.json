@@ -668,6 +668,10 @@
     "value": "This function uses the old format. Turn its query logic into a package before saving a change; the saved function still runs."
   },
   {
+    "key": "PanelForm.metricBindingsHelp",
+    "value": "Bindings share this metric's calculation and publication status; a definition change applies to every binding. Enter parameter values as JSON, such as \"text\", 12, null or [1, 2]; samples are hints only."
+  },
+  {
     "key": "PanelForm.bindings",
     "value": "Bindings"
   },

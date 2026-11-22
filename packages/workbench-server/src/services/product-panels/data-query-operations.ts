@@ -113,6 +113,6 @@ export async function remove(
 ): Promise<SinglePanelOperationOutcome> {
   const envelope = await ownerPost(host, path, { id: target.primaryKey }, ownerEnvelopeSchema);
   return envelope.success
-    ? { kind: "success", data: {}, affected: affected(target.objectType, target.primaryKey, [target.objectType]) }
+    ? { kind: "success", data: {}, affected: { ...affected(target.objectType, target.primaryKey, [target.objectType]), removed: [{ objectType: target.objectType, primaryKey: target.primaryKey }] } }
     : ownerWriteFailure(envelope, failureCode, "The owner could not delete the record");
 }

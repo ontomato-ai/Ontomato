@@ -65,6 +65,8 @@ class MetricViewFormTest {
     assertEquals("code", field(form, "/function/returnDef/columnLabels").getJSONObject("control").getString("kind"));
 
     JSONObject bindings = field(form, "/bindings");
+    // The page said what a binding shares with its metric and how its values are written.
+    assertEquals("PanelForm.metricBindingsHelp", bindings.getString("help"));
     JSONObject control = bindings.getJSONObject("control");
     assertEquals("object-array", control.getString("kind"));
     assertEquals("/id", control.getString("itemKeyPath"));
@@ -152,6 +154,7 @@ class MetricViewFormTest {
     assertEquals("code", code.getJSONObject("control").getString("kind"));
     assertEquals("python", code.getJSONObject("control").getString("language"));
     assertTrue(code.getBooleanValue("readOnly"));
+    assertEquals("PanelForm.legacyCodeHint", code.getString("help"));
     assertEquals("PanelForm.queryPackageLegacyHelp", field(form, "/function/queryPackage").getString("help"));
   }
 
@@ -172,6 +175,8 @@ class MetricViewFormTest {
     assertEquals("PENDING_REVIEW", values.getString("status"));
     assertEquals("USER", values.getString("origin"));
     assertEquals("OPERATION_READ", values.getJSONObject("function").getString("operation"));
+    // A new metric's query starts from no column labels, as the page always showed it.
+    assertEquals(new JSONObject(), values.getJSONObject("function").getJSONObject("returnDef").getJSONObject("columnLabels"));
     assertTrue(values.getJSONArray("bindings").isEmpty());
     assertEquals("metric-view.create", form.getJSONObject("save").getString("draftOperation"));
     assertEquals("string-array", field(form, "/matchQuestions").getJSONObject("control").getString("kind"));
