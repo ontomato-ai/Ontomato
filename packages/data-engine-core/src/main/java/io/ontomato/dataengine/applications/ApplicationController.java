@@ -51,8 +51,9 @@ public class ApplicationController {
     @GetMapping("/platform/applications/catalogue")
     public R<JSONObject> catalogue(@RequestParam(defaultValue = "") String search,
             @RequestParam(defaultValue = "visible") String scope, @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "30") int size) {
-        return R.of(catalog.catalogue(current(), search, scope, cursor, size));
+            @RequestParam(defaultValue = "30") int size, @RequestParam(defaultValue = "id") String sort,
+            Locale locale) {
+        return R.of(catalog.catalogue(current(), search, scope, cursor, size, sort, locale));
     }
 
     @GetMapping("/platform/applications/catalogue/{id}")

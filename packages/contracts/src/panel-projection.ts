@@ -1,5 +1,5 @@
 import {
-  applicationCatalogueScopeSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
+  applicationCatalogueScopeSchema, applicationCatalogueSortSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
 } from "./product-catalog-query";
 import { z } from "zod";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
@@ -92,6 +92,7 @@ export const panelReadParameterSchemas = {
   productSort: productCatalogQuerySchema.shape.sort.removeDefault(),
   productTemplate: productPanelCatalogQuerySchema.shape.template.unwrap(),
   applicationScope: applicationCatalogueScopeSchema,
+  applicationSort: applicationCatalogueSortSchema,
   applicationFormSection: applicationFormSectionSchema.exclude(["create"]),
   formValues: formValuesSchema,
   panelFormValues: panelFormValuesSchema,
@@ -146,6 +147,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "productScope":
     case "productSort":
     case "applicationScope":
+    case "applicationSort":
     case "applicationFormSection":
       return input?.kind === "scalar" && input.type === "string";
     case "productTemplate":

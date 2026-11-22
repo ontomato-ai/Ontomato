@@ -297,6 +297,21 @@ test("accepts a legacy hosted application entry without widening the panel regis
   assert.equal(applicationPanelUsesResponseSchema.safeParse(entries).success, false);
 });
 
+test("accepts application catalogue ordering on its query read", async () => {
+  const { APPLICATION } = await import("./platform-object-types");
+  const { productProjectionInputSchema } = await import("./product-panels");
+  const query = (sort: string) => productProjectionInputSchema.safeParse({
+    name: "Applications", description: "", visibility: "private", componentId: "@ontomato/sdk:PanelData",
+    inputs: {}, outputs: {}, config: {},
+    data: { apps: {
+      source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "query", params: { sort: { literal: sort } },
+    } },
+  });
+
+  for (const sort of ["id", "name", "updated"]) assert.equal(query(sort).success, true);
+  assert.equal(query("structure").success, false);
+});
+
 test("declares application creation and editing forms from their actual sources", async () => {
   const { APPLICATION, platformObjectTypes } = await import("./platform-object-types");
   const { missingRequiredReadParameters } = await import("./panel-projection");
