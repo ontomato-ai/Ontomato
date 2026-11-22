@@ -10,6 +10,7 @@ export const objectTypeViewSchema = z.object({
   businessKeyCount: z.number(),
   relationshipCount: z.number(),
   primaryKey: z.object({ status: z.string(), name: z.string().optional() }),
+  searchableAttributes: z.array(z.string()).optional(),
 }).strict();
 
 export const attributeViewSchema = z.object({
@@ -30,6 +31,8 @@ export const relationshipViewSchema = z.object({
   desc: z.string(),
   fromField: z.string(),
   toField: z.string(),
+  fromShowName: z.string().optional(),
+  toShowName: z.string().optional(),
 }).strict();
 
 export type ObjectTypeView = z.infer<typeof objectTypeViewSchema>;

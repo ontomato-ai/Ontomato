@@ -103,6 +103,9 @@ function objectTypeRecord(view: ObjectTypeView): Omit<PanelRecord, "fieldLabels"
       relationshipCount: String(view.relationshipCount),
       // The owner's derived primary-key state: missing, multiple, disabled or ok.
       primaryKey: view.primaryKey.status,
+      ...(view.searchableAttributes && view.searchableAttributes.length > 0 && {
+        searchableAttributes: view.searchableAttributes,
+      }),
     },
   };
 }
@@ -124,13 +127,23 @@ function attributeRecord(view: AttributeView): Omit<PanelRecord, "fieldLabels"> 
 }
 
 function relationshipRecord(view: RelationshipView): Omit<PanelRecord, "fieldLabels"> {
+  const fromLabel = view.fromShowName?.trim() || view.fromclass;
+  const toLabel = view.toShowName?.trim() || view.toclass;
+  const subtitle = fromLabel && toLabel ? `${fromLabel} → ${toLabel}` : (fromLabel || toLabel);
   return {
     primaryKey: view.relationship,
     label: view.desc || view.relationship,
+    ...(subtitle && { subtitle }),
     // Graph projections read edge endpoints from `fromclass` and `toclass`; keep both field names stable.
     fields: {
       fromclass: view.fromclass,
       toclass: view.toclass,
+      ...(view.fromclass && {
+        fromObject: { kind: "reference" as const, className: OBJECT_TYPE, primaryKey: view.fromclass, label: fromLabel },
+      }),
+      ...(view.toclass && {
+        toObject: { kind: "reference" as const, className: OBJECT_TYPE, primaryKey: view.toclass, label: toLabel },
+      }),
       desc: view.desc,
       fromField: view.fromField,
       toField: view.toField,
@@ -191,7 +204,11 @@ export function createOntologyModelReadAdapter(
 
   /** Labels the fields a record has; derived summary fields have no owner label and stay unlabelled. */
   function labelled(record: Omit<PanelRecord, "fieldLabels">, labels: Record<string, string>): PanelRecord {
-    return { ...record, fieldLabels: Object.fromEntries(Object.entries(labels).filter(([key]) => key in record.fields)) };
+    const fieldLabels = Object.fromEntries(Object.entries(labels).filter(([key]) => key in record.fields));
+    // Endpoint reference fields share the owner's labels for `fromclass` and `toclass`.
+    if ("fromObject" in record.fields && labels.fromclass) fieldLabels.fromObject = labels.fromclass;
+    if ("toObject" in record.fields && labels.toclass) fieldLabels.toObject = labels.toclass;
+    return { ...record, fieldLabels };
   }
 
   function refusedFields(error: unknown) {

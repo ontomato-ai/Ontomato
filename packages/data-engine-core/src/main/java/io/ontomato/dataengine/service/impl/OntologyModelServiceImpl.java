@@ -89,12 +89,14 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 
 	@Override
 	public List<RelationshipView> relationships(String className, User user, String lang) {
-		Map<String, Map<String, String>> relationships = relationships(rule(user));
+		Map<String, Object> rule = rule(user);
+		Map<String, Map<String, String>> relationships = relationships(rule);
+		Map<String, String> classShowNames = classShowNames(rule);
 		List<RelationshipView> result = new ArrayList<>();
 		for (Map.Entry<String, Map<String, String>> entry : relationships.entrySet()) {
 			Map<String, String> def = entry.getValue();
 			if (blank(className) || className.equals(def.get("fromclass")) || className.equals(def.get("toclass"))) {
-				result.add(relationshipView(entry.getKey(), def));
+				result.add(relationshipView(entry.getKey(), def, classShowNames));
 			}
 		}
 		return result;
@@ -102,11 +104,12 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 
 	@Override
 	public RelationshipView relationship(String relationship, User user, String lang) {
-		Map<String, String> def = relationships(rule(user)).get(relationship);
+		Map<String, Object> rule = rule(user);
+		Map<String, String> def = relationships(rule).get(relationship);
 		if (def == null) {
 			throw relationshipNotFound(lang);
 		}
-		return relationshipView(relationship, def);
+		return relationshipView(relationship, def, classShowNames(rule));
 	}
 
 	@Override
@@ -312,7 +315,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		write(user, rule);
 		audit(user, AuditLog.OPERATION_ADD, description(user, "AuditLog.relationship.add", body.relationship()),
 				com.alibaba.fastjson2.JSONObject.toJSONString(relationshipDef));
-		return relationshipView(body.relationship(), relationshipDef);
+		return relationshipView(body.relationship(), relationshipDef, classShowNames(rule));
 	}
 
 	@Override
@@ -326,7 +329,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		write(user, rule);
 		audit(user, AuditLog.OPERATION_UPD, description(user, "AuditLog.relationship.upd", checked.relationship()),
 				com.alibaba.fastjson2.JSONObject.toJSONString(checked.relationshipDef()));
-		return relationshipView(checked.relationship(), checked.relationshipDef());
+		return relationshipView(checked.relationship(), checked.relationshipDef(), classShowNames(rule));
 	}
 
 	@Override
@@ -1140,7 +1143,35 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				.filter(def -> className.equals(def.get("fromclass")) || className.equals(def.get("toclass")))
 				.count();
 		return new ObjectTypeView(className, text(classDef.get("showName")), text(classDef.get("classDesc")),
-				attrs.size(), businessKeys, relationshipsCount, primaryKeyView(classDef));
+				attrs.size(), businessKeys, relationshipsCount, primaryKeyView(classDef), searchableAttributes(attrs));
+	}
+
+	private List<String> searchableAttributes(List<Map<String, Object>> attrs) {
+		java.util.LinkedHashSet<String> terms = new java.util.LinkedHashSet<>();
+		for (Map<String, Object> attr : attrs) {
+			String showName = trim(text(attr.get("showName")));
+			String name = trim(text(attr.get("name")));
+			if (!showName.isEmpty()) {
+				terms.add(showName);
+			}
+			if (!name.isEmpty()) {
+				terms.add(name);
+			}
+		}
+		return List.copyOf(terms);
+	}
+
+	private Map<String, String> classShowNames(Map<String, Object> rule) {
+		Map<String, String> names = new LinkedHashMap<>();
+		for (Map<String, Object> classDef : classDefs(rule)) {
+			String className = text(classDef.get("className"));
+			if (className.isEmpty()) {
+				continue;
+			}
+			String showName = trim(text(classDef.get("showName")));
+			names.put(className, showName.isEmpty() ? className : showName);
+		}
+		return names;
 	}
 
 	private Map<String, Object> primaryKeyView(Map<String, Object> classDef) {
@@ -1164,17 +1195,24 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				businessKey(attr), primaryKey(attr));
 	}
 
-	private RelationshipView relationshipView(String relationship, Map<String, String> def) {
-		return new RelationshipView(relationship, text(def.get("fromclass")), text(def.get("toclass")),
-				text(def.get("desc")), text(def.get("fromField")), text(def.get("toField")));
+	private RelationshipView relationshipView(String relationship, Map<String, String> def,
+			Map<String, String> classShowNames) {
+		String fromclass = text(def.get("fromclass"));
+		String toclass = text(def.get("toclass"));
+		String fromShowName = classShowNames.getOrDefault(fromclass, fromclass);
+		String toShowName = classShowNames.getOrDefault(toclass, toclass);
+		return new RelationshipView(relationship, fromclass, toclass,
+				text(def.get("desc")), text(def.get("fromField")), text(def.get("toField")),
+				fromShowName, toShowName);
 	}
 
 	private List<RelationshipView> cascadingRelationships(Map<String, Object> rule, String className) {
+		Map<String, String> classShowNames = classShowNames(rule);
 		List<RelationshipView> result = new ArrayList<>();
 		for (Map.Entry<String, Map<String, String>> entry : relationships(rule).entrySet()) {
 			Map<String, String> def = entry.getValue();
 			if (className.equals(def.get("fromclass")) || className.equals(def.get("toclass"))) {
-				result.add(relationshipView(entry.getKey(), def));
+				result.add(relationshipView(entry.getKey(), def, classShowNames));
 			}
 		}
 		return result;
