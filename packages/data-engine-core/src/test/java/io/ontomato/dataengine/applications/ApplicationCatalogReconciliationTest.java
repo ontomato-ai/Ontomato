@@ -429,16 +429,22 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
              "delivery":{"panels":["panel-frame","panel-school"],"projections":["projection-school"],"packages":[],"agents":[],"skills":[]},
              "panelUses":[
                {"id":"school","pageKey":"school","panelId":"panel-school","path":"/applications/app-school/main","access":{"kind":"domain-member"},
-                "names":{"en":"School"},"groupKey":"school","inputs":{"term":{"literal":null}}},
+                "names":{"en":"School"},"groupKey":"school","inputs":{"term":{"literal":null}},"count":{"member":"list","data":"rows"}},
                {"id":"private","pageKey":"private","panelId":"panel-school","path":"/applications/app-school/private",
-                "access":{"permissionCode":"app:app-school:private"}}]}
+                "access":{"permissionCode":"app:app-school:private"},"count":{"member":"list","data":"totals"}}]}
             """)).andExpect(status().isOk());
 
         http.perform(get(path).param("purpose", "management")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(2))
             .andExpect(jsonPath("$.data.declaration.permissions[0].code").value("app:app-school:private"))
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
-            .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"));
+            .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"))
+            .andExpect(jsonPath("$.data.panelUses[0].count.member").value("list"))
+            .andExpect(jsonPath("$.data.panelUses[0].count.data").value("rows"))
+            .andExpect(jsonPath("$.data.panelUses[1].count.data").value("totals"));
+        http.perform(get(CATALOGUE + "/app-school")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.panelUses[0].count.data").value("rows"))
+            .andExpect(jsonPath("$.data.panelUses[1].count.data").value("totals"));
 
         var form = http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
                 .contentType(MediaType.APPLICATION_JSON).content("""
@@ -483,7 +489,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.theme.light['--el-color-primary']").value("#123456"))
             .andExpect(jsonPath("$.data.use.inputs.term.literal").hasJsonPath())
+            .andExpect(jsonPath("$.data.use.count.member").value("list"))
+            .andExpect(jsonPath("$.data.use.count.data").value("rows"))
             .andExpect(jsonPath("$.data.menu.panelUses[0].inputs.term.literal").hasJsonPath())
+            .andExpect(jsonPath("$.data.menu.panelUses[0].count.data").value("rows"))
             .andExpect(jsonPath("$.data.delivery").doesNotHaveJsonPath()).andReturn().getResponse().getContentAsString();
         var byUse = http.perform(get(resolve).param("applicationId", "app-school").param("useId", "school"))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -742,7 +751,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var use = new ApplicationPanelUse("overview", "native-frame-demo-overview", "builtin-product-overview",
             "/native-frame-demo/overview", new ApplicationPanelUse.Access(null, "domain-member"), null,
             Map.of("en", "Overview"), Map.of("en", "Explain the overview"),
-            Map.of("term", Map.of("literal", "autumn")), "main");
+            Map.of("term", Map.of("literal", "autumn")), "main", new ApplicationPanelUse.Count("list", "rows"));
         var metadata = new ApplicationCatalog.Declaration(Map.of("en", "Native example"), Map.of(), "pages",
             List.of(new ApplicationCatalog.Group("main", Map.of("en", "Main"), 1)), List.of(), List.of(), List.of(use));
         catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(declared.id(), declared.kind(),
@@ -764,7 +773,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.theme").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data.use.inputs").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data.use.descriptions.en").value("Explain the overview"))
+            .andExpect(jsonPath("$.data.use.count.member").value("list"))
+            .andExpect(jsonPath("$.data.use.count.data").value("rows"))
             .andExpect(jsonPath("$.data.menu.groups[0].key").value("main"))
+            .andExpect(jsonPath("$.data.menu.panelUses[0].count.data").value("rows"))
             .andExpect(jsonPath("$.data.menu.panelUses[0].id").value("overview"))
             .andExpect(jsonPath("$.data.menu.panelUses[0].inputs").doesNotHaveJsonPath())
             .andReturn().getResponse().getContentAsString();
