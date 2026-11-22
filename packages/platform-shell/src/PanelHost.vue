@@ -48,6 +48,8 @@ const props = withDefaults(defineProps<{
   wired?: readonly string[];
   /** When this is an application's frame: the entry it shows, its menu and where that entry's page goes. */
   currentEntry?: import("./panel-host").DirectPanelRun["currentEntry"];
+  /** Current application frame state when this content panel runs under a frame panel. */
+  frameState?: Readonly<Record<string, unknown>>;
   /**
    * Hands why the linked draft could not be used back to the agent, as the sentence for the page's composer. Absent where
    * the page has no composer (an author's preview): the notice then offers only leaving the draft.
@@ -58,7 +60,7 @@ const props = withDefaults(defineProps<{
    * draft (its address, state and forms). Absent, the instance's address only drops the draft's link.
    */
   leaveDraft?: () => void;
-}>(), { shown: true, wired: () => [], currentEntry: undefined, draftToAgent: undefined, leaveDraft: undefined });
+}>(), { shown: true, wired: () => [], currentEntry: undefined, frameState: undefined, draftToAgent: undefined, leaveDraft: undefined });
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
@@ -85,6 +87,7 @@ const view = usePanelInstance(props.port, {
   reopened: () => emit("reopened"),
   withdrawn: () => emit("withdrawn"),
   currentEntry: props.currentEntry,
+  frameState: () => props.frameState as Readonly<Record<string, import("@ontomato/contracts/agent-runtime-values").RuntimeJsonValue>> | undefined,
 });
 const frame = ref<HTMLIFrameElement | null>(null);
 /** Where the panel goes in the page: the element its own component is mounted in, placed once. */

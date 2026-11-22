@@ -8,6 +8,7 @@ import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance } from "./direct";
 import { memberComponentId } from "./projection-element";
 import { panelMemberKey, type PanelMemberContext } from "./member";
+import { isListAttachedPanelMember } from "./row-member";
 import { useDataStateLabels } from "../base/data-state-labels";
 
 /**
@@ -29,7 +30,8 @@ const props = defineProps<{
 const { t } = useI18n();
 const declaration = props.instance.direct.members[props.member];
 if (!declaration) throw new Error(`The panel declares no member '${props.member}'`);
-const stopDrawn = props.instance.markDrawn(props.member);
+const hostMounted = isListAttachedPanelMember(declaration);
+const stopDrawn = hostMounted ? () => {} : props.instance.markDrawn(props.member);
 onBeforeUnmount(stopDrawn);
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ component: Component; slot: ProjectionSlot; member: PanelMemberContext } | null>(null);
@@ -47,23 +49,26 @@ onErrorCaptured((reason: unknown) => {
 });
 
 // The member as the instance holds it — read, registered and kept current there, drawn here.
-void props.instance.placing(props.member).then(async (placing) => {
-  if (placing.kind === "awaiting") awaiting.value = true;
-  else if (placing.kind === "outsideFrame") outsideFrame.value = true;
-  else if (placing.kind === "panel") nested.value = placing;
-  else {
-    const member = placing.context;
-    const componentId = memberComponentId(member.projection);
-    const component = isDomainComponentId(componentId)
-      ? await props.instance.loadDomainComponent?.(member.projection)
-      : await componentFor(componentId, props.instance.readComponentPackage);
-    if (!component) throw new Error(`Component '${componentId}' has no runtime for this projection`);
-    loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
-  }
-}).catch((reason: unknown) => {
-  stopDrawn();
-  failure.value = reason instanceof Error ? reason : new Error(String(reason));
-});
+if (!hostMounted) {
+  void props.instance.placing(props.member).then(async (placing) => {
+    if (placing.kind === "hostMounted") return;
+    if (placing.kind === "awaiting") awaiting.value = true;
+    else if (placing.kind === "outsideFrame") outsideFrame.value = true;
+    else if (placing.kind === "panel") nested.value = placing;
+    else {
+      const member = placing.context;
+      const componentId = memberComponentId(member.projection);
+      const component = isDomainComponentId(componentId)
+        ? await props.instance.loadDomainComponent?.(member.projection)
+        : await componentFor(componentId, props.instance.readComponentPackage);
+      if (!component) throw new Error(`Component '${componentId}' has no runtime for this projection`);
+      loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
+    }
+  }).catch((reason: unknown) => {
+    stopDrawn();
+    failure.value = reason instanceof Error ? reason : new Error(String(reason));
+  });
+}
 function placeNested() {
   if (nested.value && container.value && nested.value.element.parentElement !== container.value) container.value.append(nested.value.element);
 }
@@ -96,7 +101,8 @@ const labels = useDataStateLabels();
 </script>
 
 <template>
-  <data-state v-if="refused" :result="refused" :labels="labels"></data-state>
+  <template v-if="hostMounted"></template>
+  <data-state v-else-if="refused" :result="refused" :labels="labels"></data-state>
   <data-state v-else-if="awaiting" :result="{ status: 'awaiting' }" :labels="labels"></data-state>
   <p v-else-if="outsideFrame" class="sdk-panel-member-outside-frame" role="status">{{ t("platform.currentEntryOutsideFrame") }}</p>
   <div v-else-if="nested" ref="container" class="sdk-panel-member-nested"></div>

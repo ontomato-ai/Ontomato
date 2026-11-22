@@ -9,7 +9,7 @@ import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/con
 import { readOperationInput } from "../panel/read-operation-input";
 import OperationResult from "./OperationResult.vue";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { useMemberOperations } from "../panel/member";
+import { useMember, useMemberOperations } from "../panel/member";
 import { stateObject, stateObjects } from "../panel/state";
 import type { PanelWriteResult } from "../panel/instance";
 import { useDataStateLabels } from "./data-state-labels";
@@ -55,6 +55,8 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
+const member = useMember();
+const rowOperation = member.rowOperation ?? null;
 const running = ref(false);
 const failure = shallowRef<Error | null>(null);
 /** The member's operations, as their owners admit them now. */
@@ -93,9 +95,10 @@ const targetState = computed(() => {
   return described?.source === "input" ? slotInputState(panel.manifest, slot.slot, described.input) : null;
 });
 /** Whether the target is the panel's checked list: the button then runs one batch over every object in it. */
-const batch = computed(() => targetState.value !== null && panel.manifest.state[targetState.value]!.type.kind === "list");
+const batch = computed(() => !rowOperation && targetState.value !== null && panel.manifest.state[targetState.value]!.type.kind === "list");
 /** The one object it acts on, when the target is a single object. */
 const target = computed<PanelOperationCall["target"]>(() => {
+  if (rowOperation) return null;
   const selected = targetState.value === null || batch.value ? null : stateObject(values.value[targetState.value]);
   return selected && { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey };
 });
@@ -104,7 +107,11 @@ const checkedState = computed(() => (batch.value ? targetState.value : null));
 const checkedObjects = computed(() => (checkedState.value === null ? [] : stateObjects(values.value[checkedState.value])));
 const checkedTargets = computed(() =>
   checkedObjects.value.map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey })));
-const targetKey = computed(() => (target.value?.kind === "object" ? `${target.value.objectType}:${target.value.primaryKey}` : null));
+const targetKey = computed(() => (
+  rowOperation
+    ? JSON.stringify(member.inputs.value)
+    : target.value?.kind === "object" ? `${target.value.objectType}:${target.value.primaryKey}` : null
+));
 watch(targetKey, () => {
   failure.value = null;
   read.value = null;
@@ -113,6 +120,7 @@ watch(targetKey, () => {
 const ready = computed(() => {
   // The owner lists it but would refuse it now: the button is off, and says why beside it.
   if (!descriptor.value || running.value || descriptor.value.unavailable) return false;
+  if (rowOperation) return true;
   if (checkedState.value !== null) return checkedTargets.value.length > 0;
   return descriptor.value.target.source !== "input" || target.value !== null;
 });
@@ -125,6 +133,9 @@ async function run() {
   receipt.value = null;
   try {
     if (described.effect === "read") {
+      if (rowOperation) {
+        throw new Error(`Row operation '${props.operation}' must be a write operation`);
+      }
       const { target: owned } = described;
       const hasDeclaredInputs = panel.manifest.members[slot.slot]?.readOperationInputs?.[props.operation] !== undefined;
       // Trial runs bind a draft or declared readOperationInputs; object-targeted exports take an empty input object.
@@ -139,10 +150,14 @@ async function run() {
       read.value = await panel.instance.readOperation(operationId.value, { target: target.value, input });
       return;
     }
-    const [first, ...rest] = checkedTargets.value.map((object) => ({ target: object, input: {} }));
-    const answer = await panel.instance.writeOperation(
-      operationId.value, first ? { calls: [first, ...rest] } : { call: { target: target.value, input: {} } },
-    );
+    const answer = rowOperation
+      ? await rowOperation.run(props.operation)
+      : await (() => {
+          const [first, ...rest] = checkedTargets.value.map((object) => ({ target: object, input: {} }));
+          return panel.instance.writeOperation(
+            operationId.value, first ? { calls: [first, ...rest] } : { call: { target: target.value, input: {} } },
+          );
+        })();
     if (answer.decision === "cancel") return;
     named.value = answer.named;
     keepUnchanged(answer.response);
