@@ -178,3 +178,266 @@ test("every published --sdk-* and platform theme token is backed by design-token
   assert.deepEqual(result.missing, []);
   assert.ok(result.total >= 100);
 });
+
+test("checkPanelWorkspace accepts domain-component listColumn, per-row operationParams, and listRowDetail", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "panel-list-column-ok-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const domainComponentId = "domain-component:11111111-1111-4111-8111-111111111111";
+  writeFileSync(join(dir, "registration.json"), JSON.stringify({
+    panels: [{ id: "apps-panel", mode: "create", input: { name: "Apps", description: "", visibility: "domain" } }],
+  }, null, 2));
+  writeFileSync(join(dir, "panel.json"), JSON.stringify({
+    manifest: {
+      state: {
+        selected: { type: { kind: "object", objectType: "platform:BusinessKnowledge" }, deepLink: true },
+      },
+      members: {
+        apps: {
+          component: "ObjectList",
+          type: "platform:BusinessKnowledge",
+          data: { rows: "query" },
+          state: { selected: "selected" },
+          config: {
+            columns: [
+              { key: "name", labelKey: "col.app" },
+              { key: "actions", labelKey: "col.actions" },
+            ],
+          },
+        },
+        appNameCell: {
+          component: domainComponentId,
+          listColumn: { slot: "apps", column: "name" },
+          inputs: {
+            icon: { itemField: "icon" },
+            names: { itemField: "names" },
+            fallbackLabel: { item: "label" },
+          },
+        },
+        revokeRow: {
+          component: "OperationButton",
+          listColumn: { slot: "apps", column: "actions" },
+          type: "platform:BusinessKnowledge",
+          target: "selected",
+          operation: "knowledge.approve",
+          operationParams: {
+            principalId: { itemField: "principalId" },
+            remove: { literal: true },
+          },
+        },
+        rowDetail: {
+          component: "ObjectSummary",
+          listRowDetail: { slot: "apps" },
+          type: "platform:BusinessKnowledge",
+          inputs: { target: { item: true } },
+          data: { record: "record" },
+        },
+      },
+      commands: {},
+    },
+    content: {
+      messages: {
+        en: { "panel.name": "Apps", "col.app": "Application", "col.actions": "Actions" },
+      },
+    },
+  }, null, 2));
+  writeFileSync(join(dir, "panel.html"), `<div id="app"><projection slot="apps"></projection></div>\n`);
+  writeFileSync(join(dir, "panel.mjs"), `import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n`);
+
+  const script = `
+    import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+    import { registerDomainComponentRequestSchema } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/domain-components.ts")).href)};
+    import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
+    const domainComponent = registerDomainComponentRequestSchema.parse({
+      name: "Application icon and localized name cell",
+      visibility: "domain",
+      declaration: {
+        componentId: ${JSON.stringify(domainComponentId)},
+        role: "presentation",
+        meaning: "Displays an application's icon key beside its localized name.",
+        inputs: {
+          icon: { kind: "scalar", type: "string" },
+          names: { kind: "json" },
+          fallbackLabel: { kind: "scalar", type: "string" },
+        },
+        ports: { props: [], events: [], slots: [] },
+      },
+      source: {
+        template: '<sdk-tag v-if="icon">{{ icon }}</sdk-tag><span>{{ fallbackLabel }}</span>',
+        module: 'import { computed } from "vue"; export default { props: ["icon", "names", "fallbackLabel"], setup(p) { return { text: computed(() => p.fallbackLabel) }; } };',
+      },
+    });
+    const catalogue = {
+      version: "1.0.0",
+      components: [
+        {
+          componentId: "ObjectList", module: "@ontomato/sdk/base", exportName: "ObjectList", role: "control", meaning: "List",
+          data: { rows: { results: ["panelRecordQuery", "panelRecordList"], required: true, runtimeParams: ["cursor", "size"] } },
+          outputs: { selected: { kind: "object", objectType: "@binding" } },
+          ports: { props: [], events: [], slots: [] },
+        },
+        {
+          componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary", role: "presentation", meaning: "Summary",
+          data: { record: { results: ["panelRecord"], required: true } },
+          ports: { props: [], events: [], slots: [] },
+        },
+        {
+          componentId: "OperationButton", module: "@ontomato/sdk/base", exportName: "OperationButton", role: "control", meaning: "Button",
+          data: {},
+          config: [{ name: "operation", type: "string", description: "Local operation", required: true }],
+          ports: { props: [], events: [], slots: [] },
+        },
+      ],
+    };
+    const typeTable = {
+      objectTypes: {
+        "platform:BusinessKnowledge": {
+          reads: checks.platformObjectTypes["platform:BusinessKnowledge"].reads,
+          operations: [{
+            id: "knowledge.approve", kind: "action", effect: "write", batch: false,
+            target: { source: "input", input: "knowledge" }, inputSchema: { type: "object" },
+          }],
+        },
+      },
+    };
+    const result = await checkPanelWorkspace(${JSON.stringify(dir)}, {
+      checks, catalogue, version: "1.0.0", typeTable,
+      loadDomainComponent: (id) => id === domainComponent.declaration.componentId ? domainComponent.declaration : null,
+    });
+    console.log(JSON.stringify(result));
+  `;
+  const result = JSON.parse(execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", script], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }));
+  assert.equal(result.status, "valid");
+});
+
+test("checkPanelWorkspace reports actionable diagnostics for invalid listColumn and listRowDetail bindings", (t) => {
+  const cases = [
+    {
+      label: "listColumn targeting non-ObjectList host",
+      members: {
+        detail: { component: "ObjectSummary", type: "platform:BusinessKnowledge", target: "selected", data: { record: "record" } },
+        badCell: { component: "OperationButton", listColumn: { slot: "detail", column: "actions" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
+      },
+      html: `<div id="app"><projection slot="detail"></projection></div>\n`,
+      pattern: /manifest\.members\.badCell\.listColumn\.slot:.*'detail'.*'@ontomato\/sdk:ObjectSummary'.*ObjectList/u,
+    },
+    {
+      label: "listColumn targeting compact ObjectList without config.columns",
+      members: {
+        apps: { component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" } },
+        badCell: { component: "OperationButton", listColumn: { slot: "apps", column: "actions" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
+      },
+      html: `<div id="app"><projection slot="apps"></projection></div>\n`,
+      pattern: /manifest\.members\.badCell\.listColumn\.column:.*'apps'.*no config\.columns.*actions/u,
+    },
+    {
+      label: "listColumn targeting undeclared column key",
+      members: {
+        apps: { component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" }, config: { columns: [{ key: "label" }] } },
+        badCell: { component: "OperationButton", listColumn: { slot: "apps", column: "missingCol" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
+      },
+      html: `<div id="app"><projection slot="apps"></projection></div>\n`,
+      pattern: /manifest\.members\.badCell\.listColumn\.column:.*'missingCol'.*'apps'.*\(label\)/u,
+    },
+    {
+      label: "listColumn declaring independent data read",
+      members: {
+        apps: { component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" }, config: { columns: [{ key: "summary" }] } },
+        badCell: { component: "ObjectSummary", listColumn: { slot: "apps", column: "summary" }, type: "platform:BusinessKnowledge", target: "selected", data: { record: "record" } },
+      },
+      html: `<div id="app"><projection slot="apps"></projection></div>\n`,
+      pattern: /manifest\.members\.badCell\.data:.*listColumn.*cannot declare independent data reads/u,
+    },
+    {
+      label: "listRowDetail targeting non-ObjectList host",
+      members: {
+        detail: { component: "ObjectSummary", type: "platform:BusinessKnowledge", target: "selected", data: { record: "record" } },
+        badDetail: { component: "ObjectSummary", listRowDetail: { slot: "detail" }, type: "platform:BusinessKnowledge", inputs: { target: { item: true } }, data: { record: "record" } },
+      },
+      html: `<div id="app"><projection slot="detail"></projection></div>\n`,
+      pattern: /manifest\.members\.badDetail\.listRowDetail\.slot:.*'detail'.*'@ontomato\/sdk:ObjectSummary'.*ObjectList/u,
+    },
+    {
+      label: "duplicate listColumn on same host column",
+      members: {
+        apps: { component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" }, config: { columns: [{ key: "actions" }] } },
+        firstCell: { component: "OperationButton", listColumn: { slot: "apps", column: "actions" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
+        secondCell: { component: "OperationButton", listColumn: { slot: "apps", column: "actions" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
+      },
+      html: `<div id="app"><projection slot="apps"></projection></div>\n`,
+      pattern: /manifest\.members\.secondCell\.listColumn:.*'apps'.*'actions'.*'firstCell'/u,
+    },
+  ];
+
+  for (const item of cases) {
+    const dir = mkdtempSync(join(tmpdir(), "panel-list-column-bad-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    writeFileSync(join(dir, "registration.json"), JSON.stringify({
+      panels: [{ id: "apps-panel", mode: "create", input: { name: "Apps", description: "", visibility: "domain" } }],
+    }, null, 2));
+    writeFileSync(join(dir, "panel.json"), JSON.stringify({
+      manifest: {
+        state: { selected: { type: { kind: "object", objectType: "platform:BusinessKnowledge" } } },
+        members: item.members,
+        commands: {},
+      },
+    }, null, 2));
+    writeFileSync(join(dir, "panel.html"), item.html);
+    writeFileSync(join(dir, "panel.mjs"), `import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n`);
+
+    const script = `
+      import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+      import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
+      const catalogue = {
+        version: "1.0.0",
+        components: [
+          {
+            componentId: "ObjectList", module: "@ontomato/sdk/base", exportName: "ObjectList", role: "control", meaning: "List",
+            data: { rows: { results: ["panelRecordQuery", "panelRecordList"], required: true } },
+            outputs: { selected: { kind: "object", objectType: "@binding" } },
+            ports: { props: [], events: [], slots: [] },
+          },
+          {
+            componentId: "ObjectSummary", module: "@ontomato/sdk/base", exportName: "ObjectSummary", role: "presentation", meaning: "Summary",
+            data: { record: { results: ["panelRecord"], required: true } },
+            ports: { props: [], events: [], slots: [] },
+          },
+          {
+            componentId: "OperationButton", module: "@ontomato/sdk/base", exportName: "OperationButton", role: "control", meaning: "Button",
+            data: {},
+            config: [{ name: "operation", type: "string", description: "Local operation", required: true }],
+            ports: { props: [], events: [], slots: [] },
+          },
+        ],
+      };
+      const typeTable = {
+        objectTypes: {
+          "platform:BusinessKnowledge": {
+            reads: checks.platformObjectTypes["platform:BusinessKnowledge"].reads,
+            operations: [{
+              id: "knowledge.approve", kind: "action", effect: "write", batch: false,
+              target: { source: "input", input: "knowledge" }, inputSchema: { type: "object" },
+            }],
+          },
+        },
+      };
+      await checkPanelWorkspace(${JSON.stringify(dir)}, { checks, catalogue, version: "1.0.0", typeTable });
+    `;
+    assert.throws(
+      () => execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", script], {
+        cwd: ROOT,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }),
+      (error) => {
+        const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
+        assert.match(output, item.pattern, `${item.label} diagnostic mismatch: ${output}`);
+        return true;
+      },
+      `${item.label} should fail panel-check`,
+    );
+  }
+});

@@ -15,7 +15,7 @@ import { elementComponents } from "./element-components.mjs";
 import { panelAppearance } from "./panel-appearance.mjs";
 import { writePackageComponentsRelease } from "./package-components-release.mjs";
 import { sdkChunks } from "./sdk-chunks.mjs";
-import { catalogueMarkdown, checkCatalogue, componentMetadata, componentPorts, referenceMarkdown } from "./reference.mjs";
+import { catalogueMarkdown, checkCatalogue, componentMetadata, componentPorts, exportedTypeDefinitions, referenceMarkdown } from "./reference.mjs";
 import { buildUiCatalogue } from "./ui-catalogue.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -221,8 +221,10 @@ async function main() {
     themeTokens,
   });
   writeFileSync(join(outDir, "components.json"), `${JSON.stringify(catalogue, null, 2)}\n`);
-  // The document reads the catalogue as it ships: each component's data, configuration and events beside its meaning.
-  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, catalogue), version));
+  // The document reads the catalogue as it ships: each component's data, configuration (with referenced config structs
+  // expanded) and events beside its meaning.
+  const configTypes = exportedTypeDefinitions({ root: HERE, tsconfig: join(HERE, "tsconfig.json"), entries: publicEntries });
+  writeFileSync(join(outDir, "docs/components.md"), render(catalogueMarkdown(version, catalogue, configTypes), version));
   writeFileSync(join(outDir, "docs/reference.md"), [
     `# @ontomato/sdk ${version}: reference`,
     "",

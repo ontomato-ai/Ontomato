@@ -137,9 +137,9 @@ export function referenceMarkdown({ root, tsconfig, entries }) {
         const written = declaration.getText().slice(0, declaration.body.getStart() - declaration.getStart()).trim();
         code(lines, signatures.some((text) => text.length > 4 * PRINTED_LIMIT) ? written.replace(/^export\s+/, "") : signatures.join("\n"));
       } else if (ts.isTypeAliasDeclaration(declaration)) {
-        // Aliases of utility or `typeof` types say more expanded, unless the expansion is a wall of text.
+        // Aliases of utility or `typeof` types say more expanded, unless the expansion is a wall of text or self-referential.
         const expanded = checker.typeToString(checker.getDeclaredTypeOfSymbol(symbol), undefined, FULL);
-        code(lines, `type ${name} = ${expanded.length <= 4 * PRINTED_LIMIT ? expanded : declaration.type.getText()};`);
+        code(lines, `type ${name} = ${expanded.length <= 4 * PRINTED_LIMIT && expanded !== name ? expanded : declaration.type.getText()};`);
       } else if (ts.isInterfaceDeclaration(declaration)) {
         code(lines, declaration.getText().replace(/^export\s+/, ""));
       } else if (ts.isClassDeclaration(declaration)) {
@@ -258,8 +258,39 @@ function portTypeText(type) {
   return type.kind;
 }
 
+/**
+ * Exported type alias and interface definitions across the SDK entries, keyed by type name, so the component
+ * catalogue can expand named config structs (such as `ObjectListColumn`) beside the properties that reference them.
+ */
+export function exportedTypeDefinitions({ root, tsconfig, entries }) {
+  const meta = createChecker(tsconfig, { schema: false, printer: { newLine: ts.NewLineKind.LineFeed } });
+  const program = meta.getProgram();
+  const checker = program.getTypeChecker();
+  const definitions = new Map();
+  for (const entry of entries) {
+    const source = program.getSourceFile(join(root, entry.source));
+    if (!source) continue;
+    for (const exported of checker.getExportsOfModule(checker.getSymbolAtLocation(source))) {
+      const name = exported.name;
+      if (definitions.has(name)) continue;
+      const symbol = exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported;
+      const [declaration] = symbol.declarations ?? [];
+      if (!declaration) continue;
+      if (ts.isTypeAliasDeclaration(declaration)) {
+        const expanded = checker.typeToString(checker.getDeclaredTypeOfSymbol(symbol), undefined, FULL);
+        const body = expanded.length <= 4 * PRINTED_LIMIT && expanded !== name ? expanded : declaration.type.getText();
+        definitions.set(name, `type ${name} = ${body};`);
+      } else if (ts.isInterfaceDeclaration(declaration)) {
+        if (declaration.members.some((member) => ts.isMethodSignature(member))) continue;
+        definitions.set(name, declaration.getText().replace(/^export\s+/, ""));
+      }
+    }
+  }
+  return definitions;
+}
+
 /** The catalogue's document section: each component's meaning, what it binds and what it takes and hands over. */
-export function catalogueMarkdown(version, catalogueOrComponents) {
+export function catalogueMarkdown(version, catalogueOrComponents, typeDefinitions = new Map()) {
   const isFull = !Array.isArray(catalogueOrComponents);
   const components = isFull ? catalogueOrComponents.components : catalogueOrComponents;
   const uiPrimitives = isFull ? catalogueOrComponents.uiPrimitives ?? [] : [];
@@ -282,13 +313,21 @@ export function catalogueMarkdown(version, catalogueOrComponents) {
       lines.push("Inputs:", "", ...Object.entries(component.inputs).map(([name, type]) => `- \`${name}\`: ${type.kind === "object" ? type.objectType : type.type ?? type.kind}`), "");
     if (component.config?.length) {
       lines.push("Configuration (the projection's `config`):", "");
+      const referencedTypes = new Set();
       // A projection's config names each property as the component's source does, in camelCase.
       for (const prop of component.config) {
         const name = prop.name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
         const fallback = prop.default !== undefined && prop.default !== "undefined" ? `, default ${prop.default}` : "";
-        lines.push(`- \`${name}\` (${prop.type.replace(/ \| undefined$/, "")}${prop.required ? ", required" : ""}${fallback}): ${prop.description || "—"}`);
+        const printedType = prop.type.replace(/ \| undefined$/, "");
+        lines.push(`- \`${name}\` (${printedType}${prop.required ? ", required" : ""}${fallback}): ${prop.description || "—"}`);
+        for (const match of printedType.matchAll(/\b([A-Z][A-Za-z0-9_]*)\b/gu)) {
+          if (typeDefinitions.has(match[1])) referencedTypes.add(match[1]);
+        }
       }
       lines.push("");
+      if (referencedTypes.size) {
+        lines.push("Configuration types:", "", "```ts", ...[...referencedTypes].map((name) => typeDefinitions.get(name)), "```", "");
+      }
     }
     if (component.outputs && Object.keys(component.outputs).length)
       lines.push("Hands over (bindable to the panel's state):", "", ...Object.entries(component.outputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");

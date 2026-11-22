@@ -16,14 +16,18 @@ description: Build and register an Ontomato panel from its owner's reads and ope
      owner or shared record contract — do not draw business fields in the panel to work around it.
    - Second, once the data matches, start from the official component's default rendering, then check its `config`
      for common adjustments (see [default and configured list and summary examples](CODE.md#configure-an-official-list-or-summary)).
-   - Third, write a dedicated component only as a last resort when default and `config` still leave a gap (such as a
-     single column cell or form field). Keep [component vs. panel responsibility](CODE.md#component-vs-panel-responsibility)
-     clear: panels coordinate layout, state, visibility and navigation, and do not render business fields.
-   For third-party components, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
-   Use the [member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel)
+   - Third, write a dedicated small component only as a last resort when default and `config` still leave a gap —
+     a single list column (`listColumn`), expandable row detail (`listRowDetail`), or form field (`formField`). Keep
+     [component vs. panel responsibility](CODE.md#component-vs-panel-responsibility) clear: panels coordinate layout,
+     state, visibility and navigation, and never render business fields (not via `PanelData` / `usePanelData` loops
+     and not via inline `defineComponent` in `panel.mjs`).
+   For a domain-registered small component, follow the
+   [end-to-end `listColumn` and per-row operation example](CODE.md#custom-list-columns-row-detail-and-per-row-operations).
+   For operator-installed third-party packages, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
+   Use the [panel descriptor and member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel)
    to declare projections, and use `target.projectionId` for an existing projection.
    For graphs, see [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
-3. Write the template and interactions in Vue. Use [the SDK's interface controls](CODE.md#panel-controls-and-platform-behavior),
+3. Write the template and interactions in Vue. Use [the SDK's `<sdk-*>` interface controls, `v-sdk-*` directives, `--sdk-*` theme tokens and `notify()`](CODE.md#panel-controls-and-platform-behavior),
    follow the [direct runtime](CODE.md#write-a-vue-panel), and declare the
    [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
 4. Check and register the workspace, then open the registered entry. Use the page's input box
@@ -90,6 +94,13 @@ Use the [Vue authoring guide](CODE.md) for panel sources, owner operations, form
 
 ### Registering a component in the current domain
 
-Keep `component.json` (name, visibility, and component declaration), `component.html` (Vue template), and an optional `component.mjs` (default export of Vue component options) together. The module can use the member's declared ports through `@ontomato/sdk/panel`. Register with `node ontomato.mjs component register <directory>`. It writes the assigned `componentId` into `component.json`. Use that full ID in a projection's `componentId` or an inline member's `component`.
+Authors register single small components in the current domain (distinct from deployment-installed packages, which are installed only by deployment maintainers and have no author upload API). Keep `component.json` (`name`, `visibility`, and `declaration`), `component.html` (Vue template using `<sdk-*>` tags and `--sdk-*` tokens), and an optional `component.mjs` (`export default { ... }`, importing only `vue` and `@ontomato/sdk/panel`) in one directory.
 
-Run `component read <id>` to inspect the current declaration, source and revision. To update it, pass that revision to `component register <directory> --revision <number>`. Deliver the same source files and register them in the target domain with the saved ID.
+```sh
+node "$SKILL/ontomato.mjs" component register <directory>
+node "$SKILL/ontomato.mjs" component list
+node "$SKILL/ontomato.mjs" component read <component-id>
+node "$SKILL/ontomato.mjs" component register <directory> --revision <number>
+```
+
+First registration assigns `domain-component:<uuid>` and writes it into `component.json` (`declaration.componentId`). Use that full ID in an inline member's `component` (or a projection's `componentId`), then run `panel check <panel-directory>`. Deliver the same source files and register them in another domain with the saved ID. See the [complete copy-pasteable example in `CODE.md`](CODE.md#custom-list-columns-row-detail-and-per-row-operations).
