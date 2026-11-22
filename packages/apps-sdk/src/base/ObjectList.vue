@@ -94,6 +94,11 @@ const emit = defineEmits<{
   "update:selected": [value: ObjectListSelection | null];
   /** Emitted when the explicit multi-selection set changes. */
   "update:checked": [value: readonly ObjectListRef[]];
+  /**
+   * Emitted when the object references of the current result batch change: the current page when the owner's read
+   * pages (`cursor` or `page`), or all matching rows when the read does not page; empty when no rows are shown.
+   */
+  "update:listed": [value: readonly ObjectListRef[]];
   /** Emitted when a reader clicks a reference cell carrying an owner-supplied object reference. */
   navigate: [reference: PlatformFieldReference, columnKey: string];
 }>();
@@ -441,14 +446,31 @@ function applyFallback(listed: readonly PlatformObjectRecord[]) {
   }
 }
 
+let lastListedSignature: string | null = null;
+function publishListed(listed: readonly PlatformObjectRecord[]) {
+  const refs = listed.map(rowSelectionValue);
+  const signature = JSON.stringify(refs);
+  if (signature === lastListedSignature) return;
+  lastListedSignature = signature;
+  if (placement.outputs?.listed) {
+    void panel.instance.output(member.key, "listed", refs as unknown as RuntimeJsonValue);
+  }
+  emit("update:listed", refs);
+}
+
 watch(
   datumState,
   (state) => {
+    if (state.status === "loading") return;
     if (state.status === "empty") {
+      publishListed([]);
       applyFallback([]);
       return;
     }
-    if (state.status !== "ready" || parsedData.value.status !== "ok") return;
+    if (state.status !== "ready" || parsedData.value.status !== "ok") {
+      publishListed([]);
+      return;
+    }
     const listed = rows.value;
     const byType = new Map<string, { primaryKey: string; label: string }[]>();
     for (const item of listed) {
@@ -461,6 +483,7 @@ watch(
       bucket.push(item);
     }
     for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
+    publishListed(listed);
     applyFallback(listed);
   },
   { immediate: true },
@@ -499,6 +522,30 @@ function choose(row: PlatformObjectRecord) {
     ? null
     : rowSelectionValue(row);
   setSelected(next);
+}
+
+/**
+ * Keyboard activation and row-to-row focus movement for table rows: only handles keys when the row itself holds
+ * focus so checkboxes, reference links and other interactive controls inside a cell keep their own keys.
+ */
+function onRowKeydown(row: PlatformObjectRecord, event: KeyboardEvent) {
+  if (event.target !== event.currentTarget) return;
+  if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+    event.preventDefault();
+    choose(row);
+    return;
+  }
+  const current = event.currentTarget as HTMLElement;
+  let target: Element | null = null;
+  if (event.key === "ArrowDown") target = current.nextElementSibling;
+  else if (event.key === "ArrowUp") target = current.previousElementSibling;
+  else if (event.key === "Home") target = current.parentElement?.firstElementChild ?? null;
+  else if (event.key === "End") target = current.parentElement?.lastElementChild ?? null;
+  if (target instanceof HTMLElement) {
+    event.preventDefault();
+    target.focus();
+  }
 }
 
 function toggleChecked(row: PlatformObjectRecord, checked: boolean) {
@@ -633,9 +680,11 @@ watch(someVisibleChecked, () => {
             <tr
               v-for="row in rows"
               :key="rowIdentityKey(row)"
+              tabindex="0"
               :aria-selected="rowIdentityKey(row) === chosenIdentity"
               :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
               @click="choose(row)"
+              @keydown="onRowKeydown(row, $event)"
             >
               <td v-if="canCheck" class="sdk-object-list-check-col" @click.stop>
                 <input
@@ -934,6 +983,10 @@ watch(someVisibleChecked, () => {
 }
 .sdk-object-list-table tbody tr.chosen {
   background: var(--ui-fill-secondary);
+}
+.sdk-object-list-table tbody tr:focus-visible {
+  outline: 2px solid var(--brand-link);
+  outline-offset: -2px;
 }
 .sdk-object-list-check-col {
   width: var(--control-height);
