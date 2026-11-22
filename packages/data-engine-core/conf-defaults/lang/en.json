@@ -966,5 +966,145 @@
   {
     "key": "Admin.class.formatError",
     "value": "An object class name starts with a letter or underscore and holds only letters, digits and underscores"
+  },
+  {
+    "key": "PanelForm.trigger.namePlaceholder",
+    "value": "e.g. Nightly inventory check"
+  },
+  {
+    "key": "PanelForm.trigger.frequency",
+    "value": "Schedule frequency"
+  },
+  {
+    "key": "PanelForm.trigger.timeZone",
+    "value": "Time zone"
+  },
+  {
+    "key": "PanelForm.trigger.effectKind",
+    "value": "Effect"
+  },
+  {
+    "key": "PanelForm.trigger.action",
+    "value": "Target action"
+  },
+  {
+    "key": "PanelForm.trigger.workflow",
+    "value": "Target workflow"
+  },
+  {
+    "key": "PanelForm.trigger.parameters",
+    "value": "Action parameters (JSON)"
+  },
+  {
+    "key": "PanelForm.trigger.parametersHelp",
+    "value": "Optional JSON object passed as parameters when the action runs"
+  },
+  {
+    "key": "PanelForm.trigger.inputs",
+    "value": "Workflow inputs (JSON)"
+  },
+  {
+    "key": "PanelForm.trigger.inputsHelp",
+    "value": "Optional JSON object passed as initial inputs when the workflow starts"
+  },
+  {
+    "key": "PanelForm.trigger.executor",
+    "value": "Executor"
+  },
+  {
+    "key": "PanelForm.trigger.executorPlaceholder",
+    "value": "Leave blank to run as creator, or enter principal:<id>"
+  },
+  {
+    "key": "PanelForm.trigger.executorHelp",
+    "value": "Principal used to authorize and run the triggered effect"
+  },
+  {
+    "key": "PanelForm.trigger.targetMissing",
+    "value": "Target no longer exists in this domain"
+  },
+  {
+    "key": "Trigger.notFound",
+    "value": "Trigger not found"
+  },
+  {
+    "key": "Trigger.statusInvalid",
+    "value": "Trigger status must be PENDING_REVIEW, PUBLISHED or UNUSED"
+  },
+  {
+    "key": "Trigger.condition.time",
+    "value": "Schedule"
+  },
+  {
+    "key": "Trigger.condition.unsupported",
+    "value": "Only time-based triggers are supported"
+  },
+  {
+    "key": "Trigger.effect.action",
+    "value": "Action"
+  },
+  {
+    "key": "Trigger.effect.workflow",
+    "value": "Workflow"
+  },
+  {
+    "key": "Trigger.effect.unsupported",
+    "value": "Only action and workflow effects are supported"
+  },
+  {
+    "key": "Trigger.cadence.interval",
+    "value": "Every {every} {unit}"
+  },
+  {
+    "key": "Trigger.cadence.daily",
+    "value": "Daily at {time}"
+  },
+  {
+    "key": "Trigger.cadence.weekly",
+    "value": "Every {weekday} at {time}"
+  },
+  {
+    "key": "Trigger.cadence.monthly",
+    "value": "Monthly on day {day} at {time}"
+  },
+  {
+    "key": "Trigger.unit.minute",
+    "value": "min"
+  },
+  {
+    "key": "Trigger.unit.hour",
+    "value": "hr"
+  },
+  {
+    "key": "Trigger.unit.day",
+    "value": "day"
+  },
+  {
+    "key": "Trigger.weekday.1",
+    "value": "Mon"
+  },
+  {
+    "key": "Trigger.weekday.2",
+    "value": "Tue"
+  },
+  {
+    "key": "Trigger.weekday.3",
+    "value": "Wed"
+  },
+  {
+    "key": "Trigger.weekday.4",
+    "value": "Thu"
+  },
+  {
+    "key": "Trigger.weekday.5",
+    "value": "Fri"
+  },
+  {
+    "key": "Trigger.weekday.6",
+    "value": "Sat"
+  },
+  {
+    "key": "Trigger.weekday.7",
+    "value": "Sun"
   }
 ]
