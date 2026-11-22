@@ -20,6 +20,12 @@ import {
   WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
+import {
+  buildVirtualGridBands,
+  computeScrollTopForIndex,
+  computeVirtualWindow,
+  VIRTUAL_ROW_THRESHOLD,
+} from "../../../../../packages/apps-sdk/src/base/object-list-virtual";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { noOperations } from "./panel-frame";
@@ -2342,4 +2348,387 @@ it("scrolls the list scroll container back to top when switching pages", async (
   element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
   await vi.waitFor(() => expect(element.textContent).toContain("User page 2"));
   await vi.waitFor(() => expect(container.scrollTop).toBe(0));
+});
+
+it("performs zero-request local search across nested/array fields, updates listed refs, highlights matches, and clears narrowed empty state", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "local-search-list": {
+      ...meta,
+      id: "local-search-list",
+      name: "Local search list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {
+        search: { kind: "scalar", type: "string" },
+        listed: { kind: "list", items: { kind: "object", objectType: ROLE } },
+        selected: { kind: "object", objectType: ROLE },
+      },
+      config: { searchable: true, subtitleField: "description", tagsField: "badges" },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: ROLE } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      query: { type: { kind: "scalar", type: "string" } },
+      listed: { type: { kind: "list", items: { kind: "object", objectType: ROLE } } },
+      selected: { type: { kind: "object", objectType: ROLE } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "local-search-list" },
+        outputs: {
+          search: { state: "query" },
+          listed: { state: "listed" },
+          selected: { state: "selected" },
+        },
+      },
+    },
+    commands: {},
+  });
+
+  const allRows = [
+    {
+      primaryKey: "type.order",
+      label: "Order",
+      subtitle: "Commercial purchase record",
+      fields: {
+        description: "Commercial purchase record",
+        badges: ["core", "finance"],
+        properties: {
+          kind: "json" as const,
+          value: [
+            { name: "order_amount", displayName: "Total Amount" },
+            { name: "shipping_zip", displayName: "Postal Code" },
+          ],
+        },
+      },
+    },
+    {
+      primaryKey: "type.customer",
+      label: "Customer",
+      subtitle: "Account holder profile",
+      fields: {
+        description: "Account holder profile",
+        badges: ["crm"],
+        properties: {
+          kind: "json" as const,
+          value: [{ name: "loyalty_tier", displayName: "VIP Level" }],
+        },
+      },
+    },
+    {
+      primaryKey: "type.shipment",
+      label: "Shipment",
+      subtitle: "Parcel delivery tracking",
+      fields: {
+        description: "Parcel delivery tracking",
+        badges: ["logistics"],
+        properties: {
+          kind: "json" as const,
+          value: [{ name: "carrier_code", displayName: "Carrier" }],
+        },
+      },
+    },
+  ];
+
+  const { instance, element, reads } = mountDirect(manifest, projections, () => ready({ rows: allRows }));
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(3));
+  expect(reads).toHaveLength(1);
+  expect(instance.state.values.value.listed).toEqual([
+    { className: ROLE, primaryKey: "type.order" },
+    { className: ROLE, primaryKey: "type.customer" },
+    { className: ROLE, primaryKey: "type.shipment" },
+  ]);
+
+  // Search by nested JSON property name (simulating searching an ontology object type by one of its attribute names).
+  const searchInput = element.querySelector<HTMLInputElement>('input[type="search"]')!;
+  searchInput.value = "loyalty_tier";
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
+  expect(element.querySelector(".sdk-object-list-item-label")?.textContent?.trim()).toBe("Customer");
+  expect(instance.state.values.value.listed).toEqual([{ className: ROLE, primaryKey: "type.customer" }]);
+  expect(reads).toHaveLength(1);
+
+  // Search matching label produces local <mark> highlights with zero extra reads.
+  searchInput.value = "ord";
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
+  expect(element.querySelector(".sdk-object-list-item-label mark")?.textContent).toBe("Ord");
+  expect(reads).toHaveLength(1);
+
+  // Non-matching search triggers narrowed empty state with Clear filters button and empty listed output.
+  searchInput.value = "does-not-exist";
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(element.querySelector(".fui-data-state-empty")).not.toBeNull());
+  expect(instance.state.values.value.listed).toEqual([]);
+  const clearBtn = element.querySelector<HTMLButtonElement>(".fui-data-state-action")!;
+  expect(clearBtn).not.toBeNull();
+  clearBtn.click();
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(3));
+  expect(instance.state.values.value.query).toBeNull();
+  expect(instance.state.values.value.listed).toHaveLength(3);
+  expect(reads).toHaveLength(1);
+});
+
+it("applies zero-request local field equality filters and panel-shared search with exact fallbackToFirst semantics", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "local-filter-fallback": {
+      ...meta,
+      id: "local-filter-fallback",
+      name: "Local filtered list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {
+        selected: { kind: "object", objectType: WORKFLOW },
+        listed: { kind: "list", items: { kind: "object", objectType: WORKFLOW } },
+      },
+      // Panel owns the shared search box so searchable=false hides duplicate input while still honoring bound `search`.
+      config: { fallbackToFirst: true, searchable: false },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: WORKFLOW } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      query: { type: { kind: "scalar", type: "string" } },
+      layer: { type: { kind: "scalar", type: "string" } },
+      selected: { type: { kind: "object", objectType: WORKFLOW } },
+      listed: { type: { kind: "list", items: { kind: "object", objectType: WORKFLOW } } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "local-filter-fallback" },
+        inputs: { search: { state: "query" }, layer: { state: "layer" } },
+        outputs: { selected: { state: "selected" }, listed: { state: "listed" } },
+      },
+    },
+    commands: {},
+  });
+
+  const rows = [
+    { primaryKey: "wf-1", label: "Order ingest", fields: { layer: "fact" } },
+    { primaryKey: "wf-2", label: "Metric rollup", fields: { layer: "capability" } },
+    { primaryKey: "wf-3", label: "Policy audit", fields: { layer: "governance" } },
+  ];
+
+  const { instance, element, reads } = mountDirect(manifest, projections, () => ready({ rows }));
+
+  // Initial load selects the first item and hides duplicate search input when searchable=false.
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: WORKFLOW, primaryKey: "wf-1" }));
+  expect(element.querySelector('input[type="search"]')).toBeNull();
+  expect(reads).toHaveLength(1);
+
+  // Local field filter narrows to governance -> wf-1 disappears, fallback picks wf-3 with 0 extra reads.
+  instance.state.set("layer", "governance");
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: WORKFLOW, primaryKey: "wf-3" }));
+  expect(instance.state.values.value.listed).toEqual([{ className: WORKFLOW, primaryKey: "wf-3" }]);
+  expect(reads).toHaveLength(1);
+
+  // Panel-shared search narrows to empty -> selection clears to null and Clear filters resets both layer and query.
+  instance.state.set("query", "no-match");
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toBeNull());
+  expect(instance.state.values.value.listed).toEqual([]);
+
+  const clearBtn = element.querySelector<HTMLButtonElement>(".fui-data-state-action")!;
+  clearBtn.click();
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(3));
+  expect(instance.state.values.value.layer).toBeNull();
+  expect(instance.state.values.value.query).toBeNull();
+  // Clearing filters when selection was already null must not re-select automatically.
+  expect(instance.state.values.value.selected).toBeNull();
+  expect(reads).toHaveLength(1);
+});
+
+it("groups rows by groupBy with live filtered counts, omits zero-count groups, supports collapsing and auto-expands for selected item", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "grouped-list": {
+      ...meta,
+      id: "grouped-list",
+      name: "Grouped actions",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: ACTION } },
+      config: { groupBy: "layer", groupEmptyLabel: "groups.ungrouped", searchable: true },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: ACTION } }, read: "list", params: {} } },
+    },
+    "grouped-table": {
+      ...meta,
+      id: "grouped-table",
+      name: "Grouped table",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: {
+        groupBy: "layer",
+        groupEmptyLabel: "groups.ungrouped",
+        columns: [{ key: "label", labelKey: "cols.name" }],
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: ACTION } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: ACTION } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "grouped-list" },
+        outputs: { selected: { state: "selected" } },
+      },
+      table: {
+        target: { projectionId: "grouped-table" },
+      },
+    },
+    commands: {},
+  });
+
+  const rows = [
+    { primaryKey: "a-1", label: "Create order", fields: { layer: "Fact" } },
+    { primaryKey: "a-2", label: "Cancel order", fields: { layer: "Fact" } },
+    { primaryKey: "a-3", label: "Approve budget", fields: { layer: "Governance" } },
+    { primaryKey: "a-4", label: "Ad-hoc script", fields: { layer: "" } },
+  ];
+
+  const { instance, element } = mountDirect(manifest, projections, () => ready({ rows }), {
+    messages: { en: { "groups.ungrouped": "Ungrouped", "cols.name": "Name" } },
+  });
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-items .sdk-object-list-group-header")).toHaveLength(3));
+  const readGroups = () =>
+    [...element.querySelectorAll(".sdk-object-list-items .sdk-object-list-group-header")].map((header) => ({
+      label: header.querySelector(".sdk-object-list-group-label")?.textContent?.trim(),
+      count: Number(header.querySelector(".sdk-object-list-group-count")?.textContent?.trim()),
+    }));
+
+  // Empty-value group is placed last with the configured fallback label.
+  expect(readGroups()).toEqual([
+    { label: "Fact", count: 2 },
+    { label: "Governance", count: 1 },
+    { label: "Ungrouped", count: 1 },
+  ]);
+
+  // Table layout also renders grouped headers with counts.
+  expect(element.querySelectorAll(".sdk-object-list-table .sdk-object-list-group-row")).toHaveLength(3);
+
+  // Collapsing the Governance group hides its row; selecting a-3 externally auto-expands the group.
+  const govBtn = element.querySelector<HTMLButtonElement>('.sdk-object-list-items [data-group-key="Governance"] .sdk-object-list-group-btn')!;
+  govBtn.click();
+  await vi.waitFor(() => expect(govBtn.getAttribute("aria-expanded")).toBe("false"));
+  expect(element.querySelectorAll(".sdk-object-list-items .sdk-object-list-item-btn")).toHaveLength(3);
+
+  instance.state.set("selected", { className: ACTION, primaryKey: "a-3" });
+  await vi.waitFor(() => expect(govBtn.getAttribute("aria-expanded")).toBe("true"));
+  expect(element.querySelectorAll(".sdk-object-list-items .sdk-object-list-item-btn")).toHaveLength(4);
+
+  // Local search narrows groups and omits groups whose filtered count drops to 0.
+  const searchInput = element.querySelector<HTMLInputElement>('input[type="search"]')!;
+  searchInput.value = "order";
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(readGroups()).toEqual([{ label: "Fact", count: 2 }]));
+});
+
+it("virtualizes large unpaged lists (> 60 rows) with jsdom zero-height fallback, scroll windowing, selected-row jump, and keyboard navigation", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "large-list": {
+      ...meta,
+      id: "large-list",
+      name: "Large property list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: ACTION } },
+      config: {},
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: ACTION } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: ACTION } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "large-list" },
+        outputs: { selected: { state: "selected" } },
+      },
+    },
+    commands: {},
+  });
+
+  const totalRows = VIRTUAL_ROW_THRESHOLD + 60; // 120 rows
+  const rows = Array.from({ length: totalRows }, (_, i) => ({
+    primaryKey: `prop-${i + 1}`,
+    label: `Property ${String(i + 1).padStart(3, "0")}`,
+    fields: {},
+  }));
+
+  const { instance, element } = mountDirect(manifest, projections, () => ready({ rows }));
+
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn").length).toBeGreaterThan(0));
+  const container = element.querySelector<HTMLElement>(".sdk-object-list-items")!;
+  expect(container.dataset.virtualized).toBe("true");
+
+  // With jsdom clientHeight === 0, safe fallback renders only the initial viewport + overscan instead of 0 or all 120 rows.
+  const initialRendered = element.querySelectorAll(".sdk-object-list-item-btn");
+  expect(initialRendered.length).toBeGreaterThan(0);
+  expect(initialRendered.length).toBeLessThan(40);
+  expect(initialRendered[0]!.textContent?.trim()).toBe("Property 001");
+  expect(element.querySelectorAll(".sdk-object-list-virtual-spacer").length).toBeGreaterThanOrEqual(1);
+
+  // Scrolling shifts the rendered window to rows around the new scrollTop.
+  container.scrollTop = 2400;
+  container.dispatchEvent(new Event("scroll"));
+  await vi.waitFor(() => expect(element.textContent).toContain("Property 055"));
+  expect(element.textContent).not.toContain("Property 001");
+
+  // Selecting an off-window row jumps the virtual window to it and calls scrollIntoView.
+  const scrollIntoViewSpy = vi.fn();
+  const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = scrollIntoViewSpy;
+  try {
+    instance.state.set("selected", { className: ACTION, primaryKey: "prop-108" });
+    await vi.waitFor(() => expect(element.textContent).toContain("Property 108"));
+    await vi.waitFor(() => expect(scrollIntoViewSpy).toHaveBeenCalled());
+    const chosenBtn = element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn.chosen")!;
+    expect(chosenBtn.textContent?.trim()).toBe("Property 108");
+    expect(container.scrollTop).toBeGreaterThan(4000);
+
+    // Pressing Home jumps back to the first row and focuses it across the virtual window.
+    chosenBtn.focus();
+    chosenBtn.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(element.textContent).toContain("Property 001"));
+    await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe("Property 001"));
+  } finally {
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+  }
+});
+
+it("computes virtual windows, scroll targets, and grouped card grid bands safely", () => {
+  const heights = Array.from({ length: 100 }, () => 48);
+  const fallbackWindow = computeVirtualWindow(heights, 0, 0, 4);
+  expect(fallbackWindow.startIndex).toBe(0);
+  expect(fallbackWindow.endIndex).toBe(14); // 480 / 48 = 10 visible + 4 overscan
+  expect(fallbackWindow.topPadding).toBe(0);
+  expect(fallbackWindow.bottomPadding).toBe((100 - 14) * 48);
+
+  const midWindow = computeVirtualWindow(heights, 2400, 480, 4);
+  expect(midWindow.startIndex).toBe(46);
+  expect(midWindow.endIndex).toBe(64);
+  expect(midWindow.topPadding).toBe(46 * 48);
+
+  expect(computeScrollTopForIndex(midWindow.offsets, 52, 2400, 480)).toBe(2400);
+  expect(computeScrollTopForIndex(midWindow.offsets, 10, 2400, 480)).toBe(480);
+  expect(computeScrollTopForIndex(midWindow.offsets, 90, 2400, 480)).toBe(91 * 48 - 480);
+
+  const bands = buildVirtualGridBands(
+    ["group", "row", "row", "row", "group", "row"],
+    [32, 160, 180, 150, 32, 140],
+    2,
+  );
+  expect(bands).toEqual([
+    { kind: "group", startItemIndex: 0, endItemIndex: 1, height: 32 },
+    { kind: "cards", startItemIndex: 1, endItemIndex: 3, height: 180 },
+    { kind: "cards", startItemIndex: 3, endItemIndex: 4, height: 150 },
+    { kind: "group", startItemIndex: 4, endItemIndex: 5, height: 32 },
+    { kind: "cards", startItemIndex: 5, endItemIndex: 6, height: 140 },
+  ]);
 });
