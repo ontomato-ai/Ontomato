@@ -316,6 +316,7 @@ export async function nodeApiRequest(path: string, init: any = {}): Promise<Resp
   return nodeApiFetch(relative, init.method ?? "GET", body, {
     headers: init.headers,
     signal: init.signal,
+    ...(init.keepalive ? { keepalive: true } : {}),
   });
 }
 

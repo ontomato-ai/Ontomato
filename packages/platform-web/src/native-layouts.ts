@@ -54,7 +54,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
         ],
       },
     ],
-    // The models of the modeling agents, at the foot of the menu like every application's own settings.
   },
   {
     renderer: "browser",

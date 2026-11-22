@@ -37,8 +37,6 @@ export const platformRoutes = {
   agentSettingsCapabilities: { name: "AgentSettingsCapabilities", path: "/agents/settings/capabilities" },
   agentSettingsSkills: { name: "AgentSettingsSkills", path: "/agents/settings/skills" },
   agentSettingsMcp: { name: "AgentSettingsMcp", path: "/agents/settings/mcp" },
-  /** The models of the ontology service agents the agent platform runs on, at the foot of the settings' column. */
-  agentModels: { name: "AgentModels", path: "/agents/settings/models" },
   agentSettings: { name: "AgentSettingsAgent", path: "/agents/settings/:agentId" },
   ops: { name: "Operations", path: "/ops" },
   diagnosis: { name: "ObserveDiagnosis", path: "/ops/diagnosis" },
@@ -83,8 +81,6 @@ export const platformRoutes = {
   triggers: { name: "Triggers", path: "/ontology/assets/triggers" },
   capabilityMap: { name: "CapabilityMap", path: "/ontology/assets/capability-map" },
   knowledge: { name: "BusinessKnowledge", path: "/ontology/knowledge" },
-  /** The models of the ontology modeling agents, at the foot of the ontology manager's menu. */
-   ontologyModels: { name: "OntologyModels", path: "/settings/model-config/ontology" },
   /** One page for every scheduled task of the platform. */
   schedules: { name: "Schedules", path: "/schedules" },
   /** The agent platform's own scheduled tasks: this agent's, listed by the same page. */

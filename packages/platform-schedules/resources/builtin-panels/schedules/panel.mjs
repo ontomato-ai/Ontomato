@@ -216,13 +216,23 @@ await mountPanel({
       nextCursor.value = page.nextCursor;
     }, { immediate: true });
     const runsLoading = computed(() => runsData.value.status === "loading" && runs.value.length === 0);
-    const runsFailed = computed(() => ["error", "forbidden"].includes(runsData.value.status) && runs.value.length === 0);
+    const runsFailure = computed(() => ["error", "forbidden"].includes(runsData.value.status) ? runsData.value : null);
     const loadingMore = computed(() => runsData.value.status === "loading" && !!cursor.value);
     function loadMore() {
       if (nextCursor.value) cursor.value = nextCursor.value;
     }
     const focusRun = computed(() => (focusData.value.status === "ready" ? focusData.value.value : null));
     const pinned = computed(() => (focusRun.value && !runs.value.some((run) => run.id === focusRun.value.id) ? focusRun.value : null));
+    const runGroups = computed(() => [
+      ...(pinned.value ? [{ key: "linked", runs: [pinned.value] }] : []),
+      { key: "history", runs: runs.value },
+    ]);
+    const historyRecords = ref(null);
+    const visibleFocus = computed(() => mode.value === "view" && runId.value &&
+      (pinned.value?.id === runId.value || runs.value.some(run => run.id === runId.value)) ? runId.value : null);
+    watch(visibleFocus, (id) => {
+      if (id) historyRecords.value?.querySelector("[data-run].focused")?.scrollIntoView({ block: "nearest" });
+    }, { flush: "post" });
     watch(runId, (id) => { if (id) expanded.value = new Set(expanded.value).add(id); }, { immediate: true });
     watch(focusData, (state) => {
       if (runId.value && ["empty", "error", "forbidden"].includes(state.status)) {
@@ -244,7 +254,7 @@ await mountPanel({
     function showRecords(id) {
       select(id);
       setMode("view");
-      void nextTick(() => document.querySelector("[data-records]")?.scrollIntoView?.({ block: "nearest" }));
+      void nextTick(() => historyRecords.value?.scrollIntoView({ block: "nearest" }));
     }
 
     // ---------- polling while something runs ----------
@@ -390,7 +400,7 @@ await mountPanel({
       taskState, nextText, statusLabel, moment, duration, runError, summaryText, resultPreview,
       selected, selectedId, selectedRow, record, form, detailRow, settings, revision, taskZone, paneOpen, mode,
       select, closePane, busy, toggle, runNow, askDelete, edit, command, showRecords,
-      runs, runsLoading, runsFailed, nextCursor, loadingMore, loadMore, pinned, runId, expanded, toggleRun, hasDetails,
+      runGroups, historyRecords, runsLoading, runsFailure, nextCursor, loadingMore, loadMore, runId, expanded, toggleRun, hasDetails,
       latestRun, latestResult, openResult, saved, created, cancelForm,
     };
   },

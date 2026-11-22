@@ -252,7 +252,7 @@ watch(locale, () => {
  */
 const canOpen = usePageAccess();
 const editsAgents = computed(() => canOpen(routes.agents.path));
-const opensModels = computed(() => canOpen(routes.agentModels.path));
+const opensModels = computed(() => canOpen(routes.usage.path));
 
 /**
  * The agent settings, at this application's own address: this entry opens them at the agent in use, and the reader stays
