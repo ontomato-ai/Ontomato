@@ -40,12 +40,17 @@ export function usePanelBack(
     stop();
   };
 
+  const runBack = () => {
+    panel?.instance.forms.discardAll();
+    onBack();
+  };
+
   const stopWatch = watch(
     () => [Boolean(toValue(active)), Boolean(toValue(options?.pushHistory ?? true))] as const,
     ([isActive, pushHistory]) => {
       release();
       if (!isActive || !panel?.registerBackHandler) return;
-      unregister = panel.registerBackHandler({ pushHistory, onBack });
+      unregister = panel.registerBackHandler({ pushHistory, onBack: runBack });
     },
     { immediate: true, flush: "sync" },
   );
@@ -65,7 +70,7 @@ export function usePanelBack(
       }
       if (!toValue(active)) return false;
       release();
-      onBack();
+      runBack();
       return true;
     } finally {
       runningBack = false;

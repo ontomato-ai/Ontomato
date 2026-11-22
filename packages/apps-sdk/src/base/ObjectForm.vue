@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { projectionElement } from "../panel/projection-element";
-import { computed, onMounted, provide, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
@@ -351,9 +351,13 @@ function fail(reason: unknown, retry: () => void) {
   loading.value = false;
 }
 
+let unmounted = false;
 onMounted(() => {
   mounted = true;
   load(target.value);
+});
+onBeforeUnmount(() => {
+  unmounted = true;
 });
 let pendingRefresh = false;
 /**
@@ -367,6 +371,7 @@ let movingForDraft = false;
  * discarding them is the form's own discard, and the form then shows where the panel moved.
  */
 watch(target, async (next, previous) => {
+  if (unmounted) return;
   pendingRefresh = false;
   const forDraft = movingForDraft;
   movingForDraft = false;
@@ -378,13 +383,14 @@ watch(target, async (next, previous) => {
           confirmButtonText: t("platform.discard"),
           cancelButtonText: t("platform.keepEditing"),
         });
+    if (unmounted) return;
     if (!leave) {
       moveTo(previous);
       return;
     }
     discard();
   }
-  if (targetKey(target.value) !== loaded) load(target.value);
+  if (!unmounted && targetKey(target.value) !== loaded) load(target.value);
 });
 function refreshWhenClean() {
   if (!pendingRefresh || canSettle.value || saving.value) return;

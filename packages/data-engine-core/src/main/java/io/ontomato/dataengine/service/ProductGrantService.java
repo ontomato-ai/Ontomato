@@ -1,6 +1,9 @@
 package io.ontomato.dataengine.service;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.context.annotation.DependsOn;
@@ -115,5 +118,45 @@ public class ProductGrantService implements InitializingBean {
     public List<ProductGrants.Grant> grants(String id){
         if(!allowed(id,"edit"))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required");
         return db.query("SELECT principal_kind,principal_id,verb FROM product_grant WHERE domain_id=? AND resource_id=? ORDER BY principal_kind,principal_id,verb",(row,index)->new ProductGrants.Grant(row.getString(1),row.getString(2),row.getString(3)),identity.getCurrentUser().getDomainId(),id);
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record GrantView(String principalKind, String principalId, String principalName, String verb) {}
+
+    public List<GrantView> grantViews(String id) {
+        var records = grants(id);
+        var user = identity.getCurrentUser();
+        String domainId = user != null ? user.getDomainId() : null;
+        var userIds = records.stream().filter(g -> "principal".equals(g.principalKind())).map(ProductGrants.Grant::principalId).distinct().toList();
+        var roleIds = records.stream().filter(g -> "role".equals(g.principalKind())).map(ProductGrants.Grant::principalId).distinct().toList();
+        Map<String, String> userNames = userIds.isEmpty() || domainId == null ? Map.of() : principals.principalNames(domainId, userIds);
+        Map<String, String> roleNames = roleIds.isEmpty() || domainId == null ? Map.of() : principals.roleNames(domainId, roleIds);
+        return records.stream().map(g -> {
+            String resolved = switch (g.principalKind()) {
+                case "principal" -> userNames.get(g.principalId());
+                case "role" -> roleNames.get(g.principalId());
+                default -> null;
+            };
+            String name = resolved != null && !resolved.isBlank() ? resolved : null;
+            return new GrantView(g.principalKind(), g.principalId(), name, g.verb());
+        }).toList();
+    }
+
+    public Map<String, String> principalNames(String domainId, Collection<String> principalIds) {
+        if (domainId == null || principalIds == null || principalIds.isEmpty()) return Map.of();
+        return principals.principalNames(domainId, principalIds);
+    }
+
+    public List<ProductPrincipalLookup.PrincipalOption> searchPrincipals(String kind, String keyword, int limit) {
+        var user = identity.getCurrentUser();
+        if (user == null || user.getDomainId() == null)
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        int capped = Math.max(1, Math.min(limit, 100));
+        String term = keyword == null ? "" : keyword.strip();
+        return switch (kind) {
+            case "principal" -> principals.searchPrincipals(user.getDomainId(), term, capped);
+            case "role" -> principals.searchRoles(user.getDomainId(), term, capped);
+            default -> throw new IllegalArgumentException("Expected principal or role kind");
+        };
     }
 }

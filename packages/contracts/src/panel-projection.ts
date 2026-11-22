@@ -31,6 +31,7 @@ export const panelObjectListColumnSchema = z.object({
     "How a time column formats its timestamp: 'relative' (default) shows relative time for recent dates, 'datetime' shows full local date and time, and 'date' shows local date.",
   ),
   subtitleKey: z.string().min(1).optional(),
+  iconKey: z.string().min(1).optional(),
   emptyKey: panelMessageKeySchema.optional(),
   wrap: z.boolean().optional().describe("Allow text in this column to wrap onto multiple lines. Defaults to false."),
 }).strict();
@@ -100,6 +101,7 @@ export const panelReadParameterSchemas = {
   applicationScope: applicationCatalogueScopeSchema,
   applicationSort: applicationCatalogueSortSchema,
   applicationFormSection: applicationFormSectionSchema.exclude(["create"]),
+  applicationEntryId: z.string().min(1),
   formValues: formValuesSchema,
   panelFormValues: panelFormValuesSchema,
   changedField: fieldPath.nullable(),
@@ -161,6 +163,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "applicationScope":
     case "applicationSort":
     case "applicationFormSection":
+    case "applicationEntryId":
       return input?.kind === "scalar" && input.type === "string";
     case "productTemplate":
       return input?.kind === "scalar" && input.type === "boolean";

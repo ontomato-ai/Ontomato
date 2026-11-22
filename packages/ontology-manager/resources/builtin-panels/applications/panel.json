@@ -15,6 +15,14 @@
         },
         "deepLink": true
       },
+      "tab": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "identity"
+      },
       "search": {
         "type": {
           "kind": "scalar",
@@ -30,25 +38,6 @@
         "deepLink": true,
         "default": "visible"
       },
-      "cursor": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        }
-      },
-      "size": {
-        "type": {
-          "kind": "scalar",
-          "type": "number"
-        },
-        "default": 20
-      },
-      "inspectedPanel": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:ProductPanel"
-        }
-      },
       "sort": {
         "type": {
           "kind": "scalar",
@@ -56,27 +45,42 @@
         },
         "deepLink": true,
         "default": "id"
+      },
+      "inspectedPanel": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ProductPanel"
+        }
+      },
+      "editingEntryId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "userKeyword": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "roleKeyword": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
       }
     },
     "members": {
       "catalogue": {
-        "component": "PanelData",
+        "component": "ObjectList",
         "type": "platform:Application",
         "data": {
           "rows": {
             "read": "query",
             "params": {
-              "search": {
-                "state": "search"
-              },
               "scope": {
                 "state": "scope"
-              },
-              "cursor": {
-                "state": "cursor"
-              },
-              "size": {
-                "state": "size"
               },
               "sort": {
                 "state": "sort"
@@ -84,17 +88,104 @@
             }
           }
         },
+        "state": {
+          "selected": "selected",
+          "search": "search"
+        },
+        "config": {
+          "layout": "table",
+          "pagination": "pages",
+          "showChevron": true,
+          "pageSize": 20,
+          "fallbackToFirst": false,
+          "searchPlaceholder": "search.placeholder",
+          "emptyText": "list.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "col.name",
+              "subtitleKey": "subtitle",
+              "iconKey": "icon"
+            },
+            {
+              "key": "source",
+              "labelKey": "col.source",
+              "kind": "tag"
+            },
+            {
+              "key": "entryCount",
+              "labelKey": "col.entries"
+            },
+            {
+              "key": "maintenance",
+              "labelKey": "col.maintenance",
+              "kind": "tag"
+            },
+            {
+              "key": "owner",
+              "labelKey": "col.owner"
+            },
+            {
+              "key": "updatedAt",
+              "labelKey": "col.updatedAt",
+              "kind": "time",
+              "timeFormat": "datetime"
+            }
+          ]
+        },
         "id": "builtin-product-2fb20dd5-c6b9-4cfa-aeaf-c3b22c01765e"
       },
       "record": {
         "component": "PanelData",
+        "type": "platform:Application",
         "target": "selected",
         "data": {
-          "record": "record",
-          "entries": "entries",
-          "grants": "grants"
+          "record": "record"
         },
         "id": "builtin-product-039ac450-89cc-43df-a347-bf6862881a6e"
+      },
+      "summary": {
+        "component": "ObjectSummary",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "id",
+            "names",
+            "descriptions",
+            "source",
+            "maintenance",
+            "owner",
+            "updatedAt",
+            "path",
+            "home",
+            "renderer",
+            "framePanel"
+          ]
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a01"
+      },
+      "entriesRead": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "entries": "entries"
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a02"
+      },
+      "grantsRead": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "grants": "grants"
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a03"
       },
       "save": {
         "component": "ObjectForm",
@@ -112,54 +203,37 @@
           }
         },
         "operation": "platform:Application.save",
+        "config": {
+          "actions": "none"
+        },
         "id": "builtin-product-c5de0138-e117-4696-835d-13050a683311"
       },
-      "deleteApp": {
-        "component": "PanelData",
+      "entryForm": {
+        "component": "ObjectForm",
         "type": "platform:Application",
         "target": "selected",
-        "operation": "applications.delete",
-        "id": "builtin-product-6391d99c-9f5a-4f5e-8958-efc070e8c5f2"
-      },
-      "grant": {
-        "component": "PanelData",
-        "type": "platform:Application",
-        "target": "selected",
-        "operation": "applications.grant",
-        "id": "builtin-product-2362357b-12bb-4ccd-9928-818095da486a"
-      },
-      "addEntry": {
-        "component": "PanelData",
-        "type": "platform:Application",
-        "target": "selected",
-        "operation": "applications.addEntry",
-        "id": "builtin-product-6b646748-9218-471d-ba82-dc76482db2a3"
-      },
-      "updateEntry": {
-        "component": "PanelData",
-        "type": "platform:Application",
-        "target": "selected",
-        "operation": "applications.updateEntry",
-        "id": "builtin-product-3d246f06-1055-4756-9aa9-0dcf19218827"
-      },
-      "deleteEntry": {
-        "component": "PanelData",
-        "type": "platform:Application",
-        "target": "selected",
-        "operation": "applications.deleteEntry",
-        "id": "builtin-product-79bc66a4-3d18-4901-81eb-2a028f1402e2"
-      },
-      "panelInfo": {
-        "component": "PanelData",
-        "type": "platform:ProductPanel",
-        "target": "inspectedPanel",
         "data": {
-          "panel": "record"
+          "form": {
+            "read": "form",
+            "params": {
+              "section": {
+                "literal": "entry"
+              },
+              "entryId": {
+                "state": "editingEntryId"
+              }
+            }
+          }
         },
-        "id": "builtin-product-dff28ce4-6907-4c05-b65b-1ca9ca25c7cd"
+        "operation": "platform:Application.save",
+        "config": {
+          "actions": "footer"
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a04"
       },
       "entriesForm": {
         "component": "ObjectForm",
+        "type": "platform:Application",
         "target": "selected",
         "data": {
           "form": {
@@ -172,7 +246,37 @@
           }
         },
         "operation": "platform:Application.save",
+        "config": {
+          "actions": "footer"
+        },
         "id": "builtin-product-fe66a20c-a476-4988-ac4d-d42dfaa1908a"
+      },
+      "deleteApp": {
+        "component": "OperationButton",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.delete",
+        "config": {
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "placement": "header"
+        },
+        "id": "builtin-product-6391d99c-9f5a-4f5e-8958-efc070e8c5f2"
+      },
+      "deleteEntry": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.deleteEntry",
+        "id": "builtin-product-79bc66a4-3d18-4901-81eb-2a028f1402e2"
+      },
+      "grant": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.grant",
+        "id": "builtin-product-2362357b-12bb-4ccd-9928-818095da486a"
       },
       "share": {
         "component": "PanelData",
@@ -180,20 +284,76 @@
         "target": "selected",
         "operation": "applications.share",
         "id": "builtin-product-e6ccc147-3201-4576-b4a4-16790f380c55"
+      },
+      "panelCatalogue": {
+        "component": "PanelData",
+        "type": "platform:ProductPanel",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "size": {
+                "literal": 100
+              }
+            }
+          }
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a05"
+      },
+      "panelInfo": {
+        "component": "PanelData",
+        "type": "platform:ProductPanel",
+        "target": "inspectedPanel",
+        "data": {
+          "panel": "record",
+          "members": "members"
+        },
+        "id": "builtin-product-dff28ce4-6907-4c05-b65b-1ca9ca25c7cd"
+      },
+      "userOptions": {
+        "component": "PanelData",
+        "type": "platform:User",
+        "data": {
+          "options": {
+            "read": "options",
+            "params": {
+              "keyword": {
+                "state": "userKeyword"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a06"
+      },
+      "roleOptions": {
+        "component": "PanelData",
+        "type": "platform:Role",
+        "data": {
+          "options": {
+            "read": "options",
+            "params": {
+              "keyword": {
+                "state": "roleKeyword"
+              }
+            }
+          }
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a07"
       }
     },
     "commands": {
       "create": {
         "labelKey": "action.create",
         "primary": true,
+        "icon": "plus",
         "do": {
           "set": {
             "fields": {
-              "selected": {
-                "literal": null
-              },
               "creating": {
                 "literal": true
+              },
+              "selected": {
+                "literal": null
               }
             }
           }
@@ -203,215 +363,335 @@
   },
   "content": {
     "messages": {
+      "zh-CN": {
+        "action.create": "新建应用",
+        "action.back": "返回应用",
+        "action.save": "保存",
+        "action.discard": "放弃",
+        "action.cancel": "取消",
+        "action.confirmCreate": "创建",
+        "action.openApp": "打开应用",
+        "action.retry": "重试",
+        "action.edit": "编辑",
+        "action.delete": "删除",
+        "action.confirm": "确认",
+        "search.placeholder": "搜索应用名称",
+        "scope.visible": "全部可见",
+        "scope.maintainable": "我能维护的",
+        "sort.label": "排序",
+        "sort.id": "产品结构顺序",
+        "sort.name": "名称",
+        "sort.updated": "最近更新",
+        "col.name": "名称",
+        "col.source": "来源",
+        "col.entries": "入口",
+        "col.maintenance": "当前授权",
+        "col.owner": "所有者",
+        "col.updatedAt": "更新时间",
+        "list.empty": "暂无匹配应用",
+        "detail.openSection": "打开入口",
+        "detail.loading": "正在读取应用…",
+        "detail.forbidden": "当前账号无权查看这个应用。",
+        "detail.notFound": "应用不存在或已删除",
+        "detail.runtimeTitle": "运行与配置摘要",
+        "detail.identityTitle": "身份与说明",
+        "detail.readonlyTitle": "应用信息",
+        "detail.id": "应用 ID",
+        "detail.path": "应用地址",
+        "detail.home": "首页",
+        "detail.renderer": "渲染器",
+        "detail.source": "来源",
+        "detail.maintenance": "维护权限",
+        "detail.owner": "所有者",
+        "detail.updatedAt": "更新时间",
+        "tab.identity": "基本信息",
+        "tab.entries": "入口",
+        "tab.assets": "面板与投影",
+        "tab.grants": "权限与共享",
+        "entries.count": "{count} 个入口",
+        "entries.add": "添加入口",
+        "entries.editTitle": "编辑入口",
+        "entries.addTitle": "添加入口",
+        "entries.bulkEdit": "整表编辑",
+        "entries.backToList": "返回入口列表",
+        "entries.loading": "正在读取入口…",
+        "entries.forbidden": "无权查看入口。",
+        "entries.empty": "这个应用还没有入口。",
+        "entries.emptyNotPanelApp": "该应用不是面板组合应用，不支持在此维护导航入口。",
+        "entries.colName": "菜单名",
+        "entries.colPath": "地址",
+        "entries.colPanel": "面板",
+        "entries.colGroup": "分组",
+        "entries.colAccess": "准入",
+        "entries.colAgent": "默认智能体",
+        "entries.colActions": "操作",
+        "entries.panelCatalogue": "面板目录",
+        "entries.inspectPanel": "查看所用投影",
+        "entries.frameAndTheme": "外框与主题",
+        "entries.framePanel": "外框面板",
+        "entries.themeOverrides": "主题覆盖",
+        "entries.themeLight": "浅色模式",
+        "entries.themeDark": "深色模式",
+        "entries.noTheme": "未覆盖主题变量",
+        "entries.deleted": "入口已删除。",
+        "entries.saved": "入口已保存。",
+        "entries.deleteConfirm": "删除入口「{name}」？删除后将无法恢复。",
+        "assets.usedPanels": "用到的面板（{count}）",
+        "assets.noPanels": "当前应用未引用任何面板。",
+        "assets.panelMembers": "面板用到的投影与成员",
+        "assets.selectPanel": "从左侧选择一个面板查看它用到的投影。",
+        "assets.loadingPanel": "正在读取面板成员…",
+        "assets.noMembers": "该面板未引用其他投影或嵌套面板。",
+        "assets.openPanel": "在面板目录打开",
+        "assets.openProjection": "打开",
+        "grants.loading": "正在读取授权…",
+        "grants.forbidden": "无权查看这个应用的授权。",
+        "grants.none": "暂无单独授权记录。",
+        "grants.kind": "主体类型",
+        "grants.principalCol": "主体",
+        "grants.verb": "权限",
+        "grants.actions": "操作",
+        "grants.principal": "成员",
+        "grants.role": "角色",
+        "grants.domain": "本域成员",
+        "grants.use": "使用",
+        "grants.edit": "维护",
+        "grants.revoke": "撤销",
+        "grants.add": "添加授权",
+        "grants.dialogTitle": "添加授权",
+        "grants.shareTitle": "向本域成员共享",
+        "grants.sharedDesc": "已向本域所有成员开放使用权限。",
+        "grants.privateDesc": "当前仅对下方授权的成员与角色开放。",
+        "grants.selectMember": "搜索或选择成员",
+        "grants.selectRole": "搜索或选择角色",
+        "grants.submit": "授予",
+        "grants.needPrincipal": "请选择或输入授权主体。",
+        "grants.added": "授权已添加。",
+        "grants.revoked": "授权已撤销。",
+        "grants.shareUpdated": "域内共享设置已更新。",
+        "notify.created": "应用已创建。",
+        "notify.saved": "更改已保存。",
+        "notify.deleted": "应用已删除。"
+      },
       "en": {
         "action.create": "New application",
-        "grants.loading": "Reading grants…",
-        "grants.forbidden": "You cannot read these grants.",
-        "grants.none": "No grants",
-        "grants.kind": "Principal type",
-        "grants.id": "Principal ID",
+        "action.back": "Back to applications",
+        "action.save": "Save",
+        "action.discard": "Discard",
+        "action.cancel": "Cancel",
+        "action.confirmCreate": "Create",
+        "action.openApp": "Open application",
+        "action.retry": "Retry",
+        "action.edit": "Edit",
+        "action.delete": "Delete",
+        "action.confirm": "Confirm",
+        "search.placeholder": "Search applications",
+        "scope.visible": "All visible",
+        "scope.maintainable": "Maintainable",
+        "sort.label": "Sort",
+        "sort.id": "Default order",
+        "sort.name": "Name",
+        "sort.updated": "Recently updated",
+        "col.name": "Name",
+        "col.source": "Source",
+        "col.entries": "Entries",
+        "col.maintenance": "Access",
+        "col.owner": "Owner",
+        "col.updatedAt": "Updated",
+        "list.empty": "No matching applications",
+        "detail.openSection": "Open entry",
+        "detail.loading": "Loading application…",
+        "detail.forbidden": "You do not have permission to view this application.",
+        "detail.notFound": "Application does not exist or has been deleted",
+        "detail.runtimeTitle": "Runtime summary",
+        "detail.identityTitle": "Identity & description",
+        "detail.readonlyTitle": "Application details",
+        "detail.id": "Application ID",
+        "detail.path": "Address",
+        "detail.home": "Home",
+        "detail.renderer": "Renderer",
+        "detail.source": "Source",
+        "detail.maintenance": "Maintenance",
+        "detail.owner": "Owner",
+        "detail.updatedAt": "Updated",
+        "tab.identity": "Basics",
+        "tab.entries": "Entries",
+        "tab.assets": "Panels & projections",
+        "tab.grants": "Permissions & sharing",
+        "entries.count": "{count} entries",
+        "entries.add": "Add entry",
+        "entries.editTitle": "Edit entry",
+        "entries.addTitle": "Add entry",
+        "entries.bulkEdit": "Edit full table",
+        "entries.backToList": "Back to list",
+        "entries.loading": "Loading entries…",
+        "entries.forbidden": "You cannot view these entries.",
+        "entries.empty": "This application has no entries yet.",
+        "entries.emptyNotPanelApp": "This application is not a panel application and cannot edit navigation entries here.",
+        "entries.colName": "Menu name",
+        "entries.colPath": "Address",
+        "entries.colPanel": "Panel",
+        "entries.colGroup": "Group",
+        "entries.colAccess": "Access",
+        "entries.colAgent": "Default agent",
+        "entries.colActions": "Actions",
+        "entries.panelCatalogue": "Panel catalogue",
+        "entries.inspectPanel": "Inspect projections",
+        "entries.frameAndTheme": "Frame & theme",
+        "entries.framePanel": "Frame panel",
+        "entries.themeOverrides": "Theme overrides",
+        "entries.themeLight": "Light mode",
+        "entries.themeDark": "Dark mode",
+        "entries.noTheme": "No theme overrides",
+        "entries.deleted": "Entry deleted.",
+        "entries.saved": "Entry saved.",
+        "entries.deleteConfirm": "Delete entry \"{name}\"? This cannot be undone.",
+        "assets.usedPanels": "Used panels ({count})",
+        "assets.noPanels": "No panels are referenced by this application.",
+        "assets.panelMembers": "Projections & nested panels",
+        "assets.selectPanel": "Select a panel to view the projections it uses.",
+        "assets.loadingPanel": "Loading panel members…",
+        "assets.noMembers": "This panel does not reference other projections or nested panels.",
+        "assets.openPanel": "Open in Panels",
+        "assets.openProjection": "Open",
+        "grants.loading": "Loading grants…",
+        "grants.forbidden": "You cannot view grants for this application.",
+        "grants.none": "No individual grants yet.",
+        "grants.kind": "Subject type",
+        "grants.principalCol": "Subject",
         "grants.verb": "Permission",
         "grants.actions": "Actions",
         "grants.principal": "Member",
         "grants.role": "Role",
         "grants.domain": "Domain members",
         "grants.use": "Use",
-        "grants.edit": "Edit",
+        "grants.edit": "Maintain",
         "grants.revoke": "Revoke",
-        "grants.shared": "Shared with the domain",
-        "grants.private": "Not shared with the domain",
-        "grants.shareOn": "Share with the domain",
-        "grants.shareOff": "Stop sharing with the domain",
-        "list.prev": "Previous page",
-        "sort.label": "Sort",
-        "sort.id": "Default order",
-        "sort.name": "Name",
-        "sort.updated": "Recently updated",
-        "entries.forbidden": "You cannot read these entries.",
-        "entries.loading": "Reading entries…"
-      },
-      "zh-CN": {
-        "action.create": "新建应用",
-        "grants.loading": "正在读取授权…",
-        "grants.forbidden": "你无权读取这些授权。",
-        "grants.none": "暂无授权",
-        "grants.kind": "主体类型",
-        "grants.id": "主体 ID",
-        "grants.verb": "权限",
-        "grants.actions": "操作",
-        "grants.principal": "成员",
-        "grants.role": "角色",
-        "grants.domain": "域内成员",
-        "grants.use": "使用",
-        "grants.edit": "编辑",
-        "grants.revoke": "撤销",
-        "grants.shared": "已向域内共享",
-        "grants.private": "未向域内共享",
-        "grants.shareOn": "开启域内共享",
-        "grants.shareOff": "关闭域内共享",
-        "list.prev": "上一页",
-        "sort.label": "排序",
-        "sort.id": "产品结构顺序",
-        "sort.name": "名称",
-        "sort.updated": "最近更新",
-        "entries.forbidden": "你没有权限读取入口。",
-        "entries.loading": "正在读取入口…"
+        "grants.add": "Add grant",
+        "grants.dialogTitle": "Add grant",
+        "grants.shareTitle": "Share with domain members",
+        "grants.sharedDesc": "All members in this domain can open this application.",
+        "grants.privateDesc": "Only the granted members and roles below can open it.",
+        "grants.selectMember": "Search or select a member",
+        "grants.selectRole": "Search or select a role",
+        "grants.submit": "Grant",
+        "grants.needPrincipal": "Select or enter a subject.",
+        "grants.added": "Grant added.",
+        "grants.revoked": "Grant revoked.",
+        "grants.shareUpdated": "Domain sharing updated.",
+        "notify.created": "Application created.",
+        "notify.saved": "Changes saved.",
+        "notify.deleted": "Application deleted."
       },
       "zh-TW": {
-        "grants.loading": "正在讀取授權…",
-        "grants.forbidden": "你無權讀取這些授權。",
-        "grants.none": "暫無授權",
-        "grants.kind": "主體類型",
-        "grants.id": "主體 ID",
-        "grants.verb": "權限",
-        "grants.actions": "操作",
-        "grants.principal": "成員",
-        "grants.role": "角色",
-        "grants.domain": "網域成員",
-        "grants.use": "使用",
-        "grants.edit": "編輯",
-        "grants.revoke": "撤銷",
-        "grants.shared": "已在網域內共用",
-        "grants.private": "尚未在網域內共用",
-        "grants.shareOn": "在網域內共用",
-        "grants.shareOff": "停止在網域內共用",
-        "list.prev": "上一頁",
+        "action.create": "新建應用",
+        "action.back": "返回應用",
+        "action.save": "儲存",
+        "action.discard": "放棄",
+        "action.cancel": "取消",
+        "action.confirmCreate": "建立",
+        "action.openApp": "開啟應用",
+        "action.retry": "重試",
+        "action.edit": "編輯",
+        "action.delete": "刪除",
+        "action.confirm": "確認",
+        "search.placeholder": "搜尋應用名稱",
+        "scope.visible": "全部可見",
+        "scope.maintainable": "我能維護的",
         "sort.label": "排序",
         "sort.id": "產品結構順序",
         "sort.name": "名稱",
         "sort.updated": "最近更新",
-        "entries.forbidden": "你沒有權限讀取入口。",
-        "entries.loading": "正在讀取入口…"
-      },
-      "ja": {
-        "grants.loading": "権限を読み込んでいます…",
-        "grants.forbidden": "これらの権限を表示できません。",
-        "grants.none": "権限なし",
-        "grants.kind": "対象の種類",
-        "grants.id": "対象 ID",
-        "grants.verb": "権限",
+        "col.name": "名稱",
+        "col.source": "來源",
+        "col.entries": "入口",
+        "col.maintenance": "目前授權",
+        "col.owner": "擁有者",
+        "col.updatedAt": "更新時間",
+        "list.empty": "暫無符合的應用",
+        "detail.openSection": "開啟入口",
+        "detail.loading": "正在讀取應用…",
+        "detail.forbidden": "目前帳號無權檢視此應用。",
+        "detail.notFound": "應用不存在或已刪除",
+        "detail.runtimeTitle": "執行與設定摘要",
+        "detail.identityTitle": "身分與說明",
+        "detail.readonlyTitle": "應用資訊",
+        "detail.id": "應用 ID",
+        "detail.path": "應用位址",
+        "detail.home": "首頁",
+        "detail.renderer": "呈現器",
+        "detail.source": "來源",
+        "detail.maintenance": "維護權限",
+        "detail.owner": "擁有者",
+        "detail.updatedAt": "更新時間",
+        "tab.identity": "基本資訊",
+        "tab.entries": "入口",
+        "tab.assets": "面板與投影",
+        "tab.grants": "權限與共用",
+        "entries.count": "{count} 個入口",
+        "entries.add": "新增入口",
+        "entries.editTitle": "編輯入口",
+        "entries.addTitle": "新增入口",
+        "entries.bulkEdit": "整表編輯",
+        "entries.backToList": "返回入口列表",
+        "entries.loading": "正在讀取入口…",
+        "entries.forbidden": "無權檢視入口。",
+        "entries.empty": "這個應用還沒有入口。",
+        "entries.emptyNotPanelApp": "此應用不是面板組合應用，不支援在此維護導覽入口。",
+        "entries.colName": "選單名稱",
+        "entries.colPath": "位址",
+        "entries.colPanel": "面板",
+        "entries.colGroup": "群組",
+        "entries.colAccess": "准入",
+        "entries.colAgent": "預設智慧體",
+        "entries.colActions": "操作",
+        "entries.panelCatalogue": "面板目錄",
+        "entries.inspectPanel": "檢視所用投影",
+        "entries.frameAndTheme": "外框與主題",
+        "entries.framePanel": "外框面板",
+        "entries.themeOverrides": "主題覆寫",
+        "entries.themeLight": "淺色模式",
+        "entries.themeDark": "深色模式",
+        "entries.noTheme": "未覆寫主題變數",
+        "entries.deleted": "入口已刪除。",
+        "entries.saved": "入口已儲存。",
+        "entries.deleteConfirm": "刪除入口「{name}」？刪除後無法復原。",
+        "assets.usedPanels": "用到的面板（{count}）",
+        "assets.noPanels": "目前應用未引用任何面板。",
+        "assets.panelMembers": "面板用到的投影與成員",
+        "assets.selectPanel": "從左側選擇一個面板檢視它用到的投影。",
+        "assets.loadingPanel": "正在讀取面板成員…",
+        "assets.noMembers": "該面板未引用其他投影或巢狀面板。",
+        "assets.openPanel": "在面板目錄開啟",
+        "assets.openProjection": "開啟",
+        "grants.loading": "正在讀取授權…",
+        "grants.forbidden": "無權檢視此應用的授權。",
+        "grants.none": "暫無單獨授權記錄。",
+        "grants.kind": "主體類型",
+        "grants.principalCol": "主體",
+        "grants.verb": "權限",
         "grants.actions": "操作",
-        "grants.principal": "メンバー",
-        "grants.role": "ロール",
-        "grants.domain": "ドメインメンバー",
+        "grants.principal": "成員",
+        "grants.role": "角色",
+        "grants.domain": "本域成員",
         "grants.use": "使用",
-        "grants.edit": "編集",
-        "grants.revoke": "取り消す",
-        "grants.shared": "ドメインに共有済み",
-        "grants.private": "ドメインに未共有",
-        "grants.shareOn": "ドメインに共有",
-        "grants.shareOff": "ドメインへの共有を停止",
-        "list.prev": "前のページ",
-        "sort.label": "並び順",
-        "sort.id": "既定の順序",
-        "sort.name": "名前",
-        "sort.updated": "最近の更新",
-        "entries.forbidden": "これらの入口を表示できません。",
-        "entries.loading": "入口を読み込んでいます…"
-      },
-      "ar": {
-        "grants.loading": "جارٍ قراءة الصلاحيات…",
-        "grants.forbidden": "لا يمكنك قراءة هذه الصلاحيات.",
-        "grants.none": "لا توجد صلاحيات",
-        "grants.kind": "نوع الجهة",
-        "grants.id": "معرّف الجهة",
-        "grants.verb": "الصلاحية",
-        "grants.actions": "الإجراءات",
-        "grants.principal": "عضو",
-        "grants.role": "دور",
-        "grants.domain": "أعضاء النطاق",
-        "grants.use": "استخدام",
-        "grants.edit": "تعديل",
-        "grants.revoke": "إلغاء",
-        "grants.shared": "تمت مشاركته مع النطاق",
-        "grants.private": "غير مشارك مع النطاق",
-        "grants.shareOn": "مشاركة مع النطاق",
-        "grants.shareOff": "إيقاف المشاركة مع النطاق",
-        "list.prev": "الصفحة السابقة",
-        "sort.label": "الترتيب",
-        "sort.id": "الترتيب الافتراضي",
-        "sort.name": "الاسم",
-        "sort.updated": "آخر تحديث",
-        "entries.forbidden": "لا يمكنك قراءة هذه المداخل.",
-        "entries.loading": "جارٍ قراءة المداخل…"
-      },
-      "fr": {
-        "grants.loading": "Lecture des autorisations…",
-        "grants.forbidden": "Vous ne pouvez pas lire ces autorisations.",
-        "grants.none": "Aucune autorisation",
-        "grants.kind": "Type de bénéficiaire",
-        "grants.id": "Identifiant du bénéficiaire",
-        "grants.verb": "Autorisation",
-        "grants.actions": "Actions",
-        "grants.principal": "Membre",
-        "grants.role": "Rôle",
-        "grants.domain": "Membres du domaine",
-        "grants.use": "Utiliser",
-        "grants.edit": "Modifier",
-        "grants.revoke": "Révoquer",
-        "grants.shared": "Partagé avec le domaine",
-        "grants.private": "Non partagé avec le domaine",
-        "grants.shareOn": "Partager avec le domaine",
-        "grants.shareOff": "Arrêter le partage avec le domaine",
-        "list.prev": "Page précédente",
-        "sort.label": "Tri",
-        "sort.id": "Ordre par défaut",
-        "sort.name": "Nom",
-        "sort.updated": "Dernière mise à jour",
-        "entries.forbidden": "Vous ne pouvez pas lire ces entrées.",
-        "entries.loading": "Lecture des entrées…"
-      },
-      "de": {
-        "grants.loading": "Berechtigungen werden gelesen…",
-        "grants.forbidden": "Sie können diese Berechtigungen nicht lesen.",
-        "grants.none": "Keine Berechtigungen",
-        "grants.kind": "Empfängertyp",
-        "grants.id": "Empfänger-ID",
-        "grants.verb": "Berechtigung",
-        "grants.actions": "Aktionen",
-        "grants.principal": "Mitglied",
-        "grants.role": "Rolle",
-        "grants.domain": "Domänenmitglieder",
-        "grants.use": "Verwenden",
-        "grants.edit": "Bearbeiten",
-        "grants.revoke": "Widerrufen",
-        "grants.shared": "Für die Domäne freigegeben",
-        "grants.private": "Nicht für die Domäne freigegeben",
-        "grants.shareOn": "Für die Domäne freigeben",
-        "grants.shareOff": "Domänenfreigabe beenden",
-        "list.prev": "Vorherige Seite",
-        "sort.label": "Sortierung",
-        "sort.id": "Standardreihenfolge",
-        "sort.name": "Name",
-        "sort.updated": "Zuletzt aktualisiert",
-        "entries.forbidden": "Sie können diese Einstiege nicht lesen.",
-        "entries.loading": "Einstiege werden gelesen…"
-      },
-      "it": {
-        "grants.loading": "Lettura delle autorizzazioni…",
-        "grants.forbidden": "Non puoi leggere queste autorizzazioni.",
-        "grants.none": "Nessuna autorizzazione",
-        "grants.kind": "Tipo di destinatario",
-        "grants.id": "ID del destinatario",
-        "grants.verb": "Autorizzazione",
-        "grants.actions": "Azioni",
-        "grants.principal": "Membro",
-        "grants.role": "Ruolo",
-        "grants.domain": "Membri del dominio",
-        "grants.use": "Usa",
-        "grants.edit": "Modifica",
-        "grants.revoke": "Revoca",
-        "grants.shared": "Condiviso con il dominio",
-        "grants.private": "Non condiviso con il dominio",
-        "grants.shareOn": "Condividi con il dominio",
-        "grants.shareOff": "Interrompi la condivisione con il dominio",
-        "list.prev": "Pagina precedente",
-        "sort.label": "Ordinamento",
-        "sort.id": "Ordine predefinito",
-        "sort.name": "Nome",
-        "sort.updated": "Ultimo aggiornamento",
-        "entries.forbidden": "Non puoi leggere questi ingressi.",
-        "entries.loading": "Lettura degli ingressi…"
+        "grants.edit": "維護",
+        "grants.revoke": "撤銷",
+        "grants.add": "新增授權",
+        "grants.dialogTitle": "新增授權",
+        "grants.shareTitle": "向本域成員共用",
+        "grants.sharedDesc": "已向本域所有成員開放使用權限。",
+        "grants.privateDesc": "目前僅對下方授權的成員與角色開放。",
+        "grants.selectMember": "搜尋或選擇成員",
+        "grants.selectRole": "搜尋或選擇角色",
+        "grants.submit": "授予",
+        "grants.needPrincipal": "請選擇或輸入授權主體。",
+        "grants.added": "授權已新增。",
+        "grants.revoked": "授權已撤銷。",
+        "grants.shareUpdated": "域內共用設定已更新。",
+        "notify.created": "應用已建立。",
+        "notify.saved": "變更已儲存。",
+        "notify.deleted": "應用已刪除。"
       }
     }
   }
