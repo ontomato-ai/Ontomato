@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import {
   panelFormDescriptionSchema,
@@ -23,6 +22,7 @@ import {
 } from "@ontomato/contracts/platform-object-types";
 import { config } from "../../config/application";
 import { tForLocale } from "../../i18n";
+import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { BackendResponseError, backendGet, backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
@@ -316,8 +316,8 @@ export function createOntologyModelReadAdapter(
       effect: operation.effect,
       batch: operation.batch,
       target: { source: "input", input: operation.targetInput },
-      inputSchema: zodToJsonSchema(operation.inputSchema, { effectStrategy: "input" }),
-      resultSchema: zodToJsonSchema(operation.resultSchema, { effectStrategy: "input" }),
+      inputSchema: cachedZodToJsonSchema(operation.inputSchema, { effectStrategy: "input" }),
+      resultSchema: cachedZodToJsonSchema(operation.resultSchema, { effectStrategy: "input" }),
       ...(operation.inspectImpact && { inspectImpact: { handlerRef: operation.inspectImpact.handlerRef } }),
     });
   }

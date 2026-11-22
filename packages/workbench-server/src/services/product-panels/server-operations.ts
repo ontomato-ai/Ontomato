@@ -1,14 +1,13 @@
 import type { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import type { PanelDownloadFile } from "@ontomato/contracts/panel-download";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import type { PanelFormTarget, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import {
-  describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOwnerOperationDescriptor,
-  type PanelReadOperationResult, type panelBatchInvocationSchema,
+  describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOperationDeclaration,
+  type PanelOwnerOperationDescriptor, type PanelReadOperationResult, type panelBatchInvocationSchema,
   type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelReadOperationJsonResultSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
-import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelUploadDeclaration } from "@ontomato/contracts/panel-upload";
 import type { AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
@@ -27,6 +26,7 @@ import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
 import { skillExportOperation, skillServerOperations } from "../skills/panel-operations";
 import { productCatalogServerOperations } from "./catalog-operations";
 import { HttpError } from "../../utils/errors";
+import { cachedZodToJsonSchema, cachedZodToRuntimeJsonSchema, deepFreeze } from "../../utils/zod-json-schema";
 import { tForLocale } from "../../i18n";
 
 export type PanelOperationTarget = PanelFormTarget;
@@ -153,7 +153,9 @@ const registrations: readonly PanelServerOperation[] = [
   ...ontologyModelServerOperations,
   ...productCatalogServerOperations,
 ];
-const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });
+const jsonSchema = (schema: z.ZodTypeAny) => cachedZodToJsonSchema(schema, { effectStrategy: "input" });
+const runtimeJsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });
+const declarationCache = new WeakMap<PanelServerOperation, PanelOperationDeclaration>();
 const operations = new Map(registrations.map(operation => {
   requirePanelOperationLabelKey(operation);
   requireDeclaredUploadInput(operation);
@@ -172,8 +174,10 @@ export function panelOperationUpload(handler: PanelServerOperation) {
   return handler.effect === "write" && handler.kind === "action" ? handler.upload : undefined;
 }
 
-export function operationDeclaration(handler: PanelServerOperation) {
-  return panelOperationDeclarationSchema.parse({
+export function operationDeclaration(handler: PanelServerOperation): PanelOperationDeclaration {
+  const cached = declarationCache.get(handler);
+  if (cached) return cached;
+  const declaration = deepFreeze(panelOperationDeclarationSchema.parse({
     id: handler.handlerRef,
     kind: handler.kind,
     effect: handler.effect,
@@ -184,7 +188,9 @@ export function operationDeclaration(handler: PanelServerOperation) {
       : { source: "draft" },
     inputSchema: jsonSchema(handler.inputSchema),
     ...(panelOperationUpload(handler) && { upload: panelOperationUpload(handler) }),
-  });
+  }));
+  declarationCache.set(handler, declaration);
+  return declaration;
 }
 
 export function registeredPanelOperation(id: string) {
@@ -209,7 +215,7 @@ export function describeServerOperation(handler: PanelServerOperation, locale: s
 ) {
   return describePanelOperationFromDeclaration(operationDeclaration(handler), {
     label: panelServerOperationLabel(handler, locale), slot, target,
-    resultSchema: runtimeJsonObjectSchema.parse(jsonSchema(handler.resultSchema)),
+    resultSchema: runtimeJsonSchema(handler.resultSchema),
     ...(handler.effect === "write" && handler.inspectImpact && { inspectImpact: { handlerRef: handler.inspectImpact.handlerRef } }),
   });
 }

@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { stringify } from "yaml";
 import { z } from "zod";
 import { skillCatalogDiagnosticsSchema } from "@ontomato/contracts/skills";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import {
   panelManifestSchema, panelOperationId, type PanelCommand, type PanelManifest, type PanelMemberInput,
@@ -21,6 +20,7 @@ import { SkillSourceRecordError, type ProtectedSkillOffering, type SkillSourceFa
 import { getDefaultLocale, getLocale, resolveLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductRow } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { cachedZodToJsonSchemaString } from "../../utils/zod-json-schema";
 import { readObjectActions } from "../action/panel-reads";
 import { readPanelComponentCatalogue, readProjectionComponent } from "./component-catalogue";
 import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
@@ -333,7 +333,7 @@ function describeOperation({ id, label, binding, owner, draft }: OperationDescri
   if (handler.kind !== "form.save") {
     return `${summary} Input ${JSON.stringify(declaration.inputSchema)}.${declaration.batch ? " Batch-capable." : ""}`;
   }
-  const schema = (value: z.ZodTypeAny) => JSON.stringify(zodToJsonSchema(value, { $refStrategy: "none" }));
+  const schema = (value: z.ZodTypeAny) => cachedZodToJsonSchemaString(value, { $refStrategy: "none" });
   const created = draft ? " For automatic save from an existing create draft, supply its artifact location as call.draft {sessionId,runId,path}." : "";
   return `${summary} Call target schema ${schema(handler.targetSchema)}. Call input schema ${schema(handler.inputSchema)}. ${handler.formInstructions}${created}`;
 }
