@@ -12,6 +12,7 @@ import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import {
   ACTION,
   BUSINESS_KNOWLEDGE,
+  OBJECT_TYPE,
   ONTOLOGY_TYPE,
   platformOntologyLayers,
   ROLE,
@@ -2360,18 +2361,18 @@ it("performs zero-request local search across nested/array fields, updates liste
       inputs: {},
       outputs: {
         search: { kind: "scalar", type: "string" },
-        listed: { kind: "list", items: { kind: "object", objectType: ROLE } },
-        selected: { kind: "object", objectType: ROLE },
+        listed: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } },
+        selected: { kind: "object", objectType: OBJECT_TYPE },
       },
       config: { searchable: true, subtitleField: "description", tagsField: "badges" },
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: ROLE } }, read: "list", params: {} } },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} } },
     },
   };
   const manifest = definePanel({
     state: {
       query: { type: { kind: "scalar", type: "string" } },
-      listed: { type: { kind: "list", items: { kind: "object", objectType: ROLE } } },
-      selected: { type: { kind: "object", objectType: ROLE } },
+      listed: { type: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } } },
+      selected: { type: { kind: "object", objectType: OBJECT_TYPE } },
     },
     members: {
       list: {
@@ -2431,14 +2432,14 @@ it("performs zero-request local search across nested/array fields, updates liste
     },
   ];
 
-  const { instance, element, reads } = mountDirect(manifest, projections, () => ready({ rows: allRows }));
+  const { instance, element, reads } = mountDirect(manifest, projections, () => ready(allRows));
 
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(3));
   expect(reads).toHaveLength(1);
   expect(instance.state.values.value.listed).toEqual([
-    { className: ROLE, primaryKey: "type.order" },
-    { className: ROLE, primaryKey: "type.customer" },
-    { className: ROLE, primaryKey: "type.shipment" },
+    { className: OBJECT_TYPE, primaryKey: "type.order" },
+    { className: OBJECT_TYPE, primaryKey: "type.customer" },
+    { className: OBJECT_TYPE, primaryKey: "type.shipment" },
   ]);
 
   // Search by nested JSON property name (simulating searching an ontology object type by one of its attribute names).
@@ -2447,7 +2448,7 @@ it("performs zero-request local search across nested/array fields, updates liste
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
   expect(element.querySelector(".sdk-object-list-item-label")?.textContent?.trim()).toBe("Customer");
-  expect(instance.state.values.value.listed).toEqual([{ className: ROLE, primaryKey: "type.customer" }]);
+  expect(instance.state.values.value.listed).toEqual([{ className: OBJECT_TYPE, primaryKey: "type.customer" }]);
   expect(reads).toHaveLength(1);
 
   // Search matching label produces local <mark> highlights with zero extra reads.
@@ -2462,7 +2463,7 @@ it("performs zero-request local search across nested/array fields, updates liste
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
   await vi.waitFor(() => expect(element.querySelector(".fui-data-state-empty")).not.toBeNull());
   expect(instance.state.values.value.listed).toEqual([]);
-  const clearBtn = element.querySelector<HTMLButtonElement>(".fui-data-state-action")!;
+  const clearBtn = element.querySelector<HTMLButtonElement>(".fui-data-state-clear")!;
   expect(clearBtn).not.toBeNull();
   clearBtn.click();
 
@@ -2512,7 +2513,7 @@ it("applies zero-request local field equality filters and panel-shared search wi
     { primaryKey: "wf-3", label: "Policy audit", fields: { layer: "governance" } },
   ];
 
-  const { instance, element, reads } = mountDirect(manifest, projections, () => ready({ rows }));
+  const { instance, element, reads } = mountDirect(manifest, projections, () => ready(rows));
 
   // Initial load selects the first item and hides duplicate search input when searchable=false.
   await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: WORKFLOW, primaryKey: "wf-1" }));
@@ -2530,7 +2531,7 @@ it("applies zero-request local field equality filters and panel-shared search wi
   await vi.waitFor(() => expect(instance.state.values.value.selected).toBeNull());
   expect(instance.state.values.value.listed).toEqual([]);
 
-  const clearBtn = element.querySelector<HTMLButtonElement>(".fui-data-state-action")!;
+  const clearBtn = element.querySelector<HTMLButtonElement>(".fui-data-state-clear")!;
   clearBtn.click();
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(3));
   expect(instance.state.values.value.layer).toBeNull();
@@ -2590,7 +2591,7 @@ it("groups rows by groupBy with live filtered counts, omits zero-count groups, s
     { primaryKey: "a-4", label: "Ad-hoc script", fields: { layer: "" } },
   ];
 
-  const { instance, element } = mountDirect(manifest, projections, () => ready({ rows }), {
+  const { instance, element } = mountDirect(manifest, projections, () => ready(rows), {
     messages: { en: { "groups.ungrouped": "Ungrouped", "cols.name": "Name" } },
   });
 
@@ -2661,7 +2662,7 @@ it("virtualizes large unpaged lists (> 60 rows) with jsdom zero-height fallback,
     fields: {},
   }));
 
-  const { instance, element } = mountDirect(manifest, projections, () => ready({ rows }));
+  const { instance, element } = mountDirect(manifest, projections, () => ready(rows));
 
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn").length).toBeGreaterThan(0));
   const container = element.querySelector<HTMLElement>(".sdk-object-list-items")!;
