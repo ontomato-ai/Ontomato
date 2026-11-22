@@ -200,8 +200,7 @@
   overflow: hidden;
 }
 
-.ontology-manager-shell > .knowledge-surface,
-.ontology-manager-shell > .models-surface {
+.ontology-manager-shell > .knowledge-surface {
   display: flex;
   min-height: 0;
   flex: 1;

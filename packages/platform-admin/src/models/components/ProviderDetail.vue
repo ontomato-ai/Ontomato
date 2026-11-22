@@ -194,7 +194,11 @@ function renameAffects(from: string): string[] {
     const page = agentModelPage(agent.kind);
     const name = agentName(agent);
     return page
-      ? t("admin.agentModelLocation", { agent: name, application: applicationName(page.app), page: t("platform.agentModels.title") })
+      ? t("admin.agentModelLocation", {
+          agent: name,
+          application: applicationName("settings"),
+          page: t(page.app === "ontology" ? "platform.ontologyAgentModels" : "platform.conversationAgentModels"),
+        })
       : name;
   });
   return [t("admin.modelRenameAffects", { agents: new Intl.ListFormat(locale.value).format(where) })];
