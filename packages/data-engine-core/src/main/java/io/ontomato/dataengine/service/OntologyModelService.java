@@ -37,7 +37,11 @@ public interface OntologyModelService {
 	}
 
 	record ObjectTypeView(String className, String showName, String classDesc, int attributeCount,
-			int businessKeyCount, int relationshipCount, Map<String, Object> primaryKey) {
+			int businessKeyCount, int relationshipCount, Map<String, Object> primaryKey,
+			List<String> searchableAttributes) {
+		public ObjectTypeView {
+			searchableAttributes = searchableAttributes == null ? List.of() : List.copyOf(searchableAttributes);
+		}
 	}
 
 	record AttributeView(String className, String name, String showName, String type, String attrDesc,
@@ -45,7 +49,11 @@ public interface OntologyModelService {
 	}
 
 	record RelationshipView(String relationship, String fromclass, String toclass, String desc, String fromField,
-			String toField) {
+			String toField, String fromShowName, String toShowName) {
+		public RelationshipView {
+			fromShowName = fromShowName == null ? "" : fromShowName;
+			toShowName = toShowName == null ? "" : toShowName;
+		}
 	}
 
 	record DeletionImpact(List<RelationshipView> relationships) {

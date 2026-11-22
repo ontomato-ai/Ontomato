@@ -115,7 +115,7 @@ class OntologyModelServiceImplTest {
 	}
 
 	@Test
-	void objectTypesReportCountsStoredDescriptionsAndPrimaryKeyStatus() {
+	void objectTypesReportCountsStoredDescriptionsPrimaryKeyStatusAndSearchableAttributes() {
 		var objectTypes = service.objectTypes(user, "en");
 
 		assertEquals(List.of("Device", "Site"), objectTypes.stream().map(view -> view.className()).toList());
@@ -124,10 +124,27 @@ class OntologyModelServiceImplTest {
 				device.relationshipCount()));
 		assertEquals("", device.classDesc());
 		assertEquals(Map.of("status", "ok", "name", "id"), device.primaryKey());
+		assertEquals(List.of("id", "Site", "site_id", "Size", "size"), device.searchableAttributes());
 		var site = objectTypes.get(1);
 		assertEquals(List.of(1, 0, 1), List.of(site.attributeCount(), site.businessKeyCount(),
 				site.relationshipCount()));
 		assertEquals("A site", site.classDesc());
+		assertEquals(List.of("id"), site.searchableAttributes());
+	}
+
+	@Test
+	void relationshipsResolveEndpointShowNamesAndFallBackToClassNames() {
+		((JSONObject) rule.getJSONArray("classDef").get(0)).put("showName", "Smart Device");
+		((JSONObject) rule.getJSONArray("classDef").get(1)).put("showName", "");
+
+		var list = service.relationships(null, user, "en");
+		assertEquals(1, list.size());
+		assertEquals("Smart Device", list.get(0).fromShowName());
+		assertEquals("Site", list.get(0).toShowName());
+
+		var single = service.relationship("owns", user, "en");
+		assertEquals("Smart Device", single.fromShowName());
+		assertEquals("Site", single.toShowName());
 	}
 
 	@Test
