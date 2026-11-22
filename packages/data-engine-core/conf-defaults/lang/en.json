@@ -400,6 +400,38 @@
     "value": "Select target field"
   },
   {
+    "key": "Admin.form.businessDesc",
+    "value": "Business description"
+  },
+  {
+    "key": "Admin.form.exampleClassName",
+    "value": "e.g. equipment"
+  },
+  {
+    "key": "Admin.form.examplePrimaryKey",
+    "value": "e.g. code; M3 data sources use id"
+  },
+  {
+    "key": "Admin.form.exampleShowName",
+    "value": "e.g. Equipment"
+  },
+  {
+    "key": "Admin.form.objectDescPlaceholder",
+    "value": "Describe what this business object represents"
+  },
+  {
+    "key": "Admin.form.selectOwnerType",
+    "value": "Select owner object type"
+  },
+  {
+    "key": "Admin.form.exampleAttrName",
+    "value": "e.g. serial_number"
+  },
+  {
+    "key": "Admin.form.exampleAttrShowName",
+    "value": "e.g. Serial number"
+  },
+  {
     "key": "Admin.form.primaryKeyEnableLocked",
     "value": "The primary key attribute cannot be disabled"
   },

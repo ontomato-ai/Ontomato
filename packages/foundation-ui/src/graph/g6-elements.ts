@@ -72,15 +72,16 @@ export interface G6Look {
 export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories: readonly string[], choosable: boolean, look: G6Look) {
   // An anchor is drawn transparent at size 1, not 0: G6 places a node of size 0 at the origin, whatever its x and y.
   if (node.anchor) return { size: 1, opacity: 0, lineWidth: 0, labelText: "", cursor: "default" as const };
+  const warmHighlight = node.tone === "path" || node.tone === "neighbor";
   return {
     size: look.nodeSize,
     fill: node.category === undefined
       ? colors.primary
       : colors.palette[graphCategorySlot(node.category, categories, colors.palette.length)],
-    stroke: node.tone === "path" ? (colors.path || colors.primary) : node.tone === "accent" ? colors.accent : colors.surface,
-    lineWidth: 4,
+    stroke: warmHighlight ? (colors.path || colors.primary) : node.tone === "accent" ? colors.accent : colors.surface,
+    lineWidth: warmHighlight ? 5 : 4,
     lineDash: node.tone === "accent" ? [4, 3] : [],
-    opacity: node.tone === "muted" ? 0.25 : 1,
+    opacity: node.tone === "muted" ? 0.18 : 1,
     labelText: node.label,
     // G6 only cuts a node's name when it wraps; one line of wrapping ends it in an ellipsis.
     labelMaxWidth: look.labelWidth,
@@ -95,6 +96,7 @@ export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories:
     // Edges run under the nodes; the backing keeps a name readable where one crosses it.
     labelBackground: true,
     labelBackgroundFill: colors.surface,
+    labelBackgroundOpacity: 0.92,
     labelBackgroundPadding: [1, 4],
     cursor: choosable ? ("pointer" as const) : ("default" as const),
   };
@@ -125,6 +127,7 @@ export function g6Edges(edges: readonly GraphCanvasEdge[], nodes: ReadonlyMap<st
       ? { type: "cubic", style: { loop: true, loopPlacement: "top" as const, loopDist: (nodes.get(edge.source)!.anchor?.radius ?? 0) + G6_LOOP_DIST + place * G6_LOOP_STEP } }
       : { type: pair.length > 1 ? "quadratic" : "line", style: { curveOffset: edge.source < edge.target ? offset : -offset } };
     const dashed = edge.line === "dashed";
+    const warmHighlight = edge.tone === "path" || edge.tone === "neighbor";
     return {
       id: edge.id,
       source: edge.source,
@@ -132,15 +135,17 @@ export function g6Edges(edges: readonly GraphCanvasEdge[], nodes: ReadonlyMap<st
       type: geometry.type,
       style: {
         ...geometry.style,
-        stroke: edge.tone === "path" ? (colors.path || colors.primary) : edge.tone === "accent" ? colors.primary : dashed ? colors.muted : colors.edge,
-        lineWidth: Math.min(7, (edge.tone === "path" ? 3 : edge.tone === "accent" ? 2 : 1.5) + (edge.weight === undefined ? 0 : Math.log2(edge.weight + 1))),
+        stroke: warmHighlight ? (colors.path || colors.primary) : edge.tone === "accent" ? colors.primary : dashed ? colors.muted : colors.edge,
+        lineWidth: Math.min(7, (warmHighlight ? 3 : edge.tone === "accent" ? 2 : 1.5) + (edge.weight === undefined ? 0 : Math.log2(edge.weight + 1))),
         lineDash: dashed ? [5, 4] : [],
         opacity: edge.tone === "muted" ? 0.15 : 1,
         endArrow: !large,
         labelText: edge.label ?? "",
-        labelFill: colors.muted,
+        labelFill: warmHighlight ? colors.text : colors.muted,
+        labelFontSize: 11,
         labelBackground: true,
         labelBackgroundFill: colors.surface,
+        labelBackgroundOpacity: 0.92,
         labelBackgroundPadding: [2, 4],
       },
     };

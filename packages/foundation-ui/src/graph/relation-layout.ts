@@ -86,7 +86,7 @@ export function layoutByRelations(
 
   // Each part folded as its size folds it, its columns centred on its tallest.
   const blocks: Block[] = parts.map((columns) => {
-    const rows = Math.max(6, Math.ceil(Math.sqrt(columns.flat().length) * 1.5));
+    const rows = Math.max(8, Math.ceil(Math.sqrt(columns.flat().length) * 1.5));
     const folded = columns.flatMap((column) => Array.from({ length: Math.ceil(column.length / rows) }, (_, index) => column.slice(index * rows, (index + 1) * rows)));
     const height = Math.max(...folded.map((column) => column.length));
     const at = new Map(folded.flatMap((column, x) => column.map((id, y): [string, GraphCanvasPoint] => [id, { x, y: (height - column.length) / 2 + y }])));

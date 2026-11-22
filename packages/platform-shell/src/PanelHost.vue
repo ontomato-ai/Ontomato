@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelDetailHeader, type PanelDetailHeaderAction, type PanelHostLabels, type PanelHostPort } from "./panel-host";
-import { Plus, RefreshCw, Save, Trash2, X as CloseIcon } from "lucide-vue-next";
+import { Plus, RefreshCw, Save, Settings2, Table2, Trash2, X as CloseIcon } from "lucide-vue-next";
 import { ElAlert, ElButton } from "element-plus";
 import { hasPageActions, usePageActions, type PlatformPageAction } from "./page-actions";
 import { confirmDanger } from "./confirm-danger";
@@ -212,7 +212,12 @@ const commands = computed<PlatformPageAction[]>(() => {
     ? [{ id: "refresh", label: props.labels.refresh, icon: RefreshCw, iconOnly: true, onClick: () => view.refresh(null) }]
     : [];
   const detailIcon = (icon: PanelDetailHeaderAction["icon"]) => (
-    icon === "trash" ? Trash2 : icon === "save" ? Save : icon === "plus" ? Plus : undefined
+    icon === "trash" ? Trash2
+      : icon === "save" ? Save
+        : icon === "plus" ? Plus
+          : icon === "sliders" ? Settings2
+            : icon === "table" ? Table2
+              : undefined
   );
   const mapDetailAction = (action: PanelDetailHeaderAction): PlatformPageAction => ({
     id: action.id,

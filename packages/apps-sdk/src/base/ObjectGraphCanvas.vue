@@ -5,7 +5,7 @@ import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { PageHighlight } from "@ontomato/contracts/page-context";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { G6GraphCanvas, layoutByRelations, type GraphCanvasPoint, type GraphCanvasTone, type GraphCanvasViewport, type LayoutRoom } from "@ontomato/foundation-ui/graph/g6";
+import { G6GraphCanvas, layoutByForce, layoutByRelations, type GraphCanvasPoint, type GraphCanvasTone, type GraphCanvasViewport, type LayoutRoom } from "@ontomato/foundation-ui/graph/g6";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberParam } from "../panel/member";
 import { savePanelFile } from "../panel/save-file";
@@ -26,8 +26,9 @@ import { findDirectedGraphPath } from "./object-graph-path";
  */
 const props = withDefaults(defineProps<{
   edgeEnds?: EdgeEndsConfig; editable?: boolean; categories?: readonly string[]; nodeCategory?: string;
-  nodeSize?: number; labelSize?: number;
-}>(), { editable: undefined });
+  nodeSize?: number; labelSize?: number; layout?: "relations" | "force";
+  highlightBanner?: boolean; showFocusButton?: boolean; hint?: string;
+}>(), { editable: undefined, highlightBanner: undefined, showFocusButton: undefined });
 
 const { t } = useI18n();
 const { instance } = usePanelContext();
@@ -51,6 +52,22 @@ const categories = computed(() => {
   return listed as string[];
 });
 const editable = computed(() => props.editable ?? member.projection.config.editable === true);
+const layoutMode = computed<"relations" | "force">(() => {
+  const mode = props.layout ?? member.projection.config.layout;
+  return mode === "force" ? "force" : "relations";
+});
+const showHighlightBanner = computed(() => {
+  const value = props.highlightBanner ?? member.projection.config.highlightBanner;
+  return value !== false;
+});
+const showFocusButton = computed(() => {
+  const value = props.showFocusButton ?? member.projection.config.showFocusButton;
+  return value !== false;
+});
+const canvasHint = computed(() => {
+  const value = props.hint ?? member.projection.config.hint;
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+});
 
 /** The type each datum reads: a chosen node or edge is an object of that type. */
 const typeOf = (datum: "nodes" | "edges") => {
@@ -92,7 +109,11 @@ onMounted(() => {
   const { width, height } = element.value!.getBoundingClientRect();
   measure(width, height);
 });
-const layout = computed(() => layoutByRelations(resolved.value.nodes, resolved.value.links, room.value!, look));
+const computedLayout = computed(() =>
+  layoutMode.value === "force"
+    ? layoutByForce(resolved.value.nodes, resolved.value.links, room.value!, look)
+    : layoutByRelations(resolved.value.nodes, resolved.value.links, room.value!, look),
+);
 
 /** The chosen object's key, when the state holds one of this type. */
 const keyOf = (value: RuntimeJsonValue | null, type: string) =>
@@ -145,38 +166,49 @@ const highlightKind = computed<"path" | "search" | "none">(() => {
   if (searchHighlighted.value.nodes.size || searchHighlighted.value.edges.size) return "search";
   return "none";
 });
-/** Direct neighbourhood of the chosen node or edge, used to dim unrelated elements when no path or search is active. */
+/** Direct neighbourhood of the chosen node or edge on a read-only graph; editable canvases keep all nodes crisp for connecting. */
 const selectionFocus = computed(() => {
-  const nodes = new Set<string>();
-  const edges = new Set<string>();
+  const chosenNodes = new Set<string>();
+  const chosenEdges = new Set<string>();
+  const neighborNodes = new Set<string>();
+  const neighborEdges = new Set<string>();
+  if (editable.value) return { active: false, chosenNodes, chosenEdges, neighborNodes, neighborEdges };
   const existingNodes = new Set(resolved.value.nodes.map((node) => node.id));
-  const chosenNodes = new Set(selectedNodes.value.filter((id) => existingNodes.has(id)));
+  for (const id of selectedNodes.value) {
+    if (existingNodes.has(id)) chosenNodes.add(id);
+  }
   if (chosenNodes.size) {
-    for (const id of chosenNodes) nodes.add(id);
     for (const link of resolved.value.links) {
       if (chosenNodes.has(link.source) || chosenNodes.has(link.target)) {
-        edges.add(link.id);
-        nodes.add(link.source);
-        nodes.add(link.target);
+        neighborEdges.add(link.id);
+        if (!chosenNodes.has(link.source)) neighborNodes.add(link.source);
+        if (!chosenNodes.has(link.target)) neighborNodes.add(link.target);
       }
     }
   }
   if (selectedEdges.value.length) {
-    const chosenEdges = new Set(selectedEdges.value);
+    const selectedEdgeSet = new Set(selectedEdges.value);
     for (const link of resolved.value.links) {
-      if (chosenEdges.has(link.id)) {
-        edges.add(link.id);
-        nodes.add(link.source);
-        nodes.add(link.target);
+      if (selectedEdgeSet.has(link.id)) {
+        chosenEdges.add(link.id);
+        if (!chosenNodes.has(link.source)) neighborNodes.add(link.source);
+        if (!chosenNodes.has(link.target)) neighborNodes.add(link.target);
       }
     }
   }
-  return { active: nodes.size > 0 || edges.size > 0, nodes, edges };
+  return {
+    active: chosenNodes.size > 0 || chosenEdges.size > 0,
+    chosenNodes,
+    chosenEdges,
+    neighborNodes,
+    neighborEdges,
+  };
 });
 /**
  * Path queries use the distinct `path` tone when a path is found (and leave nodes plain when none is found so no
- * misleading highlight appears); search hits use `accent`, dimming everything else; when neither is active, choosing
- * a node or edge keeps its direct neighbourhood crisp while dimming unrelated elements without raising a banner.
+ * misleading highlight appears); search hits use `accent`, dimming everything else; when neither is active on a
+ * read-only graph, choosing a node or edge highlights its direct neighbourhood with the warm `neighbor` tone while
+ * dimming unrelated elements without raising a banner.
  */
 const nodeToneOf = (id: string): GraphCanvasTone | undefined => {
   if (highlightKind.value === "path") {
@@ -186,7 +218,11 @@ const nodeToneOf = (id: string): GraphCanvasTone | undefined => {
     return undefined;
   }
   if (highlightKind.value === "search") return searchHighlighted.value.nodes.has(id) ? "accent" : "muted";
-  if (selectionFocus.value.active) return selectionFocus.value.nodes.has(id) ? undefined : "muted";
+  if (selectionFocus.value.active) {
+    if (selectionFocus.value.chosenNodes.has(id)) return undefined;
+    if (selectionFocus.value.neighborNodes.has(id)) return "neighbor";
+    return "muted";
+  }
   return undefined;
 };
 const edgeToneOf = (id: string): GraphCanvasTone | undefined => {
@@ -197,7 +233,11 @@ const edgeToneOf = (id: string): GraphCanvasTone | undefined => {
     return undefined;
   }
   if (highlightKind.value === "search") return searchHighlighted.value.edges.has(id) ? "accent" : "muted";
-  if (selectionFocus.value.active) return selectionFocus.value.edges.has(id) ? undefined : "muted";
+  if (selectionFocus.value.active) {
+    if (selectionFocus.value.chosenEdges.has(id)) return undefined;
+    if (selectionFocus.value.neighborEdges.has(id)) return "neighbor";
+    return "muted";
+  }
   return undefined;
 };
 
@@ -289,7 +329,7 @@ onBeforeUnmount(stopReportingHighlight);
 
 /** Every node where the reader put it, else where its relations place it. */
 const drawnNodes = computed(() => resolved.value.nodes.map((node) => ({
-  ...node, ...layout.value.positions.get(node.id), ...saved.value[node.id], tone: nodeToneOf(node.id),
+  ...node, ...computedLayout.value.positions.get(node.id), ...saved.value[node.id], tone: nodeToneOf(node.id),
 })));
 const drawnEdges = computed(() => resolved.value.links.map((edge) => ({ ...edge, tone: edgeToneOf(edge.id) })));
 
@@ -311,8 +351,9 @@ const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
 /** The whole graph, or — where it would be too small to read — the part around the chosen node, else the most connected. */
 function fit() {
   if (!canvas.value) return;
-  const chosen = selectedNodes.value.find((id) => layout.value.positions.has(id));
-  void canvas.value.fit({ maxZoom: 1.15, keepNames: true, padding: FIT_PADDING, around: chosen ?? layout.value.root })
+  const chosen = selectedNodes.value.find((id) => computedLayout.value.positions.has(id));
+  const maxZoom = layoutMode.value === "force" ? 1 : 1.15;
+  void canvas.value.fit({ maxZoom, keepNames: true, padding: FIT_PADDING, around: chosen ?? computedLayout.value.root })
     .then((whole) => {
       partial.value = !whole;
       moved.value = false;
@@ -371,7 +412,7 @@ async function download() {
 <template>
   <div class="sdk-object-graph-canvas" :data-graph-highlight-kind="highlightKind">
     <div
-      v-if="showGraph && highlightKind === 'path' && pathResult.status !== 'idle'"
+      v-if="showHighlightBanner && showGraph && highlightKind === 'path' && pathResult.status !== 'idle'"
       class="sdk-object-graph-canvas-highlight sdk-object-graph-canvas-path"
       :class="`status-${pathResult.status}`"
       role="status"
@@ -385,7 +426,7 @@ async function download() {
       <span class="sdk-object-graph-canvas-highlight-text">{{ pathResult.status === "found" ? pathTrail : pathBannerText }}</span>
     </div>
     <div
-      v-else-if="showGraph && highlightKind === 'search'"
+      v-else-if="showHighlightBanner && showGraph && highlightKind === 'search'"
       class="sdk-object-graph-canvas-highlight sdk-object-graph-canvas-search"
       role="status"
       data-graph-search-banner
@@ -447,14 +488,17 @@ async function download() {
               <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
             </svg>
           </button>
-          <button type="button" data-graph-action="focus-selected" :disabled="!selectedNodes.length" :title="t('platform.graphFocusSelected')" :aria-label="t('platform.graphFocusSelected')" @click="focusChosen">
+          <button v-if="showFocusButton" type="button" data-graph-action="focus-selected" :disabled="!selectedNodes.length" :title="t('platform.graphFocusSelected')" :aria-label="t('platform.graphFocusSelected')" @click="focusChosen">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <circle cx="8" cy="8" r="2.5" /><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" />
             </svg>
           </button>
           <button type="button" data-graph-action="relayout" :title="t('platform.graphRelayout')" :aria-label="t('platform.graphRelayout')" @click="relayout">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path d="M13.5 8a5.5 5.5 0 1 1-1.3-3.55M13.5 2.5v2.75h-2.75" />
+              <rect x="6" y="1.5" width="4" height="3.5" rx="0.8" />
+              <rect x="1.5" y="11" width="4" height="3.5" rx="0.8" />
+              <rect x="10.5" y="11" width="4" height="3.5" rx="0.8" />
+              <path d="M8 5v3M3.5 11V8h9v3" />
             </svg>
           </button>
           <button type="button" data-graph-action="download" :title="t('common.download')" :aria-label="t('common.download')" @click="download">
@@ -462,6 +506,10 @@ async function download() {
               <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
             </svg>
           </button>
+        </div>
+        <div v-if="canvasHint" class="sdk-object-graph-canvas-op-hint" data-graph-op-hint>
+          <span aria-hidden="true"></span>
+          {{ canvasHint }}
         </div>
       </template>
     </div>
@@ -480,12 +528,16 @@ async function download() {
   height: 100%;
   min-width: 0;
   min-height: 420px;
+  container-type: inline-size;
 }
 .sdk-object-graph-canvas-stage {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  background-color: var(--el-bg-color-page);
+  background-image: radial-gradient(var(--el-border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 .sdk-object-graph-canvas-error {
   margin: 0;
@@ -543,8 +595,9 @@ async function download() {
 }
 .sdk-object-graph-canvas-notices {
   position: absolute;
-  inset-block-end: var(--spacing-sm);
-  inset-inline-start: var(--spacing-sm);
+  inset-block-end: 66px;
+  inset-inline-start: 18px;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -574,14 +627,16 @@ async function download() {
 }
 .sdk-object-graph-canvas-tools {
   position: absolute;
-  inset-block-start: var(--spacing-sm);
-  inset-inline-end: var(--spacing-sm);
+  inset-block-end: 18px;
+  inset-inline-start: 18px;
+  z-index: 2;
   display: flex;
-  gap: calc(var(--spacing-xs) / 2);
-  padding: calc(var(--spacing-xs) / 2);
-  border: 1px solid var(--ui-divider);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs);
+  border: 1px solid var(--el-border-color-lighter, var(--ui-divider));
   border-radius: var(--radius-md);
   background: var(--el-bg-color-overlay);
+  box-shadow: var(--elevation-overlay, 0 4px 16px rgba(15, 23, 42, 0.08));
 }
 .sdk-object-graph-canvas-tools button {
   display: grid;
@@ -601,5 +656,28 @@ async function download() {
 .sdk-object-graph-canvas-tools button:not(:disabled):hover {
   background: var(--ui-fill-tertiary);
   color: var(--el-text-color-primary);
+}
+.sdk-object-graph-canvas-op-hint {
+  position: absolute;
+  inset-block-end: 20px;
+  inset-inline-end: 18px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--el-text-color-placeholder);
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+.sdk-object-graph-canvas-op-hint span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--el-color-success);
+}
+@container (max-width: 520px) {
+  .sdk-object-graph-canvas-op-hint {
+    display: none;
+  }
 }
 </style>
