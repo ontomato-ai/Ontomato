@@ -323,7 +323,9 @@ export default {
     "workbenchDetail": "Details",
     "workbenchCollapseAside": "Collapse sidebar",
     "workbenchExpandAside": "Expand sidebar",
-    "workbenchCloseDetail": "Close details"
+    "workbenchCloseDetail": "Close details",
+    "objectHeaderMoreActions": "More actions",
+    "objectHeaderMoreActionsFor": "More actions for {name}"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

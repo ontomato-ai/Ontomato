@@ -32,6 +32,7 @@ export { useMember, useMemberData, useMemberOperations, useMemberParam, useMembe
 export { usePanelData } from "../panel/panel-data";
 export { usePanelOperation, type PanelOperationHandle } from "../panel/panel-operation";
 export { savePanelFile, type PanelDownloadReceipt } from "../panel/save-file";
+export { usePanelNarrow, type UsePanelNarrowOptions } from "../panel/panel-narrow";
 export type { PanelStateStore } from "../panel/state";
 /**
  * The platform's icon for an application's icon key, as its navigation draws it (an unknown key draws the platform's

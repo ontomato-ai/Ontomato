@@ -9,6 +9,7 @@ import en from "@ontomato/workbench-ui/locales/en";
 import TwoPaneLayout from "../../../../../packages/apps-sdk/src/base/TwoPaneLayout.vue";
 import WorkbenchLayout from "../../../../../packages/apps-sdk/src/base/WorkbenchLayout.vue";
 import ObjectHeader from "../../../../../packages/apps-sdk/src/base/ObjectHeader.vue";
+import { usePanelNarrow } from "../../../../../packages/apps-sdk/src/entries/panel";
 import type { PanelOperationDescriptor } from "../../../../../packages/apps-sdk/src/panel/human-operations";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
@@ -357,7 +358,7 @@ describe("ObjectHeader", () => {
     expect(mounted.container.querySelector(".custom-action")?.textContent).toBe("Cancel");
   });
 
-  it("reads bound record fields/tones, exposes at most 2 normal operations inline, puts overflow + delete last in More, and dispatches via platform coordinator", async () => {
+  it("classifies danger by owner inspectImpact and explicit config (never by name regex), labels More with record title, uses SDK dropdown, and dispatches via shared path", async () => {
     const APPLICATION = "app-header-test";
     const entryType = { kind: "object", objectType: BUSINESS_KNOWLEDGE } as const;
     const headerProjection: ProductProjection = {
@@ -389,8 +390,8 @@ describe("ObjectHeader", () => {
       },
       operations: {
         publish: { operation: { kind: "PlatformOperation", id: "knowledge.publish" }, target: { input: "entry" } },
-        delete: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "entry" } },
-        duplicate: { operation: { kind: "PlatformOperation", id: "knowledge.duplicate" }, target: { input: "entry" } },
+        removeTag: { operation: { kind: "PlatformOperation", id: "knowledge.deleteTag" }, target: { input: "entry" } },
+        wipe: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "entry" } },
         export: { operation: { kind: "PlatformOperation", id: EXPORT_SKILL }, target: { input: "entry" } },
         archive: { operation: { kind: "PlatformOperation", id: "knowledge.archive" }, target: { input: "entry" } },
       },
@@ -412,19 +413,22 @@ describe("ObjectHeader", () => {
         kind: "action", handlerRef: "knowledge.publish", label: "Publish", effect: "write",
         target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
       },
-      delete: {
-        kind: "action", handlerRef: DELETE_KNOWLEDGE, label: "Delete", effect: "write",
+      // Named "removeTag" with handlerRef "knowledge.deleteTag", but NO inspectImpact: MUST NOT be guessed as danger!
+      removeTag: {
+        kind: "action", handlerRef: "knowledge.deleteTag", label: "Remove Tag", effect: "write",
         target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
-        inspectImpact: { handlerRef: "knowledge.delete.impact" },
       },
-      duplicate: {
-        kind: "action", handlerRef: "knowledge.duplicate", label: "Duplicate", effect: "write",
+      // Named "wipe" (not delete/remove) WITH inspectImpact: MUST be classified as danger by owner declaration!
+      wipe: {
+        kind: "action", handlerRef: "knowledge.purge", label: "Purge", effect: "write",
         target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
+        inspectImpact: { handlerRef: "knowledge.purge.impact" },
       },
       export: {
         kind: "action", handlerRef: EXPORT_SKILL, label: "Export", effect: "read",
         target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
       },
+      // Explicitly designated via dangerOperations: ["archive"].
       archive: {
         kind: "action", handlerRef: "knowledge.archive", label: "Archive", effect: "write",
         target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
@@ -460,7 +464,7 @@ describe("ObjectHeader", () => {
         const preparation = {
           intentId,
           operationId: body.operationId,
-          label: "Delete",
+          label: "Purge",
           confirmation: {
             kind: "impact",
             impact: {
@@ -484,7 +488,7 @@ describe("ObjectHeader", () => {
           intentId: saved.intentId,
           outcome: {
             kind: "success",
-            message: "Deleted Shipping Policy",
+            message: "Purged Shipping Policy",
             data: {},
             affected: { objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }], objectTypes: [BUSINESS_KNOWLEDGE] },
           },
@@ -512,26 +516,33 @@ describe("ObjectHeader", () => {
     expect(badge.textContent?.trim()).toBe("Active");
     expect(badge.dataset.tone).toBe("success");
 
-    // Inline buttons: at most 2 normal operations (Publish + Duplicate), never Delete/Archive.
+    // Default maxVisibleOperations = 2: Publish + Remove Tag (NOT guessed as danger!) appear inline.
     await vi.waitFor(() => {
       expect(document.querySelectorAll(".sdk-object-header-actions .sdk-operation-button button").length).toBe(2);
     });
     const inlineLabels = [...document.querySelectorAll(".sdk-object-header-actions .sdk-operation-button button")]
       .map((btn) => btn.textContent?.trim());
-    expect(inlineLabels).toEqual(["Publish", "Duplicate"]);
+    expect(inlineLabels).toEqual(["Publish", "Remove Tag"]);
 
-    // Open More menu: normal overflow ("Export") comes first, separator, then danger items ("Delete", "Archive") last.
+    // More button accessible name automatically includes the record title.
     const moreBtn = document.querySelector<HTMLButtonElement>(".sdk-object-header-more-btn")!;
+    expect(moreBtn.getAttribute("aria-label")).toBe("More actions for Shipping Policy");
+
+    // Open SDK dropdown More menu: overflow ("Export") first, then divided danger items ("Purge", "Archive") last.
     moreBtn.click();
     await nextTick();
-    const menuItems = [...document.querySelectorAll<HTMLButtonElement>(".sdk-object-header-more-item")];
-    expect(menuItems.map((el) => el.dataset.operation)).toEqual(["export", "delete", "archive"]);
+    const menuItems = await vi.waitFor(() => {
+      const found = [...document.querySelectorAll<HTMLElement>(".sdk-object-header-more-item")];
+      if (found.length !== 3) throw new Error(`Expected 3 menu items, got ${found.length}`);
+      return found;
+    });
+    expect(menuItems.map((el) => el.dataset.operation)).toEqual(["export", "wipe", "archive"]);
     expect(menuItems.map((el) => el.dataset.danger)).toEqual([undefined, "true", "true"]);
-    expect(document.querySelector(".sdk-object-header-more-divider")).not.toBeNull();
+    expect(document.querySelector(".sdk-object-header-more-menu .el-dropdown-menu__item--divided")).not.toBeNull();
 
-    // Clicking Delete in More triggers the host confirmation dialog & single dispatch upon confirm.
-    const deleteItem = menuItems.find((el) => el.dataset.operation === "delete")!;
-    deleteItem.click();
+    // Clicking Purge in More triggers the host confirmation dialog & single dispatch upon confirm.
+    const wipeItem = menuItems.find((el) => el.dataset.operation === "wipe")!;
+    wipeItem.click();
     const dialog = await vi.waitFor(() => {
       const box = document.querySelector<HTMLElement>(".el-message-box");
       if (!box) throw new Error("Waiting for confirmation dialog");
@@ -539,10 +550,189 @@ describe("ObjectHeader", () => {
     });
     expect(dialog.textContent).toContain("This removes Shipping Policy.");
     const confirmBtn = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
-      (btn) => btn.textContent?.trim() === "Delete",
+      (btn) => btn.textContent?.trim() === "Purge",
     )!;
     confirmBtn.click();
-    await vi.waitFor(() => expect(dispatched).toEqual(["header.delete"]));
+    await vi.waitFor(() => expect(dispatched).toEqual(["header.wipe"]));
     expect(hostChanges).toHaveLength(1);
+  });
+
+  it("allows configuring maxVisibleOperations above 2 without upper clamping and falls back to generic More aria-label when title is empty", async () => {
+    const APPLICATION = "app-header-limit-test";
+    const entryType = { kind: "object", objectType: BUSINESS_KNOWLEDGE } as const;
+    const headerProjection: ProductProjection = {
+      domainId: "domain-1",
+      ownerId: "owner-1",
+      revision: 1,
+      createdAt: "2026-11-22T00:00:00.000Z",
+      updatedAt: "2026-11-22T00:00:00.000Z",
+      editable: false,
+      visibility: "domain",
+      id: "knowledge-header-4",
+      name: "Knowledge header 4",
+      description: "",
+      componentId: "@ontomato/sdk:ObjectHeader",
+      inputs: { entry: entryType },
+      outputs: {},
+      config: {
+        maxVisibleOperations: 4,
+      },
+      data: {
+        record: {
+          source: { object: { input: "entry" } },
+          read: "record",
+          params: {},
+        },
+      },
+      operations: {
+        op1: { operation: { kind: "PlatformOperation", id: "knowledge.op1" }, target: { input: "entry" } },
+        op2: { operation: { kind: "PlatformOperation", id: "knowledge.op2" }, target: { input: "entry" } },
+        op3: { operation: { kind: "PlatformOperation", id: "knowledge.op3" }, target: { input: "entry" } },
+        op4: { operation: { kind: "PlatformOperation", id: "knowledge.op4" }, target: { input: "entry" } },
+        wipe: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "entry" } },
+      },
+    };
+
+    const manifest = definePanel({
+      state: { selected: { type: entryType } },
+      members: {
+        header: { target: { projectionId: "knowledge-header-4" }, inputs: { entry: { state: "selected" } } },
+      },
+      commands: {},
+    });
+    const panel = panelRecord("panel-object-header-4", "Object header limit test", manifest);
+    panel.content.html = `<div id="app"><Projection slot="header" /></div>`;
+    const use = panelUse("use-header-4", "object-header-4", panel.id, `/applications/${APPLICATION}/header-4`);
+
+    const opDescriptors: Record<string, PanelOperationDescriptor> = {
+      op1: { kind: "action", handlerRef: "knowledge.op1", label: "Op 1", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false },
+      op2: { kind: "action", handlerRef: "knowledge.op2", label: "Op 2", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false },
+      op3: { kind: "action", handlerRef: "knowledge.op3", label: "Op 3", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false },
+      op4: { kind: "action", handlerRef: "knowledge.op4", label: "Op 4", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false },
+      wipe: {
+        kind: "action", handlerRef: DELETE_KNOWLEDGE, label: "Wipe", effect: "write",
+        target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
+        inspectImpact: { handlerRef: "knowledge.wipe.impact" },
+      },
+    };
+
+    installPlatform((request: Sent): Response => {
+      if (request.path === "/api/product-projections/knowledge-header-4") {
+        return Response.json({ projection: headerProjection });
+      }
+      if (request.method === "POST" && request.path === "/api/product-panels/read") {
+        const body = request.body as { operations?: boolean; dataName?: string };
+        if (body.operations) return Response.json({ status: "ready", value: opDescriptors });
+        if (body.dataName === "record") {
+          return Response.json({
+            status: "ready",
+            value: { primaryKey: "k-2", label: "", fields: {} },
+          });
+        }
+      }
+      return Response.json({ error: `unexpected ${request.method} ${request.path}` }, { status: 404 });
+    });
+
+    const frame = panelFrame();
+    const host = platformPanelHost(APPLICATION, use, () => {});
+    host.frame(frame, registered(APPLICATION, use, panel), true);
+    writePanelDocument(registered(APPLICATION, use, panel), `/applications/${APPLICATION}/header-4`, {
+      selected: { className: BUSINESS_KNOWLEDGE, primaryKey: "k-2" },
+    });
+    inside(frame);
+
+    const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+    await mountPanel({});
+
+    await vi.waitFor(() => {
+      expect(document.querySelectorAll(".sdk-object-header-actions .sdk-operation-button button").length).toBe(4);
+    });
+    const inlineLabels = [...document.querySelectorAll(".sdk-object-header-actions .sdk-operation-button button")]
+      .map((btn) => btn.textContent?.trim());
+    expect(inlineLabels).toEqual(["Op 1", "Op 2", "Op 3", "Op 4"]);
+
+    const moreBtn = document.querySelector<HTMLButtonElement>(".sdk-object-header-more-btn")!;
+    expect(moreBtn.getAttribute("aria-label")).toBe("More actions");
+  });
+});
+
+describe("usePanelNarrow", () => {
+  it("defaults to --pane-narrow-breakpoint (680px internal fallback), returns true for 0 < width <= breakpoint, and respects CSS token overrides", async () => {
+    const ro = installMockResizeObserver(800);
+    cleanups.push(() => ro.restore());
+
+    let observedNarrow!: ReturnType<typeof usePanelNarrow>;
+    const mounted = mountWithI18n(
+      defineComponent({
+        setup() {
+          const box = ref<HTMLElement | null>(null);
+          observedNarrow = usePanelNarrow(box);
+          return () => h("div", { ref: box, class: "narrow-probe" });
+        },
+      }),
+    );
+    cleanups.push(() => mounted.unmount());
+    await nextTick();
+
+    // Above 680px -> not narrow.
+    expect(observedNarrow.value).toBe(false);
+
+    // Exactly at 680px (<= breakpoint) -> narrow.
+    ro.resize(680);
+    await nextTick();
+    expect(observedNarrow.value).toBe(true);
+
+    // 681px -> wide again.
+    ro.resize(681);
+    await nextTick();
+    expect(observedNarrow.value).toBe(false);
+
+    // 0px (unmeasured / hidden) -> false.
+    ro.resize(0);
+    await nextTick();
+    expect(observedNarrow.value).toBe(false);
+
+    // Panel-level CSS custom property override (--pane-narrow-breakpoint: 960px).
+    const probe = mounted.container.querySelector<HTMLElement>(".narrow-probe")!;
+    probe.style.setProperty("--pane-narrow-breakpoint", "960px");
+    ro.resize(960);
+    await nextTick();
+    expect(observedNarrow.value).toBe(true);
+
+    ro.resize(961);
+    await nextTick();
+    expect(observedNarrow.value).toBe(false);
+  });
+
+  it("supports custom breakpoint token --workbench-narrow-breakpoint (880px internal fallback) and CSS overrides", async () => {
+    const ro = installMockResizeObserver(881);
+    cleanups.push(() => ro.restore());
+
+    let observedNarrow!: ReturnType<typeof usePanelNarrow>;
+    const mounted = mountWithI18n(
+      defineComponent({
+        setup() {
+          const box = ref<HTMLElement | null>(null);
+          observedNarrow = usePanelNarrow(box, {
+            token: "--workbench-narrow-breakpoint",
+          });
+          return () => h("div", { ref: box, class: "workbench-probe" });
+        },
+      }),
+    );
+    cleanups.push(() => mounted.unmount());
+    await nextTick();
+
+    expect(observedNarrow.value).toBe(false);
+
+    ro.resize(880);
+    await nextTick();
+    expect(observedNarrow.value).toBe(true);
+
+    const probe = mounted.container.querySelector<HTMLElement>(".workbench-probe")!;
+    probe.style.setProperty("--workbench-narrow-breakpoint", "1024px");
+    ro.resize(1000);
+    await nextTick();
+    expect(observedNarrow.value).toBe(true);
   });
 });
