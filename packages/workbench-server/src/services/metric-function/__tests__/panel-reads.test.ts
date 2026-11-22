@@ -156,6 +156,7 @@ it("reads the metric catalogue as records with the owner's labels and this owner
       function: "Function", origin: "Origin", status: "Status", createdBy: "Created by", reviewedBy: "Reviewed by",
       modified: "Updated",
     },
+    tones: { status: "success" },
   });
   expect(sent).toEqual([
     { path: "/metricView/queryList", body: {} },

@@ -8,15 +8,17 @@ description: Build and register an Ontomato panel from its owner's reads and ope
 1. **Discover the owner's contract before writing code.** Run `node "$SKILL/ontomato.mjs" panel type <type-id>`
    for the owner's reads, operations and result shapes. Use `--read <name>` for one read's signature,
    required parameters and `resultSchema`. Use these commands as the authoring reference for owner APIs.
-2. Compare the original page's visible behavior with the owner's reads, forms and actions. Keep business rules,
-   confirmation and permissions with their owner. For official components, use
+2. Compare the original page's visible behavior with the owner's reads, forms and actions. Keep business rules
+   and permissions with their owner. Use the platform's write confirmation. For official components, use
    `node "$SKILL/ontomato.mjs" sdk read docs/components.md` for
    behavior, configuration, outputs and events. For third-party components, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
+   See [default and configured list and summary examples](CODE.md#configure-an-official-list-or-summary).
    Use the [member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel) to declare projections. Choose an official display component or
    [PanelData](CODE.md#read-declared-data) for custom Vue, and use `target.projectionId` for an existing projection.
    For graphs, see [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
-3. Write the template and interactions in Vue. Follow the [direct runtime and import rules](CODE.md#write-a-vue-panel)
-   and declare the [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
+3. Write the template and interactions in Vue. Use [Element Plus template tags](CODE.md#use-element-plus-in-the-template)
+   for interface controls, follow the [direct runtime](CODE.md#write-a-vue-panel), and declare the
+   [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
 4. Check and register the workspace, then open the registered entry. Use the page's input box
    for the [assistant check](#check-the-assistant-from-the-page). If the result looks wrong, follow
    [the browser and CLI checks](CODE.md#when-a-panel-looks-wrong).

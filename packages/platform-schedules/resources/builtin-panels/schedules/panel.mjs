@@ -3,6 +3,7 @@ import { appIcon, mountPanel, usePanelContext, usePanelData, usePanelOperation }
 
 const TASK = "platform:ScheduledTask";
 const DAY = 86_400_000;
+const ROW_APPS = 5;
 
 await mountPanel({
   setup() {
@@ -82,12 +83,16 @@ await mountPanel({
       const counts = new Map();
       for (const row of rows.value) counts.set(row.fields.application, (counts.get(row.fields.application) ?? 0) + 1);
       const ordered = [...appOptions.value.map((option) => option.value), ...counts.keys()];
+      if (app.value) ordered.push(app.value);
       const ids = [...new Set(ordered)].filter((id) => counts.has(id) || id === app.value);
       return [
         { id: null, label: t("filter.all"), count: rows.value.length },
         ...ids.map((id) => ({ id, label: appLabel(id), count: counts.get(id) ?? 0 })),
       ];
     });
+    const rowChips = computed(() => chips.value.slice(0, ROW_APPS + 1));
+    const moreChips = computed(() => chips.value.slice(ROW_APPS + 1));
+    const chosenMore = computed(() => moreChips.value.find(chip => chip.id === app.value));
     const query = computed(() => search.value.trim().toLocaleLowerCase(locale.value));
     const shown = computed(() =>
       rows.value.filter((row) =>
@@ -381,7 +386,7 @@ await mountPanel({
     const selectedRow = computed(() => rows.value.find((row) => row.primaryKey === selectedId.value) ?? detailRow.value);
 
     return {
-      t, app, search, chips, shown, rows, emptyText, tasksData, pickApp, appLabel, applicationIcon, appsProblem, renewalProblem, unavailableApps,
+      t, app, search, rowChips, moreChips, chosenMore, shown, rows, emptyText, tasksData, pickApp, appLabel, applicationIcon, appsProblem, renewalProblem, unavailableApps,
       taskState, nextText, statusLabel, moment, duration, runError, summaryText, resultPreview,
       selected, selectedId, selectedRow, record, form, detailRow, settings, revision, taskZone, paneOpen, mode,
       select, closePane, busy, toggle, runNow, askDelete, edit, command, showRecords,
