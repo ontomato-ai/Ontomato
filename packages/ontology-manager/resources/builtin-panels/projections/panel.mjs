@@ -5,7 +5,7 @@ import { mountPanel, usePanelData, usePanelContext, usePanelOperation } from "@o
 
 const TYPE = "platform:ProductProjection";
 const CHART_COMPONENT = "@ontomato/sdk:MetricChart";
-const CLASSES_PAGE = "/ontology/classes";
+const CAPABILITY_MAP = "/ontology/assets/capability-map";
 const PANELS_PAGE = "/ontology/panels";
 
 const COMPONENT_LABELS = {
@@ -259,7 +259,10 @@ await mountPanel({
       switch (binding?.kind) {
         case "MetricView": return `/ontology/assets/metrics/${encodeURIComponent(binding.id)}`;
         case "Action": return actionAddress(binding.id);
-        case "PlatformObjectType": return `${CLASSES_PAGE}/${encodeURIComponent(binding.id)}`;
+        case "PlatformObjectType": {
+          const state = JSON.stringify({ mode: "type", view: "list", selectedType: binding.id });
+          return `${CAPABILITY_MAP}?${new globalThis.URLSearchParams({ state })}`;
+        }
       }
     }
 
@@ -396,9 +399,7 @@ await mountPanel({
       }
     }
 
-    const openClass = () => {
-      navigate(`${CLASSES_PAGE}?type=${encodeURIComponent(TYPE)}`).catch(report);
-    };
+    const openClass = () => openOwner(ownerAddress({ kind: "PlatformObjectType", id: TYPE }));
 
     const openPanel = (panelId) => {
       const state = JSON.stringify({ selected: { className: "platform:ProductPanel", primaryKey: panelId } });
