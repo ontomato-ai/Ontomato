@@ -60,6 +60,8 @@ interface PanelInstance {
   // A computed context, read only at its top: a deep read-only type of it recurses through the member paths' JSON values
   // (a nested panel's selection) without end.
   readonly pageContext: ComputedRef<PageContext>;
+  /** The form adapters its projections registered, for the draft its address names. */
+  readonly forms: PanelFormAdapters;
   /** Set once a form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
   /**
@@ -91,6 +93,91 @@ interface PanelStateStore {
   /** The fields an address or an open request may carry, with the values they hold now. */
   deepLinkable(): Record<string, PanelDeepLinkStateValue>;
 }
+```
+
+### usePanelBack
+
+Registers a panel-local back/close layer with the enclosing host (LIFO). While `active` is truthy:
+- Browser Back (when `pushHistory` is true, the default) runs `onBack` after the host's unified unsaved-changes guard.
+- Pressing Escape (when no modal dialog, drawer, dropdown, or popover is open) runs `onBack` after the same guard.
+- Calling the returned `back()` runs the same guard and then `onBack`, keeping UI back buttons and browser Back in sync.
+
+```ts
+function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, options?: UsePanelBackOptions | undefined): PanelBackHandle
+```
+
+### PanelBackHandle
+
+```ts
+interface PanelBackHandle {
+  /**
+   * Runs the same guarded back step as Escape or browser Back (for example from a "Back to list" button): asks the
+   * host's unified unsaved-changes confirmation first and calls `onBack` only if allowed. Resolves `true` when `onBack`
+   * ran, `false` when cancelled or when `active` is currently `false`.
+   */
+  back: () => Promise<boolean>;
+}
+```
+
+### usePanelDetailHeader
+
+Publishes a full-width detail view's heading and actions to the enclosing platform page header so the page renders
+one unified bar (back to catalog, object title, and actions) rather than stacking a second titlebar inside the panel.
+Returns `true` when the enclosing host owns the page header, or `false` in nested/headerless previews so the panel
+can render a local fallback bar when needed.
+
+```ts
+function usePanelDetailHeader(header: () => PanelDetailHeader | null): boolean
+```
+
+### PanelDetailHeader
+
+What a panel displaying a single object's full-width detail view hands to the enclosing platform header so the page
+shows one unified bar (back to catalog, object title, and actions) rather than stacking two headers.
+
+```ts
+interface PanelDetailHeader {
+  backLabel: string;
+  title: string;
+  onBack(): void;
+  actions?: readonly PanelDetailHeaderAction[];
+}
+```
+
+### PanelDetailHeaderAction
+
+One action a panel or its member hands to the enclosing page header in full-width detail mode.
+
+```ts
+interface PanelDetailHeaderAction {
+  id: string;
+  label: string;
+  icon?: "plus" | "save" | "trash";
+  primary?: boolean;
+  danger?: boolean;
+  inline?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  onClick(): void;
+}
+```
+
+### usePanelNarrow
+
+Observes a panel container element's own inline width via `ResizeObserver` and reports whether it is narrow
+(`width > 0` and `width <= breakpoint`), resolving the breakpoint from a CSS design token on that element
+(default `--pane-narrow-breakpoint`). Never reads `window.innerWidth`.
+
+```ts
+function usePanelNarrow(element: MaybeRefOrGetter<HTMLElement | null | undefined>, options?: UsePanelNarrowOptions): ComputedRef<boolean>
+```
+
+### savePanelFile
+
+Saves one file for the reader, under its own name, and says what was saved.
+
+```ts
+function savePanelFile(file: { mime: "image/png" | "text/csv" | "application/zip"; bytes: ArrayBuffer | Uint8Array<ArrayBuffer> | Blob; suggestedName: string; }): { kind: "file"; name: string; mime: "image/png" | "text/csv" | "application/zip"; }
 ```
 
 ## Reads and operations
@@ -181,21 +268,36 @@ updating the editor or announcing a successful write.
 
 ## Header commands and navigation
 
-Declare each page-header command under `manifest.commands` with a localized `labelKey` and a `do` action; at most one
-is `primary: true`, the header's main button. `manifest.commands` is required; use `commands: {}` when the panel has no
-header commands. A command's values are literals or state fields. A `do.set` field must be a `deepLink: true` state
-field, so the changed address reproduces the page. Handle component-driven interactions (a selection, an output) in Vue.
+Declare each page-header command under `manifest.commands` with a localized `labelKey`, optional `icon` (`"plus"`),
+and a `do` action; at most one is `primary: true`, the header's main button. `manifest.commands` is required; use
+`commands: {}` when the panel has no header commands. A command's values are literals or state fields. A `do.set` field
+must be a `deepLink: true` state field, so the changed address reproduces the page; when every `do.set` field sets a
+literal and the panel state already holds those exact values (such as `creating: true`), the host automatically
+disables the command button until state changes. Handle component-driven interactions (a selection, an output) in Vue.
 `do.open` with `mode: "entry"` describes a `platform:ApplicationPanelUse` reference and optional destination state inputs.
 In the current direct runtime, an open command reports that the SDK opens no entry or member from a command.
 For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
 from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
 
+For a full-width detail view, call `usePanelDetailHeader` to replace the catalog header with one unified platform bar
+(back to catalog, object title, and inline actions such as Save via `instance.forms.submit("form")`); it returns
+`false` in headerless or nested previews so the panel can draw a local fallback bar. Mount `OperationButton` with
+`config.placement: "header"` (and optional `type: "danger"`, `plain: true`, `icon: "trash"`) to place a member's
+trigger button into the same platform header while keeping its confirmation dialog and error feedback mounted in the
+panel. On `ObjectForm`, set `config.actions` to `"footer"` (default, non-overlapping document-flow bar), `"header"`
+(Save/Discard/unsaved indicator in the host header), `"create-only"` (Cancel/Create bar only in create mode when edit
+Save lives in the detail header), or `"none"` (omit the bar in both modes). `ObjectForm` automatically shows word
+counters for schema `maxLength` fields and disables cascading select fields whose owner declares `disabledWhenEmpty`.
+
 The host renders the page header solely from declared metadata (title, description, back control, `manifest.commands`,
 and Refresh) and never places business data there; render counts and summaries inside panel content via the owning
-component. Below the header and above the bottom composer, every entry (full page, beside a conversation, or inside a
-custom frame's current-entry slot) receives a definite-height content box. Style panels against that box with normal
-CSS (natural stacking, or filling the box with inner scrolling and a `rem`/`px` `min-height` with no upper cap) rather
-than CSS viewport units (`vh`, `vw`, `dvh`, etc.), and use `<sdk-dialog>` / `<sdk-drawer>` for overlays.
+component. Below the header to the bottom edge of the page, every entry (full page, beside a conversation, or inside a
+custom frame's current-entry slot) receives a definite-height content box with no host padding or outer card frame; the
+bottom composer floats over the page without occupying content-box height (reserve bottom scroll room such as
+`calc(var(--page-content-gap) + 56px)` on scrollable views). Style panels against that box with normal HTML, CSS, and
+Vue (natural stacking, or filling the box with inner scrolling and a `rem`/`px` `min-height`) rather than layout
+components or CSS viewport units (`vh`, `vw`, `dvh`, etc.), and use `<sdk-dialog>` / `<sdk-drawer>` for overlays.
+Wire `usePanelBack` so browser Back, Escape, and in-page back buttons share the host's unified unsaved-changes guard.
 
 The generated page skill's Panel commands section gives the assistant the address or operation for each command.
 `do.set` opens the current entry with the changed deep-linkable fields in `state`. `do.invoke` calls the listed
@@ -209,17 +311,17 @@ starts with one slash and contains no `http://`, `https://`, or `//host` prefix.
 Use the producing session and run IDs. Give `draftPath` only the run-relative artifact path
 `outputs/drafts/<name>.page-draft.json`. Encode that value once.
 
-For the agent directory, the reply is `[Open the draft](/applications/app-example-vue-agent-directory/manage?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json)`.
+For the catalog-detail template, the reply is `[Open the draft](/applications/app-template-catalog-detail/manage?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json)`.
 
 A raw `draftPath` of `/outputs/drafts/edit.page-draft.json` starts with a slash and is invalid.
 The encoded query value `draftPath=%2Foutputs%2Fdrafts%2Fedit.page-draft.json` still starts with that slash after decoding.
 
-The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.
-The target identifies the object type and, for an edit, the owner's object ID. A form of that type matches
-`save.draftOperation` and gives the owner's form read the proposed field values to check. If the owner accepts
-changed fields, the SDK fills the form and sets `instance.draft`.
-Keep the form projection mounted with `v-show` so it can receive the draft before the editor is visible.
-Watch `instance.draft` to reveal the editor. It is null while waiting or when the draft changes nothing.
+The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and evaluates it against the panel's
+declared form members (even before the form mounts). The target identifies the object type and, for an edit, the
+owner's object ID (plus optional `itemKey` for a row-attached form). A form of that type matches `save.draftOperation`
+and gives the owner's form read the proposed field values to check. If the owner accepts changed fields, the SDK sets
+`instance.draft` and fills the form once mounted. Watch `instance.draft` to open the target detail view or create
+dialog. It is null while waiting or when the draft changes nothing.
 Use [`draftTarget(draft)`](CODE.md#save-a-form-or-hand-off-a-draft) to get the accepted draft's effective create or update target.
 The reader saves or discards the proposed change in the form.
 

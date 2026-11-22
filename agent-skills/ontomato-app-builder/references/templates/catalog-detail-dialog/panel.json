@@ -1,0 +1,87 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AgentDefinition"
+        },
+        "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": true
+      }
+    },
+    "members": {
+      "list": {
+        "component": "ObjectList",
+        "type": "platform:AgentDefinition",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "selected"
+        }
+      },
+      "detail": {
+        "component": "ObjectSummary",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false
+        }
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form",
+          "createForm": "createForm"
+        },
+        "operation": "platform:AgentDefinition.save",
+        "config": {
+          "actions": "create-only"
+        }
+      }
+    },
+    "commands": {
+      "create": {
+        "labelKey": "command.new",
+        "primary": true,
+        "icon": "plus",
+        "do": {
+          "set": {
+            "fields": {
+              "creating": {
+                "literal": true
+              },
+              "selected": {
+                "literal": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Agent Definition",
+        "command.new": "New Agent Definition",
+        "dialog.createTitle": "New Agent Definition",
+        "detail.back": "Back to Agent Definition",
+        "detail.save": "Save",
+        "detail.basicInfo": "Basic information",
+        "detail.overview": "Overview"
+      }
+    }
+  }
+}

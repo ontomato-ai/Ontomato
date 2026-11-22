@@ -1,7 +1,7 @@
 {
   "panels": [
     {
-      "id": "app-example-agent-management",
+      "id": "app-template-catalog-detail",
       "mode": "create",
       "input": {
         "name": "Agent Definition",
@@ -12,11 +12,11 @@
   ],
   "applications": [
     {
-      "id": "app-example-agent-management",
+      "id": "app-template-catalog-detail",
       "mode": "create",
       "input": {
         "entry": {
-          "path": "/applications/app-example-agent-management",
+          "path": "/applications/app-template-catalog-detail",
           "renderer": "panels"
         },
         "entryAccess": [
@@ -35,10 +35,10 @@
         },
         "panelUses": [
           {
-            "id": "app-example-agent-management-use",
-            "pageKey": "app-example-agent-management",
-            "panelId": "app-example-agent-management",
-            "path": "/applications/app-example-agent-management/manage",
+            "id": "app-template-catalog-detail-use",
+            "pageKey": "app-template-catalog-detail",
+            "panelId": "app-template-catalog-detail",
+            "path": "/applications/app-template-catalog-detail/manage",
             "access": {
               "kind": "domain-member"
             },

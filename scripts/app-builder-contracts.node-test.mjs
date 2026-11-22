@@ -567,10 +567,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
     requests.length = 0;
     const draft = join(directory, "manager");
-    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-example-agent-management", "--operation", "platform:AgentDefinition.save");
-    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/app-example-agent-management/manage");
+    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-template-catalog-detail", "--operation", "platform:AgentDefinition.save");
+    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/app-template-catalog-detail/manage");
     for (const name of ["panel.html", "panel.mjs", "panel.json", "registration.json"]) {
-      const sample = await readFile(join("agent-skills/ontomato-app-builder/examples/agent-management", name), "utf8");
+      const sample = await readFile(join("agent-skills/ontomato-app-builder/references/templates/catalog-detail-dialog", name), "utf8");
       assert.equal(await readFile(join(draft, name), "utf8"), sample);
     }
     assert.deepEqual(requests.map(([method, url]) => [method, url]), [
@@ -590,7 +590,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(reviewManifest.members.tabs.data.counts, { read: "counts", params: { by: { literal: "status" } } });
     assert.equal(reviewManifest.members.tabs.state.value, "status");
     assert.equal(reviewManifest.members.detail.state.search, "search");
-    assert.deepEqual(reviewManifest.members.action1, { component: "OperationButton", operation: "reviews.approve", target: "selected" });
+    assert.deepEqual(reviewManifest.members.action1, {
+      component: "OperationButton", operation: "reviews.approve", target: "selected", config: { placement: "header" },
+    });
     assert.deepEqual(reviewManifest.members.batch2, { component: "OperationButton", operation: "reviews.approve", target: "checked" });
     const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
     assert(reviewLayout.indexOf('slot="batch2"') < reviewLayout.indexOf('slot="list"'));
