@@ -218,6 +218,7 @@ describe("PanelApplicationRoute + usePanelBack + ObjectForm integration", () => 
       allowLeave = false;
       element.querySelector<HTMLButtonElement>(".back-btn")!.click();
       await vi.waitFor(() => expect(askUnsaved).toHaveBeenCalledTimes(1));
+      await askUnsaved.mock.results[0]!.value;
       await nextTick();
       expect(element.querySelector(".open-item")).toBeNull();
       expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')!.value).toBe("Edited");
