@@ -35,6 +35,8 @@ export interface PlatformShownPage {
   named?: boolean;
   /** Back to where the reader came from, for a page the application's menu does not reach. */
   back?: () => void;
+  /** Optional custom label for the header back control (for example a detail view returning to its catalog). */
+  backLabel?: string;
   /** The entry's external link (its address with its state), which the header's "more" offers to copy. */
   externalLink?: string;
 }
@@ -185,7 +187,7 @@ const headerLabels = computed(() => ({
           :actions="pageActions?.actions"
           :draft="pageActions?.draft ?? null"
           :labels="headerLabels"
-          :back-label="shownPage?.back ? labels.back : undefined"
+          :back-label="shownPage?.back ? (shownPage.backLabel ?? labels.back) : undefined"
           :more="moreActions"
           :more-label="labels.more"
           @back="shownPage?.back?.()"

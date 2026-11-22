@@ -45,11 +45,21 @@ const props = withDefaults(
     operation: string;
     /**
      * How the button looks: `primary` for the page's main action, `danger` for one that removes (drawn as a quiet text
-     * button in the danger colour); it changes nothing else.
+     * button in the danger colour unless `plain` is set); it changes nothing else.
      */
     type?: "primary" | "danger" | "default";
+    /** Draws a soft tinted bordered button (for example the detail titlebar's danger delete button). */
+    plain?: boolean;
+    /** Optional leading icon on the button (`trash` for destructive removal). */
+    icon?: "trash";
+    /**
+     * Where the button is rendered: `inline` (default) draws the button in place; `header` hands the action to the
+     * enclosing platform page header (falling back to inline when no header host is present) while keeping dialogs and
+     * error/result feedback mounted here.
+     */
+    placement?: "inline" | "header";
   }>(),
-  { type: "default" },
+  { type: "default", plain: false, icon: undefined, placement: "inline" },
 );
 
 const emit = defineEmits<{
@@ -137,14 +147,63 @@ function onTriggerClick() {
   if (!descriptor.value || !ready.value) return;
   trigger(props.operation, descriptor.value);
 }
+
+const usesHeaderPlacement = computed(() => props.placement === "header" && panel.registerHeaderAction !== undefined);
+watch(usesHeaderPlacement, (inHeader, _previous, onCleanup) => {
+  if (!inHeader || !panel.registerHeaderAction) return;
+  const stop = panel.registerHeaderAction(slot.slot, () => (
+    !pending.value && descriptor.value
+      ? {
+          id: slot.slot,
+          label: label.value,
+          icon: props.icon,
+          primary: props.type === "primary",
+          danger: props.type === "danger",
+          inline: props.plain,
+          disabled: !ready.value,
+          loading: running.value,
+          onClick: onTriggerClick,
+        }
+      : null
+  ));
+  onCleanup(stop);
+}, { immediate: true });
 </script>
 
 <template>
   <div class="sdk-operation-button">
-    <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
-    <!-- A removal is drawn quiet, as the platform's header draws one: danger in its colour, not a solid block; off, it
-         is plainly off. The owner still decides what it does and confirms it. -->
-    <el-button v-else :type="type" :text="type === 'danger'" :loading="running" :disabled="!ready" @click="onTriggerClick">{{ label }}</el-button>
+    <data-state v-if="!usesHeaderPlacement && pending" :result="pending" :labels="labels"></data-state>
+    <!-- A removal is drawn quiet unless `plain` requests a tinted bordered button; the owner still decides and confirms it. -->
+    <el-button
+      v-else-if="!usesHeaderPlacement"
+      :type="type"
+      :plain="plain"
+      :text="type === 'danger' && !plain"
+      :loading="running"
+      :disabled="!ready"
+      @click="onTriggerClick"
+    >
+      <svg
+        v-if="icon === 'trash' && !running"
+        class="sdk-operation-icon"
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M3 6h18" />
+        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+        <line x1="10" x2="10" y1="11" y2="17" />
+        <line x1="14" x2="14" y1="11" y2="17" />
+      </svg>
+      <span>{{ label }}</span>
+    </el-button>
     <operation-input-dialog
       v-if="inputFields.length > 0"
       v-model="inputDialogOpen"
@@ -175,6 +234,10 @@ function onTriggerClick() {
 </template>
 
 <style scoped>
+.sdk-operation-icon {
+  margin-inline-end: 6px;
+  flex-shrink: 0;
+}
 .sdk-operation-unavailable {
   margin: var(--spacing-xs) 0 0;
   color: var(--el-text-color-secondary);

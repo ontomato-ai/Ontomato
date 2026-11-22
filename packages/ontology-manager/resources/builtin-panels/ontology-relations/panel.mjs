@@ -1,5 +1,5 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelBack, usePanelContext, usePanelData, usePanelDetailHeader } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:Relationship";
 
@@ -32,32 +32,33 @@ await mountPanel({
           typeLabel(row.fields.fromclass), typeLabel(row.fields.toclass)]
           .filter(Boolean).join(" ").toLowerCase().includes(term));
     });
-    // The count waits for the owner's answer: while reading, or when the read failed, there is no number to show.
+    // Match the original catalog count format (`14 项`, and `0 项` when no rows match the filter).
     const countText = computed(() => {
       if (catalogue.value.status !== "ready") return "";
-      const shown = rows.value.length;
-      const total = allRows.value.length;
-      return search.value.trim() && shown !== total ? `${shown} / ${total} 项` : `${total} 项`;
+      return `${rows.value.length} 项`;
     });
 
     // A new relation is being made: set by the header's "新建关系类型" command, so an address can open the empty form.
     const creating = computed(() => instance.state.values.value.creating === true);
     const setCreating = (value) => instance.state.set("creating", value);
-    // The form is drawn while a new relation is being made, or for a relation the owner actually returned: a missing or
-    // unreadable relation shows the empty state alone, without a form that could only fail.
-    const editing = computed(() => creating.value || (Boolean(selectedKey.value) && detail.value.status === "ready"));
     const title = computed(() => {
       if (creating.value) return "新建关系类型";
       return detail.value.status === "ready" ? detail.value.value.label || selectedKey.value : selectedKey.value;
     });
-    // With nothing selected the column says what it is for, in agreement with what the list shows: nothing while the
-    // list is still reading or failed (the list says so), and no "pick one on the left" when the left has nothing.
-    const idleNote = computed(() => {
-      if (catalogue.value.status !== "ready") return "";
-      if (!allRows.value.length) return "新建一条关系类型后，在这里查看两端对象、修改说明和关联字段。";
-      if (!rows.value.length) return "没有可选的关系类型：清空或换个搜索词后，再从左侧选一条。";
-      return "从左侧选一条关系类型，在这里查看两端对象、修改说明和关联字段。";
-    });
+
+    const formHandle = computed(() => instance.forms.handle("form"));
+    const saving = computed(() => Boolean(formHandle.value?.busy.value));
+    const canSave = computed(() => Boolean(formHandle.value) && !saving.value);
+
+    async function saveDetail() {
+      if (!canSave.value) return;
+      if (!instance.forms.dirty()) return;
+      try {
+        await instance.forms.submit("form");
+      } catch {
+        // ObjectForm renders the owner's validation or refusal message inline on the form.
+      }
+    }
 
     function open(row) {
       setCreating(false);
@@ -66,9 +67,33 @@ await mountPanel({
     function backToCatalog() {
       instance.state.setState({ selected: null, creating: false });
     }
+    const back = usePanelBack(
+      () => Boolean(selectedKey.value),
+      backToCatalog,
+      { pushHistory: true },
+    );
+    const hasHeaderHost = usePanelDetailHeader(() => (
+      selectedKey.value
+        ? {
+            backLabel: "返回关系类型",
+            title: title.value,
+            onBack: () => void back.back(),
+            actions: detail.value.status === "ready"
+              ? [{
+                  id: "save",
+                  label: "保存",
+                  icon: "save",
+                  primary: true,
+                  disabled: !canSave.value,
+                  loading: saving.value,
+                  onClick: () => void saveDetail(),
+                }]
+              : [],
+          }
+        : null
+    ));
     function cancelCreate() {
-      setCreating(false);
-      instance.state.set("selected", null);
+      instance.state.setState({ creating: false, selected: null });
     }
     const createDialog = computed({
       get: () => creating.value && !selectedKey.value,
@@ -83,7 +108,7 @@ await mountPanel({
     function onDiscarded() {
       setCreating(false);
     }
-    // Open the object types panel directly with its deep-linkable `selected` state rather than the retired detail path.
+    // Open the object types panel directly with its deep-linkable `selected` state.
     function openType(className) {
       if (!className) return;
       const state = JSON.stringify({ selected: { className: "platform:ObjectType", primaryKey: className } });
@@ -103,20 +128,20 @@ await mountPanel({
     }, { immediate: true });
 
     // A relation the list showed and no longer does was deleted: go back to the catalogue. A relation the list never
-    // held stays selected, so the page can say it is not there.
+    // held stays selected, so the page shows the missing-relation empty state instead of silently falling back.
     const seen = new Set();
-    watch([allRows, () => catalogue.value.status], ([rows, status]) => {
+    watch([allRows, () => catalogue.value.status], ([list, status]) => {
       if (status !== "ready") return;
-      for (const row of rows) seen.add(row.primaryKey);
+      for (const row of list) seen.add(row.primaryKey);
       const key = selectedKey.value;
-      if (key && seen.has(key) && !rows.some((row) => row.primaryKey === key)) {
+      if (key && seen.has(key) && !list.some((row) => row.primaryKey === key)) {
         instance.state.set("selected", null);
       }
     }, { immediate: true });
 
     return {
-      catalogue, detail, types, allRows, rows, countText, selectedKey, search, creating, createDialog, editing, title, idleNote,
-      typeLabel, open, backToCatalog, cancelCreate, onSaved, onDiscarded, openType,
+      catalogue, detail, types, allRows, rows, countText, selectedKey, search, creating, createDialog, title,
+      saving, canSave, hasHeaderHost, typeLabel, open, backToCatalog, cancelCreate, saveDetail, onSaved, onDiscarded, openType,
     };
   },
 });

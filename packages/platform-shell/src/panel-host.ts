@@ -113,6 +113,30 @@ function projectionIdsOf(shown: HostedPanelSource): string[] {
   return Object.values(shown.panel.manifest.members).flatMap(member => ("projectionId" in member.target ? [member.target.projectionId] : []));
 }
 
+/** One action a panel or its member hands to the enclosing page header in full-width detail mode. */
+export interface PanelDetailHeaderAction {
+  id: string;
+  label: string;
+  icon?: "plus" | "save" | "trash";
+  primary?: boolean;
+  danger?: boolean;
+  inline?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  onClick(): void;
+}
+
+/**
+ * What a panel displaying a single object's full-width detail view hands to the enclosing platform header so the page
+ * shows one unified bar (back to catalog, object title, and actions) rather than stacking two headers.
+ */
+export interface PanelDetailHeader {
+  backLabel: string;
+  title: string;
+  onBack(): void;
+  actions?: readonly PanelDetailHeaderAction[];
+}
+
 /** What the host hands a panel's instance: where it is, what its address asks for, and where it reports. */
 export interface DirectPanelRun {
   /** The page's registration key, which a draft names. */
@@ -135,6 +159,10 @@ export interface DirectPanelRun {
    * panels and headerless previews). A form with `actions: "header"` publishes its Save/Discard draft here.
    */
   headerDraft?: (draft: PlatformPageDraft | null) => void;
+  /** Publishes or clears a full-width detail view's replacement heading and actions for the enclosing page header. */
+  detailHeader?: (header: PanelDetailHeader | null) => void;
+  /** Publishes member-owned actions (such as OperationButton with placement="header") into the enclosing page header. */
+  headerActions?: (actions: readonly PanelDetailHeaderAction[]) => void;
   /** The reader saved or discarded the draft the address links. */
   draftSettled(draft: PageDraftLink): void;
   /**
@@ -243,6 +271,10 @@ export interface PanelInstanceView {
   readonly dirty: Readonly<ShallowRef<boolean>>;
   /** The Save/Discard draft a form in this panel handed to the page header, or null when none did. */
   readonly headerDraft: Readonly<ShallowRef<PlatformPageDraft | null>>;
+  /** The full-width detail header a panel handed to the platform header, or null when in catalog/default mode. */
+  readonly detailHeader: Readonly<ShallowRef<PanelDetailHeader | null>>;
+  /** Member-owned actions registered for the enclosing page header (for example a detail view's Delete OperationButton). */
+  readonly headerActions: Readonly<ShallowRef<readonly PanelDetailHeaderAction[]>>;
   /** Resolves once the source is read. */
   readonly ready: Promise<void>;
   /** Whether the page may be shown: Java's answer names its use relation (always, when it opened from that answer). */
@@ -390,6 +422,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const displayLoad = shallowRef(loading);
   const dirty = shallowRef(false);
   const headerDraft = shallowRef<PlatformPageDraft | null>(null);
+  const detailHeader = shallowRef<PanelDetailHeader | null>(null);
+  const headerActions = shallowRef<readonly PanelDetailHeaderAction[]>([]);
   const state = shallowRef<PanelHostState>({});
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
@@ -566,7 +600,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       context: context => (pageContext.value = context),
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
-      ...(options.headerDraftHost ? { headerDraft: (draft) => { headerDraft.value = draft; } } : {}),
+      ...(options.headerDraftHost ? {
+        headerDraft: (draft) => { headerDraft.value = draft; },
+        detailHeader: (header) => { detailHeader.value = header; },
+        headerActions: (actions) => { headerActions.value = actions; },
+      } : {}),
       draftSettled: settleDraft,
       draftRefused: (text) => {
         draftOpening.value = false;
@@ -590,6 +628,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     draftRefusal.value = "";
     draftOpening.value = false;
     headerDraft.value = null;
+    detailHeader.value = null;
+    headerActions.value = [];
   }
 
   /** What decides how a source is drawn: its content and declaration, not its revision or identity. */
@@ -922,6 +962,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     displayLoad,
     dirty,
     headerDraft,
+    detailHeader,
+    headerActions,
     ready,
     refresh,
     direct,

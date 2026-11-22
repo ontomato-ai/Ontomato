@@ -19,15 +19,15 @@ it("defines the room under the composer once, and both composers read it", () =>
   const page = style("../components/PageComposer.vue").split(".page-ask {")[1]!.split("}")[0]!;
   const beside = style("../components/ShellPagePane.vue").split(".pane-dock {")[1]!.split("}")[0]!;
   for (const rules of [conversation, page, beside]) expect(rules).toMatch(/padding:[^;]*var\(--shell-composer-foot\);/);
-  // The page's composer stands in the flex column under the content box rather than floating sticky over it.
-  expect(page).toMatch(/flex-shrink:\s*0;/);
+  // The page's composer floats over the foot of the page (never sticky in flow or shortening the content box).
+  expect(page).toMatch(/pointer-events:\s*none;/);
   expect(page).not.toMatch(/position:\s*sticky;/);
-  // Folded, its round button stays in flow under the content box (never fixed over it) and keeps the same room under it.
+  // Folded, its round button floats at the corner with the same room under it and leaves the page its whole height.
   const unfold = [...style("../components/ShellComposer.vue").matchAll(/\n\.composer-unfold \{([^}]*)\}/g)].map((rule) => rule[1]).join("");
-  expect(unfold).not.toMatch(/position:\s*fixed;/);
+  expect(unfold).toMatch(/pointer-events:\s*auto;/);
   const pageFolded = style("../components/PageComposer.vue").split(".page-ask:has(.composer-unfold) {")[1]!.split("}")[0]!;
   expect(pageFolded).toMatch(/padding:[^;]*var\(--shell-composer-foot\);/);
-  expect(style("../components/ShellPagePane.vue")).not.toContain(".pane-dock:has(> .composer-unfold:only-child)");
+  expect(style("../components/ShellPagePane.vue")).toContain(".pane-dock:has(> .composer-unfold:only-child)");
 });
 
 /*

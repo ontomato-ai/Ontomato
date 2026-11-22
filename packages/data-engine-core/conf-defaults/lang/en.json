@@ -376,6 +376,30 @@
     "value": "Target field"
   },
   {
+    "key": "Admin.form.apiName",
+    "value": "API name"
+  },
+  {
+    "key": "Admin.form.relationDesc",
+    "value": "Relation description"
+  },
+  {
+    "key": "Admin.form.selectFromclass",
+    "value": "Select source object type"
+  },
+  {
+    "key": "Admin.form.enterFromField",
+    "value": "Select source field"
+  },
+  {
+    "key": "Admin.form.selectToclass",
+    "value": "Select target object type"
+  },
+  {
+    "key": "Admin.form.enterToField",
+    "value": "Select target field"
+  },
+  {
     "key": "Admin.form.primaryKeyEnableLocked",
     "value": "The primary key attribute cannot be disabled"
   },

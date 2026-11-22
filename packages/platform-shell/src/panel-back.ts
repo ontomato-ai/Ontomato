@@ -31,6 +31,43 @@ export interface PanelBackController {
 const BACK_MARKER_KEY = "__ontomatoPanelBack";
 let nextBackToken = 0;
 
+type PopStateHandler = (event: PopStateEvent) => boolean;
+const popStateHandlers = new Set<PopStateHandler>();
+let popStateListenerInstalled = false;
+
+function dispatchPopState(event: PopStateEvent) {
+  for (const handler of [...popStateHandlers].reverse()) {
+    if (handler(event)) return;
+  }
+}
+
+/**
+ * Installs the shared window `popstate` dispatcher. Calling this before `createWebHashHistory()` / `createWebHistory()`
+ * ensures panel-local back guards intercept dirty browser Back before Vue Router commits the underlying address (and
+ * before inter-listener microtask checkpoints flush watchers that would otherwise overwrite the popped history entry).
+ */
+export function installPanelBackPopStateListener(): void {
+  if (popStateListenerInstalled || typeof window === "undefined") return;
+  popStateListenerInstalled = true;
+  window.addEventListener("popstate", dispatchPopState, true);
+}
+
+installPanelBackPopStateListener();
+
+function routePathOf(url: string): string {
+  try {
+    const parsed = new URL(url, typeof window === "undefined" ? "http://localhost" : window.location.origin);
+    if (parsed.hash.startsWith("#/")) {
+      const hashPath = parsed.hash.slice(1);
+      const queryIndex = hashPath.indexOf("?");
+      return queryIndex >= 0 ? hashPath.slice(0, queryIndex) : hashPath;
+    }
+    return parsed.pathname;
+  } catch {
+    return url.split("?")[0] ?? url;
+  }
+}
+
 interface StackEntry {
   readonly token: string | null;
   readonly onBack: () => void;
@@ -164,6 +201,7 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
     const entry = topHistoryEntry();
     if (!entry || entry.token === null) return;
     const nextUrl = window.location.href;
+    if (routePathOf(nextUrl) !== routePathOf(entry.pushedUrl)) return;
     const nextState = {
       ...(isRecord(window.history.state) ? window.history.state : {}),
       [BACK_MARKER_KEY]: entry.token,
@@ -177,15 +215,22 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
     }
   }
 
-  function onPopState(event: PopStateEvent) {
-    if (disposed || !options.active() || handlingBack) return;
+  function onPopState(event: PopStateEvent): boolean {
+    if (disposed || !options.active()) return false;
     const entry = topHistoryEntry();
-    if (!entry || entry.token === null || currentHistoryToken() === entry.token) return;
+    if (!entry || entry.token === null) return false;
+    const currentUrl = typeof window === "undefined" ? "" : window.location.href;
+    if (routePathOf(currentUrl) !== routePathOf(entry.pushedUrl)) return false;
+    if (handlingBack) {
+      event.stopImmediatePropagation();
+      return true;
+    }
+    if (currentHistoryToken() === entry.token) return false;
     if (!options.isDirty()) {
       entry.poppedByHistory = true;
       removeEntry(entry);
       entry.onBack();
-      return;
+      return true;
     }
     // Stop Vue Router from committing the underlying list URL while the reader decides whether to discard edits.
     event.stopImmediatePropagation();
@@ -207,6 +252,7 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
         handlingBack = false;
       }
     })();
+    return true;
   }
 
   function onKeydown(event: KeyboardEvent) {
@@ -249,8 +295,8 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
   }
 
   if (typeof window !== "undefined") {
-    // Capture phase ensures dirty popstate is intercepted before Vue Router commits the popped URL.
-    window.addEventListener("popstate", onPopState, true);
+    installPanelBackPopStateListener();
+    popStateHandlers.add(onPopState);
     window.addEventListener("keydown", onKeydown);
   }
 
@@ -261,8 +307,8 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
       if (disposed) return;
       disposed = true;
       stack.length = 0;
+      popStateHandlers.delete(onPopState);
       if (typeof window !== "undefined") {
-        window.removeEventListener("popstate", onPopState, true);
         window.removeEventListener("keydown", onKeydown);
       }
     },

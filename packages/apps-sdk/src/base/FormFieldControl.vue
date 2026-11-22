@@ -169,9 +169,11 @@ function setFrequency(next: FrequencyDraft) {
       <el-input
         :model-value="text"
         :type="control.kind === 'markdown' || control.multiline ? 'textarea' : 'text'"
+        :rows="control.kind === 'text' && control.multiline ? 3 : undefined"
         :autosize="control.kind === 'markdown' ? { minRows: 6 } : undefined"
         :placeholder="control.kind === 'text' ? control.placeholder ?? undefined : undefined"
         :maxlength="control.kind === 'text' ? control.maxLength : undefined"
+        :show-word-limit="control.kind === 'text' && control.maxLength !== undefined && !off"
         :disabled="off"
         @update:model-value="set($event)"
       ></el-input>
@@ -184,6 +186,7 @@ function setFrequency(next: FrequencyDraft) {
       :model-value="control.multiple ? rows.map(optionIndex) : optionIndex(value)"
       :multiple="control.multiple"
       :clearable="!field.required"
+      :placeholder="control.placeholder ?? undefined"
       :disabled="off"
       class="sdk-form-field-wide"
       @update:model-value="chooseObject"
@@ -206,6 +209,7 @@ function setFrequency(next: FrequencyDraft) {
       :allow-create="control.allowCreate"
       :default-first-option="control.allowCreate"
       :fit-input-width="control.options.some(optionNote)"
+      :placeholder="control.placeholder ?? undefined"
       :disabled="off"
       class="sdk-form-field-wide"
       @update:model-value="set($event)"

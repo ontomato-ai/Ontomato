@@ -2,7 +2,7 @@
 import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, usePageHeading, useUnsavedChanges, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView, type PlatformPageHeading } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, usePageHeading, useUnsavedChanges, type DirectPanelRun, type PanelDetailHeader, type PanelHostLabels, type PanelHostPort, type PanelInstanceView, type PlatformPageHeading } from "@ontomato/platform-shell";
 import { applicationPanelAddress, panelAddress, panelAddressState, panelUsePath, parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
@@ -108,6 +108,8 @@ interface KeptPage {
   context: PageContext | null;
   /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
+  /** Full-width detail view heading published by the panel to replace the catalog header with a single detail bar. */
+  detailHeader: PanelDetailHeader | null;
   /** Which page skill a message beside it reaches, as its instance's latest read for it answered; null until one has. */
   pageSkill: PageSkillContext | null;
   /** Shown again and not yet through its checks: what it reaches is passed on only once they have confirmed it. */
@@ -463,6 +465,15 @@ if (!props.navigate)
  * from, or to the application's root when the page was opened directly. Beside a conversation, the conversation draws both.
  */
 const heading = computed<PlatformPageHeading | null>(() => {
+  const detail = shownPage.value?.detailHeader;
+  if (detail) {
+    return {
+      title: detail.title,
+      back: detail.onBack,
+      backLabel: detail.backLabel,
+      externalLink: opened.value,
+    };
+  }
   const title = shownPage.value?.context?.label || pageName.value;
   if (!title) return null;
   const description = pageDescription.value;
@@ -496,6 +507,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     reported: panelAddress(pageAddress.value, requestedState.value),
     context: null,
     dirty: false,
+    detailHeader: null,
     pageSkill: null,
     rechecking: false,
     lastShown: ++showings,
@@ -555,6 +567,10 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   page.dirty = dirty;
   if (page === shownPage.value) emit("display-dirty", dirty);
 }
+
+function reportDetailHeader(page: KeptPage, detail: PanelDetailHeader | null) {
+  page.detailHeader = detail;
+}
 </script>
 
 <template>
@@ -597,6 +613,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
             @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
             @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
             @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
+            @detail-header="(detail: PanelDetailHeader | null) => reportDetailHeader(page, detail)"
             @context="(context: PageContext) => reportContext(page, context)"
             @reopened="markReopened(page)"
             @withdrawn="withdraw(page)"
@@ -634,6 +651,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
           @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
           @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
+          @detail-header="(detail: PanelDetailHeader | null) => reportDetailHeader(page, detail)"
           @context="(context: PageContext) => reportContext(page, context)"
           @reopened="markReopened(page)"
           @withdrawn="withdraw(page)"
@@ -661,13 +679,11 @@ function reportDirty(page: KeptPage, dirty: boolean) {
 }
 /* A custom application frame fills the application area edge-to-edge without host inset. */
 .panel-application-frame {
-  --panel-host-padding-inline: 0px;
-  --panel-host-padding-top: 0px;
-  --panel-host-padding-bottom: 0px;
   flex: 1;
 }
 /* Fills the layout body or side pane as a definite-height flex column; carries the application theme beside a conversation. */
 .panel-application-area {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -675,7 +691,6 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   min-height: 0;
   min-width: 0;
   box-sizing: border-box;
-  padding-bottom: var(--pane-dock-space, 0px);
   overflow: hidden;
 }
 .panel-application-status {
@@ -684,19 +699,20 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   padding-block: var(--page-content-gap);
 }
 /*
- * At full page (and inside a frame's EntryUnit), the host's content box aligns horizontally with the page header's
- * gutter while keeping its scrollbar flush with the right edge (visual acceptance E-01).
+ * The page composer floats at the bottom edge of the application area without shortening the panel's content box,
+ * whether expanded or folded into its corner button.
  */
-.panel-host-page {
-  --panel-host-padding-inline: var(--page-gutter);
-  --panel-host-padding-top: var(--page-content-gap);
-  --panel-host-padding-bottom: var(--spacing-md);
-}
 .panel-page-foot {
-  flex-shrink: 0;
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
 }
 /* The page's own configuration error, where its composer would be: the reader is told, not left guessing. */
 .page-composer-error {
+  pointer-events: auto;
   width: min(760px, 100%);
   margin: 0 auto var(--spacing-md);
   color: var(--el-color-danger);

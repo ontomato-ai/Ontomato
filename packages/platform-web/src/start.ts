@@ -22,6 +22,7 @@ import {
 import { ontologyServiceAccessKey, type OntologyServiceAccess } from "@ontomato/workbench-ui";
 import { installBrandTheme, type BrandSource } from "@ontomato/design-tokens";
 import { installWorkbenchBrand } from "@ontomato/workbench-ui/brand";
+import { installPanelBackPopStateListener } from "@ontomato/platform-shell";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "./detail-selection";
 import { addressLandingGuard, panelEntryGuard } from "./panel-entries";
 import { legacyAgentSettingsTab } from "./workbench-routes";
@@ -59,6 +60,8 @@ export function startWorkbenchWeb(options: WorkbenchWebOptions): void {
   installWorkbenchContent(options.content);
   const i18n = installWorkbenchI18n(options.language);
   const pinia = createPinia();
+  // Install before Vue Router attaches its window `popstate` listener so dirty panel-local Back prompts run first.
+  installPanelBackPopStateListener();
   const router = createRouter({ history: createWebHashHistory(), routes: [] });
   // A page's old detail address opens the panel that took the page over, before any other guard sees it.
   router.beforeEach(legacyAgentSettingsTab);

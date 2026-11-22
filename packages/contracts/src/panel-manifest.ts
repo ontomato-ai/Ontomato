@@ -521,6 +521,8 @@ export const panelCommandSchema = z.object({
   labelKey: panelMessageKeySchema,
   /** The primary button among this panel's header commands. */
   primary: z.literal(true).optional(),
+  /** Optional leading icon rendered on the command's header button. */
+  icon: z.enum(["plus"]).optional(),
   do: z.union([
     z.object({ set: z.object({ fields: commandInputs.refine(fields => Object.keys(fields).length > 0, "Set at least one state field") }).strict() }).strict(),
     z.object({ invoke: z.object({ member: key, operation: key, inputs: commandInputs }).strict() }).strict(),

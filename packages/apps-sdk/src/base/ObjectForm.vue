@@ -77,11 +77,12 @@ const props = withDefaults(defineProps<{
    */
   layout?: "stacked" | "rows";
   /**
-   * Where Save, Discard and the unsaved marker live: `footer` (default) keeps them sticky at the foot of the form;
+   * Where Save, Discard and the unsaved marker live: `footer` (default) keeps them at the foot of the form;
    * `header` hands the form's draft to the enclosing page header and hides the form's own action bar, falling back to
-   * the footer when no page header host is present (such as a nested panel or headerless preview).
+   * the footer when no page header host is present; `create-only` shows Cancel/Create in create mode and lets the panel
+   * place its own Save trigger in edit mode; `none` hides the form's action bar in both modes.
    */
-  actions?: "footer" | "header";
+  actions?: "footer" | "header" | "create-only" | "none";
 }>(), { fixedFields: () => ({}), layout: "stacked", actions: "footer" });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created. */
@@ -813,8 +814,9 @@ watch(usesHeaderActions, (inHeader, _previous, onCleanup) => {
  * - On an edit form, appears only once there are changes to settle (`Discard` / `Save`).
  */
 const showActionBar = computed(() => {
-  if (usesHeaderActions.value) return false;
+  if (props.actions === "none" || usesHeaderActions.value) return false;
   if (isCreate.value) return true;
+  if (props.actions === "create-only") return false;
   if (allReadOnly.value && !canSettle.value) return false;
   return canSettle.value;
 });
@@ -877,7 +879,7 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
           {{ t("platform.formChangedCount", { count: changedCount }, changedCount) }}
         </span>
         <template v-if="isCreate">
-          <el-button :disabled="saving" @click="cancelCreate">{{ t("platform.cancel") }}</el-button>
+          <el-button text :disabled="saving" @click="cancelCreate">{{ t("platform.cancel") }}</el-button>
           <el-button type="primary" :disabled="asking" :loading="saving" @click="saveFromForm">{{ t("platform.create") }}</el-button>
         </template>
         <template v-else>
@@ -891,13 +893,10 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 </template>
 
 <style scoped>
-/* Save and Discard stay in reach at the foot of the view however long the form, both when filling a definite box
-   (the body scrolls above them) and when flowing down the page (they stick to the enclosing content box). */
+/* Save and Discard stay below the form's fields (never overlapping the last textarea in flow-down cards);
+   when filling a definite box, `.sdk-owner-form-body` scrolls above them so they stay in reach at the foot. */
 .sdk-owner-form-actions {
   flex: 0 0 auto;
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);

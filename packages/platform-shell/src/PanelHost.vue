@@ -2,8 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
-import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
-import { RefreshCw, X as CloseIcon } from "lucide-vue-next";
+import { usePanelInstance, type PanelDetailHeader, type PanelDetailHeaderAction, type PanelHostLabels, type PanelHostPort } from "./panel-host";
+import { Plus, RefreshCw, Save, Trash2, X as CloseIcon } from "lucide-vue-next";
 import { ElAlert, ElButton } from "element-plus";
 import { hasPageActions, usePageActions, type PlatformPageAction } from "./page-actions";
 import { confirmDanger } from "./confirm-danger";
@@ -87,6 +87,8 @@ const emit = defineEmits<{
   "display-address": [input: DisplayPageAddressInput];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
+  /** A full-width detail view's replacement heading and actions for the enclosing page header, or null in default mode. */
+  "detail-header": [header: PanelDetailHeader | null];
   /** Shown again, the page passed its checks: its frame may ask again and its objects are being read again. */
   reopened: [];
   /** Shown again, the page is no longer its application's: its use relation was withdrawn or bound elsewhere. */
@@ -185,6 +187,7 @@ watch(view.pageContext, (context) => context && emit("context", context));
 watch(view.address, (address) => emit("display-address", { kind: "state", address }));
 watch(view.displayLoad, (load) => emit("display-loaded", load));
 watch(view.dirty, (dirty) => emit("display-dirty", dirty), { flush: "sync", immediate: true });
+watch(view.detailHeader, (header) => emit("detail-header", header), { flush: "sync", immediate: true });
 
 // The instance's operations reach the header like any page's: one description, one handler, for a person and an agent.
 // A click reaches the frame, which runs it with the person's own credential; the state the operation targets decides
@@ -208,18 +211,48 @@ const commands = computed<PlatformPageAction[]>(() => {
   const refresh: PlatformPageAction[] = Object.keys(shown.panel.manifest.members).length
     ? [{ id: "refresh", label: props.labels.refresh, icon: RefreshCw, iconOnly: true, onClick: () => view.refresh(null) }]
     : [];
+  const detailIcon = (icon: PanelDetailHeaderAction["icon"]) => (
+    icon === "trash" ? Trash2 : icon === "save" ? Save : icon === "plus" ? Plus : undefined
+  );
+  const mapDetailAction = (action: PanelDetailHeaderAction): PlatformPageAction => ({
+    id: action.id,
+    label: action.label,
+    icon: detailIcon(action.icon),
+    primary: action.primary,
+    danger: action.danger,
+    inline: action.inline,
+    disabled: action.disabled,
+    loading: action.loading,
+    onClick: () => action.onClick(),
+  });
+  if (view.detailHeader.value) {
+    const memberActions = view.headerActions.value.map(mapDetailAction);
+    const detailActions = (view.detailHeader.value.actions ?? []).map(mapDetailAction);
+    return [...refresh, ...memberActions, ...detailActions];
+  }
   // A command setting a field this entry gives the panel would be undone at once: the entry's value stands.
   const setsWired = (id: string) => {
     const action = shown.panel.manifest.commands[id]?.do;
     return Boolean(action && "set" in action && Object.keys(action.set.fields).some((field) => props.wired.includes(field)));
+  };
+  const commandIcon = (id: string) => (shown.panel.manifest.commands[id]?.icon === "plus" ? Plus : undefined);
+  const alreadyAtTarget = (id: string) => {
+    const action = shown.panel.manifest.commands[id]?.do;
+    if (!action || !("set" in action)) return false;
+    const entries = Object.entries(action.set.fields);
+    if (!entries.length) return false;
+    // Only disable when every field sets a literal and the state already holds that exact value (e.g. already creating).
+    return entries.every(([field, source]) => "literal" in source && JSON.stringify(view.state.value[field] ?? null) === JSON.stringify(source.literal ?? null));
   };
   const shortcuts = view.operations.value
     .filter((operation) => operation.kind === "state" && !operation.memberPath && !setsWired(operation.id))
     .map((operation): PlatformPageAction => ({
       id: operation.id,
       label: operation.label,
+      icon: commandIcon(operation.id),
       // The one command the panel marks primary is the page's main action; an operation's ID here is its command's key.
       primary: shown.panel.manifest.commands[operation.id]?.primary === true,
+      disabled: alreadyAtTarget(operation.id),
       onClick: () => void view.invoke(operation.id),
     }));
   return [...refresh, ...shortcuts];
@@ -280,9 +313,6 @@ defineExpose({ ...view, operations, commands });
 
 <style scoped>
 .panel-host {
-  --panel-host-padding-inline: var(--spacing-md, 12px);
-  --panel-host-padding-top: var(--spacing-md, 12px);
-  --panel-host-padding-bottom: var(--spacing-md, 12px);
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -292,32 +322,32 @@ defineExpose({ ...view, operations, commands });
 }
 .panel-host-title {
   flex-shrink: 0;
-  padding: 4px var(--panel-host-padding-inline);
+  padding: 4px var(--spacing-md, 12px);
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .panel-host-error {
   flex-shrink: 0;
   margin: 0;
-  padding: var(--panel-host-padding-top) var(--panel-host-padding-inline);
+  padding: var(--spacing-md, 12px);
   color: var(--el-color-danger);
 }
 .panel-host-notice {
   flex-shrink: 0;
-  margin: var(--spacing-sm, 8px) var(--panel-host-padding-inline) 0;
+  margin: var(--spacing-sm, 8px) var(--spacing-md, 12px) 0;
   color: var(--el-color-warning);
   font-size: 12px;
 }
 .panel-host-draft-opening {
   flex-shrink: 0;
   margin: 0;
-  padding: var(--panel-host-padding-top) var(--panel-host-padding-inline);
+  padding: var(--spacing-md, 12px);
   color: var(--el-text-color-secondary);
 }
 .panel-host-draft {
   position: relative;
   flex-shrink: 0;
-  margin: var(--panel-host-padding-top) var(--panel-host-padding-inline) 0;
+  margin: var(--spacing-md, 12px) var(--spacing-md, 12px) 0;
 }
 .panel-host-draft :deep(.el-alert) {
   padding-right: calc(var(--spacing-md, 12px) + 24px);
@@ -368,7 +398,6 @@ defineExpose({ ...view, operations, commands });
   min-width: 0;
   overflow: auto;
   box-sizing: border-box;
-  padding: var(--panel-host-padding-top) var(--panel-host-padding-inline) var(--panel-host-padding-bottom);
 }
 /* Transparent to layout so the mounted `#app` element sits directly inside the definite-height content box. */
 .panel-host-coded {

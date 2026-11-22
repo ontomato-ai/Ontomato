@@ -43,6 +43,7 @@ withDefaults(
 <style scoped>
 /* The page fills the application's surface under the header; the header owns the one horizontal gutter. */
 .app-page {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -59,7 +60,12 @@ withDefaults(
   container: platform-page / inline-size;
 }
 .app-page-foot {
-  flex-shrink: 0;
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
 }
 .app-page > .app-navigation-header {
   padding-block: var(--spacing-xs);

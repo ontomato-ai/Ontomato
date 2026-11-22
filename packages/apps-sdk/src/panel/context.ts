@@ -19,9 +19,9 @@ import { fieldAt, valueAt } from "./form-values";
 import { projectionElement } from "./projection-element";
 import type { PanelReadPort } from "./direct";
 import type { PanelText } from "./text";
-import type { PanelBackHandlerRegistration, PlatformPageDraft } from "@ontomato/platform-shell";
+import type { PanelBackHandlerRegistration, PanelDetailHeader, PanelDetailHeaderAction, PlatformPageDraft } from "@ontomato/platform-shell";
 
-export type { PanelBackHandlerRegistration };
+export type { PanelBackHandlerRegistration, PanelDetailHeader, PanelDetailHeaderAction };
 
 /*
  * The panel context the SDK provides to a panel's own module (overall design 3.3, 3.4): the panel's declaration, the
@@ -113,6 +113,16 @@ export interface PanelContext {
    * and sandboxed frames.
    */
   registerHeaderDraft?: (slot: string, draft: () => PlatformPageDraft | null) => () => void;
+  /**
+   * Registers a full-width detail view's heading and actions in the enclosing platform header (replacing the catalog
+   * heading with a single bar). Present only when the panel runs directly under a host with a page header.
+   */
+  registerDetailHeader?: (header: () => PanelDetailHeader | null) => () => void;
+  /**
+   * Registers a member-owned action (such as OperationButton with `placement: "header"`) into the enclosing platform
+   * header. Present only when the panel runs directly under a host with a page header.
+   */
+  registerHeaderAction?: (slot: string, action: () => PanelDetailHeaderAction | null) => () => void;
   /**
    * Registers a panel-local back/close step (LIFO) with the host so browser Back (when `pushHistory: true`) and Escape
    * (when no dialog/drawer/dropdown is open) run `onBack` after the host's unified unsaved-changes guard passes.

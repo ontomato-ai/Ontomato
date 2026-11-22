@@ -266,11 +266,12 @@ defineExpose({ focus: () => input.value?.focus() });
   background: var(--el-fill-color);
 }
 /*
- * Folded: a round button aligned to the foot's trailing edge in normal flow so it sits below the content box (or inside
- * the measured page dock) and never overlaps page controls such as Save/Discard or pagination.
+ * Folded: a round button floating at the page's lower right, aligned to the foot's trailing edge so the page behind it
+ * keeps its whole height and stays clickable everywhere else.
  */
 .composer-unfold {
   margin-inline-start: auto;
+  pointer-events: auto;
   width: var(--control-height-lg);
   height: var(--control-height-lg);
   border: 1px solid var(--el-border-color);

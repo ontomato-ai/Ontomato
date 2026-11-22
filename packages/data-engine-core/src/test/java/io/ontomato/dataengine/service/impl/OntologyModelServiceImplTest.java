@@ -552,7 +552,7 @@ class OntologyModelServiceImplTest {
 				"businessKey", "Admin.form.businessKey", "primaryKey", "Admin.form.primaryKey"), labels.attribute());
 		assertEquals(Map.of("relationship", "Admin.form.relationship", "fromclass", "Admin.form.fromclass",
 				"fromField", "Admin.form.fromField", "toclass", "Admin.form.toclass", "toField", "Admin.form.toField",
-				"desc", "Admin.form.desc"), labels.relationship());
+				"desc", "Admin.form.relationDesc"), labels.relationship());
 		assertLabelledBy(labels.objectType(), service.objectTypeForm(open("draft", "platform:ObjectType", null), user, "en"));
 		assertLabelledBy(labels.attribute(), service.attributeForm(open("draft", "platform:Attribute", null), user, "en"));
 		assertLabelledBy(labels.relationship(),
@@ -637,6 +637,14 @@ class OntologyModelServiceImplTest {
 		assertEquals(List.of(), optionValues(fieldOf(form, "/fromField")));
 		assertTrue(fieldOf(form, "/fromclass").get("refreshOnChange").asBoolean());
 		assertTrue(fieldOf(form, "/fromField").get("required").asBoolean());
+		assertTrue(fieldOf(form, "/fromField").get("readOnly").asBoolean());
+		assertTrue(fieldOf(form, "/toField").get("readOnly").asBoolean());
+		assertEquals(80, fieldOf(form, "/relationship").get("control").get("maxLength").asInt());
+		assertEquals(400, fieldOf(form, "/desc").get("control").get("maxLength").asInt());
+		assertEquals("Admin.form.selectFromclass", fieldOf(form, "/fromclass").get("control").get("placeholder").asText());
+		assertEquals("Admin.form.enterFromField", fieldOf(form, "/fromField").get("control").get("placeholder").asText());
+		assertEquals("Admin.form.selectToclass", fieldOf(form, "/toclass").get("control").get("placeholder").asText());
+		assertEquals("Admin.form.enterToField", fieldOf(form, "/toField").get("control").get("placeholder").asText());
 
 		// A field held for the class before is no longer one of the new class's attributes; a matching one stays.
 		var changed = service.relationshipForm(new FormRequest(new FormTarget("draft", "platform:Relationship", null),
@@ -644,6 +652,8 @@ class OntologyModelServiceImplTest {
 						"toField", "id", "desc", ""),
 				"/fromclass"), user, "en");
 		assertEquals(List.of("id"), optionValues(fieldOf(changed, "/fromField")));
+		assertFalse(fieldOf(changed, "/fromField").get("readOnly").asBoolean());
+		assertFalse(fieldOf(changed, "/toField").get("readOnly").asBoolean());
 		assertEquals("", changed.values().get("fromField"));
 		assertEquals("id", changed.values().get("toField"));
 	}
@@ -664,8 +674,14 @@ class OntologyModelServiceImplTest {
 	void theRelationshipFormOpensAnEditWithItsNameAndEndsReadOnly() {
 		var form = service.relationshipForm(open("object", "platform:Relationship", "owns"), user, "en");
 
-		assertEquals(List.of(true, true, false, true, false, false),
+		assertEquals(List.of("/relationship", "/desc", "/fromField", "/toField"), paths(form));
+		assertEquals(List.of(true, false, false, false),
 				paths(form).stream().map(path -> fieldOf(form, path).get("readOnly").asBoolean()).toList());
+		assertEquals(List.of(false, false, true, true),
+				paths(form).stream().map(path -> fieldOf(form, path).get("required").asBoolean()).toList());
+		assertEquals("Admin.form.apiName", fieldOf(form, "/relationship").get("label").asText());
+		assertEquals("Admin.form.relationDesc", fieldOf(form, "/desc").get("label").asText());
+		assertEquals(400, fieldOf(form, "/desc").get("control").get("maxLength").asInt());
 		assertEquals(Map.of("relationship", "owns", "fromclass", "Device", "fromField", "site_id", "toclass", "Site",
 				"toField", "id", "desc", "owns"), form.values());
 		assertEquals(List.of("id", "site_id", "size"), optionValues(fieldOf(form, "/fromField")));

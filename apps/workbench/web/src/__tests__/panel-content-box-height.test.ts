@@ -72,14 +72,17 @@ describe("host content-box height stylesheets", () => {
     // Bare `#app` wrappers are layout-transparent; direct flex items keep `flex-shrink: 0` at zero specificity.
     expect(css).toMatch(/:where\(\.panel-host-direct > \.panel-host-coded > \[data-panel-bare-root\]\)\s*\{[^}]*display:\s*contents;/s);
     expect(css).toMatch(/:where\(\.panel-host-direct > \.panel-host-coded > \*\),\s*:where\(\.panel-host-direct > \.panel-host-coded > \[data-panel-bare-root\] > \*\)\s*\{[^}]*flex-shrink:\s*0;/s);
+    // PanelHost leaves padding entirely to each panel so full-bleed panels touch all four edges and list pages pad themselves.
+    expect(css).not.toContain("--panel-host-padding-");
+    expect(css).not.toMatch(/\.panel-host-direct\s*\{[^}]*padding:/s);
     // Host banners stay fixed above the scrolling content box.
     expect(css).toMatch(/\.panel-host-notice\s*\{[^}]*flex-shrink:\s*0;/s);
     expect(css).toMatch(/\.panel-host-draft\s*\{[^}]*flex-shrink:\s*0;/s);
   });
 
-  it("places PageComposer as a non-sticky flex foot and keeps non-panel PlatformLayout scrolling intact", () => {
+  it("floats PageComposer over the page foot without shortening the content box and keeps non-panel PlatformLayout scrolling intact", () => {
     const composerCss = stylesOf("../../../../../packages/agent-shell-ui/src/components/PageComposer.vue");
-    expect(composerCss).toMatch(/\.page-ask\s*\{[^}]*flex-shrink:\s*0;/s);
+    expect(composerCss).toMatch(/\.page-ask\s*\{[^}]*pointer-events:\s*none;/s);
     expect(composerCss).not.toMatch(/\.page-ask\s*\{[^}]*position:\s*sticky;/s);
     expect(composerCss).toMatch(/\.page-ask:has\(\.composer-unfold\)\s*\{[^}]*padding:[^;]*var\(--shell-composer-foot\);/s);
 
@@ -98,15 +101,18 @@ describe("host content-box height stylesheets", () => {
     expect(memberCss).toMatch(/:where\(\.sdk-panel-member-nested > \[data-panel-bare-root\]\)\s*\{[^}]*display:\s*contents;/s);
 
     const entryUnitCss = stylesOf("../../../../../packages/platform-web/src/pages/EntryUnit.vue");
-    expect(entryUnitCss).toMatch(/\.panel-entry-unit\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s);
+    expect(entryUnitCss).toMatch(/\.panel-entry-unit\s*\{[^}]*position:\s*relative;[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s);
     expect(entryUnitCss).toMatch(/\.panel-entry-unit-body\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s);
-    expect(entryUnitCss).toMatch(/\.panel-entry-unit-foot\s*\{[^}]*flex-shrink:\s*0;/s);
+    expect(entryUnitCss).toMatch(/\.panel-entry-unit-foot\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*0;[^}]*pointer-events:\s*none;/s);
 
     const routeCss = stylesOf("../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue");
-    expect(routeCss).toMatch(/\.panel-application-area\s*\{[^}]*padding-bottom:\s*var\(--pane-dock-space,\s*0px\);/s);
+    expect(routeCss).toMatch(/\.panel-application-area\s*\{[^}]*position:\s*relative;/s);
+    expect(routeCss).not.toContain("--pane-dock-space");
+    expect(routeCss).not.toContain("--panel-host-padding-");
+    expect(routeCss).toMatch(/\.panel-page-foot\s*\{[^}]*position:\s*absolute;[^}]*bottom:\s*0;[^}]*pointer-events:\s*none;/s);
 
     const paneCss = stylesOf("../../../../../packages/agent-shell-ui/src/components/ShellPagePane.vue");
-    expect(paneCss).not.toContain(".pane-dock:has(> .composer-unfold:only-child)");
+    expect(paneCss).toContain(".pane-dock:has(> .composer-unfold:only-child)");
   });
 });
 

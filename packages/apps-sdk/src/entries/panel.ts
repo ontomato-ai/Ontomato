@@ -21,6 +21,8 @@ export {
   usePanelContext,
   type PanelBackHandlerRegistration,
   type PanelContext,
+  type PanelDetailHeader,
+  type PanelDetailHeaderAction,
   type ProjectionSlot,
 } from "../panel/context";
 export {
@@ -28,6 +30,7 @@ export {
   type PanelBackHandle,
   type UsePanelBackOptions,
 } from "../panel/back";
+export { usePanelDetailHeader } from "../panel/detail-header";
 export type { PanelInstance } from "../panel/instance";
 export { applyPanelRequest } from "../panel/instance";
 export { defineComponentMeta } from "../components";

@@ -55,6 +55,8 @@ export {
   type DirectPanelMount,
   type DirectPanelRun,
   type HostedPanelSource,
+  type PanelDetailHeader,
+  type PanelDetailHeaderAction,
   type PanelHostState,
   type PanelSdkRelease,
   type PanelHostLabels,
@@ -68,6 +70,7 @@ export { confirmDanger } from "./confirm-danger";
 export {
   createPanelBackController,
   hasOpenOverlay,
+  installPanelBackPopStateListener,
   type PanelBackController,
   type PanelBackControllerOptions,
   type PanelBackHandlerRegistration,

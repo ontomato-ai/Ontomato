@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, nextTick } from "vue";
-import { createMemoryHistory, createRouter, RouterView } from "vue-router";
+import { createMemoryHistory, createRouter, createWebHashHistory, RouterView } from "vue-router";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { FUNCTION } from "@ontomato/contracts/platform-object-types";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import { provideUnsavedChanges } from "@ontomato/platform-shell";
+import { installPanelBackPopStateListener, provideUnsavedChanges } from "@ontomato/platform-shell";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import {
   installPlatform,
@@ -253,6 +253,90 @@ describe("PanelApplicationRoute + usePanelBack + ObjectForm integration", () => 
       expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toBeUndefined();
     } finally {
       app.unmount();
+    }
+  });
+
+  it("guards dirty browser Back under real createWebHashHistory without overwriting the catalog history entry", async () => {
+    installPlatform(answer);
+    installPanelBackPopStateListener();
+    window.history.replaceState(null, "", "/#/home");
+    const history = createWebHashHistory();
+    const router = createRouter({
+      history,
+      routes: [
+        { path: "/home", component: { render: () => h("div", { class: "home-view" }, "Home") } },
+        {
+          path: "/applications/:applicationId/:panelPath(.*)?",
+          component: PanelApplicationRoute,
+          props: (route) => ({ applicationId: String(route.params.applicationId) }),
+        },
+      ],
+    });
+    let allowLeave = false;
+    const askUnsaved = vi.fn(async () => allowLeave);
+    let unsavedCheck!: ReturnType<typeof provideUnsavedChanges>;
+    const Shell = defineComponent({
+      setup() {
+        unsavedCheck = provideUnsavedChanges(askUnsaved);
+        return () => h(RouterView);
+      },
+    });
+    const { app, element } = mountPlatformPage(() => h(Shell), router);
+    const removeGuard = router.beforeEach((to) => unsavedCheck.allows(to.path));
+    try {
+      await router.push("/home");
+      await router.isReady();
+      const homeUrl = window.location.href;
+      const homeState = { ...(window.history.state as Record<string, unknown>) };
+
+      await router.push(path);
+      await vi.waitFor(() => expect(element.querySelector(".open-item")).not.toBeNull());
+      const catalogUrl = window.location.href;
+      const catalogState = { ...(window.history.state as Record<string, unknown>) };
+      expect(catalogState.__ontomatoPanelBack).toBeUndefined();
+
+      // Open detail and make an unsaved edit.
+      element.querySelector<HTMLButtonElement>(".open-item")!.click();
+      await vi.waitFor(() => expect(element.querySelector('[data-field="/name"] input')).not.toBeNull());
+      await vi.waitFor(() =>
+        expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toEqual(expect.any(String)),
+      );
+      const detailHash = window.location.hash;
+      const input = element.querySelector<HTMLInputElement>('[data-field="/name"] input')!;
+      input.value = "Edited";
+      input.dispatchEvent(new Event("input"));
+      await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-unsaved")).not.toBeNull());
+
+      // Simulate browser Back popping to the catalog history entry: panel-back must intercept BEFORE Vue Router's
+      // popstate listener can commit the bare catalog URL and overwrite it via dirty watch + syncHistorySnapshot.
+      allowLeave = false;
+      window.history.replaceState(catalogState, "", catalogUrl);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: catalogState }));
+      await vi.waitFor(() => expect(askUnsaved).toHaveBeenCalledTimes(1));
+      await askUnsaved.mock.results[0]!.value;
+      await vi.waitFor(() => expect(window.location.hash).toBe(detailHash));
+      expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toEqual(expect.any(String));
+      expect(element.querySelector(".open-item")).toBeNull();
+      expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')!.value).toBe("Edited");
+
+      // Second dirty browser Back with Confirm: leaves cleanly back to catalog, clears dirty & deep-link state.
+      allowLeave = true;
+      window.history.replaceState(catalogState, "", catalogUrl);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: catalogState }));
+      await vi.waitFor(() => expect(askUnsaved).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(element.querySelector(".open-item")).not.toBeNull());
+      await vi.waitFor(() => expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({}));
+      expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toBeUndefined();
+
+      // Third browser Back from clean catalog reaches #/home via Vue Router (catalog entry was not skipped).
+      window.history.replaceState(homeState, "", homeUrl);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: homeState }));
+      await vi.waitFor(() => expect(element.querySelector(".home-view")).not.toBeNull());
+      expect(router.currentRoute.value.path).toBe("/home");
+    } finally {
+      removeGuard();
+      app.unmount();
+      history.destroy();
     }
   });
 });

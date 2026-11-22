@@ -9,8 +9,10 @@ export interface PlatformPageHeading {
   title: string;
   /** The line under the title, as a native page's header has it: the entry's description in the reader's language. */
   description?: string;
-  /** Present for a page the application's menu does not reach. */
+  /** Present for a page the application's menu does not reach, or a full-width detail view returning to its catalog. */
   back?: () => void;
+  /** Optional custom label for the header's back control (for example "Back to relation types"). */
+  backLabel?: string;
   /**
    * The entry's external link: its address with the state it is at, opened without the platform's rail. The header
    * offers to copy it; absent for a page that is no entry of an application.
