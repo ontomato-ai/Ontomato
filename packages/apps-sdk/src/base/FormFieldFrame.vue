@@ -40,7 +40,7 @@ const helpText = computed(() => {
 });
 const warningText = computed(() => props.field.warning?.trim() || null);
 const hasDefault = computed(() => props.field.defaultValue !== undefined);
-const currentValue = computed(() => (controls ? valueAt(controls.values.value, props.path) : props.value));
+const currentValue = computed(() => (controls ? valueAt(controls.prunedValues.value, props.path) : props.value));
 const atDefault = computed(() =>
   hasDefault.value
   && !(controls?.hasInvalid(props.path) ?? false)

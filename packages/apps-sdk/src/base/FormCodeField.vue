@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
@@ -67,6 +67,12 @@ function edit(source: string) {
   }
   controls.set(props.path, parsed);
 }
+
+// Switching away from a variant or removing an object unmounts this editor; drop its local unparseable state so an
+// inactive field never keeps blocking saves or leaves a stale error if the reader switches back later.
+onBeforeUnmount(() => {
+  if (invalid) controls.invalid(props.path, null);
+});
 </script>
 
 <template>

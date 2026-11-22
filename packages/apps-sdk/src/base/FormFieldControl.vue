@@ -6,9 +6,13 @@ import { ElInput } from "element-plus/es/components/input/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelFormField } from "@ontomato/contracts/panel-projection";
+import {
+  panelFormObjectActiveFields,
+  panelFormObjectActiveVariant,
+  type PanelFormField,
+} from "@ontomato/contracts/panel-projection";
 import { findPanelFormOption, type PanelFormOption } from "@ontomato/contracts/form-fields";
-import { admitsNull, valueAt } from "../panel/form-values";
+import { admitsNull, cloneJsonValue, valueAt } from "../panel/form-values";
 import { agentAvatar, avatarIconOptions, darkAvatarColorOptions, lightAvatarColorOptions, storedAgentAvatar } from "@ontomato/agent-shell-ui/avatar";
 import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import { useFormControls } from "./form-controls";
@@ -88,7 +92,7 @@ function move(index: number, to: number) {
 const remove = (index: number) => controls.reorder(props.path, rows.value.map((_, at) => at).filter((at) => at !== index));
 
 function addRow() {
-  if (control.value.kind === "object-array") set([...rows.value, control.value.defaultItem ?? {}]);
+  if (control.value.kind === "object-array") set([...rows.value, cloneJsonValue(control.value.defaultItem ?? {})]);
   else set([...rows.value, ""]);
 }
 /** A number as the reader typed it; cleared, it is null, never 0. (The input itself refuses text that is no number.) */
@@ -115,7 +119,25 @@ const setAvatar = (next: { key?: string; swatch?: number }) => set(storedAgentAv
 /** A hidden field is the owner's and is drawn by no control; an advanced one is drawn in the level's advanced section. */
 const drawn = (fields: readonly PanelFormField[], advanced: boolean) =>
   fields.filter((child) => child.control.kind !== "hidden" && (child.advanced === true) === advanced);
-const addObject = () => set(control.value.kind === "object" ? control.value.defaultObject ?? {} : {});
+const objectVariant = computed(() => (
+  control.value.kind === "object"
+    ? panelFormObjectActiveVariant(control.value, object.value ?? undefined)
+    : undefined
+));
+const objectFields = computed(() => (
+  control.value.kind === "object"
+    ? panelFormObjectActiveFields(control.value, object.value ?? undefined)
+    : []
+));
+const commonObjectPaths = computed(() => new Set(
+  control.value.kind === "object" ? control.value.fields.map((child) => child.path) : [],
+));
+const objectChildKey = (child: PanelFormField) => (
+  commonObjectPaths.value.has(child.path) || objectVariant.value === undefined
+    ? child.path
+    : `${objectVariant.value}:${child.path}`
+);
+const addObject = () => set(control.value.kind === "object" ? cloneJsonValue(control.value.defaultObject ?? {}) : {});
 /**
  * A frequency, edited as the scheduled task page edits it: the editor keeps every kind's own values while the reader
  * switches kinds, and the owner's value is the chosen kind's alone. A new value from the owner (a draft, a refresh)
@@ -249,20 +271,20 @@ function setFrequency(next: FrequencyDraft) {
     <div v-else-if="control.kind === 'object'" class="sdk-form-object">
       <template v-if="object">
         <form-field-control
-          v-for="child in drawn(control.fields, false)"
-          :key="child.path"
+          v-for="child in drawn(objectFields, false)"
+          :key="objectChildKey(child)"
           :field="child"
           :path="path + child.path"
           :disabled="off"
         ></form-field-control>
         <form-advanced-section
-          v-if="drawn(control.fields, true).length"
+          v-if="drawn(objectFields, true).length"
           class="sdk-form-object"
-          :paths="drawn(control.fields, true).map((child) => path + child.path)"
+          :paths="drawn(objectFields, true).map((child) => path + child.path)"
         >
           <form-field-control
-            v-for="child in drawn(control.fields, true)"
-            :key="child.path"
+            v-for="child in drawn(objectFields, true)"
+            :key="objectChildKey(child)"
             :field="child"
             :path="path + child.path"
             :disabled="off"

@@ -7,11 +7,17 @@ import { ElForm } from "element-plus/es/components/form/index";
 import { ElMessageBox } from "element-plus/es/components/message-box/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
-import type { PanelFormDescription, PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import {
+  panelFormObjectActiveFields,
+  pruneInactivePanelFormVariants,
+  type PanelFormDescription,
+  type PanelFormField,
+  type PanelFormValues,
+} from "@ontomato/contracts/panel-projection";
 import { slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
-import { changedPaths, fieldAt, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
+import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
 import {
@@ -26,7 +32,7 @@ import {
 import { fieldControlKey, fieldControlsOf, formControlsKey } from "./form-controls";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldPlace from "./FormFieldPlace.vue";
-import { fieldShowing } from "./form-placement";
+import { activeFieldAt, changedFieldPaths, fieldShowing, preserveInactiveVariantValues } from "./form-placement";
 import { useDataStateLabels } from "./data-state-labels";
 
 /**
@@ -209,9 +215,28 @@ const sectionGroups = computed(() => {
 function goToSection(key: string) {
   formElement.value!.querySelector<HTMLElement>(`[data-form-section="${CSS.escape(key)}"]`)!.scrollIntoView({ behavior: "smooth", block: "start" });
 }
-/** Changed values, or text a reader typed that is no value yet (JSON that does not parse): either is unsaved. */
-const dirty = computed(() => opened.value !== null
-  && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
+/** Local edit values with inactive object-variant keys pruned, matching what a save sends to the owner. */
+const prunedValues = computed(() => pruneInactivePanelFormVariants(fields.value, values.value));
+/** Opened baseline values pruned by the same variant rules so dirty/change checks ignore inactive variant leftovers. */
+const prunedOpenedValues = computed(() => (
+  opened.value ? pruneInactivePanelFormVariants(opened.value.fields, opened.value.values) : null
+));
+/** Unparseable local text limited to currently active fields, so an inactive variant never blocks saving the active one. */
+const activeInvalid = computed<Readonly<Record<string, string>>>(() => {
+  if (!Object.keys(invalid.value).length) return {};
+  return Object.fromEntries(
+    Object.entries(invalid.value).filter(([path]) => activeFieldAt(fields.value, values.value, path) !== undefined),
+  );
+});
+/** Top-level fields whose effective (pruned) values differ from the opened baseline. */
+const effectiveChangedPaths = computed<ReadonlySet<string>>(() => (
+  prunedOpenedValues.value
+    ? changedFieldPaths(fields.value, prunedOpenedValues.value, prunedValues.value)
+    : new Set()
+));
+/** Changed effective values, or unparseable text in an active field: either is unsaved. */
+const dirty = computed(() => prunedOpenedValues.value !== null
+  && (!jsonValuesEqual(prunedValues.value, prunedOpenedValues.value) || Object.keys(activeInvalid.value).length > 0));
 /**
  * The described fields this edit submits, by path: those the reader set (whatever value they end on) and those a received
  * draft wrote. The owner keeps a field not named here as it is, so a field nobody touched is never added. Whether a
@@ -225,17 +250,18 @@ const isCreate = computed(() => target.value?.kind === "draft");
 /** Whether every non-hidden field in the owner's form description is read-only. */
 const allReadOnly = computed(() => drawn.value.length > 0 && drawn.value.every((field) => field.readOnly));
 /**
- * Count of distinct top-level fields modified in this draft (union of draft-marked `changed`, reader-edited
- * `submitted`, and unparseable `invalid` fields), guaranteed >= 1 whenever `canSettle` is true.
+ * Count of distinct top-level fields modified in this draft (union of draft-marked `changed`, effective pruned diffs,
+ * and active unparseable `invalid` fields, falling back to explicitly `submitted` fields), guaranteed >= 1 whenever
+ * `canSettle` is true.
  */
 const changedCount = computed(() => {
-  const paths = new Set<string>([...changed.value, ...submitted.value]);
-  for (const path of Object.keys(invalid.value)) {
+  const paths = new Set<string>([...changed.value, ...effectiveChangedPaths.value]);
+  for (const path of Object.keys(activeInvalid.value)) {
     const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
     paths.add(described ? described.path : path);
   }
-  if (paths.size === 0 && opened.value) {
-    for (const path of changedPaths(fields.value, opened.value.values, values.value)) paths.add(path);
+  if (paths.size === 0) {
+    for (const path of submitted.value) paths.add(path);
   }
   return paths.size > 0 ? paths.size : (canSettle.value ? 1 : 0);
 });
@@ -416,7 +442,7 @@ function edit(path: string, next: PanelFormValues) {
   if (described) submitted.value = new Set([...submitted.value, described.path]);
   values.value = next;
   editedAt.set(path, ++edits);
-  const field = fieldAt(fields.value, path);
+  const field = activeFieldAt(fields.value, next, path);
   if (field?.refreshOnChange) askOwner(path);
 }
 
@@ -442,14 +468,20 @@ function askOwner(changedField: string) {
   const askedAt = edits;
   const reading = latestRead;
   // The owner changes the fields for these edits; the opened reading, its revision and the discard baseline stay.
-  void forms.describe({ target: asked, values: values.value, changedField }).then((answer) => {
+  void forms.describe({
+    target: asked,
+    values: pruneInactivePanelFormVariants(fields.value, values.value),
+    changedField,
+  }).then((answer) => {
     if (reading !== latestRead) return;
+    const localDraft = values.value;
     ownerShown.value = answer;
     description.value = fixDescription(answer);
-    values.value = [...editedAt].filter(([, at]) => at > askedAt).reduce((all, [edited]) => {
-      const kept = valueAt(values.value, edited);
+    const replayed = [...editedAt].filter(([, at]) => at > askedAt).reduce((all, [edited]) => {
+      const kept = valueAt(localDraft, edited);
       return kept === undefined ? withoutValueAt(all, edited) : withValueAt(all, edited, kept);
     }, description.value.values);
+    values.value = preserveInactiveVariantValues(description.value.fields, localDraft, replayed);
     errors.value = fieldMessages(answer.errors);
   }, (reason) => {
     if (reading === latestRead) fail(reason, () => askOwner(changedField));
@@ -478,8 +510,13 @@ function reorder(path: string, order: readonly number[]) {
 }
 
 function markInvalid(path: string, message: string | null) {
-  const { [path]: _, ...rest } = invalid.value;
-  invalid.value = message === null ? rest : { ...rest, [path]: message };
+  if (message === null) {
+    invalid.value = Object.fromEntries(
+      Object.entries(invalid.value).filter(([at]) => at !== path && !at.startsWith(`${path}/`)),
+    );
+    return;
+  }
+  invalid.value = { ...invalid.value, [path]: message };
 }
 
 /**
@@ -488,14 +525,16 @@ function markInvalid(path: string, message: string | null) {
  */
 const sharedReadOnlyReasons = computed<ReadonlySet<string>>(() => {
   const counts = new Map<string, number>();
-  const visit = (fields: readonly PanelFormField[]) => {
-    for (const field of fields) {
+  const visit = (list: readonly PanelFormField[], node: RuntimeJsonValue | undefined) => {
+    const objectNode = node !== null && typeof node === "object" && !Array.isArray(node) ? node as PanelFormValues : undefined;
+    for (const field of list) {
       if (field.readOnly && field.readOnlyReason) counts.set(field.readOnlyReason, (counts.get(field.readOnlyReason) ?? 0) + 1);
-      if (field.control.kind === "object") visit(field.control.fields);
-      if (field.control.kind === "object-array") visit(field.control.itemFields);
+      const current = objectNode ? valueAt(objectNode, field.path) : undefined;
+      if (field.control.kind === "object") visit(panelFormObjectActiveFields(field.control, current), current);
+      if (field.control.kind === "object-array") visit(field.control.itemFields, Array.isArray(current) ? current[0] : undefined);
     }
   };
-  visit(fields.value);
+  visit(fields.value, values.value);
   return new Set([...counts].filter(([, count]) => count > 1).map(([reason]) => reason));
 });
 
@@ -504,14 +543,15 @@ const hasDefaults = computed(() => fields.value.some((field) => field.control.ki
 
 provide(formControlsKey, {
   values,
-  errors: computed(() => ({ ...errors.value, ...invalid.value })),
+  prunedValues,
+  errors: computed(() => ({ ...errors.value, ...activeInvalid.value })),
   changed,
   busy: saving,
   layout: computed(() => props.layout),
   hasDefaults,
   sharedReadOnlyReasons,
   isTopLevel: (path) => topLevelPaths.value.has(path),
-  hasInvalid: (path) => Object.hasOwn(invalid.value, path),
+  hasInvalid: (path) => Object.keys(activeInvalid.value).some((at) => at === path || at.startsWith(`${path}/`)),
   set,
   remove,
   reorder,
@@ -632,7 +672,7 @@ const refusalFoot = computed(() => {
   const onFields = new Set<string>();
   const said: string[] = [];
   for (const [path, message] of named) {
-    const field = fieldShowing(fields.value, path);
+    const field = fieldShowing(fields.value, values.value, path);
     if (field === null) said.push(message);
     else onFields.add(field);
   }
@@ -661,7 +701,7 @@ function takeSavedFields(receipt: PlatformObjectRefusal) {
   ownerOpened.value = baseline;
   opened.value = fixDescription(baseline);
   const savedPaths = new Set(saved.map(([path]) => path));
-  const stillChanged = changedPaths(fields.value, opened.value.values, values.value);
+  const stillChanged = effectiveChangedPaths.value;
   const keep = (path: string) => !savedPaths.has(path) || stillChanged.has(path);
   submitted.value = new Set([...submitted.value].filter(keep));
   changed.value = new Set([...changed.value].filter(keep));
@@ -679,20 +719,23 @@ async function write(): Promise<unknown> {
   if (!into) throw new Error("This form edits one object, and none is selected");
   if (failure.value) throw failure.value.reason;
   if (loading.value || asking.value) throw new Error(t("common.loading"));
-  if (Object.keys(invalid.value).length) throw new Error(t("platform.formFixInvalid"));
+  if (Object.keys(activeInvalid.value).length) throw new Error(t("platform.formFixInvalid"));
   saving.value = true;
   refusal.value = null;
   errors.value = {};
+  const payloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
   try {
     const revision = opened.value!.revision;
     const saved = await forms.save(into, {
-      values: values.value, submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
+      values: payloadValues, submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
       ...(revision === undefined ? {} : { revision }),
     });
     submitted.value = new Set();
     held = null;
-    ownerOpened.value = { ...ownerShown.value!, values: values.value };
-    opened.value = { ...description.value!, values: values.value };
+    ownerOpened.value = { ...ownerShown.value!, values: payloadValues };
+    opened.value = { ...description.value!, values: payloadValues };
+    values.value = payloadValues;
+    invalid.value = {};
     changed.value = new Set();
     if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
     emit("saved", { className: objectType, primaryKey: saved.primaryKey });
