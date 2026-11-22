@@ -668,6 +668,8 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   height: 100%;
   min-height: 0;
   min-width: 0;
+  box-sizing: border-box;
+  padding-bottom: var(--pane-dock-space, 0px);
   overflow: hidden;
 }
 .panel-application-status {

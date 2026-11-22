@@ -99,6 +99,12 @@ describe("host content-box height stylesheets", () => {
     expect(entryUnitCss).toMatch(/\.panel-entry-unit\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s);
     expect(entryUnitCss).toMatch(/\.panel-entry-unit-body\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/s);
     expect(entryUnitCss).toMatch(/\.panel-entry-unit-foot\s*\{[^}]*flex-shrink:\s*0;/s);
+
+    const routeCss = stylesOf("../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue");
+    expect(routeCss).toMatch(/\.panel-application-area\s*\{[^}]*padding-bottom:\s*var\(--pane-dock-space,\s*0px\);/s);
+
+    const paneCss = stylesOf("../../../../../packages/agent-shell-ui/src/components/ShellPagePane.vue");
+    expect(paneCss).toMatch(/\.pane-dock:has\(> \.composer-unfold:only-child\)\s*\{[^}]*padding:\s*0;/s);
   });
 });
 
