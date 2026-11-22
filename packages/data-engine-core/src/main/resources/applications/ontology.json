@@ -42,17 +42,20 @@
       "id": "ontology-objects", "pageKey": "ontology-objects", "panelId": "builtin-product-ontology-objects",
       "path": "/ontology/objects", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Object types: the catalogue, a new type, and one type's details with its attributes and relations.", "zh-CN": "对象类型的目录、新建，以及一个类的详情：基本信息、属性与关系。"},
-      "names": {"en": "Object types", "zh-CN": "对象类型"}
+      "names": {"en": "Object types", "zh-CN": "对象类型"},
+      "count": {"member": "catalog", "data": "rows"}
     }, {
       "id": "ontology-attributes", "pageKey": "ontology-attributes", "panelId": "builtin-product-ontology-attributes",
       "path": "/ontology/attributes", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Every object type's attributes: filter by type, then create, edit, set the primary key or delete one.", "zh-CN": "各对象类型的属性：按类筛选，新建、修改、设为主键和删除。"},
-      "names": {"en": "Attributes", "zh-CN": "属性"}
+      "names": {"en": "Attributes", "zh-CN": "属性"},
+      "count": {"member": "attributes", "data": "rows"}
     }, {
       "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
       "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Define relationships and their endpoints between object types", "zh-CN": "定义对象类型之间的关系及其关联端点"},
-      "names": {"en": "Relation types", "zh-CN": "关系类型"}
+      "names": {"en": "Relation types", "zh-CN": "关系类型"},
+      "count": {"member": "catalogue", "data": "rows"}
     }, {
       "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
       "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
