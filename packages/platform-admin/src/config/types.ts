@@ -112,11 +112,4 @@ export function multiDataSourceDefinition(
   return { dataSources: draft.dataSources, classes, relationships };
 }
 
-export type GeneralConfigKey = "knowledgeMaxResult" | "dslCookerTimeout" | "lang";
-
-/** Endpoints of the general settings saves, one per editable key. */
-export const generalConfigSaveEndpoints: Record<GeneralConfigKey, string> = {
-  knowledgeMaxResult: "/businessConfig/saveKnowledgeMaxResult",
-  dslCookerTimeout: "/businessConfig/saveDslCookerTimeout",
-  lang: "/businessConfig/saveLang",
-};
+export { generalConfigSaveEndpoints, type GeneralConfigKey } from "@ontomato/contracts/general-settings";

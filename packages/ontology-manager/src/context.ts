@@ -11,7 +11,6 @@ import {
 import { metricViewsKey } from "./clients/metric-views";
 import type { MessageKey, SharedKey, TextParams } from "./i18n";
 import { emptyOntologyResourceCounts, type OntologyResourceCounts } from "./workspace";
-import { ATTRIBUTE, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 
 export type ManagerTheme = "light" | "dark";
 
@@ -81,8 +80,11 @@ export interface ManagerCounts {
   changed(objectTypes: readonly string[]): void;
 }
 
-/** The object types whose writes move a count: what `refresh` reads. */
-const COUNTED_TYPES: ReadonlySet<string> = new Set([OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP]);
+/**
+ * The object types whose writes move a count: what `refresh` reads. The pages these counted are panel entries now,
+ * counted by their own entries; the products count has no object type of its own.
+ */
+const COUNTED_TYPES: ReadonlySet<string> = new Set();
 
 const contextKey: InjectionKey<ManagerContext> = Symbol("ontology-manager-context");
 const clientKey: InjectionKey<ManagerClient> = Symbol("ontology-manager-client");
@@ -98,16 +100,9 @@ function createCounts(client: ManagerClient): ManagerCounts {
   let started = false;
   async function refresh() {
     started = true;
-    // The scheduled tasks of functions are the platform's now: this area counts only what it owns.
-    const [ontology, products] = await Promise.allSettled([
-      client.loadOntology(),
-      client.products.counts(),
-    ]);
-    if (ontology.status === "fulfilled") {
-      values.objects = ontology.value.objects.length;
-      values.attributes = ontology.value.objects.reduce((total, object) => total + object.attrs.length, 0);
-      values.relations = ontology.value.relations.length;
-    }
+    // Object types, attributes, relation types, functions and metric views are panel entries now: their counts are their
+    // entries' own; this area counts only the products it still owns.
+    const [products] = await Promise.allSettled([client.products.counts()]);
     if (products.status === "fulfilled") values.products = Object.values(products.value).reduce((sum,count)=>sum+count,0);
   }
   return {

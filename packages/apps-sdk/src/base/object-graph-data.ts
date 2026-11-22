@@ -16,6 +16,8 @@ export interface GraphRecords {
   readonly links: readonly GraphCanvasEdge[];
   readonly loading: boolean;
   readonly error: string | null;
+  /** Non-blocking notice explaining that relations cannot be viewed when `edges` is forbidden while nodes stay readable. */
+  readonly edgesNotice: string | null;
 }
 
 /** The node an edge record names at a declared pointer: its owner's key there, or a visible failure. */
@@ -35,8 +37,8 @@ function categoryOf(record: PanelRecord, pointer: string | undefined): { categor
 
 /**
  * The member's `nodes` and `edges` datums (`panelRecordList`) as a graph: a node per node record, an edge per edge
- * record between the node keys its fields name at `edgeEnds`. Either read still running is loading; a refusal or a
- * failure of either is the graph's.
+ * record between the node keys its fields name at `edgeEnds`. Either read still running is loading; node refusal or an
+ * error is the graph's, while edge refusal keeps all readable nodes with a non-blocking notice.
  */
 export function useGraphRecords(edgeEnds?: EdgeEndsConfig, nodeCategory?: string): ComputedRef<GraphRecords> {
   const { t } = useI18n();
@@ -52,11 +54,15 @@ export function useGraphRecords(edgeEnds?: EdgeEndsConfig, nodeCategory?: string
   return computed(() => {
     const n = nodesState.value;
     const e = edgesState.value;
-    if (n.status === "loading" || e.status === "loading") return { nodes: [], links: [], loading: true, error: null };
-    if (n.status === "forbidden" || e.status === "forbidden") return { nodes: [], links: [], loading: false, error: t("platform.dataForbidden") };
-    if (n.status === "error") return { nodes: [], links: [], loading: false, error: n.message };
-    if (e.status === "error") return { nodes: [], links: [], loading: false, error: e.message };
-    if (n.status !== "ready" || (e.status !== "ready" && e.status !== "empty")) return { nodes: [], links: [], loading: false, error: null };
+    if (n.status === "loading" || e.status === "loading") return { nodes: [], links: [], loading: true, error: null, edgesNotice: null };
+    if (n.status === "forbidden") return { nodes: [], links: [], loading: false, error: t("platform.dataForbidden"), edgesNotice: null };
+    if (n.status === "error") return { nodes: [], links: [], loading: false, error: n.message, edgesNotice: null };
+    if (e.status === "error") return { nodes: [], links: [], loading: false, error: e.message, edgesNotice: null };
+    const edgesForbidden = e.status === "forbidden";
+    const edgesNotice = edgesForbidden ? t("platform.graphEdgesForbidden") : null;
+    if (n.status !== "ready" || (e.status !== "ready" && e.status !== "empty" && !edgesForbidden)) {
+      return { nodes: [], links: [], loading: false, error: null, edgesNotice };
+    }
     const nodeRecords = n.value as unknown as readonly PanelRecord[];
     const edgeRecords = e.status === "ready" ? (e.value as unknown as readonly PanelRecord[]) : [];
     try {
@@ -70,9 +76,16 @@ export function useGraphRecords(edgeEnds?: EdgeEndsConfig, nodeCategory?: string
         })),
         loading: false,
         error: null,
+        edgesNotice,
       };
     } catch (reason: unknown) {
-      return { nodes: [], links: [], loading: false, error: reason instanceof Error ? reason.message : String(reason) };
+      return {
+        nodes: [],
+        links: [],
+        loading: false,
+        error: reason instanceof Error ? reason.message : String(reason),
+        edgesNotice: null,
+      };
     }
   });
 }

@@ -1,5 +1,29 @@
 [
   {
+    "key": "GeneralSettings.knowledgeMaxResult",
+    "value": "Knowledge Max Results"
+  },
+  {
+    "key": "GeneralSettings.knowledgeMaxResultHint",
+    "value": "How many knowledge entries one search returns at most."
+  },
+  {
+    "key": "GeneralSettings.dslCookerTimeoutSeconds",
+    "value": "DSL generator timeout (s)"
+  },
+  {
+    "key": "GeneralSettings.dslCookerTimeoutSecondsHint",
+    "value": "How long one DSL generation may take before it is abandoned."
+  },
+  {
+    "key": "GeneralSettings.lang",
+    "value": "Backend Language"
+  },
+  {
+    "key": "GeneralSettings.langHint",
+    "value": "The language the data engine answers in; the interface language is set here too."
+  },
+  {
     "key": "Action.unsupportedFunction",
     "value": "Action requires an OPERATION_WRITE Python Function and does not support queryPackage; use MetricView for read-only queries."
   },

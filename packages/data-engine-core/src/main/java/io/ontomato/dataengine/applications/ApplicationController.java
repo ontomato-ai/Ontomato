@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.applications;
 
+import io.ontomato.dataengine.controller.BuildTestAccess;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.core.bean.R;
@@ -127,10 +128,17 @@ public class ApplicationController {
         if (domainId.isBlank()) throw ApplicationCatalog.bad("A domain is required");
         return R.of(catalog.panelSkillSources(domainId));
     }
+    @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+    @GetMapping(value = "/platform/applications", params = "purpose=navigation")
+    public R<?> navigation() {
+        return R.of(catalog.visible(current()));
+    }
+
     @GetMapping("/platform/applications")
     public R<?> list(@RequestParam(defaultValue="navigation") String purpose) {
+        if (!purpose.equals("schedules")) return navigation();
         var user = current();
-        return R.of(purpose.equals("schedules") ? catalog.all().stream().filter(a -> catalog.inDomain(a,user) && a.getString("scheduleAdapter") != null).toList() : catalog.visible(user));
+        return R.of(catalog.all().stream().filter(a -> catalog.inDomain(a,user) && a.getString("scheduleAdapter") != null).toList());
     }
     @GetMapping("/platform/applications/{id}")
     public R<?> get(@PathVariable String id) {

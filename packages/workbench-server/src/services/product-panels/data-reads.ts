@@ -10,6 +10,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
+  AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
@@ -21,6 +22,12 @@ import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { ProductOwner } from "../product-governance/grants";
 
+import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
+import { createGeneralSettingsReads } from "../admin/general-settings-panel";
+import { createBuilderModelReads } from "../app-builder/panel-model";
+import { createDiagnosisModelReads } from "../ops-diagnosis/panel-model";
+import { readPublishedMcpServices } from "../mcp/panel-reads";
+import type { McpRequestLocation } from "../mcp/catalog";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
@@ -55,7 +62,7 @@ function customerReads(owner: ProductOwner, viewer: AssistantCredentials, caller
   };
 }
 
-function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string): Record<string, Record<string, ReadAdapter>> {
+function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
   const ontology = async () => {
     const { createPlatformOntologyReadAdapter } = await import("../platform-ontology/panel-reads");
@@ -118,7 +125,32 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     const { createFeedbackReadAdapter } = await import("../admin/feedback-panel-reads");
     return createFeedbackReadAdapter(owner, viewer);
   };
+  const audit = createAuditLogPanelReads(viewer);
+  const general = createGeneralSettingsReads({ owner, credentials: viewer });
+  const diagnosis = createDiagnosisModelReads(owner.domainId, viewer);
+  const builder = createBuilderModelReads(owner, viewer);
   return {
+    [PUBLISHED_MCP_SERVICE]: { list: () => readPublishedMcpServices(viewer, location) },
+    [AUDIT_LOG]: {
+      query: (_selection, params) => audit.query(params),
+      record: selection => audit.record(selection.primaryKey!),
+    },
+    [GENERAL_SETTINGS]: {
+      list: () => general.list(),
+      record: selection => general.record(selection.primaryKey!),
+      form: (selection, params) => general.form(selection.primaryKey!, formParams(params)),
+    },
+    [DIAGNOSIS_MODEL]: {
+      list: () => diagnosis.list(),
+      record: selection => diagnosis.record(selection.primaryKey!),
+      form: (selection, params) => diagnosis.form(selection.primaryKey!, formParams(params)),
+    },
+    [BUILDER_AGENT]: {
+      list: () => builder.list(),
+      record: selection => builder.record(selection.primaryKey!),
+      form: (selection, params) => builder.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => builder.createForm(formParams(params)),
+    },
     [ACTION]: {
       list: async () => (await actions()).list(),
       record: async selection => (await actions()).record(selection.primaryKey!),
@@ -330,7 +362,7 @@ function readSelection({ source, read }: DirectProjectionData, inputs: ReadInput
 }
 
 export async function readProductPanelData(
-  owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, callerUserName?: string,
+  owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, callerUserName?: string, location?: McpRequestLocation,
 ): Promise<ProductPanelReadResponse> {
   try {
     const { member, projection, panel, viewer: readViewer } = await resolveReadMember(owner, viewer, request);
@@ -355,7 +387,7 @@ export async function readProductPanelData(
     const selection = readSelection(data, inputs);
     const read = selection.kind === "customer"
       ? customerReads(owner, readViewer, callerUserName)[selection.method]
-      : readAdapters(owner, readViewer, callerUserName)[selection.typeId]?.[selection.method];
+      : readAdapters(owner, readViewer, callerUserName, location)[selection.typeId]?.[selection.method];
     if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
     const result = await read(selection, params, projection);
     if (declaration.result === "panelRecordList") {

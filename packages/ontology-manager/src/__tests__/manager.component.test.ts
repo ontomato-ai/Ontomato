@@ -653,8 +653,9 @@ describe("Manager pages in the service router", () => {
     await settle();
 
     expect(paths()).toEqual(
+      // The menu's own count is the product assets'; the panel entries count themselves.
       expect.arrayContaining([
-        "/admin/getMetas",
+        "/tenant-a/api/product-assets/counts",
         "/workflow/query",
       ])
     );
@@ -782,15 +783,15 @@ describe("Manager pages in the service router", () => {
 
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
-      path === "/admin/getMetas" ? 402 : path.endsWith("/product-assets/counts") ? 401 : 200;
-    const { host, failures, showMenu } = mountHost({ ...base, view: "/ontology/assets/functions" });
+      path === "/workflow/query" ? 402 : path.endsWith("/product-assets/counts") ? 401 : 200;
+    const { host, failures, showMenu } = mountHost({ ...base, view: "/ontology/assets/workflows" });
     showMenu();
     await settle();
     expect(failures.sort()).toEqual([401, 402]);
 
     requests = [];
     statusFor = () => 200;
-    host.view = "/ontology/assets/workflows";
+    host.view = "/ontology/assets/triggers";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["x-api-key"] === "key-a")).toBe(true);

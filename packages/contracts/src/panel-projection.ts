@@ -111,6 +111,8 @@ export const panelReadParameterSchemas = {
   cursor: z.string(),
   scheduledRunId: runtimeIdSchema,
   size: positiveInteger,
+  auditLogBusiness: z.enum(["BKNOWLEDGE", "BTERM", "BEXAMPLE", "SCHEMA", "ANALYSIS"]),
+  auditLogOperation: z.enum(["ADD", "UPD", "DEL"]),
   knowledgeCountField: z.literal("status"),
   knowledgeStatus: z.enum(["all", "pending", "approved"]),
   feedbackCountField: z.enum(["sourceType", "rating"]),
@@ -134,6 +136,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "className":
     case "cursor":
     case "scheduledRunId":
+    case "auditLogBusiness":
+    case "auditLogOperation":
     case "knowledgeCountField":
     case "knowledgeStatus":
     case "feedbackCountField":

@@ -14,6 +14,7 @@ import {
 import { assistantStore, type AssistantOwner, type AgentRow } from "./store";
 import { HttpError } from "../../utils/errors";
 import { assertPermission } from "../../identity/installed";
+import { agentDefinitionPermissions } from "./definition-permissions";
 import { resolveAssistantSkillReferences } from "./skill-references";
 import { AgentDefinitionFieldError, parseAgentDefinitionUpdateForm } from "./definition-form-schema";
 import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
@@ -51,7 +52,7 @@ const view = (a: AgentRow, locale?: string) =>
     sortOrder: a.sort_order,
     systemPrompt: effectiveSystemPrompt(a, locale),
   });
-export const agentDefinitionPermissions = ["analysis-agent"] as const;
+export { agentDefinitionPermissions } from "./definition-permissions";
 const isReadableDefinition = (kind: string) => !isAppBuilderKind(kind);
 
 export async function filterReadableAgentDefinitions(

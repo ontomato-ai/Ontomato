@@ -135,20 +135,10 @@ export class PlatformObjectRefusal extends Error {
     message: string,
     readonly fields: Readonly<Record<string, string>>,
     options?: { cause?: unknown },
+    readonly savedFields: Readonly<Record<string, RuntimeJsonValue>> = {},
   ) {
     super(message, options);
     this.name = "PlatformObjectRefusal";
-  }
-}
-
-/**
- * Thrown by an upload/import operation handler when the owner reports that an item already exists and may be retried
- * with `overwrite: true` once the reader explicitly confirms.
- */
-export class PlatformUploadConflict extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "PlatformUploadConflict";
   }
 }
 
