@@ -279,6 +279,25 @@ class FunctionFormTest {
     JSONObject code = field(form, "/code");
     assertEquals("python", code.getJSONObject("control").getString("language"));
     assertTrue(code.getBooleanValue("readOnly"));
+    // The page said what the old format means and what to do before changing it.
+    assertEquals("PanelForm.legacyCodeHint", code.getString("help"));
+  }
+
+  @Test
+  void namesAReadFunctionsColumnsByItsQueryAnalysisUntilLabelsAreSaved() {
+    Function function = readFunction();
+    function.getReturnDef().setColumnLabels(null);
+    function.getReturnDef().setSourceAnalysis(JSONObject.of("nodes", JSONArray.of(
+        JSONObject.of("kind", "output", "key", "amount", "label", "Amount"),
+        JSONObject.of("kind", "input", "key", "year", "label", "Year"))));
+    when(functionDao.queryById("f1")).thenReturn(function);
+
+    assertEquals(JSONObject.of("amount", "Amount"),
+        form(objectTarget("f1")).getJSONObject("values").getJSONObject("returnDef").getJSONObject("columnLabels"));
+
+    function.getReturnDef().setColumnLabels(JSONObject.of("amount", "Total"));
+    assertEquals(JSONObject.of("amount", "Total"),
+        form(objectTarget("f1")).getJSONObject("values").getJSONObject("returnDef").getJSONObject("columnLabels"));
   }
 
   @Test

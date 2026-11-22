@@ -640,6 +640,10 @@
     "value": "Legacy Python code"
   },
   {
+    "key": "PanelForm.legacyCodeHint",
+    "value": "This function uses the old format. Turn its query logic into a package before saving a change; the saved function still runs."
+  },
+  {
     "key": "PanelForm.bindings",
     "value": "Bindings"
   },

@@ -305,6 +305,7 @@ public class FunctionServiceImpl implements FunctionService {
     JSONObject current = PanelFormFields.asset(function);
     // A new definition has no ID yet; its form must not offer one for the create to carry.
     if (!existing) current.remove("id");
+    FunctionForm.labelColumnsFromAnalysis(current);
     if (values == null) {
       values = current;
     } else {

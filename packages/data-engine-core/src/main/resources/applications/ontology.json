@@ -61,7 +61,7 @@
     }, {
       "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
       "path": "/ontology/assets/capability-map", "access": {"permissionCode": "action-management"},
-      "descriptions": {"en": "Explore how roles, processes, and capabilities relate", "zh-CN": "治理层与能力层涉及的全部对象画成一张图：主体拥有角色，角色可执行动作、可编写流程，流程指定动作，触发启动一次执行。颜色区分类别；选择节点查看它的关系。指标视图、函数与 Skill 画在流程对象一侧，因为模型中它们还没有与流程相连。"},
+      "descriptions": {"en": "Explore four-layer platform types and how roles, processes, capabilities, and products relate", "zh-CN": "查看四层平台类型及角色、流程、能力与产品对象之间的关系"},
       "names": {"en": "Capability map", "zh-CN": "能力图谱"}
     }, {
       "id": "ontology-components", "pageKey": "ontology-components", "panelId": "builtin-product-sdk-components",

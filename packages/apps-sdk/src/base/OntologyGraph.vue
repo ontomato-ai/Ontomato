@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
@@ -21,6 +21,7 @@ import {
 import { usePanelContext } from "../panel/context";
 import type { MemberDataState } from "../panel/direct";
 import { useMember, useMemberParam, useMemberRead, type PanelMemberContext } from "../panel/member";
+import { savePanelFile } from "../panel/save-file";
 import type {
   PlatformGraphEdge,
   PlatformGraphNeighborsResult,
@@ -180,10 +181,38 @@ const relationLabelKeyById = new Map(platformRelationKinds.map((kind) => [kind.i
 
 const rootEl = ref<HTMLElement | null>(null);
 const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
+const partial = ref(false);
+const moved = ref(false);
+let fitted = false;
+let fitting = false;
+
+function focusAnchor(): string | undefined {
+  if (activeMode.value === "type") return props.selectedType ?? undefined;
+  const chosen = props.selected ? encodeGraphNodeId(props.selected) : null;
+  if (chosen && instanceNodes.value.has(chosen)) return chosen;
+  return rootNodeId.value ?? undefined;
+}
+
+/** Opens the graph at a zoom where node names stay readable, centering the chosen/start node when the graph overflows. */
+function fitReadable(target = canvas.value) {
+  if (!target) return;
+  fitting = true;
+  void target
+    .fit({ maxZoom: 1.15, keepNames: true, padding: 36, around: focusAnchor() })
+    .then((whole) => {
+      partial.value = whole === false;
+      moved.value = false;
+      fitted = true;
+    })
+    .finally(() => {
+      fitting = false;
+    });
+}
+
 // The canvas is there only while something is drawn: one that appears after an empty or loading view (a layer shown
-// again, a start whose read finished first) shows what it draws in the middle, not at the graph's origin in the corner.
+// again, a start whose read finished first) opens at a readable zoom around its start rather than in the corner.
 watch(canvas, (shown, before) => {
-  if (shown && !before) void shown.fit({ maxZoom: 1.15, padding: 36 });
+  if (shown && !before) fitReadable(shown);
 });
 const paletteSize = ref(0);
 
@@ -608,7 +637,7 @@ async function loadTypeMode(generation: number) {
     typeCounts.value = counts;
     manualPositions.value = new Map();
     await nextTick();
-    void canvas.value?.fit({ maxZoom: 1.15, padding: 36 });
+    fitReadable();
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
     recordFailure(reason);
@@ -682,7 +711,7 @@ async function expandInstanceNode(refValue: PanelObjectValue, generation: number
 
     if (isRoot) {
       await nextTick();
-      void canvas.value?.fit({ maxZoom: 1.15, padding: 36 });
+      fitReadable();
     }
   } catch (reason: unknown) {
     if (generation !== loadGeneration) return;
@@ -799,10 +828,13 @@ function handleMove(id: string, position: GraphCanvasPoint) {
 
 function handleViewport(viewport: GraphCanvasViewport) {
   currentViewport.value = viewport;
+  if (fitted && !fitting && partial.value) moved.value = true;
 }
 
 // ---- Toolbar actions ----
 function fitView() {
+  partial.value = false;
+  moved.value = false;
   void canvas.value?.fit({ maxZoom: 1.2, padding: 36 });
 }
 
@@ -818,11 +850,35 @@ async function relayout() {
   }
   await nextTick();
   await canvas.value?.relayout();
-  await canvas.value?.fit({ maxZoom: 1.2, padding: 36 });
+  fitReadable();
 }
+
+async function downloadPng() {
+  if (!canvas.value) return;
+  const image = await canvas.value.exportImage();
+  const date = new Date().toISOString().slice(0, 10);
+  const baseName =
+    (accessibleLabel.value || "capability-map")
+      .replace(/[/\\\p{Cc}]+/gu, "-")
+      .replace(/^\.+/u, "")
+      .trim() || "capability-map";
+  savePanelFile({
+    bytes: image,
+    mime: "image/png",
+    suggestedName: `${baseName}-${date}.png`,
+  });
+}
+
+const stopRefresh = panel.instance.onObjectChanged((target) => {
+  if (target === null) reload();
+});
 
 onMounted(() => {
   if (rootEl.value) paletteSize.value = readGraphPalette(rootEl.value).length;
+});
+
+onBeforeUnmount(() => {
+  stopRefresh();
 });
 </script>
 
@@ -912,12 +968,16 @@ onMounted(() => {
         :selection="'single'"
         :layout="{ type: 'preset' }"
         :categories="canvasCategories"
+        readable-labels
         :max-height="maxHeight"
         @update:selected="handleSelect"
         @blank="handleBlank"
         @move="handleMove"
         @viewport="handleViewport"
       />
+      <p v-if="partial" class="sdk-ontology-graph-hint" :class="{ quiet: moved }" role="status" data-graph-hint>
+        {{ t("platform.graphLargerThanCanvas") }}
+      </p>
       <div v-if="showToolbar" class="sdk-ontology-graph-tools" data-graph-toolbar>
         <button
           type="button"
@@ -941,6 +1001,18 @@ onMounted(() => {
         >
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path d="M13.5 8a5.5 5.5 0 1 1-1.3-3.55M13.5 2.5v2.75h-2.75" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="sdk-ontology-graph-tool"
+          data-graph-action="download"
+          :title="t('common.download')"
+          :aria-label="t('common.download')"
+          @click="downloadPng"
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
           </svg>
         </button>
       </div>
@@ -1133,6 +1205,24 @@ onMounted(() => {
 
 .sdk-ontology-graph-tool:active {
   background: var(--ui-fill-quaternary);
+}
+
+.sdk-ontology-graph-hint {
+  position: absolute;
+  inset-block-end: var(--spacing-sm);
+  inset-inline-start: var(--spacing-sm);
+  margin: 0;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color-overlay);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  pointer-events: none;
+  transition: opacity 200ms ease-out;
+}
+
+.sdk-ontology-graph-hint.quiet {
+  opacity: 0.55;
 }
 
 .sdk-ontology-graph-busy {

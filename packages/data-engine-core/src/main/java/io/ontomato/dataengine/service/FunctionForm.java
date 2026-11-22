@@ -144,7 +144,7 @@ public final class FunctionForm {
                 false,
                 true,
                 readOnlyReason,
-                null,
+                text(langService, lang, "PanelForm.legacyCodeHint"),
                 false));
     }
     fields.add(
@@ -319,6 +319,25 @@ public final class FunctionForm {
         Parameter.TYPE_TIME_ARRAY))
       options.add(PanelFormFields.option(type, type));
     return options;
+  }
+
+  /**
+   * A read function saved before its column labels were kept names its columns by its query analysis's outputs, as the
+   * page always showed them; saving the form keeps those labels.
+   */
+  public static void labelColumnsFromAnalysis(JSONObject function) {
+    JSONObject returnDef = function.getJSONObject("returnDef");
+    if (!Function.OPERATION_READ.equals(function.getString("operation")) || returnDef == null
+        || returnDef.get("columnLabels") != null) return;
+    JSONObject analysis = returnDef.getJSONObject("sourceAnalysis");
+    JSONArray nodes = analysis == null ? null : analysis.getJSONArray("nodes");
+    if (nodes == null) return;
+    JSONObject labels = new JSONObject();
+    for (int i = 0; i < nodes.size(); i++) {
+      JSONObject node = nodes.getJSONObject(i);
+      if ("output".equals(node.getString("kind"))) labels.put(node.getString("key"), node.getString("label"));
+    }
+    returnDef.put("columnLabels", labels);
   }
 
   private static boolean legacy(JSONObject function) {
