@@ -5,10 +5,11 @@ import {
   type ApplicationCatalogueFormRequest,
 } from "@ontomato/contracts/application-catalogue";
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
-import { panelFormDescriptionSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
-import { APPLICATION } from "@ontomato/contracts/platform-object-types";
+import { panelFormDescriptionSchema, type PanelFormDescription, type PanelFormField, type PanelRecord } from "@ontomato/contracts/panel-projection";
+import { APPLICATION, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
 import { config } from "../../config/application";
+import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
@@ -31,6 +32,66 @@ const querySchema = z.object({
   cursor: z.string().optional(),
   size: z.number().int().min(1).max(100).optional(),
 }).strict();
+
+type ApplicationCatalogueRow = z.infer<typeof applicationCatalogueQueryResultSchema>["rows"][number];
+type ApplicationCatalogueDetail = z.infer<typeof applicationCatalogueRecordSchema>;
+
+/** Project the Java owner's catalogue row or detail onto the generic record shown by panel components. */
+export function toApplicationPanelRecord(
+  row: ApplicationCatalogueRow | ApplicationCatalogueDetail, locale?: string,
+): PanelRecord {
+  const language = resolveLocale(locale);
+  const word = (key: string) => tForLocale(language, `panels.productCatalog.application.${key}`);
+  const subtitle = row.descriptions[language];
+  const fields: PanelRecord["fields"] = {
+    id: row.id,
+    names: { kind: "localized", values: row.names },
+    descriptions: { kind: "localized", values: row.descriptions },
+    icon: row.icon,
+    entryCount: row.entryCount,
+    canMaintain: row.canMaintain,
+    canEditEntries: row.canEditEntries,
+    canGrant: row.canGrant,
+    sourceKind: row.source,
+    source: word(row.source),
+    maintenance: word(row.canMaintain ? "maintainable" : "readOnly"),
+  };
+  const fieldLabels: NonNullable<PanelRecord["fieldLabels"]> = {
+    id: word("id"),
+    names: tForLocale(language, "panels.productCatalog.name"),
+    descriptions: tForLocale(language, "panels.productCatalog.description"),
+    icon: word("icon"),
+    source: word("source"),
+    maintenance: word("maintenance"),
+    entryCount: word("entryCount"),
+  };
+  if ("entry" in row) {
+    const { path, home, renderer } = row.entry;
+    fields.path = path;
+    fieldLabels.path = word("path");
+    if (home !== undefined) {
+      fields.home = home;
+      fieldLabels.home = word("home");
+    }
+    if (renderer !== undefined) {
+      fields.renderer = renderer;
+      fieldLabels.renderer = word("renderer");
+    }
+    if (row.framePanelId !== undefined) {
+      fields.framePanel = { kind: "reference", className: PRODUCT_PANEL, primaryKey: row.framePanelId, label: row.framePanelId };
+      fieldLabels.framePanel = word("framePanel");
+    }
+  }
+  return {
+    primaryKey: row.id,
+    className: APPLICATION,
+    label: row.names[language] || row.id,
+    ...(subtitle && { subtitle }),
+    fields,
+    fieldLabels,
+    tones: { source: row.source === "builtin" ? "info" : "default", maintenance: row.canMaintain ? "success" : "info" },
+  };
+}
 
 export function applicationCatalogueClient(viewer: AssistantCredentials) {
   const options = () => ({
