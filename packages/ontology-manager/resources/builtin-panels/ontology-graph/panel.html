@@ -16,7 +16,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--spacing-md);
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -27,7 +27,7 @@
     gap: 4px;
   }
   .og-summary strong {
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
     font-weight: var(--font-semibold);
   }
   .og-grid {
@@ -66,7 +66,7 @@
     width: 100%;
   }
   .og-search-icon {
-    color: var(--el-text-color-placeholder);
+    color: var(--sdk-text-color-placeholder);
   }
   .og-segments {
     display: flex;
@@ -83,7 +83,7 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     font: inherit;
     font-size: var(--text-xs);
     overflow: hidden;
@@ -92,8 +92,8 @@
     cursor: pointer;
   }
   .og-segment.active {
-    background: var(--el-bg-color);
-    color: var(--el-text-color-primary);
+    background: var(--sdk-bg-color);
+    color: var(--sdk-text-color-primary);
     font-weight: var(--font-semibold);
   }
   .og-list {
@@ -106,7 +106,7 @@
   }
   .og-list-section > p {
     margin: 0 6px 5px;
-    color: var(--el-text-color-tertiary);
+    color: var(--sdk-text-color-placeholder);
     font-size: var(--text-xs);
     font-weight: var(--font-semibold);
   }
@@ -120,12 +120,12 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     text-align: left;
     cursor: pointer;
   }
   .og-row:hover {
-    background: var(--el-fill-color-light);
+    background: var(--sdk-fill-color-light);
   }
   .og-row.active {
     color: var(--brand-link);
@@ -143,11 +143,11 @@
     white-space: nowrap;
   }
   .og-row strong {
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
     font-size: var(--text-sm);
   }
   .og-row small {
-    color: var(--el-text-color-tertiary);
+    color: var(--sdk-text-color-placeholder);
     font-size: var(--text-xs);
   }
   .og-icon {
@@ -163,12 +163,12 @@
     background: var(--ui-fill-tertiary);
   }
   .og-icon-relation {
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     background: var(--ui-fill-tertiary);
   }
   .og-list-empty {
     margin: var(--spacing-xl) 0;
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     font-size: var(--text-sm);
     text-align: center;
   }
@@ -178,7 +178,7 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    background-color: var(--el-bg-color-page);
+    background-color: var(--sdk-bg-color-page);
     background-image: radial-gradient(var(--ui-border) 1px, transparent 1px);
     background-size: 20px 20px;
   }
@@ -208,7 +208,7 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
-    color: var(--el-text-color-tertiary);
+    color: var(--sdk-text-color-placeholder);
     font-size: var(--text-xs);
     pointer-events: none;
   }
@@ -216,7 +216,7 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--el-color-success);
+    background: var(--sdk-color-success);
   }
   .og-graph-empty {
     position: absolute;
@@ -225,11 +225,11 @@
     place-content: center;
     justify-items: center;
     gap: var(--spacing-sm);
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     pointer-events: none;
   }
   .og-graph-empty strong {
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
   }
   .og-graph-empty span {
     font-size: var(--text-sm);
@@ -247,10 +247,10 @@
     justify-content: space-between;
     padding: 0 var(--spacing-md);
     border-bottom: 1px solid var(--ui-border);
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
   }
   .og-path-head strong {
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
     font-size: var(--text-sm);
   }
   .og-path-controls {
@@ -266,8 +266,8 @@
     padding: 6px 24px 6px 8px;
     border: 1px solid var(--ui-border);
     border-radius: var(--radius-sm);
-    background: var(--el-bg-color);
-    color: var(--el-text-color-primary);
+    background: var(--sdk-bg-color);
+    color: var(--sdk-text-color-primary);
     font: inherit;
     font-size: var(--text-xs);
     text-overflow: ellipsis;
@@ -285,7 +285,7 @@
   }
   .og-primary:disabled {
     border-color: var(--ui-border);
-    color: var(--el-text-color-disabled);
+    color: var(--sdk-text-color-disabled);
     cursor: default;
   }
   .og-detail {
@@ -314,7 +314,7 @@
   .og-detail-copy h2 {
     margin: 0;
     overflow: hidden;
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
     font-size: var(--text-sm);
     line-height: 20px;
     text-overflow: ellipsis;
@@ -323,7 +323,7 @@
   .og-detail-copy code {
     display: block;
     overflow: hidden;
-    color: var(--el-text-color-tertiary);
+    color: var(--sdk-text-color-placeholder);
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     line-height: 16px;
@@ -336,7 +336,7 @@
     border: 1px solid var(--ui-border);
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
     font: inherit;
     font-size: var(--text-xs);
     cursor: pointer;
@@ -346,7 +346,7 @@
   }
   .og-description {
     margin: var(--spacing-sm) 0 0;
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     font-size: var(--text-sm);
     line-height: var(--leading-relaxed);
   }
@@ -359,12 +359,12 @@
     justify-content: space-between;
     padding-bottom: 6px;
     border-bottom: 1px solid var(--ui-divider);
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
     font-size: var(--text-sm);
     font-weight: var(--font-semibold);
   }
   .og-section-label small {
-    color: var(--el-text-color-tertiary);
+    color: var(--sdk-text-color-placeholder);
   }
   .og-attribute {
     display: flex;
@@ -376,12 +376,12 @@
   }
   .og-attribute strong {
     display: block;
-    color: var(--el-text-color-regular);
+    color: var(--sdk-text-color-regular);
     font-size: var(--text-sm);
   }
   .og-attribute code {
     display: block;
-    color: var(--el-text-color-tertiary);
+    color: var(--sdk-text-color-placeholder);
     font-family: var(--font-mono);
     font-size: var(--text-xs);
   }
@@ -390,7 +390,7 @@
     padding: 1px 6px;
     border: 1px solid var(--ui-border);
     border-radius: var(--radius-sm);
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     font-size: var(--text-xs);
   }
   .og-connection {
@@ -403,7 +403,7 @@
     border: 0;
     border-bottom: 1px solid var(--ui-divider);
     background: transparent;
-    color: var(--el-text-color-regular);
+    color: var(--sdk-text-color-regular);
     font: inherit;
     font-size: var(--text-xs);
     text-align: left;
@@ -435,7 +435,7 @@
     border: 1px solid var(--ui-border);
     border-radius: var(--radius-sm);
     background: var(--ui-fill-tertiary);
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
     font: inherit;
     cursor: pointer;
   }
@@ -454,7 +454,7 @@
     justify-items: center;
     gap: 7px;
     padding: var(--spacing-xl);
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     text-align: center;
   }
   .og-side-empty .og-empty-mark {
@@ -467,7 +467,7 @@
     color: var(--brand-link);
   }
   .og-side-empty strong {
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
     font-size: var(--text-sm);
   }
   .og-side-empty span {
@@ -477,11 +477,11 @@
   }
   .og-note {
     margin: var(--spacing-sm) var(--spacing-md) 0;
-    color: var(--el-text-color-secondary);
+    color: var(--sdk-text-color-secondary);
     font-size: var(--text-xs);
   }
   .og-failure {
-    color: var(--el-color-danger);
+    color: var(--sdk-color-danger);
   }
   @container (max-width: 1120px) {
     .og-grid {
@@ -529,19 +529,19 @@
       <span :aria-busy="counts.relations === null"><strong>{{ counts.relations ?? "–" }}</strong> 关系类型</span>
     </div>
 
-    <el-alert
+    <sdk-alert
       v-for="message in readErrors"
       :key="message"
       :title="message"
       type="error"
       :closable="false"
       show-icon
-    ></el-alert>
+    ></sdk-alert>
 
     <div v-if="!readErrors.length" class="og-grid">
       <aside class="og-explorer">
         <div class="og-search-box">
-          <el-input
+          <sdk-input
             :model-value="search"
             placeholder="搜索本体资源"
             aria-label="搜索本体资源"
@@ -551,7 +551,7 @@
             <template #prefix>
               <svg class="og-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
             </template>
-          </el-input>
+          </sdk-input>
           <div class="og-segments" role="group" aria-label="按类型筛选">
             <button
               v-for="option in filterOptions"
@@ -608,7 +608,7 @@
       </aside>
 
       <main class="og-graph">
-        <div class="og-canvas" v-loading="loading">
+        <div class="og-canvas" v-sdk-loading="loading">
           <projection slot="graph"></projection>
         </div>
         <div v-if="!loading && !objects.length" class="og-graph-empty">

@@ -9,28 +9,28 @@
   .capmap-toolbar {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm) var(--spacing-md);
     padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--ui-divider); border-radius: var(--radius-md);
-    background: var(--el-bg-color);
+    background: var(--sdk-bg-color);
   }
   .capmap-search { flex: 1 1 200px; min-width: 160px; max-width: 320px; }
   .capmap-search input {
     width: 100%; height: var(--control-height); padding: 0 var(--spacing-sm); box-sizing: border-box;
     border: 1px solid var(--ui-border); border-radius: var(--radius-sm);
-    background: var(--el-fill-color-blank); color: var(--el-text-color-primary); font-size: var(--text-sm);
+    background: var(--sdk-fill-color-blank); color: var(--sdk-text-color-primary); font-size: var(--text-sm);
   }
   .capmap-search input:focus { border-color: var(--brand-link); box-shadow: var(--focus-ring); outline: none; }
   .capmap-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); margin-inline-start: auto; }
   .capmap-btn {
     height: var(--control-height); padding: 0 var(--spacing-md); border: 1px solid var(--ui-border); border-radius: var(--radius-sm);
-    background: var(--el-fill-color-blank); color: var(--el-text-color-regular); font-size: var(--text-sm); cursor: pointer;
+    background: var(--sdk-fill-color-blank); color: var(--sdk-text-color-regular); font-size: var(--text-sm); cursor: pointer;
   }
-  .capmap-btn:hover:not(:disabled) { border-color: var(--el-color-primary); color: var(--brand-link); }
-  .capmap-btn.active { border-color: var(--el-color-primary); color: var(--brand-link); background: var(--ui-fill-secondary); }
-  .capmap-btn:disabled { color: var(--el-disabled-text-color); cursor: not-allowed; }
-  .capmap-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
+  .capmap-btn:hover:not(:disabled) { border-color: var(--sdk-color-primary); color: var(--brand-link); }
+  .capmap-btn.active { border-color: var(--sdk-color-primary); color: var(--brand-link); background: var(--ui-fill-secondary); }
+  .capmap-btn:disabled { color: var(--sdk-text-color-disabled); cursor: not-allowed; }
+  .capmap-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
   .capmap-notice {
     display: flex; align-items: flex-start; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-md);
-    border: 1px solid var(--el-color-warning-light-7); background: var(--el-color-warning-light-9);
-    color: var(--el-color-warning-dark-2); font-size: var(--text-sm); line-height: 1.6;
+    border: 1px solid var(--sdk-color-warning-light-7); background: var(--sdk-color-warning-light-9);
+    color: var(--sdk-color-warning-dark-2); font-size: var(--text-sm); line-height: 1.6;
   }
   .capmap-notice button { border: 0; background: none; color: inherit; cursor: pointer; font-size: var(--text-lg); line-height: 1; }
   .capmap-body { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: var(--page-content-gap); align-items: start; }
@@ -38,71 +38,71 @@
   .capmap-canvas {
     display: flex; flex-direction: column;
     height: clamp(560px, calc(100vh - 230px), 880px); padding: var(--spacing-md); box-sizing: border-box;
-    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--el-bg-color); overflow: hidden;
+    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--sdk-bg-color); overflow: hidden;
   }
   .capmap-canvas > [data-member] { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
   .capmap-canvas.is-behind { position: absolute; inset: 0; visibility: hidden; }
   .capmap-types {
     height: clamp(560px, calc(100vh - 230px), 880px); overflow: auto; padding: var(--spacing-md) var(--spacing-lg); box-sizing: border-box;
-    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--el-bg-color);
+    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--sdk-bg-color);
   }
   .capmap-layer + .capmap-layer { margin-top: var(--spacing-md); }
   .capmap-layer > h3 {
-    margin: 0 0 var(--spacing-sm); font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--el-text-color-secondary);
+    margin: 0 0 var(--spacing-sm); font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--sdk-text-color-secondary);
     letter-spacing: var(--tracking-label);
   }
   .capmap-layer ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); }
   .capmap-type-row {
     display: flex; align-items: center; gap: var(--spacing-sm); width: 100%; padding: var(--spacing-xs) var(--spacing-sm); box-sizing: border-box;
     border: 1px solid transparent; border-radius: var(--radius-sm); background: none; cursor: pointer; text-align: start;
-    color: var(--el-text-color-primary); font-size: var(--text-sm);
+    color: var(--sdk-text-color-primary); font-size: var(--text-sm);
   }
   .capmap-type-row:hover { background: var(--ui-fill-tertiary); }
-  .capmap-type-row.active { border-color: var(--el-color-primary); background: var(--ui-fill-secondary); }
+  .capmap-type-row.active { border-color: var(--sdk-color-primary); background: var(--ui-fill-secondary); }
   .capmap-type-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .capmap-type-id { color: var(--el-text-color-placeholder); font-size: var(--text-xs); }
+  .capmap-type-id { color: var(--sdk-text-color-placeholder); font-size: var(--text-xs); }
   .capmap-aside {
     display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0;
     max-height: clamp(560px, calc(100vh - 230px), 880px); overflow: auto;
     padding: var(--spacing-md); box-sizing: border-box;
-    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--el-bg-color);
+    border: 1px solid var(--ui-divider); border-radius: var(--radius-md); background: var(--sdk-bg-color);
   }
   .capmap-count {
     flex: 0 0 auto; min-width: 20px; padding: 0 var(--spacing-xs); box-sizing: border-box; text-align: center;
-    border-radius: var(--radius-full); background: var(--el-fill-color); color: var(--el-text-color-regular); font-size: var(--text-xs); line-height: var(--leading-sm);
+    border-radius: var(--radius-full); background: var(--sdk-fill-color); color: var(--sdk-text-color-regular); font-size: var(--text-xs); line-height: var(--leading-sm);
   }
-  .capmap-count[data-status="refused"] { background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2); }
-  .capmap-count[data-status="failed"] { background: var(--el-color-danger-light-9); color: var(--el-color-danger-text); }
-  .capmap-count[data-status="unavailable"] { background: var(--ui-fill-tertiary); color: var(--el-text-color-placeholder); }
+  .capmap-count[data-status="refused"] { background: var(--sdk-color-warning-light-9); color: var(--sdk-color-warning-dark-2); }
+  .capmap-count[data-status="failed"] { background: var(--sdk-color-danger-light-9); color: var(--sdk-color-danger-text); }
+  .capmap-count[data-status="unavailable"] { background: var(--ui-fill-tertiary); color: var(--sdk-text-color-placeholder); }
   .capmap-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs) var(--spacing-sm); }
   .capmap-detail-head h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--font-semibold); }
-  .capmap-detail-head code { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
-  .capmap-def { margin: var(--spacing-sm) 0 0; font-size: var(--text-sm); line-height: 1.7; color: var(--el-text-color-regular); }
+  .capmap-detail-head code { color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
+  .capmap-def { margin: var(--spacing-sm) 0 0; font-size: var(--text-sm); line-height: 1.7; color: var(--sdk-text-color-regular); }
   .capmap-block { margin-top: var(--spacing-md); }
   .capmap-block > h4 {
-    margin: 0 0 var(--spacing-xs); font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--el-text-color-secondary); letter-spacing: var(--tracking-label);
+    margin: 0 0 var(--spacing-xs); font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--sdk-text-color-secondary); letter-spacing: var(--tracking-label);
   }
   .capmap-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
   .capmap-table th, .capmap-table td {
     padding: var(--spacing-xs) var(--spacing-xs); border-bottom: 1px solid var(--ui-divider); text-align: start; vertical-align: top;
   }
-  .capmap-table th { color: var(--el-text-color-secondary); font-weight: var(--font-medium); white-space: nowrap; }
-  .capmap-table td code { color: var(--el-text-color-regular); }
+  .capmap-table th { color: var(--sdk-text-color-secondary); font-weight: var(--font-medium); white-space: nowrap; }
+  .capmap-table td code { color: var(--sdk-text-color-regular); }
   .capmap-rowlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--spacing-xs); font-size: var(--text-xs); }
   .capmap-rowlist li {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-xs) var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-xs);
     border-radius: var(--radius-sm); background: var(--ui-fill-quaternary);
   }
-  .capmap-rowlist .capmap-muted { color: var(--el-text-color-secondary); }
+  .capmap-rowlist .capmap-muted { color: var(--sdk-text-color-secondary); }
   .capmap-status { margin: var(--spacing-xs) 0 0; padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); font-size: var(--text-xs); line-height: 1.6; }
-  .capmap-status[data-status="refused"] { background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2); }
-  .capmap-status[data-status="failed"] { background: var(--el-color-danger-light-9); color: var(--el-color-danger-text); }
+  .capmap-status[data-status="refused"] { background: var(--sdk-color-warning-light-9); color: var(--sdk-color-warning-dark-2); }
+  .capmap-status[data-status="failed"] { background: var(--sdk-color-danger-light-9); color: var(--sdk-color-danger-text); }
   .capmap-status[data-status="unavailable"], .capmap-status[data-status="no-neighbors"] {
-    background: var(--ui-fill-tertiary); color: var(--el-text-color-secondary);
+    background: var(--ui-fill-tertiary); color: var(--sdk-text-color-secondary);
   }
   .capmap-pick { display: flex; flex-direction: column; gap: var(--spacing-sm); }
   .capmap-node-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-sm); margin-bottom: var(--spacing-xs); font-size: var(--text-sm); }
-  .capmap-node-head code { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .capmap-node-head code { color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
   .capmap-relgroup { margin-top: var(--spacing-sm); padding-top: var(--spacing-sm); border-top: 1px solid var(--ui-divider); }
   .capmap-relgroup-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs); margin-bottom: var(--spacing-xs); }
   .capmap-rel-name { font-size: var(--text-sm); font-weight: var(--font-semibold); }
@@ -110,20 +110,20 @@
   .capmap-relgroup li { font-size: var(--text-xs); }
   .capmap-dir {
     display: inline-block; min-width: 34px; padding: 0 var(--spacing-xs); border-radius: var(--radius-xs); text-align: center;
-    background: var(--el-fill-color); color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm);
+    background: var(--sdk-fill-color); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm);
   }
   .capmap-dir[data-dir="outgoing"] { background: var(--ui-fill-secondary); color: var(--brand-link); }
   .capmap-peer {
     border: 0; background: none; padding: 0 calc(var(--spacing-xs) / 2); cursor: pointer; font-size: var(--text-xs);
     color: var(--brand-link); text-decoration: underline; text-underline-offset: 2px;
   }
-  .capmap-peer-type { color: var(--el-text-color-placeholder); font-size: var(--text-xs); }
+  .capmap-peer-type { color: var(--sdk-text-color-placeholder); font-size: var(--text-xs); }
   .capmap-mini {
     margin-inline-start: var(--spacing-xs); padding: 0 var(--spacing-xs); border: 1px solid var(--ui-border); border-radius: var(--radius-xs);
-    background: var(--el-fill-color-blank); color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); cursor: pointer;
+    background: var(--sdk-fill-color-blank); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); cursor: pointer;
   }
-  .capmap-mini:hover { border-color: var(--el-color-primary); color: var(--brand-link); }
-  .capmap-binding { flex: 1 1 100%; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
+  .capmap-mini:hover { border-color: var(--sdk-color-primary); color: var(--brand-link); }
+  .capmap-binding { flex: 1 1 100%; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; }
   @media (max-width: 1080px) {
     .capmap-body { grid-template-columns: minmax(0, 1fr); }
     .capmap-actions { margin-inline-start: 0; }
@@ -155,7 +155,7 @@
         />
       </div>
       <button v-if="query" type="button" class="capmap-btn" @click="clearQuery">{{ t('cm.clearSearch') }}</button>
-      <el-select
+      <sdk-select
         v-if="mode === 'type' && view === 'graph' && allRelationKinds.length"
         v-model="relationFilter"
         multiple
@@ -166,13 +166,13 @@
         style="width: 220px"
         :placeholder="t('cm.allKinds')"
       >
-        <el-option
+        <sdk-option
           v-for="kind in allRelationKinds"
           :key="kind.value"
           :value="kind.value"
           :label="$te(kind.labelKey) ? $t(kind.labelKey) : kind.value"
-        ></el-option>
-      </el-select>
+        ></sdk-option>
+      </sdk-select>
       <div v-if="mode === 'instance'" class="capmap-actions">
         <button type="button" class="capmap-btn" :disabled="!canUseSelectedAsStart" @click="useSelectedAsStart">
           {{ t('cm.useSelectedAsStart') }}
@@ -231,7 +231,7 @@
               <header class="capmap-detail-head">
                 <h2>{{ $te(detail.labelKey) ? $t(detail.labelKey) : detail.id }}</h2>
                 <code>{{ detail.id }}</code>
-                <el-tag size="small" effect="plain">{{ $te(detail.layerLabelKey) ? $t(detail.layerLabelKey) : detail.layer }}</el-tag>
+                <sdk-tag size="small" effect="plain">{{ $te(detail.layerLabelKey) ? $t(detail.layerLabelKey) : detail.layer }}</sdk-tag>
                 <span class="capmap-count" :data-status="detail.count.status">
                   <template v-if="detail.count.status === 'ok'">{{ detail.count.count }}</template>
                   <template v-else-if="detail.count.status === 'refused'">{{ t('cm.statusRefused') }}</template>
@@ -246,8 +246,8 @@
               <p v-else class="capmap-hint" style="margin-top: 8px">{{ t('cm.noDefinition') }}</p>
 
               <div class="capmap-actions" style="margin: 10px 0 0; justify-content: flex-start">
-                <el-button v-if="detail.directory" size="small" @click="openInstances(detail)">{{ t('cm.viewInstances') }}</el-button>
-                <el-button size="small" type="primary" plain @click="togglePickingStart">{{ t('cm.pickStart') }}</el-button>
+                <sdk-button v-if="detail.directory" size="small" @click="openInstances(detail)">{{ t('cm.viewInstances') }}</sdk-button>
+                <sdk-button size="small" type="primary" plain @click="togglePickingStart">{{ t('cm.pickStart') }}</sdk-button>
               </div>
               <p v-if="pickingStart" class="capmap-hint" style="margin-top: 6px">{{ t('cm.pickHint') }}</p>
 
@@ -282,18 +282,18 @@
                     <span>{{ $te(relation.labelKey) ? $t(relation.labelKey) : relation.relationKind }}</span>
                     <span class="capmap-muted">→</span>
                     <span>{{ $te(relation.peerLabelKey) ? $t(relation.peerLabelKey) : relation.peer }}</span>
-                    <el-tag size="small" effect="plain" :type="relation.derived ? 'info' : 'success'">
+                    <sdk-tag size="small" effect="plain" :type="relation.derived ? 'info' : 'success'">
                       {{ relation.derived ? t('cm.derived') : t('cm.stored') }}
-                    </el-tag>
+                    </sdk-tag>
                   </li>
                   <li v-for="relation in detail.incoming" :key="'in-' + relation.key">
                     <span class="capmap-dir" data-dir="incoming">{{ t('cm.incoming') }}</span>
                     <span>{{ $te(relation.labelKey) ? $t(relation.labelKey) : relation.relationKind }}</span>
                     <span class="capmap-muted">←</span>
                     <span>{{ $te(relation.peerLabelKey) ? $t(relation.peerLabelKey) : relation.peer }}</span>
-                    <el-tag size="small" effect="plain" :type="relation.derived ? 'info' : 'success'">
+                    <sdk-tag size="small" effect="plain" :type="relation.derived ? 'info' : 'success'">
                       {{ relation.derived ? t('cm.derived') : t('cm.stored') }}
-                    </el-tag>
+                    </sdk-tag>
                   </li>
                 </ul>
                 <p v-if="!detail.outgoing.length && !detail.incoming.length" class="capmap-hint">{{ t('cm.noRelations') }}</p>
@@ -370,20 +370,20 @@
           :description="t('cm.pickByTypeHint')"
         >
           <div class="capmap-pick">
-            <el-select v-model="pickType" size="small" filterable :placeholder="t('cm.chooseType')">
-              <el-option-group
+            <sdk-select v-model="pickType" size="small" filterable :placeholder="t('cm.chooseType')">
+              <sdk-option-group
                 v-for="group in typeOptions"
                 :key="group.layer"
                 :label="$te(group.labelKey) ? $t(group.labelKey) : group.layer"
               >
-                <el-option
+                <sdk-option
                   v-for="option in group.options"
                   :key="option.value"
                   :value="option.value"
                   :label="$te(option.labelKey) ? $t(option.labelKey) : option.value"
-                ></el-option>
-              </el-option-group>
-            </el-select>
+                ></sdk-option>
+              </sdk-option-group>
+            </sdk-select>
             <projection v-if="selectedType" slot="typeObjects"></projection>
             <p v-else class="capmap-hint">{{ t('cm.pickChooseType') }}</p>
           </div>
@@ -423,7 +423,7 @@
               {{ t('cm.unavailableKinds', { names: relationSummary.unavailable.map((kind) => ($te(kind.labelKey) ? $t(kind.labelKey) : kind.relationKind)).join('、') }) }}
             </p>
 
-            <el-select
+            <sdk-select
               v-if="relationKindsAvailable.length > 1 || relationFilter.length > 0"
               v-model="relationFilter"
               multiple
@@ -434,20 +434,20 @@
               style="margin-top: 8px"
               :placeholder="t('cm.allKinds')"
             >
-              <el-option
+              <sdk-option
                 v-for="kind in relationKindsAvailable"
                 :key="kind.value"
                 :value="kind.value"
                 :label="$te(kind.labelKey) ? $t(kind.labelKey) : kind.value"
-              ></el-option>
-            </el-select>
+              ></sdk-option>
+            </sdk-select>
 
             <div v-for="group in visibleRelationGroups" :key="group.relationKind" class="capmap-relgroup">
               <div class="capmap-relgroup-head">
                 <span class="capmap-rel-name">{{ $te(group.labelKey) ? $t(group.labelKey) : group.relationKind }}</span>
-                <el-tag size="small" effect="plain" :type="group.derived ? 'info' : 'success'">
+                <sdk-tag size="small" effect="plain" :type="group.derived ? 'info' : 'success'">
                   {{ group.derived ? t('cm.derived') : t('cm.stored') }}
-                </el-tag>
+                </sdk-tag>
                 <span v-if="group.status !== 'ok'" class="capmap-count" :data-status="group.status">
                   {{ group.status === 'refused' ? t('cm.statusRefused') : (group.status === 'failed' ? t('cm.statusFailed') : t('cm.statusUnavailable')) }}
                 </span>

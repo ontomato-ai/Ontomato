@@ -3,31 +3,31 @@
   [v-cloak] { display: none; }
   .apps { display: flex; flex-direction: column; gap: var(--spacing-md); padding-bottom: var(--spacing-4xl); }
   .apps-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--spacing-sm); }
-  .apps-title { margin: 0; color: var(--el-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); line-height: 1.5; }
+  .apps-title { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); line-height: 1.5; }
   .apps-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--spacing-sm); }
   .apps-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .apps-toolbar .apps-search { width: 260px; max-width: 100%; }
-  .apps-count { margin-inline-start: auto; color: var(--el-text-color-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+  .apps-count { margin-inline-start: auto; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
   .apps-name { display: flex; align-items: center; gap: var(--spacing-sm); min-width: 0; }
   .apps-name-text { display: flex; flex-direction: column; min-width: 0; border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
   .apps-name-text:focus-visible { box-shadow: var(--focus-ring); }
   .apps-directory { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-md); }
   .apps-name-text strong { font-weight: var(--font-semibold); }
-  .apps-name-text small { color: var(--el-text-color-secondary); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .apps-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
-  .apps-error { margin: 0; color: var(--el-color-danger-text); font-size: var(--text-sm); line-height: 1.6; }
-  .apps-ok { margin: 0; color: var(--el-color-success-text); font-size: var(--text-sm); line-height: 1.6; }
+  .apps-name-text small { color: var(--sdk-text-color-secondary); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .apps-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
+  .apps-error { margin: 0; color: var(--sdk-color-danger-text); font-size: var(--text-sm); line-height: 1.6; }
+  .apps-ok { margin: 0; color: var(--sdk-color-success-text); font-size: var(--text-sm); line-height: 1.6; }
   .apps-card { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md); border: 1px solid var(--ui-divider); border-radius: var(--radius-md); }
   .apps-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .apps-card-title { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
-  .apps-section-title { margin: 0; font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
+  .apps-card-title { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
+  .apps-section-title { margin: 0; font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
   .apps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--spacing-sm) var(--spacing-md); }
   .apps-field { min-width: 0; }
-  .apps-field dt { margin: 0 0 calc(var(--spacing-xs) / 2); color: var(--el-text-color-secondary); font-size: var(--text-xs); }
-  .apps-field dd { margin: 0; color: var(--el-text-color-primary); font-size: var(--text-sm); line-height: 1.6; word-break: break-word; }
+  .apps-field dt { margin: 0 0 calc(var(--spacing-xs) / 2); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
+  .apps-field dd { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-sm); line-height: 1.6; word-break: break-word; }
   .apps-field dd code { font-size: var(--text-xs); background: var(--ui-fill-tertiary); padding: 0 var(--spacing-xs); border-radius: var(--radius-xs); }
   .apps-locales { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); }
-  .apps-locales span { color: var(--el-text-color-regular); font-size: var(--text-sm); word-break: break-word; }
+  .apps-locales span { color: var(--sdk-text-color-regular); font-size: var(--text-sm); word-break: break-word; }
   .apps-other-languages { border-block-start: 1px solid var(--ui-divider); padding-block-start: var(--spacing-sm); }
   .apps-other-languages summary { color: var(--brand-link); cursor: pointer; font-size: var(--text-sm); }
   .apps-mono { font-family: var(--font-mono); font-size: var(--text-xs); word-break: break-all; }
@@ -37,8 +37,8 @@
   .apps-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .apps-link { color: var(--brand-link); font-size: var(--text-xs); }
   .apps-sheet { border-color: var(--ui-border); box-shadow: var(--elevation-panel); }
-  .apps-confirm { border-color: var(--el-color-danger-light-5); }
-  .apps-list-icon { display: inline-flex; vertical-align: middle; color: var(--el-text-color-regular); }
+  .apps-confirm { border-color: var(--sdk-color-danger-light-5); }
+  .apps-list-icon { display: inline-flex; vertical-align: middle; color: var(--sdk-text-color-regular); }
   .apps-list .el-table__cell, .apps-entry-table .el-table__cell { padding-inline: var(--spacing-xs) !important; }
   .apps-list .cell, .apps-entry-table .cell { padding-inline: var(--spacing-xs); }
   .apps-entry-panel-id { display: block; max-inline-size: 100%; overflow: hidden; text-align: start; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
@@ -49,62 +49,62 @@
 
     <div v-if="mode === 'list'" class="apps-directory" ref="listRegion">
       <div class="apps-toolbar">
-        <el-input class="apps-search" v-model="searchText" clearable placeholder="搜索应用名称或 ID" aria-label="搜索应用" @input="scheduleSearch"></el-input>
-        <el-radio-group :model-value="scope" aria-label="范围" @change="setScope">
-          <el-radio-button value="visible">全部可见</el-radio-button>
-          <el-radio-button value="maintainable">我能维护的</el-radio-button>
-        </el-radio-group>
-        <el-select :model-value="sort" :aria-label="t('sort.label')" style="width: 132px" @change="setSort">
-          <el-option value="id" :label="t('sort.id')"></el-option>
-          <el-option value="name" :label="t('sort.name')"></el-option>
-          <el-option value="updated" :label="t('sort.updated')"></el-option>
-        </el-select>
-        <el-select :model-value="pageSize" aria-label="每页条数" style="width: 110px" @change="setSize">
-          <el-option :value="10" label="10 条/页"></el-option>
-          <el-option :value="20" label="20 条/页"></el-option>
-          <el-option :value="50" label="50 条/页"></el-option>
-        </el-select>
+        <sdk-input class="apps-search" v-model="searchText" clearable placeholder="搜索应用名称或 ID" aria-label="搜索应用" @input="scheduleSearch"></sdk-input>
+        <sdk-radio-group :model-value="scope" aria-label="范围" @change="setScope">
+          <sdk-radio-button value="visible">全部可见</sdk-radio-button>
+          <sdk-radio-button value="maintainable">我能维护的</sdk-radio-button>
+        </sdk-radio-group>
+        <sdk-select :model-value="sort" :aria-label="t('sort.label')" style="width: 132px" @change="setSort">
+          <sdk-option value="id" :label="t('sort.id')"></sdk-option>
+          <sdk-option value="name" :label="t('sort.name')"></sdk-option>
+          <sdk-option value="updated" :label="t('sort.updated')"></sdk-option>
+        </sdk-select>
+        <sdk-select :model-value="pageSize" aria-label="每页条数" style="width: 110px" @change="setSize">
+          <sdk-option :value="10" label="10 条/页"></sdk-option>
+          <sdk-option :value="20" label="20 条/页"></sdk-option>
+          <sdk-option :value="50" label="50 条/页"></sdk-option>
+        </sdk-select>
         <span class="apps-count">{{ rows.length }} 条{{ pageIndex > 1 ? ' · 第 ' + pageIndex + ' 页' : '' }}{{ nextCursor ? ' · 还有更多' : '' }}</span>
       </div>
 
       <p class="apps-error" v-if="listError" role="alert">{{ listError }}</p>
 
-      <el-table class="apps-list" v-loading="catalogue.status === 'loading'" :data="rows" row-key="id" @row-click="openRow">
-        <el-table-column label="图标" width="52">
+      <sdk-table class="apps-list" v-sdk-loading="catalogue.status === 'loading'" :data="rows" row-key="id" @row-click="openRow">
+        <sdk-table-column label="图标" width="52">
           <template #default="{ row }">
             <span class="apps-list-icon" :title="row.icon">
               <component :is="appIcon(row.icon)" :size="16" aria-hidden="true"></component>
             </span>
           </template>
-        </el-table-column>
-        <el-table-column label="名称" min-width="110">
+        </sdk-table-column>
+        <sdk-table-column label="名称" min-width="110">
           <template #default="{ row }">
             <button class="apps-name-text" type="button" @click.stop="openRow(row)">
               <strong>{{ localizedText(row.names) }}</strong>
               <small v-if="secondaryName(row.names)">{{ secondaryName(row.names) }}</small>
             </button>
           </template>
-        </el-table-column>
-        <el-table-column label="来源" width="54">
+        </sdk-table-column>
+        <sdk-table-column label="来源" width="54">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.source === 'builtin' ? 'info' : 'primary'">{{ row.source === 'builtin' ? '内置' : '域内' }}</el-tag>
+            <sdk-tag size="small" :type="row.source === 'builtin' ? 'info' : 'primary'">{{ row.source === 'builtin' ? '内置' : '域内' }}</sdk-tag>
           </template>
-        </el-table-column>
-        <el-table-column label="维护权限" width="72">
+        </sdk-table-column>
+        <sdk-table-column label="维护权限" width="72">
           <template #default="{ row }">{{ row.canMaintain ? '能维护' : '只读' }}</template>
-        </el-table-column>
-        <el-table-column label="入口数" width="62">
+        </sdk-table-column>
+        <sdk-table-column label="入口数" width="62">
           <template #default="{ row }">{{ row.entryCount }}</template>
-        </el-table-column>
+        </sdk-table-column>
         <template #empty>
           <span>{{ catalogue.status === 'loading' ? '正在读取…' : (listError ? '读取失败' : '没有符合条件的应用') }}</span>
         </template>
-      </el-table>
+      </sdk-table>
 
       <div class="apps-foot">
-        <el-button :disabled="!isFirstPage" @click="firstPage">回到第一页</el-button>
-        <el-button :disabled="isFirstPage" @click="previousPage">{{ t('list.prev') }}</el-button>
-        <el-button :disabled="!nextCursor" @click="nextPage">下一页</el-button>
+        <sdk-button :disabled="!isFirstPage" @click="firstPage">回到第一页</sdk-button>
+        <sdk-button :disabled="isFirstPage" @click="previousPage">{{ t('list.prev') }}</sdk-button>
+        <sdk-button :disabled="!nextCursor" @click="nextPage">下一页</sdk-button>
         <span class="apps-hint">翻页由属主的游标决定：下一页读的是当前这页之后的那一段。</span>
       </div>
       <p class="apps-hint">不能显示的入口不会让应用消失：应用照样列在这里，它的入口由属主决定给谁看。</p>
@@ -116,8 +116,8 @@
           <h1 class="apps-title">{{ app ? localizedText(app.names) : '一张应用' }}</h1>
         </div>
         <div class="apps-actions">
-          <el-button @click="backToList">返回列表</el-button>
-          <el-button v-if="app" type="primary" @click="openApplication">打开应用</el-button>
+          <sdk-button @click="backToList">返回列表</sdk-button>
+          <sdk-button v-if="app" type="primary" @click="openApplication">打开应用</sdk-button>
         </div>
       </header>
 
@@ -136,7 +136,7 @@
             <h2 class="apps-section-title">身份</h2>
             <span class="apps-count" v-if="app.canMaintain">
               <span class="apps-inline-actions">
-                <el-button size="small" @click="formSection = 'identity'">编辑身份</el-button>
+                <sdk-button size="small" @click="formSection = 'identity'">编辑身份</sdk-button>
               </span>
             </span>
           </div>
@@ -182,7 +182,7 @@
             </dl>
           </details>
           <div class="apps-inline-actions">
-            <el-button size="small" text @click="openClassCatalogue">查看所属类</el-button>
+            <sdk-button size="small" text @click="openClassCatalogue">查看所属类</sdk-button>
             <span class="apps-hint" v-if="classLinkNote">{{ classLinkNote }}</span>
           </div>
         </div>
@@ -192,48 +192,48 @@
             <h2 class="apps-section-title">入口</h2>
             <span class="apps-count apps-inline-actions">
               <template v-if="app.canEditEntries">
-                <el-button size="small" @click="startAddEntry">添加入口</el-button>
-                <el-button size="small" @click="formSection = 'entries'">编辑入口表</el-button>
+                <sdk-button size="small" @click="startAddEntry">添加入口</sdk-button>
+                <sdk-button size="small" @click="formSection = 'entries'">编辑入口表</sdk-button>
               </template>
               <span class="apps-hint" v-else-if="app.source !== 'builtin'">这张应用的入口由属主按它的发布方式维护，这里不能改。</span>
             </span>
           </div>
           <p class="apps-hint" v-if="!app.canMaintain">你只能看到自己有权限进的入口，属主已经把其余的裁掉了。</p>
-          <el-table class="apps-entry-table" :data="app.panelUses" row-key="id" size="small" scrollbar-always-on>
-            <el-table-column label="菜单名" min-width="120">
+          <sdk-table class="apps-entry-table" :data="app.panelUses" row-key="id" size="small" scrollbar-always-on>
+            <sdk-table-column label="菜单名" min-width="120">
               <template #default="{ row }">{{ localizedText(row.names) || row.pageKey }}</template>
-            </el-table-column>
-            <el-table-column label="地址" min-width="135">
+            </sdk-table-column>
+            <sdk-table-column label="地址" min-width="135">
               <template #default="{ row }"><span class="apps-mono">{{ row.path }}</span></template>
-            </el-table-column>
-            <el-table-column label="面板" min-width="140">
+            </sdk-table-column>
+            <sdk-table-column label="面板" min-width="140">
               <template #default="{ row }">
-                <el-button size="small" text class="apps-link apps-entry-panel-id" :title="row.panelId" @click="inspectPanel(row.panelId)">{{ row.panelId }}</el-button>
-                <el-button size="small" text @click="openPanelCatalogue(row.panelId)">面板目录</el-button>
+                <sdk-button size="small" text class="apps-link apps-entry-panel-id" :title="row.panelId" @click="inspectPanel(row.panelId)">{{ row.panelId }}</sdk-button>
+                <sdk-button size="small" text @click="openPanelCatalogue(row.panelId)">面板目录</sdk-button>
               </template>
-            </el-table-column>
-            <el-table-column label="传入值" min-width="92">
+            </sdk-table-column>
+            <sdk-table-column label="传入值" min-width="92">
               <template #default="{ row }"><span class="apps-mono">{{ inputsText(row.inputs) }}</span></template>
-            </el-table-column>
-            <el-table-column label="组与顺序" min-width="86">
+            </sdk-table-column>
+            <sdk-table-column label="组与顺序" min-width="86">
               <template #default="{ row }">{{ groupText(row.groupKey) }}</template>
-            </el-table-column>
-            <el-table-column label="准入" min-width="106">
+            </sdk-table-column>
+            <sdk-table-column label="准入" min-width="106">
               <template #default="{ row }">{{ accessText(row.access) }}</template>
-            </el-table-column>
-            <el-table-column label="默认智能体" min-width="102">
+            </sdk-table-column>
+            <sdk-table-column label="默认智能体" min-width="102">
               <template #default="{ row }">{{ agentText(row.defaultAgent) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="90" v-if="app.canEditEntries">
+            </sdk-table-column>
+            <sdk-table-column label="操作" width="90" v-if="app.canEditEntries">
               <template #default="{ row }">
                 <span class="apps-inline-actions">
-                  <el-button size="small" text @click.stop="startEditEntry(row)">编辑</el-button>
-                  <el-button size="small" text type="danger" @click.stop="removeEntry(row)">删除</el-button>
+                  <sdk-button size="small" text @click.stop="startEditEntry(row)">编辑</sdk-button>
+                  <sdk-button size="small" text type="danger" @click.stop="removeEntry(row)">删除</sdk-button>
                 </span>
               </template>
-            </el-table-column>
+            </sdk-table-column>
             <template #empty><span>这张应用还没有入口。</span></template>
-          </el-table>
+          </sdk-table>
           <dl class="apps-grid" v-if="app.theme || app.framePanelId">
             <div class="apps-field" v-if="app.framePanelId">
               <dt>外框面板</dt>
@@ -255,7 +255,7 @@
             <div class="apps-field">
               <dt>面板（{{ usedPanels.length }}）</dt>
               <dd class="apps-inline-actions">
-                <el-button v-for="panelId in usedPanels" :key="panelId" size="small" @click="inspectPanel(panelId)">{{ panelId }}</el-button>
+                <sdk-button v-for="panelId in usedPanels" :key="panelId" size="small" @click="inspectPanel(panelId)">{{ panelId }}</sdk-button>
                 <span v-if="!usedPanels.length">—</span>
               </dd>
             </div>
@@ -263,8 +263,8 @@
               <dt>投影{{ inspectedPanelId ? '（' + inspectedPanelId + ' 的成员）' : '' }}</dt>
               <dd class="apps-inline-actions">
                 <template v-if="inspectedPanelId">
-                  <el-button v-for="member in inspectedMembers" :key="member.className + ':' + member.primaryKey" size="small" text class="apps-mono"
-                    @click="openMemberCatalogue(member)">{{ member.primaryKey }}</el-button>
+                  <sdk-button v-for="member in inspectedMembers" :key="member.className + ':' + member.primaryKey" size="small" text class="apps-mono"
+                    @click="openMemberCatalogue(member)">{{ member.primaryKey }}</sdk-button>
                   <span v-if="panelInfo.status === 'loading'">正在读面板成员…</span>
                   <span v-else-if="panelInfo.status === 'error'" class="apps-error">{{ panelInfo.message }}</span>
                   <span v-else-if="!inspectedMembers.length && panelInfo.status === 'ready'">这个面板没有用投影。</span>
@@ -280,8 +280,8 @@
             <h2 class="apps-section-title">维护与授权</h2>
           </div>
           <div class="apps-inline-actions">
-            <el-button v-if="app.canMaintain" size="small" type="danger" @click="removeApplication">删除这张应用</el-button>
-            <el-button v-if="app.canGrant" size="small" @click="openGrant">授予或撤销使用授权</el-button>
+            <sdk-button v-if="app.canMaintain" size="small" type="danger" @click="removeApplication">删除这张应用</sdk-button>
+            <sdk-button v-if="app.canGrant" size="small" @click="openGrant">授予或撤销使用授权</sdk-button>
             <span class="apps-hint" v-if="app.source === 'builtin'">内置应用随平台维护，这里不提供改动。</span>
           </div>
           <div v-if="app.canGrant">
@@ -290,23 +290,23 @@
             <p v-else-if="grants.status !== 'ready'" class="apps-hint">{{ t('grants.loading') }}</p>
             <template v-else>
               <p class="apps-hint">{{ t(grants.value.shared ? 'grants.shared' : 'grants.private') }}</p>
-              <el-button size="small" :disabled="busy" @click="shareApplication(!grants.value.shared)">
+              <sdk-button size="small" :disabled="busy" @click="shareApplication(!grants.value.shared)">
                 {{ t(grants.value.shared ? 'grants.shareOff' : 'grants.shareOn') }}
-              </el-button>
-              <el-table :data="grants.value.grants" size="small" :empty-text="t('grants.none')">
-                <el-table-column :label="t('grants.kind')">
+              </sdk-button>
+              <sdk-table :data="grants.value.grants" size="small" :empty-text="t('grants.none')">
+                <sdk-table-column :label="t('grants.kind')">
                   <template #default="{ row }">{{ t('grants.' + row.principalKind) }}</template>
-                </el-table-column>
-                <el-table-column prop="principalId" :label="t('grants.id')"></el-table-column>
-                <el-table-column :label="t('grants.verb')">
+                </sdk-table-column>
+                <sdk-table-column prop="principalId" :label="t('grants.id')"></sdk-table-column>
+                <sdk-table-column :label="t('grants.verb')">
                   <template #default="{ row }">{{ t('grants.' + row.verb) }}</template>
-                </el-table-column>
-                <el-table-column :label="t('grants.actions')">
+                </sdk-table-column>
+                <sdk-table-column :label="t('grants.actions')">
                   <template #default="{ row }">
-                    <el-button v-if="row.principalKind !== 'domain'" link :disabled="busy" @click="revokeExistingGrant(row)">{{ t('grants.revoke') }}</el-button>
+                    <sdk-button v-if="row.principalKind !== 'domain'" link :disabled="busy" @click="revokeExistingGrant(row)">{{ t('grants.revoke') }}</sdk-button>
                   </template>
-                </el-table-column>
-              </el-table>
+                </sdk-table-column>
+              </sdk-table>
             </template>
           </div>
         </div>
@@ -320,7 +320,7 @@
           <p class="apps-sub">表单由应用目录（属主）声明，字段与校验都在它那里；保存后新应用出现在列表里，不会覆盖同 ID 的应用。</p>
         </div>
         <div class="apps-actions">
-          <el-button @click="backToList">取消</el-button>
+          <sdk-button @click="backToList">取消</sdk-button>
         </div>
       </header>
       <p class="apps-error" v-if="actionError" role="alert">{{ actionError }}</p>
@@ -341,59 +341,59 @@
         <h2 class="apps-section-title">{{ entryEditing ? '编辑入口' : '添加入口' }}</h2>
         <span class="apps-hint">地址以 / 开头、不带问号井号空白；页面键在本域内唯一。</span>
       </div>
-      <el-form label-position="top">
+      <sdk-form label-position="top">
         <div class="apps-form-grid">
-          <el-form-item label="入口 ID">
-            <el-input v-model="entry.id" :disabled="entryEditing" placeholder="本应用内唯一，如 use-manage"></el-input>
-          </el-form-item>
-          <el-form-item label="面板 ID">
-            <el-input v-model="entry.panelId" placeholder="如 panel-ontology-applications"></el-input>
-          </el-form-item>
-          <el-form-item label="地址">
-            <el-input v-model="entry.path" placeholder="/applications/<应用 ID>/<页面>"></el-input>
-          </el-form-item>
-          <el-form-item label="页面键">
-            <el-input v-model="entry.pageKey" placeholder="本域内唯一，留空用入口 ID"></el-input>
-          </el-form-item>
-          <el-form-item label="菜单名 · zh-CN">
-            <el-input v-model="entry.nameZh"></el-input>
-          </el-form-item>
-          <el-form-item label="菜单名 · en">
-            <el-input v-model="entry.nameEn"></el-input>
-          </el-form-item>
-          <el-form-item label="组">
-            <el-select v-model="entry.groupKey" clearable filterable allow-create default-first-option placeholder="不分组" style="width: 100%">
-              <el-option v-for="group in groupChoices" :key="group.key" :value="group.key" :label="group.label"></el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item label="准入">
-            <el-select v-model="entry.accessKind" style="width: 100%">
-              <el-option value="domain-member" label="本域成员都能进"></el-option>
-              <el-option value="permissionCode" label="只给一个权限码"></el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item label="权限码" v-if="entry.accessKind === 'permissionCode'" class="apps-span">
-            <el-input v-model="entry.permissionCode" placeholder="本应用声明过的权限码"></el-input>
-          </el-form-item>
-          <el-form-item label="默认智能体">
-            <el-select v-model="entry.agentKind" style="width: 100%">
-              <el-option value="none" label="通用助手"></el-option>
-              <el-option value="id" label="按智能体 ID"></el-option>
-              <el-option value="preset" label="按预置类型"></el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="entry.agentKind === 'preset' ? '预置类型' : '智能体 ID'" v-if="entry.agentKind !== 'none'">
-            <el-input v-model="entry.agentValue"></el-input>
-          </el-form-item>
-          <el-form-item label="传入值（JSON 对象，可选）" class="apps-span">
-            <el-input v-model="entry.inputsText" type="textarea" :rows="3" placeholder='{"frameState": "..."}'></el-input>
-          </el-form-item>
+          <sdk-form-item label="入口 ID">
+            <sdk-input v-model="entry.id" :disabled="entryEditing" placeholder="本应用内唯一，如 use-manage"></sdk-input>
+          </sdk-form-item>
+          <sdk-form-item label="面板 ID">
+            <sdk-input v-model="entry.panelId" placeholder="如 panel-ontology-applications"></sdk-input>
+          </sdk-form-item>
+          <sdk-form-item label="地址">
+            <sdk-input v-model="entry.path" placeholder="/applications/<应用 ID>/<页面>"></sdk-input>
+          </sdk-form-item>
+          <sdk-form-item label="页面键">
+            <sdk-input v-model="entry.pageKey" placeholder="本域内唯一，留空用入口 ID"></sdk-input>
+          </sdk-form-item>
+          <sdk-form-item label="菜单名 · zh-CN">
+            <sdk-input v-model="entry.nameZh"></sdk-input>
+          </sdk-form-item>
+          <sdk-form-item label="菜单名 · en">
+            <sdk-input v-model="entry.nameEn"></sdk-input>
+          </sdk-form-item>
+          <sdk-form-item label="组">
+            <sdk-select v-model="entry.groupKey" clearable filterable allow-create default-first-option placeholder="不分组" style="width: 100%">
+              <sdk-option v-for="group in groupChoices" :key="group.key" :value="group.key" :label="group.label"></sdk-option>
+            </sdk-select>
+          </sdk-form-item>
+          <sdk-form-item label="准入">
+            <sdk-select v-model="entry.accessKind" style="width: 100%">
+              <sdk-option value="domain-member" label="本域成员都能进"></sdk-option>
+              <sdk-option value="permissionCode" label="只给一个权限码"></sdk-option>
+            </sdk-select>
+          </sdk-form-item>
+          <sdk-form-item label="权限码" v-if="entry.accessKind === 'permissionCode'" class="apps-span">
+            <sdk-input v-model="entry.permissionCode" placeholder="本应用声明过的权限码"></sdk-input>
+          </sdk-form-item>
+          <sdk-form-item label="默认智能体">
+            <sdk-select v-model="entry.agentKind" style="width: 100%">
+              <sdk-option value="none" label="通用助手"></sdk-option>
+              <sdk-option value="id" label="按智能体 ID"></sdk-option>
+              <sdk-option value="preset" label="按预置类型"></sdk-option>
+            </sdk-select>
+          </sdk-form-item>
+          <sdk-form-item :label="entry.agentKind === 'preset' ? '预置类型' : '智能体 ID'" v-if="entry.agentKind !== 'none'">
+            <sdk-input v-model="entry.agentValue"></sdk-input>
+          </sdk-form-item>
+          <sdk-form-item label="传入值（JSON 对象，可选）" class="apps-span">
+            <sdk-input v-model="entry.inputsText" type="textarea" :rows="3" placeholder='{"frameState": "..."}'></sdk-input>
+          </sdk-form-item>
         </div>
-      </el-form>
+      </sdk-form>
       <p class="apps-error" v-if="entryError" role="alert">{{ entryError }}</p>
       <div class="apps-inline-actions">
-        <el-button size="small" @click="entryOpen = false">取消</el-button>
-        <el-button size="small" type="primary" :loading="busy" @click="submitEntry">{{ entryEditing ? '保存入口' : '添加入口' }}</el-button>
+        <sdk-button size="small" @click="entryOpen = false">取消</sdk-button>
+        <sdk-button size="small" type="primary" :loading="busy" @click="submitEntry">{{ entryEditing ? '保存入口' : '添加入口' }}</sdk-button>
       </div>
     </div>
 
@@ -402,38 +402,38 @@
         <h2 class="apps-section-title">使用授权</h2>
         <span class="apps-hint">授权由治理属主判：这里只把你的意思交给它。</span>
       </div>
-      <el-form label-position="top">
+      <sdk-form label-position="top">
         <div class="apps-form-grid">
-          <el-form-item label="授给谁">
-            <el-select v-model="grant.principalKind" style="width: 100%">
-              <el-option value="principal" label="一个人"></el-option>
-              <el-option value="role" label="一个角色"></el-option>
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="grant.principalKind === 'role' ? '角色 ID' : '用户 ID'">
-            <el-input v-model="grant.principalId" placeholder="平台里的 ID"></el-input>
-          </el-form-item>
-          <el-form-item label="哪一种">
-            <el-select v-model="grant.verb" style="width: 100%">
-              <el-option value="use" label="使用"></el-option>
-              <el-option value="edit" label="维护"></el-option>
-            </el-select>
-          </el-form-item>
+          <sdk-form-item label="授给谁">
+            <sdk-select v-model="grant.principalKind" style="width: 100%">
+              <sdk-option value="principal" label="一个人"></sdk-option>
+              <sdk-option value="role" label="一个角色"></sdk-option>
+            </sdk-select>
+          </sdk-form-item>
+          <sdk-form-item :label="grant.principalKind === 'role' ? '角色 ID' : '用户 ID'">
+            <sdk-input v-model="grant.principalId" placeholder="平台里的 ID"></sdk-input>
+          </sdk-form-item>
+          <sdk-form-item label="哪一种">
+            <sdk-select v-model="grant.verb" style="width: 100%">
+              <sdk-option value="use" label="使用"></sdk-option>
+              <sdk-option value="edit" label="维护"></sdk-option>
+            </sdk-select>
+          </sdk-form-item>
         </div>
-      </el-form>
+      </sdk-form>
       <p class="apps-error" v-if="grantError" role="alert">{{ grantError }}</p>
       <div class="apps-inline-actions">
-        <el-button size="small" @click="grantOpen = false">取消</el-button>
-        <el-button size="small" :loading="busy" @click="submitGrant(true)">撤销</el-button>
-        <el-button size="small" type="primary" :loading="busy" @click="submitGrant(false)">授予</el-button>
+        <sdk-button size="small" @click="grantOpen = false">取消</sdk-button>
+        <sdk-button size="small" :loading="busy" @click="submitGrant(true)">撤销</sdk-button>
+        <sdk-button size="small" type="primary" :loading="busy" @click="submitGrant(false)">授予</sdk-button>
       </div>
     </div>
 
     <div class="apps-card apps-sheet apps-confirm" v-if="confirmState.open">
       <p class="apps-hint">{{ confirmState.message }}</p>
       <div class="apps-inline-actions">
-        <el-button size="small" @click="confirmState.open = false">取消</el-button>
-        <el-button size="small" type="danger" :loading="busy" @click="confirmRemove">确认</el-button>
+        <sdk-button size="small" @click="confirmState.open = false">取消</sdk-button>
+        <sdk-button size="small" type="danger" :loading="busy" @click="confirmRemove">确认</sdk-button>
       </div>
     </div>
 

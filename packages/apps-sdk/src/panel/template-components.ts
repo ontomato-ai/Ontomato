@@ -1,10 +1,30 @@
-import { defineAsyncComponent, type App, type Component, type ComponentOptions } from "vue";
+import { defineAsyncComponent, type App, type Component, type ComponentOptions, type Directive } from "vue";
 import loaders from "apps-sdk:element-components";
 
-const directives = {
-  "v-loading": () => import("element-plus/es/components/loading/index").then(module => module.ElLoading),
-  "v-infinite-scroll": () => import("element-plus/es/components/infinite-scroll/index").then(module => module.ElInfiniteScroll),
-  "v-popover": () => import("element-plus/es/components/popover/index").then(module => module.ElPopoverDirective),
+interface DirectiveRegistration {
+  readonly name: string;
+  readonly directive: Directive;
+  readonly bindContext?: (app: App) => void;
+}
+
+const directives: Readonly<Record<string, () => Promise<DirectiveRegistration>>> = {
+  "v-sdk-loading": () => import("element-plus/es/components/loading/index").then(module => ({
+    name: "sdk-loading",
+    directive: module.ElLoading.directive,
+    bindContext: (app) => {
+      // Share the panel app's context with the loading overlay without calling `app.use(ElLoading)`,
+      // which would also register the legacy `v-loading` directive and `$loading` global.
+      (module.ElLoading.directive as Directive & { _context?: App["_context"] })._context = app._context;
+    },
+  })),
+  "v-sdk-infinite-scroll": () => import("element-plus/es/components/infinite-scroll/index").then(module => ({
+    name: "sdk-infinite-scroll",
+    directive: module.ElInfiniteScroll,
+  })),
+  "v-sdk-popover": () => import("element-plus/es/components/popover/index").then(module => ({
+    name: "sdk-popover",
+    directive: module.ElPopoverDirective,
+  })),
 };
 
 function templateNames(template: ComponentOptions["template"]) {
@@ -27,9 +47,10 @@ function templateNames(template: ComponentOptions["template"]) {
 }
 
 /**
- * Static tags get the actual components before rendering, including children a parent inspects in its slots: Element
- * Plus's and the SDK's own (`own`), so a layout around the panel's projections never holds the first draw back for one
- * more fetch. A tag the template does not name loads at its first render.
+ * Static tags get the actual components before rendering, including children a parent inspects in its slots: the SDK's
+ * `<sdk-*>` UI primitives and base components (`own`), so a layout around the panel's projections never holds the first
+ * draw back for one more fetch. A tag the template does not name loads at its first render. Only `<sdk-*>` UI
+ * primitives and `v-sdk-*` directives are registered; legacy `<el-*>` tags and `v-loading` are not registered.
  */
 export async function prepareTemplateComponents(template: ComponentOptions["template"], own: Readonly<Record<string, () => Promise<Component>>>) {
   const names = templateNames(template);
@@ -39,12 +60,15 @@ export async function prepareTemplateComponents(template: ComponentOptions["temp
     // Tags resolved dynamically by Vue can still load the component at first render.
     return [name, used ? await load() : defineAsyncComponent(load)] as const;
   });
-  const [resolved, plugins] = await Promise.all([
+  const [resolved, resolvedDirectives] = await Promise.all([
     Promise.all(components),
     Promise.all(Object.entries(directives).filter(([name]) => names.has(name)).map(([, load]) => load())),
   ]);
   return (app: App) => {
     for (const [name, component] of resolved) app.component(name, component);
-    for (const plugin of plugins) app.use(plugin);
+    for (const { name, directive, bindContext } of resolvedDirectives) {
+      bindContext?.(app);
+      app.directive(name, directive);
+    }
   };
 }

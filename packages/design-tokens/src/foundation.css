@@ -132,12 +132,18 @@
   --transition-base: 180ms cubic-bezier(0.2, 0, 0, 1); /* expand, tab switch */
   --transition-slow: 260ms cubic-bezier(0.2, 0, 0, 1); /* drawer, dialog */
 
-  /* ---- Element Plus sizes and shape ---- */
+  /* ---- Element Plus sizes, typography and shape ---- */
   --el-component-size-small: var(--control-height-sm);
   --el-component-size: var(--control-height);
   --el-component-size-large: var(--control-height-lg);
   --el-border-radius-small: var(--radius-xs);
   --el-border-radius-base: var(--radius-sm);
+  --el-font-size-extra-small: var(--text-xs);
+  --el-font-size-small: var(--text-sm);
+  --el-font-size-base: var(--text-base);
+  --el-font-size-medium: var(--text-lg);
+  --el-font-size-large: var(--text-xl);
+  --el-font-family-mono: var(--font-mono);
 
   /*
    * ---- Neutral interaction roles ----
@@ -205,6 +211,7 @@
   --shadow-primary: var(--elevation-flat);
   --shadow-primary-hover: var(--elevation-flat);
   --shadow-dropdown: var(--elevation-overlay);
+  --el-box-shadow: var(--elevation-overlay);
   --el-shadow-sm: var(--elevation-overlay);
   --el-shadow: var(--elevation-overlay);
   --el-shadow-md: var(--elevation-overlay);
