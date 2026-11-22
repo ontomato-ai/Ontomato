@@ -127,11 +127,8 @@ export type SdkAuthoringViolationKind =
   | "forbidden-token"
   | "forbidden-export"
   | "forbidden-viewport-unit"
-  | "forbidden-hardcoded-color"
-  | "forbidden-hardcoded-font-size"
-  | "forbidden-pane-column-width"
-  | "forbidden-panel-overlay"
-  | "forbidden-panel-data-display";
+  | "forbidden-panel-data-display"
+  | "forbidden-native-control";
 
 export interface SdkAuthoringViolation {
   readonly file: string;
@@ -154,13 +151,19 @@ export interface SdkAuthoringViolation {
 export const REJECT_VIEWPORT_UNITS = false;
 
 /**
- * Single switch controlling whether panel authoring checks reject unified page-paradigm
- * violations: hardcoded colors, hardcoded font sizes, handwritten pane column widths, panel-authored
- * dialogs/drawers, and SDK data-display primitives in panel templates.
+ * Single switch controlling whether panel authoring checks enforce the three decidable
+ * platform paradigm rules:
+ * 1. no CSS viewport length units (`vh`, `dvh`, `svh`, `lvh`, `vw`, etc.);
+ * 2. no SDK data-display primitives (`<sdk-table>`, `<sdk-pagination>`, `<sdk-descriptions>`,
+ *    `<sdk-tree>`, etc.) bound to business data in panel templates;
+ * 3. no native HTML interactive controls (`<input>`, `<select>`, `<button>`, `<textarea>`) in
+ *    panel templates.
  *
- * Kept `false` while existing built-in panels migrate to the unified page paradigm. Pass
- * `{ strictParadigm: true }` (or `--strict-paradigm` in `panel check`) to enforce both viewport-unit
- * and paradigm rules immediately, or flip this constant to `true` once migration completes.
+ * Colors, font sizes, dialogs/drawers, and copy wording are intentionally not rejected.
+ *
+ * Kept `false` while existing built-in panels finish migrating. Pass `{ strictParadigm: true }`
+ * (or `--strict-paradigm` in `panel check`) to enforce all three rules immediately, or flip this
+ * constant to `true` once migration completes.
  */
 export const REJECT_PARADIGM_VIOLATIONS = false;
 
@@ -177,212 +180,237 @@ export interface CheckAuthoringTemplateOptions extends CheckAuthoringStylesOptio
 const CSS_VIEWPORT_UNIT_PATTERN =
   /(?<![A-Za-z0-9_.#\\-])([+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?:[sld]?v(?:min|max|[whib])))(?![A-Za-z0-9_-])/giu;
 
-const CSS_HEX_COLOR_PATTERN =
-  /(?<![A-Za-z0-9_-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![A-Za-z0-9_-])/gu;
-
-const CSS_COLOR_FUNCTION_START = /(?<![A-Za-z0-9_-])(?:rgba?|hsla?)\s*\(/giu;
-
-const CSS_FONT_SIZE_LITERAL_PATTERN =
-  /(?<![A-Za-z0-9_-])([+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|pt|pc|ch|ex|cap|ic|lh|rlh|cm|mm|in|q|%|[sld]?v(?:min|max|[whib])|cq[whib]|cqmin|cqmax))(?![A-Za-z0-9_-])/giu;
-
-const CSS_HARDCODED_PX_OR_REM_PATTERN =
-  /(?<![A-Za-z0-9_-])([0-9]+(?:\.[0-9]+)?|\.[0-9]+)(px|rem)(?![A-Za-z0-9_-])/giu;
-
-const CSS_FR_PATTERN = /(?<![A-Za-z0-9_-])([0-9]+(?:\.[0-9]+)?|\.[0-9]+)fr(?![A-Za-z0-9_-])/giu;
-
-const CSS_PROPERTY_NAME_PATTERN = /^(?:--[A-Za-z0-9_-]+|-?[A-Za-z][A-Za-z0-9_-]*)$/u;
-
-const PANE_SELECTOR_PATTERN =
-  /(?:^|[^a-z])(?:aside|sidebar|side|pane|split|rail|explorer|inspector|left|right|drawer|columns?)(?:$|[^a-z])/iu;
-
-const PANE_MIN_PX = 192;
-const PANE_MIN_REM = 12;
-
 const VIEWPORT_UNIT_REPLACEMENT =
   "fill the parent content box with normal CSS and a rem/px min-height, or use <sdk-dialog>/<sdk-drawer> for overlays";
 
-const HARDCODED_COLOR_REPLACEMENT =
-  "var(--sdk-text-color-primary) / var(--sdk-bg-color) / var(--ui-divider)";
+const PANEL_FORBIDDEN_DATA_DISPLAY_REPLACEMENTS: Readonly<Record<string, string>> = {
+  "sdk-table": "ObjectList via <projection>",
+  "sdk-table-v2": "ObjectList via <projection>",
+  "sdk-pagination": "ObjectList pagination via <projection>",
+  "sdk-descriptions": "ObjectSummary via <projection>",
+  "sdk-tree": "ObjectTree via <projection>",
+  "sdk-tree-v2": "ObjectTree via <projection>",
+  "el-table": "ObjectList via <projection>",
+  "el-table-v2": "ObjectList via <projection>",
+  "el-pagination": "ObjectList pagination via <projection>",
+  "el-descriptions": "ObjectSummary via <projection>",
+  "el-tree": "ObjectTree via <projection>",
+  "el-tree-v2": "ObjectTree via <projection>",
+};
 
-const HARDCODED_FONT_SIZE_REPLACEMENT =
-  "var(--text-xs) / var(--text-sm) / var(--text-base) / var(--text-lg)";
+const PANEL_NATIVE_INPUT_TYPE_REPLACEMENTS: Readonly<Record<string, string>> = {
+  checkbox: "<sdk-checkbox>",
+  radio: "<sdk-radio>",
+  number: "<sdk-input-number>",
+  date: "<sdk-date-picker>",
+  "datetime-local": "<sdk-date-picker>",
+  month: "<sdk-date-picker>",
+  week: "<sdk-date-picker>",
+  time: "<sdk-time-picker>",
+  range: "<sdk-slider>",
+  color: "<sdk-color-picker>",
+  file: "<sdk-upload>",
+  button: "<sdk-button>",
+  submit: "<sdk-button>",
+  reset: "<sdk-button>",
+};
 
-const PANE_COLUMN_WIDTH_REPLACEMENT =
-  "<two-pane-layout> / <workbench-layout>";
+interface TemplateAttribute {
+  readonly name: string;
+  readonly nameOffset: number;
+  readonly value: string | undefined;
+  readonly valueOffset: number | undefined;
+}
 
-const PANEL_OVERLAY_REPLACEMENT =
-  "TwoPaneLayout / WorkbenchLayout detail pane, ObjectList row expansion (listRowDetail), or OperationButton parameter dialog";
+interface TemplateOpeningTag {
+  readonly tagName: string;
+  readonly nameOffset: number;
+  readonly tagStart: number;
+  readonly tagEnd: number;
+  readonly tagText: string;
+  readonly inSvg: boolean;
+}
 
-const PANEL_DATA_DISPLAY_REPLACEMENT =
-  "ObjectList / ObjectSummary / ObjectTree via <projection>, or plain HTML";
-
-const PANEL_FORBIDDEN_OVERLAY_TAGS = new Set(["sdk-dialog", "sdk-drawer", "el-dialog", "el-drawer"]);
-
-const PANEL_FORBIDDEN_DATA_DISPLAY_TAGS = new Set([
-  "sdk-table",
-  "sdk-table-v2",
-  "sdk-pagination",
-  "sdk-descriptions",
-  "sdk-tree",
-  "sdk-tree-v2",
-  "el-table",
-  "el-table-v2",
-  "el-pagination",
-  "el-descriptions",
-  "el-tree",
-  "el-tree-v2",
-]);
-
-interface CssDeclaration {
-  readonly selector: string;
-  readonly property: string;
-  readonly value: string;
-  readonly valueOffset: number;
+/** Skip a Vue `{{ ... }}` mustache interpolation while respecting string literals inside it. */
+function findMustacheEnd(source: string, openIndex: number): number {
+  const len = source.length;
+  let i = openIndex + 2;
+  let quote: string | null = null;
+  while (i < len) {
+    const ch = source[i]!;
+    if (quote !== null) {
+      if (ch === "\\" && i + 1 < len) {
+        i += 2;
+        continue;
+      }
+      if (ch === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      i++;
+      continue;
+    }
+    if (ch === "}" && source[i + 1] === "}") {
+      return i + 2;
+    }
+    i++;
+  }
+  return -1;
 }
 
 /**
- * Extract property declarations with exact value offsets from comment/string-stripped CSS.
- * Supports both full stylesheets (with selectors, `@media`/`@container` blocks, and CSS nesting)
- * and bare declaration lists from inline `style="..."` attributes.
+ * Scan HTML/Vue opening tags from comment/script/style-blanked template text.
+ * Skips Vue mustache interpolations and quoted attribute values so `<button>`/`<input>` inside
+ * expressions or attribute strings are not mistaken for tags, and tracks `<svg>` nesting.
  */
-function parseCssDeclarations(stripped: string): CssDeclaration[] {
-  const declarations: CssDeclaration[] = [];
-  const selectors: string[] = [];
-  let parenDepth = 0;
-  let stmtStart = 0;
-  let colonPos = -1;
+function scanTemplateOpeningTags(sanitized: string): TemplateOpeningTag[] {
+  const tags: TemplateOpeningTag[] = [];
+  const len = sanitized.length;
+  let svgDepth = 0;
+  let i = 0;
 
-  const flushDeclaration = (end: number) => {
-    if (colonPos === -1) return;
-    const rawProp = stripped.slice(stmtStart, colonPos);
-    const property = rawProp.trim();
-    if (!CSS_PROPERTY_NAME_PATTERN.test(property)) return;
-    const rawVal = stripped.slice(colonPos + 1, end);
-    const leadVal = rawVal.length - rawVal.trimStart().length;
-    const value = rawVal.trim();
-    if (!value) return;
-    declarations.push({
-      selector: selectors.at(-1) ?? "",
-      property: property.toLowerCase(),
-      value,
-      valueOffset: colonPos + 1 + leadVal,
-    });
-  };
-
-  for (let i = 0; i < stripped.length; i++) {
-    const ch = stripped[i]!;
-    if (ch === "(") {
-      parenDepth++;
+  while (i < len) {
+    const ch = sanitized[i]!;
+    if (ch === "{" && sanitized[i + 1] === "{") {
+      const end = findMustacheEnd(sanitized, i);
+      i = end !== -1 ? end : i + 2;
       continue;
     }
-    if (ch === ")") {
-      if (parenDepth > 0) parenDepth--;
+    if (ch !== "<") {
+      i++;
       continue;
     }
-    if (parenDepth > 0) continue;
-    if (ch === ":" && colonPos === -1) {
-      colonPos = i;
+    // Closing tag `</name>`
+    if (sanitized[i + 1] === "/" && /[A-Za-z]/u.test(sanitized[i + 2] ?? "")) {
+      let j = i + 2;
+      while (j < len && /[A-Za-z0-9-]/u.test(sanitized[j]!)) j++;
+      const closeName = sanitized.slice(i + 2, j).toLowerCase();
+      if (closeName === "svg" && svgDepth > 0) svgDepth--;
+      while (j < len && sanitized[j] !== ">") j++;
+      i = j < len ? j + 1 : len;
       continue;
     }
-    if (ch === "{") {
-      const prelude = stripped.slice(stmtStart, i).trim();
-      selectors.push(prelude.startsWith("@") ? (selectors.at(-1) ?? "") : prelude);
-      stmtStart = i + 1;
-      colonPos = -1;
+    // Opening tag `<Name ...>`
+    if (!/[A-Za-z]/u.test(sanitized[i + 1] ?? "")) {
+      i++;
       continue;
     }
-    if (ch === ";" || ch === "}") {
-      flushDeclaration(i);
-      if (ch === "}") selectors.pop();
-      stmtStart = i + 1;
-      colonPos = -1;
+    const tagStart = i;
+    const nameOffset = i + 1;
+    let nameEnd = nameOffset;
+    while (nameEnd < len && /[A-Za-z0-9-]/u.test(sanitized[nameEnd]!)) nameEnd++;
+    const boundary = sanitized[nameEnd];
+    if (boundary !== undefined && !/[\s/>]/u.test(boundary)) {
+      i++;
+      continue;
     }
-  }
-  if (stmtStart < stripped.length) flushDeclaration(stripped.length);
-  return declarations;
-}
-
-/** Split a CSS value on top-level whitespace while keeping function calls intact. */
-function splitCssTopLevelTokens(value: string): { readonly text: string; readonly offset: number }[] {
-  const cleaned = value.replace(/\s*!important\s*$/iu, "");
-  const tokens: { readonly text: string; readonly offset: number }[] = [];
-  let depth = 0;
-  let bracketDepth = 0;
-  let start = -1;
-  for (let i = 0; i < cleaned.length; i++) {
-    const ch = cleaned[i]!;
-    if (ch === "(") depth++;
-    else if (ch === ")" && depth > 0) depth--;
-    else if (ch === "[") bracketDepth++;
-    else if (ch === "]" && bracketDepth > 0) bracketDepth--;
-    const isSpace = depth === 0 && bracketDepth === 0 && /\s/u.test(ch);
-    if (isSpace) {
-      if (start !== -1) {
-        tokens.push({ text: cleaned.slice(start, i), offset: start });
-        start = -1;
+    const tagName = sanitized.slice(nameOffset, nameEnd);
+    let j = nameEnd;
+    let quote: string | null = null;
+    while (j < len) {
+      const c = sanitized[j]!;
+      if (quote !== null) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'") {
+        quote = c;
+      } else if (c === ">") {
+        break;
       }
-    } else if (start === -1) {
-      start = i;
+      j++;
     }
+    const tagEnd = j < len ? j + 1 : len;
+    const tagText = sanitized.slice(tagStart, tagEnd);
+    const lowerName = tagName.toLowerCase();
+    const selfClosing = tagText.trimEnd().endsWith("/>");
+    const inSvg = svgDepth > 0 || lowerName === "svg";
+    if (lowerName === "svg" && !selfClosing) svgDepth++;
+    tags.push({ tagName, nameOffset, tagStart, tagEnd, tagText, inSvg });
+    i = tagEnd;
   }
-  if (start !== -1) tokens.push({ text: cleaned.slice(start), offset: start });
-  return tokens;
+  return tags;
 }
 
-/** Find balanced `rgb(...)`/`rgba(...)`/`hsl(...)`/`hsla(...)` calls with hardcoded channels. */
-function findHardcodedColorFunctions(value: string): { readonly found: string; readonly offset: number }[] {
-  const hits: { readonly found: string; readonly offset: number }[] = [];
-  for (const match of value.matchAll(CSS_COLOR_FUNCTION_START)) {
-    const start = match.index!;
-    const openParen = start + match[0].length - 1;
-    let depth = 1;
-    let end = openParen + 1;
-    while (end < value.length && depth > 0) {
-      if (value[end] === "(") depth++;
-      else if (value[end] === ")") depth--;
-      end++;
+/** Parse attributes of a single opening tag `<Name ...>` with exact offsets relative to `tagText`. */
+function readTagAttributes(tagText: string): TemplateAttribute[] {
+  const attrs: TemplateAttribute[] = [];
+  const len = tagText.length;
+  let i = 1;
+  while (i < len && /[A-Za-z0-9-]/u.test(tagText[i]!)) i++;
+  while (i < len) {
+    while (i < len && /[\s/]/u.test(tagText[i]!)) i++;
+    if (i >= len || tagText[i] === ">") break;
+    const nameOffset = i;
+    while (i < len && !/[\s=/>]/u.test(tagText[i]!)) i++;
+    const name = tagText.slice(nameOffset, i);
+    if (!name) {
+      i++;
+      continue;
     }
-    if (depth !== 0) continue;
-    const args = value.slice(openParen + 1, end - 1);
-    // Allow variable-derived channel triplets such as `rgba(var(--sdk-color-primary-rgb), 0.12)`.
-    if (/^\s*var\s*\(/iu.test(args)) continue;
-    hits.push({ found: value.slice(start, end), offset: start });
+    while (i < len && /\s/u.test(tagText[i]!)) i++;
+    if (tagText[i] !== "=") {
+      attrs.push({ name, nameOffset, value: undefined, valueOffset: undefined });
+      continue;
+    }
+    i++; // skip '='
+    while (i < len && /\s/u.test(tagText[i]!)) i++;
+    const ch = tagText[i];
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      const valueOffset = i + 1;
+      i = valueOffset;
+      while (i < len && tagText[i] !== quote) i++;
+      const value = tagText.slice(valueOffset, i);
+      if (i < len) i++;
+      attrs.push({ name, nameOffset, value, valueOffset });
+    } else {
+      const valueOffset = i;
+      while (i < len && !/[\s/>]/u.test(tagText[i]!)) i++;
+      const value = tagText.slice(valueOffset, i);
+      attrs.push({ name, nameOffset, value, valueOffset });
+    }
   }
-  return hits;
+  return attrs;
 }
 
-function hasPaneSizedHardcodedLength(value: string): boolean {
-  for (const match of value.matchAll(CSS_HARDCODED_PX_OR_REM_PATTERN)) {
-    const num = Number(match[1]);
-    const unit = match[2]!.toLowerCase();
-    if ((unit === "px" && num >= PANE_MIN_PX) || (unit === "rem" && num >= PANE_MIN_REM)) {
-      return true;
+function nativeControlGuidance(
+  lowerTag: string,
+  attrs?: readonly TemplateAttribute[],
+): { readonly replacement: string; readonly message: string } | null {
+  if (lowerTag === "input") {
+    const rawType = attrs?.find(attr => attr.name.toLowerCase() === "type")?.value?.trim().toLowerCase();
+    const mapped = rawType ? PANEL_NATIVE_INPUT_TYPE_REPLACEMENTS[rawType] : undefined;
+    if (mapped) {
+      return {
+        replacement: mapped,
+        message: `Do not use native <input type="${rawType}"> in a panel template; use ${mapped} instead`,
+      };
     }
+    return {
+      replacement: "<sdk-input>",
+      message: "Do not use native <input> in a panel template; use <sdk-input> instead",
+    };
   }
-  return false;
-}
-
-function isHandwrittenPaneGridColumns(value: string): boolean {
-  const tracks = splitCssTopLevelTokens(value)
-    .map(t => t.text)
-    .filter(token => !token.startsWith("["));
-  // Single-track layouts (including `1fr`, `minmax(0, 1fr)`, and `repeat(auto-fit, minmax(240px, 1fr))`)
-  // are single columns or responsive form/card grids, not handwritten multi-pane splits.
-  if (tracks.length < 2) return false;
-  if (tracks.some(track => CSS_HARDCODED_PX_OR_REM_PATTERN.test(track))) {
-    CSS_HARDCODED_PX_OR_REM_PATTERN.lastIndex = 0;
-    return true;
+  if (lowerTag === "select") {
+    return {
+      replacement: "<sdk-select>",
+      message: "Do not use native <select> in a panel template; use <sdk-select> (with <sdk-option>) instead",
+    };
   }
-  CSS_HARDCODED_PX_OR_REM_PATTERN.lastIndex = 0;
-  // Detect asymmetric fractional splits such as `minmax(0, 1.45fr) minmax(0, 1fr)` or `1fr 2fr`,
-  // while allowing equal-width grids (`1fr 1fr`) and label-value pairs (`max-content 1fr`).
-  const frWeights: number[] = [];
-  for (const track of tracks) {
-    for (const match of track.matchAll(CSS_FR_PATTERN)) {
-      frWeights.push(Number(match[1]));
-    }
+  if (lowerTag === "button") {
+    return {
+      replacement: "<sdk-button>",
+      message: "Do not use native <button> in a panel template; use <sdk-button> instead",
+    };
   }
-  return frWeights.length >= 2 && frWeights.some(weight => weight !== frWeights[0]);
+  if (lowerTag === "textarea") {
+    return {
+      replacement: '<sdk-input type="textarea">',
+      message: 'Do not use native <textarea> in a panel template; use <sdk-input type="textarea"> instead',
+    };
+  }
+  return null;
 }
 
 /**
@@ -498,7 +526,7 @@ function makeViolation(
 /**
  * Check a CSS block or stylesheet for third-party `--el-*` variables and (when enabled via
  * `REJECT_VIEWPORT_UNITS` / `REJECT_PARADIGM_VIOLATIONS` or `options.strictParadigm`) viewport
- * units, hardcoded colors, hardcoded font sizes, and handwritten pane column widths.
+ * length units.
  */
 export function checkAuthoringStyles(
   css: string,
@@ -517,7 +545,8 @@ export function checkAuthoringStyles(
       : `Do not use third-party theme variable '${found}'; use a published --sdk-* or platform design token`;
     violations.push(makeViolation(fullSource, file, baseOffset + match.index!, "forbidden-token", found, replacement, message));
   }
-  const rejectViewport = options.strictParadigm === true || (options.rejectViewportUnits ?? REJECT_VIEWPORT_UNITS);
+  const rejectViewport = options.strictParadigm === true
+    || (options.rejectViewportUnits ?? (REJECT_VIEWPORT_UNITS || REJECT_PARADIGM_VIOLATIONS));
   if (rejectViewport) {
     for (const match of stripped.matchAll(CSS_VIEWPORT_UNIT_PATTERN)) {
       const found = match[0];
@@ -525,112 +554,6 @@ export function checkAuthoringStyles(
       violations.push(makeViolation(
         fullSource, file, baseOffset + match.index!, "forbidden-viewport-unit", found, VIEWPORT_UNIT_REPLACEMENT, message,
       ));
-    }
-  }
-  const rejectParadigm = options.strictParadigm === true || (options.rejectParadigmViolations ?? REJECT_PARADIGM_VIOLATIONS);
-  if (rejectParadigm) {
-    for (const decl of parseCssDeclarations(stripped)) {
-      // Rule A1: Reject hardcoded hex and rgb/rgba/hsl/hsla colors in declaration values.
-      for (const match of decl.value.matchAll(CSS_HEX_COLOR_PATTERN)) {
-        const found = match[0];
-        violations.push(makeViolation(
-          fullSource,
-          file,
-          baseOffset + decl.valueOffset + match.index!,
-          "forbidden-hardcoded-color",
-          found,
-          HARDCODED_COLOR_REPLACEMENT,
-          `Do not hardcode color '${found}'; use a platform theme variable such as var(--sdk-text-color-primary), var(--sdk-bg-color), or var(--ui-divider)`,
-        ));
-      }
-      for (const hit of findHardcodedColorFunctions(decl.value)) {
-        violations.push(makeViolation(
-          fullSource,
-          file,
-          baseOffset + decl.valueOffset + hit.offset,
-          "forbidden-hardcoded-color",
-          hit.found,
-          HARDCODED_COLOR_REPLACEMENT,
-          `Do not hardcode color '${hit.found}'; use a platform theme variable such as var(--sdk-text-color-primary), var(--sdk-bg-color), or var(--ui-divider)`,
-        ));
-      }
-
-      // Rule A2: Reject hardcoded literal font-size values (and explicit sizes in `font` shorthand).
-      if (decl.property === "font-size" || decl.property === "font") {
-        const scanValue = decl.property === "font"
-          ? decl.value.replace(/\/\s*(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)[a-z%]*/giu, match => " ".repeat(match.length))
-          : decl.value;
-        for (const match of scanValue.matchAll(CSS_FONT_SIZE_LITERAL_PATTERN)) {
-          const found = match[1]!;
-          violations.push(makeViolation(
-            fullSource,
-            file,
-            baseOffset + decl.valueOffset + match.index!,
-            "forbidden-hardcoded-font-size",
-            found,
-            HARDCODED_FONT_SIZE_REPLACEMENT,
-            `Do not hardcode font-size '${found}'; use typography tokens var(--text-xs), var(--text-sm), var(--text-base), or var(--text-lg)`,
-          ));
-        }
-      }
-
-      // Rule A3: Reject handwritten pane column widths.
-      if (decl.property === "grid-template-columns" && isHandwrittenPaneGridColumns(decl.value)) {
-        const cleaned = decl.value.replace(/\s*!important\s*$/iu, "");
-        violations.push(makeViolation(
-          fullSource,
-          file,
-          baseOffset + decl.valueOffset,
-          "forbidden-pane-column-width",
-          cleaned,
-          PANE_COLUMN_WIDTH_REPLACEMENT,
-          `Do not hardcode pane column width '${cleaned}' in 'grid-template-columns'; use <two-pane-layout> or <workbench-layout> instead`,
-        ));
-      } else if (decl.property === "flex-basis" && hasPaneSizedHardcodedLength(decl.value)) {
-        const cleaned = decl.value.replace(/\s*!important\s*$/iu, "");
-        violations.push(makeViolation(
-          fullSource,
-          file,
-          baseOffset + decl.valueOffset,
-          "forbidden-pane-column-width",
-          cleaned,
-          PANE_COLUMN_WIDTH_REPLACEMENT,
-          `Do not hardcode pane column width '${cleaned}' in 'flex-basis'; use <two-pane-layout> or <workbench-layout> instead`,
-        ));
-      } else if (decl.property === "flex") {
-        const tokens = splitCssTopLevelTokens(decl.value);
-        const isFixedGrow = tokens[0]?.text === "0";
-        const isPaneSelector = PANE_SELECTOR_PATTERN.test(decl.selector);
-        if (isFixedGrow || isPaneSelector) {
-          for (const token of tokens) {
-            if (!hasPaneSizedHardcodedLength(token.text)) continue;
-            violations.push(makeViolation(
-              fullSource,
-              file,
-              baseOffset + decl.valueOffset + token.offset,
-              "forbidden-pane-column-width",
-              token.text,
-              PANE_COLUMN_WIDTH_REPLACEMENT,
-              `Do not hardcode pane column width '${token.text}' in 'flex'; use <two-pane-layout> or <workbench-layout> instead`,
-            ));
-          }
-        }
-      } else if (
-        (decl.property === "width" || decl.property === "inline-size")
-        && PANE_SELECTOR_PATTERN.test(decl.selector)
-        && hasPaneSizedHardcodedLength(decl.value)
-      ) {
-        const cleaned = decl.value.replace(/\s*!important\s*$/iu, "");
-        violations.push(makeViolation(
-          fullSource,
-          file,
-          baseOffset + decl.valueOffset,
-          "forbidden-pane-column-width",
-          cleaned,
-          PANE_COLUMN_WIDTH_REPLACEMENT,
-          `Do not hardcode pane column width '${cleaned}' in '${decl.property}'; use <two-pane-layout> or <workbench-layout> instead`,
-        ));
-      }
     }
   }
   return violations.sort((a, b) => a.line - b.line || a.column - b.column);
@@ -686,136 +609,143 @@ export function checkAuthoringTemplate(
     return full.replace(/[^\r\n]/gu, " ");
   });
 
-  // Check static inline `style="..."` / `style='...'` attributes inside opening tags.
-  for (const tagMatch of sanitized.matchAll(/<[A-Za-z][^>]*>/gu)) {
-    const tagText = tagMatch[0];
-    const tagStart = tagMatch.index!;
-    for (const attr of tagText.matchAll(/(?<=[\s/])style\s*=\s*(?:"([^"]*)"|'([^']*)')/giu)) {
-      const value = attr[1] ?? attr[2] ?? "";
-      const quoteOffset = attr[0].indexOf(attr[1] !== undefined ? '"' : "'") + 1;
-      violations.push(
-        ...checkAuthoringStyles(value, file, tagStart + attr.index! + quoteOffset, template, styleOptions),
-      );
-    }
-  }
+  const openingTags = scanTemplateOpeningTags(sanitized);
 
-  const checkParadigmTag = (raw: string, kebab: string, offset: number): boolean => {
+  const checkParadigmTag = (
+    raw: string,
+    kebab: string,
+    offset: number,
+    inSvg: boolean,
+    attrs?: readonly TemplateAttribute[],
+    checkNativeControl = true,
+  ): boolean => {
     if (!rejectParadigm) return false;
-    if (PANEL_FORBIDDEN_OVERLAY_TAGS.has(kebab)) {
-      violations.push(makeViolation(
-        template,
-        file,
-        offset,
-        "forbidden-panel-overlay",
-        raw,
-        PANEL_OVERLAY_REPLACEMENT,
-        `Do not author dialog or drawer <${raw}> in a panel; place create/edit/detail in the detail pane of TwoPaneLayout or WorkbenchLayout, use ObjectList row expansion (listRowDetail) for child objects, and let OperationButton open parameter dialogs for parameterized one-off actions`,
-      ));
-      return true;
-    }
-    if (PANEL_FORBIDDEN_DATA_DISPLAY_TAGS.has(kebab)) {
+    const dataDisplayReplacement = PANEL_FORBIDDEN_DATA_DISPLAY_REPLACEMENTS[kebab];
+    if (dataDisplayReplacement) {
       violations.push(makeViolation(
         template,
         file,
         offset,
         "forbidden-panel-data-display",
         raw,
-        PANEL_DATA_DISPLAY_REPLACEMENT,
-        `Do not render business data with <${raw}> in a panel; use official data components ObjectList, ObjectSummary, or ObjectTree via <projection>, or plain HTML for static content`,
+        dataDisplayReplacement,
+        `Do not render business data with <${raw}> in a panel; use official component ${dataDisplayReplacement} (ObjectList, ObjectSummary, or ObjectTree via <projection>), or plain HTML for static content`,
       ));
       return true;
+    }
+    if (!inSvg && checkNativeControl) {
+      const nativeGuidance = nativeControlGuidance(raw.toLowerCase(), attrs);
+      if (nativeGuidance) {
+        violations.push(makeViolation(
+          template,
+          file,
+          offset,
+          "forbidden-native-control",
+          raw,
+          nativeGuidance.replacement,
+          nativeGuidance.message,
+        ));
+        return true;
+      }
     }
     return false;
   };
 
-  // 1. Check opening tags for <el-*>, <El*>, unknown <sdk-*>, paradigm rules, and renamed exports like <g6-graph-canvas>.
-  for (const match of sanitized.matchAll(/<([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/gu)) {
-    const rawTag = match[1]!;
-    const offset = match.index! + 1;
+  for (const tag of openingTags) {
+    const attrs = readTagAttributes(tag.tagText);
+    const rawTag = tag.tagName;
     const kebab = toKebabCase(rawTag);
 
-    if (checkParadigmTag(rawTag, kebab, offset)) continue;
+    // 1. Check static inline `style="..."` / `style='...'` attributes.
+    for (const attr of attrs) {
+      if (attr.name.toLowerCase() === "style" && attr.value !== undefined && attr.valueOffset !== undefined) {
+        violations.push(
+          ...checkAuthoringStyles(attr.value, file, tag.tagStart + attr.valueOffset, template, styleOptions),
+        );
+      }
+    }
 
-    if (kebab.startsWith("el-")) {
-      const mapped = sdkUiComponentByImplTag(kebab);
-      if (mapped) {
-        violations.push(makeViolation(
-          template, file, offset, "forbidden-tag", rawTag, `<${mapped.sdkTag}>`,
-          `Replace third-party tag <${rawTag}> with <${mapped.sdkTag}>`,
-        ));
+    // 2. Check opening tags for paradigm rules, <el-*>, <El*>, unknown <sdk-*>, and renamed exports.
+    if (!checkParadigmTag(rawTag, kebab, tag.nameOffset, tag.inSvg, attrs)) {
+      if (kebab.startsWith("el-")) {
+        const mapped = sdkUiComponentByImplTag(kebab);
+        if (mapped) {
+          violations.push(makeViolation(
+            template, file, tag.nameOffset, "forbidden-tag", rawTag, `<${mapped.sdkTag}>`,
+            `Replace third-party tag <${rawTag}> with <${mapped.sdkTag}>`,
+          ));
+        } else {
+          const forbidden = sdkUiForbiddenByImplTag(kebab);
+          violations.push(makeViolation(
+            template, file, tag.nameOffset, "forbidden-tag", rawTag, forbidden?.replacement ?? null,
+            forbidden
+              ? `Tag <${rawTag}> is not exposed by the SDK: ${forbidden.replacement}`
+              : `Do not use third-party tag <${rawTag}>; use a published <sdk-*> component`,
+          ));
+        }
+      } else if (kebab.startsWith("sdk-")) {
+        const allowed = options.allowedSdkTags ? options.allowedSdkTags.has(kebab) : sdkUiComponentByTag(kebab) !== undefined;
+        if (!allowed) {
+          const forbidden = sdkUiForbiddenByImplTag(`el-${kebab.slice(4)}`);
+          violations.push(makeViolation(
+            template, file, tag.nameOffset, "unknown-sdk-tag", rawTag, forbidden?.replacement ?? null,
+            forbidden
+              ? `Tag <${rawTag}> is not part of the SDK UI list: ${forbidden.replacement}`
+              : `Unknown SDK UI tag <${rawTag}>; choose a tag from the SDK UI catalogue`,
+          ));
+        }
       } else {
-        const forbidden = sdkUiForbiddenByImplTag(kebab);
-        violations.push(makeViolation(
-          template, file, offset, "forbidden-tag", rawTag, forbidden?.replacement ?? null,
-          forbidden
-            ? `Tag <${rawTag}> is not exposed by the SDK: ${forbidden.replacement}`
-            : `Do not use third-party tag <${rawTag}>; use a published <sdk-*> component`,
-        ));
-      }
-      continue;
-    }
-
-    if (kebab.startsWith("sdk-")) {
-      const allowed = options.allowedSdkTags ? options.allowedSdkTags.has(kebab) : sdkUiComponentByTag(kebab) !== undefined;
-      if (!allowed) {
-        const forbidden = sdkUiForbiddenByImplTag(`el-${kebab.slice(4)}`);
-        violations.push(makeViolation(
-          template, file, offset, "unknown-sdk-tag", rawTag, forbidden?.replacement ?? null,
-          forbidden
-            ? `Tag <${rawTag}> is not part of the SDK UI list: ${forbidden.replacement}`
-            : `Unknown SDK UI tag <${rawTag}>; choose a tag from the SDK UI catalogue`,
-        ));
-      }
-      continue;
-    }
-
-    const renamed = sdkRenamedExportByImpl(rawTag) ?? sdkRenamedExportByImpl(kebab);
-    if (renamed) {
-      violations.push(makeViolation(
-        template, file, offset, "forbidden-export", rawTag, `<${renamed.sdkTag}>`,
-        `Replace renamed component tag <${rawTag}> with <${renamed.sdkTag}>`,
-      ));
-    }
-  }
-
-  // 2. Check dynamic component `is="el-..."` / `:is="'el-...'"` / `is="sdk-dialog"` / `is="g6-graph-canvas"`.
-  for (const match of sanitized.matchAll(/\b(?::|v-bind:)?is\s*=\s*(?:"([^"]*)"|'([^']*)')/giu)) {
-    const raw = (match[1] ?? match[2] ?? "").trim().replace(/^['"]|['"]$/gu, "");
-    const kebab = toKebabCase(raw);
-    const offset = match.index!;
-    if (checkParadigmTag(raw, kebab, offset)) continue;
-    if (kebab.startsWith("el-")) {
-      const mapped = sdkUiComponentByImplTag(kebab);
-      const forbidden = mapped ? undefined : sdkUiForbiddenByImplTag(kebab);
-      violations.push(makeViolation(
-        template, file, offset, "forbidden-tag", raw, mapped ? mapped.sdkTag : (forbidden?.replacement ?? null),
-        mapped
-          ? `Replace third-party component '${raw}' with '${mapped.sdkTag}'`
-          : `Do not reference third-party component '${raw}'${forbidden ? `: ${forbidden.replacement}` : ""}`,
-      ));
-    } else {
-      const renamed = sdkRenamedExportByImpl(raw) ?? sdkRenamedExportByImpl(kebab);
-      if (renamed) {
-        violations.push(makeViolation(
-          template, file, offset, "forbidden-export", raw, renamed.sdkTag,
-          `Replace renamed component '${raw}' with '${renamed.sdkTag}'`,
-        ));
+        const renamed = sdkRenamedExportByImpl(rawTag) ?? sdkRenamedExportByImpl(kebab);
+        if (renamed) {
+          violations.push(makeViolation(
+            template, file, tag.nameOffset, "forbidden-export", rawTag, `<${renamed.sdkTag}>`,
+            `Replace renamed component tag <${rawTag}> with <${renamed.sdkTag}>`,
+          ));
+        }
       }
     }
-  }
 
-  // 3. Check forbidden third-party directives (v-loading, v-infinite-scroll, v-popover) inside element tags.
-  for (const tagMatch of sanitized.matchAll(/<[A-Za-z][^>]*>/gu)) {
-    const tagText = tagMatch[0];
-    const tagStart = tagMatch.index!;
-    for (const attr of tagText.matchAll(/(?<=[\s/])(v-[a-z][a-z0-9-]*)(?=[\s.:=/>]|$)/giu)) {
-      const name = attr[1]!.toLowerCase();
-      const mapped = sdkUiDirectiveByImplName(name);
-      if (!mapped) continue;
-      violations.push(makeViolation(
-        template, file, tagStart + attr.index!, "forbidden-directive", attr[1]!, mapped.sdkName,
-        `Replace directive '${attr[1]!}' with '${mapped.sdkName}'`,
-      ));
+    // 3. Check dynamic component `is="..."` / `:is="'...'"` / `v-bind:is="'...'"` and forbidden directives.
+    for (const attr of attrs) {
+      const lowerAttr = attr.name.toLowerCase();
+      if ((lowerAttr === "is" || lowerAttr === ":is" || lowerAttr === "v-bind:is") && attr.value !== undefined) {
+        const trimmed = attr.value.trim();
+        const isLiteralTag = lowerAttr === "is" || /^'[^']*'$|^"[^"]*"$/u.test(trimmed);
+        const raw = trimmed.replace(/^['"]|['"]$/gu, "");
+        const isKebab = toKebabCase(raw);
+        const offset = tag.tagStart + attr.nameOffset;
+        if (checkParadigmTag(raw, isKebab, offset, tag.inSvg, attrs, isLiteralTag)) continue;
+        if (isKebab.startsWith("el-")) {
+          const mapped = sdkUiComponentByImplTag(isKebab);
+          const forbidden = mapped ? undefined : sdkUiForbiddenByImplTag(isKebab);
+          violations.push(makeViolation(
+            template, file, offset, "forbidden-tag", raw, mapped ? mapped.sdkTag : (forbidden?.replacement ?? null),
+            mapped
+              ? `Replace third-party component '${raw}' with '${mapped.sdkTag}'`
+              : `Do not reference third-party component '${raw}'${forbidden ? `: ${forbidden.replacement}` : ""}`,
+          ));
+        } else {
+          const renamed = sdkRenamedExportByImpl(raw) ?? sdkRenamedExportByImpl(isKebab);
+          if (renamed) {
+            violations.push(makeViolation(
+              template, file, offset, "forbidden-export", raw, renamed.sdkTag,
+              `Replace renamed component '${raw}' with '${renamed.sdkTag}'`,
+            ));
+          }
+        }
+        continue;
+      }
+
+      if (lowerAttr.startsWith("v-")) {
+        const directiveName = lowerAttr.split(/[.:]/u, 1)[0]!;
+        const mapped = sdkUiDirectiveByImplName(directiveName);
+        if (!mapped) continue;
+        const foundName = attr.name.slice(0, directiveName.length);
+        violations.push(makeViolation(
+          template, file, tag.tagStart + attr.nameOffset, "forbidden-directive", foundName, mapped.sdkName,
+          `Replace directive '${foundName}' with '${mapped.sdkName}'`,
+        ));
+      }
     }
   }
 

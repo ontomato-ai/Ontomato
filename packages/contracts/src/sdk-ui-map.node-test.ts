@@ -307,164 +307,141 @@ test("checkAuthoringStyles and checkAuthoringTemplate reject all CSS viewport un
   );
 });
 
-test("strictParadigm rejects hardcoded colors, hardcoded font sizes, and handwritten pane widths while staying off by default", () => {
+test("strictParadigm does not reject colors, font sizes, handwritten pane widths, or SDK dialogs/drawers", () => {
   assert.equal(REJECT_PARADIGM_VIOLATIONS, false);
 
-  const badCss = [
+  const allowedCss = [
     "#beef { color: #333; background: rgba(15, 23, 42, 0.12); border-color: hsl(210, 50%, 50%); }",
     ".label { font-size: 12px; }",
     ".sub { font-size: 0.875rem !important; }",
     ".shorthand { font: 600 14px/1.5 sans-serif; }",
     ".split { display: grid; grid-template-columns: clamp(26rem, 42%, 29rem) minmax(0, 1fr); }",
     ".wb { display: grid; grid-template-columns: 264px minmax(320px, 1fr) 320px; }",
-    ".ratio { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }",
     ".flex-pane { flex: 0 0 22rem; }",
     ".aside-basis { flex-basis: 320px; }",
     ".sidebar { width: 280px; }",
-    ".aside-flex { flex: 1 1 18rem; }",
   ].join("\n");
 
-  // Default switch is off: legacy styles pass without paradigm errors.
-  assert.deepEqual(checkAuthoringStyles(badCss, "panel.css"), []);
+  assert.deepEqual(checkAuthoringStyles(allowedCss, "panel.css"), []);
+  assert.deepEqual(checkAuthoringStyles(allowedCss, "panel.css", 0, allowedCss, { strictParadigm: true }), []);
 
-  const hits = checkAuthoringStyles(badCss, "panel.css", 0, badCss, { strictParadigm: true });
-  const colorHits = hits.filter(v => v.kind === "forbidden-hardcoded-color");
-  assert.deepEqual(
-    colorHits.map(v => ({ line: v.line, found: v.found })),
-    [
-      { line: 1, found: "#333" },
-      { line: 1, found: "rgba(15, 23, 42, 0.12)" },
-      { line: 1, found: "hsl(210, 50%, 50%)" },
-    ],
-  );
-  for (const hit of colorHits) {
-    assert.match(hit.message, /--sdk-text-color-primary.*--ui-divider/u);
-    assert.doesNotMatch(hit.message, /--el-/u);
-  }
-
-  const fontHits = hits.filter(v => v.kind === "forbidden-hardcoded-font-size");
-  assert.deepEqual(
-    fontHits.map(v => ({ line: v.line, found: v.found })),
-    [
-      { line: 2, found: "12px" },
-      { line: 3, found: "0.875rem" },
-      { line: 4, found: "14px" },
-    ],
-  );
-  for (const hit of fontHits) {
-    assert.match(hit.message, /--text-xs.*--text-sm.*--text-base.*--text-lg/u);
-  }
-
-  const paneHits = hits.filter(v => v.kind === "forbidden-pane-column-width");
-  assert.deepEqual(
-    paneHits.map(v => ({ line: v.line, found: v.found })),
-    [
-      { line: 5, found: "clamp(26rem, 42%, 29rem) minmax(0, 1fr)" },
-      { line: 6, found: "264px minmax(320px, 1fr) 320px" },
-      { line: 7, found: "minmax(0, 1.45fr) minmax(0, 1fr)" },
-      { line: 8, found: "22rem" },
-      { line: 9, found: "320px" },
-      { line: 10, found: "280px" },
-      { line: 11, found: "18rem" },
-    ],
-  );
-  for (const hit of paneHits) {
-    assert.match(hit.message, /<two-pane-layout>.*<workbench-layout>/u);
-  }
-
-  // Legitimate styles allowed under strictParadigm: ID selectors, comments, theme tokens, typography tokens,
-  // responsive form/card grids, equal splits, label-value grids, and small icons/controls.
-  const okCss = [
-    "/* color: #fff; font-size: 14px; grid-template-columns: 280px 1fr; */",
-    "#cafe { color: var(--sdk-text-color-primary); background: transparent; border: 1px solid var(--ui-divider /* #e5e7eb */); }",
-    ".tint { background: color-mix(in srgb, var(--sdk-bg-color) 88%, transparent); box-shadow: 0 0 0 1px rgba(var(--sdk-color-primary-rgb), 0.12); }",
-    '.note::after { content: "#123456 14px"; }',
-    ".text { font-size: var(--text-sm); font: inherit; color: currentColor; }",
-    ".inherit-size { font-size: inherit; }",
-    ".form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }",
-    ".cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }",
-    ".equal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }",
-    ".facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); }",
-    ".single { display: grid; grid-template-columns: minmax(0, 1fr); }",
-    ".tokenized { display: grid; grid-template-columns: var(--pane-aside-width) minmax(0, 1fr); }",
-    ".icon { flex: 0 0 28px; width: 24px; }",
-    ".search { width: 260px; max-width: 100%; flex: 1 1 200px; }",
-    ".pane { width: 100%; flex: 1 1 auto; }",
+  const allowedTemplate = [
+    "<style>",
+    "  .card { color: #333; font-size: 14px; width: 280px; }",
+    "</style>",
+    '<div id="app" style="color: rgba(0, 0, 0, 0.5); font-size: 13px">',
+    '  <sdk-dialog v-model="open"><p>Modal body</p></sdk-dialog>',
+    '  <SdkDrawer v-model="drawer"><span>Drawer body</span></SdkDrawer>',
+    '  <component :is="\'sdk-dialog\'"></component>',
+    "</div>",
   ].join("\n");
-  assert.deepEqual(checkAuthoringStyles(okCss, "clean.css", 0, okCss, { strictParadigm: true }), []);
+  assert.deepEqual(checkAuthoringTemplate(allowedTemplate, "panel.html", { strictParadigm: true }), []);
+
+  // Third-party <el-dialog>/<el-drawer> are still rejected only by the baseline third-party tag rule.
+  const legacyOverlays = '<el-dialog v-model="open"></el-dialog>\n<el-drawer v-model="drawer"></el-drawer>';
+  assert.deepEqual(
+    checkAuthoringTemplate(legacyOverlays, "panel.html", { strictParadigm: true }).map(v => ({
+      line: v.line,
+      kind: v.kind,
+      found: v.found,
+      replacement: v.replacement,
+    })),
+    [
+      { line: 1, kind: "forbidden-tag", found: "el-dialog", replacement: "<sdk-dialog>" },
+      { line: 2, kind: "forbidden-tag", found: "el-drawer", replacement: "<sdk-drawer>" },
+    ],
+  );
 });
 
-test("strictParadigm rejects panel dialogs/drawers, SDK data-display primitives, and viewport units together", () => {
+test("strictParadigm enforces the three decidable rules: viewport units, SDK data-display primitives, and native interactive controls", () => {
   const html = [
-    "<!-- <sdk-dialog></sdk-dialog><sdk-table></sdk-table> -->",
+    "<!-- <sdk-table></sdk-table><button>comment</button><input><select><textarea></textarea> -->",
     "<style>",
-    "  .root { height: 100vh; color: #333; }",
+    "  .root { height: 100vh; color: #333; font-size: 14px; }",
     "</style>",
-    '<div id="app" style="font-size: 13px">',
-    "  <sdk-dialog v-model=\"open\"></sdk-dialog>",
-    "  <SdkDrawer v-model=\"drawer\"></SdkDrawer>",
-    "  <el-dialog v-model=\"legacy\"></el-dialog>",
-    "  <el-drawer v-model=\"legacyDrawer\"></el-drawer>",
-    '  <component :is="\'sdk-dialog\'"></component>',
-    "  <sdk-table :data=\"rows\"></sdk-table>",
-    "  <sdk-pagination :total=\"10\"></sdk-pagination>",
+    '<div id="app" style="min-height: calc(80dvh - 40px)">',
+    '  <sdk-table :data="rows"></sdk-table>',
+    '  <sdk-pagination :total="10"></sdk-pagination>',
     "  <sdk-descriptions></sdk-descriptions>",
-    "  <sdk-tree :data=\"nodes\"></sdk-tree>",
+    '  <sdk-tree :data="nodes"></sdk-tree>',
     '  <component is="sdk-tree"></component>',
+    '  <el-table :data="rows"></el-table>',
+    '  <input v-model="query" placeholder="type=\'checkbox\'" />',
+    '  <input type="checkbox" :checked="all" />',
+    '  <input type="radio" name="mode" />',
+    '  <input type="number" v-model="count" />',
+    '  <select v-model="scope"><option value="all">All</option></select>',
+    '  <button type="button" @click="save">Save</button>',
+    '  <BUTTON type="button">Loud</BUTTON>',
+    '  <textarea v-model="notes"></textarea>',
+    '  <component :is="\'button\'"></component>',
     "</div>",
   ].join("\n");
 
-  // Default (off): only <el-dialog> and <el-drawer> are rejected by the baseline third-party tag rule.
+  // Default (off): only <el-table> is rejected by the baseline third-party tag rule.
   const baseline = checkAuthoringTemplate(html, "panel.html");
   assert.deepEqual(
     baseline.map(v => ({ line: v.line, kind: v.kind, found: v.found })),
-    [
-      { line: 8, kind: "forbidden-tag", found: "el-dialog" },
-      { line: 9, kind: "forbidden-tag", found: "el-drawer" },
-    ],
+    [{ line: 11, kind: "forbidden-tag", found: "el-table" }],
   );
 
-  // Strict paradigm enabled: rejects viewport unit + color + font-size + overlays + data-display primitives.
+  // Strict paradigm enabled: enforces viewport units, SDK data-display primitives, and native controls.
   const strict = checkAuthoringTemplate(html, "panel.html", { strictParadigm: true });
   assert.deepEqual(
-    strict.map(v => ({ line: v.line, kind: v.kind, found: v.found })),
+    strict.map(v => ({ line: v.line, kind: v.kind, found: v.found, replacement: v.replacement })),
     [
-      { line: 3, kind: "forbidden-viewport-unit", found: "100vh" },
-      { line: 3, kind: "forbidden-hardcoded-color", found: "#333" },
-      { line: 5, kind: "forbidden-hardcoded-font-size", found: "13px" },
-      { line: 6, kind: "forbidden-panel-overlay", found: "sdk-dialog" },
-      { line: 7, kind: "forbidden-panel-overlay", found: "SdkDrawer" },
-      { line: 8, kind: "forbidden-panel-overlay", found: "el-dialog" },
-      { line: 9, kind: "forbidden-panel-overlay", found: "el-drawer" },
-      { line: 10, kind: "forbidden-panel-overlay", found: "sdk-dialog" },
-      { line: 11, kind: "forbidden-panel-data-display", found: "sdk-table" },
-      { line: 12, kind: "forbidden-panel-data-display", found: "sdk-pagination" },
-      { line: 13, kind: "forbidden-panel-data-display", found: "sdk-descriptions" },
-      { line: 14, kind: "forbidden-panel-data-display", found: "sdk-tree" },
-      { line: 15, kind: "forbidden-panel-data-display", found: "sdk-tree" },
+      { line: 3, kind: "forbidden-viewport-unit", found: "100vh", replacement: strict[0]!.replacement },
+      { line: 5, kind: "forbidden-viewport-unit", found: "80dvh", replacement: strict[1]!.replacement },
+      { line: 6, kind: "forbidden-panel-data-display", found: "sdk-table", replacement: "ObjectList via <projection>" },
+      { line: 7, kind: "forbidden-panel-data-display", found: "sdk-pagination", replacement: "ObjectList pagination via <projection>" },
+      { line: 8, kind: "forbidden-panel-data-display", found: "sdk-descriptions", replacement: "ObjectSummary via <projection>" },
+      { line: 9, kind: "forbidden-panel-data-display", found: "sdk-tree", replacement: "ObjectTree via <projection>" },
+      { line: 10, kind: "forbidden-panel-data-display", found: "sdk-tree", replacement: "ObjectTree via <projection>" },
+      { line: 11, kind: "forbidden-panel-data-display", found: "el-table", replacement: "ObjectList via <projection>" },
+      { line: 12, kind: "forbidden-native-control", found: "input", replacement: "<sdk-input>" },
+      { line: 13, kind: "forbidden-native-control", found: "input", replacement: "<sdk-checkbox>" },
+      { line: 14, kind: "forbidden-native-control", found: "input", replacement: "<sdk-radio>" },
+      { line: 15, kind: "forbidden-native-control", found: "input", replacement: "<sdk-input-number>" },
+      { line: 16, kind: "forbidden-native-control", found: "select", replacement: "<sdk-select>" },
+      { line: 17, kind: "forbidden-native-control", found: "button", replacement: "<sdk-button>" },
+      { line: 18, kind: "forbidden-native-control", found: "BUTTON", replacement: "<sdk-button>" },
+      { line: 19, kind: "forbidden-native-control", found: "textarea", replacement: '<sdk-input type="textarea">' },
+      { line: 20, kind: "forbidden-native-control", found: "button", replacement: "<sdk-button>" },
     ],
   );
 
-  for (const hit of strict.filter(v => v.kind === "forbidden-panel-overlay")) {
-    assert.match(hit.message, /TwoPaneLayout.*WorkbenchLayout.*ObjectList.*OperationButton/u);
-  }
   for (const hit of strict.filter(v => v.kind === "forbidden-panel-data-display")) {
-    assert.match(hit.message, /ObjectList.*ObjectSummary.*ObjectTree.*<projection>.*HTML/u);
+    assert.match(hit.message, /ObjectList.*ObjectSummary.*ObjectTree.*<projection>/u);
   }
+  for (const hit of strict.filter(v => v.kind === "forbidden-native-control")) {
+    assert.match(hit.message, /<sdk-(?:input|checkbox|radio|input-number|select|button)/u);
+  }
+});
 
-  // Compliant panel template passes strictParadigm cleanly.
-  const compliant = [
-    "<style>",
-    "  .hint { color: var(--sdk-text-color-secondary); font-size: var(--text-sm); }",
-    "</style>",
-    '<div id="app">',
+test("strictParadigm native control check ignores SVG, script blocks, display HTML, attribute strings, and mustaches", async () => {
+  const safeTemplate = [
+    "<script>",
+    '  const raw = "<button><input><select><textarea></textarea></button>";',
+    "</script>",
+    '<div id="app" title="Use <button>, <input>, <select>, or <textarea>" :data-example="\'<button>\'">',
     "  <two-pane-layout>",
-    '    <template #aside><projection slot="list"></projection></template>',
-    '    <projection slot="summary"></projection>',
-    '    <projection slot="form"></projection>',
-    '    <p class="hint">Static explanation</p>',
+    '    <header><h2>Objects</h2><a href="#help">Docs</a></header>',
+    '    <section><p>{{ show ? "<button>ok</button>" : count < inputLimit }}</p></section>',
+    '    <label class="field">Search</label>',
+    '    <sdk-input v-model="q" @keyup.enter="() => run(a > 0)" />',
+    '    <sdk-select v-model="scope"><sdk-option label="All" value="all" /></sdk-select>',
+    '    <sdk-button type="primary" @click="() => submit()">Save</sdk-button>',
+    '    <sdk-dialog v-model="open">',
+    '      <svg viewBox="0 0 16 16" width="14" height="14"><title><button>icon</button></title><circle cx="7" cy="7" r="4.5" /><path d="M0 0" /></svg>',
+    '      <component :is="button"></component>',
+    "    </sdk-dialog>",
+    '    <projection slot="list"></projection>',
     "  </two-pane-layout>",
     "</div>",
   ].join("\n");
-  assert.deepEqual(checkAuthoringTemplate(compliant, "panel.html", { strictParadigm: true }), []);
+  assert.deepEqual(checkAuthoringTemplate(safeTemplate, "panel.html", { strictParadigm: true }), []);
+
+  // Non-template JS/TS strings containing native HTML tags are never flagged by script checks.
+  const scriptSource = 'export const snippet = "<button>Click</button><input /><select></select><textarea></textarea>";\n';
+  assert.deepEqual(await checkAuthoringScript(scriptSource, "panel.mjs"), []);
 });

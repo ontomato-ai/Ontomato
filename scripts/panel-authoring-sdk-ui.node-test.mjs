@@ -528,7 +528,7 @@ test("checkPanelWorkspace leaves viewport units allowed by default and rejects t
   assert.equal(JSON.parse(runWithViewportToggle(okDir, true)).status, "valid");
 });
 
-test("panel check --strict-paradigm enforces viewport and paradigm rules while default stays backward-compatible", (t) => {
+test("panel check --strict-paradigm enforces the three decidable rules while default stays backward-compatible", (t) => {
   const sdkDir = mkdtempSync(join(tmpdir(), "panel-paradigm-sdk-"));
   t.after(() => rmSync(sdkDir, { recursive: true, force: true }));
   writeFileSync(
@@ -547,8 +547,9 @@ test("panel check --strict-paradigm enforces viewport and paradigm rules while d
     { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
   );
 
-  // Legacy panel with viewport unit, hardcoded color/font-size/pane-width, <sdk-dialog>, and <sdk-table>:
+  // Legacy panel with viewport units, <sdk-table>, and native controls (<input>/<select>/<button>/<textarea>):
   // passes by default, fails with actionable diagnostics under --strict-paradigm.
+  // Colors, font sizes, pane widths, and <sdk-dialog>/<sdk-drawer> are NOT rejected.
   const legacyDir = mkdtempSync(join(tmpdir(), "panel-paradigm-legacy-"));
   t.after(() => rmSync(legacyDir, { recursive: true, force: true }));
   writeWorkspace(legacyDir, {
@@ -560,9 +561,13 @@ test("panel check --strict-paradigm enforces viewport and paradigm rules while d
       '<div id="app" class="root split">',
       '  <sdk-dialog v-model="open"></sdk-dialog>',
       '  <sdk-table :data="rows"></sdk-table>',
+      '  <input v-model="query" />',
+      '  <select v-model="scope"><option value="all">All</option></select>',
+      '  <button type="button" @click="save">Save</button>',
+      '  <textarea v-model="notes"></textarea>',
       "</div>",
     ].join("\n"),
-    extraCss: ".aside { flex: 0 0 22rem; background: rgba(0, 0, 0, 0.4); }\n",
+    extraCss: ".aside { width: 280px; min-height: 80dvh; background: rgba(0, 0, 0, 0.4); }\n",
   });
 
   assert.equal(JSON.parse(runCli("panel", "check", legacyDir, "--sdk-dir", sdkDir)).status, "valid");
@@ -571,14 +576,17 @@ test("panel check --strict-paradigm enforces viewport and paradigm rules while d
     () => runCli("panel", "check", legacyDir, "--sdk-dir", sdkDir, "--strict-paradigm"),
     (error) => {
       const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
+      const lines = output.trim().split("\n");
+      assert.equal(lines.length, 7);
       assert.match(output, /panel\.html:2:19:.*100vh/u);
-      assert.match(output, /panel\.html:2:33:.*#333.*--sdk-text-color-primary/u);
-      assert.match(output, /panel\.html:2:50:.*14px.*--text-xs/u);
-      assert.match(output, /panel\.html:3:50:.*264px minmax\(320px, 1fr\) 320px.*<two-pane-layout>/u);
-      assert.match(output, /panel\.html:6:4:.*sdk-dialog.*TwoPaneLayout.*ObjectList.*OperationButton/u);
-      assert.match(output, /panel\.html:7:4:.*sdk-table.*ObjectList.*ObjectSummary.*ObjectTree/u);
-      assert.match(output, /extra\.css:1:20:.*22rem.*<two-pane-layout>/u);
-      assert.match(output, /extra\.css:1:39:.*rgba\(0, 0, 0, 0\.4\)/u);
+      assert.match(output, /panel\.html:7:4:.*sdk-table.*ObjectList.*<projection>/u);
+      assert.match(output, /panel\.html:8:4:.*<input>.*<sdk-input>/u);
+      assert.match(output, /panel\.html:9:4:.*<select>.*<sdk-select>/u);
+      assert.match(output, /panel\.html:10:4:.*<button>.*<sdk-button>/u);
+      assert.match(output, /panel\.html:11:4:.*<textarea>.*<sdk-input type="textarea">/u);
+      assert.match(output, /extra\.css:1:36:.*80dvh/u);
+      // Colors, font sizes, pane widths, and dialogs (line 6) are intentionally not rejected.
+      assert.doesNotMatch(output, /#333|14px|264px|280px|rgba|panel\.html:6:/u);
       return true;
     },
   );
@@ -590,9 +598,12 @@ test("panel check --strict-paradigm enforces viewport and paradigm rules while d
   writeFileSync(join(builtinDir, "panel.json"), JSON.stringify({ manifest: { state: {}, members: {}, commands: {} } }));
   writeFileSync(
     join(builtinDir, "panel.html"),
-    '<style>.a { font-size: 13px; }</style>\n<div id="app"><sdk-drawer></sdk-drawer><sdk-pagination></sdk-pagination></div>\n',
+    '<style>.a { height: 50vw; }</style>\n<div id="app"><sdk-pagination></sdk-pagination><button type="button">Go</button></div>\n',
   );
-  writeFileSync(join(builtinDir, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";\nmountPanel({});\n');
+  writeFileSync(
+    join(builtinDir, "panel.mjs"),
+    'import { mountPanel } from "@ontomato/sdk/panel";\nconst sample = "<button><input></button>";\nmountPanel({ setup: () => ({ sample }) });\n',
+  );
 
   assert.equal(
     JSON.parse(runCli("panel", "check", builtinDir, "--builtin", "--sdk-dir", sdkDir)).panelId,
@@ -602,28 +613,32 @@ test("panel check --strict-paradigm enforces viewport and paradigm rules while d
     () => runCli("panel", "check", builtinDir, "--builtin", "--sdk-dir", sdkDir, "--strict-paradigm"),
     (error) => {
       const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
-      assert.match(output, /panel\.html:1:24:.*13px/u);
-      assert.match(output, /panel\.html:2:16:.*sdk-drawer/u);
-      assert.match(output, /panel\.html:2:41:.*sdk-pagination/u);
+      assert.match(output, /panel\.html:1:21:.*50vw/u);
+      assert.match(output, /panel\.html:2:16:.*sdk-pagination.*ObjectList/u);
+      assert.match(output, /panel\.html:2:49:.*<button>.*<sdk-button>/u);
+      assert.doesNotMatch(output, /panel\.mjs/u);
       return true;
     },
   );
 
-  // Clean unified-paradigm panel passes --strict-paradigm cleanly.
+  // Clean panel (including custom colors, font sizes, dialogs, SVG icons, and script strings) passes --strict-paradigm.
   const cleanDir = mkdtempSync(join(tmpdir(), "panel-paradigm-clean-"));
   t.after(() => rmSync(cleanDir, { recursive: true, force: true }));
   writeWorkspace(cleanDir, {
     html: [
       "<style>",
-      "  .hint { color: var(--sdk-text-color-secondary); font-size: var(--text-sm); }",
-      "  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--spacing-sm); }",
+      "  .hint { color: #334155; font-size: 13px; }",
+      "  .fields { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: var(--spacing-sm); }",
       "</style>",
       '<div id="app">',
       "  <two-pane-layout>",
       '    <p class="hint">Clean unified paradigm panel</p>',
+      '    <sdk-button type="primary"><svg viewBox="0 0 16 16"><path d="M0 0"/></svg>Save</sdk-button>',
+      '    <sdk-dialog v-model="open"><sdk-input v-model="name" /></sdk-dialog>',
       "  </two-pane-layout>",
       "</div>",
     ].join("\n"),
+    mjs: 'import { mountPanel } from "@ontomato/sdk/panel";\nconst doc = "<button><input><select><textarea>";\nmountPanel({ setup: () => ({ doc }) });\n',
   });
   assert.equal(JSON.parse(runCli("panel", "check", cleanDir, "--sdk-dir", sdkDir, "--strict-paradigm")).status, "valid");
 });
