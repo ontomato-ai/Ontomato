@@ -527,3 +527,103 @@ test("checkPanelWorkspace leaves viewport units allowed by default and rejects t
   });
   assert.equal(JSON.parse(runWithViewportToggle(okDir, true)).status, "valid");
 });
+
+test("panel check --strict-paradigm enforces viewport and paradigm rules while default stays backward-compatible", (t) => {
+  const sdkDir = mkdtempSync(join(tmpdir(), "panel-paradigm-sdk-"));
+  t.after(() => rmSync(sdkDir, { recursive: true, force: true }));
+  writeFileSync(
+    join(sdkDir, "sdk.json"),
+    JSON.stringify({ version: "1.0.0", check: "check.mjs", components: "components.json" }),
+  );
+  writeFileSync(
+    join(sdkDir, "check.mjs"),
+    `export * from ${JSON.stringify(CONTRACTS_CHECK_URL)};\nexport const draftReadOperationIds = [];\n`,
+  );
+  writeFileSync(join(sdkDir, "components.json"), JSON.stringify({ version: "1.0.0", components: [] }));
+
+  const runCli = (...args) => execFileSync(
+    process.execPath,
+    ["--import", TSX_LOADER, join(ROOT, "agent-skills/ontomato-app-builder/ontomato.mjs"), ...args],
+    { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+
+  // Legacy panel with viewport unit, hardcoded color/font-size/pane-width, <sdk-dialog>, and <sdk-table>:
+  // passes by default, fails with actionable diagnostics under --strict-paradigm.
+  const legacyDir = mkdtempSync(join(tmpdir(), "panel-paradigm-legacy-"));
+  t.after(() => rmSync(legacyDir, { recursive: true, force: true }));
+  writeWorkspace(legacyDir, {
+    html: [
+      "<style>",
+      "  .root { height: 100vh; color: #333; font-size: 14px; }",
+      "  .split { display: grid; grid-template-columns: 264px minmax(320px, 1fr) 320px; }",
+      "</style>",
+      '<div id="app" class="root split">',
+      '  <sdk-dialog v-model="open"></sdk-dialog>',
+      '  <sdk-table :data="rows"></sdk-table>',
+      "</div>",
+    ].join("\n"),
+    extraCss: ".aside { flex: 0 0 22rem; background: rgba(0, 0, 0, 0.4); }\n",
+  });
+
+  assert.equal(JSON.parse(runCli("panel", "check", legacyDir, "--sdk-dir", sdkDir)).status, "valid");
+
+  assert.throws(
+    () => runCli("panel", "check", legacyDir, "--sdk-dir", sdkDir, "--strict-paradigm"),
+    (error) => {
+      const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
+      assert.match(output, /panel\.html:2:19:.*100vh/u);
+      assert.match(output, /panel\.html:2:33:.*#333.*--sdk-text-color-primary/u);
+      assert.match(output, /panel\.html:2:50:.*14px.*--text-xs/u);
+      assert.match(output, /panel\.html:3:50:.*264px minmax\(320px, 1fr\) 320px.*<two-pane-layout>/u);
+      assert.match(output, /panel\.html:6:4:.*sdk-dialog.*TwoPaneLayout.*ObjectList.*OperationButton/u);
+      assert.match(output, /panel\.html:7:4:.*sdk-table.*ObjectList.*ObjectSummary.*ObjectTree/u);
+      assert.match(output, /extra\.css:1:20:.*22rem.*<two-pane-layout>/u);
+      assert.match(output, /extra\.css:1:39:.*rgba\(0, 0, 0, 0\.4\)/u);
+      return true;
+    },
+  );
+
+  // Builtin panel source check also honors --strict-paradigm via CLI.
+  const builtinDir = mkdtempSync(join(tmpdir(), "panel-paradigm-builtin-"));
+  t.after(() => rmSync(builtinDir, { recursive: true, force: true }));
+  writeFileSync(join(builtinDir, "registration.json"), JSON.stringify({ panels: [{ id: "builtin-product-paradigm-test" }] }));
+  writeFileSync(join(builtinDir, "panel.json"), JSON.stringify({ manifest: { state: {}, members: {}, commands: {} } }));
+  writeFileSync(
+    join(builtinDir, "panel.html"),
+    '<style>.a { font-size: 13px; }</style>\n<div id="app"><sdk-drawer></sdk-drawer><sdk-pagination></sdk-pagination></div>\n',
+  );
+  writeFileSync(join(builtinDir, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";\nmountPanel({});\n');
+
+  assert.equal(
+    JSON.parse(runCli("panel", "check", builtinDir, "--builtin", "--sdk-dir", sdkDir)).panelId,
+    "builtin-product-paradigm-test",
+  );
+  assert.throws(
+    () => runCli("panel", "check", builtinDir, "--builtin", "--sdk-dir", sdkDir, "--strict-paradigm"),
+    (error) => {
+      const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
+      assert.match(output, /panel\.html:1:24:.*13px/u);
+      assert.match(output, /panel\.html:2:16:.*sdk-drawer/u);
+      assert.match(output, /panel\.html:2:41:.*sdk-pagination/u);
+      return true;
+    },
+  );
+
+  // Clean unified-paradigm panel passes --strict-paradigm cleanly.
+  const cleanDir = mkdtempSync(join(tmpdir(), "panel-paradigm-clean-"));
+  t.after(() => rmSync(cleanDir, { recursive: true, force: true }));
+  writeWorkspace(cleanDir, {
+    html: [
+      "<style>",
+      "  .hint { color: var(--sdk-text-color-secondary); font-size: var(--text-sm); }",
+      "  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--spacing-sm); }",
+      "</style>",
+      '<div id="app">',
+      "  <two-pane-layout>",
+      '    <p class="hint">Clean unified paradigm panel</p>',
+      "  </two-pane-layout>",
+      "</div>",
+    ].join("\n"),
+  });
+  assert.equal(JSON.parse(runCli("panel", "check", cleanDir, "--sdk-dir", sdkDir, "--strict-paradigm")).status, "valid");
+});
