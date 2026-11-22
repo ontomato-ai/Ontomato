@@ -782,10 +782,10 @@ it("stages a skill ZIP for skills.import and confirms an overwrite naming the fi
   // The declaration decides what is kept: its extensions and its own limit, below the platform's.
   const wrongType = await stage(Buffer.from("text"), "notes.txt");
   expect(wrongType.status).toBe(400);
-  expect(await wrongType.json()).toMatchObject({ error: { code: "UPLOAD_TYPE_UNSUPPORTED", details: { extensions: [".zip"] } } });
+  expect(await wrongType.json()).toMatchObject({ error: { code: "UPLOAD_TYPE_UNSUPPORTED" }, details: { extensions: [".zip"] } });
   const tooLarge = await stage(Buffer.alloc(20 * 1024 * 1024 + 1), "large.zip");
   expect(tooLarge.status).toBe(413);
-  expect(await tooLarge.json()).toMatchObject({ error: { code: "UPLOAD_TOO_LARGE", details: { maxBytes: 20 * 1024 * 1024 } } });
+  expect(await tooLarge.json()).toMatchObject({ error: { code: "UPLOAD_TOO_LARGE" }, details: { maxBytes: 20 * 1024 * 1024 } });
   expect(await uploads()).toEqual([]);
 
   const first = packageOf("First");
