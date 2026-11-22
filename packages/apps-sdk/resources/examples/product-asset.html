@@ -8,17 +8,17 @@
 </head>
 <body>
 <main id="app" v-cloak>
-  <el-input v-model="assetId" placeholder="Existing product asset ID"></el-input>
-  <el-button @click="revision++">Reload shared asset</el-button>
+  <sdk-input v-model="assetId" placeholder="Existing product asset ID"></sdk-input>
+  <sdk-button @click="revision++">Reload shared asset</sdk-button>
   <product-asset v-if="assetId" :context="context" :asset-id="assetId" :revision="revision"></product-asset>
 </main>
 <script type="module">
   import {createApp,ref} from 'vue';
-  import ElementPlus from 'element-plus';
   import {connectAppContext,ProductAsset} from '@ontomato/sdk';
+  import {SdkButton,SdkInput} from '@ontomato/sdk/ui';
   const context=await connectAppContext();
-  createApp({components:{ProductAsset},setup:()=>({context,assetId:ref(''),revision:ref(0)})})
-    .use(ElementPlus).use(context).mount('#app');
+  createApp({components:{ProductAsset,SdkButton,SdkInput},setup:()=>({context,assetId:ref(''),revision:ref(0)})})
+    .use(context).mount('#app');
 </script>
 </body>
 </html>

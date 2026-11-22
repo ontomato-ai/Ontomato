@@ -11,6 +11,7 @@ export const ENTRIES = [
   { specifier: "element-plus", file: "element-plus.js", source: "src/entries/element-plus.ts" },
   { specifier: "echarts", file: "echarts.js", source: "src/entries/echarts.js" },
   { specifier: "@ontomato/sdk", file: "sdk.js", source: "src/entries/sdk.ts" },
+  { specifier: "@ontomato/sdk/ui", file: "ui.js", source: "src/entries/ui.ts" },
   { specifier: "@ontomato/sdk/chart", file: "chart.js", source: "src/entries/chart.ts" },
   { specifier: "@ontomato/sdk/markdown", file: "markdown.js", source: "src/entries/markdown.ts" },
   { specifier: "@ontomato/sdk/form", file: "form.js", source: "src/entries/form.ts" },

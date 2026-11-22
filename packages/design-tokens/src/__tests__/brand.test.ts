@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   brandContrastFailures,
@@ -129,5 +131,20 @@ describe("brand generation", () => {
   it("contrast ratios match the WCAG reference values", () => {
     expect(contrastRatio("#000000", "#ffffff")).toBeCloseTo(21, 5);
     expect(contrastRatio("#42613f", "#ffffff")).toBeCloseTo(7.0, 1);
+  });
+
+  it("maps Element Plus typography and shadow aliases to platform tokens in foundation CSS", () => {
+    const foundation = readFileSync(resolve(__dirname, "../foundation.css"), "utf8");
+    for (const alias of [
+      "--el-font-size-extra-small: var(--text-xs);",
+      "--el-font-size-small: var(--text-sm);",
+      "--el-font-size-base: var(--text-base);",
+      "--el-font-size-medium: var(--text-lg);",
+      "--el-font-size-large: var(--text-xl);",
+      "--el-font-family-mono: var(--font-mono);",
+      "--el-box-shadow: var(--elevation-overlay);",
+    ]) {
+      expect(foundation).toContain(alias);
+    }
   });
 });

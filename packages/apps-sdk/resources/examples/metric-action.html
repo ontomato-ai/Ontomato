@@ -8,8 +8,8 @@
   <style>
     [v-cloak] { display: none; }
     .page { display: grid; gap: 16px; padding: 16px; }
-    .hint { margin: 0 0 12px; color: var(--el-text-color-secondary); font-size: 13px; }
-    .el-table .selected-row > td.el-table__cell { background-color: var(--el-color-primary-light-9); }
+    .hint { margin: 0 0 12px; color: var(--sdk-text-color-secondary); font-size: 13px; }
+    .el-table .selected-row > td.el-table__cell { background-color: var(--sdk-color-primary-light-9); }
   </style>
 </head>
 <body>
@@ -24,98 +24,102 @@
     read-only JSON in <code-editor>.
   -->
   <div id="app" class="page" v-cloak>
-    <el-card>
+    <sdk-alert v-if="notice" :type="notice.type" :title="notice.text" show-icon @close="notice = null"></sdk-alert>
+    <sdk-card>
       <template #header>MetricView</template>
-      <el-form label-width="160px" @submit.prevent="read">
-        <el-form-item label="MetricView id">
-          <el-input v-model="metricViewId" placeholder="The id of a published MetricView"></el-input>
-        </el-form-item>
-        <el-form-item label="Parameters (JSON)">
+      <sdk-form label-width="160px" @submit.prevent="read">
+        <sdk-form-item label="MetricView id">
+          <sdk-input v-model="metricViewId" placeholder="The id of a published MetricView"></sdk-input>
+        </sdk-form-item>
+        <sdk-form-item label="Parameters (JSON)">
           <code-editor v-model="parametersText" language="json" :min-height="60" style="width: 100%"></code-editor>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" native-type="submit" :disabled="!metricViewId.trim()">Read</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+        </sdk-form-item>
+        <sdk-form-item>
+          <sdk-button type="primary" native-type="submit" :disabled="!metricViewId.trim()">Read</sdk-button>
+        </sdk-form-item>
+      </sdk-form>
+    </sdk-card>
 
     <metric-view-data v-if="binding" ref="metricView" :metric-view-id="binding.id" :parameters="binding.parameters"
       v-slot="{ data, loading, error }">
-      <el-card>
+      <sdk-card>
         <template #header>Result</template>
-        <el-alert v-if="error" type="error" :title="error.message" :closable="false" show-icon></el-alert>
+        <sdk-alert v-if="error" type="error" :title="error.message" :closable="false" show-icon></sdk-alert>
         <code-editor v-else-if="data !== undefined && !Array.isArray(data)" :model-value="JSON.stringify(data, null, 2)"
           language="json" readonly :min-height="120"></code-editor>
         <template v-else>
-          <el-form inline>
-            <el-form-item label="Object class">
-              <el-input v-model="className" placeholder="The rows' ontology class" style="width: 180px"></el-input>
-            </el-form-item>
-            <el-form-item label="Key">
-              <el-select v-model="keyColumn" placeholder="Primary key column" style="width: 180px">
-                <el-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></el-option>
-              </el-select>
-            </el-form-item>
-            <el-form-item label="Name">
-              <el-select v-model="nameColumn" placeholder="Column readers know a row by" style="width: 180px">
-                <el-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></el-option>
-              </el-select>
-            </el-form-item>
-          </el-form>
+          <sdk-form inline>
+            <sdk-form-item label="Object class">
+              <sdk-input v-model="className" placeholder="The rows' ontology class" style="width: 180px"></sdk-input>
+            </sdk-form-item>
+            <sdk-form-item label="Key">
+              <sdk-select v-model="keyColumn" placeholder="Primary key column" style="width: 180px">
+                <sdk-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></sdk-option>
+              </sdk-select>
+            </sdk-form-item>
+            <sdk-form-item label="Name">
+              <sdk-select v-model="nameColumn" placeholder="Column readers know a row by" style="width: 180px">
+                <sdk-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></sdk-option>
+              </sdk-select>
+            </sdk-form-item>
+          </sdk-form>
           <p class="hint">
             {{ selectable ? "Click a row to select it, and click it again to clear the selection."
               : "Name the class and the key and name columns to select rows." }}
           </p>
-          <el-table v-loading="loading" :data="data ?? []" max-height="320" border
+          <sdk-table v-sdk-loading="loading" :data="data ?? []" max-height="320" border
             :row-class-name="rowClass" @row-click="toggleRow">
-            <el-table-column v-for="column in columnsOf(data)" :key="column" :prop="column" :label="column">
-            </el-table-column>
-          </el-table>
-          <el-form inline style="margin-top: 12px">
-            <el-form-item label="Category">
-              <el-select v-model="x" placeholder="Column" style="width: 180px">
-                <el-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></el-option>
-              </el-select>
-            </el-form-item>
-            <el-form-item label="Value">
-              <el-select v-model="y" placeholder="Numeric column" style="width: 180px">
-                <el-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></el-option>
-              </el-select>
-            </el-form-item>
-          </el-form>
+            <sdk-table-column v-for="column in columnsOf(data)" :key="column" :prop="column" :label="column">
+            </sdk-table-column>
+          </sdk-table>
+          <sdk-form inline style="margin-top: 12px">
+            <sdk-form-item label="Category">
+              <sdk-select v-model="x" placeholder="Column" style="width: 180px">
+                <sdk-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></sdk-option>
+              </sdk-select>
+            </sdk-form-item>
+            <sdk-form-item label="Value">
+              <sdk-select v-model="y" placeholder="Numeric column" style="width: 180px">
+                <sdk-option v-for="column in columnsOf(data)" :key="column" :label="column" :value="column"></sdk-option>
+              </sdk-select>
+            </sdk-form-item>
+          </sdk-form>
           <rows-chart v-if="x && y" :rows="data ?? []" :x="x" :y="y"></rows-chart>
         </template>
-      </el-card>
+      </sdk-card>
     </metric-view-data>
 
     <!-- Outside <metric-view-data>: after the Action, the script reads the MetricView again through its ref. -->
-    <el-card v-if="binding">
+    <sdk-card v-if="binding">
       <template #header>Action</template>
-      <el-form label-width="160px" @submit.prevent="openAction">
-        <el-form-item label="Action id">
-          <el-input v-model="actionId" placeholder="The id of an Action you may execute"></el-input>
-        </el-form-item>
-        <el-form-item>
-          <el-button native-type="submit" :disabled="!actionId.trim()">Open its form</el-button>
-        </el-form-item>
-      </el-form>
-      <el-form v-if="action" label-position="top" @submit.prevent="execute">
+      <sdk-form label-width="160px" @submit.prevent="openAction">
+        <sdk-form-item label="Action id">
+          <sdk-input v-model="actionId" placeholder="The id of an Action you may execute"></sdk-input>
+        </sdk-form-item>
+        <sdk-form-item>
+          <sdk-button native-type="submit" :disabled="!actionId.trim()">Open its form</sdk-button>
+        </sdk-form-item>
+      </sdk-form>
+      <sdk-form v-if="action" label-position="top" @submit.prevent="execute">
         <form-fields :fields="action.fields" :values="action.values" :errors="action.errors" :disabled="executing"
           choose-placeholder="Choose" @input="(key, value) => (action.values[key] = value)"
           @choose="(field, value) => (action.values[field.key] = value)">
         </form-fields>
-        <el-button type="primary" native-type="submit" :loading="executing">
+        <sdk-button type="primary" native-type="submit" :loading="executing">
           Execute, then read the MetricView again
-        </el-button>
-      </el-form>
-    </el-card>
+        </sdk-button>
+      </sdk-form>
+    </sdk-card>
   </div>
 
   <!-- Preview execution is supplied by the host frame; the same clients run live after publication. -->
 <script type="module">
     import { computed, createApp, ref, watch } from "vue";
-    import ElementPlus, { ElMessage } from "element-plus";
     import { connectAppContext } from "@ontomato/sdk";
+    import {
+      SdkAlert, SdkButton, SdkCard, SdkForm, SdkFormItem, SdkInput, SdkOption, SdkSelect, SdkTable, SdkTableColumn,
+      vSdkLoading,
+    } from "@ontomato/sdk/ui";
     import { EChart } from "@ontomato/sdk/chart";
     import { FormFields, formFieldKey } from "@ontomato/sdk/form";
     import { CodeEditor } from "@ontomato/sdk/code";
@@ -146,18 +150,22 @@
       },
     };
 
-    function parseJson(text, what) {
+    function parseJson(text, what, onError) {
       try {
         return JSON.parse(text.trim() || "{}");
       } catch (error) {
-        ElMessage.error(`${what} are not valid JSON: ${error.message}`);
+        onError(`${what} are not valid JSON: ${error.message}`);
         return null;
       }
     }
 
     createApp({
-      components: { RowsChart, FormFields, CodeEditor },
+      components: {
+        SdkAlert, SdkButton, SdkCard, SdkForm, SdkFormItem, SdkInput, SdkOption, SdkSelect, SdkTable, SdkTableColumn,
+        RowsChart, FormFields, CodeEditor,
+      },
       setup() {
+        const notice = ref(null);
         const metricViewId = ref("");
         const parametersText = ref("{}");
         const binding = ref(null);
@@ -195,8 +203,9 @@
         });
 
         function read() {
-          const parameters = parseJson(parametersText.value, "MetricView parameters");
+          const parameters = parseJson(parametersText.value, "MetricView parameters", (text) => { notice.value = { type: "error", text }; });
           if (!parameters) return;
+          notice.value = null;
           x.value = y.value = keyColumn.value = nameColumn.value = "";
           binding.value = { id: metricViewId.value.trim(), parameters };
         }
@@ -208,7 +217,7 @@
             const form = await context.actions.form({ id });
             action.value = { id, fields: form.fields, values: { ...form.values }, errors: {} };
           } catch (error) {
-            ElMessage.error(error.message);
+            notice.value = { type: "error", text: error.message };
           }
         }
 
@@ -221,10 +230,10 @@
             current.errors = Object.fromEntries(answer.errors.map((error) => [formFieldKey(error.field, "/values/"), error.message]));
             if (!answer.parameters) return;
             await context.actions.execute({ id: current.id, parameters: answer.parameters });
-            ElMessage.success("Action executed");
+            notice.value = { type: "success", text: "Action executed" };
             await metricView.value.reload();
           } catch (error) {
-            ElMessage.error(error.message);
+            notice.value = { type: "error", text: error.message };
           } finally {
             executing.value = false;
           }
@@ -233,12 +242,12 @@
         const columnsOf = (data) => (Array.isArray(data) && data.length ? Object.keys(data[0]) : []);
 
         return {
-          metricViewId, parametersText, binding, metricView, x, y, actionId, action, executing,
+          notice, metricViewId, parametersText, binding, metricView, x, y, actionId, action, executing,
           className, keyColumn, nameColumn, selectable,
           read, openAction, execute, columnsOf, toggleRow, rowClass,
         };
       },
-    }).use(ElementPlus).use(context).mount("#app");
+    }).directive("sdk-loading", vSdkLoading).use(context).mount("#app");
   </script>
 </body>
 </html>

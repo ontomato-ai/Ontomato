@@ -21,10 +21,10 @@ export type ComponentPackageReader = (name: string) => Promise<ComponentPackageR
 /** The official entries a package's modules may import, by specifier, as the live modules this run has. */
 const officialEntries: Readonly<Record<string, () => Promise<Readonly<Record<string, unknown>>>>> = {
   "vue": () => import("../entries/vue"),
-  "element-plus": () => import("../entries/element-plus"),
   // The SDK's echarts entry re-exports the package as it is; its namespace is the package's own.
   "echarts": () => import("echarts") as Promise<Readonly<Record<string, unknown>>>,
   "@ontomato/sdk": () => import("../entries/sdk"),
+  "@ontomato/sdk/ui": () => import("../entries/ui"),
   "@ontomato/sdk/panel": () => import("../entries/panel"),
   "@ontomato/sdk/base": () => import("../entries/base"),
   "@ontomato/sdk/graph": () => import("../entries/graph"),
