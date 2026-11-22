@@ -1,15 +1,14 @@
 import { z } from "zod";
 import { runtimeJsonValueSchema, runtimeRelativePathSchema } from "./agent-runtime-values";
-import { appsSdkBuildSchema, appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
-import { directProjectionPortsSchema, panelLocalOperationNameSchema } from "./panel-projection";
-import { productCurrentIdParamsSchema } from "./product-record-id";
+import { appsSdkBuildSchema, appsSdkComponentCatalogEntrySchema, componentDeclarationSchema } from "./apps-sdk";
+import { DOMAIN_COMPONENT_PREFIX, productCurrentIdParamsSchema } from "./product-record-id";
 
 export const COMPONENT_PACKAGES_PATH = "/api/component-packages";
 
 export const componentPackageNameSchema = z.string().regex(
   /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u,
   "Expected a package name or a scoped package name",
-);
+).refine(name => name + ":" !== DOMAIN_COMPONENT_PREFIX, "This package name is reserved for domain components");
 export const componentPackageParamsSchema = z.object({ name: componentPackageNameSchema }).strict();
 
 const nonblank = z.string().trim().min(1);
@@ -46,15 +45,10 @@ export const componentPackageManifestSchema = packageIdentity.extend({
 }).superRefine(({ name, ontomato }, ctx) => checkEntryNames(name, ontomato.entries, ctx, ["ontomato", "entries"]));
 export type ComponentPackageManifest = z.infer<typeof componentPackageManifestSchema>;
 
-const componentId = directProjectionPortsSchema.shape.componentId;
-/** A component can describe which registered operations it can trigger without declaring their signatures or granting use. */
-export const componentPackageComponentSchema = appsSdkComponentCatalogEntrySchema.extend({
-  componentId,
-  operations: z.array(z.object({
-    name: panelLocalOperationNameSchema,
-    handlerRef: nonblank,
-  }).strict()).optional(),
-});
+const componentId = componentDeclarationSchema.shape.componentId;
+export const componentPackageComponentSchema = componentDeclarationSchema.merge(
+  appsSdkComponentCatalogEntrySchema.pick({ module: true, exportName: true }),
+);
 export const componentPackageComponentsSchema = z.array(componentPackageComponentSchema).nonempty();
 export type ComponentPackageComponent = z.infer<typeof componentPackageComponentSchema>;
 

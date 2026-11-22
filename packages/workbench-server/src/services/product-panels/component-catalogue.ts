@@ -1,3 +1,9 @@
+import type { ProductOwner } from "../product-governance/grants";
+import type { ComponentDeclaration } from "@ontomato/contracts/component-declaration";
+import type { DomainComponentRuntime } from "@ontomato/contracts/domain-components";
+import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
+import type { PoolClient } from "pg";
+import { domainComponentForProjection, domainComponentRecord, listVisibleDomainComponents } from "../domain-components/store";
 import { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "@ontomato/contracts/apps-sdk";
 import { directReadDeclaration, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { panelReadResultIdSchema } from "@ontomato/contracts/panel-operations";
@@ -5,7 +11,7 @@ import type { BuiltinProductProjectionInput, ProductProjectionInput } from "@ont
 import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
-import { readComponentPackage } from "../component-packages/store";
+import { listComponentPackages, readComponentPackage } from "../component-packages/store";
 
 export async function readPanelComponentCatalogue() {
   const { version, digest, catalogue: raw } = await readCurrentAppSdkComponents();
@@ -18,31 +24,57 @@ export async function readPanelComponentCatalogue() {
   return { version, digest, components };
 }
 
-export async function listSdkComponents(locale: string | undefined, search?: string): Promise<PanelRecord[]> {
-  const { components } = await readPanelComponentCatalogue();
+export async function readAuthorComponentCatalogue(owner: ProductOwner) {
+  const [{ components }, deployed, registered] = await Promise.all([
+    readPanelComponentCatalogue(), listComponentPackages(), listVisibleDomainComponents(owner.domainId, owner.userId),
+  ]);
+  const definitions = new Map<string, { declaration: ComponentDeclaration; label: string; packageName?: string }>();
+  for (const [componentId, declaration] of components) {
+    definitions.set(componentId, {
+      declaration, label: declaration.componentId, packageName: componentId.slice(0, componentId.lastIndexOf(":")),
+    });
+  }
+  for (const release of deployed) {
+    for (const declaration of release.components) {
+      if (definitions.has(declaration.componentId)) continue;
+      definitions.set(declaration.componentId, { declaration, label: declaration.componentId, packageName: release.name });
+    }
+  }
+  for (const { declaration, name } of registered) definitions.set(declaration.componentId, { declaration, label: name });
+  return definitions;
+}
+
+export async function listSdkComponents(owner: ProductOwner, locale: string | undefined, search?: string): Promise<PanelRecord[]> {
+  const components = await readAuthorComponentCatalogue(owner);
   const term = search?.trim().toLowerCase();
   const fieldLabels = {
     package: tForLocale(locale, "panels.sdkComponent.package"),
     meaning: tForLocale(locale, "panels.sdkComponent.meaning"),
   };
-  return [...components].flatMap(([primaryKey, { componentId, module, meaning, effects }]) => {
-    if (term && ![primaryKey, module, meaning, effects].some(text => text?.toLowerCase().includes(term))) return [];
+  return [...components].flatMap(([primaryKey, { label, declaration: { meaning, effects }, packageName }]) => {
+    if (term && ![primaryKey, label, packageName, meaning, effects].some(text => text?.toLowerCase().includes(term))) return [];
     return [{
-      primaryKey, label: componentId,
-      fields: { package: primaryKey.slice(0, primaryKey.lastIndexOf(":")), meaning }, fieldLabels,
+      primaryKey, label,
+      fields: { package: packageName ?? tForLocale(locale, "panels.sdkComponent.domain"), meaning }, fieldLabels,
     }];
   });
 }
 
-export async function readSdkComponent(componentId: string, locale: string | undefined) {
-  const { components } = await readPanelComponentCatalogue();
-  const component = components.get(componentId);
-  if (!component) throw new HttpError(404, tForLocale(locale, "panels.sdkComponent.notFound", { componentId }), "SDK_COMPONENT_NOT_FOUND");
-  return component;
+export async function readSdkComponent(owner: ProductOwner, componentId: string, locale: string | undefined) {
+  const definition = (await readAuthorComponentCatalogue(owner)).get(componentId);
+  if (!definition) throw new HttpError(404, tForLocale(locale, "panels.sdkComponent.notFound", { componentId }), "SDK_COMPONENT_NOT_FOUND");
+  return definition.declaration;
 }
 
 /** Resolve a projection's component from the SDK or the package's enabled release. */
-export async function readProjectionComponent(componentId: string, readCatalogue = readPanelComponentCatalogue) {
+export async function readProjectionComponent(
+  componentId: string, readCatalogue = readPanelComponentCatalogue,
+  domainId: string | null = null, client?: Pick<PoolClient, "query">,
+) {
+  if (isDomainComponentId(componentId)) {
+    const row = await domainComponentForProjection(domainId, componentId, client);
+    return row && domainComponentRecord(row, false).declaration;
+  }
   const { components } = await readCatalogue();
   const official = components.get(componentId);
   if (official) return official;
@@ -52,11 +84,27 @@ export async function readProjectionComponent(componentId: string, readCatalogue
   return release?.components.find(component => component.componentId === componentId);
 }
 
-export async function validateProjectionComponent(id: string, projection: ProductProjectionInput | BuiltinProductProjectionInput,
-  readCatalogue = readPanelComponentCatalogue) {
-  const component = await readProjectionComponent(projection.componentId, readCatalogue);
+export async function validateProjectionComponent(
+  id: string, projection: ProductProjectionInput | BuiltinProductProjectionInput, readCatalogue = readPanelComponentCatalogue,
+  scope?: { domainId: string | null; authorId?: string; client?: Pick<PoolClient, "query"> },
+): Promise<DomainComponentRuntime | undefined> {
+  let runtime: DomainComponentRuntime | undefined;
+  let component;
+  const { componentId } = projection;
+  if (isDomainComponentId(componentId)) {
+    const row = await domainComponentForProjection(scope?.domainId ?? null, componentId, scope?.client);
+    if (row) {
+      const record = domainComponentRecord(row, false);
+      if (scope?.authorId === undefined || record.ownerId === scope.authorId || record.visibility === "domain") {
+        component = record.declaration;
+        runtime = { componentId, domainId: record.domainId, revision: record.revision, source: record.source };
+      }
+    }
+  } else {
+    component = await readProjectionComponent(componentId, readCatalogue);
+  }
   if (!component)
-    throw new HttpError(400, `Projection '${id}', componentId '${projection.componentId}' is absent from the current SDK`, "PANEL_COMPONENT_UNAVAILABLE");
+    throw new HttpError(400, `Projection '${id}', componentId '${componentId}' is unavailable to this projection`, "PANEL_COMPONENT_UNAVAILABLE");
   const { data } = component;
   if (data === undefined)
     throw new HttpError(400, `Projection '${id}', componentId '${projection.componentId}' does not declare projection data`, "PANEL_COMPONENT_NOT_PROJECTABLE");
@@ -77,4 +125,5 @@ export async function validateProjectionComponent(id: string, projection: Produc
     if (!results.includes(result))
       throw new HttpError(400, `Projection '${id}', field 'data.${name}' returns '${result}'; component '${projection.componentId}' accepts ${results.join(", ")}`, "PANEL_COMPONENT_DATA_RESULT_MISMATCH");
   }
+  return runtime;
 }

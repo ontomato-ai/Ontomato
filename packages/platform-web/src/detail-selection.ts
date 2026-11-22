@@ -2,7 +2,7 @@ import type { RouteLocation } from "vue-router";
 import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -112,6 +112,14 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     use: platformRoutes.metrics.path,
     state: ({ id }): Record<string, PanelStateValue> =>
       id === "new" ? { creating: true } : { selected: { className: METRIC_VIEW, primaryKey: id! } },
+  },
+  // The skill library: a skill's detail address opens the library with that skill selected.
+  {
+    path: platformRoutes.ontologySkill.path,
+    use: platformRoutes.ontologySkills.path,
+    state: ({ skillId }): Record<string, PanelStateValue> => ({
+      selected: { className: SKILL, primaryKey: skillId! },
+    }),
   },
 ];
 

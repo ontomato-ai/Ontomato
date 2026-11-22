@@ -1,3 +1,4 @@
+import { productProjectionRenderResponseSchema } from "@ontomato/contracts/product-panels";
 import { COMPONENT_PACKAGES_PATH, componentPackageResponseSchema, type ComponentPackageResponse } from "@ontomato/contracts/component-packages";
 import { PanelMemberUnavailable } from "./direct";
 import { pageDraftReadSchema } from "@ontomato/contracts/page-draft";
@@ -55,7 +56,7 @@ export async function readPanelData(requests: PlatformRequests, request: Omit<Pr
 }
 
 /** Reads a projection's current record by ID; the caller checks it as the record it expects. */
-export async function readProjectionRecord(requests: PlatformRequests, id: string, rendering = false): Promise<unknown> {
+async function requestProjection(requests: PlatformRequests, id: string, rendering: boolean) {
   const response = await requests.request(`/product-projections/${encodeURIComponent(id)}`, {
     ...(rendering && { headers: { [PANEL_MEMBER_RENDER_HEADER]: "1" } }),
   }, "");
@@ -66,7 +67,15 @@ export async function readProjectionRecord(requests: PlatformRequests, id: strin
     if (response.status === 403 || response.status === 404) throw new PanelMemberUnavailable(response.status, message);
     throw new Error(message);
   }
-  return body.projection;
+  return body;
+}
+
+export async function readProjectionRecord(requests: PlatformRequests, id: string): Promise<unknown> {
+  return (await requestProjection(requests, id, false)).projection;
+}
+
+export async function readProjectionForRender(requests: PlatformRequests, id: string) {
+  return productProjectionRenderResponseSchema.parse(await requestProjection(requests, id, true));
 }
 
 /** An installed component package's current release and declarations, as the reader may read them. */

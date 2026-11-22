@@ -204,8 +204,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       },
     },
     [SDK_COMPONENT]: {
-      catalogue: (_selection, params) => listSdkComponents(viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
-      definition: selection => readSdkComponent(selection.primaryKey!, viewer.locale),
+      catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
+      definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer.locale),
     },
     [USER]: {
       options: async (_selection, params) => (await options()).users.options({
@@ -332,7 +332,7 @@ async function readParameters(
   const resolved = new Map<string, unknown>();
   const runtime = Object.entries(runtimeParams ?? {});
   if (runtime.length) {
-    const component = await readProjectionComponent(projection.componentId);
+    const component = await readProjectionComponent(projection.componentId, undefined, projection.domainId);
     const names = appsSdkComponentDatum(component?.data, dataName)?.runtimeParams ?? [];
     for (const [name, value] of runtime) {
       const parameter = panelReadParameterId(declaration, name);

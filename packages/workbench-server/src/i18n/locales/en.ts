@@ -37,6 +37,7 @@ export const en = {
   "panels.simplePages.opsMcpAuth": "No API key is required in the open-source edition. Call send with a message to start a session; pass the returned sessionId to continue it, and call send with only the sessionId to fetch the result of a run that is still in progress.",
   ...scheduledTaskPanelMessages(scheduledTaskPanelTextEn),
   "panels.sdkComponent.package": "SDK package",
+  "panels.sdkComponent.domain": "Registered in this domain",
   "panels.sdkComponent.meaning": "Purpose",
   "panels.sdkComponent.notFound": "SDK component '{componentId}' is not in the current release.",
   "panels.agentForm.name": "Name",

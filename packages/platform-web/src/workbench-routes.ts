@@ -15,7 +15,7 @@ type PageComponent = NonNullable<RouteRecordSingleView["component"]>;
 function capabilityTabLink(to: { query: LocationQuery }): RouteLocationRaw | undefined {
   if (to.query.tab !== "capabilities") return undefined;
   const { tab: _tab, ...query } = to.query;
-  return { name: routes.ontologySkills.name, query };
+  return { path: routes.ontologySkills.path, query };
 }
 
 /** The builder's old top-level entry: the agent platform's settings at the agent it named, its query kept. */
@@ -43,16 +43,9 @@ export function workbenchPages(
     { ...routes.externalMcp,
       component: () => import("./pages/ExternalMcpRoute.vue"),
       meta: { service: true, page: routes.externalMcp.path, ownHeader: true } },
-    { ...routes.ontologySkills,
-      component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.SkillLibrary),
-      meta: { service: true, page: routes.ontologySkills.path, ownHeader: true } },
-    { ...routes.ontologySkill,
-      component: () => import("@ontomato/workbench-ui/features/workbench").then(module => module.SkillDetail),
-      props: true,
-      meta: { service: true, page: routes.ontologySkills.path, ownHeader: true } },
-    // The capability library's earlier addresses: skills are the ontology manager's, external MCP the system settings'.
+    // The capability library's earlier addresses: skills are the ontology manager's panel, external MCP the system settings'.
     ...[routes.ontologyCapabilities, routes.agentSettingsCapabilities, routes.agentSettingsSkills].map(
-      (location) => ({ ...location, redirect: { name: routes.ontologySkills.name } }),
+      (location) => ({ ...location, redirect: routes.ontologySkills.path }),
     ),
     ...[routes.ontologyMcp, routes.agentSettingsMcp].map(
       (location) => ({ ...location, redirect: { name: routes.externalMcp.name } }),

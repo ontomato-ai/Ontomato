@@ -206,6 +206,15 @@ describe("skill panel server operations", () => {
       executor: { owner: actor.owner, credentials: { token: "op-token", locale: "zh-CN" } },
     };
 
+    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "protected-check" })).toBeUndefined();
+    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" })).toEqual({
+      reason: "内置技能随产品提供，不能删除",
+    });
+    expect(await deleteOp.unavailable!(zhHost, { kind: "object", objectType: SKILL, primaryKey: "studio-skill" })).toEqual({
+      reason: "由 Demo Studio 提供，不能在这里删除",
+    });
+    expect(await deleteOp.unavailable!(host, { kind: "object", objectType: SKILL, primaryKey: "missing-skill" })).toBeUndefined();
+
     expect(await deleteOp.execute(
       zhHost,
       { kind: "object", objectType: SKILL, primaryKey: "builtin-skill" },
