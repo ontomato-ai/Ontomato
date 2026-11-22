@@ -98,6 +98,30 @@ class MetricViewPanelEndpointTest {
   }
 
   @Test
+  void theListFiltersByOriginWhenProvided() throws Exception {
+    MetricView userMetric = new MetricView();
+    userMetric.setId("m1");
+    userMetric.setName("Revenue");
+    userMetric.setStatus(MetricView.STATUS_PUBLISHED);
+    userMetric.setOrigin(MetricView.ORIGIN_USER);
+    MetricView systemMetric = new MetricView();
+    systemMetric.setId("m2");
+    systemMetric.setName("System metric");
+    systemMetric.setStatus(MetricView.STATUS_PUBLISHED);
+    systemMetric.setOrigin(MetricView.ORIGIN_SYSTEM);
+    when(metricViewService.queryList(eq(MetricView.STATUS_PUBLISHED), isNull(), isNull(), eq("domain")))
+        .thenReturn(List.of(userMetric, systemMetric));
+    when(subjectDirectory.subjectsInDomain("domain")).thenReturn(List.of());
+
+    JSONObject body = perform("/metricView/queryList", """
+        {"status":"PUBLISHED","origin":"SYSTEM"}""");
+
+    JSONArray data = body.getJSONArray("data");
+    assertEquals(1, data.size());
+    assertEquals("m2", data.getJSONObject(0).getString("id"));
+  }
+
+  @Test
   void aSingleReadCarriesTheCreatorsAndReviewersDisplayNames() throws Exception {
     when(metricViewService.queryById("m1", "domain")).thenReturn(displayMetric());
     stubSubjects();
@@ -240,7 +264,7 @@ class MetricViewPanelEndpointTest {
 
     assertFalse(body.getBooleanValue("success"));
     assertEquals("METRIC_VIEW_NOT_FOUND", body.getString("code"));
-    assertEquals("MetricView not found", body.getString("message"));
+    assertEquals("MetricView.notFound", body.getString("message"));
   }
 
   @Test

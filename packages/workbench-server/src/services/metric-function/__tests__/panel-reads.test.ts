@@ -234,3 +234,22 @@ it("searches a catalogue by name or description in any case and pages what it ke
   for (const cursor of ["later", "", " ", "0x10", "1e2", "-1", "1.5"])
     await expect(reads.query({ cursor })).rejects.toMatchObject({ status: 400, code: "INVALID_CURSOR" });
 });
+
+it("forwards metric status/origin filters and function operation filter to their owners", async () => {
+  const sent = catalogueOwner(path => ({ success: true, data: path.endsWith("/metricView/queryList") ? [metricAsset] : [functionAsset] }));
+  const metrics = createMetricReadAdapter(owner, viewer);
+  const functions = createFunctionReadAdapter(owner, viewer);
+
+  await metrics.query({ status: "PUBLISHED", origin: "USER" });
+  await metrics.query({ status: "UNUSED" });
+  await functions.query({ operation: "OPERATION_PRODUCT" });
+
+  expect(sent).toEqual([
+    { path: "/metricView/queryList", body: { status: "PUBLISHED", origin: "USER" } },
+    { path: "/metricView/queryList", body: { status: "UNUSED" } },
+    { path: "/function/queryList", body: { operation: "OPERATION_PRODUCT" } },
+  ]);
+  await expect(metrics.query({ status: "UNKNOWN" })).rejects.toThrow();
+  await expect(metrics.query({ origin: "OTHER" })).rejects.toThrow();
+  await expect(functions.query({ operation: "OPERATION_OTHER" })).rejects.toThrow();
+});

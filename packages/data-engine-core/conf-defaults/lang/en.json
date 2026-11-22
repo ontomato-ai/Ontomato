@@ -760,6 +760,10 @@
     "value": "Product"
   },
   {
+    "key": "PanelForm.sourceArtifact",
+    "value": "Product artifact"
+  },
+  {
     "key": "WriteFunctionOperation.classNotExist",
     "value": "Class does not exist"
   },

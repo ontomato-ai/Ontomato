@@ -180,7 +180,17 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [METRIC_VIEW]: {
     ...describeType("metricView", "capability"),
     reads: {
-      ...definitionQuery,
+      query: {
+        source: "type", parameterMode: "fixed",
+        params: {
+          search: "keyword",
+          status: "metricViewStatus",
+          origin: "metricViewOrigin",
+          cursor: "cursor",
+          size: "size",
+        },
+        result: "panelRecordQuery",
+      },
       ...modelReads,
       result: { source: "object", parameterMode: "owner", parameter: "ontologyParameter", result: "metricOutput" },
     },
@@ -195,7 +205,14 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
   [FUNCTION]: {
     ...describeType("function", "capability"),
-    reads: { ...definitionQuery, ...modelReads },
+    reads: {
+      query: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", operation: "functionOperation", cursor: "cursor", size: "size" },
+        result: "panelRecordQuery",
+      },
+      ...modelReads,
+    },
     operations: [`${FUNCTION}.save`, DELETE_FUNCTION],
   },
   [ACTION]: {

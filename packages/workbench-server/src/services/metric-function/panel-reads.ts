@@ -37,12 +37,20 @@ const catalogueQuerySchema = z.object({
   size: panelReadParameterSchemas.size.optional(),
 }).strict();
 
+const metricCatalogueQuerySchema = catalogueQuerySchema.extend({
+  status: panelReadParameterSchemas.metricViewStatus.optional(),
+  origin: panelReadParameterSchemas.metricViewOrigin.optional(),
+}).strict();
+
+const functionCatalogueQuerySchema = catalogueQuerySchema.extend({
+  operation: panelReadParameterSchemas.functionOperation.optional(),
+}).strict();
+
 /**
  * The records a search keeps, matching name or description in any case, from the offset the cursor names, at most `size`
  * of them, with the total the search keeps. The owner answers its whole domain list, so the query reads it once.
  */
-function queried(records: readonly PanelRecord[], params: Record<string, unknown>): PanelRecordQuery {
-  const { search, cursor, size } = catalogueQuerySchema.parse(params);
+function queried(records: readonly PanelRecord[], { search, cursor, size }: z.infer<typeof catalogueQuerySchema>): PanelRecordQuery {
   // A cursor is the decimal offset this query answered as nextCursor.
   if (cursor !== undefined && !/^\d+$/.test(cursor))
     throw new HttpError(400, "The cursor does not name a position in the list", "INVALID_CURSOR");
@@ -159,9 +167,11 @@ export function createMetricReadAdapter(_owner: ProductOwner, viewer: AssistantC
   }
   return {
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
+      const { status, origin, ...paging } = metricCatalogueQuerySchema.parse(params);
       const columns = labels();
-      const metrics = await owner("metric-list", "/metricView/queryList", {}, z.array(metricSchema));
-      return queried(metrics.map(metric => metricRecord(metric, columns)), params);
+      const body = { ...(status ? { status } : {}), ...(origin ? { origin } : {}) };
+      const metrics = await owner("metric-list", "/metricView/queryList", body, z.array(metricSchema));
+      return queried(metrics.map(metric => metricRecord(metric, columns)), paging);
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       return metricRecord(await owner("metric-record", "/metricView/queryById", { id: primaryKey }, metricSchema), labels());
@@ -199,9 +209,11 @@ export function createFunctionReadAdapter(_owner: ProductOwner, viewer: Assistan
   const labels = () => fieldLabels("function", ["operation"]);
   return {
     async query(params: Record<string, unknown>): Promise<PanelRecordQuery> {
+      const { operation, ...paging } = functionCatalogueQuerySchema.parse(params);
       const columns = labels();
-      const functions = await owner("function-list", "/function/queryList", {}, z.array(functionSchema));
-      return queried(functions.map(fn => functionRecord(fn, columns)), params);
+      const body = operation ? { operation } : {};
+      const functions = await owner("function-list", "/function/queryList", body, z.array(functionSchema));
+      return queried(functions.map(fn => functionRecord(fn, columns)), paging);
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       return functionRecord(await owner("function-record", "/function/queryById", { id: primaryKey }, functionSchema), labels());
