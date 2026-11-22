@@ -143,7 +143,7 @@ describe("action panel server operations", () => {
     const removed = hostWith(() => Response.json({ success: true }));
     expect(await operation.execute(removed.host, actionTarget)).toEqual({
       kind: "success", data: {},
-      affected: { objects: [{ objectType: ACTION, primaryKey: "a1" }], objectTypes: [ACTION] },
+      affected: { objects: [{ objectType: ACTION, primaryKey: "a1" }], objectTypes: [ACTION], removed: [{ objectType: ACTION, primaryKey: "a1" }] },
     });
     expect(removed.sent[0]?.path).toBe("/api/data-query/action/delete");
     expect(JSON.parse(String(removed.sent[0]?.init.body))).toEqual({ id: "a1" });

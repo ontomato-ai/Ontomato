@@ -630,6 +630,10 @@ it("serves business knowledge panel reads over real HTTP routes backed by Postgr
         { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, outcome: { kind: "success", data: {} } },
         { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-3" }, outcome: { kind: "success", data: {} } },
       ],
+      // What the batch deleted, once for the whole batch, for the panel to let go of.
+      affected: {
+        removed: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-3" }],
+      },
     },
   });
   expect(ownerWrites).toEqual([

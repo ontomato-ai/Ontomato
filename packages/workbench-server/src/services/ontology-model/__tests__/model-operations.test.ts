@@ -415,6 +415,12 @@ describe("ontology model server operations", () => {
           { objectType: RELATIONSHIP, primaryKey: "runs" },
         ],
         objectTypes: [OBJECT_TYPE, ATTRIBUTE, RELATIONSHIP],
+        // The type, and the relationships that joined it, are gone.
+        removed: [
+          { objectType: OBJECT_TYPE, primaryKey: "Device" },
+          { objectType: RELATIONSHIP, primaryKey: "owns" },
+          { objectType: RELATIONSHIP, primaryKey: "runs" },
+        ],
       },
     });
     expect(plainOutcome).toEqual({
@@ -423,6 +429,7 @@ describe("ontology model server operations", () => {
       affected: {
         objects: [{ objectType: OBJECT_TYPE, primaryKey: "Device" }],
         objectTypes: [OBJECT_TYPE, ATTRIBUTE],
+        removed: [{ objectType: OBJECT_TYPE, primaryKey: "Device" }],
       },
     });
   });
@@ -447,12 +454,14 @@ describe("ontology model server operations", () => {
       affected: {
         objects: [{ objectType: ATTRIBUTE, primaryKey: '["Device","site_id"]' }],
         objectTypes: [ATTRIBUTE, OBJECT_TYPE],
+        removed: [{ objectType: ATTRIBUTE, primaryKey: '["Device","site_id"]' }],
       },
     });
     expect(relationship).toEqual({
       kind: "success",
       data: {},
       affected: {
+        removed: [{ objectType: RELATIONSHIP, primaryKey: "owns" }],
         objects: [{ objectType: RELATIONSHIP, primaryKey: "owns" }],
         objectTypes: [RELATIONSHIP, OBJECT_TYPE],
       },

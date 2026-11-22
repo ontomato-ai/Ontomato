@@ -170,5 +170,10 @@ export type PanelOperationImpact = z.infer<typeof panelOperationImpactSchema>;
 export const panelOperationAffectedSchema = z.object({
   objects: z.array(panelObjectIdentitySchema),
   objectTypes: z.array(runtimeKeySchema),
+  /**
+   * Of the objects, those the write removed (a delete): no longer there to read, so a panel lets go of any state that
+   * holds one — a selection is cleared, a checked list drops it — instead of reading it again.
+   */
+  removed: z.array(panelObjectIdentitySchema).optional(),
 }).strict();
 export type PanelOperationAffected = z.infer<typeof panelOperationAffectedSchema>;
