@@ -1,5 +1,5 @@
-import { computed, ref, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { mountPanel, usePanelBack, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
 
 /*
  * The ontology graph: the owner's object types and relation types on the platform's shared graph canvas (the same one
@@ -28,8 +28,22 @@ await mountPanel({
     const filter = ref("all");
     const pathFrom = ref("");
     const pathTo = ref("");
-    const pathMessage = ref("");
+    const toast = ref(null);
     const navigationError = ref("");
+    const listEl = ref(null);
+
+    let toastTimer = null;
+    function showToast(type, text) {
+      if (toastTimer) clearTimeout(toastTimer);
+      toast.value = { type, text };
+      toastTimer = setTimeout(() => {
+        toast.value = null;
+        toastTimer = null;
+      }, 3200);
+    }
+    onBeforeUnmount(() => {
+      if (toastTimer) clearTimeout(toastTimer);
+    });
 
     const countOf = (rows) => (rows.value.status === "ready" ? rows.value.value.length : null);
     const counts = computed(() => ({
@@ -37,7 +51,9 @@ await mountPanel({
       attributes: countOf(attributeRows),
       relations: countOf(relationRows),
     }));
-    const loading = computed(() => [objectRows, relationRows, attributeRows].some((rows) => rows.value.status === "loading"));
+    const loading = computed(() =>
+      [objectRows, relationRows, attributeRows].some((rows) => rows.value.status === "loading"),
+    );
     const readErrors = computed(() =>
       [
         ["对象类型", objectRows],
@@ -87,66 +103,93 @@ await mountPanel({
     const objectNames = computed(() => new Map(objects.value.map((object) => [object.className, object.showName])));
     const classNameLabel = (className) => objectNames.value.get(className) ?? (className || "（未知对象类型）");
 
-    // The page's public state: the reader's selection, search and what stands out, which its agent reads too.
+    // Public state: selection, search and highlights, readable by the page's agent and preserved in deep links.
     const search = computed({
       get: () => instance.state.values.value.search ?? "",
       set: (value) => instance.state.set("search", value ?? ""),
     });
+    const requestedObjectKey = computed(() => instance.state.values.value.objectType?.primaryKey ?? "");
+    const requestedRelationKey = computed(() => instance.state.values.value.relation?.primaryKey ?? "");
     const selectedObject = computed(() =>
-      objects.value.find((object) => object.className === instance.state.values.value.objectType?.primaryKey) ?? null,
+      objects.value.find((object) => object.className === requestedObjectKey.value) ?? null,
     );
     const selectedRelation = computed(() =>
-      relations.value.find((relation) => relation.relationship === instance.state.values.value.relation?.primaryKey) ?? null,
+      relations.value.find((relation) => relation.relationship === requestedRelationKey.value) ?? null,
     );
-    /** The left column's two sections: the classes and the relations the reader's query and filter leave. */
-    const matches = (values, term) => !term || values.some((value) => String(value ?? "").toLowerCase().includes(term));
+    const missingObjectKey = computed(() =>
+      !loading.value && requestedObjectKey.value && !selectedObject.value ? requestedObjectKey.value : "",
+    );
+    const missingRelationKey = computed(() =>
+      !loading.value && requestedRelationKey.value && !selectedRelation.value ? requestedRelationKey.value : "",
+    );
+
+    const attributesOf = (className) => attributesByClass.value.get(className) ?? [];
+    const drawableRelations = computed(() =>
+      relations.value.filter(
+        (relation) => objectNames.value.has(relation.fromclass) && objectNames.value.has(relation.toclass),
+      ),
+    );
+
+    const matches = (values, term) =>
+      !term || values.some((value) => String(value ?? "").toLowerCase().includes(term));
+
     const filteredObjects = computed(() => {
       if (filter.value === "relations") return [];
       const term = search.value.trim().toLowerCase();
       return objects.value.filter((object) =>
-        matches([object.className, object.showName, object.classDesc, ...attributesOf(object.className).flatMap((item) => [item.name, item.showName])], term),
+        matches(
+          [
+            object.className,
+            object.showName,
+            object.classDesc,
+            ...attributesOf(object.className).flatMap((item) => [item.name, item.showName]),
+          ],
+          term,
+        ),
       );
     });
     const filteredRelations = computed(() => {
       if (filter.value === "objects") return [];
       const term = search.value.trim().toLowerCase();
-      return drawableRelations.value.filter((relation) => matches([relation.relationship, relation.name, relation.desc], term));
+      return drawableRelations.value.filter((relation) =>
+        matches([relation.relationship, relation.name, relation.desc], term),
+      );
     });
-    const attributesOf = (className) => attributesByClass.value.get(className) ?? [];
 
     const selectedAttributes = computed(() => attributesByClass.value.get(selectedObject.value?.className ?? "") ?? []);
     const connectedRelations = computed(() =>
       selectedObject.value
         ? relations.value.filter(
             (relation) =>
-              relation.fromclass === selectedObject.value.className || relation.toclass === selectedObject.value.className,
+              relation.fromclass === selectedObject.value.className ||
+              relation.toclass === selectedObject.value.className,
           )
         : [],
     );
 
-    /** The relations the canvas can draw: both ends are object types of this domain. */
-    const drawableRelations = computed(() =>
-      relations.value.filter((relation) => objectNames.value.has(relation.fromclass) && objectNames.value.has(relation.toclass)),
-    );
-
-    const highlighted = computed(() => ({
-      nodes: instance.state.values.value.highlightedNodes ?? [],
-      edges: instance.state.values.value.highlightedEdges ?? [],
-    }));
-    const hasHighlight = computed(() => highlighted.value.nodes.length > 0 || highlighted.value.edges.length > 0);
-    const activePath = computed(() =>
-      Boolean(instance.state.values.value.pathFrom?.primaryKey && instance.state.values.value.pathTo?.primaryKey),
-    );
-    const hasBanner = computed(() => hasHighlight.value || activePath.value);
+    // Always scroll the left resource list back to top when query or filter changes so the first hit is never clipped.
+    watch([search, filter], () => {
+      if (listEl.value) listEl.value.scrollTop = 0;
+    });
 
     // Sync path dropdowns when state is updated externally (e.g. by the page's agent).
     watch(
-      () => [instance.state.values.value.pathFrom?.primaryKey ?? "", instance.state.values.value.pathTo?.primaryKey ?? ""],
+      () => [
+        instance.state.values.value.pathFrom?.primaryKey ?? "",
+        instance.state.values.value.pathTo?.primaryKey ?? "",
+      ],
       ([from, to]) => {
         if (from && from !== pathFrom.value) pathFrom.value = from;
         if (to && to !== pathTo.value) pathTo.value = to;
       },
     );
+
+    // Clearing either path endpoint removes the active path highlight from the canvas.
+    watch([pathFrom, pathTo], ([from, to]) => {
+      if ((!from || !to) && (instance.state.values.value.pathFrom || instance.state.values.value.pathTo)) {
+        instance.state.setState({ pathFrom: null, pathTo: null });
+      }
+    });
 
     function highlight(nodes, edges) {
       instance.state.setState({
@@ -157,11 +200,9 @@ await mountPanel({
       });
     }
     function clearHighlight() {
-      pathMessage.value = "";
       highlight([], []);
     }
 
-    /** What the page highlights: what the query and the filter leave, or nothing when both are open. */
     function highlightBrowsed() {
       if (!search.value.trim() && filter.value === "all") {
         clearHighlight();
@@ -172,31 +213,37 @@ await mountPanel({
         filteredRelations.value.map((relation) => relation.relationship),
       );
     }
+
     const setFilter = (value) => {
       filter.value = value;
-      pathMessage.value = "";
       highlightBrowsed();
     };
 
     const setSearch = (value) => {
       search.value = value ?? "";
-      pathMessage.value = "";
       const term = search.value.trim().toLowerCase();
       if (!term) {
         highlightBrowsed();
         return;
       }
-      const words = (className) => (attributesByClass.value.get(className) ?? []).flatMap((item) => [item.name, item.showName]);
-      const hitObjects = objects.value.filter((object) =>
-        [object.className, object.showName, object.classDesc, ...words(object.className)].some((value) =>
-          String(value ?? "").toLowerCase().includes(term),
-        ),
-      );
-      const hitRelations = drawableRelations.value.filter((relation) =>
-        [relation.relationship, relation.name, relation.desc].some((value) =>
-          String(value ?? "").toLowerCase().includes(term),
-        ),
-      );
+      const words = (className) =>
+        (attributesByClass.value.get(className) ?? []).flatMap((item) => [item.name, item.showName]);
+      const hitObjects =
+        filter.value === "relations"
+          ? []
+          : objects.value.filter((object) =>
+              [object.className, object.showName, object.classDesc, ...words(object.className)].some((v) =>
+                String(v ?? "").toLowerCase().includes(term),
+              ),
+            );
+      const hitRelations =
+        filter.value === "objects"
+          ? []
+          : drawableRelations.value.filter((relation) =>
+              [relation.relationship, relation.name, relation.desc].some((v) =>
+                String(v ?? "").toLowerCase().includes(term),
+              ),
+            );
       highlight(
         hitObjects.map((object) => object.className),
         hitRelations.map((relation) => relation.relationship),
@@ -206,20 +253,17 @@ await mountPanel({
     function findPath() {
       const from = pathFrom.value;
       const to = pathTo.value;
-      if (!from || !to) {
-        pathMessage.value = "先选起点和终点对象类型。";
-        return;
-      }
-      // Delegate path highlighting and reporting to ObjectGraph via its native pathFrom/pathTo bindings
-      // instead of writing path nodes into highlightedNodes (which the canvas renders as search hits).
+      if (!from || !to) return;
       instance.state.setState({
+        objectType: null,
+        relation: null,
         pathFrom: { className: OBJECT_TYPE, primaryKey: from },
         pathTo: { className: OBJECT_TYPE, primaryKey: to },
         highlightedNodes: [],
         highlightedEdges: [],
       });
       if (from === to) {
-        pathMessage.value = `「${classNameLabel(from)}」自己就是起点和终点。`;
+        showToast("success", "已找到 0 跳路径");
         return;
       }
       const queue = [{ node: from, hops: 0 }];
@@ -230,25 +274,56 @@ await mountPanel({
           if (relation.fromclass !== current.node || visited.has(relation.toclass)) continue;
           const hops = current.hops + 1;
           if (relation.toclass === to) {
-            pathMessage.value = `找到路径：${hops} 跳`;
+            showToast("success", `已找到 ${hops} 跳路径`);
             return;
           }
           visited.add(relation.toclass);
           queue.push({ node: relation.toclass, hops });
         }
       }
-      pathMessage.value = `找不到从「${classNameLabel(from)}」到「${classNameLabel(to)}」的路径`;
+      showToast("warning", "未找到可达路径");
     }
 
     function selectObject(className) {
       navigationError.value = "";
-      instance.state.setState({ objectType: { className: OBJECT_TYPE, primaryKey: className }, relation: null });
+      instance.state.setState({
+        objectType: { className: OBJECT_TYPE, primaryKey: className },
+        relation: null,
+        pathFrom: null,
+        pathTo: null,
+        highlightedNodes: [],
+        highlightedEdges: [],
+      });
     }
 
     function selectRelation(relationship) {
       navigationError.value = "";
-      instance.state.setState({ relation: { className: RELATIONSHIP, primaryKey: relationship }, objectType: null });
+      instance.state.setState({
+        relation: { className: RELATIONSHIP, primaryKey: relationship },
+        objectType: null,
+        pathFrom: null,
+        pathTo: null,
+        highlightedNodes: [],
+        highlightedEdges: [],
+      });
     }
+
+    function clearSelection() {
+      navigationError.value = "";
+      instance.state.setState({
+        objectType: null,
+        relation: null,
+        pathFrom: null,
+        pathTo: null,
+      });
+    }
+
+    // Esc or browser Back clears an active object/relation selection cleanly.
+    usePanelBack(
+      () => Boolean(requestedObjectKey.value || requestedRelationKey.value),
+      clearSelection,
+      { pushHistory: true },
+    );
 
     async function openModeling() {
       navigationError.value = "";
@@ -266,12 +341,15 @@ await mountPanel({
       }
     }
 
-    // The agent names the selected object by the owner's label, not by its key alone.
+    // Register human-readable labels for the page's agent context.
     watch(
       objects,
       (list) => {
         if (list.length)
-          instance.nameObjects(OBJECT_TYPE, list.map((object) => ({ primaryKey: object.className, label: object.showName })));
+          instance.nameObjects(
+            OBJECT_TYPE,
+            list.map((object) => ({ primaryKey: object.className, label: object.showName })),
+          );
       },
       { immediate: true },
     );
@@ -300,19 +378,20 @@ await mountPanel({
       setFilter,
       filteredObjects,
       filteredRelations,
+      listEl,
       selectObject,
+      selectRelation,
+      clearSelection,
       selectedObject,
       selectedRelation,
+      missingObjectKey,
+      missingRelationKey,
       selectedAttributes,
       connectedRelations,
       pathFrom,
       pathTo,
-      pathMessage,
-      hasHighlight,
-      hasBanner,
+      toast,
       findPath,
-      clearHighlight,
-      selectRelation,
       openModeling,
       navigationError,
       classNameLabel,

@@ -502,7 +502,8 @@ it("dims non-adjacent nodes and edges on selection without showing any highlight
     const { instance, element } = mount(false);
     await vi.waitFor(() => expect(canvas.nodes).toHaveLength(5));
 
-    // Selecting only a node keeps it, its directly connected edges, and their peer nodes crisp while dimming the rest.
+    // Selecting only a node keeps it selected, marks its direct peers and connecting edges with the warm neighbor tone,
+    // and dims unrelated elements without showing a banner.
     instance.state.setState({
       selectedClass: { className: OBJECT_TYPE, primaryKey: "person" } as never,
       selectedRelation: null,
@@ -514,18 +515,18 @@ it("dims non-adjacent nodes and edges on selection without showing any highlight
     expect(instance.pageContext.value.highlights).toBeUndefined();
     expect(canvas.nodes.map(({ id, tone }) => [id, tone ?? "default"])).toEqual([
       ["person", "default"],
-      ["team", "default"],
+      ["team", "neighbor"],
       ["dept", "muted"],
       ["org", "muted"],
       ["isolated", "muted"],
     ]);
     expect(canvas.edges.map(({ id, tone }) => [id, tone ?? "default"])).toEqual([
-      ["r-pt", "default"],
+      ["r-pt", "neighbor"],
       ["r-td", "muted"],
       ["r-do", "muted"],
     ]);
 
-    // Selecting only an edge keeps that edge and its two endpoints crisp while dimming the rest, with no banner.
+    // Selecting only an edge keeps that edge crisp, marks its two endpoints as neighbors, and dims the rest with no banner.
     instance.state.setState({
       selectedClass: null,
       selectedRelation: { className: RELATIONSHIP, primaryKey: "r-td" } as never,
@@ -537,8 +538,8 @@ it("dims non-adjacent nodes and edges on selection without showing any highlight
     expect(instance.pageContext.value.highlights).toBeUndefined();
     expect(canvas.nodes.map(({ id, tone }) => [id, tone ?? "default"])).toEqual([
       ["person", "muted"],
-      ["team", "default"],
-      ["dept", "default"],
+      ["team", "neighbor"],
+      ["dept", "neighbor"],
       ["org", "muted"],
       ["isolated", "muted"],
     ]);
@@ -557,6 +558,38 @@ it("dims non-adjacent nodes and edges on selection without showing any highlight
     classes = twoClasses;
     relations = oneRelation;
   }
+});
+
+it("keeps unrelated nodes undimmed on editable canvases and supports force layout, hidden banners, compact toolbar, and hint", async () => {
+  const { instance, element } = mount(true, {}, {
+    layout: "force",
+    highlightBanner: false,
+    showFocusButton: false,
+    hint: "Click a node to inspect",
+  });
+  await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
+
+  // Selecting a node on an editable canvas does not dim other nodes so users can connect them freely.
+  instance.state.set("selectedClass", { className: OBJECT_TYPE, primaryKey: "person" } as never);
+  await nextTick();
+  expect(canvas.nodes.map(({ id, tone }) => [id, tone ?? "default"])).toEqual([
+    ["org", "default"],
+    ["person", "default"],
+  ]);
+
+  // Compact toolbar hides focus-selected; hint renders cleanly.
+  expect(element.querySelector('[data-graph-action="focus-selected"]')).toBeNull();
+  expect(element.querySelector('[data-graph-action="relayout"]')).not.toBeNull();
+  expect(element.querySelector("[data-graph-op-hint]")?.textContent?.trim()).toBe("Click a node to inspect");
+
+  // With highlightBanner disabled, path highlights still report to pageContext without rendering the inline banner.
+  instance.state.setState({
+    pathFrom: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+    pathTo: { className: OBJECT_TYPE, primaryKey: "org" } as never,
+  });
+  await nextTick();
+  expect(element.querySelector("[data-graph-path-banner]")).toBeNull();
+  expect(instance.pageContext.value.highlights?.[0]?.kind).toBe("path");
 });
 
 it("separates 'no path found in the visible graph' from 'relations hidden due to permissions' when edges are forbidden", async () => {

@@ -402,6 +402,11 @@ it("draws path-toned nodes and edges visually distinct from accent search highli
   );
   expect(drawn["e-search"]!.style).toMatchObject({ stroke: "p", lineWidth: 2, opacity: 1 });
   expect(drawn["e-path"]!.style).toMatchObject({ stroke: "#e6a23c", lineWidth: 3, opacity: 1 });
+
+  const neighborNode = g6NodeStyle({ id: "n3", label: "N3", tone: "neighbor" }, withPathColor, [], true, look);
+  expect(neighborNode).toMatchObject({ stroke: "#e6a23c", lineWidth: 5, lineDash: [], opacity: 1 });
+  const neighborDrawn = g6Edges([{ id: "e-nbr", source: "A", target: "B", tone: "neighbor" }], nodes, withPathColor);
+  expect(neighborDrawn[0]!.style).toMatchObject({ stroke: "#e6a23c", lineWidth: 3, opacity: 1, labelFill: "t" });
 });
 
 it("creates the graph and emits resized when a canvas mounted at 0x0 later receives real dimensions", async () => {

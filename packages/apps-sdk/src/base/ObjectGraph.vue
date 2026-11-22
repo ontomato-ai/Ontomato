@@ -27,7 +27,15 @@ const props = withDefaults(defineProps<{
   nodeSize?: number;
   /** On the page's canvas, the size of each node's name in screen pixels; the platform's own when absent. */
   labelSize?: number;
-}>(), { editable: undefined });
+  /** Automatic placement algorithm for unplaced nodes: column-based `relations` (default) or radial `force`. */
+  layout?: "relations" | "force";
+  /** Whether to show the inline search/path banner strip above the canvas (default true). */
+  highlightBanner?: boolean;
+  /** Whether to include the focus-selected action in the floating canvas toolbar (default true). */
+  showFocusButton?: boolean;
+  /** Optional subtle operation hint shown at the bottom-right corner of the canvas. */
+  hint?: string;
+}>(), { editable: undefined, highlightBanner: undefined, showFocusButton: undefined });
 
 const panel = usePanelContext();
 const member = useMember();
@@ -54,5 +62,17 @@ if (port) {
 
 <template>
   <!-- Choosing a form's field, the graph is drawn by the form, where the field is. -->
-  <ObjectGraphCanvas v-if="!choosesField" :edge-ends="edgeEnds" :editable="editable" :categories="categories" :node-category="nodeCategory" :node-size="nodeSize" :label-size="labelSize"></ObjectGraphCanvas>
+  <ObjectGraphCanvas
+    v-if="!choosesField"
+    :edge-ends="edgeEnds"
+    :editable="editable"
+    :categories="categories"
+    :node-category="nodeCategory"
+    :node-size="nodeSize"
+    :label-size="labelSize"
+    :layout="layout"
+    :highlight-banner="highlightBanner"
+    :show-focus-button="showFocusButton"
+    :hint="hint"
+  ></ObjectGraphCanvas>
 </template>
