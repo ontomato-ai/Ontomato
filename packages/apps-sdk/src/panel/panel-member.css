@@ -1,0 +1,30 @@
+/*
+ * Member containers placed by <Projection> (and <CurrentEntry>): panel CSS sizes this box, and a flex column lets the
+ * drawn official component or nested panel fill a definite height without collapsing when height is auto.
+ * Zero-specificity :where() rules keep panel layout overrides (such as display: grid or custom classes) in full control.
+ */
+:where(.sdk-panel-member) {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+:where(.sdk-panel-member-nested) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+:where(.sdk-panel-member-nested > *) {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+:where(.sdk-current-entry) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}

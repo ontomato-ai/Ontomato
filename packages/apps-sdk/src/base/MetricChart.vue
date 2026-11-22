@@ -50,6 +50,7 @@ const labels = useDataStateLabels(() => t("ontology.ovNoChartData"));
         <ChartView
           :file="value.file"
           :metric="value.metric"
+          height="100%"
           :undated="t('ontology.ovUndated')"
           :empty="t('ontology.ovNoChartData')"
         ></ChartView>
@@ -59,7 +60,14 @@ const labels = useDataStateLabels(() => t("ontology.ovNoChartData"));
 </template>
 
 <style scoped>
+/* Fills the box its member is placed in; falls back to 320px when that box has no definite height. */
 .sdk-metric-chart {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
   min-width: 0;
+  min-height: 320px;
 }
 </style>

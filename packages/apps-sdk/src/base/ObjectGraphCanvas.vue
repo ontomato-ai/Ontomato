@@ -264,8 +264,9 @@ function move(id: string, place: GraphCanvasPoint) {
 const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
 /** The whole graph, or — where it would be too small to read — the part around the chosen node, else the most connected. */
 function fit() {
+  if (!canvas.value) return;
   const chosen = selectedNodes.value.find((id) => layout.value.positions.has(id));
-  void canvas.value!.fit({ maxZoom: 1.15, keepNames: true, padding: FIT_PADDING, around: chosen ?? layout.value.root })
+  void canvas.value.fit({ maxZoom: 1.15, keepNames: true, padding: FIT_PADDING, around: chosen ?? layout.value.root })
     .then((whole) => {
       partial.value = !whole;
       moved.value = false;
@@ -416,12 +417,17 @@ async function download() {
 </template>
 
 <style scoped>
-/* The canvas fills the box its member is placed in (a flex item stretched to the panel's space, or a fixed height): how
-   tall that box is is the panel's, filling it is the canvas's own — G6 draws nothing in a box it measures at 0. */
+/* Fills the box its member is placed in; falls back to the default minimum canvas height when that box has no definite
+   height, so G6 always measures a non-zero canvas. */
 .sdk-object-graph-canvas {
   position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
   height: 100%;
-  min-height: 0;
+  min-width: 0;
+  min-height: 420px;
 }
 .sdk-object-graph-canvas-error {
   margin: 0;

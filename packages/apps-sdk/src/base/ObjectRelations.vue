@@ -391,13 +391,18 @@ function statusText(status: PlatformGraphStatus): string {
 <style scoped>
 .sdk-object-relations {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: var(--spacing-sm);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 .sdk-object-relations-header {
   align-items: center;
   border-bottom: 1px solid var(--ui-divider);
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
   padding-bottom: var(--spacing-xs);
@@ -430,13 +435,17 @@ function statusText(status: PlatformGraphStatus): string {
 }
 .sdk-object-relations-groups {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: var(--spacing-sm);
+  min-height: 0;
+  overflow-y: auto;
 }
 .sdk-object-relations-group {
   border: 1px solid var(--ui-divider);
   border-radius: var(--radius-md);
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: var(--spacing-xs);
   padding: var(--spacing-sm) var(--spacing-sm);

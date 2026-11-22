@@ -831,6 +831,16 @@ function handleViewport(viewport: GraphCanvasViewport) {
   if (fitted && !fitting && partial.value) moved.value = true;
 }
 
+/** Re-fits the graph once its container settles at a new size (e.g. a side panel toggling or composer resizing). */
+let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+function handleResized() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    fitReadable();
+  }, 200);
+}
+onBeforeUnmount(() => clearTimeout(resizeTimer));
+
 // ---- Toolbar actions ----
 function fitView() {
   partial.value = false;
@@ -974,6 +984,7 @@ onBeforeUnmount(() => {
         @blank="handleBlank"
         @move="handleMove"
         @viewport="handleViewport"
+        @resized="handleResized"
       />
       <p v-if="partial" class="sdk-ontology-graph-hint" :class="{ quiet: moved }" role="status" data-graph-hint>
         {{ t("platform.graphLargerThanCanvas") }}
@@ -1026,14 +1037,17 @@ onBeforeUnmount(() => {
 <style scoped>
 .sdk-ontology-graph {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: var(--spacing-sm);
+  min-width: 0;
   min-height: 0;
   height: 100%;
 }
 
 .sdk-ontology-graph-bar {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
@@ -1078,6 +1092,7 @@ onBeforeUnmount(() => {
 
 .sdk-ontology-graph-legend {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-xs) var(--spacing-md);
@@ -1121,6 +1136,7 @@ onBeforeUnmount(() => {
 }
 
 .sdk-ontology-graph-notice {
+  flex: 0 0 auto;
   padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
@@ -1156,7 +1172,10 @@ onBeforeUnmount(() => {
 
 .sdk-ontology-graph-frame {
   position: relative;
-  flex: 1;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
   min-height: 420px;
   overflow: hidden;
   border: 1px solid var(--ui-divider);

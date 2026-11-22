@@ -73,3 +73,15 @@ const labels = useDataStateLabels(props.emptyText ? () => panel.t(props.emptyTex
     </data-state>
   </div>
 </template>
+
+<style scoped>
+.sdk-object-tree {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+</style>
