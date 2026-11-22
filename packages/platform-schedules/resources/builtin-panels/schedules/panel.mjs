@@ -368,7 +368,7 @@ await mountPanel({
         if (outcome.kind !== "success") return refused(outcome);
         setMode("view");
         instance.state.setState({ selectedTask: null, runId: null });
-        notify({ kind: "success", text: t("message.deleted") });
+        notify({ kind: "success", text: outcome.message });
       });
     }
     function edit(row) {
