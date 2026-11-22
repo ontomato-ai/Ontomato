@@ -92,7 +92,8 @@
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Read functions keep a query package and column labels; write functions keep parameters and Python code. A name is edited once, here.", "zh-CN": "读函数维护查询逻辑包和列标签，写函数维护参数和 Python 代码；名称只在这里编辑一次。"},
-      "names": {"en": "Functions", "zh-CN": "函数"}
+      "names": {"en": "Functions", "zh-CN": "函数"},
+      "count": {"member": "list", "data": "rows"}
     }, {
       "id": "business-knowledge", "pageKey": "business-knowledge", "panelId": "builtin-product-business-knowledge",
       "path": "/ontology/knowledge", "access": {"permissionCode": "business-knowledge"},
