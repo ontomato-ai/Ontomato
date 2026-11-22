@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { domainComponentRuntimeSchema } from "./domain-components";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
@@ -21,7 +22,7 @@ export { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-el
 import { objectDetailUsedByResponseSchema } from "./object-detail";
 import { productCatalogCursorSchema } from "./product-catalog-query";
 export { productCatalogQuerySchema, type ProductCatalogQuery } from "./product-catalog-query";
-import { builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema, productCurrentIdParamsSchema } from "./product-record-id";
+import { builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema, isDomainComponentId, productCurrentIdParamsSchema } from "./product-record-id";
 export {
   BUILTIN_PRODUCT_ID_PREFIX, builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema,
   isBuiltinProductId, productCurrentIdParamsSchema,
@@ -146,7 +147,7 @@ function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.Ref
 const builtinProjectionDefinition = projectionDefinition.extend({
   visibility: builtinVisibility,
   componentId: projectionDefinition.shape.componentId.refine(
-    componentId => componentId !== METRIC_CHART_COMPONENT, domainProjectionBinding("componentId"),
+    componentId => componentId !== METRIC_CHART_COMPONENT && !isDomainComponentId(componentId), domainProjectionBinding("componentId"),
   ),
 });
 export const builtinProductProjectionInputSchema = builtinProjectionDefinition.superRefine(validateBuiltinProjection);
@@ -414,6 +415,11 @@ export const registerDirectProjectionRequestSchema = registerProductProjectionRe
 /** GET and PUT return the same current record; neither accepts a historical revision selector. */
 export const productProjectionResponseSchema = z.object({ projection: currentProjectionRecordSchema }).strict();
 export type ProductProjectionResponse = z.infer<typeof productProjectionResponseSchema>;
+
+/** The authorized render read may include source for the one component the projection names. */
+export const productProjectionRenderResponseSchema = productProjectionResponseSchema.extend({
+  domainComponent: domainComponentRuntimeSchema.optional(),
+});
 
 /**
  * Source registration accepts only the card identity. The owner authorizes the source and derives the binding,

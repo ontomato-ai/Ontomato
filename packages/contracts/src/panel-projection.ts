@@ -2,6 +2,7 @@ import {
   applicationCatalogueScopeSchema, applicationCatalogueSortSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
 } from "./product-catalog-query";
 import { z } from "zod";
+import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
@@ -73,7 +74,7 @@ export const projectionOperationBindingSchema = z.object({
 export type ProjectionOperationBinding = z.infer<typeof projectionOperationBindingSchema>;
 
 export const directProjectionPortsSchema = z.object({
-  componentId: z.string().regex(/^(?:@[^@\s/:]+\/)?[^@\s/:]+:[^@\s/:]+$/u, "Expected a package-qualified component name"),
+  componentId: componentIdSchema,
   inputs: z.record(readKey, directProjectionInputTypeSchema),
   outputs: z.record(readKey, directPanelPortTypeSchema),
   data: z.record(readKey, directProjectionDataSchema),
