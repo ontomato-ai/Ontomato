@@ -1057,7 +1057,8 @@ it("reads agent settings and reference options with the panel viewer", async () 
   expect(panelFormDescriptionSchema.parse(await ready("definition", "createForm")).values).toMatchObject({
     name: "", enabled: true, modelSelection: { modelId: null }, skills: [],
   });
-  expect(panelOptionListSchema.parse(await ready("models", "options")).options.map(option => option.value)).toEqual(["demo/chat"]);
+  // The empty choice, following the domain's default model, comes first (原页面对照《智能体设置》, f3468a825).
+  expect(panelOptionListSchema.parse(await ready("models", "options")).options.map(option => option.value)).toEqual([null, "demo/chat"]);
   const models = panelOptionListSchema.parse(await ready("models", "selected", { values: ["demo/missing", "demo/chat", null] }));
   expect(models.options.map(option => option.value)).toEqual(["demo/missing", "demo/chat", null]);
   expect(models.options[0]?.unavailable?.reason).toEqual(expect.any(String));
