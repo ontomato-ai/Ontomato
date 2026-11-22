@@ -93,9 +93,11 @@ export interface PanelInstance {
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
   /** The form adapters its projections registered, for the draft its address names. */
   readonly forms: PanelFormAdapters;
-  /** Set once a mounted form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
+  /** Set once a form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
   receiveDraft(value: ReceivedPanelDraft<Record<string, unknown>>): void;
+  /** Clears a draft tentatively claimed by an unmounted member when its form still cannot be drawn on screen. */
+  rollbackDraft(value: ReceivedPanelDraft<Record<string, unknown>>): void;
   /**
    * Ends the draft a form in `slot` holds, once the reader saved or discarded it: a saved create draft first records the
    * object it created (`created`), then whoever listens hears which draft ended. A slot that holds no draft has nothing
@@ -239,7 +241,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     if (!found) throw new Error(`The panel offers no operation '${id}'`);
     return found.invoke(input);
   }
-  const forms = new PanelFormAdapters(options.reportDraftError);
+  const forms = new PanelFormAdapters(options.reportDraftError, Object.keys(manifest.members));
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
   const highlights = shallowReactive(new Map<string, Readonly<Ref<PageHighlight | null>>>());
@@ -274,6 +276,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     forms,
     draft: readonly(draft) as Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>,
     receiveDraft(value) { draft.value = value; },
+    rollbackDraft(value) { if (draft.value === value) draft.value = null; },
     async settleDraft(slot, created) {
       const ended = draft.value;
       if (ended?.slot !== slot) return;

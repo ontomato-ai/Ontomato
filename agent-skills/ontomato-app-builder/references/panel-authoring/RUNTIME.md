@@ -60,7 +60,7 @@ interface PanelInstance {
   // A computed context, read only at its top: a deep read-only type of it recurses through the member paths' JSON values
   // (a nested panel's selection) without end.
   readonly pageContext: ComputedRef<PageContext>;
-  /** Set once a mounted form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
+  /** Set once a form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;

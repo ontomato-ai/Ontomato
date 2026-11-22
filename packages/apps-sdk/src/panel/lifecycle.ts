@@ -74,18 +74,25 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     if (!link) return;
     // A draft that cannot be used is that draft's problem: the panel goes on without it.
     await receivePanelDraft(options.pageKey, instance.forms, { readPageDraft: options.readPageDraft },
-      link, instance.receiveDraft, () => currentDraft === key, () => { if (currentDraft === key) reports.draftOpened(); })
+      link, instance.receiveDraft, () => currentDraft === key, () => { if (currentDraft === key) reports.draftOpened(); },
+      instance.rollbackDraft)
       .catch((reason: unknown) => reports.draftRefused(reason instanceof PanelDraftUnusable ? reason : unreadableDraft(link.path, reason)));
   }
   async function followAddress(next: string) {
-    const desired = panelAddressState(next);
-    const patch: Record<string, PanelStateValue> = {};
-    for (const [name, field] of Object.entries(instance.manifest.state)) {
-      if (!field.deepLink) continue;
-      const value = desired[name] ?? null;
-      if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) patch[name] = value;
+    const hasState = new URL(next, "http://page.invalid").searchParams.has("state");
+    const hasDraft = pageDraftLinkOf(next) !== null;
+    // A draft link without an explicit `state` parameter opens over the page as it is rather than wiping deep-link
+    // selections (which would unmount conditional `v-if` forms before the draft is even read).
+    if (hasState || !hasDraft) {
+      const desired = panelAddressState(next);
+      const patch: Record<string, PanelStateValue> = {};
+      for (const [name, field] of Object.entries(instance.manifest.state)) {
+        if (!field.deepLink) continue;
+        const value = desired[name] ?? null;
+        if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) patch[name] = value;
+      }
+      instance.state.setState(patch);
     }
-    instance.state.setState(patch);
     address.value = next;
     await followDraft();
   }
