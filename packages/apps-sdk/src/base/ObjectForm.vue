@@ -509,9 +509,13 @@ useProjectionForm({
 });
 
 function discard() {
+  const refused = refusal.value;
+  const reopen = refused instanceof PlatformObjectRefusal &&
+    Object.keys(refused.fields).length === 0 && Object.keys(refused.savedFields).length === 0;
   held = null;
   adopt(ownerOpened.value!);
   emit("discarded");
+  if (reopen) load(target.value);
   void panel.instance.settleDraft(slot.slot).catch(showRefusal);
 }
 

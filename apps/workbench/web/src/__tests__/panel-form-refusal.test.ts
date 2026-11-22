@@ -3,7 +3,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import { formSaveCalls, humanIntents, ignoreChanges,
+import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
   SCHEDULED_TASK,
   inside,
   installPlatform,
@@ -126,5 +126,16 @@ describe("a panel's form when the owner refuses a save", () => {
     // Counted by the fields the reader changes.
     await expect(context.instance.invoke(save.id)).rejects.toThrow(twoFields.message);
     await vi.waitFor(() => expect(foot()).toEqual(["2 fields need changing"]));
+
+    context.instance.forms.handle("form")!.set("/caseSetId", "set-retired");
+    refusals.push(conflict);
+    await expect(context.instance.invoke(save.id)).rejects.toThrow(conflict.message);
+    const beforeDiscard = sent.length;
+    const discard = [...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")]
+      .find(button => button.textContent?.trim() === "Discard")!;
+    await vi.waitFor(() => expect(discard.disabled).toBe(false));
+    discard.click();
+    await confirmDiscard();
+    await vi.waitFor(() => expect(sent.slice(beforeDiscard)).toContainEqual(expect.objectContaining({ path: taskPath, method: "GET" })));
   });
 });
