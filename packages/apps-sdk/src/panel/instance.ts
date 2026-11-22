@@ -1,3 +1,4 @@
+import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
@@ -118,6 +119,8 @@ export interface PanelInstance {
   runHandler(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
   /** The owner's description of one of this panel's operations, by its ID. */
   describeOperation(operationId: string): Promise<PanelOperationDescriptor>;
+  /** Stages a file the reader picked for one of this panel's operations that declares an upload (see `PanelHumanOperations.upload`). */
+  uploadFile(operationId: string, file: File): Promise<PanelUploadReceipt>;
   /** Runs a read-only operation as the reader: what it read, with nothing written and nothing reported changed. */
   readOperation(operationId: string, call: { target: PanelOperationCall["target"]; input: ReadOperationInput }): Promise<PanelReadOperationResult>;
   /**
@@ -320,6 +323,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     describeOperation: (operationId) => options.operations.describe(operationId, operationPath(operationId)),
     readOperation: (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
+    uploadFile: (operationId, file) => options.operations.upload(operationId, file, operationPath(operationId)),
     writeOperation,
     objectChanged,
     letGo(removed) {

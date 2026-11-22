@@ -4,6 +4,7 @@ export const baseComponents = {
   ObjectSummary: () => import("./base/ObjectSummary.vue").then(module => module.default),
   ObjectForm: () => import("./base/ObjectForm.vue").then(module => module.default),
   OperationButton: () => import("./base/OperationButton.vue").then(module => module.default),
+  FileUploadControl: () => import("./base/FileUploadControl.vue").then(module => module.default),
   SegmentedControl: () => import("./base/SegmentedControl.vue").then(module => module.default),
   GraphCanvas: () => import("@ontomato/foundation-ui/graph").then(module => module.GraphCanvas),
   G6GraphCanvas: () => import("@ontomato/foundation-ui/graph/g6").then(module => module.G6GraphCanvas),

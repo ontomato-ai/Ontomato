@@ -225,6 +225,18 @@ export const components: readonly ComponentMetadata[] = [
     data: {},
   }),
   defineComponentMeta({
+    componentId: "FileUploadControl",
+    module: "@ontomato/sdk/base",
+    exportName: "FileUploadControl",
+    role: "control",
+    meaning:
+      "The control of one operation its projection names (`config.operation`) whose owner takes a file (it declares an `upload`, such as `skills.import`): it opens the file picker for the declared kinds, checks the file's kind and size, uploads it and runs the operation once with it, and shows the owner's answer with the file's name and size. Optional `intro` and `rules` are shown before the picker. With `overwrite-on` set to the owner's refusal code for an existing item (for `skills.import`, `SKILL_EXISTS`), it sends the same file again with `overwrite: true`, and the platform's confirmation, naming the file and what it replaces, is the one question the reader answers.",
+    effects: "Uploads the picked file for the named operation and runs it as the reader, as its owner admits it now.",
+    bindsElement: ["PlatformOperation:*"],
+    // The control reads no datum: its operation is the projection's, described by its owner as admitted now.
+    data: {},
+  }),
+  defineComponentMeta({
     componentId: "ReferencePicker",
     module: "@ontomato/sdk/base",
     exportName: "ReferencePicker",
