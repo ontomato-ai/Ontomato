@@ -12,7 +12,8 @@ import { authoredReadParameterSource, directReadDeclaration, panelReadParameterI
 import {
   AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
-  ONTOLOGY_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
+  ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
+  PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
   type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -35,6 +36,7 @@ import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-re
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
+import { createGovernanceReadAdapters } from "../governance/panel-reads";
 import type { SkillResolveRequest } from "../skills/panel-reads";
 import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
@@ -65,6 +67,7 @@ function customerReads(owner: ProductOwner, viewer: AssistantCredentials, caller
 
 function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
+  const governance = createGovernanceReadAdapters(viewer);
   const ontology = async () => {
     const { createPlatformOntologyReadAdapter } = await import("../platform-ontology/panel-reads");
     return createPlatformOntologyReadAdapter(owner, viewer, callerUserName);
@@ -232,6 +235,11 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         page: panelReadParameterSchemas.page.optional().parse(params.page),
       }),
       resolve: async (_selection, params) => (await options()).users.resolve(params.values as readonly unknown[]),
+      query: (_selection, params) => governance.users.query(params),
+      record: selection => governance.users.record(selection.primaryKey!),
+      form: (selection, params) => governance.users.form(selection.primaryKey!, formParams(params)),
+      effectivePermissions: selection => governance.users.effectivePermissions(selection.primaryKey!),
+      lookupAccount: (_selection, params) => governance.users.lookupAccount(panelReadParameterSchemas.keyword.parse(params.keyword)),
     },
     [ROLE]: {
       options: async (_selection, params) => {
@@ -250,6 +258,54 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
             .map(id => ({ primaryKey: id, value: id, label: byId.get(id) ?? id })),
         };
       },
+      query: (_selection, params) => governance.roles.query(params),
+      record: selection => governance.roles.record(selection.primaryKey!),
+      form: (selection, params) => governance.roles.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => governance.roles.createForm(formParams(params)),
+    },
+    [PERMISSION_POLICY]: {
+      options: () => governance.policies.options(),
+      resolve: (_selection, params) => governance.policies.resolve(panelReadParameterSchemas.optionValues.parse(params.values)),
+      query: (_selection, params) => governance.policies.query(params),
+      record: selection => governance.policies.record(selection.primaryKey!),
+      form: (selection, params) => governance.policies.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => governance.policies.createForm(formParams(params)),
+      menuPermissions: selection => governance.policies.menuPermissions(selection.primaryKey!),
+      apiPermissions: (selection, params) => governance.policies.apiPermissions(
+        selection.primaryKey!, panelReadParameterSchemas.keyword.optional().parse(params.search),
+      ),
+      dataPermissions: selection => governance.policies.dataPermissions(selection.primaryKey!),
+    },
+    [ORG_UNIT]: {
+      list: () => governance.orgUnits.list(),
+      options: () => governance.orgUnits.options(),
+      resolve: (_selection, params) => governance.orgUnits.resolve(panelReadParameterSchemas.optionValues.parse(params.values)),
+      record: selection => governance.orgUnits.record(selection.primaryKey!),
+      form: (selection, params) => governance.orgUnits.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => governance.orgUnits.createForm({
+        ...formParams(params), parentId: panelReadParameterSchemas.keyword.optional().parse(params.parentId),
+      }),
+      members: selection => governance.orgUnits.members(selection.primaryKey!),
+      memberCandidates: (selection, params) => governance.orgUnits.memberCandidates(
+        selection.primaryKey!, panelReadParameterSchemas.keyword.optional().parse(params.keyword),
+      ),
+      positions: selection => governance.orgUnits.positions(selection.primaryKey!),
+      grants: selection => governance.orgUnits.grants(selection.primaryKey!),
+      inheritedGrants: selection => governance.orgUnits.inheritedGrants(selection.primaryKey!),
+    },
+    [ORG_MEMBERSHIP]: {
+      record: selection => governance.orgMemberships.record(selection.primaryKey!),
+    },
+    [ORG_POSITION]: {
+      record: selection => governance.orgPositions.record(selection.primaryKey!),
+      form: (selection, params) => governance.orgPositions.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => governance.orgPositions.createForm({
+        ...formParams(params), orgId: panelReadParameterSchemas.keyword.parse(params.orgId),
+      }),
+    },
+    [ORG_GRANT]: {
+      record: selection => governance.orgGrants.record(selection.primaryKey!),
+      form: (selection, params) => governance.orgGrants.form(selection.primaryKey!, formParams(params)),
     },
     [SKILL]: {
       async options() {
