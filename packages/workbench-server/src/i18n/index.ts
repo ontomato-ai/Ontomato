@@ -90,6 +90,14 @@ export function getConclusionPrefix(locale?: string): string {
   return packs.get(target)?.conclusionPrefix || packs.get(defaultLocale)?.conclusionPrefix || target;
 }
 
+function formatMessage(message: TranslationValue, params?: Record<string, any>): string {
+  if (typeof message === "function") return message(params);
+  if (!params) return message;
+  return message.replace(/\{(\w+)\}/g, (_, paramKey) => {
+    return params[paramKey] !== undefined ? String(params[paramKey]) : `{${paramKey}}`;
+  });
+}
+
 function translate(locale: Locale, key: string, params?: Record<string, any>): string {
   assertConfigured();
   const message = packs.get(locale)?.messages[key] || packs.get(defaultLocale)?.messages[key];
@@ -97,11 +105,7 @@ function translate(locale: Locale, key: string, params?: Record<string, any>): s
     createLogger("i18n").warn(`Missing translation key: ${key}`);
     return key;
   }
-  if (typeof message === "function") return message(params);
-  if (!params) return message;
-  return message.replace(/\{(\w+)\}/g, (_, paramKey) => {
-    return params[paramKey] !== undefined ? String(params[paramKey]) : `{${paramKey}}`;
-  });
+  return formatMessage(message, params);
 }
 
 export function t(key: string, params?: Record<string, any>): string {
@@ -119,4 +123,21 @@ export function tForLocale(
   params?: Record<string, any>
 ): string {
   return translate(locale ? resolveLocale(locale) : getLocale(), key, params);
+}
+
+/**
+ * Looks up a translation strictly in the resolved locale pack without falling back to defaultLocale
+ * or logging a missing-key warning, allowing callers to keep a source-of-truth English fallback.
+ */
+export function tOptionalForLocale(
+  locale: string | undefined,
+  key: string,
+  params?: Record<string, any>
+): string | undefined {
+  const resolved = locale ? resolveLocale(locale) : getLocale();
+  const messages = packs.get(resolved)?.messages;
+  if (!messages || !Object.hasOwn(messages, key)) return undefined;
+  const message = messages[key];
+  if (!message) return undefined;
+  return formatMessage(message, params);
 }

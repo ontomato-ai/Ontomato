@@ -8,7 +8,7 @@ import { appsSdkComponentCatalogSchema, appsSdkComponentDatum } from "@ontomato/
 import { directReadDeclaration, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { panelReadResultIdSchema } from "@ontomato/contracts/panel-operations";
 import type { BuiltinProductProjectionInput, ProductProjectionInput } from "@ontomato/contracts/product-panels";
-import { tForLocale } from "../../i18n";
+import { tForLocale, tOptionalForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { readCurrentAppSdkComponents } from "../app-builder/sdk";
 import { listComponentPackages, readComponentPackage } from "../component-packages/store";
@@ -28,10 +28,10 @@ export async function readAuthorComponentCatalogue(owner: ProductOwner) {
   const [{ components }, deployed, registered] = await Promise.all([
     readPanelComponentCatalogue(), listComponentPackages(), listVisibleDomainComponents(owner.domainId, owner.userId),
   ]);
-  const definitions = new Map<string, { declaration: ComponentDeclaration; label: string; packageName?: string }>();
+  const definitions = new Map<string, { declaration: ComponentDeclaration; label: string; packageName?: string; official?: boolean }>();
   for (const [componentId, declaration] of components) {
     definitions.set(componentId, {
-      declaration, label: declaration.componentId, packageName: componentId.slice(0, componentId.lastIndexOf(":")),
+      declaration, label: declaration.componentId, packageName: componentId.slice(0, componentId.lastIndexOf(":")), official: true,
     });
   }
   for (const release of deployed) {
@@ -44,6 +44,20 @@ export async function readAuthorComponentCatalogue(owner: ProductOwner) {
   return definitions;
 }
 
+function localizeOfficialComponentText(
+  declaration: ComponentDeclaration,
+  official: boolean | undefined,
+  locale: string | undefined,
+): { meaning: string; effects: string | undefined } {
+  if (!official) return { meaning: declaration.meaning, effects: declaration.effects };
+  const keyPrefix = `panels.sdkComponent.catalog.${declaration.componentId}`;
+  const meaning = tOptionalForLocale(locale, `${keyPrefix}.meaning`) ?? declaration.meaning;
+  const effects = declaration.effects !== undefined
+    ? (tOptionalForLocale(locale, `${keyPrefix}.effects`) ?? declaration.effects)
+    : undefined;
+  return { meaning, effects };
+}
+
 export async function listSdkComponents(owner: ProductOwner, locale: string | undefined, search?: string): Promise<PanelRecord[]> {
   const components = await readAuthorComponentCatalogue(owner);
   const term = search?.trim().toLowerCase();
@@ -51,11 +65,16 @@ export async function listSdkComponents(owner: ProductOwner, locale: string | un
     package: tForLocale(locale, "panels.sdkComponent.package"),
     meaning: tForLocale(locale, "panels.sdkComponent.meaning"),
   };
-  return [...components].flatMap(([primaryKey, { label, declaration: { meaning, effects }, packageName }]) => {
-    if (term && ![primaryKey, label, packageName, meaning, effects].some(text => text?.toLowerCase().includes(term))) return [];
+  return [...components].flatMap(([primaryKey, { label, declaration, packageName, official }]) => {
+    const localized = localizeOfficialComponentText(declaration, official, locale);
+    if (
+      term
+      && ![primaryKey, label, packageName, declaration.meaning, declaration.effects, localized.meaning, localized.effects]
+        .some(text => text?.toLowerCase().includes(term))
+    ) return [];
     return [{
       primaryKey, label,
-      fields: { package: packageName ?? tForLocale(locale, "panels.sdkComponent.domain"), meaning }, fieldLabels,
+      fields: { package: packageName ?? tForLocale(locale, "panels.sdkComponent.domain"), meaning: localized.meaning }, fieldLabels,
     }];
   });
 }
@@ -63,7 +82,13 @@ export async function listSdkComponents(owner: ProductOwner, locale: string | un
 export async function readSdkComponent(owner: ProductOwner, componentId: string, locale: string | undefined) {
   const definition = (await readAuthorComponentCatalogue(owner)).get(componentId);
   if (!definition) throw new HttpError(404, tForLocale(locale, "panels.sdkComponent.notFound", { componentId }), "SDK_COMPONENT_NOT_FOUND");
-  return definition.declaration;
+  if (!definition.official) return definition.declaration;
+  const localized = localizeOfficialComponentText(definition.declaration, true, locale);
+  return {
+    ...definition.declaration,
+    meaning: localized.meaning,
+    ...(localized.effects !== undefined ? { effects: localized.effects } : {}),
+  };
 }
 
 /** Resolve a projection's component from the SDK or the package's enabled release. */
