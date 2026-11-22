@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import PlatformPageHeader from "../PlatformPageHeader.vue";
-import { createApp, defineComponent, h, nextTick, ref, type Ref } from "vue";
+import { createApp, defineComponent, h, markRaw, nextTick, ref, type Ref } from "vue";
 import { providePageActions, usePageActions, type PlatformPageActions } from "../page-actions";
 
 describe("page header actions", () => {
@@ -72,7 +72,7 @@ describe("page header actions", () => {
         title: "Applications",
         moreLabel: "More",
         actions: [
-          { id: "refresh", label: "Refresh", icon: defineComponent({ render: () => h("svg") }), iconOnly: true, onClick: refresh },
+          { id: "refresh", label: "Refresh", icon: markRaw(defineComponent({ render: () => h("svg") })), iconOnly: true, onClick: refresh },
           { id: "create", label: "Create", primary: true, onClick: firstPrimary },
           { id: "import", label: "Import", primary: true, onClick: secondPrimary },
           { id: "delete", label: "Delete", danger: true, onClick: danger },
@@ -81,7 +81,9 @@ describe("page header actions", () => {
       },
     });
     try {
-      const visible = wrapper.findAll<HTMLButtonElement>(".page-actions > button.action");
+      const refreshButton = wrapper.get<HTMLButtonElement>('.page-actions > button.icon-action[aria-label="Refresh"]');
+      expect(refreshButton.exists()).toBe(true);
+      const visible = wrapper.findAll<HTMLButtonElement>(".page-actions > button.action:not(.icon-action)");
       expect(visible.map((button) => button.text().trim())).toEqual(["Create", "Import"]);
       expect(visible[0]!.classes()).toContain("primary");
       expect(visible[1]!.classes()).toContain("secondary");

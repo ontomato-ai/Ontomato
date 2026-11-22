@@ -61,9 +61,10 @@ describe("createPanelBackController", () => {
       window.history.replaceState({ current: "/apps/om/applications" }, "", "/apps/om/applications");
       window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
       await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1));
-      await nextTick();
+      await vi.waitFor(() =>
+        expect(window.location.pathname + window.location.search).toBe("/apps/om/applications?state=app-1"),
+      );
       expect(onBack).not.toHaveBeenCalled();
-      expect(window.location.pathname + window.location.search).toBe("/apps/om/applications?state=app-1");
       expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toEqual(expect.any(String));
 
       // Confirm: onBack runs once.
@@ -114,6 +115,7 @@ describe("createPanelBackController", () => {
       dirty = true;
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
       await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1));
+      await confirmLeaveUnsaved.mock.results[0]!.value;
       await nextTick();
       expect(outerBack).not.toHaveBeenCalled();
 
@@ -150,9 +152,7 @@ describe("confirmDanger and unified unsaved-changes confirmation", () => {
         autofocus: false,
       }),
     );
-    await nextTick();
-    await nextTick();
-    expect(document.activeElement).toBe(cancel);
+    await vi.waitFor(() => expect(document.activeElement).toBe(cancel));
     resolveConfirm("confirm" as never);
     expect(await pending).toBe(true);
   });

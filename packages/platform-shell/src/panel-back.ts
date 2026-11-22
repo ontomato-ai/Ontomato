@@ -190,20 +190,23 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
     // Stop Vue Router from committing the underlying list URL while the reader decides whether to discard edits.
     event.stopImmediatePropagation();
     handlingBack = true;
-    void options.confirmLeaveUnsaved().then((allowed) => {
-      if (disposed) return;
-      if (allowed) {
-        entry.poppedByHistory = true;
-        removeEntry(entry);
-        entry.onBack();
-        return;
+    void (async () => {
+      try {
+        const allowed = await options.confirmLeaveUnsaved();
+        if (disposed) return;
+        if (allowed) {
+          entry.poppedByHistory = true;
+          removeEntry(entry);
+          entry.onBack();
+          return;
+        }
+        if (stack.includes(entry) && typeof window !== "undefined") {
+          window.history.pushState(entry.pushedState, "", entry.pushedUrl);
+        }
+      } finally {
+        handlingBack = false;
       }
-      if (stack.includes(entry) && typeof window !== "undefined") {
-        window.history.pushState(entry.pushedState, "", entry.pushedUrl);
-      }
-    }).finally(() => {
-      handlingBack = false;
-    });
+    })();
   }
 
   function onKeydown(event: KeyboardEvent) {
@@ -235,11 +238,14 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
       return;
     }
     handlingBack = true;
-    void options.confirmLeaveUnsaved().then((allowed) => {
-      if (!disposed && allowed) invoke();
-    }).finally(() => {
-      handlingBack = false;
-    });
+    void (async () => {
+      try {
+        const allowed = await options.confirmLeaveUnsaved();
+        if (!disposed && allowed) invoke();
+      } finally {
+        handlingBack = false;
+      }
+    })();
   }
 
   if (typeof window !== "undefined") {
