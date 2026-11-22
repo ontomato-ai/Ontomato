@@ -332,9 +332,11 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   ],
   [bindingKey({ kind: "PlatformOperation", id: EXPORT_SKILL })]: [
     { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/export$/ },
+    panelReadOperationRequest,
   ],
   [bindingKey({ kind: "PlatformOperation", id: EXPORT_FEEDBACK })]: [
     { method: "GET", service: "", path: /^\/feedback\/export(?:\?[^#]+)?$/ },
+    panelReadOperationRequest,
   ],
 };
 

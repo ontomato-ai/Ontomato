@@ -1,6 +1,6 @@
 <style>
   [v-cloak] { display: none; }
-  .skills { display: flex; flex-direction: column; gap: var(--spacing-md); min-height: 0; min-width: 0; container-type: inline-size; }
+  .skills { display: flex; flex-direction: column; gap: var(--spacing-sm); min-height: 0; min-width: 0; container-type: inline-size; }
   .skills-bar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: var(--spacing-sm); }
   .skills-data { display: none; }
   .skills-body {
@@ -36,14 +36,13 @@
   }
   .detail-head {
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: var(--spacing-xs) var(--spacing-md);
+    flex-direction: column;
+    gap: var(--spacing-sm);
     padding: var(--spacing-md) var(--spacing-lg);
     border-bottom: 1px solid var(--ui-divider);
     flex-shrink: 0;
   }
-  .detail-meta { display: flex; flex: 1 1 16rem; flex-direction: column; gap: var(--spacing-xs); min-width: 0; }
+  .detail-meta { display: flex; flex-direction: column; gap: var(--spacing-xs); min-width: 0; }
   .detail-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); min-width: 0; }
   .detail-name {
     margin: 0;
@@ -73,10 +72,8 @@
   .detail-actions {
     display: flex;
     flex-wrap: wrap;
-    flex: none;
     align-items: flex-start;
     gap: var(--spacing-sm);
-    margin-inline-start: auto;
   }
   .package {
     display: grid;

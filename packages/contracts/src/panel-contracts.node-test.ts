@@ -1898,7 +1898,9 @@ test("knowledge, feedback and skill reads stay at their declared owners", () => 
     [DELETE_KNOWLEDGE, "POST", "/data-query", "/admin/delBussinessKnowledge"],
     [DELETE_SKILL, "DELETE", "", "/skills/skill"],
     [EXPORT_SKILL, "GET", "", "/skills/skill/export"],
+    [EXPORT_SKILL, "POST", "", "/panel-operations/read"],
     [EXPORT_FEEDBACK, "GET", "", "/feedback/export?keyword=sample"],
+    [EXPORT_FEEDBACK, "POST", "", "/panel-operations/read"],
   ] as const) {
     const key = bindingKey({ kind: "PlatformOperation", id: operation });
     assert.ok(clientSends([key], method, service, path));
