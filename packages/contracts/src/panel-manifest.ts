@@ -2,7 +2,20 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema } from "./form-fields";
 import { pageDraftLinkSchema } from "./page-draft";
+import {
+  panelMemberItemKeySchema,
+  panelObjectRefSchema,
+  type PanelMemberItemKey,
+  type PanelObjectRef,
+} from "./panel-object-ref";
 import { APPLICATION_PANEL_USE, PRODUCT_PANEL, PRODUCT_PROJECTION, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
+
+export {
+  panelMemberItemKeySchema,
+  panelObjectRefSchema,
+  type PanelMemberItemKey,
+  type PanelObjectRef,
+};
 
 /* The registered manifest describes a panel instance's state, placements, ports and events. Resource owners
  * describe their own operations. A frame and a direct instance consume the same registered declaration. */
@@ -100,13 +113,6 @@ export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
 export function matchesObjectType(field: OntologyObjectUnionType | z.infer<typeof ontologyObjectTypeSchema>, className: string): boolean {
   return field.kind === "object" ? field.objectType === className : objectUnionTypes(field).includes(className);
 }
-
-/** An object reference in panel state. */
-export const panelObjectRefSchema = z.object({
-  className: z.string().min(1).max(200),
-  primaryKey: z.string().min(1).max(1000),
-}).strict();
-export type PanelObjectRef = z.infer<typeof panelObjectRefSchema>;
 
 /** Values that can cross the address and deep-link state boundary. */
 export const panelDeepLinkStateValueSchema = z.union([
@@ -368,13 +374,6 @@ export const panelPlacementSchema = z.object({
   theme: placementPorts.theme,
 }).strict();
 export type PanelPlacement = z.infer<typeof panelPlacementSchema>;
-
-/** Stable row identity inside a list: primaryKey for homogeneous lists, or `{className, primaryKey}` for heterogeneous lists. */
-export const panelMemberItemKeySchema = z.union([
-  panelObjectRefSchema.shape.primaryKey,
-  panelObjectRefSchema,
-]);
-export type PanelMemberItemKey = z.infer<typeof panelMemberItemKeySchema>;
 
 export const panelMemberPathSegmentSchema = z.object({
   member: key,

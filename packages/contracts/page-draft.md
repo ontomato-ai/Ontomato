@@ -10,7 +10,7 @@ conversation no longer uses. The one fact kept beside it is the object a create 
 type PageDraft<Form> = {
   pageKey: string;          // the page's registration key, e.g. agent-settings
   operation: string;        // the page's own form action, e.g. agent.update
-  target: { objectType: string; id?: string }; // the type and, for an edit, the owner's opaque id
+  target: { objectType: string; id?: string; itemKey?: PanelMemberItemKey }; // target object, plus optional embedded row key
   form: Form;               // the page's save request body
   created?: { id: string }; // read only: the object a create draft's first save created
 };
@@ -50,11 +50,11 @@ that names its target is `409 PAGE_DRAFT_NOT_CREATE`. The agent's file is never 
 `created` itself: only the read adds it, from the record. The record lives in `assistant_page_draft_creations`, keyed
 by the conversation, the run and the draft's path, and goes with its conversation.
 
-The shared `draftTarget(draft)` returns `{ kind: "update", objectType, id }` for an edit or a draft that
-carries `created`, and `{ kind: "create", objectType }` for a new object. A create draft saved once is from
-then on an update of the object it created, so its link opens that object and, unchanged, opens it as it is. If that
-object has since been deleted, the page reports it missing as it would any missing object; it never offers the create
-again.
+The shared `draftTarget(draft)` returns `{ kind: "update", objectType, id }` (with `itemKey` preserved when editing an
+embedded row under a parent object) for an edit or a draft that carries `created`, and `{ kind: "create", objectType }`
+for a new object. A create draft saved once is from then on an update of the object it created, so its link opens that
+object and, unchanged, opens it as it is. If that object has since been deleted, the page reports it missing as it
+would any missing object; it never offers the create again.
 
 Filling, marking the changed fields and saving stay in the page: opening a draft never calls a write endpoint, and the
 saved call is the page's own. A draft is a change to the object the page reads: when filling it in changes nothing —

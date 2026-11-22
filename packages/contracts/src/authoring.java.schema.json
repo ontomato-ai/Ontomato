@@ -1812,6 +1812,35 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200
+            },
+            "itemKey": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "className": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "primaryKey": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    }
+                  },
+                  "required": [
+                    "className",
+                    "primaryKey"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "required": [
