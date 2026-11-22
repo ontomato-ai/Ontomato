@@ -30,10 +30,8 @@ definitions are prepared in this conversation, tested here, and drafted into the
    (`metricViews.test`, Markdown output) and `trialJson` (`metricViews.testExecute`, raw JSON output with truncation
    metadata) — with `{ draft, parameters }`. Neither saves anything. Treat a truncated result as partial, never as the
    complete numbers.
-4. **Draft into the form and leave saving to the reader.** Read the `definition` form for the target: its
-   `save.draftOperation` is `metric-view.create` for a new metric and `metric-view.update` for an existing one. After
-   owner adoption, write the page draft artifact (`{ pageKey: "metric-views", operation, target, form }`) and give the
-   reader a site-relative draft link so they can review the diff and save or discard it.
+4. **Draft into the form and leave saving to the reader.** How to write the draft is in this page's generated skill;
+   the reader reviews it in the `definition` form and saves or discards it.
 
 ## Owner rules this page shows and never rejudges
 
