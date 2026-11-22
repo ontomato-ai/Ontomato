@@ -8,13 +8,23 @@
     height: 100%;
     container-type: inline-size;
   }
+  /* The domain's sizes belong to the canvas's own top edge, on the same strip as its tools: they describe the
+     picture, so they cost the page no line of its own. */
   .og-counts {
+    position: absolute;
+    top: var(--spacing-sm);
+    left: var(--spacing-sm);
+    z-index: 2;
     display: flex;
     align-items: center;
-    gap: var(--spacing-lg);
+    gap: var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--el-bg-color) 88%, transparent);
     color: var(--el-text-color-secondary);
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
+    pointer-events: none;
   }
   .og-counts strong {
     color: var(--el-text-color-primary);
@@ -223,12 +233,6 @@
 </style>
 <div id="app">
   <section class="og">
-    <div class="og-counts">
-      <span :aria-busy="counts.objects === null"><strong>{{ counts.objects ?? "–" }}</strong> 对象类型</span>
-      <span :aria-busy="counts.attributes === null"><strong>{{ counts.attributes ?? "–" }}</strong> 属性</span>
-      <span :aria-busy="counts.relations === null"><strong>{{ counts.relations ?? "–" }}</strong> 关系类型</span>
-    </div>
-
     <el-alert
       v-for="message in readErrors"
       :key="message"
@@ -264,6 +268,11 @@
 
     <div class="og-body">
       <div class="og-canvas" v-loading="loading">
+        <div class="og-counts">
+          <span :aria-busy="counts.objects === null"><strong>{{ counts.objects ?? "–" }}</strong> 对象类型</span>
+          <span :aria-busy="counts.attributes === null"><strong>{{ counts.attributes ?? "–" }}</strong> 属性</span>
+          <span :aria-busy="counts.relations === null"><strong>{{ counts.relations ?? "–" }}</strong> 关系类型</span>
+        </div>
         <projection slot="graph"></projection>
       </div>
 
