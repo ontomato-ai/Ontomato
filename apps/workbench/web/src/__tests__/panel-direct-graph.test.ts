@@ -538,10 +538,19 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
   await nextTick();
   expect(element.querySelector(".el-form-item__error")?.textContent).toContain("Metadata service unavailable");
 
-  // Ready nodes with an empty edges datum still draw the nodes rather than collapsing to an empty graph.
+  // Ready nodes with a forbidden edges datum keep all readable nodes and show a non-blocking notice instead of a blocking error.
   nodesState.value = { status: "ready", value: [{ primaryKey: "Order", label: "Order", fields: {} }] };
+  edgesState.value = { status: "forbidden" };
+  await nextTick();
+  expect(element.querySelector(".el-form-item__error")?.textContent?.trim() ?? "").toBe("");
+  expect(element.querySelector(".el-empty")).toBeNull();
+  expect(element.textContent).toContain("Order");
+  expect(element.querySelector("[data-graph-edges-notice]")?.textContent?.trim()).toBe(publicEn.platform.graphEdgesForbidden);
+
+  // Ready nodes with an empty edges datum still draw the nodes rather than collapsing to an empty graph.
   edgesState.value = { status: "empty" };
   await nextTick();
+  expect(element.querySelector("[data-graph-edges-notice]")).toBeNull();
   expect(element.querySelector(".el-empty")).toBeNull();
   expect(element.textContent).toContain("Order");
 

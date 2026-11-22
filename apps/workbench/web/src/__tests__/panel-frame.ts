@@ -626,7 +626,7 @@ export const noOperations: {
   operations: PanelHumanOperations; confirmOperation: ConfirmPanelOperation; expandPageComposer: () => never; navigate: () => never;
   nested: () => never; readComponentPackage: () => never;
 } = {
-  operations: { describe: unused, read: unused, prepare: unused }, confirmOperation: unused,
+  operations: { describe: unused, read: unused, upload: unused, prepare: unused }, confirmOperation: unused,
   // A test that opens the page's composer gives its own; any other call to it fails the test.
   expandPageComposer: () => { throw new Error("This test opens no composer"); },
   navigate: () => { throw new Error("This test opens no address"); },

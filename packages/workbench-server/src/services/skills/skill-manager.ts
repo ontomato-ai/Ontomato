@@ -39,6 +39,30 @@ function requireWritable(skill: SkillEntry) {
   if (skill.source.kind !== "domain") throw new Error(`Skill ${skill.skill.name} has no writable file source`);
   return skill.source;
 }
+/** The one standard skill package in a ZIP, with its entries under `prefix`. */
+function openSkillZip(bytes: Buffer) {
+  let zip: AdmZip;
+  try { zip = new AdmZip(bytes); }
+  catch { throw new InvalidSkillPackageError("Cannot read skill ZIP"); }
+  const allEntries = zip.getEntries();
+  for (const entry of allEntries) {
+    if (!normalizeSkillPackagePath(entry.entryName.replace(/\/$/, "")) ||
+        ((entry.attr >>> 16) & 0o170000) === 0o120000)
+      throw new InvalidSkillPackageError(`Invalid skill ZIP path: ${entry.entryName}`);
+  }
+  const entries = allEntries.filter((entry) => !entry.isDirectory);
+  const roots = entries.filter((entry) => /^(?:[^/]+\/)?SKILL\.md$/.test(entry.entryName));
+  if (roots.length !== 1) throw new InvalidSkillPackageError("ZIP must contain one standard skill package");
+  const prefix = roots[0]!.entryName.slice(0, -"SKILL.md".length);
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+  let parsed;
+  try { parsed = parseSkillMarkdown(decoder.decode(roots[0]!.getData())); }
+  catch (error) { throw new InvalidSkillPackageError(`Invalid SKILL.md: ${String(error)}`); }
+  if (!parsed) throw new InvalidSkillPackageError("Standard SKILL.md frontmatter is required");
+  const id = parsed.manifest.name;
+  if (isProtectedSkillName(id)) throw new InvalidSkillPackageError("This skill name is reserved");
+  return { id, manifest: parsed.manifest, entries, prefix };
+}
 class SkillManager {
   private info(skill: SkillEntry, locale?: string): SkillInfo {
     const labelPath = publicSkillLabelsPath();
@@ -162,28 +186,15 @@ class SkillManager {
     for (const file of (await skill.provide()).files) zip.addFile(file.path, Buffer.from(file.content, "utf8"));
     return zip.toBuffer();
   }
+  /** The skill an imported package would replace, read without writing; null when its name is new. */
+  async importedSkill(domainId: string, bytes: Buffer, credentials: AssistantCredentials) {
+    const { id } = openSkillZip(bytes);
+    const existing = (await readSkillView(domainId, credentials)).registry.getSkillById(id);
+    return existing ? this.info(existing, credentials.locale) : null;
+  }
   async importSkill(domainId: string, bytes: Buffer, credentials: AssistantCredentials, overwrite = false) {
     return withDomainSkills(domainId, async () => {
-      let zip: AdmZip;
-      try { zip = new AdmZip(bytes); }
-      catch { throw new InvalidSkillPackageError("Cannot read skill ZIP"); }
-      const allEntries = zip.getEntries();
-      for (const entry of allEntries) {
-        if (!normalizeSkillPackagePath(entry.entryName.replace(/\/$/, "")) ||
-            ((entry.attr >>> 16) & 0o170000) === 0o120000)
-          throw new InvalidSkillPackageError(`Invalid skill ZIP path: ${entry.entryName}`);
-      }
-      const entries = allEntries.filter((entry) => !entry.isDirectory);
-      const roots = entries.filter((entry) => /^(?:[^/]+\/)?SKILL\.md$/.test(entry.entryName));
-      if (roots.length !== 1) throw new InvalidSkillPackageError("ZIP must contain one standard skill package");
-      const prefix = roots[0]!.entryName.slice(0, -"SKILL.md".length);
-      const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-      let parsed;
-      try { parsed = parseSkillMarkdown(decoder.decode(roots[0]!.getData())); }
-      catch (error) { throw new InvalidSkillPackageError(`Invalid SKILL.md: ${String(error)}`); }
-      if (!parsed) throw new InvalidSkillPackageError("Standard SKILL.md frontmatter is required");
-      const id = parsed.manifest.name;
-      if (isProtectedSkillName(id)) throw new InvalidSkillPackageError("This skill name is reserved");
+      const { id, manifest, entries, prefix } = openSkillZip(bytes);
       const { registry } = await readSkillView(domainId, credentials);
       const existing = registry.getSkillById(id);
       if (!existing && registry.hasRegisteredName(id))
@@ -193,7 +204,7 @@ class SkillManager {
         previousPath = requireWritable(existing).path;
         if (!overwrite) throw new HttpError(409, `Skill already exists: ${id}`, "SKILL_EXISTS", { skillId: id });
       }
-      return this.replace(domainId, parsed.manifest, previousPath, (directory) => {
+      return this.replace(domainId, manifest, previousPath, (directory) => {
         // Overwrite replaces the whole package, including removed resources.
         fs.rmSync(directory, { recursive: true });
         fs.mkdirSync(directory);

@@ -44,6 +44,7 @@ const DECLARED_DATA = {
   ObjectSummary: { record: ["panelRecord"] },
   ObjectForm: { form: ["panelFormDescription"], createForm: ["panelFormDescription"] },
   OperationButton: {},
+  FileUploadControl: {},
   ReferencePicker: { options: ["panelOptionList"], selected: ["panelOptionList"] },
   ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
   OntologyGraph: { schema: ["panelGraphSchema"], counts: ["panelGraphCounts"], start: ["panelGraphStart"], neighbors: ["panelGraphNeighbors"] },
@@ -202,10 +203,8 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
     });
-    // Components that only ran in the old frame are not offered until each runs in the platform's page: an author never
-    // places one that would not work there.
-    for (const withdrawn of ["FileUploadControl"])
-      assert.equal(declared.get(withdrawn), undefined, `${withdrawn} is not offered`);
+    // The upload control runs its operation through the platform's upload contract, in a frame and in the platform's page.
+    assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwrite-on")?.required, false);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
     const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitle-lines");
     assert.equal(subtitleLines?.required, false);

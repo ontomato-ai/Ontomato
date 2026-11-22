@@ -137,7 +137,12 @@ afterEach(() => {
   Object.assign(canvas, { nodes: [], edges: [], selected: [], selectedEdges: [], editable: false, emit: null, fits: [], zooms: [], categories: [], look: {}, fitsWhole: true });
 });
 
-function mount(editable: boolean, initial: Record<string, unknown> = {}, look: Record<string, unknown> = {}) {
+function mount(
+  editable: boolean,
+  initial: Record<string, unknown> = {},
+  look: Record<string, unknown> = {},
+  overrides: { nodes?: ProductPanelReadResponse; edges?: ProductPanelReadResponse } = {},
+) {
   const projection = graph(editable, look);
   const instance = createDirectPanelInstance(manifest(projection.id), {
     pageKey: "modeling", url: () => "/modeling", label: () => "Modeling", initial: initial as never,
@@ -145,7 +150,8 @@ function mount(editable: boolean, initial: Record<string, unknown> = {}, look: R
     readProjection: async () => projection,
     read: async (request) => {
       if (request.operations) return ready({});
-      return ready(request.dataName === "nodes" ? classes : relations);
+      if (request.dataName === "nodes") return overrides.nodes ?? ready(classes);
+      return overrides.edges ?? ready(relations);
     },
   });
   const element = document.createElement("div");
@@ -309,4 +315,16 @@ it("says nothing when the whole graph is in view", async () => {
   await vi.waitFor(() => expect(canvas.fits).toHaveLength(1));
   await nextTick();
   expect(element.querySelector("[data-graph-hint]")).toBeNull();
+});
+
+it("keeps readable nodes and explains what is hidden when edges are forbidden, while node refusal still blocks the graph", async () => {
+  const partial = mount(false, {}, {}, { edges: { status: "forbidden" } });
+  await vi.waitFor(() => expect(canvas.nodes.map((node) => node.id)).toEqual(["org", "person"]));
+  expect(canvas.edges).toEqual([]);
+  expect(partial.element.querySelector('[role="alert"]')).toBeNull();
+  const notice = partial.element.querySelector<HTMLElement>("[data-graph-edges-notice]");
+  expect(notice?.textContent?.trim()).toBe(publicEn.platform.graphEdgesForbidden);
+
+  const blocked = mount(false, {}, {}, { nodes: { status: "forbidden" } });
+  await vi.waitFor(() => expect(blocked.element.querySelector('[role="alert"]')?.textContent?.trim()).toBe(publicEn.platform.dataForbidden));
 });
