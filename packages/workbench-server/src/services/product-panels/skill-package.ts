@@ -1,3 +1,4 @@
+import type { ComponentDeclaration } from "@ontomato/contracts/component-declaration";
 import { createHash } from "node:crypto";
 import { stringify } from "yaml";
 import { z } from "zod";
@@ -26,7 +27,7 @@ import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOp
 import { panelServerOperationLabel } from "./server-operations";
 import { panelSkillScope } from "./skill-identity";
 
-type ComponentCatalogue = Awaited<ReturnType<typeof readPanelComponentCatalogue>>["components"];
+type ComponentCatalogue = ReadonlyMap<string, ComponentDeclaration>;
 type PanelDefinition = BuiltinProductPanelInput | ProductPanelInput;
 type ProjectionDefinition = BuiltinProductProjectionInput | ProductProjectionInput;
 const verbs = new Intl.ListFormat("en", { type: "conjunction" });
@@ -140,8 +141,8 @@ export async function panelSkillSources(
         : undefined;
       const installedIds = [...new Set(entries.map(([, projection]) => projection.componentId))]
         .filter(componentId => !sdk.components.has(componentId));
-      const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk))] as const));
-      const components = new Map(sdk.components);
+      const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk), scope === "platform" ? null : domainId)] as const));
+      const components = new Map<string, ComponentDeclaration>(sdk.components);
       for (const [id, component] of installed) if (component) components.set(id, component);
       const description = describePanel(panel, new Map(entries), components, locale, names);
       const operationLabels = description.operations.map(({ id, label }) => [id, label]);

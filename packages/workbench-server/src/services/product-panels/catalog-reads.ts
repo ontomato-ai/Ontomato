@@ -9,13 +9,13 @@ import {
   productPanelInputSchema, productVisibilitySchema, registerProductPanelRequestSchema, type ProductVisibility,
   registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
-import type { AppsSdkComponentCatalogEntry } from "@ontomato/contracts/apps-sdk";
+import type { ComponentDeclaration } from "@ontomato/contracts/component-declaration";
 import { domainProductIdSchema } from "@ontomato/contracts/product-record-id";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { ProductOwner } from "../product-governance/grants";
 import { currentProductGrants, currentProductUsedBy, listCurrentProducts } from "./catalog";
-import { readPanelComponentCatalogue } from "./component-catalogue";
+import { readAuthorComponentCatalogue } from "./component-catalogue";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 
 const jsonSchema = (schema: z.ZodTypeAny) => runtimeJsonObjectSchema.parse(zodToJsonSchema(schema, { effectStrategy: "input" }));
@@ -72,7 +72,7 @@ function configurationControl(type: string): [z.ZodTypeAny, PanelFormField["cont
 }
 
 type FormField = ReturnType<typeof formFields>["field"];
-function projectionConfigurationFields(field: FormField, component: AppsSdkComponentCatalogEntry | undefined, config: unknown) {
+function projectionConfigurationFields(field: FormField, component: ComponentDeclaration | undefined, config: unknown) {
   if (!component?.config?.length) return [
     field("/config", directProjectionPortsSchema.shape.config, { kind: "code", language: "json" }),
   ];
@@ -181,14 +181,14 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
   async function describeForm(id: string, values: Record<string, unknown>, editable: boolean, revision?: number, chart = false) {
     const { field, fields } = formFields(viewer.locale, editable, revision === undefined, values.visibility === "platform");
     if (chart) return formResult("projection", id, fields, values, revision);
-    const { components } = await readPanelComponentCatalogue();
-    const candidates = [...components].filter(([key, item]) => key !== METRIC_CHART_COMPONENT && item.data !== undefined);
-    const component = candidates.find(([key]) => key === values.componentId)?.[1];
+    const components = await readAuthorComponentCatalogue(owner);
+    const candidates = [...components].filter(([key, item]) => key !== METRIC_CHART_COMPONENT && item.declaration.data !== undefined);
+    const component = typeof values.componentId === "string" ? components.get(values.componentId)?.declaration : undefined;
     const schema = directProjectionPortsSchema.shape;
     return formResult("projection", id, [
       ...fields,
       field("/componentId", schema.componentId, {
-        kind: "select", options: candidates.map(([value, item]) => option(value, item.componentId)),
+        kind: "select", options: candidates.map(([value, item]) => option(value, item.label)),
       }, { labelKey: "component", refreshOnChange: true }),
       field("/data", schema.data, { kind: "code", language: "json" }),
       ...projectionConfigurationFields(field, component, values.config),
