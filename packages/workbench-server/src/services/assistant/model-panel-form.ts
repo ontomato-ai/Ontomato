@@ -4,6 +4,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { modelLabel } from "@ontomato/contracts/model-selection";
 import { modelOptionsSchema, modelReferenceSchema } from "@ontomato/contracts/model-settings";
 import { MODEL_OPTION } from "@ontomato/contracts/platform-object-types";
+import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import type { PanelFormDescription, PanelFormField, PanelFormRequest, PanelOption } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
 import { tForLocale } from "../../i18n";
@@ -11,6 +12,8 @@ import { validateModelSelection } from "../../platform/agent-runtime/model-selec
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+
+export const DOMAIN_DEFAULT_MODEL_OPTION = "@default";
 
 export const modelPanelValues = z.object({ modelId: modelReferenceSchema.nullable() }).strict();
 export const modelSelectionWrite = z.object({ modelSelection: modelPanelValues }).strict();
@@ -28,7 +31,7 @@ export async function readDomainModelOptions(viewer: AssistantCredentials): Prom
   const chat = models.filter(model => model.type === "chat");
   const current = chat.find(model => model.ref === defaultModelId);
   const following: PanelOption = {
-    primaryKey: "@default",
+    primaryKey: DOMAIN_DEFAULT_MODEL_OPTION,
     value: null,
     label: current
       ? tForLocale(viewer.locale, "panels.agentOptions.domainDefaultModel", { model: modelLabel(current) })
@@ -46,9 +49,39 @@ export async function readDomainModelLabelMap(viewer: AssistantCredentials): Pro
   }
 }
 
+/**
+ * Builds select options for row-style model settings forms where each agent is a field:
+ * `"@default"` represents following the domain default, followed by each domain chat model, plus a disabled entry if
+ * the stored model ID is no longer configured.
+ */
+export function buildModelSelectOptions(
+  domainOptions: readonly PanelOption[], storedModelId: string | null, locale?: string,
+): PanelFormOption[] {
+  const choices: PanelFormOption[] = domainOptions.map(option => ({
+    value: option.value === null ? DOMAIN_DEFAULT_MODEL_OPTION : String(option.value),
+    label: option.label,
+    description: null,
+    disabled: false,
+    disabledReason: null,
+  }));
+  if (storedModelId && !choices.some(choice => choice.value === storedModelId)) {
+    const unavailable = tForLocale(locale, "panels.agentOptions.unavailable");
+    choices.push({
+      value: storedModelId,
+      label: `${storedModelId} (${unavailable})`,
+      description: null,
+      disabled: true,
+      disabledReason: unavailable,
+    });
+  }
+  return choices;
+}
+
 export const formJsonSchema = (schema: z.ZodTypeAny) => runtimeJsonObjectSchema.parse(zodToJsonSchema(schema, { effectStrategy: "input" }));
-export const modelPanelField = (locale?: string): PanelFormField => ({
-  path: "/modelSelection/modelId", label: tForLocale(locale, "panels.agentForm.modelSelection"),
+export const modelPanelField = (locale?: string, meta?: { label?: string; help?: string }): PanelFormField => ({
+  path: "/modelSelection/modelId",
+  label: meta?.label ?? tForLocale(locale, "panels.agentForm.modelSelection"),
+  ...(meta?.help ? { help: meta.help } : {}),
   valueSchema: formJsonSchema(modelPanelValues.shape.modelId),
   required: false, readOnly: false, defaultValue: null,
   control: { kind: "reference", objectType: MODEL_OPTION, multiple: false },
@@ -57,6 +90,7 @@ export const modelPanelField = (locale?: string): PanelFormField => ({
 export async function describeModelPanelForm(
   domainId: string, current: string | null, inputs: Pick<PanelFormRequest, "values">,
   save: Omit<PanelFormDescription["save"], "bodySchema">, locale?: string,
+  meta?: { label?: string; help?: string },
 ): Promise<PanelFormDescription> {
   const values = { modelSelection: { modelId: current }, ...inputs.values };
   const errors: PanelFormDescription["errors"] = [];
@@ -74,7 +108,7 @@ export async function describeModelPanelForm(
     }
   }
   return {
-    fields: [modelPanelField(locale)], values, errors,
+    fields: [modelPanelField(locale, meta)], values, errors,
     save: { ...save, bodySchema: formJsonSchema(modelSelectionWrite) },
   };
 }
