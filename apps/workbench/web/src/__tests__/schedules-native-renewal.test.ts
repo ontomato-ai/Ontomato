@@ -13,6 +13,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import examples from "../../../../../packages/contracts/examples/platform-schedules.json";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
+import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../packages/platform-web/src/detail-selection";
 import { panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
 import source from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.json";
@@ -32,6 +33,10 @@ const row = {
     application: "agents", frequency: "Every Monday", state: "off", nextRun: "", timeZone: "UTC",
     lastRun: "completed", lastRunAt: "2026-11-21T00:00:00Z", lastRunSummary: "**Finished**",
   },
+};
+const operationsRow = {
+  ...row, primaryKey: "10000000-0000-4000-8000-000000000002", label: "Operations test",
+  fields: { ...row.fields, application: "operations", lastRunSummary: "" },
 };
 const target = { kind: "object", objectType: "platform:Application", primaryKey: "schedules" };
 const objectTypes = Object.fromEntries(Object.entries(platformObjectTypes).map(([type, entry]) => [
@@ -74,6 +79,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { ...platformRoutes.layout, component: RouterView, children: [] }, unknownAddressRoute,
   ] });
+  router.beforeEach(detailSelectionGuard(DETAIL_SELECTIONS));
   router.beforeEach(panelEntryGuard(router));
   const sent = installPlatform(request => {
     const { path } = request;
@@ -91,7 +97,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         },
       } : {} });
       switch (body.dataName) {
-        case "rows": return Response.json({ status: "ready", value: [row] });
+        case "rows": return Response.json({ status: "ready", value: [row, operationsRow] });
         case "record": return Response.json({ status: "ready", value: row });
         case "runs": return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });
         case "run": return Response.json({ status: "ready", value: run });
@@ -134,6 +140,15 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       await vi.waitFor(() => expect(element.querySelector(".schedules [data-run].focused")).not.toBeNull());
     }
     await vi.waitFor(() => expect(element.querySelector('.schedules [data-task] [title="Finished"]')?.textContent).toBe("Finished"));
+    if (!refused) {
+      const list = element.querySelector(".schedules");
+      await router.push("/schedules?app=operations");
+      expect(router.currentRoute.value.query.app).toBeUndefined();
+      expect(JSON.parse(String(router.currentRoute.value.query.state))).toEqual({ app: "operations" });
+      await vi.waitFor(() => expect(element.querySelector('.schedules [data-app="operations"]')?.getAttribute("aria-pressed")).toBe("true"));
+      expect(Array.from(element.querySelectorAll(".schedules [data-task]"), item => item.getAttribute("data-task"))).toEqual([operationsRow.primaryKey]);
+      expect(element.querySelector(".schedules")).toBe(list);
+    }
   } finally {
     app.unmount();
   }

@@ -30,29 +30,6 @@ await mountPanel({
     const opRenew = usePanelOperation("renew", "renewCredential");
     const renewalProblem = ref("");
 
-    // Keep the links issued by the original page and execution results working at their original address.
-    onMounted(async () => {
-      const address = new URL(instance.pageContext.value.url, window.location.origin);
-      const params = address.searchParams;
-      const legacyApp = params.get("app");
-      const legacyTask = params.get("taskId");
-      const legacyRun = params.get("runId");
-      if (!legacyApp && !legacyTask && !legacyRun) return;
-      const state = Object.fromEntries(["app", "selectedTask", "runId", "compose"].flatMap(key => {
-        const value = values.value[key];
-        return value == null ? [] : [[key, value]];
-      }));
-      if (legacyApp && !Object.hasOwn(state, "app")) state.app = legacyApp;
-      if (legacyTask && !Object.hasOwn(state, "selectedTask")) {
-        state.selectedTask = { className: TASK, primaryKey: legacyTask };
-      }
-      if (legacyRun && !Object.hasOwn(state, "runId")) state.runId = legacyRun;
-      for (const key of ["app", "taskId", "runId"]) params.delete(key);
-      params.set("state", JSON.stringify(state));
-      await navigate(address.pathname + address.search);
-      instance.state.setState(state);
-    });
-
     // Page-local state.
     const search = ref("");
     // Draft links use the page state to open the owner's form before it checks the draft.
