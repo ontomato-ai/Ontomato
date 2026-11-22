@@ -89,7 +89,7 @@ function mountFormHarness(options: {
   values: PanelFormValues;
   createMode?: boolean;
   locale?: "en" | "zh-CN";
-  config?: Record<string, unknown>;
+  config?: DirectProjection["config"];
   onSave?: (values: PanelFormValues) => void;
 }) {
   const createMode = options.createMode ?? false;
