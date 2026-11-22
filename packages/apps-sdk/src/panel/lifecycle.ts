@@ -2,12 +2,13 @@ import { watch, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import type { PanelDeepLinkStateValue, PanelObjectIdentity, PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelDeepLinkStateValue, PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { panelOperationSchema } from "@ontomato/contracts/panel-manifest";
 import { receivePanelDraft, type PanelDraftSource } from "./draft";
 import { PanelDraftUnusable, unreadableDraft } from "./draft-refusal";
 import { pageDraftLinkOf, type PanelInstance } from "./instance";
+import { checkPanelValue, type PanelFieldValue } from "./state";
 
 /*
  * One panel instance's run beside its host, the same in a panel's frame and in the platform's own document: what it
@@ -85,10 +86,10 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     // selections (which would unmount conditional `v-if` forms before the draft is even read).
     if (hasState || !hasDraft) {
       const desired = panelAddressState(next);
-      const patch: Record<string, PanelStateValue> = {};
+      const patch: Record<string, PanelFieldValue> = {};
       for (const [name, field] of Object.entries(instance.manifest.state)) {
         if (!field.deepLink) continue;
-        const value = desired[name] ?? null;
+        const value = checkPanelValue(instance.manifest, name, desired[name] ?? field.default ?? null);
         if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) patch[name] = value;
       }
       instance.state.setState(patch);

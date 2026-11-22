@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { RefreshCw, X as CloseIcon } from "lucide-vue-next";
 import { ElAlert, ElButton } from "element-plus";
 import { hasPageActions, usePageActions, type PlatformPageAction } from "./page-actions";
+import { confirmDanger } from "./confirm-danger";
+import { createPanelBackController } from "./panel-back";
+import { useOptionalLeaveConfirmation } from "./unsaved-changes";
 
 /**
  * One panel instance, shown full screen, beside a conversation or inside another application, or as an author's candidate
@@ -60,7 +63,23 @@ const props = withDefaults(defineProps<{
    * draft (its address, state and forms). Absent, the instance's address only drops the draft's link.
    */
   leaveDraft?: () => void;
-}>(), { shown: true, wired: () => [], currentEntry: undefined, frameState: undefined, draftToAgent: undefined, leaveDraft: undefined });
+  /**
+   * Whether panel-local back handlers with `pushHistory: true` may push browser history entries. True at full page and
+   * candidate preview; false beside a conversation or for a custom application frame panel.
+   */
+  historyBack?: boolean;
+  /** Optional override for confirming unsaved-change leave outside an enclosing platform shell. */
+  confirmLeave?: () => Promise<boolean>;
+}>(), {
+  shown: true,
+  wired: () => [],
+  currentEntry: undefined,
+  frameState: undefined,
+  draftToAgent: undefined,
+  leaveDraft: undefined,
+  historyBack: true,
+  confirmLeave: undefined,
+});
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
@@ -75,6 +94,47 @@ const emit = defineEmits<{
 }>();
 
 const headerDraftHost = hasPageActions();
+const shellLeave = useOptionalLeaveConfirmation();
+let localLeaveConfirmed = false;
+let localLeavePending: Promise<boolean> | null = null;
+let localLeaveToken = 0;
+
+function confirmLeaveUnsaved(): Promise<boolean> {
+  if (!view.dirty.value) return Promise.resolve(true);
+  if (!props.confirmLeave && shellLeave) return shellLeave.confirm();
+  if (localLeaveConfirmed) return Promise.resolve(true);
+  if (localLeavePending) return localLeavePending;
+  const ask = props.confirmLeave ?? (() => confirmDanger("Leave without saving?", "Unsaved changes"));
+  localLeavePending = ask().then(
+    (ok) => {
+      localLeavePending = null;
+      if (ok) {
+        localLeaveConfirmed = true;
+        const token = ++localLeaveToken;
+        void nextTick()
+          .then(() => nextTick())
+          .then(() => {
+            if (localLeaveToken === token) localLeaveConfirmed = false;
+          });
+      }
+      return ok;
+    },
+    () => {
+      localLeavePending = null;
+      return false;
+    },
+  );
+  return localLeavePending;
+}
+
+const backController = createPanelBackController({
+  active: () => props.shown,
+  allowHistory: () => props.historyBack,
+  isDirty: () => view.dirty.value,
+  confirmLeaveUnsaved,
+});
+onBeforeUnmount(() => backController.dispose());
+
 const view = usePanelInstance(props.port, {
   labels: props.labels,
   label: (source) => {
@@ -90,7 +150,10 @@ const view = usePanelInstance(props.port, {
   currentEntry: props.currentEntry,
   frameState: () => props.frameState as Readonly<Record<string, import("@ontomato/contracts/agent-runtime-values").RuntimeJsonValue>> | undefined,
   headerDraftHost,
+  registerBackHandler: backController.register,
+  confirmLeaveUnsaved,
 });
+watch(() => [props.address, props.initial, view.address.value], () => backController.syncHistorySnapshot(), { flush: "post" });
 const frame = ref<HTMLIFrameElement | null>(null);
 /** Where the panel goes in the page: the element its own component is mounted in, placed once. */
 /** The reader closes the notice: the page goes on as it does without the draft. */

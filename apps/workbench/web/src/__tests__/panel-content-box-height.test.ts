@@ -81,7 +81,7 @@ describe("host content-box height stylesheets", () => {
     const composerCss = stylesOf("../../../../../packages/agent-shell-ui/src/components/PageComposer.vue");
     expect(composerCss).toMatch(/\.page-ask\s*\{[^}]*flex-shrink:\s*0;/s);
     expect(composerCss).not.toMatch(/\.page-ask\s*\{[^}]*position:\s*sticky;/s);
-    expect(composerCss).toMatch(/\.page-ask:has\(\.composer-unfold\)\s*\{[^}]*padding:\s*0;/s);
+    expect(composerCss).toMatch(/\.page-ask:has\(\.composer-unfold\)\s*\{[^}]*padding:[^;]*var\(--shell-composer-foot\);/s);
 
     const layoutCss = stylesOf("../../../../../packages/platform-web/src/PlatformLayout.vue");
     // Conventional pages keep body scrolling and vertical padding.
@@ -106,7 +106,7 @@ describe("host content-box height stylesheets", () => {
     expect(routeCss).toMatch(/\.panel-application-area\s*\{[^}]*padding-bottom:\s*var\(--pane-dock-space,\s*0px\);/s);
 
     const paneCss = stylesOf("../../../../../packages/agent-shell-ui/src/components/ShellPagePane.vue");
-    expect(paneCss).toMatch(/\.pane-dock:has\(> \.composer-unfold:only-child\)\s*\{[^}]*padding:\s*0;/s);
+    expect(paneCss).not.toContain(".pane-dock:has(> .composer-unfold:only-child)");
   });
 });
 

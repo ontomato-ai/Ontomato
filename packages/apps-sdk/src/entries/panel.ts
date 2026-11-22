@@ -17,7 +17,17 @@ export { mountPanel, type PanelComponent, type PanelMount } from "../panel/mount
 export { default as Projection } from "../panel/Projection.vue";
 export { useProjectionSlot, useProjectionForm } from "../panel/context";
 export { registerHandler, handlerFor, registeredHandlers, type RegisteredHandler } from "../panel/handlers";
-export { usePanelContext, type PanelContext, type ProjectionSlot } from "../panel/context";
+export {
+  usePanelContext,
+  type PanelBackHandlerRegistration,
+  type PanelContext,
+  type ProjectionSlot,
+} from "../panel/context";
+export {
+  usePanelBack,
+  type PanelBackHandle,
+  type UsePanelBackOptions,
+} from "../panel/back";
 export type { PanelInstance } from "../panel/instance";
 export { applyPanelRequest } from "../panel/instance";
 export { defineComponentMeta } from "../components";

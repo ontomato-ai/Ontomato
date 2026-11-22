@@ -22,9 +22,12 @@ it("defines the room under the composer once, and both composers read it", () =>
   // The page's composer stands in the flex column under the content box rather than floating sticky over it.
   expect(page).toMatch(/flex-shrink:\s*0;/);
   expect(page).not.toMatch(/position:\s*sticky;/);
-  // Folded, its round button keeps the same room under it.
+  // Folded, its round button stays in flow under the content box (never fixed over it) and keeps the same room under it.
   const unfold = [...style("../components/ShellComposer.vue").matchAll(/\n\.composer-unfold \{([^}]*)\}/g)].map((rule) => rule[1]).join("");
-  expect(unfold).toMatch(/bottom: var\(--shell-composer-foot\);/);
+  expect(unfold).not.toMatch(/position:\s*fixed;/);
+  const pageFolded = style("../components/PageComposer.vue").split(".page-ask:has(.composer-unfold) {")[1]!.split("}")[0]!;
+  expect(pageFolded).toMatch(/padding:[^;]*var\(--shell-composer-foot\);/);
+  expect(style("../components/ShellPagePane.vue")).not.toContain(".pane-dock:has(> .composer-unfold:only-child)");
 });
 
 /*

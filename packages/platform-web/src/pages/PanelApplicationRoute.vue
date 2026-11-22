@@ -572,6 +572,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         :address="frameAddress"
         :initial="frameState"
         :current-entry="currentEntry"
+        :history-back="false"
         @display-address="reportFrameAddress"
       />
       <div v-if="framePort" ref="holder" class="panel-entry-holder">
@@ -592,6 +593,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
             :frame-state="frameState"
             :draft-to-agent="draftToAgent"
             :leave-draft="leaveDraft"
+            :history-back="!props.navigate"
             @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
             @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
             @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
@@ -628,6 +630,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           :frame-state="frameState"
           :draft-to-agent="draftToAgent"
           :leave-draft="leaveDraft"
+          :history-back="!props.navigate"
           @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
           @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
           @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"

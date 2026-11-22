@@ -4,7 +4,7 @@ import { computed, onMounted, provide, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
-import { ElMessageBox } from "element-plus/es/components/message-box/index";
+import { confirmDanger } from "@ontomato/platform-shell";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import {
@@ -371,9 +371,12 @@ watch(target, async (next, previous) => {
   movingForDraft = false;
   if (targetKey(next) === loaded) return;
   if ((forDraft ? dirty.value : canSettle.value) && !saving.value && previous !== null && targetKey(previous) === loaded) {
-    const leave = await ElMessageBox.confirm(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
-      confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
-    }).then(() => true, () => false);
+    const leave = panel.confirmLeaveUnsaved
+      ? await panel.confirmLeaveUnsaved()
+      : await confirmDanger(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
+          confirmButtonText: t("platform.discard"),
+          cancelButtonText: t("platform.keepEditing"),
+        });
     if (!leave) {
       moveTo(previous);
       return;
@@ -638,9 +641,10 @@ function discard() {
 
 /** The reader's Discard: what they have not saved is thrown away only once they say so (原页面对照《智能体设置》). */
 async function confirmDiscard() {
-  const confirmed = await ElMessageBox.confirm(t("platform.formDiscardConfirm"), t("platform.discard"), {
-    confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
-  }).then(() => true, () => false);
+  const confirmed = await confirmDanger(t("platform.formDiscardConfirm"), t("platform.discard"), {
+    confirmButtonText: t("platform.discard"),
+    cancelButtonText: t("platform.keepEditing"),
+  });
   if (confirmed) discard();
 }
 
@@ -650,9 +654,10 @@ async function confirmDiscard() {
  */
 async function cancelCreate() {
   if (canSettle.value) {
-    const confirmed = await ElMessageBox.confirm(t("platform.formDiscardConfirm"), t("platform.cancel"), {
-      confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
-    }).then(() => true, () => false);
+    const confirmed = await confirmDanger(t("platform.formDiscardConfirm"), t("platform.cancel"), {
+      confirmButtonText: t("platform.discard"),
+      cancelButtonText: t("platform.keepEditing"),
+    });
     if (!confirmed) return;
   }
   resetDraft(false);

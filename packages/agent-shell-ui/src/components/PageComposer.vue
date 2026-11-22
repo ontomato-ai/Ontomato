@@ -155,15 +155,21 @@ onBeforeUnmount(() => withdraw?.());
  * above its own — one value for both, so it takes as little of the page as it can.
  */
 .page-ask {
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
-  width: min(760px, 100%);
-  margin-inline: auto;
+  width: 100%;
   padding: var(--spacing-sm) 0 var(--shell-composer-foot);
   background: var(--el-bg-color);
+  box-sizing: border-box;
 }
-/* Folded into its round button, the foot leaves the page its whole height. */
+.page-ask > :deep(.composer) {
+  width: min(760px, 100%);
+  margin-inline: auto;
+}
+/* Folded into its round button, the foot stays in flow below the content box so the button never overlaps page controls. */
 .page-ask:has(.composer-unfold) {
-  padding: 0;
-  background: none;
+  padding: var(--spacing-xs) 0 var(--shell-composer-foot);
+  background: transparent;
 }
 </style>
