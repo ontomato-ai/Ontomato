@@ -100,6 +100,7 @@ export const panelReadParameterSchemas = {
   applicationScope: applicationCatalogueScopeSchema,
   applicationSort: applicationCatalogueSortSchema,
   applicationFormSection: applicationFormSectionSchema.exclude(["create"]),
+  applicationEntryId: z.string().min(1),
   formValues: formValuesSchema,
   panelFormValues: panelFormValuesSchema,
   changedField: fieldPath.nullable(),
@@ -161,6 +162,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "applicationScope":
     case "applicationSort":
     case "applicationFormSection":
+    case "applicationEntryId":
       return input?.kind === "scalar" && input.type === "string";
     case "productTemplate":
       return input?.kind === "scalar" && input.type === "boolean";

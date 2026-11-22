@@ -43,6 +43,7 @@ export const applicationCatalogueRecordSchema = summary
 
 export const applicationCatalogueFormRequestSchema = panelFormRequestSchema.extend({
   section: applicationFormSectionSchema,
+  entryId: z.string().min(1).optional(),
 });
 export type ApplicationCatalogueFormRequest = z.infer<typeof applicationCatalogueFormRequestSchema>;
 

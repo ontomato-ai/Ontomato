@@ -321,7 +321,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       form: {
         ...modelReads.form,
-        params: { ...definitionFormParams, section: "applicationFormSection" },
+        params: { ...definitionFormParams, section: "applicationFormSection", entryId: "applicationEntryId" },
         requiredParams: ["section"],
       },
       createForm: modelReads.createForm,

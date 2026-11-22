@@ -4,6 +4,7 @@ import { productCurrentIdParamsSchema } from "./product-record-id";
 const productGrantRecordSchema = z.object({
   principalKind: z.enum(["principal", "role", "domain"]),
   principalId: z.string(),
+  principalName: z.string().min(1).optional(),
   verb: z.enum(["use", "edit"]),
 });
 export type ProductGrantRecord = z.infer<typeof productGrantRecordSchema>;
@@ -16,7 +17,7 @@ export const productGrantsResponseSchema = z.object({
 export const productCatalogueGrantsSchema = productGrantsResponseSchema.extend({ shared: z.boolean() }).strict();
 
 /** Set or revoke an individual principal or role grant. */
-export const changeProductGrantRequestSchema = productGrantRecordSchema.extend({
+export const changeProductGrantRequestSchema = productGrantRecordSchema.omit({ principalName: true }).extend({
   principalKind: productGrantRecordSchema.shape.principalKind.exclude(["domain"]),
   principalId: productGrantRecordSchema.shape.principalId.min(1).max(200),
   remove: z.boolean(),
