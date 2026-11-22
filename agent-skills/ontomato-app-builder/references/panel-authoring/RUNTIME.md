@@ -45,8 +45,8 @@ interface PanelContext {
   navigate(address: string): Promise<void>;
   /**
    * Tells the reader briefly how something the page did went — "Exported", "Deleted", why a call failed — in the
-   * platform's own message at the top of the window, as its pages do; it fades by itself. A note that belongs on the
-   * page and stays is `<el-alert>` in the template. A panel the platform runs has it; a frame has none.
+   * platform's own message at the top of the window, as its pages do. It fades by itself and is available in panels
+   * that run directly on the platform.
    */
   notify(message: { kind: "success" | "info" | "warning" | "error"; text: string }): void;
 }
