@@ -22,7 +22,7 @@ vi.mock("@ontomato/design-tokens", async (original) => {
  * the account menu) does not, and nothing is left behind once the application goes.
  */
 
-const theme: PanelThemeOverrides = { light: { "--el-color-primary": "#0f7b6c" }, dark: { "--el-color-primary": "#3cc4ad" } };
+const theme: PanelThemeOverrides = { light: { "--sdk-color-primary": "#0f7b6c" }, dark: { "--sdk-color-primary": "#3cc4ad" } };
 let unmount: (() => void) | null = null;
 
 afterEach(() => {
@@ -62,9 +62,11 @@ it("assigns the theme in the application's area in the reader's mode, and follow
   const mode = ref<ThemeMode>("light");
   const area = mountArea(mode, ref(theme));
   await nextTick();
+  expect(area().style.getPropertyValue("--sdk-color-primary")).toBe("#0f7b6c");
   expect(area().style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
   mode.value = "dark";
   await nextTick();
+  expect(area().style.getPropertyValue("--sdk-color-primary")).toBe("#3cc4ad");
   expect(area().style.getPropertyValue("--el-color-primary")).toBe("#3cc4ad");
 });
 
@@ -137,11 +139,14 @@ it("declares the shades of a colour the theme recolours in the area and its pop-
   const assigned = ref<PanelThemeOverrides | null>(theme);
   const area = mountArea(mode, assigned);
   await nextTick();
+  expect(area().style.getPropertyValue("--sdk-color-primary-light-3")).toBe("color-mix(in srgb, var(--sdk-color-primary), var(--sdk-bg-color) 30%)");
   expect(area().style.getPropertyValue("--el-color-primary-light-3")).toBe("color-mix(in srgb, var(--el-color-primary), var(--el-bg-color) 30%)");
+  expect(area().style.getPropertyValue("--sdk-color-primary-rgb")).toBe("15, 123, 108");
   expect(area().style.getPropertyValue("--el-color-primary-rgb")).toBe("15, 123, 108");
-  expect((await popup("picker-popup")).style.getPropertyValue("--el-color-primary-light-3")).not.toBe("");
+  expect((await popup("picker-popup")).style.getPropertyValue("--sdk-color-primary-light-3")).not.toBe("");
   assigned.value = null;
   await nextTick();
+  expect(area().style.getPropertyValue("--sdk-color-primary-light-3")).toBe("");
   expect(area().style.getPropertyValue("--el-color-primary-light-3")).toBe("");
 });
 

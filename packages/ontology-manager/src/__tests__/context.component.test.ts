@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, inject, ref, type App } from "vue";
 import type { ManagerAuthFailureStatus, ManagerClient, ManagerCredential } from "../api";
-import { METRIC_VIEW, OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
+import { FUNCTION, METRIC_VIEW, OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import { managerNavigation, managerPaths } from "../navigation";
 import { countedTypesChangedKey, createManager, useManagerClient, useManagerContext, useManagerCounts, type ManagerTheme } from "../context";
 
@@ -15,6 +15,7 @@ beforeEach(() => {
   mountedApps = [];
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     requests.push({ url, headers: init.headers as Record<string, string> });
+    if (url.endsWith("/product-assets/counts")) return new Response(JSON.stringify({ counts: { dashboard: 2, report: 1 } }), { status });
     return new Response(JSON.stringify({ success: true, data: [] }), { status });
   });
 });
@@ -133,42 +134,39 @@ describe("the Manager installed in the page", () => {
   it("the navigation counts are read once per page load and again on request", async () => {
     const page = mountPage();
     const counts = page.counts();
-    expect(counts.values.metrics).toBeNull();
+    const reads = () => requests.filter((r) => r.url.endsWith("/product-assets/counts")).length;
+    expect(counts.values.products).toBeNull();
     counts.ensure();
     counts.ensure();
-    await vi.waitFor(() => expect(counts.values.metrics).toBe(0));
-    const reads = requests.filter((r) => r.url.endsWith("/metricView/queryList")).length;
-    expect(reads).toBe(1);
+    await vi.waitFor(() => expect(counts.values.products).toBe(3));
+    expect(reads()).toBe(1);
     await counts.refresh();
-    expect(requests.filter((r) => r.url.endsWith("/metricView/queryList")).length).toBeGreaterThan(reads);
-    // Object types, attributes and relation types are panel entries counting themselves: the Manager reads no ontology for them.
-    expect(requests.filter((r) => r.url.endsWith("/admin/getMetas"))).toEqual([]);
+    expect(reads()).toBe(2);
+    // Object types, attributes, relation types, functions and metric views are panel entries counting themselves: the
+    // Manager reads none of their lists.
+    expect(requests.filter((r) => /\/(admin\/getMetas|metricView\/queryList|function\/queryList)$/.test(r.url))).toEqual([]);
   });
 
   it("the menu's counts are read by the menu itself, so a page load that opens no Manager page still shows them", async () => {
     // A panel entry of the ontology manager opened directly: no Manager page mounts, only the menu reads its rows.
     const page = mountPage();
     const navigation = managerNavigation(page.counts());
-    const metrics = navigation.pages.find((entry) => entry.count && entry.path === managerPaths.metrics)!;
-    expect(metrics.count!()).toBeNull();
-    await vi.waitFor(() => expect(metrics.count!()).toBe(0));
+    const products = navigation.pages.find((entry) => entry.count && entry.path === managerPaths.products)!;
+    expect(products.count!()).toBeNull();
+    await vi.waitFor(() => expect(products.count!()).toBe(3));
     navigation.pages.forEach((entry) => entry.count?.());
-    expect(requests.filter((r) => r.url.endsWith("/metricView/queryList"))).toHaveLength(1);
+    expect(requests.filter((r) => r.url.endsWith("/product-assets/counts"))).toHaveLength(1);
     // The panel entries' rows count themselves from their entries' declarations, not from this tally.
-    expect(navigation.pages.filter((entry) => entry.count).map((entry) => entry.path)).not.toContain(managerPaths.objects);
+    expect(navigation.pages.filter((entry) => entry.count).map((entry) => entry.path)).toEqual([managerPaths.products]);
   });
 
-  it("reads the counts again for a write that changed a type they count, once per write, and not for another", async () => {
+  it("reads no counts again for a page's write: the pages those writes change count themselves", async () => {
     const page = mountPage();
-    const reads = () => requests.filter((r) => r.url.endsWith("/metricView/queryList")).length;
-    // A page is handed the counts' one entry for its writes, not the counts themselves. Object types no longer move
-    // these counts: their entry counts itself.
-    page.countedTypesChanged()(["Customer", "platform:ScheduledTask", OBJECT_TYPE]);
+    // A page is handed the counts' one entry for its writes, not the counts themselves. Object types, functions and
+    // metric views no longer move these counts: their entries count themselves, and the products count has no type.
+    page.countedTypesChanged()(["Customer", "platform:ScheduledTask", OBJECT_TYPE, FUNCTION, METRIC_VIEW]);
     await new Promise((resolve) => setTimeout(resolve));
-    expect(reads()).toBe(0);
-    page.countedTypesChanged()(["Customer", METRIC_VIEW, METRIC_VIEW]);
-    await vi.waitFor(() => expect(page.counts().values.metrics).toBe(0));
-    expect(reads()).toBe(1);
+    expect(requests).toEqual([]);
   });
 
   it("reports a clear error when used in an app the Manager is not installed in", () => {

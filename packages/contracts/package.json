@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/chart-data/*.node-test.ts src/agent-presentation.node-test.ts src/chart-import.node-test.ts src/dashboard-authoring.node-test.ts src/page-draft.node-test.ts src/panel-contracts.node-test.ts src/product-catalog.node-test.ts src/object-detail.node-test.ts src/authoring.node-test.ts src/action-panel.node-test.ts src/panel-authoring-expansion.node-test.ts && node --import tsx scripts/panel-authoring-reference.mjs --check && node --import tsx scripts/panel-runtime-reference.mjs --check",
+    "test": "node --import tsx --test src/chart-data/*.node-test.ts src/agent-presentation.node-test.ts src/chart-import.node-test.ts src/dashboard-authoring.node-test.ts src/page-draft.node-test.ts src/panel-contracts.node-test.ts src/sdk-ui-map.node-test.ts src/product-catalog.node-test.ts src/object-detail.node-test.ts src/authoring.node-test.ts src/action-panel.node-test.ts src/panel-authoring-expansion.node-test.ts && node --import tsx scripts/panel-authoring-reference.mjs --check && node --import tsx scripts/panel-runtime-reference.mjs --check",
     "generate:authoring": "node --import tsx scripts/authoring-schema.mjs",
     "generate:panel-authoring-reference": "node --import tsx scripts/panel-authoring-reference.mjs",
     "generate:panel-runtime-reference": "node --import tsx scripts/panel-runtime-reference.mjs",

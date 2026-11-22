@@ -45,7 +45,7 @@ import (see "Compose a panel").
 | `@ontomato/sdk/preview` | `TablePreview`, `<table-preview>`: a table of text cells, with `parseCsv` for CSV and TSV; `HtmlPreview`, `<html-preview>`: an HTML document in a sandboxed frame |
 | `@ontomato/sdk/chat` | The platform's conversation components, `createAssistantClient` and `useShellLabels` |
 | `@ontomato/sdk/panel` | `definePanel`, `mountPanel` and `Projection` for the panel host |
-| `@ontomato/sdk/graph` | `G6GraphCanvas` and `OntologyGraph`: interactive G6 graphs; large, so import only where a page draws one |
+| `@ontomato/sdk/graph` | `InteractiveGraphCanvas` and `OntologyGraph`: interactive graphs; large, so import only where a page draws one |
 
 The chart, Markdown, form, code and preview components are the ones the platform's own pages use, so an app looks and
 behaves like them. Import each module where the page needs it; a page loads only the modules it imports.
@@ -58,9 +58,13 @@ scripts, styles or fonts from the internet, because many installations have no i
 A panel is page code — a Vue template, its style and its script — and a declaration of the projections it uses and the
 state it makes public. The platform runs the panel's code in its own page.
 
-Choose official components and ports from [the catalogue](components.md). A projection names an owner read, its
-source and parameters, and the component which renders the result. Map each member's inputs and outputs to the
-panel's typed state. Mark state intended for the address with `deepLink`. Keep business rules in the owning capability.
+Choose official components and ports from [the catalogue](components.md). Check first whether the owner's read matches
+an official component's data port (if not, extend the owner or shared record contract rather than drawing business fields
+in the panel), then start from the default component or add `config`, and write a dedicated component only as a last
+resort. A projection names an owner read, its source and parameters, and the component which renders the result. The
+panel coordinates layout, typed state, visibility, navigation and header commands; components render business fields and
+initiate business operations. Map each member's inputs and outputs to the panel's typed state. Mark state intended for
+the address with `deepLink`. Keep business rules in the owning capability.
 
 | Workspace file | Content |
 | --- | --- |
@@ -118,28 +122,34 @@ them as any other value. While the state holds nothing (no class chosen), the fi
 { "config": { "fixedFields": { "/className": { "state": "selected", "path": "/primaryKey" } } } }
 ```
 
-### Draw a part yourself
+### Coordinate with declared data and operations
 
-When no official component draws a part the way the page needs, the panel draws it itself. Declare a member whose
-projection uses `@ontomato/sdk:PanelData`: it draws nothing and takes any data the projection names, under names of
-your choosing. Do not place it in the template: the platform holds every member the panel declares from the start,
-placed or not, so its data and operations are there for the page's code. Read each datum in the page's code with
-`usePanelData(member, name)`:
+Components render business fields and trigger business operations. Panels do not render business fields from a data
+port: if an official component and its `config` do not cover a block (even a single column cell or form field), write a
+component for that slot instead of drawing business data in `panel.html`.
+
+Reading declared data in panel code is legitimate for coordination (deciding visibility, navigation or follow-up state);
+prefer a component's own outputs whenever they already carry the value. When a panel needs a non-rendering member to
+read declared data for coordination or to declare operations without rendering content, use `@ontomato/sdk:PanelData`.
+Do not place it in the template: the platform holds every member the panel declares from the start, placed or not, so
+its data and operations are available to the panel's code through `usePanelData(member, name)` and
+`usePanelOperation(member, name)`:
 
 ```js
-import { computed, ref } from "vue";
-import { mountPanel, usePanelData, usePanelOperation } from "@ontomato/sdk/panel";
+import { watch } from "vue";
+import { mountPanel, usePanelContext, usePanelData, usePanelOperation } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
-    const cursor = ref(null);
-    // The member's `rows` datum (an owner's query), with the cursor and page size as the page's own run-time values.
-    const rows = usePanelData("board", "rows", () => ({ cursor: cursor.value, size: 20 }));
-    const items = computed(() => (rows.value.status === "ready" ? rows.value.value.rows : []));
-    const next = () => { cursor.value = rows.value.value?.nextCursor ?? null; };
+    const { instance } = usePanelContext();
+    // Coordination read: inspect a declared datum to drive panel state without rendering business fields in the panel.
+    const summary = usePanelData("statusCheck", "record");
+    watch(summary, (state) => {
+      if (state.status === "empty") instance.state.set("selected", null);
+    });
     // The operation acts on the object the member's target input is bound to in the panel's state.
-    const approve = usePanelOperation("board", "approve");
-    return { rows, items, next, approve };
+    const approve = usePanelOperation("review", "approve");
+    return { approve };
   },
 });
 ```
@@ -158,22 +168,19 @@ runs it exactly as the page's header and an agent do (a write is confirmed where
 read, or saves the file it sent):
 
 ```js
-const approve = usePanelOperation("board", "approve");
-// <el-button :disabled="!approve.operation.value" @click="approve.run()">{{ approve.operation.value?.label }}</el-button>
+const approve = usePanelOperation("review", "approve");
+// Bind to an SDK control or button: disabled when !approve.operation.value, click runs approve.run().
 ```
 
 To open another of the platform's pages, call `usePanelContext().navigate(address)` with an address such as
 `/agents/chat?agentId=…`; when the platform cannot open it, the page says why and the call rejects with that reason.
 Never call the platform's business endpoints from the page.
 
-The platform's interface components are template tags in a panel, with no import (the panel's module imports only
-`vue` and `@ontomato/sdk/panel`): `<markdown-view>`, `<code-editor>`, `<e-chart>`, `<table-preview>`, `<html-preview>`
-and `<form-fields>`, with the attributes their sections below give. Draw a document the page read (a skill's
-`SKILL.md`, a report body) with `<markdown-view :content="text">`, the product Markdown every platform page uses, and a
-file as code with `<code-editor :model-value="text" language="javascript" readonly>` (JSON, Markdown, HTML, Python or
-plain text too; without `readonly` it edits through `v-model`). Never draw either as plain text. To tell the reader how something the page did went ("Exported", why a call failed), call
+A panel's module imports only `vue` and `@ontomato/sdk/panel`, never third-party UI libraries directly. Use the
+Ontomato SDK's own interface controls for panel chrome that does not render business fields. To tell the reader how
+something the page did went ("Exported", why a call failed), call
 `usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })`: the platform's own message, which
-fades by itself. A note that stays on the page is `<el-alert>`.
+fades by itself.
 
 
 Run the App Builder skill's `ontomato panel check` on the workspace directory. It uses the current release's

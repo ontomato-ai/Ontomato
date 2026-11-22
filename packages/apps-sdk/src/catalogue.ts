@@ -311,12 +311,12 @@ export const components: readonly ComponentMetadata[] = [
       "Draws the nodes and edges it is given as a light SVG graph, each node in the tone its caller gives it and marked when its ID is among the selected ones, and hands back the selection a reader's choice results in and the part of the graph in view. What the nodes are, which may be chosen and what a choice implies are its caller's: it reads nothing and decides nothing about them.",
   }),
   defineComponentMeta({
-    componentId: "G6GraphCanvas",
+    componentId: "InteractiveGraphCanvas",
     module: "@ontomato/sdk/graph",
-    exportName: "G6GraphCanvas",
+    exportName: "InteractiveGraphCanvas",
     role: "control",
     meaning:
-      "Draws the nodes and edges it is given with G6, for graphs a reader pans, zooms and drags: the graph canvas's interface, plus each node coloured by its category from the edition's palette, edges labelled, dashed or weighted as given, and invisible anchors for aggregated edges. It hands back the selection a reader's choice results in, the part of the graph in view, a double-click, a dragged node's new place and a click on empty canvas, and gives its caller the current positions and an image of the view. What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.",
+      "Draws the nodes and edges it is given as an interactive canvas that a reader pans, zooms and drags: each node coloured by its category from the edition's palette, edges labelled, dashed or weighted as given, and invisible anchors for aggregated edges. It hands back the selection a reader's choice results in, the part of the graph in view, a double-click, a dragged node's new place and a click on empty canvas, and gives its caller the current positions and an image of the view. What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.",
   }),
   defineComponentMeta({
     componentId: "OntologyGraph",
@@ -465,7 +465,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "PanelData",
     role: "presentation",
     meaning:
-      "Draws nothing: it hands the data its projection declares to the panel's own code, which reads each datum with usePanelData(member, name) and draws it in the page's own way. A projection names it for the part of a page the panel draws itself; the panel's own buttons run the projection's operations with instance.invoke.",
+      "Draws nothing: a non-rendering member for reading declared data through usePanelData(member, name) to coordinate panel state, visibility or navigation (prefer a component's own output when available), or for declaring operations invoked through usePanelOperation(member, name). Do not use PanelData to render business fields in a panel template; use an official component, configure it, or write a component for that slot.",
     // Any datum the projection names, under the author's own name, with any read result and the run-time values the
     // other components give; the read's own signature still bounds them. The catalogue test keeps these lists whole.
     data: {

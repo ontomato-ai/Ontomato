@@ -131,7 +131,6 @@ export default {
     triggerManagement: "Triggers",
     capabilityMap: "Capability Map",
     dataBrowser: "Data Browser",
-    metrics: "Metric Views",
     objectTypes: "Object Types",
     ontologyAttributes: "Properties",
     ontologyGraph: "Ontomap",
