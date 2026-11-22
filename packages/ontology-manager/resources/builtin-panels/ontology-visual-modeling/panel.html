@@ -42,6 +42,9 @@
     flex-direction: column;
     border: 1px solid var(--ui-border);
     border-radius: var(--radius-md);
+    background-color: var(--el-bg-color-page);
+    background-image: radial-gradient(var(--ui-border) 1px, transparent 1px);
+    background-size: 20px 20px;
     overflow: hidden;
   }
   /*
@@ -197,10 +200,10 @@
     <span class="vm-hint">{{ t("visualModeling.hint") }}</span>
     <div class="vm-selection">
       <el-tag v-if="selectedNode" type="primary" size="small" disable-transitions>
-        {{ t("visualModeling.selectedType", { name: selectedNode.primaryKey }) }}
+        {{ t("visualModeling.selectedType", { name: selectedNodeLabel }) }}
       </el-tag>
       <el-tag v-else-if="selectedEdge" type="success" size="small" disable-transitions>
-        {{ t("visualModeling.selectedRelation", { name: selectedEdge.primaryKey }) }}
+        {{ t("visualModeling.selectedRelation", { name: selectedEdgeLabel }) }}
       </el-tag>
       <span v-else class="vm-state">{{ t("visualModeling.noSelection") }}</span>
       <el-button v-if="selectedNode || selectedEdge" text size="small" @click="clearSelection">
@@ -228,7 +231,7 @@
 
       <template v-else>
         <div class="vm-side-title">
-          <span :title="selectedNode.primaryKey">{{ selectedNode.primaryKey }}</span>
+          <span :title="selectedNode.primaryKey">{{ selectedNodeLabel }}</span>
           <el-button text size="small" @click="clearSelection">{{ t("visualModeling.close") }}</el-button>
         </div>
         <projection slot="classForm"></projection>

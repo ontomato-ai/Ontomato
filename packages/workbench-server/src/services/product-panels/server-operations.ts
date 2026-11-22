@@ -90,6 +90,12 @@ export type PanelWriteServerOperation = ServerOperation & (
     (TargetedExecution & {
       targetInput: string;
       targetLabel(host: PanelOperationHost, target: PanelRecordTarget): Promise<string>;
+      /**
+       * The owner's sentence for one call it completed, naming what it acted on by the target's `targetLabel`
+       * ("Function “Refund” deleted"), in the host's language. The platform reads the name before the call runs (a delete
+       * leaves nothing to read after) and gives the sentence as the success's message, for the reader and an agent.
+       */
+      done?(host: PanelOperationHost, name: string): string;
       upload?: undefined;
     } & (
       { batch: false } |
@@ -99,6 +105,7 @@ export type PanelWriteServerOperation = ServerOperation & (
       /** An action that acts on no selected object, such as creating one from a file. */
       targetInput?: undefined;
       targetLabel?: undefined;
+      done?: undefined;
       batch: false;
       /** The input that is a file the person stages before the call. */
       upload?: PanelUploadDeclaration;

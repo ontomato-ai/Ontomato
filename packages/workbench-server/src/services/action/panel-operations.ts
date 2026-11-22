@@ -142,6 +142,7 @@ export const m6ServerOperations = [
     resultSchema: deletedSchema,
     targetInput: "action",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/action/queryById", "ACTION_UNAVAILABLE"),
+    done: (host, name) => tForLocale(host.locale, "panels.action.deleted", { name }),
     inspectImpact: deleteActionImpact,
     unavailable: (host: Host, target: PanelRecordTarget) => ownerDeleteUnavailable(host, "/action/queryById",
       { id: target.primaryKey, purpose: "delete-availability" }, "ACTION_UNAVAILABLE"),

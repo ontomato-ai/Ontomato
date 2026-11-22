@@ -178,6 +178,7 @@ describe("skill panel server operations", () => {
           { objectType: AGENT_DEFINITION, primaryKey: agent1 },
         ],
         objectTypes: [SKILL, AGENT_DEFINITION],
+        removed: [{ objectType: SKILL, primaryKey: "removable-skill" }],
       },
     });
     await expect(fs.stat(dir)).rejects.toThrow();

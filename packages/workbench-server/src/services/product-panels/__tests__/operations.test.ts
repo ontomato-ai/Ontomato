@@ -384,8 +384,11 @@ it("asks by the entry's title and approves the whole entry as the executor", asy
   expect(mocks.request.mock.calls[0][2].message).toBe('Run “Approve” on “Order rule” as Victor?');
   answer();
   current = { ...current, id: uuid(6) };
-  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({ kind: "dispatched", outcome: { kind: "success", data: {} } });
-  expect(reads.map((headers) => [headers.get("tk"), headers.get("X-API-Key")])).toEqual([["U-token", null], [null, "V-key"]]);
+  expect(await dispatchPanel(owner, credentials, current.id, input.intentId)).toMatchObject({
+    kind: "dispatched", outcome: { kind: "success", data: {}, message: "Business knowledge “Order rule” approved" },
+  });
+  // Then, as the executor, the entry's title for the owner's sentence and the list read of the approval itself.
+  expect(reads.map((headers) => [headers.get("tk"), headers.get("X-API-Key")])).toEqual([["U-token", null], [null, "V-key"], [null, "V-key"]]);
   const target = { objectType: BUSINESS_KNOWLEDGE, primaryKey: key };
   expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
     target, affected: { objects: [target], objectTypes: [BUSINESS_KNOWLEDGE] },
@@ -453,9 +456,13 @@ it.each([
   const input = { ...action(), operationId: "run.delete", call: {
     target: { kind: "object" as const, objectType, primaryKey: uuid(9) }, input: {},
   } };
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json(
-    { error: { code, message: "Owner response" }, correlationId: "test" }, { status },
-  )));
+  // The agent's name is read before the write; the delete itself answers with the status.
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => init.method === "GET"
+    ? Response.json({
+      id: uuid(9), name: "Inventory analyst", description: "", icon: null, enabled: true,
+      executionUserId: null, modelSelection: { modelId: null }, skills: [], systemPrompt: "",
+    })
+    : Response.json({ error: { code, message: "Owner response" }, correlationId: "test" }, { status })));
   expect(await operatePanel(owner, credentials, current.id, input)).toMatchObject({
     kind: "dispatched", outcome: { kind, code },
   });
@@ -658,6 +665,57 @@ it("publishes type-only changes from a successful single write", async () => {
   expect(mocks.notify.mock.calls).toEqual([[{ domainId: owner.domainId, initiator: owner.userId, rootSession: root,
     target: null, affected,
   }]]);
+});
+
+it("says what a single write did by its target's name, read before the write, unless the owner said it", async () => {
+  const { handler, request: { calls, ...request } } = installBatchOwner();
+  automatic = true;
+  const order: string[] = [];
+  handler.targetLabel.mockImplementation(async (_host, target: { primaryKey: string }) => {
+    order.push("name");
+    return `Task ${target.primaryKey}`;
+  });
+  handler.execute.mockImplementation(async () => {
+    order.push("write");
+    return { kind: "success", data: { done: true } };
+  });
+  Object.assign(handler, { done: (_host: unknown, name: string) => `${name} deleted` });
+  expect(await operatePanel(owner, credentials, current.id, { ...request, call: calls[0] })).toMatchObject({
+    kind: "dispatched", outcome: { kind: "success", message: `Task ${calls[0].target.primaryKey} deleted` },
+  });
+  // The name is read while the target is still there.
+  expect(order.slice(-2)).toEqual(["name", "write"]);
+
+  handler.execute.mockResolvedValue({ kind: "success", data: { done: true }, message: "The owner's own words" });
+  expect(await operatePanel(owner, credentials, current.id, { ...request, intentId: uuid(6), call: calls[1] })).toMatchObject({
+    kind: "dispatched", outcome: { kind: "success", message: "The owner's own words" },
+  });
+});
+
+it("fails before claiming a write whose target's name cannot be read, so the write is not left unknown", async () => {
+  const { handler, request: { calls, ...request } } = installBatchOwner();
+  automatic = true;
+  Object.assign(handler, { done: (_host: unknown, name: string) => `${name} deleted` });
+  handler.targetLabel.mockRejectedValueOnce(new Error("The task is gone"));
+  await expect(operatePanel(owner, credentials, current.id, { ...request, call: calls[0] })).rejects.toThrow("The task is gone");
+  expect(handler.execute).not.toHaveBeenCalled();
+  expect(intents.get(request.intentId)).toMatchObject({ dispatched: false });
+});
+
+it("gathers what a batch removed from its successful items once", async () => {
+  const { handler, request, impact } = installBatchOwner();
+  automatic = true;
+  const [first, second] = impact.objects.map(({ target }) => target);
+  const gone = (target: typeof first) => ({ kind: "success", data: { done: true }, affected: {
+    objects: [target], objectTypes: [target!.objectType], removed: [target],
+  } });
+  const items = impact.objects.map(({ target }, index) => ({
+    target, outcome: index === 0 ? gone(first) : index === 1 ? gone(second) : { kind: "refusal", code: "IN_USE", message: "In use" },
+  }));
+  handler.executeBatch.mockResolvedValue({ kind: "batch", items });
+  expect(await operatePanel(owner, credentials, current.id, request)).toMatchObject({ kind: "dispatched", outcome: {
+    kind: "batch", affected: { objects: [first, second], objectTypes: [first!.objectType], removed: [first, second] },
+  } });
 });
 
 it("freezes a human batch and its impact, then claims once with the reader's credentials", async () => {

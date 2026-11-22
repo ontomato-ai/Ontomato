@@ -162,6 +162,7 @@ export const skillServerOperations = [
     inputSchema: deleteInputSchema,
     resultSchema: emptyResultSchema,
     targetLabel: skillTitle,
+    done: (host, name) => tForLocale(host.locale, "panels.skill.deleted", { name }),
     inspectImpact: deleteSkillImpact,
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected skill");
@@ -179,6 +180,7 @@ export const skillServerOperations = [
               ...result.affectedAgents.map(agent => ({ objectType: AGENT_DEFINITION, primaryKey: agent.id })),
             ],
             objectTypes: result.cleanedAgentCount > 0 ? [SKILL, AGENT_DEFINITION] : [SKILL],
+            removed: [{ objectType: SKILL, primaryKey: target.primaryKey }],
           },
         };
       } catch (error) {

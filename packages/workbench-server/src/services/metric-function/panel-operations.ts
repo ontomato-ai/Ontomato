@@ -304,6 +304,7 @@ export const m5ServerOperations = [
     resultSchema: deletedSchema,
     targetInput: "function",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/function/queryById", "FUNCTION_UNAVAILABLE"),
+    done: (host, name) => tForLocale(host.locale, "panels.function.deleted", { name }),
     inspectImpact: deleteFunctionImpact,
     unavailable: (host: Host, target: PanelRecordTarget) => ownerDeleteUnavailable(host, "/function/deleteRefusal",
       { id: target.primaryKey }, "FUNCTION_UNAVAILABLE", "The function cannot be read"),

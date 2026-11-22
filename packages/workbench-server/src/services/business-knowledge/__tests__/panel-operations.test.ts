@@ -197,7 +197,7 @@ describe("business knowledge panel server operations", () => {
     const { host, sent } = hostWith(answers("/admin/delBussinessKnowledge", { success: true }));
     expect(await operation.execute(host, target)).toEqual({
       kind: "success", data: {},
-      affected: { objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }], objectTypes: [BUSINESS_KNOWLEDGE] },
+      affected: { objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }], objectTypes: [BUSINESS_KNOWLEDGE], removed: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }] },
     });
     expect(sent[0]?.path).toBe("/api/data-query/admin/delBussinessKnowledge");
     expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ knowledgeID: "k-1" });
@@ -283,7 +283,7 @@ describe("business knowledge panel server operations", () => {
       { target, input: {} }, { target: second, input: {} }, { target: third, input: {} },
     ])).toEqual({ kind: "batch", items: [
       { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }, outcome: {
-        kind: "success", data: {}, affected: { objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }], objectTypes: [BUSINESS_KNOWLEDGE] } } },
+        kind: "success", data: {}, affected: { objects: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }], objectTypes: [BUSINESS_KNOWLEDGE], removed: [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-1" }] } } },
       { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, outcome: {
         kind: "refusal", code: "KNOWLEDGE_DELETE_REFUSED", message: "The entry is governed elsewhere" } },
       { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-3" }, outcome: {
