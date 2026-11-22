@@ -322,16 +322,15 @@ public final class FunctionForm {
   }
 
   /**
-   * A read function saved before its column labels were kept names its columns by its query analysis's outputs, as the
-   * page always showed them; saving the form keeps those labels.
+   * A read function saved before its column labels were kept names its columns by its query analysis's outputs, and one
+   * with no analysis yet (a new one) starts from no labels, as the page always showed them; saving the form keeps them.
    */
   public static void labelColumnsFromAnalysis(JSONObject function) {
     JSONObject returnDef = function.getJSONObject("returnDef");
     if (!Function.OPERATION_READ.equals(function.getString("operation")) || returnDef == null
         || returnDef.get("columnLabels") != null) return;
     JSONObject analysis = returnDef.getJSONObject("sourceAnalysis");
-    JSONArray nodes = analysis == null ? null : analysis.getJSONArray("nodes");
-    if (nodes == null) return;
+    JSONArray nodes = analysis == null || analysis.getJSONArray("nodes") == null ? new JSONArray() : analysis.getJSONArray("nodes");
     JSONObject labels = new JSONObject();
     for (int i = 0; i < nodes.size(); i++) {
       JSONObject node = nodes.getJSONObject(i);

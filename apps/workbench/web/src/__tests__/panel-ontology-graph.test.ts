@@ -37,7 +37,8 @@ import {
  *   edges, internal layer filter (does not mutate panel state), query highlighting without hiding, selectedType output.
  * - Instance mode: default start(), 1-hop neighbors(), incremental merge on unexpanded click without losing or moving
  *   existing nodes, no redundant fetch on already-expanded node, query highlighting without hiding or refetching,
- *   drawn-only legend counts, and fit/relayout toolbar actions (no in-frame export button; host triggers exports).
+ *   drawn-only legend counts, readable-label opening fit with overflow hint, PNG download, host refresh reload, and
+ *   fit/relayout toolbar actions.
  * - Three-state separation: no neighbors (all ok & 0 edges), owner refused, and read failed shown distinctly and never
  *   collapsed into an empty graph.
  */
@@ -47,12 +48,16 @@ const canvasRecorder = {
   edges: [] as readonly GraphCanvasEdge[],
   selected: [] as readonly string[],
   categories: [] as readonly string[],
+  readableLabels: false,
+  fitsWhole: true,
+  fitOptions: [] as Array<Record<string, unknown> | undefined>,
   fitCalls: 0,
   relayoutCalls: 0,
   exportCalls: 0,
   emitSelect: null as ((ids: string[]) => void) | null,
   emitBlank: null as (() => void) | null,
   emitMove: null as ((id: string, pos: GraphCanvasPoint) => void) | null,
+  emitViewport: null as ((viewport: { x: number; y: number; width: number; height: number; zoom: number }) => void) | null,
 };
 
 function resetCanvasRecorder() {
@@ -60,12 +65,16 @@ function resetCanvasRecorder() {
   canvasRecorder.edges = [];
   canvasRecorder.selected = [];
   canvasRecorder.categories = [];
+  canvasRecorder.readableLabels = false;
+  canvasRecorder.fitsWhole = true;
+  canvasRecorder.fitOptions = [];
   canvasRecorder.fitCalls = 0;
   canvasRecorder.relayoutCalls = 0;
   canvasRecorder.exportCalls = 0;
   canvasRecorder.emitSelect = null;
   canvasRecorder.emitBlank = null;
   canvasRecorder.emitMove = null;
+  canvasRecorder.emitViewport = null;
 }
 
 vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
@@ -82,6 +91,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
       selection: { type: String, default: "single" },
       layout: { type: Object, default: () => ({ type: "grid" }) },
       categories: { type: Array, default: () => [] },
+      readableLabels: { type: Boolean, default: false },
       maxHeight: { type: Number, default: undefined },
     },
     emits: ["update:selected", "blank", "move", "viewport"],
@@ -89,9 +99,12 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
       canvasRecorder.emitSelect = (ids: string[]) => emit("update:selected", ids);
       canvasRecorder.emitBlank = () => emit("blank");
       canvasRecorder.emitMove = (id: string, pos: GraphCanvasPoint) => emit("move", id, pos);
+      canvasRecorder.emitViewport = (viewport) => emit("viewport", viewport);
       expose({
-        fit: async () => {
+        fit: async (options?: Record<string, unknown>) => {
           canvasRecorder.fitCalls += 1;
+          canvasRecorder.fitOptions.push(options);
+          return canvasRecorder.fitsWhole;
         },
         relayout: async () => {
           canvasRecorder.relayoutCalls += 1;
@@ -106,6 +119,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
         canvasRecorder.edges = props.edges as readonly GraphCanvasEdge[];
         canvasRecorder.selected = props.selected as readonly string[];
         canvasRecorder.categories = props.categories as readonly string[];
+        canvasRecorder.readableLabels = props.readableLabels;
         return h("div", { class: "mock-g6-canvas", "aria-label": props.label });
       };
     },
@@ -464,9 +478,24 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
 
   await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBe(2));
   expect(neighborCalls).toEqual([{ className: USER, primaryKey: "u-1" }]);
+  expect(canvasRecorder.readableLabels).toBe(true);
+  expect(canvasRecorder.fitOptions.at(-1)).toMatchObject({ keepNames: true, around: userId });
 
-  // No in-frame Export PNG button: host owns the export action and requests PNG bytes over the bridge
-  expect(document.querySelector('[data-graph-action="export-png"]')).toBeNull();
+  // Download PNG button exports the drawn canvas through savePanelFile
+  const downloadBtn = document.querySelector<HTMLButtonElement>('[data-graph-action="download"]');
+  expect(downloadBtn).not.toBeNull();
+  const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:capmap-test");
+  const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  try {
+    downloadBtn!.click();
+    await vi.waitFor(() => expect(canvasRecorder.exportCalls).toBe(1));
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  } finally {
+    createUrl.mockRestore();
+    revokeUrl.mockRestore();
+    clickSpy.mockRestore();
+  }
 
   // Record root position before expanding neighbor
   const rootPosBefore = { x: nodeById(userId)!.x!, y: nodeById(userId)!.y! };
@@ -521,11 +550,23 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
   const fitBefore = canvasRecorder.fitCalls;
   document.querySelector<HTMLButtonElement>('[data-graph-action="fit"]')!.click();
   await vi.waitFor(() => expect(canvasRecorder.fitCalls).toBeGreaterThan(fitBefore));
+  expect(canvasRecorder.fitOptions.at(-1)?.keepNames).toBeUndefined();
 
+  canvasRecorder.fitsWhole = false;
   const relayoutBefore = canvasRecorder.relayoutCalls;
   document.querySelector<HTMLButtonElement>('[data-graph-action="relayout"]')!.click();
   await vi.waitFor(() => expect(canvasRecorder.relayoutCalls).toBeGreaterThan(relayoutBefore));
   expect(nodeById(userId)?.x).toBe(0);
+  await vi.waitFor(() => expect(document.querySelector("[data-graph-hint]")).not.toBeNull());
+  expect(document.querySelector("[data-graph-hint]")!.classList.contains("quiet")).toBe(false);
+  canvasRecorder.emitViewport!({ x: 40, y: 0, width: 800, height: 600, zoom: 0.9 });
+  await nextTick();
+  expect(document.querySelector("[data-graph-hint]")!.classList.contains("quiet")).toBe(true);
+
+  // Host header Refresh invokes refreshObjects(), which reloads the graph from its start
+  const neighborsBeforeRefresh = neighborCalls.length;
+  mounted.context.instance.refreshObjects();
+  await vi.waitFor(() => expect(neighborCalls.length).toBeGreaterThan(neighborsBeforeRefresh));
 });
 
 it("separates no-neighbors, owner-refused and read-failed states without collapsing into an empty graph", async () => {
