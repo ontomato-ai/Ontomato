@@ -2,8 +2,7 @@
 
 Write the Vue template and scoped panel styles in `panel.html`. Put the template inside `<div id="app">`. Place a
 declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
-Use Vue attributes, events, `v-if` and `v-for` for
-interactions. Adapt the layout to the container width. The host draws the page title and back control.
+Use Vue attributes, events, `v-if` and `v-for` for interactions. Adapt the layout to the container width.
 Panel CSS positions member containers. Set colors, font sizes, spacing and corner radii with the platform's
 design variables. Run `node "$SKILL/ontomato.mjs" sdk read styles/sdk.css` to find the released
 `--text-*`, `--spacing-*` and `--radius-*` variables. In the browser, inspect the page's computed styles for
@@ -24,10 +23,7 @@ configuration and ports, use `sdk read docs/components.md`. The repository's
 `packages/apps-sdk/src/panel/mount.ts` implements the legacy iframe runtime.
 
 Use the platform’s interface components directly in the template: `<markdown-view>`, `<code-editor readonly>`
-for code viewing, `<e-chart>`, `<table-preview>`, `<html-preview>` and `<form-fields>`. Import only `vue` and
-`@ontomato/sdk/panel` in the module. For feedback after an operation, call
-`usePanelContext().notify({ kind, text })` via the context captured in setup. For a message that stays on the page,
-use `<el-alert>`.
+for code viewing, `<e-chart>`, `<table-preview>`, `<html-preview>` and `<form-fields>`.
 
 For translations, put flat message keys under locale tags in `panel.json`'s `content.messages`. For example,
 `{"en":{"panel.greeting":"Hello, {name}"}}` is a message table. Use `t("panel.greeting", { name })` in the
@@ -36,6 +32,39 @@ Use the flat `panel.name` key for the panel title, for example
 `{"zh-CN":{"panel.name":"治理报告"},"en":{"panel.name":"Governance report"}}`. The host uses an entry's menu name
 when present. Otherwise it uses the panel name in the reader's locale, then the platform's default locale and the
 name in `registration.json`. Keep the entry's menu metadata for entries that belong in the menu.
+
+## Use Element Plus in the template
+
+For interface controls, write the Element Plus tags directly in `panel.html`. Use `el-button`, `el-tag`,
+`el-tabs` with `el-tab-pane`, `el-table` with `el-table-column`, `el-input`, `el-select` with `el-option`,
+`el-dialog`, `el-drawer`, `el-empty` and `el-alert` as needed. Keep the tags unwrapped and let the platform's
+Element Plus and enterprise theme style the controls, including buttons and tags. Keep panel CSS for layout
+and use declared projections for business data.
+
+In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel`. Leave `element-plus` out of script imports.
+For transient feedback, call `usePanelContext().notify({ kind, text })` through the context captured in setup.
+For a message that stays on the page, use `<el-alert>`.
+
+This template fragment uses local Vue refs `optionsOpen` (initially `false`) and `density` (initially
+`"comfortable"`) returned by setup.
+
+```html
+<el-button @click="optionsOpen = true">View options</el-button>
+<el-tag>{{ density === 'compact' ? 'Compact' : 'Comfortable' }}</el-tag>
+<el-dialog v-model="optionsOpen" title="View options">
+  <el-select v-model="density" aria-label="Display density">
+    <el-option label="Comfortable" value="comfortable"></el-option>
+    <el-option label="Compact" value="compact"></el-option>
+  </el-select>
+</el-dialog>
+```
+
+Leave the following controls to the platform.
+
+- **Confirm writes.** Have the button invoke the [declared owner operation](#invoke-declared-owner-operations).
+  Button clicks and assistant calls use the same platform confirmation. Use local dialogs for interface choices.
+- **Page header.** The host renders the title, back control, commands and refresh. Declare commands in
+  `manifest.commands` and keep the panel template focused on the page content.
 
 ## Open a panel at a specific state
 
