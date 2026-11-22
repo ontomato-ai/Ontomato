@@ -11,8 +11,8 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
  * by the host — the page opens with the reader's saved value, a change is saved, and what the address asks for wins over
  * the saved value. Any panel declaring such a field gets this; no page keeps its own copy (localStorage) any more.
  *
- * What this rules out: a reader's arrangement (a graph's node positions) lost on leaving and coming back; a saved value
- * overriding the address a link opened.
+ * What this rules out: a reader's arrangement (a graph's node positions) lost on leaving and coming back, or on a reload
+ * within the save's delay; a saved value overriding the address a link opened.
  */
 
 const app = "app-personal";
@@ -100,6 +100,29 @@ it("takes what the address asks for over the reader's saved value", async () => 
   const opened = await open(panelAddress(at("board"), { view: "grid" }));
   try {
     await vi.waitFor(() => expect(text(".view")).toBe("grid"));
+  } finally {
+    opened.app.unmount();
+  }
+});
+
+it("sends a change still within the save's delay at once when the page goes, as a request that outlives it", async () => {
+  saved = { layout: "saved" };
+  const opened = await open(at("board"));
+  try {
+    await vi.waitFor(() => expect(text(".layout")).toBe("saved"));
+    document.querySelector<HTMLButtonElement>(".move")!.click();
+    await vi.waitFor(() => expect(text(".layout")).toBe("moved"));
+    // A reload unmounts nothing: the page only says it goes.
+    window.dispatchEvent(new Event("pagehide"));
+    // Well before the 400 ms the save otherwise waits.
+    await vi.waitFor(() => expect(writes).toHaveLength(1), { timeout: 200 });
+    expect(writes[0]).toMatchObject({ values: { layout: "moved" } });
+    const [, init] = vi.mocked(fetch).mock.calls.find(([input, sent]) =>
+      String(input).endsWith("/product-panels/personal-state") && sent?.method === "PUT")!;
+    expect(init!.keepalive).toBe(true);
+    // Nothing is left waiting to be sent a second time.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(writes).toHaveLength(1);
   } finally {
     opened.app.unmount();
   }
