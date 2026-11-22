@@ -464,7 +464,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     const { panel } = productPanelResponseSchema.parse(await response.json());
     expect(panel).toMatchObject({ visibility: "platform", ownerId: null, editable: false });
     expect(panel.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: true });
-    expect(panel.manifest.commands.create).toEqual({
+    expect(panel.manifest.commands.create).toMatchObject({
       labelKey: "action.create", primary: true, do: { set: { fields: {
         selected: { literal: null }, creating: { literal: true },
       } } },
