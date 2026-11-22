@@ -277,7 +277,7 @@ export const memberRefOf = (panelId: string) => ({
 export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Sent) {
   const query = new URLSearchParams(request.search);
   const applicationId = query.get("applicationId");
-  if (!applicationId) return undefined;
+  if (!applicationId || query.get("source") === "frame") return undefined;
   const pageKey = query.get("pageKey")!;
   const permissionCode = query.get("permissionCode");
   const locator = permissionCode ? { permissionCode, pageKey } : { access: "domain-member", pageKey };

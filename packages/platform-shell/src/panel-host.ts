@@ -79,6 +79,11 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
   coded(source: Source, run: DirectPanelRun, target: CodedPanelTarget): Promise<DirectPanelMount>;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
   /**
+   * Whether the latest `source()` call already verified access and reconciled revisions against a server snapshot
+   * before returning, so initial `load()` does not issue a duplicate snapshot immediately after mounting.
+   */
+  sourceReconciled?(): boolean;
+  /**
    * Whether the use relation this host opens is still the application's, bound to the same panel: what a kept page is
    * checked against when it is shown again. A candidate has no relation to check.
    */
@@ -173,8 +178,8 @@ export interface DirectPanelMount {
   address(url: string): void;
   /** Objects it may show changed: it reads again what it shows of them. */
   refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
-  /** Projections it places have newer definitions: it reads them again. */
-  projectionsChanged(projections: readonly { id: string; revision: number }[]): void;
+  /** Projections it places have newer definitions or changed access: it reads them again. */
+  projectionsChanged(projections: readonly { id: string; revision?: number }[]): void;
   /** Whether its reads may run: not while its page is out of the reader's view. */
   activate(active: boolean): void;
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
@@ -389,6 +394,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let active = true;
   let author: ReturnType<Extract<PanelDefinitionMode, { kind: "author" }>["definitions"]["observe"]> | undefined;
   const pending = new Map<string, ProductDefinitionRevision>();
+  /** Fixed projections reported `forbidden` by the latest snapshot: forced re-read so revoked grants show immediately. */
+  const pendingForbiddenProjections = new Set<string>();
   /** A candidate read again whose definition differs from the one shown; it waits like a changed record does. */
   let pendingCandidate: HostedPanelSource | null = null;
   let pendingObjectRefresh = false;
@@ -431,8 +438,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       admitted.value = true;
       if (port.mode.kind === "author") follow(read);
       // A viewer's panel is reconciled with a short read; the frame does not wait for it.
-      else if (read.kind === "registered")
-        void port.snapshot(read.panel.id).then(snapshot => { if (active) return advance([{ kind: "panel", ...snapshot.panel }]); })
+      else if (read.kind === "registered" && !port.sourceReconciled?.())
+        void port.snapshot(read.panel.id).then(snapshot => { if (active) return reconcileSnapshot(snapshot); })
           .catch(failure => { if (active) reportPanelUnavailable(failure); });
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
@@ -607,7 +614,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** The instance holds unsaved changes, or no longer does: a definition change waits for them. */
   function reportDirty(now: boolean) {
     dirty.value = now;
-    if (!now && (pending.size || pendingCandidate)) void applyPending();
+    if (!now && (pending.size || pendingForbiddenProjections.size || pendingCandidate)) void applyPending();
   }
 
   function snapshotRevisions(snapshot: PanelDefinitionSnapshot): ProductDefinitionRevision[] {
@@ -615,6 +622,20 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       { kind: "panel", ...snapshot.panel },
       ...snapshot.projections.map(projection => ({ kind: "projection" as const, ...projection })),
     ];
+  }
+
+  function reconcileSnapshot(snapshot: PanelDefinitionSnapshot) {
+    const shown = source.value;
+    if (shown && snapshot.members) {
+      for (const member of snapshot.members) {
+        if (member.status !== "forbidden" || member.memberPath.length !== 1) continue;
+        const declaration = shown.panel.manifest.members[member.memberPath[0]!.member];
+        if (declaration && "projectionId" in declaration.target) {
+          pendingForbiddenProjections.add(declaration.target.projectionId);
+        }
+      }
+    }
+    return advance(snapshotRevisions(snapshot));
   }
 
   /** A registered panel and its projections; a candidate has no panel record, only the registered projections it names. */
@@ -655,17 +676,30 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
           const next = { ...shown, panel: record } as HostedPanelSource;
           await adopt(next);
           author?.replace(targetsOf(next));
-          return;
+          if (!active || !frameReady || dirty.value || source.value !== next) return;
         }
       }
-      const projectionIds = new Set(projectionIdsOf(shown));
-      const projections = [...pending.values()]
-        .filter(revision => revision.kind === "projection" && projectionIds.has(revision.id))
-        .map(({ id, revision }) => ({ id, revision }));
+      const current = source.value;
+      if (!current) return;
+      const projectionIds = new Set(projectionIdsOf(current));
+      const directProjections = new Map<string, { id: string; revision?: number }>();
+      for (const revision of pending.values()) {
+        if (revision.kind === "projection" && projectionIds.has(revision.id)) {
+          directProjections.set(revision.id, { id: revision.id, revision: revision.revision });
+        }
+      }
+      for (const id of pendingForbiddenProjections) {
+        if (projectionIds.has(id)) directProjections.set(id, { id });
+      }
       pending.clear();
+      pendingForbiddenProjections.clear();
+      const projections = [...directProjections.values()];
       if (!projections.length) return;
       if (direct.value) direct.value.mount.projectionsChanged(projections);
-      else post({ kind: "projections-changed", projections });
+      else {
+        const frameProjections = projections.filter((p): p is { id: string; revision: number } => p.revision !== undefined);
+        if (frameProjections.length) post({ kind: "projections-changed", projections: frameProjections });
+      }
     }).catch(failure => { if (active) reportPanelUnavailable(failure); });
     return applying;
   }
@@ -674,7 +708,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   async function restore(shown: Extract<HostedPanelSource, { kind: "registered" }>) {
     try {
       const snapshot = await port.snapshot(shown.panel.id);
-      if (active) await advance(snapshotRevisions(snapshot));
+      if (active) await reconcileSnapshot(snapshot);
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
     }
@@ -752,7 +786,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       options.reopened?.();
       follow(shown);
       refresh(null);
-      if (snapshot) await advance(snapshotRevisions(snapshot));
+      if (snapshot) await reconcileSnapshot(snapshot);
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
     }

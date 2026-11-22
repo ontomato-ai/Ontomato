@@ -11,5 +11,6 @@ export {
 export { panelModuleFor, type DirectPanelComponentPort, type DirectPanelModuleExports } from "./panel/direct-run";
 export { panelHumanOperations, type ConfirmPanelOperation, type PanelHumanOperations } from "./panel/human-operations";
 export type { PlatformRequests } from "./panel/platform-objects";
+export { readProjectionForRender } from "./panel/platform-requests";
 
 export { useMember, useMemberData, useMemberOperations, useMemberParam, useMemberRead, type PanelMemberRowOperation } from "./panel/member";

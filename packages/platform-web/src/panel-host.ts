@@ -3,7 +3,7 @@ import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import {
   applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelPageSkillContextResponseSchema, productPanelResponseSchema, productPanelSchema,
   type ApplicationEntryResolution, type ApplicationEntryResolutionQuery, type ApplicationPanelUse,
-  type ProductPanelReadQuery,
+  type BundledPanelProjection, type ProductPanel, type ProductPanelReadQuery,
 } from "@ontomato/contracts/product-panels";
 import { appsSdkCurrentSchema, appsSdkReleaseManifestSchema } from "@ontomato/contracts/apps-sdk";
 import {
@@ -30,8 +30,13 @@ import {
 } from "@ontomato/platform-shell";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import {
-  panelModuleFor, PanelMemberUnavailable, type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
+  panelModuleFor, PanelMemberUnavailable, readProjectionForRender, type DirectPanelMount as PanelRunMount, type DirectPanelMountOptions, type PlatformRequests,
 } from "@ontomato/apps-sdk/direct";
+import {
+  currentDefinitionCacheScope, framePanelCacheKey, getCachedPanel, ingestBundledPanelProjections,
+  invalidateCachedPanel, invalidateCachedPanelById, invalidateCachedProjection, readCachedProjection,
+  reconcileDefinitionCacheWithSnapshot, setCachedPanel,
+} from "./panel-definition-cache";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
 import * as Vue from "vue";
 import { provideGlobalConfig } from "element-plus";
@@ -91,7 +96,7 @@ async function release(): Promise<PanelSdkRelease> {
   return { base: current.sdkBasePath, manifest: appsSdkReleaseManifestSchema.parse(await manifest.json()) };
 }
 
-/** A panel's current record. */
+/** A panel's current record (unbundled, uncached — used for author previews and auxiliary reads). */
 async function panel(panelId: string) {
   return productPanelSchema.parse((await json(panelHostPaths.panel(panelId))).panel);
 }
@@ -137,21 +142,71 @@ export function platformPanelHost(
     ? { ...shown, pageKey: use.pageKey, permissionCode: use.access.permissionCode }
     : { ...shown, pageKey: use.pageKey, access: "domain-member" };
   const page = new URLSearchParams(read);
+  let lastPanel: ProductPanel | undefined;
+  let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
+  let sourceReconciled = false;
   return {
-    // Opening reads the panel's record, and — beside it, not before it — which page skill this page reaches: the panel is
-    // drawn as soon as its record is here, and only the page's composer and conversation wait for the skill (a read of
-    // the record that also worked out the skill took 2.3 s on 128, the record alone 0.5 s).
+    // Opening reads the panel's record (bundled with its fixed projections on cache miss), and — beside it, not before
+    // it — which page skill this page reaches: the panel is drawn as soon as its record is here, and only the page's
+    // composer and conversation wait for the skill (a read of the record that also worked out the skill took 2.3 s on
+    // 128, the record alone 0.5 s).
     async source() {
+      sourceReconciled = false;
+      let sourceFailed = false;
       void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`)
-        .then((answer) => pageSkill?.(productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext))
+        .then((answer) => {
+          if (!sourceFailed) pageSkill?.(productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext);
+        })
         // Without it the page's composer stays closed, as for a page that reaches no skill; the panel is unaffected.
         .catch(() => undefined);
-      const answer = productPanelResponseSchema.parse(await json(panelHostPaths.panel(use.panelId)));
-      return { kind: "registered", applicationId, use, panel: answer.panel };
+      try {
+        const cached = getCachedPanel(use.panelId);
+        if (cached) {
+          // Verify panel access and definition revisions before mounting a cached record, using the lightweight
+          // snapshot (no page query so Node skips pageSkillContext — that runs in parallel above).
+          const scope = currentDefinitionCacheScope();
+          let verified;
+          try {
+            verified = panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(use.panelId)));
+          } catch (failure) {
+            invalidateCachedPanel(use.panelId);
+            throw failure;
+          }
+          const forbidden = reconcileDefinitionCacheWithSnapshot(use.panelId, cached, verified, scope);
+          if (verified.panel.revision === cached.revision) {
+            lastPanel = cached;
+            mountUnavailable = forbidden;
+            sourceReconciled = true;
+            return { kind: "registered", applicationId, use, panel: cached };
+          }
+          invalidateCachedPanel(use.panelId);
+          sourceReconciled = true;
+        }
+        const scope = currentDefinitionCacheScope();
+        const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?includeProjections=1`));
+        setCachedPanel(use.panelId, answer.panel, scope);
+        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        lastPanel = answer.panel;
+        return { kind: "registered", applicationId, use, panel: answer.panel };
+      } catch (failure) {
+        sourceFailed = true;
+        throw failure;
+      }
     },
+    sourceReconciled: () => sourceReconciled,
     pageKey: use.pageKey,
     use: shown,
-    panel,
+    async panel(panelId) {
+      if (panelId === use.panelId) {
+        const scope = currentDefinitionCacheScope();
+        const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}?includeProjections=1`));
+        setCachedPanel(panelId, answer.panel, scope);
+        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        lastPanel = answer.panel;
+        return answer.panel;
+      }
+      return panel(panelId);
+    },
     release,
     // The frame is this application's: the address the reader is on names it, and a panel shown beside a conversation is
     // the same application's page. Registering it under that ID is what lets the bridge recognise the frame and answer
@@ -161,7 +216,7 @@ export function platformPanelHost(
     // The panel runs in this document, as the same application's page: its members read through the platform as the
     // reader, within this use, and a person's write is confirmed and dispatched here.
     coded: (source, run, target) => withPersonalState({ kind: "registered", ...shown }, [], source.panel.manifest, run,
-      (opened) => mountCoded(withNested(directOptions(source, opened, shown, changed, beside), { kind: "registered", ...shown }), target, source.panel.content.module)),
+      (opened) => mountCoded(withNested(directOptions(source, opened, shown, changed, beside, undefined, undefined, mountUnavailable), { kind: "registered", ...shown }), target, source.panel.content.module)),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
@@ -172,7 +227,19 @@ export function platformPanelHost(
     // The page's check of its definitions, when it is shown again or comes back to the foreground, is read for this page
     // too: the page skill it reaches is confirmed again with it, since what it may reach can have changed meanwhile.
     async snapshot(panelId) {
-      const answer = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(panelId)}?${page}`));
+      const scope = currentDefinitionCacheScope();
+      let answer;
+      try {
+        answer = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(panelId)}?${page}`));
+      } catch (failure) {
+        invalidateCachedPanel(panelId);
+        throw failure;
+      }
+      const forbidden = reconcileDefinitionCacheWithSnapshot(panelId, lastPanel, answer, scope);
+      if (mountUnavailable && answer.members !== undefined) {
+        mountUnavailable.clear();
+        for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
+      }
       pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
       return answer;
     },
@@ -193,19 +260,60 @@ export function framePanelHost(
   const shown: PanelUseRef = { applicationId, useId: use.id };
   const frameSource: PanelReadSource = { kind: "frame", applicationId, useId: use.id } as PanelReadSource;
   const query = new URLSearchParams({ applicationId, useId: use.id, source: "frame" });
+  const sourceQuery = new URLSearchParams({ applicationId, useId: use.id, source: "frame", includeProjections: "1" });
+  const cacheKey = framePanelCacheKey(applicationId, framePanelId);
+  let lastPanel: ProductPanel | undefined;
+  let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
+  let sourceReconciled = false;
   return {
     async source() {
-      // Node answers the frame's record alone, with no page skill: the frame is no page of its own.
-      const answer = await json(`${panelHostPaths.panel(framePanelId)}?${query}`);
-      return { kind: "registered", applicationId, use, panel: productPanelSchema.parse(answer.panel) };
+      sourceReconciled = false;
+      const cached = getCachedPanel(cacheKey);
+      if (cached) {
+        const scope = currentDefinitionCacheScope();
+        let verified;
+        try {
+          verified = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(framePanelId)}?${query}`));
+        } catch (failure) {
+          invalidateCachedPanel(cacheKey);
+          throw failure;
+        }
+        const forbidden = reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
+        if (verified.panel.revision === cached.revision) {
+          lastPanel = cached;
+          mountUnavailable = forbidden;
+          sourceReconciled = true;
+          return { kind: "registered", applicationId, use, panel: cached };
+        }
+        invalidateCachedPanel(cacheKey);
+        sourceReconciled = true;
+      }
+      // Node answers the frame's record (bundled with its fixed projections) alone, with no page skill: the frame is no page of its own.
+      const scope = currentDefinitionCacheScope();
+      const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
+      setCachedPanel(cacheKey, answer.panel, scope);
+      mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+      lastPanel = answer.panel;
+      return { kind: "registered", applicationId, use, panel: answer.panel };
     },
+    sourceReconciled: () => sourceReconciled,
     pageKey: use.pageKey,
     use: shown,
-    panel,
+    async panel(panelId) {
+      if (panelId === framePanelId) {
+        const scope = currentDefinitionCacheScope();
+        const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}?${sourceQuery}`));
+        setCachedPanel(cacheKey, answer.panel, scope);
+        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        lastPanel = answer.panel;
+        return answer.panel;
+      }
+      return panel(panelId);
+    },
     release,
     frame: () => { throw new Error("An application's frame runs in the platform's document, not in a frame"); },
     coded: (source, run, target) => mountCoded(
-      withNested(directOptions(source, run, shown, changed, undefined, frameSource, "frame"), frameSource),
+      withNested(directOptions(source, run, shown, changed, undefined, frameSource, "frame", mountUnavailable), frameSource),
       target, source.panel.content.module,
     ),
     // The frame is the entry's: it stands while Java still names the same entry, bound to the same frame panel.
@@ -214,7 +322,21 @@ export function framePanelHost(
       return answer.use.id === use.id && answer.framePanelId === framePanelId;
     },
     async snapshot(panelId) {
-      return panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(panelId)}?${query}`));
+      const scope = currentDefinitionCacheScope();
+      const targetKey = panelId === framePanelId ? cacheKey : panelId;
+      let answer;
+      try {
+        answer = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(panelId)}?${query}`));
+      } catch (failure) {
+        invalidateCachedPanel(targetKey);
+        throw failure;
+      }
+      const forbidden = reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
+      if (mountUnavailable && answer.members !== undefined) {
+        mountUnavailable.clear();
+        for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
+      }
+      return answer;
     },
     mode: { kind: "view" },
   };
@@ -278,12 +400,15 @@ function directOptions(
   readSource: PanelReadSource = { kind: "registered", ...use },
   /** The root its people's operations are bound to: the frame's, for a frame panel. */
   root?: "frame",
+  /** Bundled unavailable fixed projections for this mount only; never persisted across re-entries. */
+  mountUnavailable?: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>>,
 ): OwnPanelOptions {
   const { global } = workbenchI18n();
   return {
     manifest: source.panel.manifest,
     run,
     requests: platformRequests,
+    readProjection: (id) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id), mountUnavailable),
     use: root ? { ...use, root } : use,
     read: request => readPanelData({ source: readSource, ...request }),
     confirmOperation: preparation => confirmPanelIntent(use, preparation.intentId, changed),
@@ -337,8 +462,11 @@ async function mountNested(
   // The placed panel's own theme with this placement's laid over it (default → … → the panel → this placement).
   const dropTheme = applyTheme(element, () => composeThemes(panel.theme, run.theme), hostThemeMode);
   try {
+    const nestedReadProjection = source.kind === "candidate"
+      ? undefined
+      : (id: string) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id));
     const mount = await withPersonalState(source, placedAt, panel.manifest, run, (opened) => mountCoded(
-      withNested({ ...outer, manifest: panel.manifest, messages: panel.content.messages ?? {}, run: opened, memberPath: placedAt }, source),
+      withNested({ ...outer, readProjection: nestedReadProjection, manifest: panel.manifest, messages: panel.content.messages ?? {}, run: opened, memberPath: placedAt }, source),
       { element, template }, panel.content.module,
     ));
     return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); dropTheme(); } } };
@@ -497,6 +625,10 @@ function createAuthorDefinitions(): PanelAuthorDefinitions {
         observed.set(key, revision);
         return true;
       });
+      for (const revision of changed) {
+        if (revision.kind === "panel") invalidateCachedPanelById(revision.id, revision.revision);
+        else invalidateCachedProjection(revision.id, revision.revision);
+      }
       for (const observer of observers.keys()) {
         const relevant = changed.filter(revision => observer.targets.has(targetKey(revision)));
         if (relevant.length) observer.onRevisions(relevant);

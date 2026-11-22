@@ -5,7 +5,7 @@ import type { ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-ho
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
 import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions } from "./direct";
 import { runPanel } from "./lifecycle";
-import { type PanelMessages } from "@ontomato/contracts/product-panels";
+import { type PanelMessages, type ProductProjectionRenderResponse } from "@ontomato/contracts/product-panels";
 import { panelHumanOperations, type PanelOperationUse } from "./human-operations";
 import type { PlatformRequests } from "./platform-objects";
 import { readComponentPackage, readPageDraft, readProjectionForRender, recordDraftCreated } from "./platform-requests";
@@ -28,6 +28,11 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
   run: DirectPanelRun;
   /** The platform's request path, as the reader: drafts, projection records and the coordinator's operations. */
   requests: PlatformRequests;
+  /**
+   * Optional host hook for reading a projection's render payload (e.g. from bundled panel definitions or a
+   * revision-checked client cache). Falls back to `readProjectionForRender(requests, id)` when omitted.
+   */
+  readProjection?(id: string): Promise<ProductProjectionRenderResponse>;
   loadDomainComponent?(runtime: DomainComponentRuntime): Promise<Component>;
   /** The application use the panel runs as (with `root: "frame"` for the frame); a preview runs as none and runs no operation. */
   use: PanelOperationUse | null;
@@ -88,7 +93,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       operations: panelHumanOperations(options.use, requests),
       recordDraftCreated: (link, id) => recordDraftCreated(requests, link, id),
       readProjection: async (id) => {
-        const { projection, domainComponent } = await readProjectionForRender(requests, id);
+        const { projection, domainComponent } = await (options.readProjection?.(id) ?? readProjectionForRender(requests, id));
         if (domainComponent) domainSources.set(projection, domainComponent);
         return projection;
       },

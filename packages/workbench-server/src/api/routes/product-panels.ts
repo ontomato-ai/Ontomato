@@ -21,10 +21,10 @@ import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import { z } from "zod";
 import {
-  applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
+  applicationPanelReferencesRequestSchema, bundledPanelProjectionSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
   PROJECTION_REUSE_PANEL_HEADER,
-  productCurrentIdParamsSchema, productProjectionRenderResponseSchema, productPanelPageSkillContextQuerySchema, productPanelPageSkillContextResponseSchema,
-  productPanelReadQuerySchema, type ProductPanelPageSkillContextQuery, type ProductPanelReadQuery,
+  productCurrentIdParamsSchema, productPanelGetQuerySchema, productProjectionRenderResponseSchema, productPanelPageSkillContextQuerySchema, productPanelPageSkillContextResponseSchema,
+  productPanelReadQuerySchema, type BundledPanelProjection, type ProductPanel, type ProductPanelPageSkillContextQuery, type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
   registerProductPanelRequestSchema,
   registerProductProjectionRequestSchema, updateChartProjectionSourceRequestSchema,
@@ -70,6 +70,42 @@ function pageSkillContextFor(
     { domainId: caller.owner.domainId, initiatorCredentials: caller.credentials },
     entrance, { kind: "application-use", applicationId, useId }, panel, panelSkillProvider,
   );
+}
+
+/**
+ * Reads every unique fixed projection member of a panel in parallel using the same `use` grant and render-validation
+ * path as `GET /api/product-projections/:id`. Per-member 403/404 denials stay isolated to that member.
+ */
+async function readBundledPanelProjections(
+  caller: ReturnType<typeof context>,
+  panel: Pick<ProductPanel, "manifest">,
+): Promise<Record<string, BundledPanelProjection>> {
+  const ids = [...new Set(
+    Object.values(panel.manifest.members).flatMap((member) =>
+      "projectionId" in member.target ? [member.target.projectionId] : [],
+    ),
+  )];
+  const entries = await Promise.all(ids.map(async (projectionId): Promise<[string, BundledPanelProjection] | null> => {
+    try {
+      const projection = await readCurrentProjectionRecord(caller.owner, caller.credentials, projectionId, false);
+      const domainComponent = await validateProjectionComponent(
+        projectionId, projection, undefined, { domainId: projection.domainId },
+      );
+      return [projectionId, bundledPanelProjectionSchema.parse({
+        status: "ready",
+        projection,
+        ...(domainComponent && { domainComponent }),
+      })];
+    } catch (error) {
+      if (error instanceof HttpError && (error.status === 403 || error.status === 404)) {
+        return [projectionId, { status: "unavailable", httpStatus: error.status, message: error.message }];
+      }
+      // Omit a member whose component validation fails (400) so the panel still opens and only that member reports its error.
+      if (error instanceof HttpError && error.status === 400) return null;
+      throw error;
+    }
+  }));
+  return Object.fromEntries(entries.filter((entry): entry is [string, BundledPanelProjection] => entry !== null));
 }
 
 function registrationIssue(issue: z.ZodIssue, branch?: number): string {
@@ -148,15 +184,20 @@ productPanelsRouter.post("/definition-stream", wrap(async (req, res) => {
 productPanelsRouter.get("/:id", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store");
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
-  const query = productPanelReadQuerySchema.parse(req.query);
+  const { includeProjections, ...query } = productPanelGetQuerySchema.parse(req.query);
+  const bundleProjections = includeProjections === "1";
   if ("source" in query) {
     const { panel } = await requireFrameForRead(query, c, id);
-    res.json({ panel });
+    const projections = bundleProjections ? await readBundledPanelProjections(c, panel) : undefined;
+    res.json({ panel, ...(projections && { projections }) });
     return;
   }
   const panel = await readCurrentPanelRecord(c.owner, c.credentials, id, !("applicationId" in query));
-  const pageSkillContext = "applicationId" in query ? await pageSkillContextFor(query, c, panel) : undefined;
-  res.json({ panel, ...(pageSkillContext && { pageSkillContext }) });
+  const [pageSkillContext, projections] = await Promise.all([
+    "applicationId" in query ? pageSkillContextFor(query, c, panel) : Promise.resolve(undefined),
+    bundleProjections ? readBundledPanelProjections(c, panel) : Promise.resolve(undefined),
+  ]);
+  res.json({ panel, ...(pageSkillContext && { pageSkillContext }), ...(projections && { projections }) });
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);

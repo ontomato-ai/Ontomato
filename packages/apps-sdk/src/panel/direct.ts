@@ -96,7 +96,7 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
 export interface NestedPanelMount {
   readonly instance: PanelInstance;
   refresh(target: null, affected?: PanelOperationAffected): void;
-  projectionsChanged(projections: readonly { id: string; revision: number }[]): void;
+  projectionsChanged(projections: readonly { id: string; revision?: number }[]): void;
   activate(active: boolean): void;
   dispose(): void;
 }
@@ -343,6 +343,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   }>();
   /** The revision each member's projection was last read at. */
   const readRevisions = new Map<string, number>();
+  /** The newest revision reported for each projection ID, to reconcile in-flight initial reads without duplicating them. */
+  const latestRevisions = new Map<string, number>();
   const versions = shallowReactive(new Map<string, number>());
   let active = true;
   /** A member's segment of a path: its key, and for one placed from the panel's state the selection that chose it. */
@@ -402,6 +404,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   function release(member: string) {
     projections.delete(member);
     definitions.delete(member);
+    readRevisions.delete(member);
     for (const [key, entry] of [...rowOperationsCache.entries()]) {
       if (entry.member !== member) continue;
       rowOperationsCache.delete(key);
@@ -572,7 +575,13 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         const id = placedProjectionId(member);
         if (id === null) throw new Error(`Member '${member}' places no projection now`);
         found = options.readProjection(id).then((projection) => {
-          readRevisions.set(member, projection.revision);
+          if (projections.get(member) === found) {
+            readRevisions.set(member, projection.revision);
+            const newest = latestRevisions.get(id);
+            if (newest !== undefined && projection.revision < newest) {
+              queueMicrotask(() => directInstance.projectionChanged(id, newest));
+            }
+          }
           return projection;
         }).catch((reason: unknown) => {
           if (projections.get(member) === found) projections.delete(member);
@@ -743,15 +752,26 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       for (const mount of nestedMounts) mount.activate(next);
     },
     projectionChanged(id: string, revision?: number) {
+      if (revision !== undefined) {
+        latestRevisions.set(id, Math.max(latestRevisions.get(id) ?? 0, revision));
+      }
       for (const member of Object.keys(direct.members)) {
         if (placedProjectionId(member) !== id) continue;
-        if (revision !== undefined && revision <= (readRevisions.get(member) ?? 0)) continue;
+        if (revision !== undefined) {
+          if (readRevisions.has(member)) {
+            if (revision <= readRevisions.get(member)!) continue;
+          } else if (projections.has(member)) {
+            // Initial read is still in flight; it will reconcile against `latestRevisions` once it resolves.
+            continue;
+          }
+        }
         // A member the instance held is held anew from the newer definition, drawn or not.
         const held = members.has(member);
         release(member);
         if (held) void directInstance.placing(member).catch(() => undefined);
       }
-      if (revision !== undefined) for (const mount of nestedMounts) mount.projectionsChanged([{ id, revision }]);
+      for (const mount of nestedMounts)
+        mount.projectionsChanged([revision === undefined ? { id } : { id, revision }]);
     },
     projectionVersion: (member: string) => versions.get(member) ?? 0,
     markDrawn(member: string) {
