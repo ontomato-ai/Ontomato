@@ -67,17 +67,17 @@ await mountPanel({
     function backToCatalog() {
       instance.state.setState({ selected: null, creating: false });
     }
-    const back = usePanelBack({
-      active: () => Boolean(selectedKey.value),
-      pushHistory: true,
-      onBack: backToCatalog,
-    });
+    const back = usePanelBack(
+      () => Boolean(selectedKey.value),
+      backToCatalog,
+      { pushHistory: true },
+    );
     const hasHeaderHost = usePanelDetailHeader(() => (
       selectedKey.value
         ? {
             backLabel: "返回关系类型",
             title: title.value,
-            onBack: () => void back.trigger(),
+            onBack: () => void back.back(),
             actions: detail.value.status === "ready"
               ? [{
                   id: "save",

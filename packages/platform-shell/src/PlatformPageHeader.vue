@@ -431,8 +431,8 @@ watch(moreOpen, (open, _previous, onCleanup) => {
   background: var(--el-color-primary-dark-2);
 }
 .action.danger {
-  border: 1px solid var(--el-color-danger-light-5, var(--el-color-danger));
-  background: var(--el-color-danger-light-9, var(--el-bg-color));
+  border: 1px solid color-mix(in srgb, var(--el-color-danger) 42%, transparent);
+  background: color-mix(in srgb, var(--el-color-danger) 8%, transparent);
   color: var(--el-color-danger);
 }
 .action.danger:not(:disabled):hover {
