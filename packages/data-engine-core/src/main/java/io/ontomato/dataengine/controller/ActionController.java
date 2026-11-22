@@ -271,9 +271,15 @@ public class ActionController {
 		try {
 			User user = SystemUtils.getCurUser();
 			String id = param.getString("id");
+			if ("delete-availability".equals(param.getString("purpose"))) {
+				var reason = actionService.systemDeletionRefusal(id, user.getDomainId(), lang);
+				return JSONObject.of("success", true, "data", JSONObject.of("reason", reason));
+			}
 			Action action = actionService.queryById(id);
 			ret.put("success", true);
 			ret.put("data", action == null ? null : withDisplay(action, subjectNames(user.getDomainId()), lang));
+		} catch (OwnerRefusal e) {
+			e.writeTo(ret);
 		} catch (Exception e) {
 			log.error(e.getMessage(), e);
 			ret.put("success", false);

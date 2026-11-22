@@ -308,10 +308,17 @@ class MetricViewBindingContractTest {
   @Test
   void aSystemMetricCannotBeSavedOrDeleted() {
     var saved = service.save(metric("domain-a"), "en");
+    assertNull(service.systemDeletionRefusal(saved.getId(), "domain-a", "en"));
     metrics.get(saved.getId()).setOrigin(MetricView.ORIGIN_SYSTEM);
+    var languages = mock(io.ontomato.dataengine.service.LangService.class);
+    when(languages.get("en", "MetricView.cannotDeleteSystem")).thenReturn("This is a system metric.");
+    ReflectionTestUtils.setField(service, "langService", languages);
 
     assertRefusal("METRIC_VIEW_SYSTEM", () -> service.save(saved, "en"));
-    assertRefusal("METRIC_VIEW_SYSTEM", () -> service.delete(saved.getId(), "domain-a", "en"));
+    var refused = assertThrows(OwnerRefusal.class, () -> service.delete(saved.getId(), "domain-a", "en"));
+    assertEquals("METRIC_VIEW_SYSTEM", refused.code());
+    assertEquals("This is a system metric.", refused.getMessage());
+    assertEquals(refused.getMessage(), service.systemDeletionRefusal(saved.getId(), "domain-a", "en"));
   }
 
   @Test
