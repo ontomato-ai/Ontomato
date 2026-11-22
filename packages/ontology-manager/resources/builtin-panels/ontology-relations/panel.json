@@ -59,6 +59,7 @@
           "record": "record"
         },
         "config": {
+          "showTitle": false,
           "fields": [
             "fromObject",
             "toObject"
