@@ -2,6 +2,7 @@ import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
+import { entryCount } from "./entry-counts";
 import type { AppPartition } from "./partition";
 export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "homePermission" | "entryHome" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
@@ -138,14 +139,17 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
     const panels = isPanelApplication(app);
     const applicationRoute = embedded || panels;
     // Catalog entries may precede their renderer or an edition's asynchronous layout registration.
+    // An entry's count is the one its declaration names, read as its page reads it (entry-counts).
     const panelPages = panels ? app.panelUses?.flatMap(use => use.names ? [{
       id: panelUsePath(use.path),
       label: use.names[locale] ?? use.names.en!,
+      ...use.count ? { count: entryCount(app.id, use) } : {},
     }] : []) ?? [] : [];
     // A native application's panel entries stand where its menu table lists their addresses.
     const entries = !panels && !embedded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
       id: panelUsePath(use.path),
       label: use.names[locale] ?? use.names.en!,
+      ...use.count ? { count: entryCount(app.id, use) } : {},
     }] as const] : []) ?? []) : undefined;
     const layout: NativeLayout = panelPages.length > 1
       ? { frame: "menu", sections: [{ key: app.id, pages: panelPages }] }

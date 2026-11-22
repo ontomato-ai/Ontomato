@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { appDeclarations } from "../partition";
 import { catalogPartitionFixture as appPartition } from "./fixtures";
 import { closedAccess, generatedNavigation } from "./fixtures";
 import { catalogFixture } from "./fixtures";
 import { catalogPartition } from "../native-layouts";
 import { appAt } from "../apps";
+
+// An entry's declared count, as the platform reads it for the entry (its own module's tests cover the read).
+vi.mock("../entry-counts", () => ({ entryCount: (applicationId: string, use: { id: string }) => `${applicationId}/${use.id}` === "ontology/ontology-functions" ? 63 : null }));
 
 const t = (key: string) => key;
 const declarations = appDeclarations(generatedNavigation(), closedAccess(["business-knowledge"]), appPartition(), t);
@@ -110,4 +113,16 @@ describe("the operations application's user feedback", () => {
   it("does not open on user feedback for a reader the catalogue gives no such entry", () => {
     expect(operations(["user-feedback"], withoutFeedback).home).not.toBe("/ops/feedback");
   });
+});
+
+it("gives a panel entry's row the count its entry declares, and keeps a native page's own count for an entry declaring none", () => {
+  const catalog = catalogFixture().map(app => app.id !== "ontology" ? app : {
+    ...app,
+    panelUses: (app.panelUses ?? []).map(use => use.id === "ontology-functions" ? { ...use, count: { member: "list", data: "rows" } } : use),
+  });
+  const ontology = catalogPartition(catalog, "zh-CN").find(app => app.id === "ontology")!;
+  expect(ontology.entries?.get("/ontology/assets/functions")).toMatchObject({ count: 63 });
+  // An entry that declares nothing carries no count of its own: the row it stands in keeps the page's.
+  const knowledge = ontology.entries?.get("/ontology/knowledge");
+  expect(knowledge && "count" in knowledge).toBe(false);
 });

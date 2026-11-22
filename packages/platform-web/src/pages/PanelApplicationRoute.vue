@@ -15,6 +15,7 @@ import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import EntryUnit from "./EntryUnit.vue";
 import { copyExternalLink } from "../external-link";
+import { entryCountsChanged } from "../entry-counts";
 import { Link } from "lucide-vue-next";
 import { expandDeclaredComposer, hostThemeMode } from "../app-host";
 import { useApplicationCatalog } from "../catalog";
@@ -79,7 +80,10 @@ const countedTypesChanged = inject(countedTypesChangedKey, null);
  */
 function changed(change: PanelObjectChange) {
   host.value?.refresh(change.target, change.affected);
-  if (change.affected) countedTypesChanged?.(change.affected.objectTypes);
+  if (change.affected) {
+    countedTypesChanged?.(change.affected.objectTypes);
+    entryCountsChanged();
+  }
 }
 watch(() => props.objectRefresh?.seq, () => {
   if (props.objectRefresh) changed(props.objectRefresh);
