@@ -2,24 +2,20 @@ import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource } from "@ontomato/platform-shell";
-import { defineAsyncComponent, defineComponent, h, ref, type PropType } from "vue";
+import { defineAsyncComponent, defineComponent, h, ref } from "vue";
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
-import { useManagerClient, useManagerCounts } from "./context";
+import { useManagerClient } from "./context";
 import ManagerFrame from "./ManagerFrame.vue";
-import OntologyAssetCatalog from "./components/OntologyAssetCatalog.vue";
 import WorkflowCatalog from "./components/WorkflowCatalog.vue";
 import TriggerCatalog from "./components/TriggerCatalog.vue";
 import { managerPaths } from "./navigation";
-import type { AssetTab } from "./workspace";
 
 /*
  * Heavy pages load when first entered, so their graph, chart and Markdown libraries stay out of the entry script:
- * visual modeling brings AntV G6/X6, data browsing loads G6 only for its graph view, and asset details
- * bring Markdown and code highlighting.
+ * visual modeling brings AntV G6/X6 and data browsing loads G6 only for its graph view.
  */
 const DataBrowser = defineAsyncComponent(() => import("./data-browser/DataBrowser.vue"));
-const OntologyAssetDetail = defineAsyncComponent(() => import("./components/OntologyAssetDetail.vue"));
 const ObjectViewPage = defineAsyncComponent(() => import("./object-views/ObjectViewPage.vue"));
 const ObjectViewBuilder = defineAsyncComponent(() => import("./object-views/ObjectViewBuilder.vue"));
 const ProductAssetCatalog=defineAsyncComponent(()=>import("./products/ProductAssetCatalog.vue"));
@@ -64,9 +60,6 @@ const ObjectViewEditorRoute = defineComponent({
   },
 });
 
-const assetDetails = { metrics: routes.metric };
-const ASSET_KINDS: readonly AssetTab[] = ["metrics"];
-
 /** Where the data browser last was, kept per router so that the navigation entry returns to that object type. */
 interface DataBrowserMemory {
   className: string;
@@ -91,50 +84,6 @@ function dataBrowserPage(memory: DataBrowserMemory) {
     },
   });
 }
-
-const AssetCatalogPage = defineComponent({
-  name: "ManagerAssetCatalogPage",
-  props: { kind: { type: String as PropType<AssetTab>, required: true } },
-  setup(props) {
-    const router = useRouter();
-    return () =>
-      h("section", { class: "asset-surface" }, [
-        h(OntologyAssetCatalog, {
-          kind: props.kind,
-          onSelect: (asset: { id?: string }) => {
-            if (asset.id) void router.push({ name: assetDetails[props.kind].name, params: { id: asset.id } });
-          },
-          onCreate: () => void router.push({ name: assetDetails[props.kind].name, params: { id: "new" } }),
-        }),
-      ]);
-  },
-});
-
-const AssetDetailPage = defineComponent({
-  name: "ManagerAssetDetailPage",
-  props: {
-    kind: { type: String as PropType<AssetTab>, required: true },
-    id: { type: String, required: true },
-  },
-  setup(props) {
-    const router = useRouter();
-    const counts = useManagerCounts();
-    return () =>
-      h("section", { class: "asset-surface" }, [
-        h(OntologyAssetDetail, {
-          kind: props.kind,
-          asset: props.id === "new" ? null : { id: props.id, name: props.id },
-          creating: props.id === "new",
-          onBack: () => {
-            void router.push(routes[props.kind].path);
-            void counts.refresh();
-          },
-          onSaved: () => void counts.refresh(),
-          onCreated: () => void counts.refresh(),
-        }),
-      ]);
-  },
-});
 
 const WorkflowPage = defineComponent({
   name: "ManagerWorkflowPage",
@@ -192,15 +141,6 @@ export function managerRoutes(): RouteRecordRaw[] {
               ? { name: "manager-data", params: { className: dataBrowser.className } }
               : true,
         },
-        ...ASSET_KINDS.flatMap((kind) => [
-          { ...routes[kind], component: AssetCatalogPage, props: { kind }, meta: { page: routes[kind].path } },
-          {
-            ...assetDetails[kind],
-            component: AssetDetailPage,
-            props: (route: { params: Record<string, unknown> }) => ({ kind, ...stringParam("id")(route) }),
-            meta: { page: routes[kind].path },
-          },
-        ]),
         { ...routes.workflows, component: WorkflowPage, meta: { page: managerPaths.workflows } },
         { ...routes.triggers, component: TriggerPage, meta: { page: managerPaths.triggers } },
         { ...routes.ontologyModels, component: OntologyModelsPage, meta: { page: routes.ontologyModels.path } },

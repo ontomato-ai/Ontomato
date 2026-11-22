@@ -35,7 +35,6 @@ let held: Map<string, { resolve: (response: Response) => void }[]>;
 let holdPaths: Set<string>;
 let statusFor: (path: string) => number;
 let metasFor: (url: string) => unknown;
-let metricDetail: Record<string, unknown>;
 let dataAdapter: string;
 let instanceNodeCount: number;
 let largeOverview: boolean;
@@ -119,16 +118,6 @@ function respond(url: string, body?: Record<string, unknown>, method = "POST"): 
   if (path === "/metricView/queryList") return json({ success: true, data: [
     { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER" },
   ] });
-  if (path === "/metricView/queryById") return json({ success: true, data: metricDetail });
-  if (path === "/metricView/save") {
-    metricDetail = { ...body, bindings: (body?.bindings as Record<string, unknown>[]).map((binding, index) => ({
-      ...binding, id: binding.id || `binding-${index}`,
-    })) };
-    return json({ success: true, data: metricDetail });
-  }
-  if (path === "/metricView/test") return json({ success: true, data: {
-    md: "# Revenue\n\n| Month | Total |\n| --- | ---: |\n| Jan | 42 |",
-  } });
   if (path === "/data/instanceGraph/connections") return json({ success: true, data: {
     overviewEdges: [{ source: "Order:1", target: "Item:2", type: "has" }], overviewEdgesTruncated: false, version: "v1",
   } });
@@ -183,8 +172,6 @@ beforeEach(() => {
   objectTypeChanges = {};
   statusFor = () => 200;
   metasFor = () => metas(["Order", "Item"]);
-  metricDetail = { id: "metric-1", name: "Revenue metric", status: "PUBLISHED", origin: "USER",
-    function: { name: "Revenue", operation: "OPERATION_READ", parameters: [], returnDef: { classNames: [] } }, bindings: [] };
   dataAdapter = "mysql";
   dataAdapters = [
     { type: "m3", label: "M3", requiresJoinFields: false, fields: [], examples: {} },
@@ -353,7 +340,7 @@ const base: HostOptions = {
   credential: { type: "apiKey", apiKey: "key-a" },
   ...english,
   theme: "light",
-  view: "/ontology/assets/metrics",
+  view: "/ontology/assets/workflows",
   dataFallbacks: hostFallbacks,
   presentation,
 };
@@ -668,7 +655,7 @@ describe("Manager pages in the service router", () => {
     expect(paths()).toEqual(
       expect.arrayContaining([
         "/admin/getMetas",
-        "/metricView/queryList",
+        "/workflow/query",
       ])
     );
     for (const request of requests) {
@@ -677,68 +664,6 @@ describe("Manager pages in the service router", () => {
       expect(request.headers.tk).toBeUndefined();
       expect(request.headers["Accept-Language"]).toBe("en");
     }
-  });
-
-  it("round-trips owned bindings with typed values and removes one without changing the calculation", async () => {
-    const queryPackage = { manifest: { schema: "ontomato.query-package.v1", entry: { kind: "dsl", query: "main" },
-      queries: { main: "q.json" }, modules: [], computation: null, parameterBindings: [],
-      parameterDefs: [{ name: "amount", type: "TYPE_NUMBER", value: null }, { name: "region", type: "TYPE_STRING", value: null }] },
-      files: [{ path: "q.json", content: "shared query" }] };
-    metricDetail.function = { id: "function-1", name: "Revenue", operation: "OPERATION_READ", queryPackage,
-      parameters: queryPackage.manifest.parameterDefs, returnDef: { classNames: [], columnLabels: {} } };
-    metricDetail.bindings = [{ id: "saved-binding", name: "Existing", parameters: { amount: 7, region: "north" }, matchQuestions: [] }];
-    const { root } = mountHost({ ...base, view: "/ontology/assets/metrics" });
-    await settle();
-    (root().querySelector(".resource-table-row") as HTMLButtonElement).click();
-    await settle();
-    clickButton("Add binding");
-    await settle();
-    const card = root().querySelectorAll(".metric-binding")[1]!;
-    const input = (label: string, value: string) => {
-      const field = card.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
-      field.value = value; field.dispatchEvent(new Event("input", { bubbles: true }));
-    };
-    input("Binding name", "New binding"); input("amount", "0"); input("region", "null");
-    await settle(); clickButton("Save"); await settle();
-    const saved = [...requests].reverse().find((r) => r.url.endsWith("/metricView/save"))!.body!;
-    expect(saved.type).toBeUndefined();
-    expect(saved.function).toMatchObject({ id: "function-1", code: null, queryPackage });
-    expect((saved.function as { parameters: { value?: unknown }[] }).parameters.every((p) => p.value === null)).toBe(true);
-    expect((saved.bindings as Record<string, unknown>[])[1]!.parameters).toEqual({ amount: 0, region: null });
-    (root().querySelector(".resource-table-row") as HTMLButtonElement).click(); await settle();
-    expect(root().querySelectorAll(".metric-binding")).toHaveLength(2);
-    const remove = [...root().querySelectorAll<HTMLButtonElement>(".metric-binding button")]
-      .find((button) => button.textContent?.includes("Remove binding"))!;
-    remove.click(); await settle(); clickButton("Save"); await settle();
-    const remaining = [...requests].reverse().find((r) => r.url.endsWith("/metricView/save"))!.body!.bindings as Record<string, unknown>[];
-    expect(remaining).toHaveLength(1);
-    expect(remaining[0]!.name).toBe("New binding");
-    expect(remaining[0]!.id).toBe("binding-1");
-    expect(remaining[0]!.parameters).toEqual({ amount: 0, region: null });
-  });
-
-  it("previews metric Markdown and lets the user switch to its source", async () => {
-    const { root } = mountHost({ ...base, view: "/ontology/assets/metrics" });
-    await settle();
-    (root().querySelector(".resource-table-row") as HTMLButtonElement).click();
-    await settle();
-    clickButton("Test");
-    await settle();
-    clickButton("Test and generate Markdown");
-    await settle();
-
-    const overlay = document.querySelector(".manager-overlay-host")!;
-    const preview = overlay.querySelector(".metric-markdown-preview")!;
-    expect(preview.querySelector("h1")?.textContent).toBe("Revenue");
-    expect(preview.querySelector("table")?.textContent).toContain("42");
-    expect(overlay.querySelector(".metric-markdown-preview textarea")).toBeNull();
-
-    const sourceRadio = [...overlay.querySelectorAll<HTMLElement>(".markdown-view-toggle .el-radio")]
-      .find((item) => item.textContent?.trim() === "Source")!;
-    sourceRadio.querySelector("input")!.click();
-    await settle();
-    expect(overlay.querySelector(".metric-markdown-preview")).toBeNull();
-    expect(overlay.querySelector(".el-dialog .cm-content")?.textContent).toContain("# Revenue");
   });
 
   it("the address locates data browsing; page actions navigate through the router; unknown addresses land on the graph", async () => {
@@ -757,11 +682,11 @@ describe("Manager pages in the service router", () => {
     expect(row.classList.contains("current-row")).toBe(true);
 
     // The navigation entry (a bare /data) returns to the object type last on show.
-    host.view = "/ontology/assets/metrics";
+    host.view = "/ontology/assets/workflows";
     await settle();
     host.view = "/browser/data/Order";
     await settle();
-    host.view = "/ontology/assets/metrics";
+    host.view = "/ontology/assets/workflows";
     await settle();
     host.view = "/browser/data";
     await settle();
@@ -849,7 +774,7 @@ describe("Manager pages in the service router", () => {
     expect(root().textContent).not.toContain("[de] ");
     expect(requests).toEqual([]);
 
-    host.view = "/ontology/assets/metrics";
+    host.view = "/ontology/assets/workflows";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
@@ -857,7 +782,7 @@ describe("Manager pages in the service router", () => {
 
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
-      path === "/metricView/queryList" ? 402 : path.endsWith("/product-assets/counts") ? 401 : 200;
+      path === "/admin/getMetas" ? 402 : path.endsWith("/product-assets/counts") ? 401 : 200;
     const { host, failures, showMenu } = mountHost({ ...base, view: "/ontology/assets/functions" });
     showMenu();
     await settle();
@@ -865,7 +790,7 @@ describe("Manager pages in the service router", () => {
 
     requests = [];
     statusFor = () => 200;
-    host.view = "/ontology/assets/metrics";
+    host.view = "/ontology/assets/workflows";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["x-api-key"] === "key-a")).toBe(true);
@@ -897,7 +822,7 @@ describe("Manager pages in the service router", () => {
     expect(metaRequests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
 
     requests = [];
-    host.view = "/ontology/assets/metrics";
+    host.view = "/ontology/assets/workflows";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "de")).toBe(true);

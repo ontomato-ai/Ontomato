@@ -156,10 +156,10 @@ describe("open-source Ontology Service page", () => {
   });
 
   it("a 401 stops the page with its status; a 402 keeps it", async () => {
-    statusFor = (url) => (url.endsWith("/metricView/queryList") ? 402 : 200);
+    statusFor = (url) => (url.endsWith("/admin/getMetas") ? 402 : 200);
     await start("/#/objects");
     expect(document.querySelector(".platform-shell")).not.toBeNull();
-    statusFor = (url) => (url.endsWith("/metricView/queryList") ? 401 : 200);
+    statusFor = (url) => (url.endsWith("/admin/getMetas") ? 401 : 200);
     await start("/#/objects");
     expect(document.querySelector(".platform-shell")).toBeNull();
   });
