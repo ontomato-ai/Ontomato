@@ -110,8 +110,26 @@
     }, {
       "id": "ontology-skills", "pageKey": "skills-library", "panelId": "builtin-product-skills-library",
       "path": "/ontology/skills", "access": {"permissionCode": "skill-management"},
-      "descriptions": {"en": "Manage skills available to agents", "zh-CN": "管理可供智能体使用的 Skill"},
-      "names": {"en": "Skill", "zh-CN": "Skill"},
+      "descriptions": {
+        "en": "Manage skills available to agents",
+        "zh-CN": "管理可供智能体使用的 Skill",
+        "zh-TW": "管理可供智慧體使用的 Skill",
+        "ja": "エージェントが利用できる Skill を管理",
+        "ar": "إدارة المهارات المتاحة للوكلاء",
+        "fr": "Gérer les Skills disponibles pour les agents",
+        "de": "Verfügbare Skills für Agenten verwalten",
+        "it": "Gestisci gli Skill disponibili per gli agenti"
+      },
+      "names": {
+        "en": "Skill",
+        "zh-CN": "Skill",
+        "zh-TW": "Skill",
+        "ja": "Skill",
+        "ar": "Skill",
+        "fr": "Skill",
+        "de": "Skill",
+        "it": "Skill"
+      },
       "count": {"member": "list", "data": "rows"}
     }]
   }
