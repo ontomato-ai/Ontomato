@@ -64,7 +64,7 @@ export interface PanelFormAdapter {
 export interface ReceivedPanelDraft<Form extends object> {
   slot: string;
   operation: string;
-  /** The object the draft is for: its type, and its id once it names one (an update, or a create its save created). */
+  /** The object the draft is for: its type, its id once it names one (an update, or a create its save created), and optionally the embedded row key. */
   target: PageDraftObjectRef;
   /** The object a create draft's earlier save created; absent for an update draft and an unsaved create. */
   created?: { id: string };
@@ -74,10 +74,13 @@ export interface ReceivedPanelDraft<Form extends object> {
   link: PageDraftLink;
 }
 
-/** The object a draft addresses: a create draft saved once addresses the object it created from then on. */
+/** The object a draft addresses: a create draft saved once addresses the object it created from then on, preserving any embedded row itemKey. */
 function addressed(draft: PageDraft<Record<string, unknown>>): PageDraftObjectRef {
   const id = draft.target.id ?? draft.created?.id;
-  return id === undefined ? { objectType: draft.target.objectType } : { objectType: draft.target.objectType, id };
+  if (id === undefined) return { objectType: draft.target.objectType };
+  return draft.target.itemKey === undefined
+    ? { objectType: draft.target.objectType, id }
+    : { objectType: draft.target.objectType, id, itemKey: draft.target.itemKey };
 }
 
 /** A draft no form of a page takes: the type of the object it is for and the operation it asks for, as the reader is told. */

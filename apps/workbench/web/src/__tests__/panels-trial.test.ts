@@ -198,6 +198,38 @@ describe("a panel instance", () => {
     expect([...received.changed].sort()).toEqual(["/instruction", "/operation"]);
     expect(adapters.unclaimed(["other", "form"])).toBeNull();
   });
+
+  it("preserves optional itemKey on a received draft target for embedded row edits", async () => {
+    const form = (performs: string) => ({
+      handle: { fields: shallowRef([]), values: shallowRef({}), errors: shallowRef({}), changed: shallowRef(new Set<string>()), busy: ref(false), set: () => {} },
+      receive: async (draft: { operation: string }) => (draft.operation === performs ? new Set(["/label"]) : null),
+      submit: async () => ({}),
+      dirty: () => false,
+      discard: () => {},
+    });
+
+    for (const itemKey of ["row-1", { className: SCHEDULED_TASK, primaryKey: "row-2" }] as const) {
+      const adapters = new PanelFormAdapters();
+      adapters.register("rowForm", form("row.save"));
+      const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
+        void receivePanelDraft(
+          "panels-trial-a-tasks",
+          adapters,
+          {
+            readPageDraft: async () => ({
+              pageKey: "panels-trial-a-tasks",
+              operation: "row.save",
+              target: { objectType: SCHEDULED_TASK, id: "parent-1", itemKey },
+              form: { label: "Updated row" },
+            }),
+          },
+          { sessionId: "s", runId: "r", path: "outputs/drafts/row.page-draft.json" },
+          taken,
+        ),
+      );
+      expect(received.target).toEqual({ objectType: SCHEDULED_TASK, id: "parent-1", itemKey });
+    }
+  });
 });
 
 describe("a panel's module", () => {
