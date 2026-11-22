@@ -94,7 +94,15 @@ const shown = computed(() => {
   const heldKeys = new Set(held.value.map((option) => option.primaryKey));
   return [...held.value, ...offered.value.filter((option) => !heldKeys.has(option.primaryKey))];
 });
-const chosen = computed(() => (multiple.value ? held.value.map((option) => option.primaryKey) : held.value[0]?.primaryKey ?? ""));
+/**
+ * The choice shown: the held ones; for a single reference held empty, the owner's own empty choice when its catalogue
+ * names one (following a default, the reader's own permissions), so the field says what its empty value means.
+ */
+const chosen = computed(() => {
+  if (multiple.value) return held.value.map((option) => option.primaryKey);
+  if (field.value.value === null) return [...known.value.values()].find((option) => option.value === null)?.primaryKey ?? "";
+  return held.value[0]?.primaryKey ?? "";
+});
 
 /**
  * Writes the reader's choice in the owner's shape: the chosen values of a multiple reference (an empty list once it is

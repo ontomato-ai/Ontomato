@@ -20,6 +20,7 @@ export const en = {
   "panels.agentForm.hiddenSkillSelection": "This agent has selected skills you cannot view. Ask someone who can see the full selection to change it.",
   "panels.agentForm.executionReadOnly": "Only a domain governance administrator may change the execution user.",
   "panels.agentOptions.domainDefault": "Use the domain default",
+  "panels.agentOptions.domainDefaultModel": "Domain default ({model})",
   "panels.agentOptions.executionOwn": "The reader's own permissions",
   "panels.agentOptions.unavailable": "This option is no longer available.",
   "panels.agentOptions.disabled": "This user is disabled.",

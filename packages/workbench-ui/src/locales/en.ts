@@ -173,6 +173,7 @@ export default {
     "discard": "Discard",
     "unsavedChanges": "Unsaved changes",
     "formLeaveUnsaved": "This form has changes you have not saved. Discard them and open the other item?",
+    "formDiscardConfirm": "Discard the changes you have not saved?",
     "keepEditing": "Keep editing",
     "openInNewTab": "Opens in a new tab",
     "pages": "Pages",

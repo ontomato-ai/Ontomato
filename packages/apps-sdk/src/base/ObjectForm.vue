@@ -480,6 +480,14 @@ function discard() {
   void panel.instance.settleDraft(slot.slot).catch(showRefusal);
 }
 
+/** The reader's Discard: what they have not saved is thrown away only once they say so (原页面对照《智能体设置》). */
+async function confirmDiscard() {
+  const confirmed = await ElMessageBox.confirm(t("platform.formDiscardConfirm"), t("platform.discard"), {
+    confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
+  }).then(() => true, () => false);
+  if (confirmed) discard();
+}
+
 async function saveFromForm() {
   try {
     await panel.instance.forms.submit(slot.slot);
@@ -598,7 +606,8 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
         <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
       </div>
       <div class="sdk-owner-form-actions">
-        <el-button :disabled="saving || !canSettle" @click="discard">{{ t("platform.discard") }}</el-button>
+        <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">{{ t("platform.unsavedChanges") }}</span>
+        <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
         <el-button type="primary" :disabled="!canSettle" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
       </div>
     </el-form>
@@ -609,6 +618,8 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 <style scoped>
 .sdk-owner-form-actions {
   display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   justify-content: flex-end;
   margin-block-start: var(--spacing-md);
 }
@@ -642,5 +653,10 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
   font: inherit;
   padding: 0;
   text-decoration: underline;
+}
+.sdk-owner-form-unsaved {
+  margin-inline-end: auto;
+  color: var(--el-color-warning);
+  font-size: var(--text-sm);
 }
 </style>

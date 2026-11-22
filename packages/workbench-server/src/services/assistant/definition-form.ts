@@ -39,9 +39,9 @@ const fields = [
 
 const fieldSchemas = fields.map(({ schema, ...field }) => ({
   ...field, valueSchema: agentFormJsonSchema(schema),
-  // Reference lists may be empty even when the save body carries the array.
-  required: field.key !== "modelSelection" && !schema.isOptional()
-    && !(field.control.kind === "reference" && field.control.multiple && schema.safeParse([]).success),
+  // What a reader must fill in before saving, as the agent settings page always asked: the name alone. The others the
+  // save body carries are given their values here and may stay as they are (原页面对照《智能体设置》, 2026-11-22).
+  required: field.key === "name",
   defaultValue: field.key === "modelSelection" ? initialValues.modelSelection.modelId : initialValues[field.key],
 }));
 

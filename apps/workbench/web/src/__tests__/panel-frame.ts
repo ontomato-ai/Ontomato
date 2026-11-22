@@ -635,6 +635,24 @@ export const noOperations: {
 };
 
 /** The form save calls that reached the coordinator. */
+/**
+ * Answers a form's "discard what you have not saved?" with Discard, as a reader who means it does: a form throws its
+ * changes away only once asked (原页面对照《智能体设置》, 2026-11-22).
+ */
+export async function confirmDiscard() {
+  const box = await vi.waitFor(() => {
+    const open = [...document.querySelectorAll<HTMLElement>(".el-message-box")].filter((item) => item.closest<HTMLElement>(".el-overlay")?.style.display !== "none");
+    if (!open.length) throw new Error("The form did not ask before discarding");
+    return open.at(-1)!;
+  });
+  [...box.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Discard")!.click();
+  // The answer reaches the form once the question has closed.
+  await vi.waitFor(() => {
+    if (box.closest<HTMLElement>(".el-overlay")?.style.display !== "none") throw new Error("The question is still open");
+  });
+  await new Promise((resolve) => setTimeout(resolve));
+}
+
 export function formSaveCalls(sent: readonly Sent[]) {
   return sent.filter((request) => request.method === "POST" && request.path === "/api/panel-operations/intents")
     .map(({ body }) => (body as { call: { target: PanelOperationCall["target"]; input: PanelFormSaveInput } }).call);
