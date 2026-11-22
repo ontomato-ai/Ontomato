@@ -169,7 +169,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists the owner's records of the projection's type, compact or as a table (`columns`), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). What it offers follows the read and the placement: a search box when the read takes `search`, paging when it pages, checkboxes when the placement binds `checked`, and the status filter when it binds `status`; each is the list's own value unless the placement binds it to the panel's state. Clicking an item selects it (`selected`); search matches are highlighted, and a reference field is a link the page hears as `navigate`. Compact lists can cap a summary's visible lines with `subtitleLines`. A successful read with zero rows shows the empty message (`emptyText` can supply its message key). Missing required inputs show the waiting state.",
+      "Lists the owner's records of the projection's type, compact or as a table (`columns`), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). What it offers follows the read and the placement: a search box when the read takes `search`, paging when it pages, checkboxes when the placement binds `checked`, and the status filter when it binds `status`; each is the list's own value unless the placement binds it to the panel's state. Clicking an item or pressing Enter/Space on a focused table row selects it (`selected`), and arrow keys move focus between table rows without interfering with interactive controls inside a cell; search matches are highlighted, and a reference field is a link the page hears as `navigate`. `listed` outputs the object references of the current result batch — the current page when the owner's read pages (`cursor` or `page`), or all matching rows when the read does not page (empty when no rows are shown) — so another member such as a graph can follow the list's hits without issuing a second read. Compact lists can cap a summary's visible lines with `subtitleLines`. A successful read with zero rows shows the empty message (`emptyText` can supply its message key). Missing required inputs show the waiting state.",
     effects: "Reads the bound type's list, query or ontology objects datum as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
     // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
@@ -182,6 +182,8 @@ export const components: readonly ComponentMetadata[] = [
     outputs: {
       selected: { kind: "object", objectType: "@binding" },
       checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+      // References of the current batch: current page when paged, or all matching rows when unpaged.
+      listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
     },
   }),
@@ -460,7 +462,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "PanelData",
     role: "presentation",
     meaning:
-      "Draws nothing: it hands the data its projection declares to the panel's own code, which reads each datum with usePanelData(member, name) and draws it in the page's own way. A projection names it for the part of a page the panel draws itself; the panel's own buttons run the projection's operations with instance.invoke.",
+      "Draws nothing: a non-rendering member for reading declared data through usePanelData(member, name) to coordinate panel state, visibility or navigation (prefer a component's own output when available), or for declaring operations invoked through usePanelOperation(member, name). Do not use PanelData to render business fields in a panel template; use an official component, configure it, or write a component for that slot.",
     // Any datum the projection names, under the author's own name, with any read result and the run-time values the
     // other components give; the read's own signature still bounds them. The catalogue test keeps these lists whole.
     data: {

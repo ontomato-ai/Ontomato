@@ -9,12 +9,19 @@ description: Build and register an Ontomato panel from its owner's reads and ope
    for the owner's reads, operations and result shapes. Use `--read <name>` for one read's signature,
    required parameters and `resultSchema`. Use these commands as the authoring reference for owner APIs.
 2. Compare the original page's visible behavior with the owner's reads, forms and actions. Keep business rules
-   and permissions with their owner. Use the platform's write confirmation. For official components, use
-   `node "$SKILL/ontomato.mjs" sdk read docs/components.md` for
-   behavior, configuration, outputs and events. For third-party components, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
-   See [default and configured list and summary examples](CODE.md#configure-an-official-list-or-summary).
-   Use the [member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel) to declare projections. Choose an official display component or
-   [PanelData](CODE.md#read-declared-data) for custom Vue, and use `target.projectionId` for an existing projection.
+   and permissions with their owner. Use the platform's write confirmation. Follow the
+   [three-step component lookup](CODE.md#choose-an-official-component-before-writing-one):
+   - First, match the owner's read (`panel type <type-id> --read <name>`) against an official component's data port
+     (`node "$SKILL/ontomato.mjs" sdk read docs/components.md`). If the shapes do not match, that gap belongs on the
+     owner or shared record contract — do not draw business fields in the panel to work around it.
+   - Second, once the data matches, start from the official component's default rendering, then check its `config`
+     for common adjustments (see [default and configured list and summary examples](CODE.md#configure-an-official-list-or-summary)).
+   - Third, write a dedicated component only as a last resort when default and `config` still leave a gap (such as a
+     single column cell or form field). Keep [component vs. panel responsibility](CODE.md#component-vs-panel-responsibility)
+     clear: panels coordinate layout, state, visibility and navigation, and do not render business fields.
+   For third-party components, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
+   Use the [member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel)
+   to declare projections, and use `target.projectionId` for an existing projection.
    For graphs, see [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
 3. Write the template and interactions in Vue. Use [the SDK's interface controls](CODE.md#panel-controls-and-platform-behavior),
    follow the [direct runtime](CODE.md#write-a-vue-panel), and declare the
