@@ -11,8 +11,6 @@ import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "./types
 export const G6_NODE_SIZE = 32;
 /** The size of a node's name, in graph units. */
 export const G6_LABEL_SIZE = 12;
-/** The least zoom at which a node's name is still drawn 10 pixels high: below it names cannot be read. */
-export const G6_READABLE_ZOOM = 10 / G6_LABEL_SIZE;
 /** The widest a node's name is drawn unless its caller says otherwise: about 24 Latin or 13 Chinese characters. */
 export const G6_LABEL_WIDTH = 160;
 /** How far a node's first loop reaches above it, and how much further each next loop does. */

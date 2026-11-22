@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Graph, type EdgeData, type NodeData } from "@antv/g6";
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { G6_LABEL_WIDTH, G6_LOOP_DIST, G6_LOOP_STEP, G6_NODE_SIZE, g6Edges, g6Node, g6NodeStyle, readG6Colors, type G6Colors } from "./g6-elements";
+import { G6_LABEL_SIZE, G6_LABEL_WIDTH, G6_LOOP_DIST, G6_LOOP_STEP, G6_NODE_SIZE, g6Edges, g6Node, g6NodeStyle, readG6Colors, type G6Colors } from "./g6-elements";
+import { zoomKeepingNamesApart } from "./name-room";
 import { MARGIN, NODE_HEIGHT, NODE_WIDTH, placeNodes } from "./layout";
 import type {
   GraphCanvasEdge,
@@ -392,24 +393,42 @@ async function afterChanges(task: (target: Graph) => Promise<void>) {
   await enqueue(task);
 }
 
+/** A name's box on screen as G6 draws it: one line of its bold label font, no wider than `labelWidth`, on its padded backing. */
+let measuring: CanvasRenderingContext2D | null = null;
+function nameBox(text: string) {
+  measuring ??= document.createElement("canvas").getContext("2d")!;
+  measuring.font = `600 ${G6_LABEL_SIZE}px system-ui, sans-serif`;
+  return { width: Math.min(measuring.measureText(text).width, props.labelWidth) + 8, height: G6_LABEL_SIZE * 1.2 + 2 };
+}
+/** The zoom below which two of the graph's names, held at their size on screen, would cover each other. */
+function namesApartZoom(target: Graph) {
+  const names = target.getNodeData().filter((datum) => datum.style?.labelText).map((datum) => ({
+    x: Number(datum.style!.x), y: Number(datum.style!.y), ...nameBox(String(datum.style!.labelText)),
+  }));
+  return zoomKeepingNamesApart(names, 4);
+}
+
 defineExpose({
   /**
    * Shows the whole graph, no larger than `maxZoom`, keeping `padding` pixels clear (one value, or top, right, bottom,
-   * left). With `minZoom` it is never shown smaller: a graph that would be is shown at `minZoom` around the node
-   * `around` (its middle when absent) as far as the graph's own edges allow, and the reader pans to the rest — names
-   * stay readable rather than all in view. Resolves whether the whole graph is in view.
+   * left). With `minZoom` it is never shown smaller; with `keepNames` (names held at their size on screen) never smaller
+   * than its names stay apart at. A graph that would be is shown at that zoom around the node `around` (its middle when
+   * absent) as far as the graph's own edges allow, and the reader pans to the rest — every name shown rather than all
+   * in view. Resolves whether the whole graph is in view.
    */
-  fit: async (options: { maxZoom?: number; minZoom?: number; around?: string; padding?: number | [number, number, number, number] } = {}) => {
+  fit: async (options: { maxZoom?: number; minZoom?: number; keepNames?: true; around?: string; padding?: number | [number, number, number, number] } = {}) => {
+    if (options.keepNames && !props.readableLabels) throw new Error("A fit keeps names apart only on a canvas that holds its names at their size");
     let whole = true;
     await afterChanges(async (target) => {
       if (options.padding !== undefined) target.setOptions({ padding: options.padding });
       await target.fitView({ when: "always", direction: "both" });
       const zoom = target.getZoom();
+      const least = options.keepNames ? Math.min(namesApartZoom(target), options.maxZoom ?? Infinity) : options.minZoom;
       if (options.maxZoom !== undefined && zoom > options.maxZoom) await target.zoomTo(options.maxZoom, false);
-      else if (options.minZoom !== undefined && zoom < options.minZoom) {
+      else if (least !== undefined && zoom < least) {
         whole = false;
-        await target.zoomTo(options.minZoom, false);
-        return showAround(target, options.minZoom, options.around, options.padding);
+        await target.zoomTo(least, false);
+        return showAround(target, least, options.around, options.padding);
       }
       await target.fitCenter(false);
     });

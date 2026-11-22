@@ -238,6 +238,33 @@ it("fits a graph no smaller than names stay readable at, and then shows the part
   wrapper.unmount();
 });
 
+// Names held at their size on screen (panelisation lead, 2026-11-22): a fit stops shrinking the graph where two names
+// would start to cover each other, not at a fixed zoom, so one fit shows the whole graph whenever its names allow.
+it("fits a graph whose names keep their size no smaller than its names stay apart at", async () => {
+  const widths = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+    { font: "", measureText: (text: string) => ({ width: text.length * 10 }) } as unknown as CanvasRenderingContext2D,
+  );
+  const nodes = [{ id: "a", label: "Node a", x: 0, y: 0 }, { id: "b", label: "Node b", x: 220, y: 0 }];
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes, layout: { type: "preset" }, readableLabels: true } });
+  await flushPromises();
+  const fit = (options: object) => (wrapper.vm as unknown as { fit(options: object): Promise<boolean> }).fit(options);
+  const steps = () => calls.filter(([name]) => ["fitView", "zoomTo", "fitCenter"].includes(name));
+  // Two names of 60 pixels on 8 of backing, side by side 220 apart, clear each other with 4 to spare from 72/220.
+  const apart = (68 / 2 + 68 / 2 + 4) / 220;
+
+  view.fitted = 0.5;
+  calls.length = 0;
+  expect(await fit({ keepNames: true })).toBe(true);
+  expect(steps()).toEqual([["fitView", 0.5], ["fitCenter", null]]);
+
+  view.fitted = 0.2;
+  calls.length = 0;
+  expect(await fit({ keepNames: true, around: "a" })).toBe(false);
+  expect(steps()).toEqual([["fitView", 0.2], ["zoomTo", apart]]);
+  wrapper.unmount();
+  widths.mockRestore();
+});
+
 it("keeps a node's name readable when the reader zooms out, and hides only names that would overlap", async () => {
   const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(2), layout: { type: "preset" }, readableLabels: true } });
   await flushPromises();

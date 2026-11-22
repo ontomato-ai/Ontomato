@@ -7,7 +7,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
-import { G6_READABLE_ZOOM, type GraphCanvasEdge, type GraphCanvasNode, type GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
+import { type GraphCanvasEdge, type GraphCanvasNode, type GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -203,12 +203,12 @@ it("places classes nobody placed by their relations, and opens on the chosen cla
     expect(x("paper")).toBeGreaterThan(x("award"));
     // Each edge drawn with its relationship's name.
     expect(canvas.edges.map(({ label }) => label)).toContain("person to org");
-    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ minZoom: G6_READABLE_ZOOM, around: "person" })]));
+    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ keepNames: true, around: "person" })]));
 
     for (const app of mounted.splice(0)) app.unmount();
     canvas.fits = [];
     mount(false, { selectedClass: { className: OBJECT_TYPE, primaryKey: "paper" } });
-    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ minZoom: G6_READABLE_ZOOM, around: "paper" })]));
+    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ keepNames: true, around: "paper" })]));
   } finally {
     classes = twoClasses;
     relations = oneRelation;

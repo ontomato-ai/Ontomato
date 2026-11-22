@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { G6GraphCanvas, G6_READABLE_ZOOM, layoutByRelations, type GraphCanvasPoint, type GraphCanvasTone, type GraphCanvasViewport, type LayoutRoom } from "@ontomato/foundation-ui/graph/g6";
+import { G6GraphCanvas, layoutByRelations, type GraphCanvasPoint, type GraphCanvasTone, type GraphCanvasViewport, type LayoutRoom } from "@ontomato/foundation-ui/graph/g6";
 import { useMember, useMemberParam } from "../panel/member";
 import { savePanelFile } from "../panel/save-file";
 import { useGraphRecords, type EdgeEndsConfig } from "./object-graph-data";
@@ -113,7 +113,7 @@ const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
 /** The whole graph, or — where it would be too small to read — the part around the chosen node, else the most connected. */
 function fit() {
   const chosen = selectedNodes.value.find((id) => layout.value.positions.has(id));
-  void canvas.value!.fit({ maxZoom: 1.15, minZoom: G6_READABLE_ZOOM, padding: FIT_PADDING, around: chosen ?? layout.value.root })
+  void canvas.value!.fit({ maxZoom: 1.15, keepNames: true, padding: FIT_PADDING, around: chosen ?? layout.value.root })
     .then((whole) => {
       partial.value = !whole;
       moved.value = false;
