@@ -9,26 +9,7 @@ import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
  */
 
 const SKILL_TYPE = "platform:Skill";
-
-function compareTreePath(a, b) {
-  const pa = a.split("/");
-  const pb = b.split("/");
-  const len = Math.min(pa.length, pb.length);
-  for (let i = 0; i < len; i++) {
-    const aIsFile = i === pa.length - 1;
-    const bIsFile = i === pb.length - 1;
-    if (aIsFile !== bIsFile) return aIsFile ? 1 : -1;
-    if (pa[i] !== pb[i]) return pa[i] < pb[i] ? -1 : 1;
-  }
-  return pa.length - pb.length;
-}
-
-function defaultFileOf(records) {
-  if (!Array.isArray(records) || records.length === 0) return null;
-  const skillDoc = records.find((entry) => entry.primaryKey === "SKILL.md");
-  if (skillDoc) return skillDoc.primaryKey;
-  return [...records].sort((a, b) => compareTreePath(a.primaryKey, b.primaryKey))[0]?.primaryKey ?? null;
-}
+const DEFAULT_FILE = "SKILL.md";
 
 await mountPanel({
   setup() {
@@ -39,7 +20,6 @@ await mountPanel({
       return typeof value === "string" && value.length > 0 ? value : null;
     });
     const record = usePanelData("detail", "record");
-    const files = usePanelData("tree", "files");
 
     const skill = computed(() => {
       const held = record.value.status === "ready" ? record.value.value : null;
@@ -51,25 +31,20 @@ await mountPanel({
       };
     });
 
-    // Keep the current file while it belongs to the selected package; otherwise open SKILL.md first.
+    // Select SKILL.md synchronously on first selection or skill switch so tree and content load in parallel with detail;
+    // ObjectTree (fallbackToFirst: true) keeps SKILL.md or any deep-linked file when present and falls back otherwise.
     watch(
-      () => [selected.value?.primaryKey ?? null, files.value.status, files.value.status === "ready" ? files.value.value : null],
-      ([skillId, status, list]) => {
+      () => selected.value?.primaryKey ?? null,
+      (skillId, previousSkillId) => {
         if (!skillId) {
           if (filePath.value !== null) instance.state.setState({ filePath: null });
           return;
         }
-        if (status === "empty") {
-          if (filePath.value !== null) instance.state.setState({ filePath: null });
-          return;
+        if (!filePath.value || (previousSkillId && previousSkillId !== skillId)) {
+          if (filePath.value !== DEFAULT_FILE) instance.state.setState({ filePath: DEFAULT_FILE });
         }
-        if (status !== "ready" || !Array.isArray(list)) return;
-        const current = filePath.value;
-        if (current && list.some((entry) => entry.primaryKey === current)) return;
-        const next = defaultFileOf(list);
-        if (next !== current) instance.state.setState({ filePath: next });
       },
-      { immediate: true },
+      { immediate: true, flush: "sync" },
     );
 
     function onImported(response) {
@@ -78,7 +53,7 @@ await mountPanel({
       if (importedId) {
         instance.state.setState({
           selected: { className: SKILL_TYPE, primaryKey: importedId },
-          filePath: null,
+          filePath: DEFAULT_FILE,
         });
       }
     }
