@@ -49,6 +49,10 @@ const props = withDefaults(
     categories?: readonly string[];
     /** The widest a node's name is drawn, in graph units; a longer one ends in an ellipsis. 160 when absent. */
     labelWidth?: number;
+    /** The nodes' diameter, for a page that draws them at its own size (the ontology graph's 62). */
+    nodeSize?: number;
+    /** The names' size, for a page that draws them at its own (the ontology graph's 13). */
+    labelSize?: number;
     /**
      * Keeps names readable however far the reader zooms: a node's and an edge's name stay their size on screen, and a
      * name that would then overlap another is hidden until there is room for it again.
@@ -60,7 +64,7 @@ const props = withDefaults(
      */
     editable?: boolean;
   }>(),
-  { edges: () => [], selected: () => [], selectedEdges: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH, readableLabels: false, editable: false },
+  { edges: () => [], selected: () => [], selectedEdges: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH, nodeSize: G6_NODE_SIZE, labelSize: G6_LABEL_SIZE, readableLabels: false, editable: false },
 );
 const emit = defineEmits<{
   /** The selection a reader's choice results in: every chosen ID, in the order they were chosen. */
@@ -126,7 +130,7 @@ async function sync(target: Graph) {
   const nodes = new Map(props.nodes.map((node) => [node.id, node]));
   const positions = positionsOf(props.nodes);
   const choosable = props.selection !== "none";
-  const nodeStyles = new Map(props.nodes.map((node) => [node.id, g6NodeStyle(node, colors, props.categories, choosable, props.labelWidth)]));
+  const nodeStyles = new Map(props.nodes.map((node) => [node.id, g6NodeStyle(node, colors, props.categories, choosable, look())]));
   const edges = g6Edges(props.edges, nodes, colors);
   const edgeKeys = new Map(edges.map((edge) => [String(edge.id), JSON.stringify(edge)]));
 
@@ -340,7 +344,7 @@ function restyle() {
 }
 
 watch(
-  () => [props.nodes, props.edges, props.layout.type, props.categories, props.selection, props.labelWidth],
+  () => [props.nodes, props.edges, props.layout.type, props.categories, props.selection, props.labelWidth, props.nodeSize, props.labelSize],
   () => void enqueue(sync),
 );
 watch(
@@ -378,7 +382,7 @@ onBeforeUnmount(() => {
 });
 
 /** How far a drawn node reaches from its centre: half its name's width across, its size above, and its name below. */
-const REACH = { x: () => props.labelWidth / 2, top: G6_NODE_SIZE / 2, bottom: G6_NODE_SIZE / 2 + 6 + 18 };
+const REACH = { x: () => props.labelWidth / 2, top: () => props.nodeSize / 2, bottom: () => props.nodeSize / 2 + 6 + props.labelSize * 1.5 };
 
 /**
  * At a zoom the whole graph does not fit at, the part around `around` (the graph's middle when absent), moved no further
@@ -389,7 +393,7 @@ async function showAround(target: Graph, zoom: number, around: string | undefine
   // A node with loops reaches as far above it as its outermost loop.
   const loops = new Map<string, number>();
   for (const edge of target.getEdgeData()) if (edge.source === edge.target) loops.set(String(edge.source), (loops.get(String(edge.source)) ?? 0) + 1);
-  const above = (id: string) => (loops.has(id) ? REACH.top + G6_LOOP_DIST + (loops.get(id)! - 1) * G6_LOOP_STEP : REACH.top);
+  const above = (id: string) => (loops.has(id) ? REACH.top() + G6_LOOP_DIST + (loops.get(id)! - 1) * G6_LOOP_STEP : REACH.top());
   const nodes = target.getNodeData().filter((node) => !node.data?.anchor);
   const points = nodes.map((node) => ({ x: Number(node.style!.x), y: Number(node.style!.y), top: above(String(node.id)) }));
   if (!points.length) return;
@@ -397,7 +401,7 @@ async function showAround(target: Graph, zoom: number, around: string | undefine
   const { width, height } = frame.value!.getBoundingClientRect();
   const bounds = {
     minX: Math.min(...points.map(({ x }) => x)) - REACH.x(), maxX: Math.max(...points.map(({ x }) => x)) + REACH.x(),
-    minY: Math.min(...points.map(({ y, top }) => y - top)), maxY: Math.max(...points.map(({ y }) => y)) + REACH.bottom,
+    minY: Math.min(...points.map(({ y, top }) => y - top)), maxY: Math.max(...points.map(({ y }) => y)) + REACH.bottom(),
   };
   const focus = around === undefined ? undefined : target.getNodeData().find((node) => String(node.id) === around);
   const wanted = focus
@@ -420,12 +424,14 @@ async function afterChanges(task: (target: Graph) => Promise<void>) {
   await enqueue(task);
 }
 
+/** The look the page sets for its nodes and names. */
+const look = () => ({ nodeSize: props.nodeSize, labelSize: props.labelSize, labelWidth: props.labelWidth });
 /** A name's box on screen as G6 draws it: one line of its bold label font, no wider than `labelWidth`, on its padded backing. */
 let measuring: CanvasRenderingContext2D | null = null;
 function nameBox(text: string) {
   measuring ??= document.createElement("canvas").getContext("2d")!;
-  measuring.font = `600 ${G6_LABEL_SIZE}px system-ui, sans-serif`;
-  return { width: Math.min(measuring.measureText(text).width, props.labelWidth) + 8, height: G6_LABEL_SIZE * 1.2 + 2 };
+  measuring.font = `600 ${props.labelSize}px system-ui, sans-serif`;
+  return { width: Math.min(measuring.measureText(text).width, props.labelWidth) + 8, height: props.labelSize * 1.2 + 2 };
 }
 /** The zoom below which two of the graph's names, held at their size on screen, would cover each other. */
 function namesApartZoom(target: Graph) {

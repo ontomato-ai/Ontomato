@@ -22,26 +22,34 @@ const initialValues: CurrentValues = {
 };
 type Control = PanelFormField["control"];
 const reference = (objectType: string, multiple = false): Control => ({ kind: "reference", objectType, multiple });
+/** The agent page's sections, in its order (原页面对照《智能体设置》): each field below names the one it is drawn in. */
+const SECTIONS = ["basics", "model", "prompt", "capabilities", "execution", "data"] as const;
+/** The sections with a line under their title, as the page had. */
+const SECTION_HINTS = new Set<(typeof SECTIONS)[number]>(["model", "prompt", "capabilities", "execution", "data"]);
 const fields = [
-  { key: "name", path: "/name", schema: inputSchema.shape.name, control: { kind: "text" } },
-  { key: "description", path: "/description", schema: inputSchema.shape.description, control: { kind: "text", multiline: true } },
-  { key: "icon", path: "/icon", schema: inputSchema.shape.icon, control: { kind: "avatar" } },
-  { key: "enabled", path: "/enabled", schema: inputSchema.shape.enabled, control: { kind: "switch" } },
-  { key: "systemPrompt", path: "/systemPrompt", schema: inputSchema.shape.systemPrompt, control: { kind: "markdown" } },
+  { key: "name", path: "/name", schema: inputSchema.shape.name, control: { kind: "text" }, section: "basics", placeholder: true },
+  { key: "description", path: "/description", schema: inputSchema.shape.description, control: { kind: "text", multiline: true }, section: "basics", placeholder: true },
+  { key: "icon", path: "/icon", schema: inputSchema.shape.icon, control: { kind: "avatar" }, section: "basics" },
+  { key: "enabled", path: "/enabled", schema: inputSchema.shape.enabled, control: { kind: "switch" }, section: "basics", help: true },
   { key: "modelSelection", path: "/modelSelection/modelId",
-    schema: inputSchema.shape.modelSelection.removeDefault().shape.modelId, control: reference(MODEL_OPTION) },
-  { key: "skills", path: "/skills", schema: inputSchema.shape.skills, control: reference(SKILL, true) },
+    schema: inputSchema.shape.modelSelection.removeDefault().shape.modelId, control: reference(MODEL_OPTION), section: "model" },
+  { key: "systemPrompt", path: "/systemPrompt", schema: inputSchema.shape.systemPrompt, control: { kind: "markdown" }, section: "prompt" },
+  { key: "skills", path: "/skills", schema: inputSchema.shape.skills, control: reference(SKILL, true), section: "capabilities", help: true },
+  { key: "enabledMcpServiceIds", path: "/enabledMcpServiceIds", schema: inputSchema.shape.enabledMcpServiceIds,
+    control: reference(MCP_SERVICE_OPTION, true), section: "capabilities", help: true },
+  { key: "executionUserId", path: "/executionUserId", schema: inputSchema.shape.executionUserId, control: reference(USER), section: "execution" },
   { key: "classNames", path: "/classNames", schema: inputSchema.shape.classNames,
-    control: { kind: "reference", objectType: OBJECT_TYPE, multiple: true, relatedObjectTypes: [RELATIONSHIP] } },
-  { key: "enabledMcpServiceIds", path: "/enabledMcpServiceIds", schema: inputSchema.shape.enabledMcpServiceIds, control: reference(MCP_SERVICE_OPTION, true) },
-  { key: "executionUserId", path: "/executionUserId", schema: inputSchema.shape.executionUserId, control: reference(USER) },
-] satisfies { key: keyof typeof initialValues; path: string; schema: z.ZodTypeAny; control: Control }[];
+    control: { kind: "reference", objectType: OBJECT_TYPE, multiple: true, relatedObjectTypes: [RELATIONSHIP] }, section: "data", help: true },
+] satisfies {
+  key: keyof typeof initialValues; path: string; schema: z.ZodTypeAny; control: Control; section: (typeof SECTIONS)[number]; help?: true;
+  placeholder?: true;
+}[];
 
-const fieldSchemas = fields.map(({ schema, ...field }) => ({
+const fieldSchemas = fields.map(({ schema, help: _help, placeholder: _placeholder, ...field }) => ({
   ...field, valueSchema: agentFormJsonSchema(schema),
-  // Reference lists may be empty even when the save body carries the array.
-  required: field.key !== "modelSelection" && !schema.isOptional()
-    && !(field.control.kind === "reference" && field.control.multiple && schema.safeParse([]).success),
+  // What a reader must fill in before saving, as the agent settings page always asked: the name alone. The others the
+  // save body carries are given their values here and may stay as they are (原页面对照《智能体设置》, 2026-11-22).
+  required: field.key === "name",
   defaultValue: field.key === "modelSelection" ? initialValues.modelSelection.modelId : initialValues[field.key],
 }));
 
@@ -93,14 +101,21 @@ export async function describeAgentDefinitionForm(
   }
   const { canSetExecutionUser } = openOptions ?? await readExecutionOptions(credentials, null);
   const text = (key: string) => tForLocale(credentials.locale, `panels.agentForm.${key}`);
+  const helped = new Set(fields.filter((field) => "help" in field).map(({ key }) => key));
+  const suggested = new Set(fields.filter((field) => "placeholder" in field).map(({ key }) => key));
   return {
     values,
     errors,
+    sections: SECTIONS.map((key) => ({
+      key, title: text(`sections.${key}`), ...(SECTION_HINTS.has(key) ? { hint: text(`sections.${key}Hint`) } : {}),
+    })),
     fields: fieldSchemas.map(({ key, ...field }) => {
       const readOnly = key === "executionUserId" && !canSetExecutionUser;
       return {
         ...field,
+        ...(suggested.has(key) && field.control.kind === "text" ? { control: { ...field.control, placeholder: text(`placeholder.${key}`) } } : {}),
         label: text(key), readOnly, ...(readOnly ? { readOnlyReason: text("executionReadOnly") } : {}),
+        ...(helped.has(key) ? { help: text(`help.${key}`) } : {}),
       };
     }),
     save: agentDefinitionSave(target),

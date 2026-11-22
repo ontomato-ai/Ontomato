@@ -7,7 +7,7 @@ import type { ProductDefinitionTarget } from "@ontomato/contracts/product-subscr
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { appBuilderPages } from "../../../../../packages/platform-web/src/workbench-routes";
 import PanelCandidateRoute from "../../../../../packages/platform-web/src/pages/PanelCandidateRoute.vue";
-import {
+import { confirmDiscard,
   installPlatform, leaveFrame, mountPlatformPage, nothingAt, PLACE_EVERY_MEMBER, projections, READER, type Sent,
 } from "./panel-frame";
 
@@ -228,6 +228,7 @@ it("reads the candidate again when the author comes back, and waits for an unsav
     expect(element.querySelector(".panel-host-coded > *")).toBe(shown);
     // Discarded: the changed candidate is drawn.
     [...element.querySelectorAll<HTMLButtonElement>("[data-member='definition'] button")].find(button => button.textContent?.trim() === "Discard")!.click();
+    await confirmDiscard();
     await vi.waitFor(() => expect(element.querySelector(".panel-host-coded > .changed")).not.toBeNull());
     expect(formal(sent)).toEqual([]);
   } finally {

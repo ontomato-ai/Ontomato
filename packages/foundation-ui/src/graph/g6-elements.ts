@@ -59,11 +59,18 @@ export function isLargeGraph(nodes: number, edges: number) {
  * A node's look, without its position: the position is applied only when its caller moves it. Its name is drawn under
  * it on one line, no wider than `labelWidth`, ending in an ellipsis where it would run on.
  */
-export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories: readonly string[], choosable: boolean, labelWidth: number) {
+/** How large a graph draws its nodes and their names, and how wide a name may run: a page's own, else the canvas's. */
+export interface G6Look {
+  nodeSize: number;
+  labelSize: number;
+  labelWidth: number;
+}
+
+export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories: readonly string[], choosable: boolean, look: G6Look) {
   // An anchor is drawn transparent at size 1, not 0: G6 places a node of size 0 at the origin, whatever its x and y.
   if (node.anchor) return { size: 1, opacity: 0, lineWidth: 0, labelText: "", cursor: "default" as const };
   return {
-    size: G6_NODE_SIZE,
+    size: look.nodeSize,
     fill: node.category === undefined
       ? colors.primary
       : colors.palette[graphCategorySlot(node.category, categories, colors.palette.length)],
@@ -73,12 +80,12 @@ export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories:
     opacity: node.tone === "muted" ? 0.25 : 1,
     labelText: node.label,
     // G6 only cuts a node's name when it wraps; one line of wrapping ends it in an ellipsis.
-    labelMaxWidth: labelWidth,
+    labelMaxWidth: look.labelWidth,
     labelWordWrap: true,
     labelMaxLines: 1,
     labelTextOverflow: "…",
     labelFill: colors.text,
-    labelFontSize: G6_LABEL_SIZE,
+    labelFontSize: look.labelSize,
     labelFontWeight: 600,
     labelPlacement: "bottom" as const,
     labelOffsetY: 6,

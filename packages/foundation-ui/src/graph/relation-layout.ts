@@ -1,4 +1,4 @@
-import { G6_LABEL_WIDTH } from "./g6-elements";
+import { G6_LABEL_SIZE, G6_LABEL_WIDTH, G6_NODE_SIZE } from "./g6-elements";
 import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "./types";
 
 /*
@@ -19,8 +19,16 @@ import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "./types
 
 /** From one column to the next: a node's name, at its widest, and a gap. */
 export const RELATION_COLUMN_GAP = G6_LABEL_WIDTH + 60;
-/** From one row to the next: a node, its name under it, and a gap. */
-export const RELATION_ROW_GAP = 76;
+/** The sizes a page draws its nodes and their names at; each the canvas's own when absent. */
+export interface RelationLayoutLook {
+  nodeSize?: number;
+  labelSize?: number;
+}
+/** From one row to the next for nodes and names drawn at `look`: a node, its name under it, and a gap. */
+const rowGapFor = ({ nodeSize = G6_NODE_SIZE, labelSize = G6_LABEL_SIZE }: RelationLayoutLook = {}) =>
+  Math.round(nodeSize + labelSize * 1.2 + 6 + 24);
+/** From one row to the next at the canvas's own sizes. */
+export const RELATION_ROW_GAP = rowGapFor();
 
 /** The room the whole graph is to be shown in, in screen pixels (the canvas less its fit padding). */
 export interface LayoutRoom {
@@ -34,7 +42,10 @@ export interface RelationLayout {
   root: string | undefined;
 }
 
-export function layoutByRelations(nodes: readonly GraphCanvasNode[], edges: readonly GraphCanvasEdge[], room: LayoutRoom): RelationLayout {
+export function layoutByRelations(
+  nodes: readonly GraphCanvasNode[], edges: readonly GraphCanvasEdge[], room: LayoutRoom, look?: RelationLayoutLook,
+): RelationLayout {
+  const rowGap = rowGapFor(look);
   const order = new Map(nodes.map((node, index) => [node.id, index]));
   const neighbours = new Map(nodes.map((node) => [node.id, new Set<string>()]));
   for (const { source, target } of edges) {
@@ -83,11 +94,11 @@ export function layoutByRelations(nodes: readonly GraphCanvasNode[], edges: read
   });
   const positions = new Map<string, GraphCanvasPoint>();
   let top = 0;
-  for (const shelf of shelve(blocks, alone.length, room)) {
+  for (const shelf of shelve(blocks, alone.length, room, rowGap)) {
     let left = 0;
     for (const block of shelf.blocks) {
       const at = block.at ?? new Map(alone.map((id, index) => [id, { x: index % block.cols, y: Math.floor(index / block.cols) }]));
-      for (const [id, place] of at) positions.set(id, { x: (left + place.x) * RELATION_COLUMN_GAP, y: (top + place.y) * RELATION_ROW_GAP });
+      for (const [id, place] of at) positions.set(id, { x: (left + place.x) * RELATION_COLUMN_GAP, y: (top + place.y) * rowGap });
       left += block.cols + 1;
     }
     top += shelf.rows + 1;
@@ -113,7 +124,7 @@ interface Shelf {
  * of columns, and the place, that leaves the drawing least tall. The width whose drawing the room shows at the largest
  * zoom is taken, the narrower of equals.
  */
-function shelve(parts: readonly Block[], alone: number, room: LayoutRoom): Shelf[] {
+function shelve(parts: readonly Block[], alone: number, room: LayoutRoom, rowGap: number): Shelf[] {
   const options = alone ? Array.from({ length: alone }, (_, index) => ({ cols: index + 1, rows: Math.ceil(alone / (index + 1)) })) : [];
   if (!parts.length && !options.length) return [];
   const narrowest = Math.max(1, ...parts.map(({ cols }) => cols));
@@ -133,7 +144,7 @@ function shelve(parts: readonly Block[], alone: number, room: LayoutRoom): Shelf
         .reduce((least, candidate) => (height(candidate) < height(least) ? candidate : least));
     }
     const cols = Math.max(...shelves.map((shelf) => shelf.cols));
-    const zoom = Math.min(room.width / ((cols - 1) * RELATION_COLUMN_GAP + G6_LABEL_WIDTH), room.height / (height(shelves) * RELATION_ROW_GAP));
+    const zoom = Math.min(room.width / ((cols - 1) * RELATION_COLUMN_GAP + G6_LABEL_WIDTH), room.height / (height(shelves) * rowGap));
     if (!best || zoom > best.zoom) best = { zoom, shelves };
   }
   return best!.shelves;

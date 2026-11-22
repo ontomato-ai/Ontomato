@@ -187,6 +187,10 @@ public class MetricViewController {
 		try {
 			String id = param.getString("id");
 			User user = SystemUtils.getCurUser();
+			if ("delete-availability".equals(param.getString("purpose"))) {
+				var reason = metricViewService.systemDeletionRefusal(id, user.getDomainId(), lang);
+				return JSONObject.of("success", true, "data", JSONObject.of("reason", reason));
+			}
 			MetricView metricView = metricViewService.queryById(id, user.getDomainId());
             if (metricView == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
 			ret.put("success", true);

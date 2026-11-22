@@ -1,6 +1,7 @@
 package io.ontomato.dataengine.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import java.util.function.Supplier;
 
 /**
  * An owner's explicit business refusal, carrying the code a caller reads to tell it from an execution failure.
@@ -24,6 +25,11 @@ public class OwnerRefusal extends IllegalArgumentException {
 
   public String code() {
     return code;
+  }
+
+  /** System-origin assets cannot be deleted. The owner supplies its code and localized reason. */
+  public static OwnerRefusal systemAssetDeletion(String origin, String code, Supplier<String> reason) {
+    return "SYSTEM".equals(origin) ? new OwnerRefusal(code, reason.get()) : null;
   }
 
   /** Writes this refusal into a data-query envelope. */
