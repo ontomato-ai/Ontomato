@@ -1,4 +1,4 @@
-import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, watch, type ComputedRef, type EffectScope, type Ref } from "vue";
+import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, watch, type Component, type ComputedRef, type EffectScope, type Ref } from "vue";
 import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
@@ -53,6 +53,7 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
   currentEntry?: DirectPanelRun["currentEntry"];
   /** Reads an installed component package's current release, for a member whose component is the package's. */
   readComponentPackage: ComponentPackageReader;
+  loadDomainComponent?(projection: DirectProjection): Promise<Component>;
   /** Reads one named datum of one member, as the platform's read entry answers it for this panel's source. */
   read: PanelReadPort;
   /** Reads a member's current projection by ID, as the reader. */
@@ -143,6 +144,7 @@ export interface DirectPanelInstance extends PanelInstance {
   readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
   /** Reads an installed component package's current release (see the options). */
   readonly readComponentPackage: ComponentPackageReader;
+  readonly loadDomainComponent?: DirectPanelInstanceOptions["loadDomainComponent"];
   /** The panel's own words, in the current language. */
   readonly text: PanelText;
   /** The page's composer, expanded with a member's declared conversation entry. */
@@ -424,6 +426,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     entryMenu: computed(() => options.currentEntry?.menu.value ?? null),
     direct,
     readComponentPackage: options.readComponentPackage,
+    loadDomainComponent: options.loadDomainComponent,
     text: options.text,
     expandPageComposer: options.expandPageComposer,
     navigate: options.navigate,

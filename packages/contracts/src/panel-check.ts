@@ -3,11 +3,22 @@ export { applicationCatalogueRecordSchema, applicationIdentityUpdateSchema } fro
 export { applicationIconKeys, domainApplicationIconKeys } from "./application-icons";
 export {
   APPS_SDK_PACKAGE_COMPONENTS_PATH, appsSdkComponentCatalogSchema, appsSdkComponentDatum, appsSdkReleaseManifestSchema,
+  appsSdkThemeTokenEntrySchema, appsSdkUiDirectiveEntrySchema, appsSdkUiPrimitiveEntrySchema,
 } from "./apps-sdk";
 export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./panel-authoring";
 export { bindPanelAuthoringChart, expandPanelAuthoringMember } from "./panel-authoring-expansion";
 export { panelManifestSchema, panelPortAccepts } from "./panel-manifest";
-export { panelModuleImports } from "./panel-module";
+export {
+  checkAuthoringScript, checkAuthoringStyles, checkAuthoringTemplate, checkAuthoringTheme,
+  componentModuleImports, componentOfficialSpecifiers, isComponentOfficialSpecifier, panelModuleImports,
+} from "./panel-module";
+export {
+  SDK_PLATFORM_THEME_TOKENS, SDK_RENAMED_EXPORTS, SDK_THEME_TOKEN_ALIASES, SDK_THEME_TOKENS,
+  SDK_UI_COMPONENTS, SDK_UI_DIRECTIVES, SDK_UI_ENTRY_SPECIFIER, SDK_UI_FORBIDDEN_COMPONENTS,
+  sdkRenamedExportByImpl, sdkThemeTokenCatalogueEntries, sdkThemeTokenReplacement,
+  sdkUiComponentByImplExport, sdkUiComponentByImplTag, sdkUiComponentByTag,
+  sdkUiDirectiveByImplName, sdkUiDirectiveByName, sdkUiForbiddenByImplExport, sdkUiForbiddenByImplTag,
+} from "./sdk-ui-map";
 export { missingEntryMessageKeys } from "./panel-conversation-entry";
 export {
   chartProjectionLookupResponseSchema, panelDefinitionContentSchema, productProjectionInputSchema,

@@ -39,7 +39,7 @@ await mountPanel({ setup() {
   return () => h("output", { class: "term" }, String(instance.state.values.value.term ?? ""));
 } });
 ` };
-const theme: PanelThemeOverrides = { light: { "--el-color-primary": "#0f7b6c" } };
+const theme: PanelThemeOverrides = { light: { "--sdk-color-primary": "#0f7b6c" } };
 const uses = [
   { ...panelUse("use-spring", "term-spring", panel.id, at("spring")), names: { en: "Spring" }, inputs: { term: { literal: "2026 spring" } } },
   { ...panelUse("use-autumn", "term-autumn", panel.id, at("autumn")), names: { en: "Autumn" }, inputs: { term: { literal: "2026 autumn" } } },
@@ -100,7 +100,8 @@ it("assigns the application's theme on the content beside a conversation", async
   try {
     await vi.waitFor(() => expect(term()).toBe("2026 spring"));
     const content = element.querySelector<HTMLElement>(".panel-application-area")!;
-    await vi.waitFor(() => expect(content.style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c"));
+    await vi.waitFor(() => expect(content.style.getPropertyValue("--sdk-color-primary")).toBe("#0f7b6c"));
+    expect(content.style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
   } finally {
     mounted.unmount();
   }

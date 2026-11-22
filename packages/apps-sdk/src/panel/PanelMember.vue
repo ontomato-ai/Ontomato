@@ -2,6 +2,7 @@
 import { computed, onMounted, provide, ref, shallowRef, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
+import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
 import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance } from "./direct";
@@ -44,7 +45,11 @@ void props.instance.placing(props.member).then(async (placing) => {
   else if (placing.kind === "panel") nested.value = placing;
   else {
     const member = placing.context;
-    const component = await componentFor(memberComponentId(member.projection), props.instance.readComponentPackage);
+    const componentId = memberComponentId(member.projection);
+    const component = isDomainComponentId(componentId)
+      ? await props.instance.loadDomainComponent?.(member.projection)
+      : await componentFor(componentId, props.instance.readComponentPackage);
+    if (!component) throw new Error(`Component '${componentId}' has no runtime for this projection`);
     loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
   }
 }).catch((reason: unknown) => {

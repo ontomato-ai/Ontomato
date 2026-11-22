@@ -12,8 +12,7 @@
     "ontology-modeling",
     "action-management",
     "business-knowledge",
-    "skill-management",
-    "system-config"
+    "skill-management"
   ],
   "scheduleAdapter": "java:ontology",
   "declaration": {
@@ -91,6 +90,12 @@
       "path": "/ontology/agents", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "The agents of this domain: choose one to read or change its name, avatar, instructions, model and skills, or create one.", "zh-CN": "本域的智能体：选中一个查看或修改它的名称、头像、提示词、模型和技能，也可以新建一个。"},
       "names": {"en": "Agent settings", "zh-CN": "智能体设置"}, "groupKey": "products"
+    }, {
+      "id": "ontology-metric-views", "pageKey": "metric-views", "panelId": "builtin-product-ontology-metric-views",
+      "path": "/ontology/assets/metrics", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Define business metrics and the queries used to calculate them", "zh-CN": "定义业务指标及其计算查询"},
+      "names": {"en": "Metric Views", "zh-CN": "指标视图"},
+      "count": {"member": "list", "data": "rows"}
     }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},

@@ -1,3 +1,4 @@
+import { loadDomainComponent } from "./domain-component";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
 import {
   applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelPageSkillContextResponseSchema, productPanelResponseSchema, productPanelSchema,
@@ -352,8 +353,9 @@ async function mountNested(
  * Personal state (product-layer standard, part two): a field a panel declares \`personal: true\` is kept for each reader,
  * by the use relation and the place the panel stands at. Opening, the panel takes the reader's saved values under what
  * the address or the entry gives it (those win), above its declared defaults; as the reader changes them, they are
- * saved, a moment after the last change and once more when the page goes. A panel that keeps none reads and writes
- * nothing; a read that fails opens the panel at its defaults.
+ * saved, a moment after the last change and once more when the panel goes — or the whole page does (a reload or a closed
+ * tab unmounts nothing), then as a request that outlives the page. A panel that keeps none reads and writes nothing; a
+ * read that fails opens the panel at its defaults.
  */
 const PERSONAL_STATE_DELAY = 400;
 
@@ -374,13 +376,23 @@ async function withPersonalState(
   const current = () => JSON.stringify(Object.fromEntries(fields.map((field) => [field, mounted.instance.state.values.value[field] ?? null])));
   let stored = current();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const save = () => {
+  const save = (keepalive = false) => {
     timer = undefined;
     const next = current();
     if (next === stored) return;
     stored = next;
-    void json(`/api${PANEL_PERSONAL_STATE_PATH}`, { method: "PUT", body: JSON.stringify({ ...scope, values: JSON.parse(next) }) }).catch(() => {});
+    void json(`/api${PANEL_PERSONAL_STATE_PATH}`, {
+      method: "PUT", body: JSON.stringify({ ...scope, values: JSON.parse(next) }), ...(keepalive && { keepalive: true }),
+    }).catch(() => {});
   };
+  /** Sends at once what is still waiting for the delay; `keepalive` lets the request finish after the page is gone. */
+  const flush = (keepalive: boolean) => {
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    save(keepalive);
+  };
+  const leave = () => flush(true);
+  window.addEventListener("pagehide", leave);
   const stop = Vue.watch(current, () => {
     clearTimeout(timer);
     timer = setTimeout(save, PERSONAL_STATE_DELAY);
@@ -389,10 +401,8 @@ async function withPersonalState(
     ...mounted,
     dispose() {
       stop();
-      if (timer !== undefined) {
-        clearTimeout(timer);
-        save();
-      }
+      window.removeEventListener("pagehide", leave);
+      flush(false);
       mounted.dispose();
     },
   };
@@ -420,6 +430,7 @@ async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTa
     [panelModuleSpecifiers.vue]: Vue as unknown as Record<string, unknown>,
     [panelModuleSpecifiers.sdk]: panelModuleFor({
       ...options,
+      loadDomainComponent,
       element: target.element,
       template: target.template,
       install(app) {

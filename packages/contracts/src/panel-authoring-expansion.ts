@@ -1,4 +1,5 @@
 import { appsSdkComponentDatum, type AppsSdkComponentCatalogEntry } from "./apps-sdk";
+import type { ComponentDeclaration } from "./component-declaration";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import type { PanelAuthoringMember } from "./panel-authoring";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
@@ -13,8 +14,10 @@ import type { PlatformTypeTableResponse } from "./platform-type-table";
 
 type ShortMember = Extract<PanelAuthoringMember, { component: string }>;
 
-function qualifiedId(component: AppsSdkComponentCatalogEntry): string {
-  if (component.componentId.includes(":")) return component.componentId;
+type AuthoringComponent = AppsSdkComponentCatalogEntry | ComponentDeclaration;
+
+function qualifiedId(component: AuthoringComponent): string {
+  if (!("module" in component) || component.componentId.includes(":")) return component.componentId;
   const packageName = component.module.split("/", component.module.startsWith("@") ? 2 : 1).join("/");
   return `${packageName}:${component.componentId}`;
 }
@@ -29,7 +32,7 @@ export function expandPanelAuthoringMember(
   member: ShortMember,
   { state, components, typeTable }: {
     state: PanelManifest["state"];
-    components: readonly AppsSdkComponentCatalogEntry[];
+    components: readonly AuthoringComponent[];
     typeTable: Pick<PlatformTypeTableResponse, "objectTypes" | "unavailableActions">;
   },
 ): { projection: DirectProjectionPorts; placement: Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs" | "formField"> } {
