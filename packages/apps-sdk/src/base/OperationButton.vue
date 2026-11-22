@@ -21,9 +21,11 @@ import { useDataStateLabels } from "./data-state-labels";
  * A read (a trial run) takes the form the owner's operation targets and the inputs the slot's declaration names
  * (`readOperationInputs`), and shows what it read beneath the button; it saves nothing. A write is frozen as one intent
  * — the selected object, or every checked one as one batch — which the host confirms where the owner or the batch asks,
- * and dispatches once; the receipt is shown here in the owner's words, item by item for a batch, and only the objects the
- * owner reports changed are read again. Items a batch did not change stay checked. What a write returned is the owner's
- * record of it, not something to show the reader: the button says what the owner said of it, or that it was done.
+ * and dispatches once, and only the objects the owner reports changed are read again (what it removed is let go of: a
+ * selection holding it is cleared). A single write done is said in the platform's message, in the owner's words naming
+ * what it acted on, since the button often goes with what it deleted; a batch is reported here item by item, and items
+ * it did not change stay checked; a refusal or failure stays beside the button. The page hears every outcome (`done`).
+ * What a write returned is the owner's record of it, not something to show the reader.
  *
  * The operation is one its projection names (`operation`, the projection's local name for it); the button is named by
  * its owner's description, in the reader's language, and shows that a choice is needed while the owner admits it for
@@ -46,6 +48,10 @@ const props = withDefaults(
   { type: "default" },
 );
 
+const emit = defineEmits<{
+  /** A write was dispatched and its owner answered: the outcome, for the page to act on. */
+  done: [outcome: Outcome];
+}>();
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
@@ -124,9 +130,13 @@ async function run() {
       operationId.value, first ? { calls: [first, ...rest] } : { call: { target: target.value, input: {} } },
     );
     if (answer.decision === "cancel") return;
-    receipt.value = answer.response;
     named.value = answer.named;
     keepUnchanged(answer.response);
+    const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
+    // A single write done is told where it outlasts the button; anything else stays beside it.
+    if (answered?.kind === "success") panel.notify({ kind: "success", text: said(answered) });
+    else receipt.value = answer.response;
+    if (answered) emit("done", answered);
   } catch (reason) {
     fail(reason);
   } finally {
@@ -182,7 +192,7 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
           >{{ nameOf(item.target) }}: {{ said(item.outcome) }}</li>
         </ul>
       </div>
-      <p v-else :role="outcome.kind === 'success' ? 'status' : 'alert'" :data-outcome="outcome.kind">{{ said(outcome) }}</p>
+      <p v-else role="alert" :data-outcome="outcome.kind">{{ said(outcome) }}</p>
     </template>
   </div>
 </template>

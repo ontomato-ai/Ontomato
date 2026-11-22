@@ -79,7 +79,8 @@ it("draws the owner's field names, button name and run message in a directly ren
   });
   expect(button.textContent?.trim()).toBe(ownerAnswered.operation.value.runNow.label);
   button.click();
-  await vi.waitFor(() => expect(element.querySelector(".sdk-operation-button [data-outcome=success]")?.textContent)
+  // The owner's run message, in the platform's message where it outlasts the button.
+  await vi.waitFor(() => expect(document.querySelector(".el-message")?.textContent?.trim())
     .toBe(ownerAnswered.runNowReceipt.outcome.message));
   // The run the owner returned is its record of the write, not something to show.
   expect(element.querySelector(".sdk-operation-result")).toBeNull();

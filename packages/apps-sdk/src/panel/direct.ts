@@ -514,6 +514,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       return state;
     },
     refresh(affected: PanelOperationAffected) {
+      // What the write removed is let go of first, so nothing below reads it again.
+      if (affected.removed) instance.letGo(affected.removed);
       for (const { data, inputs, reread } of shown) {
         const object = stateObject(sourceObject(data, inputs()));
         if (object && affected.objects.some((changed) => changed.objectType === object.className && changed.primaryKey === object.primaryKey))

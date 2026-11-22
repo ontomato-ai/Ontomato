@@ -60,6 +60,19 @@ it("refreshes the projection form from the component's typed configuration and p
   expect(checked.values.config).toEqual({ custom: { untouched: true } });
 });
 
+it("forwards application catalogue sorting and its opaque cursor to Java", async () => {
+  vi.mocked(backendGet).mockResolvedValueOnce({
+    text: JSON.stringify({ success: true, data: { rows: [] } }),
+  } as Awaited<ReturnType<typeof backendGet>>);
+
+  const adapter = createApplicationReadAdapter(owner, viewer);
+  await adapter.query({ sort: "name", cursor: "name-en.app-example.QWxwaGE" });
+  const request = new URL(vi.mocked(backendGet).mock.lastCall![1], "http://localhost");
+  expect(request.pathname).toBe("/platform/applications/catalogue");
+  expect(request.searchParams.get("sort")).toBe("name");
+  expect(request.searchParams.get("cursor")).toBe("name-en.app-example.QWxwaGE");
+});
+
 it("gets application grants only for an application whose owner allows edit, with domain sharing from its use grant", async () => {
   const row = {
     id: "app-grants", names: { en: "Application" }, descriptions: { en: "" }, icon: "layout-grid",

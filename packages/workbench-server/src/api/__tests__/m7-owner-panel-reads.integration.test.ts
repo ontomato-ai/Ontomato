@@ -720,12 +720,15 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
     outcome: {
       kind: "success",
       data: {},
+      // The owner's sentence naming the skill it deleted.
+      message: expect.any(String),
       affected: {
         objects: [
           { objectType: SKILL, primaryKey: "custom-domain-skill" },
           { objectType: AGENT_DEFINITION, primaryKey: agentIds.readable },
         ],
         objectTypes: [SKILL, AGENT_DEFINITION],
+        removed: [{ objectType: SKILL, primaryKey: "custom-domain-skill" }],
       },
     },
   });

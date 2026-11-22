@@ -370,10 +370,21 @@ const queryStatusLabel = computed(() => {
   return "";
 });
 
+/**
+ * Whether the reader narrowed the read: their search, or a value the panel's state gives one of its other parameters (a
+ * status filter, a chosen type). An empty answer to a narrowed read says nothing matches, not that there is nothing.
+ */
+const narrowed = computed(() => searchText.value !== "" || nonPagingParamNames.some((name) => {
+  if (name === "search" || isFixedLiteral(name)) return false;
+  const value = currentParams.value[name];
+  return value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && value.length === 0);
+}));
+
 const listResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(() => {
   const state = datumState.value;
+  const empty = state.status === "empty" || (state.status === "ready" && rows.value.length === 0);
+  if (empty) return narrowed.value ? { status: "empty", narrowed: true } : { status: "empty" };
   if (state.status !== "ready") return state as DataStateResult<readonly PlatformObjectRecord[]>;
-  if (rows.value.length === 0) return { status: "empty" };
   return { status: "ready", value: rows.value };
 });
 
