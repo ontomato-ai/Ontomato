@@ -203,6 +203,9 @@ watch(
           operations,
           param,
           rowOperation,
+          get rowItemKey() {
+            return panelRecordItemKey(props.row);
+          },
         };
       })!;
 

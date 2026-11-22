@@ -139,6 +139,13 @@ export class PanelFormAdapters {
     if (!slot) throw new Error("A form projection registers under the slot whose declaration names it");
     if (this.#bySlot.has(slot)) throw new Error(`Slot '${slot}' already holds a form`);
     this.#bySlot.set(slot, adapter);
+    // Row-attached forms have no top-level member receiver and mount per row under one slot name; when another row
+    // mounts after a previous row declined a held draft, re-offer the held draft to the newly mounted row form.
+    const held = this.#held.value;
+    if (held && !this.#receivers.has(slot)) {
+      held.offered.delete(slot);
+      held.declined.delete(slot);
+    }
     this.#offerNext();
     return () => this.#bySlot.delete(slot);
   }
@@ -179,10 +186,15 @@ export class PanelFormAdapters {
   }
 
   /** What a held draft is for — its object's type and its operation — once every one of these form slots declined it. */
-  unclaimed(formSlots: readonly string[]): UnclaimedDraft | null {
+  unclaimed(formSlots: readonly string[], hasRowDetail = false): UnclaimedDraft | null {
     void this.#declines.value;
     const held = this.#held.value;
-    return held !== null && held.current() && formSlots.every((slot) => held.declined.has(slot))
+    if (held === null || !held.current()) return null;
+    // A draft addressed to an embedded row (`itemKey`) waits for a `listRowDetail` form to mount for that row instead
+    // of reporting unclaimed as soon as top-level forms (or another expanded row) decline it.
+    if (held.draft.target.itemKey !== undefined && hasRowDetail) return null;
+    const candidates = new Set([...formSlots, ...this.#bySlot.keys()]);
+    return [...candidates].every((slot) => held.declined.has(slot))
       ? { objectType: held.draft.target.objectType, operation: held.draft.operation } : null;
   }
 
@@ -234,8 +246,13 @@ export class PanelFormAdapters {
       }
       if (changed === null) {
         held.offering = false;
-        held.declined.add(next);
-        this.#declines.value += 1;
+        if (mounted && this.#bySlot.get(next) !== receiver) {
+          held.offered.delete(next);
+          held.declined.delete(next);
+        } else {
+          held.declined.add(next);
+          this.#declines.value += 1;
+        }
         this.#offerNext();
         return;
       }
