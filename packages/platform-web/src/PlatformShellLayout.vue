@@ -22,6 +22,7 @@ import { localeAutonyms } from "./locale-names";
 import type { PlatformShownPage } from "./PlatformLayout.vue";
 import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
+import { entryCount } from "./entry-counts";
 import type { PlatformBrand } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelEntryApplication, useApplicationCatalog } from "./catalog";
@@ -72,7 +73,7 @@ watch(() => host.navigation.value, () => { void catalog.refresh(); }, { deep: tr
 watch(() => route.path === platformRoutes.home.path, (home) => { if (home) void catalog.refresh(); });
 /** The rail's placeholders stand in for a list it does not have yet; a later read keeps the rows it shows. */
 const railLoading = computed(() => catalog.loading.value && catalog.applications.value.length === 0);
-const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers));
+const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers, entryCount));
 
 const declarations = computed<PlatformAppDeclaration[]>(() =>
   appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key)),
