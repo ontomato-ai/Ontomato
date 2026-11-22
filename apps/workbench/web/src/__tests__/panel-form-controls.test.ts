@@ -8,7 +8,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { humanIntents, ignoreChanges,
+import { confirmDiscard, humanIntents, ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -232,6 +232,7 @@ it("discarding unparsed JSON shows the value the form holds again", async () => 
   code("/schema", "{");
   await vi.waitFor(() => expect(error("/schema")).toMatch(/^Not valid JSON/));
   item("/name")!.closest("form")!.querySelector<HTMLButtonElement>(".sdk-owner-form-actions button")!.click();
+  await confirmDiscard();
   await vi.waitFor(() => expect(error("/schema")).toBeFalsy());
   expect(item("/schema")!.textContent).toContain('"type": "object"');
   expect(context.instance.dirty()).toBe(false);

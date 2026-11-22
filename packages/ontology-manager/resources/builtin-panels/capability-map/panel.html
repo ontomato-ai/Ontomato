@@ -173,7 +173,6 @@
           :label="$te(kind.labelKey) ? $t(kind.labelKey) : kind.value"
         ></el-option>
       </el-select>
-      <span class="capmap-hint">{{ t('cm.edgeLegend') }}</span>
       <div v-if="mode === 'instance'" class="capmap-actions">
         <button type="button" class="capmap-btn" :disabled="!canUseSelectedAsStart" @click="useSelectedAsStart">
           {{ t('cm.useSelectedAsStart') }}

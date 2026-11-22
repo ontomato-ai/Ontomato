@@ -11,7 +11,7 @@ import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
-import { noOperations } from "./panel-frame";
+import { confirmDiscard, noOperations } from "./panel-frame";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
 
 /*
@@ -294,6 +294,7 @@ it("tells the page's code the form was saved, with the object, and that it was d
   note.dispatchEvent(new Event("input"));
   await nextTick();
   [...element.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].find((button) => button.textContent?.trim() === "Discard")!.click();
+  await confirmDiscard();
   await vi.waitFor(() => expect(discarded).toHaveBeenCalledTimes(1));
   expect(saved).toHaveBeenCalledTimes(1);
 });
