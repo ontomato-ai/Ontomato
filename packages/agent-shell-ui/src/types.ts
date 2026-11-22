@@ -216,6 +216,8 @@ export interface ShellLabels {
   pageContextAddress: (url: string) => string;
   /** The same line names what was selected in the page. */
   selectionContext: (selection: string) => string;
+  /** The same line names what a component highlighted (search matches or a directed path). */
+  highlightContext?: (highlight: string) => string;
   /** The line a message ends with while a file is open beside the conversation: its title and its workspace path. */
   fileContext: (file: { label: string; path: string }) => string;
   /** The line a message ends with once the page or file its conversation was last told about is no longer shown. */

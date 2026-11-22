@@ -31,8 +31,10 @@ export interface G6Colors {
   /** line-strong: edges */
   edge: string;
   primary: string;
-  /** The ring and edge of an `accent` element. */
+  /** The ring and edge of an `accent` element (such as search matches). */
   accent: string;
+  /** The solid ring and thickened edge of a `path` element, distinct from `accent`. */
+  path?: string;
   /** The categorical palette, in slot order. */
   palette: string[];
 }
@@ -47,6 +49,7 @@ export function readG6Colors(element: Element): G6Colors {
     edge: role("--el-border-color-dark"),
     primary: role("--el-color-primary"),
     accent: role("--el-color-primary-light-5"),
+    path: role("--el-color-warning"),
     palette: readGraphPalette(element),
   };
 }
@@ -74,7 +77,7 @@ export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories:
     fill: node.category === undefined
       ? colors.primary
       : colors.palette[graphCategorySlot(node.category, categories, colors.palette.length)],
-    stroke: node.tone === "accent" ? colors.accent : colors.surface,
+    stroke: node.tone === "path" ? (colors.path || colors.primary) : node.tone === "accent" ? colors.accent : colors.surface,
     lineWidth: 4,
     lineDash: node.tone === "accent" ? [4, 3] : [],
     opacity: node.tone === "muted" ? 0.25 : 1,
@@ -129,8 +132,8 @@ export function g6Edges(edges: readonly GraphCanvasEdge[], nodes: ReadonlyMap<st
       type: geometry.type,
       style: {
         ...geometry.style,
-        stroke: edge.tone === "accent" ? colors.primary : dashed ? colors.muted : colors.edge,
-        lineWidth: Math.min(7, (edge.tone === "accent" ? 2 : 1.5) + (edge.weight === undefined ? 0 : Math.log2(edge.weight + 1))),
+        stroke: edge.tone === "path" ? (colors.path || colors.primary) : edge.tone === "accent" ? colors.primary : dashed ? colors.muted : colors.edge,
+        lineWidth: Math.min(7, (edge.tone === "path" ? 3 : edge.tone === "accent" ? 2 : 1.5) + (edge.weight === undefined ? 0 : Math.log2(edge.weight + 1))),
         lineDash: dashed ? [5, 4] : [],
         opacity: edge.tone === "muted" ? 0.15 : 1,
         endArrow: !large,

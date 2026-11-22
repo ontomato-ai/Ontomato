@@ -151,3 +151,50 @@ it("gives a selection made in a placed panel with that placement's path, as the 
   const prompts = { ...lines, file: (file: { label: string; path: string }) => `Current file: ${file.label} (${file.path})`, closed: "The page was closed." };
   expect(writtenText(`Approve it.\n\n${line}`, prompts)).toBe("Approve it.");
 });
+
+it("carries graph search and path highlights distinctly in pageContextLine and strips highlight-only lines from user text", () => {
+  const prompts = {
+    ...lines,
+    highlight: (summary: string) => `Highlighted: ${summary}`,
+    file: (file: { label: string; path: string }) => `Current file: ${file.label} (${file.path})`,
+    closed: "The page was closed.",
+  };
+  const searchPage: PageContext = {
+    url: "/ontology/graph",
+    label: "Ontology graph",
+    selection: [],
+    highlights: [{
+      kind: "search",
+      summary: "Search matches (2): Person, Organization",
+      items: [
+        { kind: "platform:ObjectType", id: "person", label: "Person" },
+        { kind: "platform:ObjectType", id: "org", label: "Organization" },
+      ],
+    }],
+  };
+  const searchLine = pageContextLine(searchPage, prompts, false);
+  expect(searchLine).toBe("Highlighted: Search matches (2): Person, Organization");
+  expect(writtenText(`Explain these.\n\n${searchLine}`, prompts)).toBe("Explain these.");
+
+  const pathPage: PageContext = {
+    url: "/ontology/graph",
+    label: "Ontology graph",
+    selection: [],
+    highlights: [{
+      kind: "path",
+      summary: "No path found in the visible graph from Person to Organization",
+      from: { kind: "platform:ObjectType", id: "person", label: "Person" },
+      to: { kind: "platform:ObjectType", id: "org", label: "Organization" },
+      found: false,
+      nodes: [],
+      edges: [],
+      partialEdges: true,
+      partialNotice: "Relations are hidden because you do not have access to them",
+    }],
+  };
+  const pathLine = pageContextLine(pathPage, prompts, true);
+  expect(pathLine).toBe(
+    "Current page: Ontology graph (/ontology/graph)；Highlighted: No path found in the visible graph from Person to Organization；Relations are hidden because you do not have access to them",
+  );
+  expect(writtenText(`Why no path?\n\n${pathLine}`, prompts)).toBe("Why no path?");
+});
