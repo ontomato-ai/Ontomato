@@ -1,6 +1,7 @@
 import { computed, inject, type ComputedRef, type InjectionKey } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelMemberItemKey } from "@ontomato/contracts/panel-object-ref";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { MemberData, MemberDataState, MemberInputs } from "./direct";
 import { usePanelContext } from "./context";
@@ -36,6 +37,8 @@ export interface PanelMemberContext {
   readonly param?: (name: string) => MemberParam;
   /** Present on `listColumn` / `listRowDetail` row instances: executes a declared write operation on that row. */
   readonly rowOperation?: PanelMemberRowOperation;
+  /** Present on `listColumn` / `listRowDetail` row instances: canonical `itemKey` of the mounted row. */
+  readonly rowItemKey?: PanelMemberItemKey;
 }
 
 /** The member a projection is drawn as, once its projection is loaded. */

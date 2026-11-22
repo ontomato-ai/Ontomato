@@ -24,6 +24,7 @@ import {
   editedInput,
   evaluateMemberFormDraft,
   formTargetKey,
+  itemKeysEqual,
   memberFormSource,
   MemberDataUnavailable,
   type FormSource,
@@ -243,8 +244,15 @@ const dirty = computed(() => prunedOpenedValues.value !== null
  * value ended where it began does not matter: a field set back to the value shown is still submitted, and can be saved.
  */
 const submitted = shallowRef<ReadonlySet<string>>(new Set());
+/** Whether the panel instance's active received draft belongs to this form (and this exact row when row-attached). */
+const hasActiveDraft = computed(() => {
+  const active = panel.instance.draft.value;
+  if (!active || active.slot !== slot.slot) return false;
+  if (member.rowItemKey === undefined) return active.target.itemKey === undefined;
+  return active.target.itemKey !== undefined && itemKeysEqual(member.rowItemKey, active.target.itemKey);
+});
 /** Whether the form has something to save or discard: changed values, a received draft, or fields set on purpose. */
-const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot || submitted.value.size > 0);
+const canSettle = computed(() => dirty.value || hasActiveDraft.value || submitted.value.size > 0);
 /** Whether the form is creating a new object (`createForm`, no existing object selected). */
 const isCreate = computed(() => target.value?.kind === "draft");
 /** Whether every non-hidden field in the owner's form description is read-only. */
@@ -620,7 +628,7 @@ function resetDraft(reopenWhenUnfieldedRefusal: boolean) {
   heldRefusal = null;
   if (ownerOpened.value) adopt(ownerOpened.value);
   if (reopen) load(target.value);
-  void panel.instance.settleDraft(slot.slot).catch(showRefusal);
+  if (hasActiveDraft.value) void panel.instance.settleDraft(slot.slot).catch(showRefusal);
 }
 
 function discard() {
@@ -743,7 +751,9 @@ async function write(): Promise<unknown> {
 
     // A received draft ends with its save; a create draft first records the object it created. The save stands either
     // way: a record that fails is shown with the form, on the object the owner created.
-    await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);
+    if (hasActiveDraft.value) {
+      await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);
+    }
     return saved;
   } catch (reason) {
     if (reason instanceof PlatformObjectRefusal && targetKey(target.value) === targetKey(into)) takeSavedFields(reason);

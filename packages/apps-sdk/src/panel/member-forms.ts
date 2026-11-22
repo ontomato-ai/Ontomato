@@ -2,6 +2,7 @@ import { readonly, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
+import type { PanelMemberItemKey } from "@ontomato/contracts/panel-object-ref";
 import type { PanelFormDescription, PanelFormRequest, PanelFormSaveInput, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { MemberDataState } from "./direct";
 import type { PanelInstance } from "./instance";
@@ -124,6 +125,12 @@ export interface EvaluatedMemberFormDraft {
   readonly refusal: unknown | null;
 }
 
+/** Whether two canonical row `itemKey` values identify the same row (`string` primaryKey or `{ className, primaryKey }`). */
+export function itemKeysEqual(a: PanelMemberItemKey, b: PanelMemberItemKey): boolean {
+  if (typeof a === "string" || typeof b === "string") return a === b;
+  return a.className === b.className && a.primaryKey === b.primaryKey;
+}
+
 /**
  * Checks whether a draft belongs to this form member and, if so, asks the owner to validate it against the target form.
  * Shared by mounted `ObjectForm` instances and member-level draft receivers for unmounted forms so both follow one rule.
@@ -134,6 +141,15 @@ export async function evaluateMemberFormDraft(
   forms: FormSource,
   draft: PageDraft<Record<string, unknown>>,
 ): Promise<EvaluatedMemberFormDraft | null> {
+  const rowItemKey = member.rowItemKey;
+  const draftItemKey = draft.target.itemKey;
+  if (rowItemKey !== undefined) {
+    // Row-attached form: only claim drafts targeting this exact embedded row (`itemKey` present and equal).
+    if (draftItemKey === undefined || !itemKeysEqual(rowItemKey, draftItemKey)) return null;
+  } else if (draftItemKey !== undefined) {
+    // Non-row form: never hijack drafts addressed to an embedded row (`itemKey` present).
+    return null;
+  }
   const { objectType, creates, state, currentTarget } = formTargetState(member, instance);
   // A draft for an object of another type is another form's: its owner is never asked about an object it does not hold.
   if (draft.target.objectType !== objectType) return null;
@@ -148,8 +164,9 @@ export async function evaluateMemberFormDraft(
     : { kind: "object", objectType, primaryKey: draft.target.id ?? draft.created!.id };
   // A create draft saved once addresses the object it created from then on.
   const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : named;
-  // A form whose input is not bound to panel state cannot move to another target; it only takes drafts for its own.
-  if (state === null && formTargetKey(currentTarget()) !== formTargetKey(into)) return null;
+  // A form whose input is not bound to panel state (or a row-attached form mounted under a specific host row) cannot
+  // move to another target; it only takes drafts for its own.
+  if ((state === null || rowItemKey !== undefined) && formTargetKey(currentTarget()) !== formTargetKey(into)) return null;
   const namedForm = await forms.describe({ target: named, changedField: null });
   if (namedForm.save.draftOperation !== draft.operation) return null;
   const baseline = formTargetKey(into) === formTargetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
@@ -217,7 +234,9 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
     async save(target, input) {
       const save = formSave(member.operations.value);
       if (!save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
-      const answer = await instance.writeOperation(instance.operationIdOf(member.key, save.name), { call: { target, input } });
+      const answer = member.rowOperation
+        ? await member.rowOperation.run(save.name, { ...input })
+        : await instance.writeOperation(instance.operationIdOf(member.key, save.name), { call: { target, input } });
       if (answer.decision === "cancel") throw new Error("The save was cancelled");
       const { response } = answer;
       if (response.kind === "not-dispatched") throw new Error(response.message);

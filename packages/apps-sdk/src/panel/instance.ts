@@ -267,6 +267,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const topLevelMemberKeys = Object.entries(manifest.members)
     .filter(([, member]) => !isListAttachedPanelMember(member))
     .map(([memberKey]) => memberKey);
+  const hasRowDetailMembers = Object.values(manifest.members).some((member) => member.listRowDetail !== undefined);
   const forms = new PanelFormAdapters(options.reportDraftError, topLevelMemberKeys);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
@@ -319,7 +320,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const registered = registrations.value;
       if (!topLevelMemberKeys.every((member) => registered.some((registration) => registration.slot === member))) return null;
       const formSlots = registered.filter((registration) => registration.takesDrafts).map((registration) => registration.slot);
-      return forms.unclaimed(formSlots);
+      return forms.unclaimed(formSlots, hasRowDetailMembers);
     }),
     projections: readonly(registrations),
     register(registration) {
