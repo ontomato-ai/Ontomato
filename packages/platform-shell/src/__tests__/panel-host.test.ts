@@ -3,10 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { effectScope, nextTick, shallowRef } from "vue";
+import { defineComponent, effectScope, h, nextTick, shallowRef } from "vue";
+import { mount } from "@vue/test-utils";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import { panelAddress, panelAddressState, PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { definePanel, type PanelCommand } from "@ontomato/contracts/panel-manifest";
+import PanelHost from "../PanelHost.vue";
+import PlatformPageHeader from "../PlatformPageHeader.vue";
+import { providePageActions } from "../page-actions";
+import { isSetCommandSatisfied } from "../panel-commands";
 import {
   panelFrameDocument,
   usePanelInstance,
@@ -580,5 +585,179 @@ describe("the panel host", () => {
     await expect(second).resolves.toBe("answer of task.clear");
     expect(port.started("use-a").invoked).toEqual(["runTask.runNow", "task.clear"]);
     scope.stop();
+  });
+});
+
+describe("header set command auto-disable", () => {
+  const manifest = definePanel({
+    state: {
+      creating: { type: { kind: "scalar", type: "boolean" }, deepLink: true },
+      selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true },
+      pinnedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true },
+      search: { type: { kind: "scalar", type: "string" } },
+      tags: { type: { kind: "scalar", type: "string" }, deepLink: true },
+    },
+    members: {
+      tasks: { target: { projectionId: "projection-x" } },
+      drawer: { target: { projectionId: "projection-drawer" } },
+    },
+    commands: {
+      create: {
+        labelKey: "create",
+        primary: true,
+        do: { set: { fields: { creating: { literal: true }, selectedTask: { literal: null } } } },
+      },
+      focusDefault: {
+        labelKey: "focusDefault",
+        do: { set: { fields: { selectedTask: { literal: { className: SCHEDULED_TASK, primaryKey: "task-1" } } } } },
+      },
+      followPinned: {
+        labelKey: "followPinned",
+        do: { set: { fields: { selectedTask: { state: "pinnedTask" } } } },
+      },
+      copySearch: {
+        labelKey: "copySearch",
+        do: { set: { fields: { tags: { state: "search" } } } },
+      },
+      runTask: {
+        labelKey: "runTask",
+        do: { invoke: { member: "tasks", operation: "runNow", inputs: {} } },
+      },
+      openDrawer: {
+        labelKey: "openDrawer",
+        do: { open: { mode: "drawer", member: "drawer" } },
+      },
+    },
+  });
+
+  it("evaluates do.set satisfaction across scalar, null-omitted, object-ref, state-ref, and non-set commands", () => {
+    const create = manifest.commands.create!;
+    // List state (unset or false) and detail state keep create enabled.
+    expect(isSetCommandSatisfied(create, manifest, {})).toBe(false);
+    expect(isSetCommandSatisfied(create, manifest, { creating: false })).toBe(false);
+    expect(isSetCommandSatisfied(create, manifest, {
+      creating: false,
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" },
+    })).toBe(false);
+    expect(isSetCommandSatisfied(create, manifest, {
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" },
+    })).toBe(false);
+
+    // Create state: deepLinkable() omits selectedTask when null, which still matches { literal: null }.
+    expect(isSetCommandSatisfied(create, manifest, { creating: true })).toBe(true);
+    expect(isSetCommandSatisfied(create, manifest, { creating: true, selectedTask: null })).toBe(true);
+    // Still enabled if selectedTask is not cleared yet.
+    expect(isSetCommandSatisfied(create, manifest, {
+      creating: true,
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" },
+    })).toBe(false);
+
+    // Object reference literal compares structurally regardless of key order.
+    const focusDefault = manifest.commands.focusDefault!;
+    expect(isSetCommandSatisfied(focusDefault, manifest, {
+      selectedTask: { primaryKey: "task-1", className: SCHEDULED_TASK },
+    })).toBe(true);
+    expect(isSetCommandSatisfied(focusDefault, manifest, {
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" },
+    })).toBe(false);
+
+    // Source { state } resolves only when deepLink === true.
+    const followPinned = manifest.commands.followPinned!;
+    expect(isSetCommandSatisfied(followPinned, manifest, {})).toBe(true);
+    expect(isSetCommandSatisfied(followPinned, manifest, {
+      pinnedTask: { className: SCHEDULED_TASK, primaryKey: "task-9" },
+      selectedTask: { primaryKey: "task-9", className: SCHEDULED_TASK },
+    })).toBe(true);
+    expect(isSetCommandSatisfied(followPinned, manifest, {
+      pinnedTask: { className: SCHEDULED_TASK, primaryKey: "task-9" },
+    })).toBe(false);
+
+    // Non-deepLink source state conservatively stays enabled even when absent from host state.
+    expect(isSetCommandSatisfied(manifest.commands.copySearch, manifest, {})).toBe(false);
+
+    // Non-set commands (invoke, open), empty fields, and item sources are never disabled.
+    expect(isSetCommandSatisfied(manifest.commands.runTask, manifest, {})).toBe(false);
+    expect(isSetCommandSatisfied(manifest.commands.openDrawer, manifest, {})).toBe(false);
+    const emptyFields: PanelCommand = { labelKey: "empty", do: { set: { fields: {} } } };
+    expect(isSetCommandSatisfied(emptyFields, manifest, {})).toBe(false);
+    const itemSource: PanelCommand = { labelKey: "item", do: { set: { fields: { creating: { item: true } } } } };
+    expect(isSetCommandSatisfied(itemSource, manifest, { creating: true })).toBe(false);
+  });
+
+  it("disables a header do.set primary button in PanelHost while its target state holds and re-enables on exit", async () => {
+    const panels = new Map([["panel-create", record("panel-create", "Tasks", manifest)]]);
+    const port = platform({ panels, uses: [useRelation("use-create", "tasks", "panel-create", "/a/tasks")] });
+    const hostPort = port.port("use-create");
+
+    const wrapper = mount(defineComponent({
+      setup() {
+        const header = providePageActions();
+        return () => h("div", [
+          h(PlatformPageHeader, {
+            title: "Tasks",
+            actions: header.value?.actions,
+            draft: header.value?.draft ?? null,
+          }),
+          h(PanelHost, {
+            port: hostPort,
+            address: "/applications/app-a/a/tasks",
+            labels,
+            language: { locale: "en", fallback: "en" },
+          }),
+        ]);
+      },
+    }));
+
+    try {
+      await vi.waitFor(() => expect(port.started("use-create")).toBeTruthy());
+      const started = port.started("use-create");
+      const url = started.run.url();
+      started.run.operations([
+        { id: "create", label: "New task", kind: "state", inputSchema: {}, handlerRef: "panel.command:create" },
+        { id: "runTask", label: "Run now", kind: "state", inputSchema: {}, handlerRef: "panel.command:runTask" },
+        { id: "openDrawer", label: "Open drawer", kind: "state", inputSchema: {}, handlerRef: "panel.command:openDrawer" },
+      ]);
+      await nextTick();
+
+      const button = (text: string) => {
+        const found = wrapper.findAll<HTMLButtonElement>(".page-actions > button.action")
+          .find((candidate) => candidate.text().trim() === text);
+        if (!found) throw new Error(`Button '${text}' not found`);
+        return found;
+      };
+
+      // 1. List state: create is enabled.
+      expect(button("New task").classes()).toContain("primary");
+      expect(button("New task").element.disabled).toBe(false);
+      expect(button("Run now").element.disabled).toBe(false);
+      expect(button("Open drawer").element.disabled).toBe(false);
+
+      // 2. Detail state: create remains enabled.
+      started.run.state({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } }, url);
+      await nextTick();
+      expect(button("New task").element.disabled).toBe(false);
+
+      // 3. Create state (selectedTask omitted as deepLinkable() omits null): create disables; invoke/open stay enabled.
+      started.run.state({ creating: true }, url);
+      await nextTick();
+      expect(button("New task").element.disabled).toBe(true);
+      expect(button("Run now").element.disabled).toBe(false);
+      expect(button("Open drawer").element.disabled).toBe(false);
+      await button("New task").trigger("click");
+      expect(started.invoked).toEqual([]);
+
+      // 4. Exit create state (creating: false or cleared): create becomes enabled and clickable again.
+      started.run.state({ creating: false }, url);
+      await nextTick();
+      expect(button("New task").element.disabled).toBe(false);
+
+      started.run.state({}, url);
+      await nextTick();
+      expect(button("New task").element.disabled).toBe(false);
+      await button("New task").trigger("click");
+      expect(started.invoked).toEqual(["create"]);
+    } finally {
+      wrapper.unmount();
+    }
   });
 });

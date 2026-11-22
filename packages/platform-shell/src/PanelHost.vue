@@ -6,6 +6,7 @@ import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./pa
 import { RefreshCw, X as CloseIcon } from "lucide-vue-next";
 import { ElAlert, ElButton } from "element-plus";
 import { hasPageActions, usePageActions, type PlatformPageAction } from "./page-actions";
+import { isSetCommandSatisfied } from "./panel-commands";
 import { confirmDanger } from "./confirm-danger";
 import { createPanelBackController } from "./panel-back";
 import { useOptionalLeaveConfirmation } from "./unsaved-changes";
@@ -215,13 +216,18 @@ const commands = computed<PlatformPageAction[]>(() => {
   };
   const shortcuts = view.operations.value
     .filter((operation) => operation.kind === "state" && !operation.memberPath && !setsWired(operation.id))
-    .map((operation): PlatformPageAction => ({
-      id: operation.id,
-      label: operation.label,
-      // The one command the panel marks primary is the page's main action; an operation's ID here is its command's key.
-      primary: shown.panel.manifest.commands[operation.id]?.primary === true,
-      onClick: () => void view.invoke(operation.id),
-    }));
+    .map((operation): PlatformPageAction => {
+      const command = shown.panel.manifest.commands[operation.id];
+      const satisfied = isSetCommandSatisfied(command, shown.panel.manifest, view.state.value);
+      return {
+        id: operation.id,
+        label: operation.label,
+        // The one command the panel marks primary is the page's main action; an operation's ID here is its command's key.
+        primary: command?.primary === true,
+        ...(satisfied ? { disabled: true } : {}),
+        onClick: () => void view.invoke(operation.id),
+      };
+    });
   return [...refresh, ...shortcuts];
 });
 usePageActions(() => (props.shown && view.source.value ? { actions: commands.value, draft: view.headerDraft.value } : null));
