@@ -105,7 +105,7 @@ public final class MetricViewForm {
               false,
               true,
               readOnlyReason,
-              null,
+              text(langService, lang, "PanelForm.legacyCodeHint"),
               false));
     fields.add(textField("/function/logic", text(langService, lang, "PanelForm.logic"), true, false, readOnlyReason, null));
     fields.add(bindingsField(parameterDefs, readOnlyReason, lang, langService));
@@ -167,7 +167,7 @@ public final class MetricViewForm {
         false,
         readOnlyReason != null,
         readOnlyReason,
-        null,
+        text(langService, lang, "PanelForm.metricBindingsHelp"),
         false);
   }
 

@@ -64,6 +64,7 @@ await mountPanel({
     const attributeRows = computed(() => readyRows(attributes));
     const relationRows = computed(() => readyRows(relations));
     const primaryKeyAttributes = computed(() => attributeRows.value.filter(row => row.fields.primaryKey === "true"));
+    const primaryKeyCount = computed(() => primaryKeyAttributes.value.length);
     // The class's counts and primary-key status are the owner's, from its catalog row of this class: an attribute
     // write reports the object-type catalogue as changed (it is read again) but not the class record itself.
     const summary = computed(() =>
@@ -138,6 +139,10 @@ await mountPanel({
       if (creating.value) backToCatalog();
     }
     function openAttribute(row) {
+      if (attributeMode.value === "edit" && selectedAttribute.value?.primaryKey === row.primaryKey) {
+        closeAttribute();
+        return;
+      }
       instance.state.set("selectedAttribute", { className: ATTRIBUTE, primaryKey: row.primaryKey });
       attributeMode.value = "edit";
     }
@@ -209,8 +214,8 @@ await mountPanel({
     })}`;
 
     return {
-      t, view, search, catalog, filteredRows, catalogCount, relationCount, labels, detail, record, attributes, attributeRows, relations, relationRows,
-      summary, primaryKeyStatus, selected, selectedAttribute, editingAttribute, isPrimaryKey, attributeMode, attributeError, busy,
+      t, view, creating, search, catalog, filteredRows, catalogCount, relationCount, labels, detail, record, attributes, attributeRows, relations, relationRows,
+      summary, primaryKeyCount, primaryKeyStatus, selected, selectedAttribute, editingAttribute, isPrimaryKey, attributeMode, attributeError, busy,
       deleteObjectOp, setPrimaryKeyOp, deleteAttributeOp,
       openClass, backToCatalog, objectSaved, formDiscarded, openAttribute, startCreateAttribute, closeAttribute,
       attributeSaved, removeObject, makePrimaryKey, removeAttribute, configureView, browseData, relationAddress,

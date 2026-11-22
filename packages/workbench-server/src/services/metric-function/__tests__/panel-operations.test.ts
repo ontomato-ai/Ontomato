@@ -159,7 +159,10 @@ describe("metric and function panel server operations", () => {
     const remove = hostWith(() => Response.json({ success: true }));
     expect(await operation.execute(remove.host, metricTarget)).toEqual({
       kind: "success", data: {},
-      affected: { objects: [{ objectType: METRIC_VIEW, primaryKey: metricTarget.primaryKey }], objectTypes: [METRIC_VIEW] },
+      affected: {
+        objects: [{ objectType: METRIC_VIEW, primaryKey: metricTarget.primaryKey }], objectTypes: [METRIC_VIEW],
+        removed: [{ objectType: METRIC_VIEW, primaryKey: metricTarget.primaryKey }],
+      },
     });
     expect(remove.sent[0]?.path).toBe("/api/data-query/metricView/delete");
     expect(JSON.parse(String(remove.sent[0]?.init.body))).toEqual({ id: "m1" });
@@ -389,7 +392,10 @@ describe("metric and function panel server operations", () => {
     const deleted = hostWith(() => Response.json({ success: true }));
     expect(await remove.execute(deleted.host, functionTarget)).toEqual({
       kind: "success", data: {},
-      affected: { objects: [{ objectType: FUNCTION, primaryKey: functionTarget.primaryKey }], objectTypes: [FUNCTION] },
+      affected: {
+        objects: [{ objectType: FUNCTION, primaryKey: functionTarget.primaryKey }], objectTypes: [FUNCTION],
+        removed: [{ objectType: FUNCTION, primaryKey: functionTarget.primaryKey }],
+      },
     });
     expect(deleted.sent[0]?.path).toBe("/api/data-query/function/delete");
     const deleteRefused = hostWith(() => Response.json({

@@ -7,7 +7,7 @@ import {
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import { panelFormDescriptionSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
 import { APPLICATION } from "@ontomato/contracts/platform-object-types";
-import { applicationCatalogueScopeSchema } from "@ontomato/contracts/product-catalog-query";
+import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders } from "../../utils/backend-client";
@@ -27,6 +27,7 @@ const ownerData = <T>(text: string, schema: z.ZodType<T>) =>
 const querySchema = z.object({
   search: z.string().optional(),
   scope: applicationCatalogueScopeSchema.optional(),
+  sort: applicationCatalogueSortSchema.optional(),
   cursor: z.string().optional(),
   size: z.number().int().min(1).max(100).optional(),
 }).strict();
