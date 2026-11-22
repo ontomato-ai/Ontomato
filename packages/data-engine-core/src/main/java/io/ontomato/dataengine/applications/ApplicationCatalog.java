@@ -384,7 +384,7 @@ public class ApplicationCatalog {
 
     private void requireIconChange(JSONObject application, String icon, User user) {
         var changed = changedIcon(application, icon);
-        if (changed != null) panels.requireCurrent(user.getDomainId(), null, List.of(), null, null, changed);
+        if (changed != null) panels.requireCurrent(user.getDomainId(), null, List.of(), null, null, changed, null);
     }
     public JSONObject view(JSONObject app, User user) {
         return view(app, user, new BuiltinPageKeys(all()));
@@ -812,10 +812,10 @@ public class ApplicationCatalog {
     }
 
     public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user) {
-        return putPanelUses(id, body, user, false);
+        return putPanelUses(id, body, user, false, null);
     }
 
-    public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user, boolean createOnly) {
+    public JSONObject putPanelUses(String id, ApplicationController.PanelRegistration body, User user, boolean createOnly, Locale locale) {
         validateId(id);
         if (user.getDomainId() == null || !id.startsWith("app-")) throw bad("A panel application requires an app- ID and domain");
         if (body.entry() == null || body.panelUses() == null || !"panels".equals(body.entry().renderer()))
@@ -868,7 +868,7 @@ public class ApplicationCatalog {
             var entry = JSONObject.of("path", entryPath, "renderer", "panels");
             validateMappings(id, user.getDomainId(), entry, List.of(), uses);
             panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery(), settings.theme(),
-                supplied == null ? null : changedIcon(old, supplied.icon()));
+                supplied == null ? null : changedIcon(old, supplied.icon()), locale);
             if (old != null && supplied == null) {
                 db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,panel_settings=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
                     entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue),

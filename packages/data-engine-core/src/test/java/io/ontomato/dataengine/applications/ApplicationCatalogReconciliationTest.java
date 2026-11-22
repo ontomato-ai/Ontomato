@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -380,7 +381,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         actualCatalog.putPanelUses("app-local", registration, second);
         assertEquals("builtin-product-browser",
             actualCatalog.require("app-local").getList("panelUses", ApplicationPanelUse.class).getFirst().panelId());
-        verify(panels).requireCurrent("domain-two", null, List.of(localUse), null, null, "pages");
+        verify(panels).requireCurrent("domain-two", null, List.of(localUse), null, null, "pages", null);
     }
 
     private ApplicationCatalog.Builtin builtInBrowser(String panelId) {
@@ -850,7 +851,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             """);
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration.toJSONString()))
             .andExpect(status().isOk());
-        verify(panels).requireCurrent("domain", null, List.of(), null, null, "pages");
+        verify(panels).requireCurrent(eq("domain"), isNull(), eq(List.of()), isNull(), isNull(), eq("pages"), any(Locale.class));
         jdbc.update("UPDATE sys_application SET icon=? WHERE id=?", "ontology", "app-icon-proof");
         var declaration = registration.getJSONObject("declaration");
         declaration.put("icon", "ontology");
@@ -858,7 +859,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         clearInvocations(panels);
         http.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(registration.toJSONString()))
             .andExpect(status().isOk());
-        verify(panels).requireCurrent("domain", null, List.of(), null, null, null);
+        verify(panels).requireCurrent(eq("domain"), isNull(), eq(List.of()), isNull(), isNull(), isNull(), any(Locale.class));
 
         var identityPath = "/platform/applications/app-icon-proof/identity";
         var update = JSONObject.of("names", JSONObject.of("en", "Renamed again"), "descriptions", new JSONObject(), "icon", "ontology");
@@ -868,7 +869,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         verifyNoInteractions(panels);
 
         doThrow(ApplicationCatalog.bad("Icon is reserved")).when(panels)
-            .requireCurrent("domain", null, List.of(), null, null, "settings");
+            .requireCurrent("domain", null, List.of(), null, null, "settings", null);
         update.put("icon", "settings");
         http.perform(put(identityPath).contentType(MediaType.APPLICATION_JSON).content(update.toJSONString()))
             .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Icon is reserved"));
@@ -876,6 +877,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     }
 
     @Test void registrationReportsARefusedDefaultAgentOnItsSubmittedEntryRow() throws Exception {
+        var acceptLanguage = new AtomicReference<String>();
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         var reason = "Entry 'history' default agent preset 'knowledge-governance' does not select the skill for panel 'panel-overview'.";
         var payload = JSONObject.of(
@@ -883,6 +885,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             "details", JSONObject.of("useId", "history"));
         server.createContext("/internal/product-panels/validate-references", exchange -> {
             try {
+                acceptLanguage.set(exchange.getRequestHeaders().getFirst(HttpHeaders.ACCEPT_LANGUAGE));
                 var body = payload.toJSONString().getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(409, body.length);
@@ -904,7 +907,8 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             when(grants.allowed("panel-overview", "use")).thenReturn(true);
 
             mvc.perform(put("/platform/applications/app-default-agent-proof/panel-uses")
-                    .param("create", "true").contentType(MediaType.APPLICATION_JSON).content("""
+                    .param("create", "true").locale(Locale.SIMPLIFIED_CHINESE)
+                    .contentType(MediaType.APPLICATION_JSON).content("""
                     {"entry":{"path":"/applications/app-default-agent-proof","renderer":"panels"},"entryAccess":["domain-member"],
                      "declaration":{"names":{"en":"Default agent proof"},"descriptions":{},"icon":"pages","groups":[],"permissions":[]},
                      "panelUses":[
@@ -920,6 +924,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 .andExpect(jsonPath("$.errors[0].field").value("/values/panelUses/1/defaultAgent"))
                 .andExpect(jsonPath("$.errors[0].code").value("target_unavailable"))
                 .andExpect(jsonPath("$.errors[0].message").value(reason));
+            assertEquals("zh-CN", acceptLanguage.get());
             assertTrue(records().isEmpty());
         } finally {
             server.stop(0);
@@ -1013,7 +1018,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
                 new ApplicationPanelUse("plan", "plan", "panel-plan", "/example/plan", member,
                     new DefaultAgentTarget("id", "planner", null), null),
                 new ApplicationPanelUse("ordinary", "ordinary", "panel-ordinary", "/example/ordinary", member, null, null)
-            ), null, null, null);
+            ), null, null, null, null);
 
             assertEquals("test-service", serviceHeader.get());
             var uses = requests.get().getJSONArray("uses");

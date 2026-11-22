@@ -38,12 +38,12 @@ class ApplicationIconTest {
         catalog.updateIcon("app-example", "ontology", user);
         verifyNoInteractions(panels);
         catalog.updateIcon("app-example", "users", user);
-        verify(panels).requireCurrent("domain", null, List.of(), null, null, "users");
+        verify(panels).requireCurrent("domain", null, List.of(), null, null, "users", null);
         verify(db).update("UPDATE sys_application SET icon=?,updated_at=now() WHERE id=?", "users", "app-example");
         assertEquals("release", app.getString("releaseId"));
 
         doThrow(ApplicationCatalog.bad("Invalid application icon")).when(panels)
-            .requireCurrent("domain", null, List.of(), null, null, "https://external/icon.svg");
+            .requireCurrent("domain", null, List.of(), null, null, "https://external/icon.svg", null);
         assertThrows(ResponseStatusException.class, () -> catalog.updateIcon("app-example", "https://external/icon.svg", user));
         verify(db, never()).update("UPDATE sys_application SET icon=?,updated_at=now() WHERE id=?", "https://external/icon.svg", "app-example");
     }
