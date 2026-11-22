@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
+import { SDK_UI_COMPONENTS } from "../contracts/src/sdk-ui-map.ts";
 const moduleId = "apps-sdk:element-components";
 
-/** Use the installed Element Plus version's own component list to generate imports of its component modules. */
+/** Generate lazy loaders for the SDK UI primitives declared in the single mapping table. */
 export function elementComponents() {
   return {
     name: "apps-sdk-element-components",
@@ -10,15 +10,9 @@ export function elementComponents() {
     },
     load(id) {
       if (id !== "\0" + moduleId) return;
-      const installer = readFileSync(new URL(import.meta.resolve("element-plus/es/component.mjs")), "utf8");
-      const ast = this.parse(installer);
-      const list = ast.body.flatMap(node => node.declarations ?? []).find(declaration => declaration.init.type === "ArrayExpression");
-      const paths = new Map(ast.body.filter(node => node.type === "ImportDeclaration").flatMap(node =>
-        node.specifiers.map(specifier => [specifier.local.name, node.source.value]),
-      ));
-      const loaders = list.init.elements.map(({ name }) => {
-        const path = paths.get(name).replace(/^\.\//, "element-plus/es/");
-        return `  ${name}: () => import(${JSON.stringify(path)}).then(module => module.${name})`;
+      const loaders = SDK_UI_COMPONENTS.map(({ sdkExport, implExport, implSubpath }) => {
+        const path = `element-plus/es/components/${implSubpath}/index.mjs`;
+        return `  ${sdkExport}: () => import(${JSON.stringify(path)}).then(module => module.${implExport})`;
       });
       return `export default {\n${loaders.join(",\n")}\n};`;
     },

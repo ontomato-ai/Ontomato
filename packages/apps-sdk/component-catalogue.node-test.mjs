@@ -213,5 +213,64 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(subtitleLines?.description ?? "", /visible lines in a compact summary/);
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
     assert.equal(declared.get("MetricChart").config, undefined, "a component with no configuration declares none");
+
+    // SDK UI primitives, directives, and theme tokens are published under Ontomato SDK names with zero third-party leaks.
+    assert.equal(catalogue.uiPrimitives.length, 106);
+    const sdkButton = catalogue.uiPrimitives.find((item) => item.tag === "sdk-button");
+    assert.equal(sdkButton?.exportName, "SdkButton");
+    assert.equal(sdkButton?.module, "@ontomato/sdk/ui");
+    assert.ok(sdkButton?.props.length > 0, "SdkButton publishes its props");
+    assert.deepEqual(
+      catalogue.uiDirectives.map((item) => [item.name, item.exportName]),
+      [
+        ["v-sdk-loading", "vSdkLoading"],
+        ["v-sdk-infinite-scroll", "vSdkInfiniteScroll"],
+        ["v-sdk-popover", "vSdkPopover"],
+      ],
+    );
+    assert.ok(catalogue.themeTokens.some((token) => token.name === "--sdk-color-primary" && token.overridable));
+    const uiJson = JSON.stringify({
+      uiPrimitives: catalogue.uiPrimitives,
+      uiDirectives: catalogue.uiDirectives,
+      themeTokens: catalogue.themeTokens,
+    });
+    assert.equal(
+      uiJson.match(/Element[\s-]?Plus|element-plus|--el-[a-z0-9-]+|\bel-[a-z][a-z0-9-]*\b|\bEl[A-Z][A-Za-z0-9]*\b/g),
+      null,
+      "UI catalogue must not leak third-party identifiers",
+    );
+    const componentsDoc = readFileSync(join(out, version, "docs/components.md"), "utf8");
+    assert.match(componentsDoc, /`<sdk-button>`/);
+    assert.match(componentsDoc, /`v-sdk-loading`/);
+    assert.match(componentsDoc, /`--sdk-color-primary`/);
+    assert.equal(
+      readdirSync(join(out, version, "docs")).includes("element-plus.web-types.json"),
+      false,
+      "Third-party web-types.json is no longer shipped in docs/",
+    );
   });
+});
+
+test("the @ontomato/sdk/ui entry exports every SDK_UI_COMPONENTS primitive and directive while keeping component names intact", async () => {
+  const { SDK_UI_COMPONENTS, SDK_UI_DIRECTIVES } = await import("../contracts/src/sdk-ui-map.ts");
+  const uiSource = readFileSync(join(HERE, "src/entries/ui.ts"), "utf8");
+  for (const entry of SDK_UI_COMPONENTS) {
+    assert.match(
+      uiSource,
+      new RegExp(`\\b${entry.implExport} as ${entry.sdkExport}\\b`),
+      `src/entries/ui.ts must re-export ${entry.implExport} as ${entry.sdkExport}`,
+    );
+  }
+  for (const directive of SDK_UI_DIRECTIVES) {
+    assert.match(
+      uiSource,
+      new RegExp(`\\b${directive.implExport} as ${directive.sdkExport}\\b`),
+      `src/entries/ui.ts must re-export ${directive.implExport} as ${directive.sdkExport}`,
+    );
+  }
+  // Verify live module identity and untouched `.name` on key primitives.
+  const buttonMod = await import("element-plus/es/components/button/index.mjs");
+  const dialogMod = await import("element-plus/es/components/dialog/index.mjs");
+  assert.equal(buttonMod.ElButton.name, "ElButton");
+  assert.equal(dialogMod.ElDialog.name, "ElDialog");
 });

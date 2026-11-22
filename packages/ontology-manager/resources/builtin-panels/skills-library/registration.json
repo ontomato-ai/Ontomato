@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-skills-library",
+      "input": {
+        "name": "Skill",
+        "description": "Manage skills available to agents."
+      }
+    }
+  ]
+}

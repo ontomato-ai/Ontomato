@@ -8,7 +8,8 @@ import { ElMessageBox } from "element-plus/es/components/message-box/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormDescription, PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
-import { slotState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
+import { slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
+import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
@@ -77,9 +78,15 @@ const forms: FormSource = memberFormSource(member, panel.instance);
 const editInput = editedInput(member.projection);
 /** Whether the projection reads the owner's create form, which a create draft is read in. */
 const creates = Object.values(member.projection.data).some((data) => data.read === "createForm");
-/** The panel state the edited object is held in; a form that only creates holds none. */
-const state = computed(() => (editInput === undefined ? null : slotState(panel.manifest, slot.slot, editInput)));
-const key = computed(() => (state.value === null ? null : selectedKey(panel.instance.state.values.value[state.value])));
+/** The panel state the edited object is held in; a form that only creates or binds no state holds none. */
+const state = computed(() => (editInput === undefined ? null : slotInputState(panel.manifest, slot.slot, editInput)));
+const key = computed(() => (
+  state.value !== null
+    ? selectedKey(panel.instance.state.values.value[state.value])
+    : editInput === undefined
+      ? null
+      : selectedKey(slot.inputs[editInput] as PanelFieldValue | undefined)
+));
 /**
  * What the form shows: the chosen object, or, with nothing chosen, a new one when the projection reads its owner's create
  * form — an owner declares one only when it creates. This is known from the projection at once, never from an answer
@@ -471,10 +478,12 @@ useProjectionForm({
     const named: PanelFormTarget = create && creates
       ? { kind: "draft" }
       : { kind: "object", objectType, primaryKey: draft.target.id ?? draft.created!.id };
-    const namedForm = await forms.describe({ target: named, changedField: null });
-    if (namedForm.save.draftOperation !== draft.operation) return null;
     // A create draft saved once addresses the object it created from then on.
     const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : named;
+    // A form whose input is not bound to panel state cannot move to another target; it only takes drafts for its own.
+    if (state.value === null && targetKey(target.value) !== targetKey(into)) return null;
+    const namedForm = await forms.describe({ target: named, changedField: null });
+    if (namedForm.save.draftOperation !== draft.operation) return null;
     const baseline = targetKey(into) === targetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
     // The draft is this form's from here on: an owner that cannot check its values at all (a value it cannot read) has
     // not taken it either, and that is said on this form, as a refusal is; the rest of the panel goes on.

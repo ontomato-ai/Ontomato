@@ -22,6 +22,30 @@ function writePanelDescriptor(file, document, source) {
   return writeFile(file, JSON.stringify(document, null, indent) + newline);
 }
 
+function formatAuthoringViolations(violations) {
+  return violations.map(v => `${v.file}:${v.line}:${v.column}: ${v.message}`).join("\n");
+}
+
+async function checkPanelAuthoringSources({ directory, files, descriptorFile, theme, html, module, checks }) {
+  const violations = [];
+  if (theme && checks.checkAuthoringTheme) {
+    violations.push(...checks.checkAuthoringTheme(theme, descriptorFile));
+  }
+  if (html !== undefined && checks.checkAuthoringTemplate) {
+    violations.push(...checks.checkAuthoringTemplate(html, resolve(directory, "panel.html")));
+  }
+  if (module !== undefined && checks.checkAuthoringScript) {
+    violations.push(...await checks.checkAuthoringScript(module, resolve(directory, "panel.mjs")));
+  }
+  if (checks.checkAuthoringStyles) {
+    for (const name of files.filter(entry => entry.endsWith(".css")).sort()) {
+      const cssFile = resolve(directory, name);
+      violations.push(...checks.checkAuthoringStyles(await readFile(cssFile, "utf8"), cssFile));
+    }
+  }
+  if (violations.length) throw new Error(formatAuthoringViolations(violations));
+}
+
 export async function checkBuiltinPanelSource(directory, checks, { assignIds = false, builtinEntryIds } = {}) {
   if (!checks.builtinProductIdSchema) throw new Error("Use an SDK release that supports platform product IDs");
   const registrationFile = resolve(directory, "registration.json");
@@ -73,16 +97,34 @@ export async function checkBuiltinPanelSource(directory, checks, { assignIds = f
 
   const files = await readdir(directory);
   const trialPath = "/applications/app-";
+  const sourceTexts = {};
   for (const name of ["panel.html", "panel.mjs", "recipes.md"]) {
     if (!files.includes(name)) continue;
     const path = resolve(directory, name);
     const text = await readFile(path, "utf8");
+    sourceTexts[name] = text;
     const offset = text.indexOf(trialPath);
     if (offset === -1) continue;
     const lines = text.slice(0, offset).split(/\r\n|[\r\n]/u);
     const column = lines.at(-1).length + 1;
     throw new Error(`${path}:${lines.length}:${column}: Replace the domain application address (${trialPath}…) with a built-in entry address.`);
   }
+  if (sourceTexts["panel.mjs"] !== undefined && checks.panelModuleImports) {
+    try {
+      await checks.panelModuleImports(sourceTexts["panel.mjs"]);
+    } catch (error) {
+      throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
+    }
+  }
+  await checkPanelAuthoringSources({
+    directory,
+    files,
+    descriptorFile: file,
+    theme: document.theme,
+    html: sourceTexts["panel.html"],
+    module: sourceTexts["panel.mjs"],
+    checks,
+  });
 
   const assigned = new Map();
   for (const [member, declaration] of Object.entries(parsed.data.members)) {
@@ -173,6 +215,11 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
   const contents = await Promise.all(sources.map(async ([key, file]) => [
     key, await readFile(resolve(directory, file), "utf8"),
   ]));
+  const themeViolations = document.theme && checks.checkAuthoringTheme
+    ? checks.checkAuthoringTheme(document.theme, descriptorFile)
+    : [];
+  if (themeViolations.length) throw new Error(formatAuthoringViolations(themeViolations));
+
   const result = checks.panelDefinitionContentSchema.safeParse({
     ...descriptor, manifest: expanded.manifest, content: { ...content, ...Object.fromEntries(contents) },
   });
@@ -182,6 +229,14 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
     } catch (error) {
       throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
     }
+    await checkPanelAuthoringSources({
+      directory,
+      files,
+      descriptorFile,
+      html: result.data.content.html,
+      module: result.data.content.module,
+      checks,
+    });
 
     return { definition: result.data, inline: expanded.inline, charts: expanded.charts, descriptorFile, document, source };
   }

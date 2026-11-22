@@ -259,7 +259,12 @@ function portTypeText(type) {
 }
 
 /** The catalogue's document section: each component's meaning, what it binds and what it takes and hands over. */
-export function catalogueMarkdown(version, components) {
+export function catalogueMarkdown(version, catalogueOrComponents) {
+  const isFull = !Array.isArray(catalogueOrComponents);
+  const components = isFull ? catalogueOrComponents.components : catalogueOrComponents;
+  const uiPrimitives = isFull ? catalogueOrComponents.uiPrimitives ?? [] : [];
+  const uiDirectives = isFull ? catalogueOrComponents.uiDirectives ?? [] : [];
+  const themeTokens = isFull ? catalogueOrComponents.themeTokens ?? [] : [];
   const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can bind. Each one names the module a page imports it from, what it means, the ontology elements it may bind, the data it reads, the configuration a projection sets on it, the values it hands the panel and the events the page can listen to. A projection chooses one component, the data it reads and its configuration, and names the owners' operations it offers; a panel places members of projections.`, ""];
   for (const component of components) {
     lines.push(`## ${component.componentId}`, "", `${component.role === "control" ? "Control" : "Presentation"}: \`${component.exportName}\` from \`${component.module}\`.`, "", component.meaning, "");
@@ -290,6 +295,29 @@ export function catalogueMarkdown(version, components) {
     const events = component.ports?.events?.filter(({ name }) => !name.startsWith("update:")) ?? [];
     if (events.length)
       lines.push("Events the page can listen to on `<projection>`:", "", ...events.map(({ name, description }) => `- \`${name}\`: ${description || "—"}`), "");
+  }
+  if (uiPrimitives.length) {
+    lines.push(
+      "## UI primitives (`@ontomato/sdk/ui`)",
+      "",
+      "Data-free interface controls published by this SDK. Use `<sdk-*>` tags directly in panel templates (`panel.html`) or import `Sdk*` from `@ontomato/sdk/ui` in custom components. Full prop, event and slot schemas are in `components.json` (`uiPrimitives`).",
+      "",
+    );
+    table(lines, ["Template tag", "Export (`@ontomato/sdk/ui`)", "Description"], uiPrimitives.map((item) => [
+      `\`<${item.tag}>\``, `\`${item.exportName}\``, cell(item.description || "—"),
+    ]));
+  }
+  if (uiDirectives.length) {
+    lines.push("## UI directives (`@ontomato/sdk/ui`)", "");
+    table(lines, ["Template directive", "Export (`@ontomato/sdk/ui`)", "Description"], uiDirectives.map((item) => [
+      `\`${item.name}\``, `\`${item.exportName}\``, cell(item.description),
+    ]));
+  }
+  if (themeTokens.length) {
+    lines.push("## Theme tokens", "", "CSS custom properties published for panel and component styling. Overridable tokens may be set in `panel.json` `theme.light` / `theme.dark`.", "");
+    table(lines, ["Token", "Kind", "Overridable"], themeTokens.map((item) => [
+      `\`${item.name}\``, `\`${item.kind}\``, item.overridable ? "yes" : "no",
+    ]));
   }
   return lines.join("\n");
 }

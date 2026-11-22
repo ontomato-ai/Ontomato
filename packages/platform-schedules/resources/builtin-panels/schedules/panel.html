@@ -2,10 +2,10 @@
   .schedules { display: flex; flex-direction: column; gap: var(--spacing-lg); }
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--spacing-md); }
   .chips { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); }
-  .chip { display: inline-flex; gap: var(--spacing-xs); align-items: center; padding: var(--spacing-xs) var(--spacing-md); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--el-text-color-regular); font-size: var(--text-sm); cursor: pointer; }
-  .chip:hover { background: var(--el-fill-color-light); }
-  .chip.is-active { background: var(--el-bg-color); color: var(--el-text-color-primary); font-weight: var(--font-semibold); box-shadow: 0 0 0 1px var(--el-border-color-lighter); }
-  .chip .count { color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
+  .chip { display: inline-flex; gap: var(--spacing-xs); align-items: center; padding: var(--spacing-xs) var(--spacing-md); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--sdk-text-color-regular); font-size: var(--text-sm); cursor: pointer; }
+  .chip:hover { background: var(--sdk-fill-color-light); }
+  .chip.is-active { background: var(--sdk-bg-color); color: var(--sdk-text-color-primary); font-weight: var(--font-semibold); box-shadow: 0 0 0 1px var(--sdk-border-color-lighter); }
+  .chip .count { color: var(--sdk-text-color-secondary); font-variant-numeric: tabular-nums; }
   .filter-more { max-width: 100%; }
   .chevron { border: solid currentColor; border-width: 0 1px 1px 0; width: 5px; height: 5px; rotate: 45deg; }
   .search { width: 280px; max-width: 100%; }
@@ -14,49 +14,49 @@
   @media (max-width: 960px) { .body.with-pane { grid-template-columns: minmax(0, 1fr); } }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: var(--spacing-lg); margin: 0; padding: 0; list-style: none; }
   .grid > li { min-width: 0; }
-  .card { display: flex; flex-direction: column; gap: var(--spacing-sm); height: 100%; box-sizing: border-box; padding: var(--spacing-lg); border: 1px solid var(--el-border-color-lighter); border-radius: var(--radius-lg); background: var(--el-bg-color); cursor: pointer; }
-  .card.is-selected { border-color: var(--el-color-primary); box-shadow: 0 0 0 1px var(--el-color-primary); }
+  .card { display: flex; flex-direction: column; gap: var(--spacing-sm); height: 100%; box-sizing: border-box; padding: var(--spacing-lg); border: 1px solid var(--sdk-border-color-lighter); border-radius: var(--radius-lg); background: var(--sdk-bg-color); cursor: pointer; }
+  .card.is-selected { border-color: var(--sdk-color-primary); box-shadow: 0 0 0 1px var(--sdk-color-primary); }
   .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
   .card-app > svg { width: 1rem; height: 1rem; }
-  .card-app { display: inline-flex; align-items: center; gap: var(--spacing-xs); font-size: var(--text-xs); color: var(--el-text-color-secondary); overflow-wrap: anywhere; }
-  .card-title { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); overflow-wrap: anywhere; }
+  .card-app { display: inline-flex; align-items: center; gap: var(--spacing-xs); font-size: var(--text-xs); color: var(--sdk-text-color-secondary); overflow-wrap: anywhere; }
+  .card-title { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); overflow-wrap: anywhere; }
   .card-select { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
-  .card-summary { margin: 0; font-size: var(--text-sm); color: var(--el-text-color-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-  .card-pause { margin: 0; padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2); font-size: var(--text-xs); overflow-wrap: anywhere; }
+  .card-summary { margin: 0; font-size: var(--text-sm); color: var(--sdk-text-color-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .card-pause { margin: 0; padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); background: var(--sdk-color-warning-light-9); color: var(--sdk-color-warning-dark-2); font-size: var(--text-xs); overflow-wrap: anywhere; }
   .pause-controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--spacing-xs) var(--spacing-sm); }
   .pause-details { flex: 1; min-width: 0; }
   .pause-details summary { display: inline-flex; align-items: center; gap: var(--spacing-xs); list-style: none; cursor: pointer; }
   .pause-details summary::-webkit-details-marker { display: none; }
   .pause-details[open] .chevron { rotate: 225deg; }
-  .pause-details p { margin: var(--spacing-xs) 0 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); overflow-wrap: anywhere; }
-  .card-meta { display: flex; flex-direction: column; gap: 6px; margin-top: auto; padding-top: var(--spacing-md); border-top: 1px solid var(--el-border-color-lighter); font-size: var(--text-xs); color: var(--el-text-color-regular); }
+  .pause-details p { margin: var(--spacing-xs) 0 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); overflow-wrap: anywhere; }
+  .card-meta { display: flex; flex-direction: column; gap: 6px; margin-top: auto; padding-top: var(--spacing-md); border-top: 1px solid var(--sdk-border-color-lighter); font-size: var(--text-xs); color: var(--sdk-text-color-regular); }
   .line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; }
-  .muted { color: var(--el-text-color-secondary); }
+  .muted { color: var(--sdk-text-color-secondary); }
   .card-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
-  .empty { display: grid; justify-items: center; gap: var(--spacing-sm); padding: var(--spacing-3xl) var(--spacing-lg); text-align: center; color: var(--el-text-color-secondary); overflow-wrap: anywhere; }
-  .pane { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg); border: 1px solid var(--el-border-color-lighter); border-radius: var(--radius-lg); background: var(--el-bg-color); min-width: 0; }
+  .empty { display: grid; justify-items: center; gap: var(--spacing-sm); padding: var(--spacing-3xl) var(--spacing-lg); text-align: center; color: var(--sdk-text-color-secondary); overflow-wrap: anywhere; }
+  .pane { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg); border: 1px solid var(--sdk-border-color-lighter); border-radius: var(--radius-lg); background: var(--sdk-bg-color); min-width: 0; }
   .pane-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--spacing-sm); }
   .pane-head h2 { margin: 0; font-size: var(--text-lg); overflow-wrap: anywhere; }
-  .pane-head p { margin: var(--spacing-xs) 0 0; font-size: var(--text-xs); color: var(--el-text-color-secondary); }
+  .pane-head p { margin: var(--spacing-xs) 0 0; font-size: var(--text-xs); color: var(--sdk-text-color-secondary); }
   .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--spacing-xs) var(--spacing-md); margin: 0; font-size: var(--text-sm); }
-  .facts dt { color: var(--el-text-color-secondary); }
+  .facts dt { color: var(--sdk-text-color-secondary); }
   .facts dd { margin: 0; overflow-wrap: anywhere; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .actions .el-button + .el-button { margin-left: 0; }
   .section-title { margin: var(--spacing-sm) 0 0; font-size: var(--text-sm); font-weight: var(--font-semibold); }
   .run-records, .run-group { display: flex; flex-direction: column; gap: var(--spacing-sm); }
-  .group-title { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); }
-  .runs { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--el-border-color); border-radius: var(--radius-md); overflow: hidden; }
+  .group-title { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
+  .runs { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--sdk-border-color); border-radius: var(--radius-md); overflow: hidden; }
   .run { display: flex; flex-direction: column; gap: var(--spacing-xs); padding: var(--spacing-md); font-size: var(--text-sm); }
-  .run + .run { border-top: 1px solid var(--el-border-color-lighter); }
-  .run.focused { background: var(--el-fill-color-light); }
+  .run + .run { border-top: 1px solid var(--sdk-border-color-lighter); }
+  .run.focused { background: var(--sdk-fill-color-light); }
   .run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
   .run-head .result-link { margin-left: auto; }
   .run p { margin: 0; overflow-wrap: anywhere; }
-  .run .error { color: var(--el-color-danger); }
-  .run .sub { font-size: var(--text-xs); color: var(--el-text-color-secondary); }
-  .details { display: grid; gap: var(--spacing-xs); margin: var(--spacing-xs) 0 0; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); background: var(--el-fill-color); }
-  .details dt { font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--el-text-color-secondary); }
+  .run .error { color: var(--sdk-color-danger); }
+  .run .sub { font-size: var(--text-xs); color: var(--sdk-text-color-secondary); }
+  .details { display: grid; gap: var(--spacing-xs); margin: var(--spacing-xs) 0 0; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); background: var(--sdk-fill-color); }
+  .details dt { font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--sdk-text-color-secondary); }
   .details dd { margin: 0 0 var(--spacing-xs); }
   .details pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--text-xs); }
   .more { display: flex; justify-content: center; }
@@ -71,34 +71,34 @@
           @click="pickApp(chip.id)">
           <span>{{ chip.label }}</span><span class="count">{{ chip.count }}</span>
         </button>
-        <el-dropdown v-if="moreChips.length" class="filter-more" trigger="click" @command="pickApp">
+        <sdk-dropdown v-if="moreChips.length" class="filter-more" trigger="click" @command="pickApp">
           <button type="button" class="chip" :class="{ 'is-active': chosenMore }" :aria-pressed="!!chosenMore">
             <span>{{ chosenMore?.label ?? t("filter.more") }}</span>
             <span v-if="chosenMore" class="count">{{ chosenMore.count }}</span>
             <span class="chevron" aria-hidden="true"></span>
           </button>
           <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item v-for="chip in moreChips" :key="chip.id" :command="chip.id"
+            <sdk-dropdown-menu>
+              <sdk-dropdown-item v-for="chip in moreChips" :key="chip.id" :command="chip.id"
                 :aria-current="chip.id === app ? 'true' : undefined" style="justify-content:space-between;gap:var(--spacing-lg)">
                 <span>{{ chip.label }}</span><span>{{ chip.count }}</span>
-              </el-dropdown-item>
-            </el-dropdown-menu>
+              </sdk-dropdown-item>
+            </sdk-dropdown-menu>
           </template>
-        </el-dropdown>
+        </sdk-dropdown>
       </div>
-      <el-input v-model="search" class="search" clearable :placeholder="t('filter.search')" :aria-label="t('filter.search')"></el-input>
+      <sdk-input v-model="search" class="search" clearable :placeholder="t('filter.search')" :aria-label="t('filter.search')"></sdk-input>
     </div>
 
-    <el-alert v-if="renewalProblem" :title="t('notice.credentialRefused', { reason: renewalProblem })" type="warning" :closable="false" show-icon></el-alert>
-    <el-alert v-if="appsProblem" :title="appsProblem" type="warning" :closable="false" show-icon></el-alert>
+    <sdk-alert v-if="renewalProblem" :title="t('notice.credentialRefused', { reason: renewalProblem })" type="warning" :closable="false" show-icon></sdk-alert>
+    <sdk-alert v-if="appsProblem" :title="appsProblem" type="warning" :closable="false" show-icon></sdk-alert>
 
     <div class="body" :class="{ 'with-pane': paneOpen }">
       <div>
-        <el-skeleton v-if="tasksData.status === 'loading' && rows.length === 0" :rows="4" animated aria-busy="true"></el-skeleton>
-        <el-alert v-else-if="tasksData.status === 'error' || tasksData.status === 'forbidden'" :title="t('loadFailed')" type="error" :closable="false" show-icon>
+        <sdk-skeleton v-if="tasksData.status === 'loading' && rows.length === 0" :rows="4" animated aria-busy="true"></sdk-skeleton>
+        <sdk-alert v-else-if="tasksData.status === 'error' || tasksData.status === 'forbidden'" :title="t('loadFailed')" type="error" :closable="false" show-icon>
           <div v-if="tasksData.message">{{ tasksData.message }}</div>
-        </el-alert>
+        </sdk-alert>
         <div v-else-if="shown.length === 0" class="empty" role="status"><p>{{ emptyText }}</p></div>
         <ul v-else class="grid">
           <li v-for="row in shown" :key="row.primaryKey">
@@ -106,9 +106,9 @@
               :aria-label="row.label" @click="select(row.primaryKey)">
               <div class="card-head">
                 <span class="card-app"><component :is="applicationIcon(row.fields.application)" aria-hidden="true"></component>{{ appLabel(row.fields.application) }}</span>
-                <el-switch :model-value="taskState(row).kind === 'on'" :loading="busy.has(row.primaryKey)" :disabled="busy.has(row.primaryKey)"
+                <sdk-switch :model-value="taskState(row).kind === 'on'" :loading="busy.has(row.primaryKey)" :disabled="busy.has(row.primaryKey)"
                   :aria-label="t('card.switch', { title: row.label })" @click.stop
-                  @update:model-value="toggle(row, Boolean($event))"></el-switch>
+                  @update:model-value="toggle(row, Boolean($event))"></sdk-switch>
               </div>
               <h3 class="card-title">
                 <button type="button" class="card-select" :aria-label="t('card.select', { title: row.label })"
@@ -120,8 +120,8 @@
                   <summary class="card-pause">{{ t("state.paused") }} <span class="chevron" aria-hidden="true"></span></summary>
                   <p>{{ taskState(row).reason }}</p>
                 </details>
-                <el-button v-if="row.fields.pauseCode === 'definition_changed'" class="pause-review" link type="primary" size="small"
-                  @click="edit(row)">{{ t("card.review") }}</el-button>
+                <sdk-button v-if="row.fields.pauseCode === 'definition_changed'" class="pause-review" link type="primary" size="small"
+                  @click="edit(row)">{{ t("card.review") }}</sdk-button>
               </div>
               <div class="card-meta">
                 <p class="line">{{ row.fields.frequency }}</p>
@@ -129,7 +129,7 @@
                 <p class="line">
                   <template v-if="row.fields.lastRun">
                     <span class="muted">{{ t("card.last") }}</span>
-                    <el-tag size="small" :type="row.fields.lastRun === 'failed' ? 'danger' : row.fields.lastRun === 'skipped' ? 'warning' : row.fields.lastRun === 'running' ? 'primary' : 'success'">{{ statusLabel(row.fields.lastRun) }}</el-tag>
+                    <sdk-tag size="small" :type="row.fields.lastRun === 'failed' ? 'danger' : row.fields.lastRun === 'skipped' ? 'warning' : row.fields.lastRun === 'running' ? 'primary' : 'success'">{{ statusLabel(row.fields.lastRun) }}</sdk-tag>
                     <span>{{ moment(row.fields.lastRunAt, row.fields.timeZone) }}</span>
                   </template>
                   <span v-else class="muted">{{ t("card.neverRun") }}</span>
@@ -137,19 +137,19 @@
                 <p v-if="row.fields.lastRunSummary" class="card-summary" :title="resultPreview(row.fields.lastRunSummary)">{{ resultPreview(row.fields.lastRunSummary) }}</p>
               </div>
               <div class="card-foot" @click.stop>
-                <el-button v-if="row.fields.latestResultPath" link type="primary" size="small" @click="openResult({ path: row.fields.latestResultPath })">{{ t("action.viewResult") }}</el-button>
-                <el-button link type="primary" size="small" @click="showRecords(row.primaryKey)">{{ t("action.records") }}</el-button>
-                <el-dropdown trigger="click" placement="bottom-end" :disabled="busy.has(row.primaryKey)" @command="command(row, $event)">
-                  <el-button text size="small" :aria-label="t('card.more', { title: row.label })" :disabled="busy.has(row.primaryKey)">···</el-button>
+                <sdk-button v-if="row.fields.latestResultPath" link type="primary" size="small" @click="openResult({ path: row.fields.latestResultPath })">{{ t("action.viewResult") }}</sdk-button>
+                <sdk-button link type="primary" size="small" @click="showRecords(row.primaryKey)">{{ t("action.records") }}</sdk-button>
+                <sdk-dropdown trigger="click" placement="bottom-end" :disabled="busy.has(row.primaryKey)" @command="command(row, $event)">
+                  <sdk-button text size="small" :aria-label="t('card.more', { title: row.label })" :disabled="busy.has(row.primaryKey)">···</sdk-button>
                   <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="runNow">{{ t("action.runNow") }}</el-dropdown-item>
-                      <el-dropdown-item command="edit">{{ t("action.edit") }}</el-dropdown-item>
-                      <el-dropdown-item command="records">{{ t("action.records") }}</el-dropdown-item>
-                      <el-dropdown-item command="remove" divided>{{ t("action.delete") }}</el-dropdown-item>
-                    </el-dropdown-menu>
+                    <sdk-dropdown-menu>
+                      <sdk-dropdown-item command="runNow">{{ t("action.runNow") }}</sdk-dropdown-item>
+                      <sdk-dropdown-item command="edit">{{ t("action.edit") }}</sdk-dropdown-item>
+                      <sdk-dropdown-item command="records">{{ t("action.records") }}</sdk-dropdown-item>
+                      <sdk-dropdown-item command="remove" divided>{{ t("action.delete") }}</sdk-dropdown-item>
+                    </sdk-dropdown-menu>
                   </template>
-                </el-dropdown>
+                </sdk-dropdown>
               </div>
             </article>
           </li>
@@ -161,12 +161,12 @@
         <div v-if="mode === 'create'" class="task-form" data-form="create">
           <div class="pane-head">
             <div><h2>{{ t("form.newTitle") }}</h2><p>{{ t("form.subtitle") }}</p></div>
-            <el-button text size="small" @click="cancelForm">{{ t("action.close") }}</el-button>
+            <sdk-button text size="small" @click="cancelForm">{{ t("action.close") }}</sdk-button>
           </div>
-          <el-alert v-for="option in unavailableApps" :key="option.value" type="info" :closable="false"
-            :title="t('notice.unavailable', { app: appLabel(option.value), reason: option.disabledReason ?? '' })"></el-alert>
+          <sdk-alert v-for="option in unavailableApps" :key="option.value" type="info" :closable="false"
+            :title="t('notice.unavailable', { app: appLabel(option.value), reason: option.disabledReason ?? '' })"></sdk-alert>
           <projection slot="newForm" @saved="created" @discarded="cancelForm"></projection>
-          <el-alert :title="t('form.identity')" type="info" :closable="false" show-icon></el-alert>
+          <sdk-alert :title="t('form.identity')" type="info" :closable="false" show-icon></sdk-alert>
         </div>
 
         <!-- Edit: the owner's form for the selected task, kept mounted so it can take an agent's draft. -->
@@ -174,18 +174,18 @@
           class="task-form" data-form="edit" @keydown.esc="closeEditOnEscape">
           <div class="pane-head">
             <div><h2>{{ t("form.editTitle") }}</h2><p>{{ selectedRow?.label }} · {{ t("form.conflictHint") }}</p></div>
-            <el-button text size="small" @click="cancelForm">{{ t("action.close") }}</el-button>
+            <sdk-button text size="small" @click="cancelForm">{{ t("action.close") }}</sdk-button>
           </div>
           <projection slot="editForm" @saved="saved" @discarded="cancelForm"></projection>
-          <el-alert :title="t('form.identity')" type="info" :closable="false" show-icon></el-alert>
+          <sdk-alert :title="t('form.identity')" type="info" :closable="false" show-icon></sdk-alert>
         </div>
 
         <!-- The selected task: its settings, actions and run records. -->
         <template v-if="mode === 'view' && selected">
           <p v-if="record.status === 'loading' && !detailRow" class="muted" role="status">{{ t("detail.loading") }}</p>
-          <el-alert v-else-if="record.status === 'empty'" :title="t('detail.gone')" type="warning" :closable="false" show-icon></el-alert>
-          <el-alert v-else-if="record.status === 'forbidden'" :title="t('detail.forbidden')" type="warning" :closable="false" show-icon></el-alert>
-          <el-alert v-else-if="record.status === 'error'" :title="record.message" type="error" :closable="false" show-icon></el-alert>
+          <sdk-alert v-else-if="record.status === 'empty'" :title="t('detail.gone')" type="warning" :closable="false" show-icon></sdk-alert>
+          <sdk-alert v-else-if="record.status === 'forbidden'" :title="t('detail.forbidden')" type="warning" :closable="false" show-icon></sdk-alert>
+          <sdk-alert v-else-if="record.status === 'error'" :title="record.message" type="error" :closable="false" show-icon></sdk-alert>
           <template v-if="detailRow">
             <div class="pane-head">
               <div>
@@ -193,10 +193,10 @@
                 <h2>{{ detailRow.label }}</h2>
               </div>
               <div class="actions">
-                <el-switch :model-value="taskState(detailRow).kind === 'on'" :loading="busy.has(detailRow.primaryKey)" :disabled="busy.has(detailRow.primaryKey)"
+                <sdk-switch :model-value="taskState(detailRow).kind === 'on'" :loading="busy.has(detailRow.primaryKey)" :disabled="busy.has(detailRow.primaryKey)"
                   :active-text="taskState(detailRow).label" :aria-label="t('card.switch', { title: detailRow.label })"
-                  @update:model-value="toggle(detailRow, Boolean($event))"></el-switch>
-                <el-button text size="small" @click="closePane">{{ t("action.close") }}</el-button>
+                  @update:model-value="toggle(detailRow, Boolean($event))"></sdk-switch>
+                <sdk-button text size="small" @click="closePane">{{ t("action.close") }}</sdk-button>
               </div>
             </div>
             <p v-if="taskState(detailRow).reason" class="card-pause">{{ t("detail.paused", { reason: taskState(detailRow).reason }) }}</p>
@@ -208,10 +208,10 @@
               <dt>{{ t("detail.notifyEmail") }}</dt><dd>{{ settings ? (settings.notifyEmail || t("detail.none")) : "…" }}</dd>
             </dl>
             <div class="actions">
-              <el-button type="primary" size="small" :loading="busy.has(detailRow.primaryKey)" data-action="run-now" @click="runNow(detailRow)">{{ t("action.runNow") }}</el-button>
-              <el-button size="small" data-action="edit" @click="edit(detailRow)">{{ t("action.edit") }}</el-button>
-              <el-button size="small" type="danger" plain data-action="delete" @click="askDelete(detailRow)">{{ t("action.delete") }}</el-button>
-              <el-button v-if="latestResult" link type="primary" size="small" @click="openResult(latestResult.resultLink)">{{ t("action.viewResult") }} →</el-button>
+              <sdk-button type="primary" size="small" :loading="busy.has(detailRow.primaryKey)" data-action="run-now" @click="runNow(detailRow)">{{ t("action.runNow") }}</sdk-button>
+              <sdk-button size="small" data-action="edit" @click="edit(detailRow)">{{ t("action.edit") }}</sdk-button>
+              <sdk-button size="small" type="danger" plain data-action="delete" @click="askDelete(detailRow)">{{ t("action.delete") }}</sdk-button>
+              <sdk-button v-if="latestResult" link type="primary" size="small" @click="openResult(latestResult.resultLink)">{{ t("action.viewResult") }} →</sdk-button>
             </div>
 
             <div ref="historyRecords" class="run-records">
@@ -221,19 +221,19 @@
                 <ul v-if="group.runs.length" class="runs">
                   <li v-for="run in group.runs" :key="run.id" class="run" :class="{ focused: run.id === runId }" :data-run="run.id">
                     <div class="run-head">
-                      <el-tag size="small" :type="run.status === 'failed' ? 'danger' : run.status === 'skipped' ? 'warning' : run.status === 'running' ? 'primary' : 'success'">{{ statusLabel(run.status) }}</el-tag>
+                      <sdk-tag size="small" :type="run.status === 'failed' ? 'danger' : run.status === 'skipped' ? 'warning' : run.status === 'running' ? 'primary' : 'success'">{{ statusLabel(run.status) }}</sdk-tag>
                       <span>{{ t(`trigger.${run.trigger}`) }}</span>
                       <span>{{ moment(run.startedAt, taskZone) }}</span>
                       <span v-if="run.spendTime !== null">{{ t("runs.took", { time: duration(run.spendTime) }) }}</span>
-                      <el-button v-if="run.resultLink" class="result-link" link type="primary" size="small" @click="openResult(run.resultLink)">{{ t("action.viewResult") }} →</el-button>
+                      <sdk-button v-if="run.resultLink" class="result-link" link type="primary" size="small" @click="openResult(run.resultLink)">{{ t("action.viewResult") }} →</sdk-button>
                     </div>
                     <p v-if="run.scheduledAt && run.trigger === 'schedule'" class="sub">{{ t("runs.scheduledFor", { time: moment(run.scheduledAt, taskZone) }) }}</p>
                     <p v-if="run.error" class="error">{{ runError(run.error) }}</p>
                     <markdown-view v-if="run.resultSummary" :content="run.resultSummary"></markdown-view>
                     <p v-if="run.status === 'running'" class="sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
-                    <el-button v-if="hasDetails(run)" link type="primary" size="small" style="align-self: flex-start" :aria-expanded="expanded.has(run.id)" @click="toggleRun(run.id)">
+                    <sdk-button v-if="hasDetails(run)" link type="primary" size="small" style="align-self: flex-start" :aria-expanded="expanded.has(run.id)" @click="toggleRun(run.id)">
                       {{ expanded.has(run.id) ? t("runs.hide") : t("runs.details") }}
-                    </el-button>
+                    </sdk-button>
                     <dl v-if="expanded.has(run.id) && hasDetails(run)" class="details">
                       <template v-if="run.snapshot && run.snapshot.summary.length > 0">
                         <dt>{{ t("runs.content") }}</dt><dd>{{ summaryText(run.snapshot.summary) }}</dd>
@@ -248,13 +248,13 @@
                   </li>
                 </ul>
                 <template v-if="group.key === 'history'">
-                  <el-skeleton v-if="runsLoading" :rows="3" aria-busy="true"></el-skeleton>
-                  <el-alert v-else-if="runsFailure" :title="t('runs.loadFailed')" type="error" :closable="false" show-icon>
-                    <el-button v-if="runsFailure.retry" text size="small" data-action="retry-history" @click="runsFailure.retry()">{{ t("runs.retry") }}</el-button>
-                  </el-alert>
+                  <sdk-skeleton v-if="runsLoading" :rows="3" aria-busy="true"></sdk-skeleton>
+                  <sdk-alert v-else-if="runsFailure" :title="t('runs.loadFailed')" type="error" :closable="false" show-icon>
+                    <sdk-button v-if="runsFailure.retry" text size="small" data-action="retry-history" @click="runsFailure.retry()">{{ t("runs.retry") }}</sdk-button>
+                  </sdk-alert>
                   <div v-else-if="group.runs.length === 0" class="empty" role="status"><p>{{ t("runs.empty") }}</p></div>
                   <div v-if="nextCursor && !runsFailure" class="more">
-                    <el-button size="small" :loading="loadingMore" data-action="more-history" @click="loadMore">{{ t("runs.loadMore") }}</el-button>
+                    <sdk-button size="small" :loading="loadingMore" data-action="more-history" @click="loadMore">{{ t("runs.loadMore") }}</sdk-button>
                   </div>
                 </template>
               </section>

@@ -36,13 +36,13 @@ it("offers the domain's default model and the reader's own permissions by name, 
   vi.stubGlobal("fetch", vi.fn(async (url: string) => answer(String(url))));
   const options = createAgentOptionReadAdapters(viewer as never);
   const models = (await options.models.options()).options;
-  expect(models[0]).toEqual({ primaryKey: "@default", value: null, label: "Domain default (Dev model)" });
-  expect(models.slice(1).map(({ value }) => value)).toEqual(["local/dev-model"]);
+  expect(models[0]).toEqual({ primaryKey: "@default", value: null, label: "Domain default (Dev model (local/dev-model))" });
+  expect(models.slice(1)).toEqual([{ primaryKey: "local/dev-model", value: "local/dev-model", label: "Dev model (local/dev-model)" }]);
   const users = (await options.users.options({})).options;
   expect(users[0]).toEqual({ primaryKey: "@default", value: null, label: "The reader's own permissions" });
   expect(users.slice(1).map(({ value }) => value)).toEqual(["u-1"]);
   // A held empty value reads as the same choice.
-  expect((await options.models.resolve([null])).options[0]!.label).toBe("Domain default (Dev model)");
+  expect((await options.models.resolve([null])).options[0]!.label).toBe("Domain default (Dev model (local/dev-model))");
 });
 
 it("asks only for the agent's name before it is saved", async () => {

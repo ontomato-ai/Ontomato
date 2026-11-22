@@ -1,4 +1,29 @@
+import {
+  SDK_UI_COMPONENTS,
+  SDK_UI_DIRECTIVES,
+  SDK_UI_ENTRY_SPECIFIER,
+  sdkThemeTokenCatalogueEntries,
+} from "@ontomato/contracts/sdk-ui-map";
+import type {
+  AppsSdkThemeTokenEntry,
+  AppsSdkUiDirectiveEntry,
+} from "@ontomato/contracts/apps-sdk";
 import { defineComponentMeta, type ComponentMetadata } from "./components";
+
+export const uiPrimitiveEntries = SDK_UI_COMPONENTS.map(({ sdkTag, sdkExport }) => ({
+  tag: sdkTag,
+  exportName: sdkExport,
+  module: SDK_UI_ENTRY_SPECIFIER,
+}));
+
+export const uiDirectives: readonly AppsSdkUiDirectiveEntry[] = SDK_UI_DIRECTIVES.map((directive) => ({
+  name: directive.sdkName,
+  exportName: directive.sdkExport,
+  module: SDK_UI_ENTRY_SPECIFIER,
+  description: directive.description,
+}));
+
+export const themeTokens: readonly AppsSdkThemeTokenEntry[] = sdkThemeTokenCatalogueEntries();
 
 /*
  * Semantic metadata of the components this SDK version exports (overall design 3.1): what each means, what it binds,

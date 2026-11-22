@@ -1,18 +1,17 @@
 import { z } from "zod";
 import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
 import { agentExecutionOptionsSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
-import { modelOptionsSchema, modelReferenceSchema } from "@ontomato/contracts/model-settings";
+import { modelReferenceSchema } from "@ontomato/contracts/model-settings";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { PanelFormRequest, PanelOption, PanelRecord } from "@ontomato/contracts/panel-projection";
-import { config } from "../../config/application";
 import { tForLocale } from "../../i18n";
 import { assertPermission } from "../../identity/installed";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { describeAgentDefinitionForm } from "./definition-form";
 import { agentDefinitionPermissions, listAgentDefinitions, readAgentDefinition } from "./definitions";
 import { queryExecutionOptions } from "./execution-setting";
+import { readDomainModelOptions } from "./model-panel-form";
 import type { AssistantOwner } from "./store";
 
 type FormInputs = Pick<PanelFormRequest, "values" | "changedField">;
@@ -54,25 +53,9 @@ export function createAgentDefinitionReadAdapter(owner: AssistantOwner, viewer: 
 
 export function createAgentOptionReadAdapters(viewer: AssistantCredentials) {
   const text = (key: string) => tForLocale(viewer.locale, `panels.agentOptions.${key}`);
-  const modelResponse = z.object({ success: z.literal(true), data: modelOptionsSchema });
   const userId = agentExecutionOptionsSchema.shape.users.element.shape.id;
   const defaultOption = (label: string): PanelOption => ({ primaryKey: "@default", value: null, label });
-  /**
-   * The domain's chat models, the first choice an agent's empty one: following the domain's default model, named by the
-   * model it is now, so a reader can go back to it and sees what an empty choice means.
-   */
-  const modelOptions = async () => {
-    const response = await backendGet("agent-model-options", `${config.dataQuery.baseUrl}/model-options`, {
-      headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
-    });
-    const { data: { models, defaultModelId } } = modelResponse.parse(JSON.parse(response.text));
-    const chat = models.filter(model => model.type === "chat");
-    const current = chat.find(model => model.ref === defaultModelId);
-    const following = defaultOption(current
-      ? tForLocale(viewer.locale, "panels.agentOptions.domainDefaultModel", { model: current.name })
-      : text("domainDefault"));
-    return [following, ...chat.map(({ ref, name }): PanelOption => ({ primaryKey: ref, value: ref, label: name }))];
-  };
+  const modelOptions = () => readDomainModelOptions(viewer);
   /** Running with the reader's own permissions: the empty choice of whose permissions an agent runs with. */
   const readersOwn = () => defaultOption(text("executionOwn"));
 

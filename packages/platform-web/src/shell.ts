@@ -4,8 +4,7 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Bot, Cable, Cpu, Puzzle, Plug } from "lucide-vue-next";
-import { skillLibraryCount } from "@ontomato/workbench-ui/features/workbench";
+import { Bot, Cable, Cpu, Plug } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
@@ -148,11 +147,10 @@ export function createServiceManager(options: {
   });
 }
 
-/** The ontology manager's pages the agent platform's pages draw: the skills, beside its capabilities. */
+/** The model settings pages the platform shell mounts directly. */
 const ontologyWorkspacePages: readonly PlatformPage[] = [
   {path:platformRoutes.systemAgentModels.path,titleKey:'platform.systemAgentModels',descriptionKey:'platform.systemAgentModelsDescription',icon:Bot,permissions:['system-config','app-builder'],group:'platform',ownHeader:true},
   {path:platformRoutes.builderModels.path,titleKey:'platform.builderAgentModels',icon:Cpu,permissions:['app-builder'],group:'platform',ownHeader:true},
-  { path: platformRoutes.ontologySkills.path, titleKey: "capabilities.skillTitle", icon: Puzzle, permissions: ["skill-management"], group: "assets", ownHeader: true, count: skillLibraryCount },
 ];
 
 /**

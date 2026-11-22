@@ -164,6 +164,18 @@ export const skillServerOperations = [
     targetLabel: skillTitle,
     done: (host, name) => tForLocale(host.locale, "panels.skill.deleted", { name }),
     inspectImpact: deleteSkillImpact,
+    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
+      const skillManager = await loadSkillManager();
+      let info;
+      try { info = await skillManager.getSkillInfo(host.initiator.owner.domainId, target.primaryKey, host.initiator.credentials); }
+      catch (error) { if (error instanceof HttpError && error.status < 500) return undefined; throw error; }
+      if (info.writeRestriction === null) return undefined;
+      return {
+        reason: info.writeRestriction.kind === "public"
+          ? tForLocale(host.locale, "panels.skill.readOnlyPublic")
+          : tForLocale(host.locale, "panels.skill.readOnlyProvider", { provider: info.writeRestriction.providerName }),
+      };
+    },
     async execute(host: PanelOperationHost, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected skill");
       const { owner, credentials } = host.executor;

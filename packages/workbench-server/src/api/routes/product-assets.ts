@@ -9,7 +9,7 @@ import { context, wrap } from "../utils/agent-host";
 import { listProducts, getProduct, saveProduct, deleteProduct, personalHome,queryProducts,dependencyProducts,countProductTypes,readProductOverlay,saveProductOverlay } from "../../services/product-assets/store";
 import {personalWorkspaceSchema} from '@ontomato/contracts/personal-workspace';
 import { HttpError } from "../../utils/errors";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import {expandedProductDependencies} from '../../services/product-assets/dependencies';
 import {readProductRelease,productReleaseIssues,snapshotAsset,publishProductBundle,rollbackProductBundle,listProductBundleReleases,synchronizeBundlePublication} from '../../services/product-assets/releases';
 import {assembleAgentProfile,renderAgentObjectContext,executeProfileTool} from '../../services/product-assets/agent-profile';
@@ -51,7 +51,7 @@ router.post('/:id/create-page',wrap(async(req,res)=>{
   if(source.document.kind!=='layout-template'&&!(source.document.kind==='page'&&source.document.isTemplate))throw new HttpError(400,'Choose a layout template','INVALID_HOME_TEMPLATE');
   res.json({asset:await saveProduct(owner,randomUUID(),{name,description:source.description,visibility:'private',document:{...source.document,kind:'page',isTemplate:false}},0,credentials)});
 }));
-router.get("/types", wrap(async (_req,res) => { res.json({types:productTypes,schema:zodToJsonSchema(productAuthoringSchema,{target:"jsonSchema7"})}); }));
+router.get("/types", wrap(async (_req,res) => { res.json({types:productTypes,schema:cachedZodToJsonSchema(productAuthoringSchema,{target:"jsonSchema7"})}); }));
 router.get('/query',wrap(async(req,res)=>{const c=context(req);await ensurePlatformAssets(c.owner,c.credentials);res.json(await queryProducts(c.owner,productQuerySchema.parse(req.query)));}));
 router.get('/counts',wrap(async(req,res)=>{res.json({counts:await countProductTypes(context(req).owner)});}));
 router.get('/graph',wrap(async(req,res)=>{const {owner,credentials}=context(req);res.json({graph:await registeredProductGraph(owner,await listProducts(owner),credentials)});}));
