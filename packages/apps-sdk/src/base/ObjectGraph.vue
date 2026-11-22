@@ -23,6 +23,10 @@ const props = withDefaults(defineProps<{
   categories?: readonly string[];
   /** On the page's canvas, a JSON Pointer into each node record's `fields` naming its category; one colour when absent. */
   nodeCategory?: string;
+  /** On the page's canvas, each node's diameter in screen pixels; the platform's own when absent. */
+  nodeSize?: number;
+  /** On the page's canvas, the size of each node's name in screen pixels; the platform's own when absent. */
+  labelSize?: number;
 }>(), { editable: undefined });
 
 const panel = usePanelContext();
@@ -50,5 +54,5 @@ if (port) {
 
 <template>
   <!-- Choosing a form's field, the graph is drawn by the form, where the field is. -->
-  <ObjectGraphCanvas v-if="!choosesField" :edge-ends="edgeEnds" :editable="editable" :categories="categories" :node-category="nodeCategory"></ObjectGraphCanvas>
+  <ObjectGraphCanvas v-if="!choosesField" :edge-ends="edgeEnds" :editable="editable" :categories="categories" :node-category="nodeCategory" :node-size="nodeSize" :label-size="labelSize"></ObjectGraphCanvas>
 </template>

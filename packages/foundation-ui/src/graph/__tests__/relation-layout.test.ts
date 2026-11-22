@@ -114,3 +114,15 @@ it("keeps a part's columns as its relations order them, however the room folds t
 it("has no first node when there are no nodes", () => {
   expect(layoutByRelations([], [], SCREEN)).toEqual({ positions: new Map(), root: undefined });
 });
+
+it("leaves rows room for the nodes and names a page draws larger", () => {
+  const nodes = ["hub", "a", "b"].map(node);
+  const edges = [edge("hub", "a"), edge("hub", "b")];
+  const rowGap = (look?: { nodeSize: number; labelSize: number }) => {
+    const { positions } = layoutByRelations(nodes, edges, { width: 400, height: 1600 }, look);
+    return Math.abs(positions.get("b")!.y - positions.get("a")!.y);
+  };
+  expect(rowGap()).toBe(RELATION_ROW_GAP);
+  // A 62-pixel node with a 13-pixel name under it, and the same room between one name and the next node.
+  expect(rowGap({ nodeSize: 62, labelSize: 13 })).toBe(108);
+});

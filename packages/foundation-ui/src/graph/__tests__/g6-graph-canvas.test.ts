@@ -370,3 +370,13 @@ it("keeps a node's loop inside the view it shows from the graph's edge, not cut 
   expect(of("translate")[0]).toEqual([-320, -224]);
   wrapper.unmount();
 });
+
+// A page that draws its graph as the ontology graph always did (原页面对照《本体图谱》: 62-pixel nodes, 13-pixel names)
+// sets the sizes; every other graph keeps the canvas's own.
+it("draws its nodes and names at the sizes its page sets", async () => {
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(1), layout: { type: "preset" }, nodeSize: 62, labelSize: 13 } });
+  await flushPromises();
+  const drawn = of("add").flatMap((batch: any) => batch.nodes ?? []);
+  expect(drawn[0].style).toMatchObject({ size: 62, labelFontSize: 13 });
+  wrapper.unmount();
+});
