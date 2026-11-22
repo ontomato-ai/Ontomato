@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { G6GraphCanvas, G6_READABLE_ZOOM, layoutByRelations, type GraphCanvasPoint, type GraphCanvasTone, type GraphCanvasViewport } from "@ontomato/foundation-ui/graph/g6";
+import { G6GraphCanvas, G6_READABLE_ZOOM, layoutByRelations, type GraphCanvasPoint, type GraphCanvasTone, type GraphCanvasViewport, type LayoutRoom } from "@ontomato/foundation-ui/graph/g6";
 import { useMember, useMemberParam } from "../panel/member";
 import { savePanelFile } from "../panel/save-file";
 import { useGraphRecords, type EdgeEndsConfig } from "./object-graph-data";
@@ -59,7 +59,22 @@ const saved = computed<Positions>(() => {
   const value = positions.value.value;
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as unknown as Positions : {};
 });
-const layout = computed(() => layoutByRelations(resolved.value.nodes, resolved.value.links));
+/** The clear space kept around the graph when it is fitted to the canvas. */
+const FIT_PADDING = 36;
+/**
+ * The room the graph is laid out for: the canvas, less the space a fit keeps clear. Measured once the canvas's box is
+ * there and again whenever the canvas takes a new size, so the graph's parts are laid out to the room it is shown in.
+ */
+const element = ref<HTMLElement | null>(null);
+const room = ref<LayoutRoom | null>(null);
+const measure = (width: number, height: number) => {
+  room.value = { width: Math.max(0, width - 2 * FIT_PADDING), height: Math.max(0, height - 2 * FIT_PADDING) };
+};
+onMounted(() => {
+  const { width, height } = element.value!.getBoundingClientRect();
+  measure(width, height);
+});
+const layout = computed(() => layoutByRelations(resolved.value.nodes, resolved.value.links, room.value!));
 
 /** The chosen object's key, when the state holds one of this type. */
 const keyOf = (value: RuntimeJsonValue | null, type: string) =>
@@ -98,7 +113,7 @@ const canvas = ref<InstanceType<typeof G6GraphCanvas> | null>(null);
 /** The whole graph, or — where it would be too small to read — the part around the chosen node, else the most connected. */
 function fit() {
   const chosen = selectedNodes.value.find((id) => layout.value.positions.has(id));
-  void canvas.value!.fit({ maxZoom: 1.15, minZoom: G6_READABLE_ZOOM, padding: 36, around: chosen ?? layout.value.root })
+  void canvas.value!.fit({ maxZoom: 1.15, minZoom: G6_READABLE_ZOOM, padding: FIT_PADDING, around: chosen ?? layout.value.root })
     .then((whole) => {
       partial.value = !whole;
       moved.value = false;
@@ -119,11 +134,18 @@ function focusChosen() {
   void canvas.value!.focus(selectedNodes.value[0]!);
 }
 const ZOOM_STEP = 1.25;
-/** Once the container settles at a new size (a side panel opening beside it), the graph is fitted to it again. */
+/**
+ * Once the container settles at a new size (a side panel opening beside it), the graph is laid out for the new room and
+ * fitted to it again.
+ */
 let settling: ReturnType<typeof setTimeout> | undefined;
-function resized() {
+function resized(width: number, height: number) {
   clearTimeout(settling);
-  settling = setTimeout(fit, 200);
+  settling = setTimeout(() => {
+    measure(width, height);
+    // The canvas takes the new places on the next update; the fit waits for them.
+    void nextTick(fit);
+  }, 200);
 }
 onBeforeUnmount(() => clearTimeout(settling));
 /** The zoom the canvas shows, as the page reads it (`zoom`), to two decimals; and the zoom the page sets, shown. */
@@ -148,11 +170,11 @@ async function download() {
 </script>
 
 <template>
-  <div class="sdk-object-graph-canvas">
+  <div ref="element" class="sdk-object-graph-canvas">
     <el-skeleton v-if="resolved.loading" :rows="4" animated></el-skeleton>
     <p v-else-if="resolved.error" class="sdk-object-graph-canvas-error" role="alert">{{ resolved.error }}</p>
     <el-empty v-else-if="!resolved.nodes.length" :description="t('platform.graphEmpty')" :image-size="48"></el-empty>
-    <template v-else>
+    <template v-else-if="room">
       <G6GraphCanvas
         ref="canvas"
         :label="member.projection.name"

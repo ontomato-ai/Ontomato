@@ -5,10 +5,16 @@ import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "./types
  * Where nodes nobody placed go on the G6 canvas: by their relations. In each separate part of the graph the most
  * connected node stands first, the nodes one relation away in the column after it, two away in the one after that, each
  * column ordered after the nodes it joins in the column before so that edges cross as little as they can. A column
- * longer than a screen folds into several side by side. Parts are stacked below one another, the largest first, and
- * nodes with no relation at all close the drawing in rows.
+ * longer than a screen folds into several side by side.
  *
- * Positions are node centres in graph units, as G6 places a node. The same graph is always laid out the same way.
+ * The parts share the room the graph is shown in (panelisation lead, 2026-11-22): each part a block as its relations lay
+ * it out, the nodes with no relation at all one more block of rows, laid on shelves from the largest down — side by
+ * side where the room is wide, one below another where it is tall. Of every width a shelf may take, the one that shows
+ * the whole graph largest in the room is taken. A part keeps its own shape whatever the room: folding a part further to
+ * fit would draw its relations through the nodes of the column it folds past (every other line, at the rows' spacing).
+ *
+ * Positions are node centres in graph units, as G6 places a node. The same graph in the same room is always laid out
+ * the same way.
  */
 
 /** From one column to the next: a node's name, at its widest, and a gap. */
@@ -16,13 +22,19 @@ export const RELATION_COLUMN_GAP = G6_LABEL_WIDTH + 60;
 /** From one row to the next: a node, its name under it, and a gap. */
 export const RELATION_ROW_GAP = 76;
 
+/** The room the whole graph is to be shown in, in screen pixels (the canvas less its fit padding). */
+export interface LayoutRoom {
+  width: number;
+  height: number;
+}
+
 export interface RelationLayout {
   positions: Map<string, GraphCanvasPoint>;
   /** The first node of the largest part: where a reader's view starts when nothing is chosen. */
   root: string | undefined;
 }
 
-export function layoutByRelations(nodes: readonly GraphCanvasNode[], edges: readonly GraphCanvasEdge[]): RelationLayout {
+export function layoutByRelations(nodes: readonly GraphCanvasNode[], edges: readonly GraphCanvasEdge[], room: LayoutRoom): RelationLayout {
   const order = new Map(nodes.map((node, index) => [node.id, index]));
   const neighbours = new Map(nodes.map((node) => [node.id, new Set<string>()]));
   for (const { source, target } of edges) {
@@ -61,22 +73,70 @@ export function layoutByRelations(nodes: readonly GraphCanvasNode[], edges: read
   }
   parts.sort((a, b) => b.flat().length - a.flat().length);
 
-  const positions = new Map<string, GraphCanvasPoint>();
-  let top = 0;
-  for (const columns of parts) {
+  // Each part folded as its size folds it, its columns centred on its tallest.
+  const blocks: Block[] = parts.map((columns) => {
     const rows = Math.max(6, Math.ceil(Math.sqrt(columns.flat().length) * 1.5));
     const folded = columns.flatMap((column) => Array.from({ length: Math.ceil(column.length / rows) }, (_, index) => column.slice(index * rows, (index + 1) * rows)));
     const height = Math.max(...folded.map((column) => column.length));
-    folded.forEach((column, x) => {
-      const offset = (height - column.length) / 2;
-      column.forEach((id, y) => positions.set(id, { x: x * RELATION_COLUMN_GAP, y: top + (offset + y) * RELATION_ROW_GAP }));
-    });
-    top += (height + 1) * RELATION_ROW_GAP;
+    const at = new Map(folded.flatMap((column, x) => column.map((id, y): [string, GraphCanvasPoint] => [id, { x, y: (height - column.length) / 2 + y }])));
+    return { cols: folded.length, rows: height, at };
+  });
+  const positions = new Map<string, GraphCanvasPoint>();
+  let top = 0;
+  for (const shelf of shelve(blocks, alone.length, room)) {
+    let left = 0;
+    for (const block of shelf.blocks) {
+      const at = block.at ?? new Map(alone.map((id, index) => [id, { x: index % block.cols, y: Math.floor(index / block.cols) }]));
+      for (const [id, place] of at) positions.set(id, { x: (left + place.x) * RELATION_COLUMN_GAP, y: (top + place.y) * RELATION_ROW_GAP });
+      left += block.cols + 1;
+    }
+    top += shelf.rows + 1;
   }
-  const width = Math.max(4, ...[...positions.values()].map(({ x }) => Math.round(x / RELATION_COLUMN_GAP) + 1));
-  alone.forEach((id, index) =>
-    positions.set(id, { x: (index % width) * RELATION_COLUMN_GAP, y: top + Math.floor(index / width) * RELATION_ROW_GAP }));
   return { positions, root: parts[0]?.[0]?.[0] ?? alone[0] };
+}
+
+/** A block on a shelf, in columns and rows: a part with its nodes' places in it (`at`), or the nodes with no relation. */
+interface Block {
+  cols: number;
+  rows: number;
+  at?: ReadonlyMap<string, GraphCanvasPoint>;
+}
+interface Shelf {
+  blocks: Block[];
+  cols: number;
+  rows: number;
+}
+
+/**
+ * The shelves that show the whole graph largest in the room. For each width a shelf may take, in columns, each part —
+ * the largest first — takes the first shelf with room for it, or a new one; the nodes with no relation take the number
+ * of columns, and the place, that leaves the drawing least tall. The width whose drawing the room shows at the largest
+ * zoom is taken, the narrower of equals.
+ */
+function shelve(parts: readonly Block[], alone: number, room: LayoutRoom): Shelf[] {
+  const options = alone ? Array.from({ length: alone }, (_, index) => ({ cols: index + 1, rows: Math.ceil(alone / (index + 1)) })) : [];
+  if (!parts.length && !options.length) return [];
+  const narrowest = Math.max(1, ...parts.map(({ cols }) => cols));
+  const widest = parts.reduce((sum, { cols }) => sum + cols + 1, 0) + alone;
+  const height = (shelves: readonly Shelf[]) => shelves.reduce((sum, shelf) => sum + shelf.rows, 0) + shelves.length - 1;
+  const put = (shelves: Shelf[], block: Block, width: number) => {
+    const shelf = shelves.find((candidate) => candidate.cols + 1 + block.cols <= width);
+    if (!shelf) return [...shelves, { blocks: [block], cols: block.cols, rows: block.rows }];
+    return shelves.map((candidate) => candidate === shelf
+      ? { blocks: [...shelf.blocks, block], cols: shelf.cols + 1 + block.cols, rows: Math.max(shelf.rows, block.rows) } : candidate);
+  };
+  let best: { zoom: number; shelves: Shelf[] } | undefined;
+  for (let width = narrowest; width <= widest; width += 1) {
+    let shelves = parts.reduce<Shelf[]>((laid, block) => put(laid, block, width), []);
+    if (options.length) {
+      shelves = options.filter(({ cols }) => cols <= width).map((block) => put(shelves, block, width))
+        .reduce((least, candidate) => (height(candidate) < height(least) ? candidate : least));
+    }
+    const cols = Math.max(...shelves.map((shelf) => shelf.cols));
+    const zoom = Math.min(room.width / ((cols - 1) * RELATION_COLUMN_GAP + G6_LABEL_WIDTH), room.height / (height(shelves) * RELATION_ROW_GAP));
+    if (!best || zoom > best.zoom) best = { zoom, shelves };
+  }
+  return best!.shelves;
 }
 
 /** One part's columns: the root, then each node in the column after the nearest one it joins, ordered after it. */
