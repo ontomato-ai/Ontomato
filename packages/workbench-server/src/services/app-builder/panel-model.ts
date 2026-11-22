@@ -5,12 +5,13 @@ import { panelFormSaveInputSchema, type PanelFormDescription, type PanelFormRequ
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { describeModelPanelForm, formJsonSchema, modelPanelValues, modelSelectionWrite } from "../assistant/model-panel-form";
+import { describeModelPanelForm, formJsonSchema, modelPanelValues, modelSelectionWrite, readDomainModelLabelMap } from "../assistant/model-panel-form";
 import type { AssistantOwner } from "../assistant/store";
 import { affected } from "../product-panels/data-query-operations";
 import type { PanelOperationTarget, PanelServerOperation } from "../product-panels/server-operations";
 import { assertAppBuilderAccess } from "./access";
 import { builderAgentName, createBuilderAgent, listBuilderAgents, readBuilderAgent, saveBuilderModel } from "./agents";
+import { APP_BUILDER } from "./definition";
 
 const operation = `${BUILDER_AGENT}.save`;
 const createValues = z.object({ name: builderAgentName }).strict();
@@ -26,12 +27,18 @@ function createBody(values: unknown) {
 export function createBuilderModelReads(owner: AssistantOwner, viewer: AssistantCredentials) {
   const text = (key: string) => tForLocale(viewer.locale, `panels.simplePages.${key}`);
   const nameLabel = tForLocale(viewer.locale, "panels.agentForm.name");
-  function toRecord(agent: Awaited<ReturnType<typeof readBuilderAgent>>): PanelRecord {
+  const loadModelLabels = () => readDomainModelLabelMap(viewer);
+  function displayName(rawName: string): string {
+    return rawName === APP_BUILDER.name ? text("defaultBuilderAgentName") : rawName;
+  }
+  function toRecord(agent: Awaited<ReturnType<typeof readBuilderAgent>>, modelLabels: Map<string | null, string>): PanelRecord {
+    const label = displayName(agent.name);
+    const modelId = agent.modelSelection.modelId;
     return {
-      primaryKey: agent.id, label: agent.name, subtitle: text("builderDescription"),
+      primaryKey: agent.id, label, subtitle: text("builderDescription"),
       fields: {
-        name: agent.name,
-        modelId: agent.modelSelection.modelId ?? tForLocale(viewer.locale, "panels.agentOptions.domainDefault"),
+        name: label,
+        modelId: modelLabels.get(modelId) ?? modelId ?? tForLocale(viewer.locale, "panels.agentOptions.domainDefault"),
       },
       fieldLabels: { name: nameLabel, modelId: tForLocale(viewer.locale, "panels.agentForm.modelSelection") },
     };
@@ -39,11 +46,13 @@ export function createBuilderModelReads(owner: AssistantOwner, viewer: Assistant
   return {
     async list() {
       await assertAppBuilderAccess(viewer);
-      return (await listBuilderAgents(owner)).map(toRecord);
+      const [agents, modelLabels] = await Promise.all([listBuilderAgents(owner), loadModelLabels()]);
+      return agents.map(agent => toRecord(agent, modelLabels));
     },
     async record(primaryKey: string) {
       await assertAppBuilderAccess(viewer);
-      return toRecord(await readBuilderAgent(owner, id.parse(primaryKey)));
+      const [agent, modelLabels] = await Promise.all([readBuilderAgent(owner, id.parse(primaryKey)), loadModelLabels()]);
+      return toRecord(agent, modelLabels);
     },
     async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">) {
       await assertAppBuilderAccess(viewer);

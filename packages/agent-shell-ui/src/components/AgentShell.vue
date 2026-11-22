@@ -370,7 +370,12 @@ watch(sessionId, (id) => {
   carriedIn = id;
 });
 
-const linePrompts = () => ({ page: props.labels.pageContext, pageAddress: props.labels.pageContextAddress, selection: props.labels.selectionContext });
+const linePrompts = () => ({
+  page: props.labels.pageContext,
+  pageAddress: props.labels.pageContextAddress,
+  selection: props.labels.selectionContext,
+  highlight: props.labels.highlightContext,
+});
 /**
  * What a reopened conversation already carries, read when the shell first sends in it: its history shows the line each
  * message ended with, so the page or file the last such line named is known, and a message written beside that same

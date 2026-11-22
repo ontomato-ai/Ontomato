@@ -142,6 +142,11 @@ onBeforeUnmount(() => resized?.disconnect());
   opacity: 1;
   stroke-width: 2;
 }
+.graph-edge.path {
+  stroke: var(--el-color-warning);
+  opacity: 1;
+  stroke-width: 2.5;
+}
 .graph-node {
   outline: none;
 }
@@ -166,6 +171,12 @@ onBeforeUnmount(() => resized?.disconnect());
   fill: var(--el-color-primary-light-9);
   stroke: var(--el-color-primary-light-5);
   stroke-dasharray: 4 3;
+}
+.graph-node.path rect {
+  fill: var(--el-color-warning-light-9);
+  stroke: var(--el-color-warning);
+  stroke-width: 2;
+  stroke-dasharray: none;
 }
 .graph-node.selected rect {
   fill: var(--el-color-primary);

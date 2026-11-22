@@ -1,7 +1,7 @@
 import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
-import type { PageContext } from "@ontomato/contracts/page-context";
+import type { PageContext, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
   type PanelStateValue,
@@ -157,6 +157,11 @@ export interface PanelInstance {
   operationPath(operationId: string): PanelMemberPath | undefined;
   /** A panel placed in one of this instance's members publishes into it, until the returned function ends that. */
   publish(member: string, publisher: Readonly<Ref<NestedPublisher>>): () => void;
+  /**
+   * Publishes what one member currently highlights (such as search matches or a directed path result) into
+   * `pageContext.highlights`, until the returned disposer runs.
+   */
+  reportHighlight(member: string, highlight: Readonly<Ref<PageHighlight | null>>): () => void;
   /** The state an address or an open request may carry, for this instance. */
   deepLink(): Record<string, PanelDeepLinkStateValue>;
 }
@@ -238,18 +243,30 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
+  const highlights = shallowReactive(new Map<string, Readonly<Ref<PageHighlight | null>>>());
   const translate = options.translate ?? ((key: string) => key);
-  const pageContext = computed<PageContext>(() => ({
-    pageKey: options.pageKey,
-    url: options.url(),
-    label: options.label(),
-    selection: [
-      // A placed panel's own selections say which placed panel they are, by its path.
-      ...panelSelection(manifest, state.values.value, names, translate)
-        .map((selected) => (prefix.length ? { ...selected, memberPath: prefix as PublisherPath } : selected)),
-      ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.selection ?? []),
-    ],
-  }));
+  const pageContext = computed<PageContext>(() => {
+    const reportedHighlights = [
+      ...[...highlights.values()].flatMap((entry) => {
+        const value = entry.value;
+        if (!value) return [];
+        return [prefix.length ? { ...value, memberPath: prefix as PublisherPath } : value];
+      }),
+      ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.highlights ?? []),
+    ];
+    return {
+      pageKey: options.pageKey,
+      url: options.url(),
+      label: options.label(),
+      selection: [
+        // A placed panel's own selections say which placed panel they are, by its path.
+        ...panelSelection(manifest, state.values.value, names, translate)
+          .map((selected) => (prefix.length ? { ...selected, memberPath: prefix as PublisherPath } : selected)),
+        ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.selection ?? []),
+      ],
+      ...(reportedHighlights.length ? { highlights: reportedHighlights } : {}),
+    };
+  });
   return {
     manifest,
     state,
@@ -360,6 +377,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       publishers.set(member, publisher);
       return () => {
         if (publishers.get(member) === publisher) publishers.delete(member);
+      };
+    },
+    reportHighlight(member, highlight) {
+      highlights.set(member, highlight);
+      return () => {
+        if (highlights.get(member) === highlight) highlights.delete(member);
       };
     },
     deepLink: () => state.deepLinkable(),

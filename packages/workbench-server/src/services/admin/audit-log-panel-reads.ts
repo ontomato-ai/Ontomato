@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { panelReadParameterSchemas, type PanelRecord } from "@ontomato/contracts/panel-projection";
+import { panelReadParameterSchemas, type PanelFieldTone, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { config } from "../../config/application";
 import { assertPermission } from "../../identity/installed";
 import { tForLocale } from "../../i18n";
@@ -26,22 +26,51 @@ const querySchema = z.object({
   size: panelReadParameterSchemas.size.max(100).optional(),
 }).strict();
 
+const businessLabelKeys: Record<string, string> = {
+  BKNOWLEDGE: "auditBusinessKnowledge",
+  BTERM: "auditBusinessGlossary",
+  BEXAMPLE: "auditBusinessExample",
+  ANALYSIS: "auditBusinessAnalysis",
+};
+const operationStyle: Record<string, { key: string; tone: PanelFieldTone }> = {
+  ADD: { key: "auditOperationAdd", tone: "info" },
+  UPD: { key: "auditOperationModify", tone: "warning" },
+  DEL: { key: "auditOperationDelete", tone: "danger" },
+};
+
 export function createAuditLogPanelReads(viewer: AssistantCredentials) {
   const text = (key: string) => tForLocale(viewer.locale, `panels.simplePages.${key}`);
   const fieldLabels = () => Object.fromEntries(
     ["business", "operation", "description", "userId", "userName", "byAi", "parameters", "operateTime"]
       .map(key => [key, text(key)]),
   );
+  function formatBusiness(code: string | null | undefined): string {
+    if (!code) return "";
+    if (code === "SCHEMA") return "Schema";
+    const key = businessLabelKeys[code];
+    return key ? text(key) : code;
+  }
+  function formatOperation(code: string | null | undefined): { label: string; tone?: PanelFieldTone } {
+    if (!code) return { label: "" };
+    const matched = operationStyle[code];
+    return matched ? { label: text(matched.key), tone: matched.tone } : { label: code, tone: "default" };
+  }
   function record(entry: z.infer<typeof auditRecordSchema>, labels: Record<string, string>, detail: boolean): PanelRecord {
+    const business = formatBusiness(entry.bussiness);
+    const op = formatOperation(entry.operation);
+    const tones: Record<string, PanelFieldTone> = {};
+    if (business) tones.business = "default";
+    if (op.tone) tones.operation = op.tone;
     return {
       primaryKey: entry.id, label: entry.description || entry.id, fieldLabels: labels,
       fields: {
-        business: entry.bussiness ?? "", operation: entry.operation ?? "", description: entry.description ?? "",
+        business, operation: op.label, description: entry.description ?? "",
         userId: entry.userId ?? "", userName: entry.userName ?? "",
         byAi: entry.byAi == null ? "" : String(entry.byAi),
         operateTime: entry.operateTime == null ? "" : new Date(entry.operateTime).toISOString(),
         ...(detail && { parameters: entry.paramter ?? "" }),
       },
+      ...(Object.keys(tones).length > 0 && { tones }),
     };
   }
   async function read(path: string, body: object) {

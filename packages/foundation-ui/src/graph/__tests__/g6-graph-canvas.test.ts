@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import type { GraphCanvasEdge, GraphCanvasNode } from "../types";
-import { g6Edges, type G6Colors } from "../g6-elements";
+import { g6Edges, g6NodeStyle, type G6Colors } from "../g6-elements";
 
 /*
  * What callers of the G6 canvas build on: it changes only the elements whose props changed (a graph grows by a longer
@@ -379,4 +379,27 @@ it("draws its nodes and names at the sizes its page sets", async () => {
   const drawn = of("add").flatMap((batch: any) => batch.nodes ?? []);
   expect(drawn[0].style).toMatchObject({ size: 62, labelFontSize: 13 });
   wrapper.unmount();
+});
+
+it("draws path-toned nodes and edges visually distinct from accent search highlights", () => {
+  const withPathColor: G6Colors = { ...colors, path: "#e6a23c" };
+  const look = { nodeSize: 32, labelSize: 12, labelWidth: 160 };
+  const searchNode = g6NodeStyle({ id: "n1", label: "N1", tone: "accent" }, withPathColor, [], true, look);
+  const pathNode = g6NodeStyle({ id: "n2", label: "N2", tone: "path" }, withPathColor, [], true, look);
+  expect(searchNode).toMatchObject({ stroke: "a", lineDash: [4, 3], opacity: 1 });
+  expect(pathNode).toMatchObject({ stroke: "#e6a23c", lineDash: [], opacity: 1 });
+
+  const nodes = new Map([node("A"), node("B"), node("C")]);
+  const drawn = Object.fromEntries(
+    g6Edges(
+      [
+        { id: "e-search", source: "A", target: "B", tone: "accent" },
+        { id: "e-path", source: "B", target: "C", tone: "path" },
+      ],
+      nodes,
+      withPathColor,
+    ).map((edge) => [edge.id, edge]),
+  );
+  expect(drawn["e-search"]!.style).toMatchObject({ stroke: "p", lineWidth: 2, opacity: 1 });
+  expect(drawn["e-path"]!.style).toMatchObject({ stroke: "#e6a23c", lineWidth: 3, opacity: 1 });
 });

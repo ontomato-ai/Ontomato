@@ -259,7 +259,7 @@ function ports(definition: PanelDefinition | ProjectionDefinition) {
 
 async function incompatiblePort(
   source: ReferenceManifest, { wiring }: Reference, definition: PanelDefinition | ProjectionDefinition,
-  readCatalogue = readPanelComponentCatalogue,
+  readCatalogue = readPanelComponentCatalogue, domainId: string | null = null, client?: QueryClient,
 ) {
   const target = ports(definition);
   const implicit = new Set<string>();
@@ -298,7 +298,7 @@ async function incompatiblePort(
   if ("data" in definition) {
     for (const { name, datum, declaration } of reads) {
       if (!missingRequiredReadParameters(declaration, datum.params, undefined, wiring).length) continue;
-      const component = await readProjectionComponent(definition.componentId, readCatalogue);
+      const component = await readProjectionComponent(definition.componentId, readCatalogue, domainId, client);
       const runtimeParams = appsSdkComponentDatum(component?.data, name)?.runtimeParams;
       const [missing] = missingRequiredReadParameters(declaration, datum.params, runtimeParams, wiring);
       if (missing !== undefined) return `data '${name}' requires parameter '${missing}'`;
@@ -335,7 +335,7 @@ export async function validateCurrentProductReferences(
       const issue = await checkOperationTarget(definition, reference.wiring);
       if (issue) return issue;
     }
-    return incompatiblePort(manifest, reference, definition, readCatalogue);
+    return incompatiblePort(manifest, reference, definition, readCatalogue, isBuiltinProductId(reference.target.id) ? null : owner.domainId, client);
   };
   if ("manifest" in input) panels.set(id, input);
   const saved = await loadSavedPlacements(owner.domainId, panels, client);
@@ -402,7 +402,8 @@ export async function validatePersonalPlacement(
   const definition = target.kind === "panel" ? panels.get(target.id) : await requireProjection(owner.domainId, target.id, client);
   if (!definition) throw new HttpError(404, "Selected member does not exist", "PRODUCT_UNAVAILABLE");
 
-  const issue = await incompatiblePort(panel.manifest, { key: field, target, wiring: placement }, definition);
+  const issue = await incompatiblePort(panel.manifest, { key: field, target, wiring: placement }, definition, undefined,
+    isBuiltinProductId(target.id) ? null : owner.domainId, client);
   if (issue) throw new HttpError(400, `Personal placement '${field}': ${issue}`, "PANEL_PORT_MISMATCH");
 
   if (target.kind === "panel") rejectCycles(panels, details, [target.id], ancestors);

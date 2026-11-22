@@ -116,8 +116,13 @@ const display = useConversationDisplay({
   features: () => workbench.value.features,
   resolve: resolvePage,
   serialize,
-  // The shell's name and address for the page from the moment it opens; what is selected is the page's report.
-  context: (page, reported) => ({ url: page.address, label: pageLabel(page.featureId, reported), selection: selectionIn(page, reported) }),
+  // The shell's name and address for the page from the moment it opens; selection and highlights are the page's report.
+  context: (page, reported) => ({
+    url: page.address,
+    label: pageLabel(page.featureId, reported),
+    selection: selectionIn(page, reported),
+    ...(reported?.highlights?.length ? { highlights: reported.highlights } : {}),
+  }),
   leave: { leaves: (address) => leave.leaves(address?.split("?")[0] ?? ""), confirm: () => leave.confirm() },
 });
 // A native entry becomes resolvable beside the conversation when the reader's application catalog arrives.

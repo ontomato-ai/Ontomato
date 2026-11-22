@@ -21,7 +21,7 @@ export interface GraphRecords {
 }
 
 /** The node an edge record names at a declared pointer: its owner's key there, or a visible failure. */
-function endpoint(edge: string, fields: Readonly<Record<string, string>>, path: string): string {
+function endpoint(edge: string, fields: PanelRecord["fields"], path: string): string {
   const value = valueAt({ ...fields }, path);
   if (typeof value !== "string") throw new Error(`Edge '${edge}' names no node at ${path}`);
   return value;

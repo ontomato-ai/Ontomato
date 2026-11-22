@@ -132,7 +132,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [`${SCHEDULED_TASK}.save`, RUN_NOW, CREATE_SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED, DELETE_SCHEDULED_TASK],
   },
-  [PUBLISHED_MCP_SERVICE]: { ...describeType("publishedMcpService"), reads: metadataList },
+  [PUBLISHED_MCP_SERVICE]: { ...describeType("publishedMcpService"), reads: { ...metadataList, record: modelReads.record } },
   [AUDIT_LOG]: {
     ...describeType("auditLog"),
     reads: {

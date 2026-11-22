@@ -26,7 +26,7 @@ import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
 import { createGeneralSettingsReads } from "../admin/general-settings-panel";
 import { createBuilderModelReads } from "../app-builder/panel-model";
 import { createDiagnosisModelReads } from "../ops-diagnosis/panel-model";
-import { readPublishedMcpServices } from "../mcp/panel-reads";
+import { readPublishedMcpService, readPublishedMcpServices } from "../mcp/panel-reads";
 import type { McpRequestLocation } from "../mcp/catalog";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
@@ -130,7 +130,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const diagnosis = createDiagnosisModelReads(owner.domainId, viewer);
   const builder = createBuilderModelReads(owner, viewer);
   return {
-    [PUBLISHED_MCP_SERVICE]: { list: () => readPublishedMcpServices(viewer, location) },
+    [PUBLISHED_MCP_SERVICE]: {
+      list: () => readPublishedMcpServices(viewer, location),
+      record: selection => readPublishedMcpService(viewer, selection.primaryKey!, location),
+    },
     [AUDIT_LOG]: {
       query: (_selection, params) => audit.query(params),
       record: selection => audit.record(selection.primaryKey!),
@@ -201,8 +204,8 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       },
     },
     [SDK_COMPONENT]: {
-      catalogue: (_selection, params) => listSdkComponents(viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
-      definition: selection => readSdkComponent(selection.primaryKey!, viewer.locale),
+      catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
+      definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer.locale),
     },
     [USER]: {
       options: async (_selection, params) => (await options()).users.options({
@@ -329,7 +332,7 @@ async function readParameters(
   const resolved = new Map<string, unknown>();
   const runtime = Object.entries(runtimeParams ?? {});
   if (runtime.length) {
-    const component = await readProjectionComponent(projection.componentId);
+    const component = await readProjectionComponent(projection.componentId, undefined, projection.domainId);
     const names = appsSdkComponentDatum(component?.data, dataName)?.runtimeParams ?? [];
     for (const [name, value] of runtime) {
       const parameter = panelReadParameterId(declaration, name);

@@ -3,7 +3,7 @@ import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { SegmentedTextReader, type SegmentedTextPage, type SegmentedTextSource } from "@ontomato/foundation-ui/reader";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import type { PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import { panelRecordFieldText, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberParam } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
@@ -47,7 +47,7 @@ const emit = defineEmits<{
   close: [anchor?: string];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const panel = usePanelContext();
 const member = useMember();
 const declared = member.projection.data;
@@ -92,7 +92,7 @@ function readPage(sourceId: string, cursor: string | null) {
     page.value = {
       sourceId,
       title: sourceId,
-      items: rows.map((row) => ({ id: row.primaryKey, text: row.fields.text ?? "" })),
+      items: rows.map((row) => ({ id: row.primaryKey, text: panelRecordFieldText(row.fields.text, locale.value) })),
       nextOffset: nextCursor === undefined ? null : Number(nextCursor),
     };
   });
