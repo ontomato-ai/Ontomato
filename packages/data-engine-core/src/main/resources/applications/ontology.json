@@ -107,6 +107,12 @@
       "path": "/ontology/knowledge", "access": {"permissionCode": "business-knowledge"},
       "descriptions": {"en": "Maintain business rules and terminology, and review pending knowledge", "zh-CN": "维护业务规则与术语，审核待确认的知识"},
       "names": {"en": "Business knowledge", "zh-CN": "业务知识"}
+    }, {
+      "id": "ontology-skills", "pageKey": "skills-library", "panelId": "builtin-product-skills-library",
+      "path": "/ontology/skills", "access": {"permissionCode": "skill-management"},
+      "descriptions": {"en": "Manage skills available to agents", "zh-CN": "管理可供智能体使用的 Skill"},
+      "names": {"en": "Skill", "zh-CN": "Skill"},
+      "count": {"member": "list", "data": "rows"}
     }]
   }
 }

@@ -1,0 +1,155 @@
+<style>
+  [v-cloak] { display: none; }
+  .skills { display: flex; flex-direction: column; gap: var(--spacing-md); min-height: 0; min-width: 0; container-type: inline-size; }
+  .skills-bar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: var(--spacing-sm); }
+  .skills-data { display: none; }
+  .skills-body {
+    display: grid;
+    grid-template-columns: clamp(19rem, 32%, 24rem) minmax(0, 1fr);
+    height: max(24rem, calc(100vh - 15rem));
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-md);
+    background: var(--el-bg-color);
+  }
+  .skills-list {
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    border-right: 1px solid var(--ui-divider);
+  }
+  .skills-detail {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .skills-hint {
+    margin: auto;
+    padding: var(--spacing-xl) var(--spacing-lg);
+    color: var(--el-text-color-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+  .detail-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--spacing-xs) var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--ui-divider);
+    flex-shrink: 0;
+  }
+  .detail-meta { display: flex; flex: 1 1 16rem; flex-direction: column; gap: var(--spacing-xs); min-width: 0; }
+  .detail-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); min-width: 0; }
+  .detail-name {
+    margin: 0;
+    overflow: hidden;
+    color: var(--el-text-color-primary);
+    font-size: var(--text-base);
+    line-height: var(--leading-base);
+    font-weight: var(--font-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .detail-source {
+    flex: none;
+    padding: 0 var(--spacing-xs);
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-sm);
+    color: var(--el-text-color-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.6;
+  }
+  .detail-summary {
+    margin: 0;
+    color: var(--el-text-color-secondary);
+    font-size: var(--text-sm);
+    line-height: var(--leading-sm);
+  }
+  .detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    flex: none;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+    margin-inline-start: auto;
+  }
+  .package {
+    display: grid;
+    grid-template-columns: clamp(12rem, 26%, 15rem) minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .package-tree {
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-sm);
+    overflow: auto;
+    border-right: 1px solid var(--ui-divider);
+  }
+  .package-viewer {
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-md) var(--spacing-lg);
+    overflow: auto;
+  }
+  @container (max-width: 56rem) {
+    .skills-body { grid-template-columns: minmax(0, 1fr); height: auto; overflow: visible; }
+    .skills-list { max-height: 22rem; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
+    .skills-detail { min-height: 24rem; }
+  }
+  @container (max-width: 40rem) {
+    .package { grid-template-columns: minmax(0, 1fr); }
+    .package-tree { max-height: 12rem; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
+  }
+</style>
+<div id="app" v-cloak>
+  <section class="skills">
+    <div class="skills-bar">
+      <projection slot="import" @uploaded="onImported"></projection>
+    </div>
+    <!-- Data-only member holding the selected skill record for the detail header. -->
+    <div class="skills-data">
+      <projection slot="detail"></projection>
+    </div>
+    <div class="skills-body">
+      <div class="skills-list">
+        <projection slot="list"></projection>
+      </div>
+      <div class="skills-detail">
+        <p v-if="!selected" class="skills-hint">{{ t("panel.select") }}</p>
+        <p v-else-if="record.status === 'forbidden'" class="skills-hint">{{ t("panel.recordForbidden") }}</p>
+        <p v-else-if="record.status === 'error'" class="skills-hint" role="alert">{{ record.message }}</p>
+        <p v-else-if="record.status !== 'ready'" class="skills-hint" role="status">{{ t("panel.loading") }}</p>
+        <template v-else>
+          <div class="detail-head">
+            <div class="detail-meta">
+              <div class="detail-title">
+                <h2 class="detail-name" :title="skill.name">{{ skill.name }}</h2>
+                <span v-if="skill.source" class="detail-source">{{ skill.source }}</span>
+              </div>
+              <p v-if="skill.summary" class="detail-summary">{{ skill.summary }}</p>
+            </div>
+            <div class="detail-actions">
+              <projection slot="export"></projection>
+              <projection slot="remove" @done="onDeleted"></projection>
+            </div>
+          </div>
+          <div class="package">
+            <div class="package-tree">
+              <projection slot="tree"></projection>
+            </div>
+            <div class="package-viewer">
+              <projection slot="content"></projection>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </section>
+</div>
