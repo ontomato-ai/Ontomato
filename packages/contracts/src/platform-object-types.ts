@@ -194,7 +194,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         source: "object", parameterMode: "fixed", params: { path: "skillFilePath" }, requiredParams: ["path"], result: "panelRecord",
       },
     },
-    operations: [DELETE_SKILL, EXPORT_SKILL],
+    operations: [IMPORT_SKILL, DELETE_SKILL, EXPORT_SKILL],
   },
   [BUSINESS_KNOWLEDGE]: {
     ...describeType("businessKnowledge", "capability"),

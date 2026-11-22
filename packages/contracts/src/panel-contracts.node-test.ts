@@ -482,7 +482,7 @@ test("feedback, governance records and the skill library read through their owne
   };
   assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
   assert.deepEqual(required(SKILL, "file"), ["path"]);
-  assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL, EXPORT_SKILL]);
+  assert.deepEqual(platformObjectTypes[SKILL].operations, [IMPORT_SKILL, DELETE_SKILL, EXPORT_SKILL]);
   assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
 });
 
@@ -1607,6 +1607,39 @@ test("a panel download validates the same basename and media type for the file a
   assert.equal(readPanelOperationResponseSchema.safeParse(receipt).success, false);
 });
 
+test("an upload declaration names a file input whose value is a staged upload, and the confirmation names the file", async () => {
+  const {
+    PANEL_UPLOAD_MAX_BYTES, panelFileInputSchema, panelUploadAccepted, panelUploadDeclarationSchema, panelUploadReceiptSchema,
+  } = await import("./panel-upload");
+  const { panelHumanOperationConfirmationSchema, panelUploadRequestSchema } = await import("./panel-agent");
+  const declaration = { input: "file", accept: [{ mime: "application/zip", extension: ".zip" }], maxBytes: 20 * 1024 * 1024 };
+  assert.deepEqual(panelUploadDeclarationSchema.parse(declaration), declaration);
+  for (const invalid of [{ maxBytes: PANEL_UPLOAD_MAX_BYTES + 1 }, { accept: [] }, { accept: [{ mime: "application/zip", extension: "zip" }] }])
+    assert.equal(panelUploadDeclarationSchema.safeParse({ ...declaration, ...invalid }).success, false);
+  assert.equal(panelUploadAccepted(declaration, "Report.ZIP")?.mime, "application/zip");
+  assert.equal(panelUploadAccepted(declaration, "report.zip.exe"), undefined);
+
+  const uploadId = "00000000-0000-4000-8000-000000000001";
+  assert.deepEqual(panelFileInputSchema.parse({ kind: "upload", uploadId }), { kind: "upload", uploadId });
+  // Only the staged branch exists; a bare id or another source is not a file input yet.
+  assert.equal(panelFileInputSchema.safeParse({ uploadId }).success, false);
+  assert.equal(panelFileInputSchema.safeParse({ kind: "artifact", uploadId }).success, false);
+  const receipt = { uploadId, name: "技能.zip", size: 1024, mime: "application/zip" };
+  assert.deepEqual(panelUploadReceiptSchema.parse(receipt), receipt);
+  assert.equal(panelUploadReceiptSchema.safeParse({ ...receipt, name: "../x.zip" }).success, false);
+  assert.equal(panelUploadReceiptSchema.safeParse({ ...receipt, size: 0 }).success, false);
+
+  const operation = { applicationId: "skills", useId: "library", operationId: "list.import" };
+  assert.deepEqual(panelUploadRequestSchema.parse({ operation }), { operation });
+  const { uploadId: _id, ...file } = receipt;
+  const confirmation = {
+    kind: "impact", upload: file,
+    impact: { summary: "Overwrites skill Alpha", total: 1, objects: [{ target: { objectType: "skill", primaryKey: "alpha" }, label: "Alpha" }] },
+  };
+  assert.deepEqual(panelHumanOperationConfirmationSchema.parse(confirmation), confirmation);
+  assert.equal(panelHumanOperationConfirmationSchema.safeParse({ ...confirmation, upload: receipt }).success, false);
+});
+
 test("a read-only trial carries the current draft and parameters without a write intent", () => {
   const input = { draft: { query: { select: ["name"] } }, parameters: { limit: 3 } };
   const request = {
@@ -1722,7 +1755,6 @@ test("knowledge, feedback and skill reads stay at their declared owners", () => 
     [APPROVE_KNOWLEDGE, "POST", "/data-query", "/admin/editBussinessKnowledge"],
     [DELETE_KNOWLEDGE, "POST", "/data-query", "/admin/delBussinessKnowledge"],
     [DELETE_SKILL, "DELETE", "", "/skills/skill"],
-    [IMPORT_SKILL, "POST", "", "/skills/import?overwrite=true"],
     [EXPORT_SKILL, "GET", "", "/skills/skill/export"],
     [EXPORT_FEEDBACK, "GET", "", "/feedback/export?keyword=sample"],
   ] as const) {
@@ -1731,6 +1763,11 @@ test("knowledge, feedback and skill reads stay at their declared owners", () => 
     assert.ok(!panelClientReads(key).some(read => read.path.test(path)));
   }
 
+  // An import stages its file through the panel upload contract; a frame never posts to the old route.
+  const importBinding = bindingKey({ kind: "PlatformOperation", id: IMPORT_SKILL });
+  assert.ok(!clientSends([importBinding], "POST", "", "/skills/import"));
+  assert.ok(clientSends([importBinding], "POST", "", "/panel-operations/uploads"));
+  assert.ok(!clientSends([binding(SKILL)], "POST", "", "/panel-operations/uploads"));
   assert.ok(!clientSends([binding(SKILL)], "GET", "", "/skills/skill/export"));
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/export"));
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/state"));

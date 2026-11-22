@@ -277,6 +277,11 @@ export const createPanelHumanOperationIntentRequest = {
   method: "POST", service: "", path: /^\/panel-operations\/intents$/,
 } as const satisfies ClientRequest;
 
+/** The frame can stage a file for a published operation; the server keeps it only for an operation that declares an upload. */
+export const panelUploadRequest = {
+  method: "POST", service: "", path: /^\/panel-operations\/uploads$/,
+} as const satisfies ClientRequest;
+
 export const panelReadOperationRequest = {
   method: "POST", service: "", path: /^\/panel-operations\/read$/,
 } as const satisfies ClientRequest;
@@ -325,9 +330,6 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
     { method: "DELETE", service: "", path: /^\/skills\/[^/?#]+$/ },
     panelOperationImpactRequest,
   ],
-  [bindingKey({ kind: "PlatformOperation", id: IMPORT_SKILL })]: [
-    { method: "POST", service: "", path: /^\/skills\/import(?:\?overwrite=true)?$/ },
-  ],
   [bindingKey({ kind: "PlatformOperation", id: EXPORT_SKILL })]: [
     { method: "GET", service: "", path: /^\/skills\/[^/?#]+\/export$/ },
   ],
@@ -345,6 +347,7 @@ export function clientSends(bindings: Iterable<string>, method: string, service:
     if ((binding.startsWith("PlatformOperation:") || binding.startsWith("PlatformObjectType:"))
       && (matches(panelOperationDescriptorRead) || matches(createPanelHumanOperationIntentRequest)))
       return true;
+    if (binding.startsWith("PlatformOperation:") && matches(panelUploadRequest)) return true;
     const metricId = boundMetricId(binding);
     if (metricId && metricViewReads.some(request => {
       if (request.method !== method || request.service !== service || !request.path.test(path)) return false;

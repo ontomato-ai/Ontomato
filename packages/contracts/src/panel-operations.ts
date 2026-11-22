@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelDownloadReceiptSchema } from "./panel-download";
+import { panelUploadDeclarationSchema } from "./panel-upload";
 import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema, panelOperationUnavailableSchema } from "./panel-manifest";
 import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
@@ -46,6 +47,8 @@ export const panelOperationDeclarationSchema = z.object({
   target: panelOperationDeclarationTargetSchema,
   inputSchema: runtimeJsonObjectSchema,
   batch: z.boolean(),
+  /** A single write action whose named input is a file the person stages first (see `panel-upload`). */
+  upload: panelUploadDeclarationSchema.optional(),
 }).strict();
 export type PanelOperationDeclaration = z.infer<typeof panelOperationDeclarationSchema>;
 

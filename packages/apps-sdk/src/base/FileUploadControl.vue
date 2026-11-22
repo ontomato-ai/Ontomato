@@ -1,32 +1,30 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
-import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
-import { PlatformUploadConflict } from "../panel/platform-objects";
-import { stateObject } from "../panel/state";
+import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
+import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
+import { panelUploadAccepted, panelUploadSize, type PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
+import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMemberOperations } from "../panel/member";
 
 /**
- * File upload/import control bound to a declared `PlatformOperation`. Optionally presents format rules before opening
- * the file picker, enforces declared `accept` extensions before sending, invokes the projection's operation handler
- * (which sends multipart `FormData` along its declared method/path through the bridge), and prompts for explicit
- * overwrite confirmation when the owner reports `PlatformUploadConflict`.
+ * The control of one operation that takes a file (its owner declares an `upload`), run as the reader the way an
+ * `OperationButton` runs a write. It may first show the format rules, then opens the file picker limited to the declared
+ * kinds, checks the picked file against the declared kinds and size, stages it, and writes once with the staged file as
+ * the declared input. The host confirms where the owner asks, naming the file. When the owner refuses with
+ * `overwrite-on` (such as `SKILL_EXISTS`), the same staged file is sent again with `overwrite: true`, and the host's
+ * confirmation, naming what is replaced, is the one dialog the reader answers. The owner's receipt is shown beneath.
  */
 const props = withDefaults(
   defineProps<{
-    /** The operation it runs: the projection's local name for it, under `operations`. */
+    /** The operation it runs: the projection's local name for it, under `operations`; its owner declares the upload. */
     operation: string;
-    /** Optional slot input whose panel state holds the target object, when the upload targets one object. */
-    input?: string;
-    /** Optional extra parameters merged into `call.input` alongside `{ file, overwrite }`. */
+    /** Further operation input sent beside the file. */
     params?: Readonly<Record<string, unknown>>;
     /** Trigger button label (panel message key via `panel.t` or literal; defaults to the operation label). */
     label?: string;
     /** Button emphasis: `"primary"` or `"default"`. */
     type?: "primary" | "default";
-    /** Accepted file extensions or MIME types (e.g. `".zip"`). Extensions starting with `.` are enforced before upload. */
-    accept?: string;
     /** Optional title for the format-rules dialog (defaults to the trigger button label). */
     dialogTitle?: string;
     /** Optional introductory text shown in the pre-upload dialog (resolved via `panel.t`). */
@@ -35,37 +33,32 @@ const props = withDefaults(
     rules?: readonly string[];
     /** Optional label for the choose-file button inside the dialog. */
     chooseLabel?: string;
-    /** Optional label for the confirm button in the overwrite dialog. */
-    overwriteLabel?: string;
-    /** Optional validation message when the selected file extension is rejected. */
-    invalidTypeMessage?: string;
+    /** The owner's refusal code that means the item exists and the call may be repeated with `overwrite: true`. */
+    overwriteOn?: string;
     /** Disables the upload trigger. */
     disabled?: boolean;
   }>(),
   {
-    input: undefined,
     params: undefined,
     label: undefined,
     type: "primary",
-    accept: undefined,
     dialogTitle: undefined,
     intro: undefined,
     rules: undefined,
     chooseLabel: undefined,
-    overwriteLabel: undefined,
-    invalidTypeMessage: undefined,
+    overwriteOn: undefined,
     disabled: false,
   },
 );
 
 const emit = defineEmits<{
-  /** Emitted after the upload operation succeeds. */
-  uploaded: [result: unknown, meta: { readonly file: File; readonly overwrite: boolean }];
-  /** Emitted when validation or the upload operation fails. */
+  /** Emitted with the host's receipt after the owner accepted the file. */
+  uploaded: [response: PanelHumanOperationDispatchResponse, meta: { readonly file: PanelUploadReceipt; readonly overwrite: boolean }];
+  /** Emitted when the file is refused before it is sent, or staging or the write fails. */
   error: [error: Error];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 
@@ -73,31 +66,27 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const rulesOpen = ref(false);
 const uploading = ref(false);
 const failure = shallowRef<Error | null>(null);
-const pendingConflict = shallowRef<{ file: File; message: string } | null>(null);
+/** What the owner said of the last file, with that file. */
+const receipt = shallowRef<{ message: string; ok: boolean; file: PanelUploadReceipt } | null>(null);
 
 /** The member's operations, as their owners admit them now. */
 const operations = useMemberOperations();
 if (!Object.hasOwn(slot.projection.operations ?? {}, props.operation))
   throw new Error(`The projection in member '${slot.slot}' names no operation '${props.operation}'`);
 /** The owner's description of the upload; nothing is sent until the owner admits it. */
-const published = computed(() => (operations.value.status === "ready" ? operations.value.value[props.operation] ?? null : null));
-
-const targetState = computed(() => slotInputState(panel.manifest, slot.slot, props.input));
-const target = computed<PanelOperationCall["target"]>(() => {
-  if (!targetState.value) return null;
-  const selected = stateObject(panel.instance.state.values.value[targetState.value]);
-  return selected && { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey };
+const published = computed<PanelOwnerOperationDescriptor | null>(() =>
+  operations.value.status === "ready" ? operations.value.value[props.operation] ?? null : null);
+const declared = computed(() => {
+  const upload = published.value?.upload;
+  if (published.value && !upload) throw new Error(`Operation '${props.operation}' takes no file`);
+  return upload ?? null;
 });
+const operationId = computed(() => panel.instance.operationIdOf(slot.slot, props.operation));
 
 const triggerLabel = computed(() => (props.label ? panel.t(props.label) : published.value?.label ?? ""));
 const hasRulesDialog = computed(() => Boolean(props.intro || props.rules?.length));
-const allowedExtensions = computed(() =>
-  (props.accept ?? "")
-    .split(",")
-    .map((token) => token.trim().toLowerCase())
-    .filter((token) => token.startsWith(".")),
-);
-const isDisabled = computed(() => props.disabled || uploading.value || published.value === null || (targetState.value !== null && target.value === null));
+const extensions = computed(() => declared.value?.accept.map((kind) => kind.extension).join(",") ?? "");
+const isDisabled = computed(() => props.disabled || uploading.value || declared.value === null || Boolean(published.value?.unavailable));
 
 function openPicker() {
   if (fileInput.value) {
@@ -112,63 +101,56 @@ function onTriggerClick() {
   else openPicker();
 }
 
-function checkExtension(file: File): boolean {
-  if (!allowedExtensions.value.length) return true;
-  const lower = file.name.toLowerCase();
-  return allowedExtensions.value.some((ext) => lower.endsWith(ext));
+function fail(reason: unknown) {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  failure.value = error;
+  emit("error", error);
 }
 
-async function submitFile(file: File, overwrite: boolean) {
-  uploading.value = true;
-  failure.value = null;
-  try {
-    const result = await panel.invoke(published.value!.handlerRef, {
-      target: target.value,
-      input: { ...(props.params ?? {}), file, overwrite },
-    });
-    pendingConflict.value = null;
-    panel.instance.refreshObjects();
-    emit("uploaded", result, { file, overwrite });
-  } catch (reason: unknown) {
-    if (!overwrite && reason instanceof PlatformUploadConflict) {
-      pendingConflict.value = { file, message: reason.message };
-      return;
-    }
-    const err = reason instanceof Error ? reason : new Error(String(reason));
-    failure.value = err;
-    emit("error", err);
-  } finally {
-    uploading.value = false;
+/** Writes once with the staged file; on the declared refusal, once more with `overwrite: true`. */
+async function write(file: PanelUploadReceipt, overwrite: boolean): Promise<void> {
+  const input = {
+    ...(props.params ?? {}), [declared.value!.input]: { kind: "upload", uploadId: file.uploadId }, ...(overwrite && { overwrite: true }),
+  };
+  const answer = await panel.instance.writeOperation(operationId.value, { call: { target: null, input } });
+  if (answer.decision === "cancel") return;
+  const response = answer.response;
+  if (response.kind === "not-dispatched") {
+    receipt.value = { message: response.message, ok: false, file };
+    return;
   }
+  const outcome = response.outcome;
+  if (!overwrite && props.overwriteOn && outcome?.kind === "refusal" && outcome.code === props.overwriteOn) return write(file, true);
+  if (outcome?.kind === "success") {
+    receipt.value = { message: outcome.message ?? t("platform.operationDone"), ok: true, file };
+    emit("uploaded", response, { file, overwrite });
+    return;
+  }
+  const message = outcome === null || outcome.kind === "batch" ? t("platform.operationUnknown", { message: "" })
+    : outcome.kind === "unknown" ? t("platform.operationUnknown", { message: outcome.message }) : outcome.message;
+  receipt.value = { message, ok: false, file };
 }
 
-function onFileChange(event: Event) {
+async function onFileChange(event: Event) {
   const inputEl = event.target as HTMLInputElement;
   const file = inputEl.files?.[0];
   inputEl.value = "";
   rulesOpen.value = false;
-  if (!file) return;
-  if (!checkExtension(file)) {
-    const message = props.invalidTypeMessage
-      ? panel.t(props.invalidTypeMessage)
-      : t("platform.uploadInvalidType", { accept: props.accept ?? "" });
-    const err = new Error(message);
-    failure.value = err;
-    emit("error", err);
-    return;
+  const upload = declared.value;
+  if (!file || !upload) return;
+  failure.value = null;
+  receipt.value = null;
+  // The owner's declaration is checked here so a wrong file is named at once; the server checks it again.
+  if (!panelUploadAccepted(upload, file.name)) return fail(new Error(t("platform.uploadInvalidType", { accept: extensions.value })));
+  if (file.size > upload.maxBytes) return fail(new Error(t("platform.uploadTooLarge", { size: panelUploadSize(upload.maxBytes, locale.value) })));
+  uploading.value = true;
+  try {
+    await write(await panel.instance.uploadFile(operationId.value, file), false);
+  } catch (reason) {
+    fail(reason);
+  } finally {
+    uploading.value = false;
   }
-  void submitFile(file, false);
-}
-
-function confirmOverwrite() {
-  const conflict = pendingConflict.value;
-  if (!conflict) return;
-  pendingConflict.value = null;
-  void submitFile(conflict.file, true);
-}
-
-function cancelOverwrite() {
-  pendingConflict.value = null;
 }
 </script>
 
@@ -187,10 +169,15 @@ function cancelOverwrite() {
       ref="fileInput"
       type="file"
       class="sdk-file-upload-input"
-      :accept="accept"
+      :accept="extensions"
       @change="onFileChange"
     />
+    <p v-if="published?.unavailable" class="sdk-file-upload-hint">{{ published.unavailable.reason }}</p>
     <p v-if="failure" role="alert" class="sdk-file-upload-error">{{ failure.message }}</p>
+    <p v-if="receipt" :role="receipt.ok ? 'status' : 'alert'" :class="receipt.ok ? 'sdk-file-upload-done' : 'sdk-file-upload-error'">
+      {{ receipt.message }}
+      <span class="sdk-file-upload-file">{{ t("platform.uploadFile", { name: receipt.file.name, size: panelUploadSize(receipt.file.size, locale) }) }}</span>
+    </p>
 
     <div v-if="rulesOpen" class="sdk-file-upload-backdrop" @click.self="rulesOpen = false">
       <div role="dialog" aria-modal="true" class="sdk-file-upload-modal">
@@ -205,21 +192,6 @@ function cancelOverwrite() {
           </button>
           <button type="button" class="sdk-file-upload-btn primary sdk-file-upload-choose" @click="openPicker">
             {{ chooseLabel ? panel.t(chooseLabel) : t("platform.uploadChooseFile") }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="pendingConflict" class="sdk-file-upload-backdrop" @click.self="cancelOverwrite">
-      <div role="alertdialog" aria-modal="true" class="sdk-file-upload-modal">
-        <h3 class="sdk-file-upload-modal-title">{{ t("platform.uploadConfirmTitle") }}</h3>
-        <p class="sdk-file-upload-intro">{{ pendingConflict.message }}</p>
-        <div class="sdk-file-upload-modal-actions">
-          <button type="button" class="sdk-file-upload-btn sdk-file-upload-cancel" @click="cancelOverwrite">
-            {{ t("platform.uploadCancel") }}
-          </button>
-          <button type="button" class="sdk-file-upload-btn primary sdk-file-upload-overwrite" @click="confirmOverwrite">
-            {{ overwriteLabel ? panel.t(overwriteLabel) : t("platform.uploadOverwrite") }}
           </button>
         </div>
       </div>
@@ -254,6 +226,16 @@ function cancelOverwrite() {
 .sdk-file-upload-btn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+.sdk-file-upload-hint,
+.sdk-file-upload-done {
+  color: var(--el-text-color-regular);
+  font-size: var(--el-font-size-small, 12px);
+  margin: 0;
+}
+.sdk-file-upload-file {
+  color: var(--el-text-color-secondary);
+  margin-inline-start: 6px;
 }
 .sdk-file-upload-error {
   color: var(--el-color-danger);

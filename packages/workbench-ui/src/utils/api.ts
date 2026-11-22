@@ -312,7 +312,8 @@ export async function nodeApiBlobPost(path: string, body?: any, opts?: any): Pro
  */
 export async function nodeApiRequest(path: string, init: any = {}): Promise<Response> {
   const relative = path.replace(/^\/api(?=\/)/, "");
-  return nodeApiFetch(relative, init.method ?? "GET", init.body ? JSON.parse(String(init.body)) : undefined, {
+  const body = init.body instanceof FormData ? init.body : init.body ? JSON.parse(String(init.body)) : undefined;
+  return nodeApiFetch(relative, init.method ?? "GET", body, {
     headers: init.headers,
     signal: init.signal,
   });
@@ -326,14 +327,17 @@ export async function nodeApiFetch(
 ): Promise<Response> {
   const credential = currentCredential();
   const extraHeaders = (opts && opts.headers) || {};
+  const sends = method !== "GET" && method !== "DELETE";
+  // A multipart body goes as it is: its Content-Type carries the boundary only the browser writing it knows.
+  const form = body instanceof FormData;
   const res = await fetch(`${API_BASE}${normalizePath(path)}`, {
     method,
     ...opts,
     headers: buildBaseHeaders({
-      ...(method !== "GET" && method !== "DELETE" ? { "Content-Type": "application/json" } : {}),
+      ...(sends && !form ? { "Content-Type": "application/json" } : {}),
       ...extraHeaders,
     }),
-    body: method !== "GET" && method !== "DELETE" ? JSON.stringify(body ?? {}) : undefined,
+    body: sends ? (form ? body : JSON.stringify(body ?? {})) : undefined,
   });
   syncServerNowFromResponse(res);
 

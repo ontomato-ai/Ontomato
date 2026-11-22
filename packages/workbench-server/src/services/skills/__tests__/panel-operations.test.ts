@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AGENT_DEFINITION, DELETE_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
+import AdmZip from "adm-zip";
+import { AGENT_DEFINITION, DELETE_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { installContentLayout } from "../../../content/layout";
 import { registerSkillProvider } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
@@ -72,8 +73,9 @@ registerSkillProvider({
 });
 
 const { skillServerOperations } = await import("../panel-operations");
-const deleteOp = skillServerOperations.find(op => op.handlerRef === DELETE_SKILL)!;
+const deleteOp = skillServerOperations.find((op): op is Extract<typeof op, { targetInput: string }> => op.handlerRef === DELETE_SKILL)!;
 if (deleteOp.kind !== "action") throw new Error("Expected action operation");
+const importOp = skillServerOperations.find((op): op is Extract<typeof op, { upload: object }> => op.handlerRef === IMPORT_SKILL)!;
 
 const domain = "skill-ops-domain";
 const actor = { owner: { domainId: domain, userId: "operator" }, credentials: { token: "op-token", locale: "en" } };
@@ -228,6 +230,63 @@ describe("skill panel server operations", () => {
       kind: "refusal",
       code: "SKILL_NOT_FOUND",
       message: "Skill not found",
+    });
+  });
+
+  describe("skills.import", () => {
+    const zip = (name: string, body = "Body") => {
+      const archive = new AdmZip();
+      archive.addFile(`${name}/SKILL.md`, Buffer.from(`---\nname: ${name}\ndescription: Imported\n---\n${body}\n`));
+      const bytes = archive.toBuffer();
+      return { name: `${name}.zip`, mime: "application/zip", size: bytes.length, bytes };
+    };
+    const call = (file: ReturnType<typeof zip>, overwrite?: boolean) => ({ file, ...(overwrite !== undefined && { overwrite }) });
+
+    it("takes a staged skill ZIP of at most 20 MB and acts on no selected skill", () => {
+      expect(importOp).toMatchObject({
+        kind: "action", effect: "write", batch: false, targetType: SKILL,
+        upload: { input: "file", accept: [{ mime: "application/zip", extension: ".zip" }], maxBytes: 20 * 1024 * 1024 },
+      });
+      expect("targetInput" in importOp).toBe(false);
+      expect(importOp.targetSchema.safeParse(null).success).toBe(true);
+      expect(importOp.inputSchema.safeParse({ file: { kind: "upload", uploadId: "00000000-0000-4000-8000-000000000001" } }).success).toBe(true);
+      expect(importOp.inputSchema.safeParse({ file: { uploadId: "00000000-0000-4000-8000-000000000001" } }).success).toBe(false);
+    });
+
+    it("imports a new skill, refuses an existing name with its id, and overwrites only after the named confirmation", async () => {
+      const first = zip("imported-skill");
+      expect(await importOp.inspectImpact!.inspect(host, [{ target: null, input: call(first, true) }])).toBeNull();
+      expect(await importOp.execute(host, null, call(first))).toEqual({
+        kind: "success", message: "Imported skill imported-skill.", data: { id: "imported-skill", title: "imported-skill" },
+        affected: { objects: [{ objectType: SKILL, primaryKey: "imported-skill" }], objectTypes: [SKILL] },
+      });
+      expect(mocks.assertPermission).toHaveBeenCalledWith(actor.credentials, ["skill-management"]);
+
+      const second = zip("imported-skill", "Revised");
+      expect(await importOp.execute(host, null, call(second))).toEqual({
+        kind: "refusal", code: "SKILL_EXISTS", message: "A skill named imported-skill already exists.", details: { skillId: "imported-skill" },
+      });
+      expect(await importOp.inspectImpact!.inspect(host, [{ target: null, input: call(second) }])).toBeNull();
+      expect(await importOp.inspectImpact!.inspect(host, [{ target: null, input: call(second, true) }])).toEqual({
+        summary: "This replaces the existing skill imported-skill with the uploaded package.",
+        objects: [{ target: { objectType: SKILL, primaryKey: "imported-skill" }, label: "imported-skill" }],
+        total: 1,
+      });
+      expect(await importOp.execute(host, null, call(second, true))).toMatchObject({ kind: "success" });
+      const installed = path.join(root, "data", "domain-skills", domain, "imported-skill", "SKILL.md");
+      expect(await fs.readFile(installed, "utf8")).toContain("Revised");
+    });
+
+    it("refuses an unreadable package and an import without permission", async () => {
+      const broken = { name: "broken.zip", mime: "application/zip", size: 3, bytes: Buffer.from("zip") };
+      expect(await importOp.inspectImpact!.inspect(host, [{ target: null, input: { file: broken, overwrite: true } }])).toBeNull();
+      expect(await importOp.execute(host, null, { file: broken })).toEqual({
+        kind: "refusal", code: "INVALID_SKILL_PACKAGE", message: "This file is not a valid skill package: Cannot read skill ZIP",
+      });
+      mocks.assertPermission.mockRejectedValueOnce(new HttpError(403, "Missing skill-management permission", "PERMISSION_DENIED"));
+      expect(await importOp.execute(host, null, call(zip("denied-skill")))).toEqual({
+        kind: "refusal", code: "PERMISSION_DENIED", message: "Missing skill-management permission",
+      });
     });
   });
 });

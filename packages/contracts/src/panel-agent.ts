@@ -13,6 +13,7 @@ import { ontologyElementRefSchema } from "./ontology-element-ref";
 import { EXECUTE_OBJECT_ACTION } from "./platform-object-types";
 import { applicationFrameSourceSchema, panelUseRefSchema } from "./product-panels";
 import { pageDraftSchema } from "./page-draft";
+import { panelUploadFileSchema } from "./panel-upload";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
 
 const key = z.string().min(1).max(200);
@@ -38,6 +39,12 @@ export const panelOperationRefSchema = panelUseRefSchema.extend({
   memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
 }).strict();
 export type PanelOperationRef = z.infer<typeof panelOperationRefSchema>;
+
+/**
+ * Multipart fields of `POST /api/panel-operations/uploads` besides the `file` part: `operation` is this ref as JSON text.
+ * The file is kept for the reader and that operation only, and its receipt goes into the call's declared file input.
+ */
+export const panelUploadRequestSchema = z.object({ operation: panelOperationRefSchema }).strict();
 
 /** Resolve the declared read under the caller's authority without creating a write intent. */
 export const readPanelOperationRequestSchema = panelOperationRefSchema.extend({
@@ -77,7 +84,12 @@ export type CreatePanelHumanOperationIntentRequest = z.infer<typeof createPanelH
 /** A multi-target batch names its targets. A single call confirms only when its owner inspects the impact. */
 export const panelHumanOperationConfirmationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") }).strict(),
-  z.object({ kind: z.literal("impact"), impact: panelOperationImpactSchema }).strict(),
+  z.object({
+    kind: z.literal("impact"),
+    impact: panelOperationImpactSchema,
+    /** The staged file the call hands its owner, named beside what the owner said it affects. */
+    upload: panelUploadFileSchema.optional(),
+  }).strict(),
   z.object({
     kind: z.literal("batch"),
     targets: panelOperationImpactSchema.omit({ summary: true }),

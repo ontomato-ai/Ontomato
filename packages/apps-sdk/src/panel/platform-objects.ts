@@ -141,17 +141,6 @@ export class PlatformObjectRefusal extends Error {
   }
 }
 
-/**
- * Thrown by an upload/import operation handler when the owner reports that an item already exists and may be retried
- * with `overwrite: true` once the reader explicitly confirms.
- */
-export class PlatformUploadConflict extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "PlatformUploadConflict";
-  }
-}
-
 /*
  * ---- Resource adapters (M1 typed forms) ----
  *

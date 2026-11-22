@@ -9,7 +9,7 @@ import AdmZip from "adm-zip";
 import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
-  AGENT_DEFINITION, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL, FEEDBACK_RECORD, SKILL,
+  AGENT_DEFINITION, DELETE_SKILL, EXPORT_FEEDBACK, EXPORT_SKILL, FEEDBACK_RECORD, IMPORT_SKILL, SKILL,
 } from "@ontomato/contracts/panel-client-requests";
 import { productPanelOperationsReadResponseSchema } from "@ontomato/contracts/panel-host";
 import { productPanelInputSchema, productProjectionInputSchema } from "@ontomato/contracts/product-panels";
@@ -167,6 +167,7 @@ const projections = {
         params: { search: { input: "search" }, cursor: { input: "cursor" }, size: { input: "size" } },
       },
     },
+    operations: { import: { operation: { kind: "PlatformOperation", id: IMPORT_SKILL } } },
   }),
   "proj-skill-detail": productProjectionInputSchema.parse({
     name: "Skill detail", description: "", visibility: "domain",
@@ -240,6 +241,7 @@ beforeAll(async () => {
           "panels.skill.readOnlyPublic": "内置技能随产品提供，不能删除",
           "panels.skill.readOnlyProvider": "由 {provider} 提供，不能在这里删除",
           "panels.confirmation.deleteSkillImpact": "此操作将删除所选技能，并清理 {count} 个智能体对它的引用。",
+          "panels.confirmation.overwriteSkillImpact": "将用上传的技能包覆盖已有技能 {skill}。",
         } as typeof en,
       },
     },
@@ -328,6 +330,8 @@ beforeAll(async () => {
   const { panelOperationsRouter, productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
   const { ensurePanelOperationsSchema } = await import("../../infrastructure/postgres-migrations/20261118-panel-operations/schema");
   await ensurePanelOperationsSchema(state.pool);
+  const { ensurePanelOperationUploadsSchema } = await import("../../infrastructure/postgres-migrations/20261122-panel-operation-uploads/schema");
+  await ensurePanelOperationUploadsSchema(state.pool);
 
   const app = express();
   app.use(express.json());
@@ -735,4 +739,95 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
     [agentIds.readable],
   );
   expect(agentRows.rows[0]?.skills).toEqual([]);
+});
+
+// Runs after the panel above is registered.
+it("stages a skill ZIP for skills.import and confirms an overwrite naming the file and the skill, over HTTP backed by PG", async () => {
+  const use = { applicationId: "app-m7", useId: "owners" };
+  const operation = { ...use, operationId: "skillList.import" };
+  const packageOf = (body: string) => {
+    const archive = new AdmZip();
+    archive.addFile("uploaded-skill/SKILL.md", Buffer.from(`---\nname: uploaded-skill\ndescription: Uploaded\n---\n${body}\n`));
+    return archive.toBuffer();
+  };
+  const stage = (bytes: Buffer, name: string, ref: object = operation) => {
+    const form = new FormData();
+    form.set("operation", JSON.stringify(ref));
+    form.set("file", new Blob([new Uint8Array(bytes)]), name);
+    return fetch(`${state.base}/api/panel-operations/uploads`, { method: "POST", headers: { "Accept-Language": "zh-CN" }, body: form });
+  };
+  const uploads = async () => (await state.pool!.query(`SELECT id FROM "${state.schema}".panel_operation_uploads`)).rows.map(row => row.id);
+  const prepare = async (uploadId: string, overwrite?: boolean) => request("POST", "panel-operations/intents", {
+    ...operation, call: { target: null, input: { file: { kind: "upload", uploadId }, ...(overwrite && { overwrite }) } },
+  }, "zh-CN");
+  const dispatch = async (intentId: string) =>
+    (await request("POST", `panel-operations/intents/${intentId}/dispatch`, {}, "zh-CN")).json();
+
+  const described = await request("POST", "product-panels/read", {
+    source: { kind: "registered", ...use }, memberPath: [{ member: "skillList" }], operations: true, inputs: {},
+  });
+  expect(productPanelOperationsReadResponseSchema.parse(await described.json())).toMatchObject({
+    status: "ready",
+    value: {
+      import: {
+        handlerRef: IMPORT_SKILL, kind: "action", effect: "write", batch: false, target: { source: "none" },
+        upload: { input: "file", accept: [{ mime: "application/zip", extension: ".zip" }], maxBytes: 20 * 1024 * 1024 },
+      },
+    },
+  });
+
+  // The declaration decides what is kept: its extensions and its own limit, below the platform's.
+  const wrongType = await stage(Buffer.from("text"), "notes.txt");
+  expect(wrongType.status).toBe(400);
+  expect(await wrongType.json()).toMatchObject({ error: { code: "UPLOAD_TYPE_UNSUPPORTED", details: { extensions: [".zip"] } } });
+  const tooLarge = await stage(Buffer.alloc(20 * 1024 * 1024 + 1), "large.zip");
+  expect(tooLarge.status).toBe(413);
+  expect(await tooLarge.json()).toMatchObject({ error: { code: "UPLOAD_TOO_LARGE", details: { maxBytes: 20 * 1024 * 1024 } } });
+  expect(await uploads()).toEqual([]);
+
+  const first = packageOf("First");
+  const staged = await stage(first, "上传技能.zip");
+  expect(staged.status).toBe(200);
+  const receipt = await staged.json();
+  expect(receipt).toEqual({ uploadId: expect.any(String), name: "上传技能.zip", size: first.length, mime: "application/zip" });
+
+  // A file staged for another person or that has gone is refused before an intent exists.
+  const missing = await prepare(randomUUID());
+  expect(missing.status).toBe(409);
+  expect(await missing.json()).toMatchObject({ error: { code: "UPLOAD_NOT_FOUND" } });
+
+  // A new skill name needs no confirmation; success discards the staged file.
+  const fresh = await (await prepare(receipt.uploadId)).json();
+  expect(fresh.confirmation).toEqual({ kind: "none" });
+  expect(await dispatch(fresh.intentId)).toMatchObject({
+    kind: "dispatched",
+    outcome: { kind: "success", data: { id: "uploaded-skill" }, affected: { objects: [{ objectType: SKILL, primaryKey: "uploaded-skill" }] } },
+  });
+  expect(await uploads()).toEqual([]);
+
+  // The same name is refused with its id and the file is kept, so the overwrite reuses it under one named confirmation.
+  const second = packageOf("Second");
+  const again = await (await stage(second, "上传技能-v2.zip")).json();
+  const refused = await (await prepare(again.uploadId)).json();
+  expect(await dispatch(refused.intentId)).toMatchObject({
+    kind: "dispatched", outcome: { kind: "refusal", code: "SKILL_EXISTS", details: { skillId: "uploaded-skill" } },
+  });
+  expect(await uploads()).toEqual([again.uploadId]);
+  const overwrite = await (await prepare(again.uploadId, true)).json();
+  expect(overwrite.confirmation).toEqual({
+    kind: "impact",
+    impact: {
+      summary: "将用上传的技能包覆盖已有技能 uploaded-skill。",
+      objects: [{ target: { objectType: SKILL, primaryKey: "uploaded-skill" }, label: "uploaded-skill" }],
+      total: 1,
+    },
+    upload: { name: "上传技能-v2.zip", size: second.length, mime: "application/zip" },
+  });
+  expect(await dispatch(overwrite.intentId)).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  expect(await uploads()).toEqual([]);
+  const installed = new AdmZip(Buffer.from(await (await request("POST", "panel-operations/read", {
+    ...use, operationId: "skillDetail.export",
+    call: { target: { kind: "object", objectType: SKILL, primaryKey: "uploaded-skill" }, input: {} },
+  })).arrayBuffer()));
+  expect(installed.readAsText("SKILL.md")).toContain("Second");
 });

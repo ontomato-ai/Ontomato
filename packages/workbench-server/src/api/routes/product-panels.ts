@@ -2,8 +2,9 @@ import {
   createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
   inspectPanelOperationImpactRequestSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
   panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
-  readPanelOperationRequestSchema, readPanelOperationResponseSchema, updatePanelOperationSettingsRequestSchema,
+  panelUploadRequestSchema, readPanelOperationRequestSchema, readPanelOperationResponseSchema, updatePanelOperationSettingsRequestSchema,
 } from "@ontomato/contracts/panel-agent";
+import { PANEL_UPLOAD_MAX_BYTES, PANEL_UPLOADS_PATH, panelUploadReceiptSchema } from "@ontomato/contracts/panel-upload";
 import { panelDownloadFileSchema } from "@ontomato/contracts/panel-download";
 import { agentSessionRefSchema } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
@@ -13,10 +14,11 @@ import {
 } from "@ontomato/contracts/panel-host";
 import {
   dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
-  projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
+  projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor, stagePanelUpload,
 } from "../../services/product-panels/operations";
 import { panelOperationStore } from "../../services/product-panels/operation-store";
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
+import multer from "multer";
 import { z } from "zod";
 import {
   applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
@@ -39,6 +41,7 @@ import {
   validateApplicationPanelReferences,
 } from "../../services/product-panels/current";
 import { HttpError } from "../../utils/errors";
+import { tForLocale } from "../../i18n";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
 import { validateProjectionComponent } from "../../services/product-panels/component-catalogue";
@@ -255,6 +258,27 @@ panelOperationsRouter.post("/panel-operations/read", wrap(async (req, res) => {
   }).send(body);
 }));
 
+// The owner's own limit is checked after the operation is known; this only bounds what is read into memory.
+const pickedFile = multer({
+  storage: multer.memoryStorage(), defParamCharset: "utf8", limits: { fileSize: PANEL_UPLOAD_MAX_BYTES, files: 1, fields: 1 },
+}).single("file");
+const readPickedFile: RequestHandler = (req, res, next) => pickedFile(req, res, error => {
+  if (error instanceof multer.MulterError)
+    next(error.code === "LIMIT_FILE_SIZE"
+      ? new HttpError(413, tForLocale(context(req).credentials.locale, "panels.upload.tooLarge", { megabytes: PANEL_UPLOAD_MAX_BYTES / 1024 / 1024 }),
+        "UPLOAD_TOO_LARGE", { maxBytes: PANEL_UPLOAD_MAX_BYTES })
+      : new HttpError(400, error.message, "INVALID_REQUEST"));
+  else next(error);
+});
+panelOperationsRouter.post(PANEL_UPLOADS_PATH, readPickedFile, wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  let operation: unknown;
+  try { operation = JSON.parse(String(req.body?.operation)); }
+  catch { throw new HttpError(400, "The operation field must be JSON", "INVALID_REQUEST"); }
+  const request = panelUploadRequestSchema.parse({ operation });
+  const picked = req.file && { name: req.file.originalname, bytes: req.file.buffer };
+  res.json(panelUploadReceiptSchema.parse(await stagePanelUpload(owner, credentials, request.operation, picked)));
+}));
 panelOperationsRouter.post("/panel-operations/inspect-impact", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const input = inspectPanelOperationImpactRequestSchema.parse(req.body);
