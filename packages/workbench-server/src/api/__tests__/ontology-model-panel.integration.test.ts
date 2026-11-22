@@ -61,15 +61,19 @@ function seed() {
 
 const touching = (className: string) =>
   [...model.relationships].filter(([, rel]) => rel.fromclass === className || rel.toclass === className);
-const relationshipView = ([relationship, rel]: [string, typeof model.relationships extends Map<string, infer V> ? V : never]) =>
-  ({ relationship, ...rel });
+const classLabel = (className: string) => model.classes.get(className)?.showName || className;
+const relationshipView = ([relationship, rel]: [string, typeof model.relationships extends Map<string, infer V> ? V : never]) => ({
+  relationship, ...rel, fromShowName: classLabel(rel.fromclass), toShowName: classLabel(rel.toclass),
+});
 function objectTypeView(className: string) {
   const { showName, classDesc, attrs } = model.classes.get(className)!;
   const keys = attrs.filter(attr => attr.primaryKey);
+  const searchableAttributes = [...new Set(attrs.flatMap(attr => [attr.showName, attr.name].filter(Boolean)))];
   return {
     className, showName, classDesc, attributeCount: attrs.length,
     businessKeyCount: attrs.filter(attr => attr.businessKey).length, relationshipCount: touching(className).length,
     primaryKey: keys.length === 1 ? { status: "ok", name: keys[0]!.name } : { status: "missing" },
+    searchableAttributes,
   };
 }
 const textField = (pointer: string, label: string, required: boolean) => ({
@@ -304,7 +308,7 @@ it("serves the ontology model's catalog reads to a panel viewer through the owne
     {
       primaryKey: "warehouse", label: "Warehouse",
       fields: { className: "warehouse", showName: "Warehouse", classDesc: "", attributeCount: "2", businessKeyCount: "0",
-        relationshipCount: "1", primaryKey: "ok" },
+        relationshipCount: "1", primaryKey: "ok", searchableAttributes: ["ID", "id", "CODE", "code"] },
       fieldLabels: { className: "API name", showName: "Display name", classDesc: "Description" },
     },
     expect.objectContaining({ primaryKey: "item", label: "item" }),
@@ -315,9 +319,17 @@ it("serves the ontology model's catalog reads to a panel viewer through the owne
     { primaryKey: '["warehouse","code"]', label: "CODE" },
   ]);
   expect(await read("relationships", "rows")).toEqual([{
-    primaryKey: "contains", label: "Contains",
-    fields: { fromclass: "warehouse", toclass: "item", desc: "Contains", fromField: "code", toField: "warehouse_code" },
-    fieldLabels: { fromclass: "Source object", toclass: "Target object", desc: "Description", fromField: "Source field", toField: "Target field" },
+    primaryKey: "contains", label: "Contains", subtitle: "Warehouse → item",
+    fields: {
+      fromclass: "warehouse", toclass: "item",
+      fromObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "warehouse", label: "Warehouse" },
+      toObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "item", label: "item" },
+      desc: "Contains", fromField: "code", toField: "warehouse_code",
+    },
+    fieldLabels: {
+      fromclass: "Source object", toclass: "Target object", fromObject: "Source object", toObject: "Target object",
+      desc: "Description", fromField: "Source field", toField: "Target field",
+    },
   }]);
   expect(await read("summary", "record")).toMatchObject({ primaryKey: "warehouse", fields: { attributeCount: "2" } });
   expect(await read("create", "form")).toMatchObject({
