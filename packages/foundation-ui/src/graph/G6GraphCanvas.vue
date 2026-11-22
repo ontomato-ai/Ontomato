@@ -298,7 +298,14 @@ async function create(width: number, height: number) {
   target.on("canvas:click", () => emit("blank"));
   target.on("node:dblclick", (event: any) => emit("activate", { kind: "node", id: String(event.target.id) }));
   target.on("edge:dblclick", (event: any) => emit("activate", { kind: "edge", id: String(event.target.id) }));
+  // A drag with Shift on an editable canvas draws a relation (`create-edge`), and G6 still ends a drag for the node it
+  // started from: that node moved nowhere, so its end is no move.
+  let drawingRelation = false;
+  target.on("node:dragstart", (event: any) => {
+    drawingRelation = props.editable && event.shiftKey;
+  });
   target.on("node:dragend", (event: any) => {
+    if (drawingRelation) return;
     const id = String(event.target.id);
     const [x, y] = target.getElementPosition(id);
     emit("move", id, { x, y });
