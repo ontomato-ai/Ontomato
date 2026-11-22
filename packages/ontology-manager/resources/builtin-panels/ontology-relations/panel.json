@@ -24,29 +24,47 @@
       }
     },
     "members": {
-      "catalogue": {
-        "component": "PanelData",
+      "list": {
+        "component": "ObjectList",
         "type": "platform:Relationship",
         "data": {
           "rows": "list"
         },
+        "state": {
+          "selected": "selected",
+          "search": "search"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": true,
+          "fallbackToFirst": true,
+          "emptyText": "relations.empty",
+          "emptyHint": "relations.emptyHint"
+        },
         "id": "builtin-product-2a6a25e8-ec04-41aa-8146-e49741e7d530"
       },
-      "types": {
-        "component": "PanelData",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "list"
-        },
-        "id": "builtin-product-f0bcb58b-8ef7-4f65-b818-336c72ac6db7"
-      },
-      "detail": {
-        "component": "PanelData",
+      "header": {
+        "component": "ObjectHeader",
         "target": "selected",
         "data": {
           "record": "record"
         },
+        "operation": "relationships.delete",
         "id": "builtin-product-1aaa68ea-6ded-4fe8-abb7-f8c51b43d8e7"
+      },
+      "connections": {
+        "component": "ObjectSummary",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "fields": [
+            "fromObject",
+            "toObject"
+          ]
+        },
+        "id": "builtin-product-f0bcb58b-8ef7-4f65-b818-336c72ac6db7"
       },
       "form": {
         "component": "ObjectForm",
@@ -57,15 +75,6 @@
         },
         "operation": "platform:Relationship.save",
         "id": "builtin-product-6063073e-28b1-4a47-bcff-64b305b1a600"
-      },
-      "remove": {
-        "component": "OperationButton",
-        "operation": "relationships.delete",
-        "target": "selected",
-        "config": {
-          "type": "danger"
-        },
-        "id": "builtin-product-655a5639-5fd3-4e29-9192-096597b6a77d"
       }
     },
     "commands": {
@@ -90,10 +99,28 @@
   "content": {
     "messages": {
       "zh-CN": {
-        "relations.command.create": "新建关系类型"
+        "panel.name": "关系类型",
+        "relations.command.create": "新建关系类型",
+        "relations.empty": "暂无关系类型",
+        "relations.emptyHint": "点击右上角「新建关系类型」创建第一条关系。",
+        "relations.selectPlaceholder": "从左侧选择一条关系类型查看并编辑详情",
+        "relations.backToList": "← 返回关系类型",
+        "relations.createTitle": "新建关系类型",
+        "relations.section.connections": "对象连接",
+        "relations.section.basic": "基本信息",
+        "relations.navigateFailed": "无法打开目标对象类型"
       },
       "en": {
-        "relations.command.create": "New relation type"
+        "panel.name": "Relation types",
+        "relations.command.create": "New relation type",
+        "relations.empty": "No relation types",
+        "relations.emptyHint": "Select \"New relation type\" above to create one.",
+        "relations.selectPlaceholder": "Select a relation type from the list to view or edit it.",
+        "relations.backToList": "← Back to relation types",
+        "relations.createTitle": "New relation type",
+        "relations.section.connections": "Connected object types",
+        "relations.section.basic": "Basic information",
+        "relations.navigateFailed": "Unable to open the target object type"
       }
     }
   }
