@@ -11,6 +11,7 @@ import { useFormControls } from "./form-controls";
  * panel. Python, Markdown and the like are the owner's text as it is. JSON whose value schema is not a string is the
  * owner's JSON value: the source shown is that value, an edit that parses writes the parsed value, and one that does not
  * stays here as text, marked on the field, and the form will not save it; nothing is ever stored as a string instead.
+ * No value is drawn as no text, as every empty field is, never as the word null, and emptied text is no value.
  */
 const props = defineProps<{ field: PanelFormField; path: string; disabled: boolean }>();
 const CodeEditor = defineAsyncComponent(() => import("@ontomato/foundation-ui/code").then((module) => module.CodeEditor));
@@ -23,13 +24,14 @@ const parses = computed(() => language.value === "json" && props.field.valueSche
 const value = computed(() => valueAt(controls.values.value, props.path));
 
 const format = (held: RuntimeJsonValue | undefined) =>
-  parses.value ? (held === undefined ? "" : JSON.stringify(held, null, 2)) : typeof held === "string" ? held : "";
+  parses.value ? (held === undefined || held === null ? "" : JSON.stringify(held, null, 2)) : typeof held === "string" ? held : "";
 const text = ref(format(value.value));
 /** Whether the text shown is not a value the form holds. */
 let invalid = false;
 
 function shows(held: RuntimeJsonValue | undefined): boolean {
   if (!parses.value) return text.value === held;
+  if (text.value.trim() === "") return held === undefined || held === null;
   try {
     return JSON.stringify(JSON.parse(text.value)) === JSON.stringify(held);
   } catch {
@@ -53,7 +55,7 @@ function edit(source: string) {
   if (!parses.value) return controls.set(props.path, source);
   let parsed: RuntimeJsonValue;
   try {
-    parsed = JSON.parse(source) as RuntimeJsonValue;
+    parsed = source.trim() === "" ? null : JSON.parse(source) as RuntimeJsonValue;
   } catch (reason) {
     invalid = true;
     controls.invalid(props.path, t("platform.formInvalidJson", { message: (reason as Error).message }));

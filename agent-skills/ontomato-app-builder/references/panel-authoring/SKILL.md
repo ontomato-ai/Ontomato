@@ -16,8 +16,8 @@ description: Build and register an Ontomato panel from its owner's reads and ope
    Use the [member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel) to declare projections. Choose an official display component or
    [PanelData](CODE.md#read-declared-data) for custom Vue, and use `target.projectionId` for an existing projection.
    For graphs, see [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
-3. Write the template and interactions in Vue. Use [Element Plus template tags](CODE.md#use-element-plus-in-the-template)
-   for interface controls, follow the [direct runtime](CODE.md#write-a-vue-panel), and declare the
+3. Write the template and interactions in Vue. Use [the SDK's interface controls](CODE.md#panel-controls-and-platform-behavior),
+   follow the [direct runtime](CODE.md#write-a-vue-panel), and declare the
    [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
 4. Check and register the workspace, then open the registered entry. Use the page's input box
    for the [assistant check](#check-the-assistant-from-the-page). If the result looks wrong, follow

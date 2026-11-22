@@ -8,7 +8,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { confirmDiscard, humanIntents, ignoreChanges,
+import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -91,13 +91,13 @@ const panel = panelRecord("panel-form-controls", "Form controls", manifest);
 const use = panelUse("use-form-controls", "form-controls", panel.id, "/ontology/agents");
 
 const formPath = "/api/assistant/agent-definitions/form";
-async function open(outcome: PanelOperationOutcome = { kind: "success", data: {} }) {
+async function open(outcome: PanelOperationOutcome = { kind: "success", data: {} }, held: PanelFormValues = stored) {
   const intents = humanIntents(() => outcome, { source: "input", input: "agent" });
   const sent = installPlatform((request: Sent) => {
     if (request.path === `/api/product-projections/${projection.id}`) return Response.json({ projection });
     if (request.path === formPath) {
       const { values } = request.body as { values?: PanelFormValues };
-      return Response.json({ fields, values: values ?? stored, errors: [], save });
+      return Response.json({ fields, values: values ?? held, errors: [], save });
     }
     return intents(request) ?? nothingAt(request);
   });
@@ -168,6 +168,26 @@ it("edits parameter rows at their absolute paths, and a message follows its row 
   expect(form.values.value.parameters).toEqual([storedParameters[0], { name: "", type: "string", required: false }]);
 });
 
+it("keeps acknowledged fields out of the next submission and discards only unsaved changes", async () => {
+  const { context, sent } = await open({
+    kind: "failure", code: "SAVE_FAILED", message: "Parameter write failed",
+    savedFields: { "/name": "Saved name" },
+    errors: [{ field: "/parameters/1/name", code: "target_unavailable", message: "Parameter write failed" }],
+  });
+  type("/name", "Saved name");
+  type("/parameters/1/name", "Unsaved parameter");
+  await nextTick();
+  await expect(context.instance.invoke("definition.save")).rejects.toThrow("Parameter write failed");
+  await vi.waitFor(() => expect(error("/parameters/1/name")).toBe("Parameter write failed"));
+  await expect(context.instance.invoke("definition.save")).rejects.toThrow("Parameter write failed");
+  expect(formSaveCalls(sent)[1]!.input).toMatchObject({ submittedFields: ["/parameters"] });
+
+  item("/name")!.closest("form")!.querySelector<HTMLButtonElement>(".sdk-owner-form-actions button")!.click();
+  await confirmDiscard();
+  expect(item("/name")?.querySelector("input")?.value).toBe("Saved name");
+  expect(item("/parameters/1/name")?.querySelector("input")?.value).toBe("count");
+});
+
 it("asks the owner again with a row field's absolute path when it refreshes the form", async () => {
   const { context, sent } = await open();
   context.instance.forms.handle("definition")!.set("/parameters/1/type", "string");
@@ -223,6 +243,22 @@ it("saves Python as text and JSON as the owner's value, and never saves JSON tha
     schema: { type: "array", items: { type: "string" } },
     script: "def run(order):\n    return None",
   });
+});
+
+// An empty JSON value is drawn empty, as every other empty field is, never as the word null; emptying the text empties
+// the value instead of marking it as JSON that does not parse.
+it("draws an empty JSON value as empty and saves emptied text as no value", async () => {
+  const { context, sent } = await open(undefined, { ...stored, schema: null });
+  await vi.waitFor(() => expect(item("/schema")?.querySelector(".cm-editor")).toBeTruthy(), { timeout: 5000 });
+  expect(item("/schema")!.querySelector(".cm-content")!.textContent).toBe("");
+
+  code("/schema", '{"type": "string"}');
+  await nextTick();
+  code("/schema", "");
+  await nextTick();
+  expect(error("/schema")).toBeFalsy();
+  await context.instance.invoke("definition.save");
+  expect(submitted(sent)[0]!).toMatchObject({ schema: null });
 });
 
 it("discarding unparsed JSON shows the value the form holds again", async () => {

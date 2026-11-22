@@ -38,6 +38,11 @@ public class LangServiceImpl implements LangService {
 		}
 	}
 
+	@Override
+	public java.util.Set<String> installedLanguages() {
+		return java.util.Set.copyOf(langMap.keySet());
+	}
+
 	// The requested pack, then the installed English pack, then the key itself: an edition installs only
 	// the packs it ships (open source: en only), so a request for another language must not fail.
 	@Override

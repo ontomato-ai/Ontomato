@@ -347,6 +347,23 @@ public class BusinessConfigController {
 		}
 	}
 	
+    @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
+    @GetMapping("/businessConfig/generalForm")
+    public JSONObject generalForm(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String locale) {
+        BusinessConfig settings = businessConfigService.get(SystemUtils.getCurUser().getDomainId());
+        JSONObject fields = new JSONObject();
+        for (String name : java.util.List.of("knowledgeMaxResult", "dslCookerTimeoutSeconds", "lang")) {
+            String key = "GeneralSettings." + name;
+            fields.put(name, JSONObject.of("label", langService.get(locale, key), "help", langService.get(locale, key + "Hint")));
+        }
+        return JSONObject.of(
+                "knowledgeMaxResult", settings.getKnowledgeMaxResult(),
+                "dslCookerTimeout", settings.getDslCookerTimeout(),
+                "lang", settings.getLang(),
+                "languages", langService.installedLanguages(),
+                "fields", fields);
+    }
+
 	@GetMapping("/businessConfig/getConfig")
     @ResponseBody
     public JSONObject getConfig() {

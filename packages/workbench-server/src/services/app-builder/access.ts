@@ -2,7 +2,7 @@ import { z } from "zod";
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
 import { buildUrl, getApiConfig } from "../../config/data-query-api";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { backendGet } from "../../utils/backend-client";
+import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 
 const navigationResponseSchema = z.object({
@@ -17,7 +17,7 @@ export async function assertAppBuilderAccess(credentials: AssistantCredentials):
     const response = await backendGet(
       "application-navigation",
       buildUrl(api, "/platform/applications?purpose=navigation"),
-      { ...credentials, timeoutMs: api.timeout, retries: 1 },
+      { headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey, credentials.headers), timeoutMs: api.timeout, retries: 1 },
     );
     applications = navigationResponseSchema.parse(JSON.parse(response.text)).data;
   } catch (error) {

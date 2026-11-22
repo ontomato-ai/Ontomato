@@ -550,6 +550,23 @@ function showRefusal(reason: unknown) {
   errors.value = reason instanceof PlatformObjectRefusal ? reason.fields : {};
 }
 
+function takeSavedFields(receipt: PlatformObjectRefusal) {
+  const saved = Object.entries(receipt.savedFields);
+  if (!saved.length) return;
+  const previous = ownerOpened.value!;
+  const baseline = { ...previous, values: saved.reduce(
+    (all, [path, value]) => withValueAt(all, path, value), previous.values,
+  ) };
+  ownerOpened.value = baseline;
+  opened.value = fixDescription(baseline);
+  const savedPaths = new Set(saved.map(([path]) => path));
+  const stillChanged = changedPaths(fields.value, opened.value.values, values.value);
+  const keep = (path: string) => !savedPaths.has(path) || stillChanged.has(path);
+  submitted.value = new Set([...submitted.value].filter(keep));
+  changed.value = new Set([...changed.value].filter(keep));
+  if (held) held = { ...held, baseline, submitted: submitted.value, changed: changed.value };
+}
+
 /**
  * Writes the form through its owner — the selected object's update, or the create — with the revision it was read at
  * where the owner has one. An owner that refuses has its reason shown beside the form and its field messages on the
@@ -583,6 +600,7 @@ async function write(): Promise<unknown> {
     await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);
     return saved;
   } catch (reason) {
+    if (reason instanceof PlatformObjectRefusal && targetKey(target.value) === targetKey(into)) takeSavedFields(reason);
     showRefusal(reason);
     throw reason;
   } finally {
@@ -737,8 +755,8 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
   outline: none;
   box-shadow: var(--focus-ring);
 }
-/* Narrow, the list gives way to the sections. */
-@container sdk-owner-form (max-width: 900px) {
+/* Narrow, the list gives way to the sections: below this the fields beside it would be narrower than a line of text. */
+@container sdk-owner-form (max-width: 720px) {
   .sdk-owner-form-sectioned {
     grid-template-columns: minmax(0, 1fr);
   }

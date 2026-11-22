@@ -16,4 +16,5 @@ export const productPanelCatalogQuerySchema = productCatalogQuerySchema.extend({
 export type ProductPanelCatalogQuery = z.infer<typeof productPanelCatalogQuerySchema>;
 
 export const applicationCatalogueScopeSchema = z.enum(["visible", "maintainable"]);
+export const applicationCatalogueSortSchema = z.enum(["id", "name", "updated"]);
 export const applicationFormSectionSchema = z.enum(["identity", "entries", "create"]);

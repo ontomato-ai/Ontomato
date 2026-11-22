@@ -286,6 +286,7 @@ export default {
     "operationChecked": "{label} ({count} checked)",
     "operationDownloaded": "Downloaded {name}",
     "dataEmpty": "Nothing to show",
+    "dataNoMatch": "Nothing matches your search or filters",
     "dataForbidden": "You do not have access to this",
     "dataAwaiting": "Select an item first",
     "dataUnreachable": "The data could not be read. Try again.",
@@ -1143,6 +1144,11 @@ export default {
       "product": "Product"
     },
     "types": {
+      "publishedMcpService": "Published MCP service",
+      "auditLog": "Audit log",
+      "generalSettings": "General settings",
+      "diagnosisModel": "Diagnosis model",
+      "builderAgent": "App builder agent",
       "scheduledTask": "Scheduled task",
       "modelOption": "Model",
       "mcpServiceOption": "MCP service",

@@ -33,36 +33,15 @@ Use the flat `panel.name` key for the panel title, for example
 when present. Otherwise it uses the panel name in the reader's locale, then the platform's default locale and the
 name in `registration.json`. Keep the entry's menu metadata for entries that belong in the menu.
 
-## Use Element Plus in the template
+## Panel controls and platform behavior
 
-For interface controls, write the Element Plus tags directly in `panel.html`. Use `el-button`, `el-tag`,
-`el-tabs` with `el-tab-pane`, `el-table` with `el-table-column`, `el-input`, `el-select` with `el-option`,
-`el-dialog`, `el-drawer`, `el-empty` and `el-alert` as needed. Keep the tags unwrapped and let the platform's
-Element Plus and enterprise theme style the controls, including buttons and tags. Keep panel CSS for layout
-and choose the wiring by what each control does. An `el-table` can render records read through a declared
-projection, and an `el-button` can invoke a registered owner operation.
-
-In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel`. Keep Element Plus in the template. The
-whole-package import `import "element-plus"` is unavailable in panel scripts. For transient feedback, import
+Use the Ontomato SDK's interface controls. In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel`.
+For transient feedback, import
 `usePanelContext` from `@ontomato/sdk/panel`, capture `const panel = usePanelContext()` in setup and call
 `panel.notify({ kind: "success", text: "Export complete" })` from the event handler. `kind` accepts
-`"success"`, `"info"`, `"warning"` or `"error"`. For a message that stays on the page, use `<el-alert>`.
+`"success"`, `"info"`, `"warning"` or `"error"`.
 
-This template fragment uses local Vue refs `optionsOpen` (initially `false`) and `density` (initially
-`"comfortable"`) returned by setup.
-
-```html
-<el-button @click="optionsOpen = true">View options</el-button>
-<el-tag>{{ density === 'compact' ? 'Compact' : 'Comfortable' }}</el-tag>
-<el-dialog v-model="optionsOpen" title="View options">
-  <el-select v-model="density" aria-label="Display density">
-    <el-option label="Comfortable" value="comfortable"></el-option>
-    <el-option label="Compact" value="compact"></el-option>
-  </el-select>
-</el-dialog>
-```
-
-If an `el-dialog` or `el-drawer` mounts at the page root, check its theme, stacking and keyboard focus in the
+If a dialog or drawer mounts at the page root, check its theme, stacking and keyboard focus in the
 application that opens it. Include a check when the panel is beside a conversation.
 
 Leave the following to the platform.
@@ -131,12 +110,12 @@ Use `labelKey` for a column heading from the panel's messages.
 
 Place the member with `<projection slot="list"></projection>`. In its template, `#toolbar-actions` adds a
 control to the visible toolbar and `#batch-actions="{ checked, clear }"` adds controls for checked rows.
-For example, open the local options dialog from the toolbar while keeping the built-in list behavior.
+For example, place an already declared `review` member in the toolbar.
 
 ```html
 <projection slot="list">
   <template #toolbar-actions>
-    <el-button @click="optionsOpen = true">View options</el-button>
+    <projection slot="review"></projection>
   </template>
 </projection>
 ```

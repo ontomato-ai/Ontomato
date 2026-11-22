@@ -100,9 +100,12 @@ const Applications = {
     watch(mode, (next, previous) => {
       if (previous === "list") positions.set(listKey(), scrollContainer().scrollTop);
     });
-    watch([mode, catalogue], ([next, data]) => {
-      if (next === "list" && data.status === "ready" && positions.has(listKey()))
-        scrollContainer().scrollTop = positions.get(listKey());
+    watch([listRegion, catalogue], ([region, data], _previous, onCleanup) => {
+      const position = positions.get(listKey());
+      if (!region || data.status !== "ready" || position === undefined) return;
+      // The list subtree is mounted separately from the mode change; let its table lay out first.
+      const frame = requestAnimationFrame(() => { scrollContainer().scrollTop = position; });
+      onCleanup(() => cancelAnimationFrame(frame));
     }, { flush: "post" });
 
     watch(rows, (list) => {
@@ -214,7 +217,8 @@ const Applications = {
     async function openClassCatalogue() {
       classLinkNote.value = "";
       try {
-        await navigate(`/ontology/classes/${encodeURIComponent(APPLICATION)}`);
+        const state = JSON.stringify({ mode: "type", view: "list", selectedType: APPLICATION });
+        await navigate(`/ontology/assets/capability-map?${new globalThis.URLSearchParams({ state })}`);
       } catch (reason) {
         classLinkNote.value = `平台没有打开类目录：${reason instanceof Error ? reason.message : String(reason)}`;
       }
