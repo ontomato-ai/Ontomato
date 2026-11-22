@@ -28,6 +28,7 @@ export const en = {
   "panels.simplePages.saveBuilder": "Save builder agent",
   "panels.simplePages.saveGeneral": "Save general settings",
   "panels.simplePages.invalidModel": "Choose an available chat model or use the domain default.",
+  "panels.simplePages.modelMissing": "Model \"{id}\" is no longer configured. Choose another model; until then this agent cannot run.",
   "panels.simplePages.invalidBuilderName": "Enter a name of 1 to 200 characters.",
   "panels.simplePages.invalidGeneral": "Enter a valid setting value.",
   "panels.simplePages.builderDescription": "Application design, code generation and publishing conversations",
