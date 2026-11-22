@@ -5,7 +5,7 @@
   .skills-data { display: none; }
   .skills-body {
     display: grid;
-    grid-template-columns: clamp(19rem, 32%, 24rem) minmax(0, 1fr);
+    grid-template-columns: clamp(15rem, 30%, 22rem) minmax(0, 1fr);
     height: max(24rem, calc(100vh - 15rem));
     min-height: 0;
     overflow: hidden;
@@ -77,7 +77,7 @@
   }
   .package {
     display: grid;
-    grid-template-columns: clamp(12rem, 26%, 15rem) minmax(0, 1fr);
+    grid-template-columns: clamp(9.5rem, 26%, 14rem) minmax(0, 1fr);
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -95,12 +95,12 @@
     padding: var(--spacing-md) var(--spacing-lg);
     overflow: auto;
   }
-  @container (max-width: 56rem) {
+  @container (max-width: 45rem) {
     .skills-body { grid-template-columns: minmax(0, 1fr); height: auto; overflow: visible; }
     .skills-list { max-height: 22rem; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
     .skills-detail { min-height: 24rem; }
   }
-  @container (max-width: 40rem) {
+  @container (max-width: 36rem) {
     .package { grid-template-columns: minmax(0, 1fr); }
     .package-tree { max-height: 12rem; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
   }
