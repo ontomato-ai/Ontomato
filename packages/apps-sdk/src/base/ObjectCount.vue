@@ -255,7 +255,6 @@ const accessibleLabel = computed<string | undefined>(() => {
 <style scoped>
 .sdk-object-count {
   align-items: baseline;
-  align-self: flex-start;
   color: var(--el-text-color-secondary);
   display: inline-flex;
   flex-wrap: nowrap;
@@ -265,6 +264,7 @@ const accessibleLabel = computed<string | undefined>(() => {
   line-height: var(--leading-sm);
   min-width: 0;
   white-space: nowrap;
+  width: fit-content;
 }
 .sdk-object-count-item {
   align-items: baseline;
