@@ -28,6 +28,10 @@ const operationId = "renew.renewCredential";
 const taskId = "10000000-0000-4000-8000-000000000001";
 const runId = "20000000-0000-4000-8000-000000000001";
 const run = { ...examples.runs.find(item => item.response.status === "completed")!.response, id: runId, taskId };
+const olderRun = {
+  ...run, id: "20000000-0000-4000-8000-000000000002", result: "Earlier run result",
+  executionDetails: { source: "owner snapshot" },
+};
 const row = {
   primaryKey: taskId, label: "Nightly test", fields: {
     application: "agents", frequency: "Every Monday", state: "off", nextRun: "", timeZone: "UTC",
@@ -89,6 +93,8 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
   ] });
   router.beforeEach(detailSelectionGuard(DETAIL_SELECTIONS));
   router.beforeEach(panelEntryGuard(router));
+  const historyReads: Array<string | null> = [];
+  let checkHistory = false;
   const sent = installPlatform(request => {
     const { path } = request;
     if (path === "/api/data-query/platform/applications/schedules/panel-uses")
@@ -107,8 +113,17 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       switch (body.dataName) {
         case "rows": return Response.json({ status: "ready", value: [row, pausedRow, ...otherApplications] });
         case "record": return Response.json({ status: "ready", value: row });
-        case "runs": return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });
-        case "run": return Response.json({ status: "ready", value: run });
+        case "runs": {
+          if (!checkHistory) return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });
+          const cursor = body.runtimeParams?.cursor === "older" ? "older" : null;
+          const firstAttempt = !historyReads.includes(cursor);
+          historyReads.push(cursor);
+          if (firstAttempt) return Response.json({ status: "error", message: "Run records unavailable" });
+          return Response.json({
+            status: "ready", value: { runs: cursor ? [olderRun] : [run], nextCursor: cursor ? null : "older" },
+          });
+        }
+        case "run": return Response.json({ status: "ready", value: body.inputs.runId === olderRun.id ? olderRun : run });
         default: return Response.json({ status: "empty" });
       }
     }
@@ -171,6 +186,33 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       expect(element.querySelectorAll(".schedules .chips > button")).toHaveLength(6);
       expect(element.querySelector(".filter-more [aria-pressed]")?.getAttribute("aria-pressed")).toBe("true");
       expect(element.querySelector(".schedules [data-task]")?.getAttribute("data-task")).toBe(other.primaryKey);
+
+      checkHistory = true;
+      await router.push(`/schedules?taskId=${taskId}&runId=${olderRun.id}`);
+      const linked = `[data-run="${olderRun.id}"]`;
+      await vi.waitFor(() => expect(element.querySelector(`${linked} .details`)?.textContent ?? "").toContain("Earlier run result"));
+      expect(element.querySelector(`${linked} .details`)?.textContent).toContain("owner snapshot");
+      expect(element.querySelector(`${linked} .result-link`)).not.toBeNull();
+      const retryHistory = async () => {
+        const retry = await vi.waitFor(() => {
+          const button = element.querySelector<HTMLButtonElement>('[data-action="retry-history"]');
+          expect(button).not.toBeNull();
+          return button!;
+        });
+        retry.click();
+      };
+      await retryHistory();
+      const more = await vi.waitFor(() => {
+        const button = element.querySelector<HTMLButtonElement>('[data-action="more-history"]');
+        expect(button).not.toBeNull();
+        return button!;
+      });
+      more.click();
+      await retryHistory();
+      await vi.waitFor(() => expect(historyReads).toEqual([null, null, "older", "older"]));
+      await vi.waitFor(() => expect(element.querySelectorAll(`.runs ${linked}`)).toHaveLength(1));
+      expect(element.querySelectorAll(".runs [data-run]")).toHaveLength(2);
+      expect(element.querySelector(`${linked} .details`)?.textContent).toContain("Earlier run result");
     }
   } finally {
     app.unmount();

@@ -43,6 +43,8 @@
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .actions .el-button + .el-button { margin-left: 0; }
   .section-title { margin: var(--spacing-sm) 0 0; font-size: var(--text-sm); font-weight: var(--font-semibold); }
+  .run-records, .run-group { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+  .group-title { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); }
   .runs { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--el-border-color); border-radius: var(--radius-md); overflow: hidden; }
   .run { display: flex; flex-direction: column; gap: var(--spacing-xs); padding: var(--spacing-md); font-size: var(--text-sm); }
   .run + .run { border-top: 1px solid var(--el-border-color-lighter); }
@@ -207,57 +209,50 @@
               <el-button v-if="latestResult" link type="primary" size="small" @click="openResult(latestResult.resultLink)">{{ t("action.viewResult") }} →</el-button>
             </div>
 
-            <h3 class="section-title" data-records>{{ t("runs.title") }}</h3>
-            <section v-if="pinned">
-              <h4 class="group-title">{{ t("runs.linked") }}</h4>
-              <ul class="runs">
-                <li class="run focused" :data-run="pinned.id">
-                  <div class="run-head">
-                    <el-tag size="small">{{ statusLabel(pinned.status) }}</el-tag>
-                    <span>{{ t(`trigger.${pinned.trigger}`) }}</span>
-                    <span>{{ moment(pinned.startedAt, taskZone) }}</span>
-                    <span v-if="pinned.spendTime !== null">{{ t("runs.took", { time: duration(pinned.spendTime) }) }}</span>
+            <div ref="historyRecords" class="run-records">
+              <h3 class="section-title" data-records>{{ t("runs.title") }}</h3>
+              <section v-for="group in runGroups" :key="group.key" class="run-group">
+                <h4 v-if="group.key === 'linked'" class="group-title">{{ t("runs.linked") }}</h4>
+                <ul v-if="group.runs.length" class="runs">
+                  <li v-for="run in group.runs" :key="run.id" class="run" :class="{ focused: run.id === runId }" :data-run="run.id">
+                    <div class="run-head">
+                      <el-tag size="small" :type="run.status === 'failed' ? 'danger' : run.status === 'skipped' ? 'warning' : run.status === 'running' ? 'primary' : 'success'">{{ statusLabel(run.status) }}</el-tag>
+                      <span>{{ t(`trigger.${run.trigger}`) }}</span>
+                      <span>{{ moment(run.startedAt, taskZone) }}</span>
+                      <span v-if="run.spendTime !== null">{{ t("runs.took", { time: duration(run.spendTime) }) }}</span>
+                      <el-button v-if="run.resultLink" class="result-link" link type="primary" size="small" @click="openResult(run.resultLink)">{{ t("action.viewResult") }} →</el-button>
+                    </div>
+                    <p v-if="run.scheduledAt && run.trigger === 'schedule'" class="sub">{{ t("runs.scheduledFor", { time: moment(run.scheduledAt, taskZone) }) }}</p>
+                    <p v-if="run.error" class="error">{{ runError(run.error) }}</p>
+                    <markdown-view v-if="run.resultSummary" :content="run.resultSummary"></markdown-view>
+                    <p v-if="run.status === 'running'" class="sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
+                    <el-button v-if="hasDetails(run)" link type="primary" size="small" style="align-self: flex-start" :aria-expanded="expanded.has(run.id)" @click="toggleRun(run.id)">
+                      {{ expanded.has(run.id) ? t("runs.hide") : t("runs.details") }}
+                    </el-button>
+                    <dl v-if="expanded.has(run.id) && hasDetails(run)" class="details">
+                      <template v-if="run.snapshot && run.snapshot.summary.length > 0">
+                        <dt>{{ t("runs.content") }}</dt><dd>{{ summaryText(run.snapshot.summary) }}</dd>
+                      </template>
+                      <template v-if="run.result !== null">
+                        <dt>{{ t("runs.result") }}</dt><dd><pre>{{ run.result }}</pre></dd>
+                      </template>
+                      <template v-if="run.executionDetails !== null">
+                        <dt>{{ t("runs.executionDetails") }}</dt><dd><pre>{{ JSON.stringify(run.executionDetails, null, 2) }}</pre></dd>
+                      </template>
+                    </dl>
+                  </li>
+                </ul>
+                <template v-if="group.key === 'history'">
+                  <el-skeleton v-if="runsLoading" :rows="3" aria-busy="true"></el-skeleton>
+                  <el-alert v-else-if="runsFailure" :title="t('runs.loadFailed')" type="error" :closable="false" show-icon>
+                    <el-button v-if="runsFailure.retry" text size="small" data-action="retry-history" @click="runsFailure.retry()">{{ t("runs.retry") }}</el-button>
+                  </el-alert>
+                  <div v-else-if="group.runs.length === 0" class="empty" role="status"><p>{{ t("runs.empty") }}</p></div>
+                  <div v-if="nextCursor && !runsFailure" class="more">
+                    <el-button size="small" :loading="loadingMore" data-action="more-history" @click="loadMore">{{ t("runs.loadMore") }}</el-button>
                   </div>
-                  <p v-if="pinned.error" class="error">{{ runError(pinned.error) }}</p>
-                  <markdown-view v-if="pinned.resultSummary" :content="pinned.resultSummary"></markdown-view>
-                </li>
-              </ul>
-            </section>
-            <el-skeleton v-if="runsLoading" :rows="3" aria-busy="true"></el-skeleton>
-            <el-alert v-else-if="runsFailed" :title="t('runs.loadFailed')" type="error" :closable="false" show-icon>
-            </el-alert>
-            <div v-else-if="runs.length === 0" class="empty" role="status"><p>{{ t("runs.empty") }}</p></div>
-            <ul v-else class="runs">
-              <li v-for="run in runs" :key="run.id" class="run" :class="{ focused: run.id === runId }" :data-run="run.id">
-                <div class="run-head">
-                  <el-tag size="small" :type="run.status === 'failed' ? 'danger' : run.status === 'skipped' ? 'warning' : run.status === 'running' ? 'primary' : 'success'">{{ statusLabel(run.status) }}</el-tag>
-                  <span>{{ t(`trigger.${run.trigger}`) }}</span>
-                  <span>{{ moment(run.startedAt, taskZone) }}</span>
-                  <span v-if="run.spendTime !== null">{{ t("runs.took", { time: duration(run.spendTime) }) }}</span>
-                  <el-button v-if="run.resultLink" class="result-link" link type="primary" size="small" @click="openResult(run.resultLink)">{{ t("action.viewResult") }} →</el-button>
-                </div>
-                <p v-if="run.scheduledAt && run.trigger === 'schedule'" class="sub">{{ t("runs.scheduledFor", { time: moment(run.scheduledAt, taskZone) }) }}</p>
-                <p v-if="run.error" class="error">{{ runError(run.error) }}</p>
-                <markdown-view v-if="run.resultSummary" :content="run.resultSummary"></markdown-view>
-                <p v-if="run.status === 'running'" class="sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
-                <el-button v-if="hasDetails(run)" link type="primary" size="small" style="align-self: flex-start" :aria-expanded="expanded.has(run.id)" @click="toggleRun(run.id)">
-                  {{ expanded.has(run.id) ? t("runs.hide") : t("runs.details") }}
-                </el-button>
-                <dl v-if="expanded.has(run.id) && hasDetails(run)" class="details">
-                  <template v-if="run.snapshot && run.snapshot.summary.length > 0">
-                    <dt>{{ t("runs.content") }}</dt><dd>{{ summaryText(run.snapshot.summary) }}</dd>
-                  </template>
-                  <template v-if="run.result !== null">
-                    <dt>{{ t("runs.result") }}</dt><dd><pre>{{ run.result }}</pre></dd>
-                  </template>
-                  <template v-if="run.executionDetails !== null">
-                    <dt>{{ t("runs.executionDetails") }}</dt><dd><pre>{{ JSON.stringify(run.executionDetails, null, 2) }}</pre></dd>
-                  </template>
-                </dl>
-              </li>
-            </ul>
-            <div v-if="nextCursor" class="more">
-              <el-button size="small" :loading="loadingMore" @click="loadMore">{{ t("runs.loadMore") }}</el-button>
+                </template>
+              </section>
             </div>
           </template>
         </template>
