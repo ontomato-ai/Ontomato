@@ -5,7 +5,7 @@ import {
   type ApplicationCatalogueFormRequest,
 } from "@ontomato/contracts/application-catalogue";
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
-import { panelFormDescriptionSchema, type PanelFormDescription, type PanelFormField, type PanelRecord } from "@ontomato/contracts/panel-projection";
+import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { APPLICATION, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
 import { config } from "../../config/application";
@@ -42,11 +42,13 @@ export function toApplicationPanelRecord(
 ): PanelRecord {
   const language = resolveLocale(locale);
   const word = (key: string) => tForLocale(language, `panels.productCatalog.application.${key}`);
-  const subtitle = row.descriptions[language];
+  const names = { kind: "localized", values: row.names } as const;
+  const descriptions = { kind: "localized", values: row.descriptions } as const;
+  const subtitle = panelRecordFieldText(descriptions, language, "en");
   const fields: PanelRecord["fields"] = {
     id: row.id,
-    names: { kind: "localized", values: row.names },
-    descriptions: { kind: "localized", values: row.descriptions },
+    names,
+    descriptions,
     icon: row.icon,
     entryCount: row.entryCount,
     canMaintain: row.canMaintain,
@@ -85,7 +87,7 @@ export function toApplicationPanelRecord(
   return {
     primaryKey: row.id,
     className: APPLICATION,
-    label: row.names[language] || row.id,
+    label: panelRecordFieldText(names, language, "en") || row.id,
     ...(subtitle && { subtitle }),
     fields,
     fieldLabels,
@@ -163,7 +165,13 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
   const form = async (input: ApplicationCatalogueFormRequest) =>
     withDefaultAgentChoices(await client.form(input), () => defaultAgentChoices(owner.domainId, viewer.locale));
   return {
-    query, record,
+    async query(params: Record<string, unknown>) {
+      const { rows, nextCursor } = await query(params);
+      return { rows: rows.map(row => toApplicationPanelRecord(row, viewer.locale)), ...(nextCursor !== undefined && { nextCursor }) };
+    },
+    async record(primaryKey: string) {
+      return toApplicationPanelRecord(await record(primaryKey), viewer.locale);
+    },
     async grants(primaryKey: string) {
       if (!(await record(primaryKey)).canGrant)
         throw new HttpError(403, "Application edit Grant required", "PRODUCT_FORBIDDEN");
@@ -192,8 +200,12 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
       return { ...draft, values: { ...draft.values, id: allocatedId } };
     },
     async entries(primaryKey: string) {
-      const { id, entry, panelUses } = await record(primaryKey);
-      return { applicationId: id, entry, panelUses };
+      const { id, entry, panelUses, groups, framePanelId, theme } = await record(primaryKey);
+      return {
+        applicationId: id, entry, panelUses, groups,
+        ...(framePanelId !== undefined && { framePanelId }),
+        ...(theme !== undefined && { theme }),
+      };
     },
   };
 }

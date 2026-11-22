@@ -288,9 +288,9 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       query: {
         source: "type", parameterMode: "fixed",
         params: { search: "keyword", scope: "applicationScope", sort: "applicationSort", cursor: "cursor", size: "size" },
-        result: "applicationCatalogue",
+        result: "panelRecordQuery",
       },
-      record: { ...catalogueRecord, result: "applicationRecord" },
+      record: { ...catalogueRecord, result: "panelRecord" },
       entries: { ...catalogueRecord, result: "applicationEntries" },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       form: {

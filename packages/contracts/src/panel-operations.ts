@@ -15,7 +15,7 @@ import {
   applicationEntryMenuSchema, currentPanelRecordSchema, currentProjectionRecordSchema,
   productPanelListResponseSchema, productPanelUsedBySchema, productProjectionListResponseSchema, productProjectionUsedBySchema,
 } from "./product-panels";
-import { applicationCatalogueEntriesSchema, applicationCatalogueQueryResultSchema, applicationCatalogueRecordSchema } from "./application-catalogue";
+import { applicationCatalogueEntriesSchema } from "./application-catalogue";
 import { panelManifestSchema } from "./panel-manifest";
 import { platformOntologySchemaResponseSchema } from "./platform-ontology";
 import {
@@ -104,8 +104,6 @@ export const panelReadResultSchemas = {
   productPanelUsedBy: productPanelUsedBySchema,
   productPanelMembers: panelManifestSchema.innerType().shape.members,
   productCatalogueGrants: productCatalogueGrantsSchema,
-  applicationCatalogue: applicationCatalogueQueryResultSchema,
-  applicationRecord: applicationCatalogueRecordSchema,
   applicationEntries: applicationCatalogueEntriesSchema,
   panelFormDescription: panelFormDescriptionSchema,
   scheduledTaskRunPage: platformTaskRunPageSchema,

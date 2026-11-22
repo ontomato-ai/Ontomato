@@ -143,7 +143,7 @@ it("omits unprovided detail fields and preserves a frame panel as a typed refere
     entry: { path: "/applications/app-public" }, groups: [], panelUses: [],
   });
   const row = panelRecordSchema.parse(toApplicationPanelRecord(legacy, "fr"));
-  expect(row.label).toBe(legacy.id);
+  expect(row.label).toBe("Legacy app");
   expect(row).not.toHaveProperty("subtitle");
   expect(row.fields).toMatchObject({ path: legacy.entry.path });
   expect(row.fields).not.toHaveProperty("home");

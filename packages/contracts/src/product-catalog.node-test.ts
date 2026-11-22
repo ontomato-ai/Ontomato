@@ -232,6 +232,11 @@ test("declares typed catalogue reads that reuse the current product records and 
   assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.query.result, "productProjectionList");
   assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.usedBy.result, "productPanelUsedBy");
   assert.equal(platformObjectTypes[APPLICATION].reads?.form.result, "panelFormDescription");
+  assert.equal(platformObjectTypes[APPLICATION].reads?.query.result, "panelRecordQuery");
+  assert.equal(platformObjectTypes[APPLICATION].reads?.record.result, "panelRecord");
+  assert.equal(platformObjectTypes[APPLICATION].reads?.entries.result, "applicationEntries");
+  assert.equal(Object.hasOwn(panelReadResultSchemas, "applicationCatalogue"), false);
+  assert.equal(Object.hasOwn(panelReadResultSchemas, "applicationRecord"), false);
   assert.equal(panelReadResultSchemas.productProjectionRecord, currentProjectionRecordSchema);
   assert.equal(panelReadResultSchemas.productPanelRecord, currentPanelRecordSchema);
   assert.equal(panelReadParameterSchemas.productScope.safeParse("mine").success, true);
@@ -256,7 +261,11 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
   const builtin = { ...use, panelId: BUILTIN_PRODUCT_ID_PREFIX + base.panelId };
   assert.deepEqual(builtinApplicationPanelUseSchema.parse(builtin), builtin);
   assert.deepEqual(registerApplicationPanelUsesRequestSchema.parse({ entry, panelUses: [use] }).panelUses, [use]);
-  assert.deepEqual(applicationCatalogueEntriesSchema.parse({ applicationId, entry, panelUses: [use] }).panelUses, [use]);
+  const entries = {
+    applicationId, entry, panelUses: [use], groups: [{ key: "reports", names: { en: "Reports" }, sort: 0 }],
+    framePanelId: "review-frame", theme: { light: { "--brand-primary": "#336699" } },
+  };
+  assert.deepEqual(applicationCatalogueEntriesSchema.parse(entries), entries);
   const resolution = { applicationId, use, menu: { groups: [], panelUses: [] } };
   assert.deepEqual(applicationEntryResolutionSchema.parse(resolution), resolution);
 });

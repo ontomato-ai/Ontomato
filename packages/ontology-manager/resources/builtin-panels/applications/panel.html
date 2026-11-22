@@ -69,32 +69,32 @@
 
       <p class="apps-error" v-if="listError" role="alert">{{ listError }}</p>
 
-      <sdk-table class="apps-list" v-sdk-loading="catalogue.status === 'loading'" :data="rows" row-key="id" @row-click="openRow">
-        <sdk-table-column label="图标" width="52">
+      <sdk-table class="apps-list" v-sdk-loading="catalogue.status === 'loading'" :data="rows" row-key="primaryKey" @row-click="openRow">
+        <sdk-table-column :label="rows[0]?.fieldLabels?.icon ?? '图标'" width="52">
           <template #default="{ row }">
-            <span class="apps-list-icon" :title="row.icon">
-              <component :is="appIcon(row.icon)" :size="16" aria-hidden="true"></component>
+            <span class="apps-list-icon" :title="row.fields.icon">
+              <component :is="appIcon(row.fields.icon)" :size="16" aria-hidden="true"></component>
             </span>
           </template>
         </sdk-table-column>
-        <sdk-table-column label="名称" min-width="110">
+        <sdk-table-column :label="rows[0]?.fieldLabels?.names ?? '名称'" min-width="110">
           <template #default="{ row }">
             <button class="apps-name-text" type="button" @click.stop="openRow(row)">
-              <strong>{{ localizedText(row.names) }}</strong>
-              <small v-if="secondaryName(row.names)">{{ secondaryName(row.names) }}</small>
+              <strong>{{ row.label }}</strong>
+              <small v-if="secondaryName(row.fields.names.values)">{{ secondaryName(row.fields.names.values) }}</small>
             </button>
           </template>
         </sdk-table-column>
-        <sdk-table-column label="来源" width="54">
+        <sdk-table-column :label="rows[0]?.fieldLabels?.source ?? '来源'" width="54">
           <template #default="{ row }">
-            <sdk-tag size="small" :type="row.source === 'builtin' ? 'info' : 'primary'">{{ row.source === 'builtin' ? '内置' : '域内' }}</sdk-tag>
+            <sdk-tag size="small" :type="row.tones.source === 'default' ? 'primary' : row.tones.source">{{ row.fields.source }}</sdk-tag>
           </template>
         </sdk-table-column>
-        <sdk-table-column label="维护权限" width="72">
-          <template #default="{ row }">{{ row.canMaintain ? '能维护' : '只读' }}</template>
+        <sdk-table-column :label="rows[0]?.fieldLabels?.maintenance ?? '维护权限'" width="72">
+          <template #default="{ row }">{{ row.fields.maintenance }}</template>
         </sdk-table-column>
-        <sdk-table-column label="入口数" width="62">
-          <template #default="{ row }">{{ row.entryCount }}</template>
+        <sdk-table-column :label="rows[0]?.fieldLabels?.entryCount ?? '入口数'" width="62">
+          <template #default="{ row }">{{ row.fields.entryCount }}</template>
         </sdk-table-column>
         <template #empty>
           <span>{{ catalogue.status === 'loading' ? '正在读取…' : (listError ? '读取失败' : '没有符合条件的应用') }}</span>
@@ -113,7 +113,7 @@
     <template v-else-if="mode === 'detail'">
       <header class="apps-head">
         <div>
-          <h1 class="apps-title">{{ app ? localizedText(app.names) : '一张应用' }}</h1>
+          <h1 class="apps-title">{{ app ? app.label : '一张应用' }}</h1>
         </div>
         <div class="apps-actions">
           <sdk-button @click="backToList">返回列表</sdk-button>
@@ -134,7 +134,7 @@
         <div class="apps-card">
           <div class="apps-card-head">
             <h2 class="apps-section-title">身份</h2>
-            <span class="apps-count" v-if="app.canMaintain">
+            <span class="apps-count" v-if="app.fields.canMaintain">
               <span class="apps-inline-actions">
                 <sdk-button size="small" @click="formSection = 'identity'">编辑身份</sdk-button>
               </span>
@@ -142,42 +142,42 @@
           </div>
           <dl class="apps-grid">
             <div class="apps-field">
-              <dt>来源</dt>
-              <dd>{{ app.source === 'builtin' ? '内置' : '域内' }}</dd>
+              <dt>{{ app.fieldLabels.source }}</dt>
+              <dd>{{ app.fields.source }}</dd>
             </div>
             <div class="apps-field">
-              <dt>维护权限</dt>
-              <dd>{{ permissionSummary(app) }}</dd>
+              <dt>{{ app.fieldLabels.maintenance }}</dt>
+              <dd>{{ permissionSummary(app.fields) }}</dd>
             </div>
             <div class="apps-field">
               <dt>入口</dt>
-              <dd><code>{{ app.entry.path }}</code>{{ app.entry.home ? ' · 首页 ' + app.entry.home : '' }}</dd>
+              <dd><code>{{ app.fields.path }}</code><span v-if="app.fields.home"> · {{ app.fieldLabels.home }} {{ app.fields.home }}</span></dd>
             </div>
           </dl>
-          <p class="apps-hint" v-if="localizedText(app.descriptions)">{{ localizedText(app.descriptions) }}</p>
+          <p class="apps-hint" v-if="app.subtitle">{{ app.subtitle }}</p>
           <details class="apps-other-languages">
             <summary>其他语言与技术信息</summary>
             <dl class="apps-grid">
-              <div class="apps-field" v-if="localeRows(app.names).length > 1">
+              <div class="apps-field" v-if="localeRows(app.fields.names.values).length > 1">
                 <dt>其他语言名称</dt>
                 <dd class="apps-locales">
-                  <span v-for="item in localeRows(app.names).slice(1)" :key="item.key">{{ item.key }}：{{ item.value }}</span>
+                  <span v-for="item in localeRows(app.fields.names.values).slice(1)" :key="item.key">{{ item.key }}：{{ item.value }}</span>
                 </dd>
               </div>
-              <div class="apps-field" v-if="localeRows(app.descriptions).length > 1">
+              <div class="apps-field" v-if="localeRows(app.fields.descriptions.values).length > 1">
                 <dt>其他语言说明</dt>
                 <dd class="apps-locales">
-                  <span v-for="item in localeRows(app.descriptions).slice(1)" :key="item.key">{{ item.key }}：{{ item.value }}</span>
+                  <span v-for="item in localeRows(app.fields.descriptions.values).slice(1)" :key="item.key">{{ item.key }}：{{ item.value }}</span>
                 </dd>
               </div>
               <div class="apps-field">
-                <dt>应用 ID</dt><dd><code>{{ app.id }}</code></dd>
+                <dt>{{ app.fieldLabels.id }}</dt><dd><code>{{ app.primaryKey }}</code></dd>
               </div>
               <div class="apps-field">
-                <dt>图标键</dt><dd><code>{{ app.icon }}</code></dd>
+                <dt>图标键</dt><dd><code>{{ app.fields.icon }}</code></dd>
               </div>
-              <div class="apps-field" v-if="app.entry.renderer">
-                <dt>渲染器</dt><dd><code>{{ app.entry.renderer }}</code></dd>
+              <div class="apps-field" v-if="app.fields.renderer">
+                <dt>{{ app.fieldLabels.renderer }}</dt><dd><code>{{ app.fields.renderer }}</code></dd>
               </div>
             </dl>
           </details>
@@ -191,15 +191,15 @@
           <div class="apps-card-head">
             <h2 class="apps-section-title">入口</h2>
             <span class="apps-count apps-inline-actions">
-              <template v-if="app.canEditEntries">
+              <template v-if="app.fields.canEditEntries">
                 <sdk-button size="small" @click="startAddEntry">添加入口</sdk-button>
                 <sdk-button size="small" @click="formSection = 'entries'">编辑入口表</sdk-button>
               </template>
-              <span class="apps-hint" v-else-if="app.source !== 'builtin'">这张应用的入口由属主按它的发布方式维护，这里不能改。</span>
+              <span class="apps-hint" v-else-if="app.fields.sourceKind !== 'builtin'">这张应用的入口由属主按它的发布方式维护，这里不能改。</span>
             </span>
           </div>
-          <p class="apps-hint" v-if="!app.canMaintain">你只能看到自己有权限进的入口，属主已经把其余的裁掉了。</p>
-          <sdk-table class="apps-entry-table" :data="app.panelUses" row-key="id" size="small" scrollbar-always-on>
+          <p class="apps-hint" v-if="!app.fields.canMaintain">你只能看到自己有权限进的入口，属主已经把其余的裁掉了。</p>
+          <sdk-table class="apps-entry-table" v-sdk-loading="entries.status === 'loading'" :data="entryData?.panelUses ?? []" row-key="id" size="small" scrollbar-always-on>
             <sdk-table-column label="菜单名" min-width="120">
               <template #default="{ row }">{{ localizedText(row.names) || row.pageKey }}</template>
             </sdk-table-column>
@@ -224,7 +224,7 @@
             <sdk-table-column label="默认智能体" min-width="102">
               <template #default="{ row }">{{ agentText(row.defaultAgent) }}</template>
             </sdk-table-column>
-            <sdk-table-column label="操作" width="90" v-if="app.canEditEntries">
+            <sdk-table-column label="操作" width="90" v-if="app.fields.canEditEntries">
               <template #default="{ row }">
                 <span class="apps-inline-actions">
                   <sdk-button size="small" text @click.stop="startEditEntry(row)">编辑</sdk-button>
@@ -232,16 +232,21 @@
                 </span>
               </template>
             </sdk-table-column>
-            <template #empty><span>这张应用还没有入口。</span></template>
+            <template #empty>
+              <span v-if="entries.status === 'error'" role="alert">{{ entries.message }}</span>
+              <span v-else-if="entries.status === 'forbidden'">{{ t('entries.forbidden') }}</span>
+              <span v-else-if="entries.status === 'loading'">{{ t('entries.loading') }}</span>
+              <span v-else>这张应用还没有入口。</span>
+            </template>
           </sdk-table>
-          <dl class="apps-grid" v-if="app.theme || app.framePanelId">
-            <div class="apps-field" v-if="app.framePanelId">
-              <dt>外框面板</dt>
-              <dd><code>{{ app.framePanelId }}</code></dd>
+          <dl class="apps-grid" v-if="entryData?.theme || app.fields.framePanel">
+            <div class="apps-field" v-if="app.fields.framePanel">
+              <dt>{{ app.fieldLabels.framePanel }}</dt>
+              <dd><code>{{ app.fields.framePanel.label }}</code></dd>
             </div>
-            <div class="apps-field" v-if="app.theme">
+            <div class="apps-field" v-if="entryData?.theme">
               <dt>主题</dt>
-              <dd class="apps-mono">{{ themeText(app.theme) }}</dd>
+              <dd class="apps-mono">{{ themeText(entryData.theme) }}</dd>
             </div>
           </dl>
         </div>
@@ -275,16 +280,16 @@
           </dl>
         </div>
 
-        <div class="apps-card" v-if="app.canMaintain || app.canGrant">
+        <div class="apps-card" v-if="app.fields.canMaintain || app.fields.canGrant">
           <div class="apps-card-head">
             <h2 class="apps-section-title">维护与授权</h2>
           </div>
           <div class="apps-inline-actions">
-            <sdk-button v-if="app.canMaintain" size="small" type="danger" @click="removeApplication">删除这张应用</sdk-button>
-            <sdk-button v-if="app.canGrant" size="small" @click="openGrant">授予或撤销使用授权</sdk-button>
-            <span class="apps-hint" v-if="app.source === 'builtin'">内置应用随平台维护，这里不提供改动。</span>
+            <sdk-button v-if="app.fields.canMaintain" size="small" type="danger" @click="removeApplication">删除这张应用</sdk-button>
+            <sdk-button v-if="app.fields.canGrant" size="small" @click="openGrant">授予或撤销使用授权</sdk-button>
+            <span class="apps-hint" v-if="app.fields.sourceKind === 'builtin'">内置应用随平台维护，这里不提供改动。</span>
           </div>
-          <div v-if="app.canGrant">
+          <div v-if="app.fields.canGrant">
             <p v-if="grants.status === 'error'" class="apps-error" role="alert">{{ grants.message }}</p>
             <p v-else-if="grants.status === 'forbidden'" class="apps-error" role="alert">{{ t('grants.forbidden') }}</p>
             <p v-else-if="grants.status !== 'ready'" class="apps-hint">{{ t('grants.loading') }}</p>
