@@ -223,9 +223,18 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("skill", "capability"),
     childCollections: ["files"],
     reads: {
-      // `options` and `resolve` pick skills for an agent; `query` is the library catalogue, read-only provider packages included.
+      // `options` and `resolve` pick skills for an agent; `query` and `counts` browse the library catalogue by source, read-only provider packages included.
       ...referenceReads,
-      query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
+      query: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", source: "skillSource", cursor: "cursor", size: "size" },
+        result: "panelRecordQuery",
+      },
+      counts: {
+        source: "type", parameterMode: "fixed",
+        params: { by: "skillCountField", search: "keyword" },
+        requiredParams: ["by"], result: "panelGroupCounts",
+      },
       record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       files: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       file: {

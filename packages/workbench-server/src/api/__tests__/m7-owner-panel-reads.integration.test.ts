@@ -155,6 +155,7 @@ const projections = {
     componentId: "@ontomato/sdk:ObjectList",
     inputs: {
       search: { kind: "scalar", type: "string" },
+      source: { kind: "scalar", type: "string" },
       cursor: { kind: "scalar", type: "string" },
       size: { kind: "scalar", type: "number" },
     },
@@ -164,10 +165,27 @@ const projections = {
       rows: {
         source: { type: { kind: "PlatformObjectType", id: SKILL } },
         read: "query",
-        params: { search: { input: "search" }, cursor: { input: "cursor" }, size: { input: "size" } },
+        params: { search: { input: "search" }, source: { input: "source" }, cursor: { input: "cursor" }, size: { input: "size" } },
       },
     },
     operations: { import: { operation: { kind: "PlatformOperation", id: IMPORT_SKILL } } },
+  }),
+  "proj-skill-counts": productProjectionInputSchema.parse({
+    name: "Skill source counts", description: "", visibility: "domain",
+    componentId: "@ontomato/sdk:SegmentedControl",
+    inputs: {
+      by: { kind: "scalar", type: "string" },
+      search: { kind: "scalar", type: "string" },
+    },
+    outputs: {},
+    config: {},
+    data: {
+      counts: {
+        source: { type: { kind: "PlatformObjectType", id: SKILL } },
+        read: "counts",
+        params: { by: { input: "by" }, search: { input: "search" } },
+      },
+    },
   }),
   "proj-skill-detail": productProjectionInputSchema.parse({
     name: "Skill detail", description: "", visibility: "domain",
@@ -196,6 +214,7 @@ const panel = productPanelInputSchema.parse({
       '  <projection slot="feedbackList"></projection>',
       '  <projection slot="feedbackDetail"></projection>',
       '  <projection slot="skillList"></projection>',
+      '  <projection slot="skillCounts"></projection>',
       '  <projection slot="skillDetail"></projection>',
       "</div>",
     ].join("\n"),
@@ -215,6 +234,7 @@ const panel = productPanelInputSchema.parse({
       feedbackCounts: { target: { projectionId: "proj-feedback-counts" } },
       feedbackDetail: { target: { projectionId: "proj-feedback-detail" }, inputs: { record: { state: "selectedFeedback" } } },
       skillList: { target: { projectionId: "proj-skill-list" } },
+      skillCounts: { target: { projectionId: "proj-skill-counts" } },
       skillDetail: { target: { projectionId: "proj-skill-detail" }, inputs: { skill: { state: "selectedSkill" } } },
     },
     commands: {},
@@ -237,6 +257,10 @@ beforeAll(async () => {
           "api.feedback.sources.analysis_task": "分析任务",
           "api.feedback.ratings.like": "点赞",
           "api.feedback.ratings.dislike": "点踩",
+          "panels.skill.sourceAll": "全部",
+          "panels.skill.sourceDomain": "本域",
+          "panels.skill.sourcePublic": "平台",
+          "panels.skill.sourceProvider": "外部提供",
           "panels.skill.delete": "删除",
           "panels.skill.readOnlyPublic": "内置技能随产品提供，不能删除",
           "panels.skill.readOnlyProvider": "由 {provider} 提供，不能在这里删除",
@@ -567,6 +591,21 @@ it("serves feedback, governance, and skill library reads plus skills.delete over
     value: { nextCursor: "2", total: 3 },
   });
   expect(skillPage.value.rows).toHaveLength(2);
+
+  const skillDomainOnly = await read("skillList", "rows", { source: "domain" });
+  expect(skillDomainOnly).toMatchObject({
+    status: "ready",
+    value: { total: 1, rows: [{ primaryKey: "custom-domain-skill" }] },
+  });
+  expect(await read("skillCounts", "counts", { by: "source" }, "zh-CN")).toEqual({
+    status: "ready",
+    value: [
+      { key: "all", label: "全部", count: 3 },
+      { key: "domain", label: "本域", count: 1 },
+      { key: "public", label: "平台", count: 1 },
+      { key: "provider", label: "外部提供", count: 1 },
+    ],
+  });
 
   const publicSkillRef = { className: SKILL, primaryKey: "builtin-skill" };
   expect(await read("skillDetail", "record", { skill: publicSkillRef })).toMatchObject({

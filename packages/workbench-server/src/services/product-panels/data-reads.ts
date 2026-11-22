@@ -243,6 +243,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       async query(_selection, params) {
         return (await skillLibrary()).query(params);
       },
+      async counts(_selection, params) {
+        return (await skillLibrary()).counts(params);
+      },
       async record(selection) {
         return (await skillLibrary()).record(selection.primaryKey!);
       },

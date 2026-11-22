@@ -2,6 +2,7 @@ import { z } from "zod";
 import { runtimeSkillKey, runtimeSkillRefSchema, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
 import {
   panelReadParameterSchemas,
+  type PanelGroupCounts,
   type PanelOption,
   type PanelOptionList,
   type PanelRecord,
@@ -17,8 +18,8 @@ import { skillManager } from "./skill-manager";
 /*
  * The skill owner's named reads for panels:
  * - `options` and `resolve` answer a reference picker from the catalogue the initiating reader can see.
- * - `query`, `record`, `files`, and `file` browse the skill library and its package files through `skillManager`,
- *   marking read-only provider and public packages in each row.
+ * - `query`, `counts`, `record`, `files`, and `file` browse the skill library by source and inspect package files
+ *   through `skillManager`, marking read-only provider and public packages in each row.
  */
 
 /** The values a form already holds, each a complete skill reference, in their submitted order. */
@@ -26,10 +27,13 @@ export interface SkillResolveRequest {
   values: readonly RuntimeSkillRef[];
 }
 
+type SkillSourceFilter = z.infer<typeof panelReadParameterSchemas.skillSource>;
+
 export type SkillReads = {
   options(): Promise<PanelOptionList>;
   resolve(request: SkillResolveRequest): Promise<PanelOptionList>;
   query(params: Record<string, unknown>): Promise<PanelRecordQuery>;
+  counts(params: Record<string, unknown>): Promise<PanelGroupCounts>;
   record(primaryKey: string): Promise<PanelRecord>;
   files(primaryKey: string): Promise<PanelRecord[]>;
   file(primaryKey: string, params: Record<string, unknown>): Promise<PanelRecord>;
@@ -37,13 +41,24 @@ export type SkillReads = {
 
 const queryInputSchema = z.object({
   search: z.string().optional(),
+  source: panelReadParameterSchemas.skillSource.optional(),
   cursor: z.string().regex(/^\d+$/).optional(),
   size: z.number().int().positive().optional(),
+}).strict();
+
+const countsInputSchema = z.object({
+  by: panelReadParameterSchemas.skillCountField,
+  search: z.string().optional(),
 }).strict();
 
 const fileInputSchema = z.object({
   path: panelReadParameterSchemas.skillFilePath,
 }).strict();
+
+function skillSourceKind(restriction: SkillWriteRestriction): Exclude<SkillSourceFilter, "all"> {
+  if (restriction === null) return "domain";
+  return restriction.kind;
+}
 
 export function createSkillReadAdapter(
   owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string,
@@ -98,6 +113,20 @@ export function createSkillReadAdapter(
     };
   }
 
+  async function librarySkills(search?: string): Promise<{
+    all: SkillInfo[];
+    matched: SkillInfo[];
+    diagnostics?: SkillCatalogDiagnostics;
+  }> {
+    const { skills: all, diagnostics } = await skillManager.getAllSkills(owner.domainId, viewer);
+    const needle = search?.trim().toLowerCase() ?? "";
+    const matched = needle
+      ? all.filter(skill =>
+          [skill.id, skill.title, skill.description].some(value => value.toLowerCase().includes(needle)))
+      : all;
+    return { all, matched, diagnostics };
+  }
+
   return {
     async options() {
       const { skills, diagnostics } = await assistantSkillCatalog(owner.domainId, viewer);
@@ -127,20 +156,43 @@ export function createSkillReadAdapter(
       };
     },
     async query(params: Record<string, unknown>) {
-      const { search, cursor, size } = queryInputSchema.parse(params);
-      const needle = search?.trim() ?? "";
-      const { skills, diagnostics } = needle
-        ? await skillManager.searchSkills(owner.domainId, needle, viewer)
-        : await skillManager.getAllSkills(owner.domainId, viewer);
+      const { search, source, cursor, size } = queryInputSchema.parse(params);
+      const { matched, diagnostics } = await librarySkills(search);
       const messages = diagnosticText(diagnostics);
+      const filtered = source && source !== "all"
+        ? matched.filter(skill => skillSourceKind(skill.writeRestriction) === source)
+        : matched;
       const offset = cursor === undefined ? 0 : Number(cursor);
       const labels = skillFieldLabels();
       return {
-        rows: skills.slice(offset, size === undefined ? undefined : offset + size).map(skill => skillRow(skill, labels)),
-        ...(size !== undefined && offset + size < skills.length ? { nextCursor: String(offset + size) } : {}),
-        total: skills.length,
+        rows: filtered.slice(offset, size === undefined ? undefined : offset + size).map(skill => skillRow(skill, labels)),
+        ...(size !== undefined && offset + size < filtered.length ? { nextCursor: String(offset + size) } : {}),
+        total: filtered.length,
         ...(messages ? { diagnostics: messages } : {}),
       };
+    },
+    async counts(params: Record<string, unknown>) {
+      const { search } = countsInputSchema.parse(params);
+      const { all, matched } = await librarySkills(search);
+      let domain = 0;
+      let publicCount = 0;
+      let provider = 0;
+      for (const skill of matched) {
+        const kind = skillSourceKind(skill.writeRestriction);
+        if (kind === "domain") domain += 1;
+        else if (kind === "public") publicCount += 1;
+        else provider += 1;
+      }
+      const hasProvider = all.some(skill => skillSourceKind(skill.writeRestriction) === "provider");
+      const groups: PanelGroupCounts = [
+        { key: "all", label: t("panels.skill.sourceAll"), count: matched.length },
+        { key: "domain", label: t("panels.skill.sourceDomain"), count: domain },
+        { key: "public", label: t("panels.skill.sourcePublic"), count: publicCount },
+      ];
+      if (hasProvider) {
+        groups.push({ key: "provider", label: t("panels.skill.sourceProvider"), count: provider });
+      }
+      return groups;
     },
     async record(primaryKey: string) {
       return skillRow(await skillManager.getSkillInfo(owner.domainId, primaryKey, viewer), skillFieldLabels());

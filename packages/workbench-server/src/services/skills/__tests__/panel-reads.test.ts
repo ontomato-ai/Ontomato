@@ -3,9 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { runtimeSkillKey, type RuntimeSkillRef } from "@ontomato/contracts/agent-runtime-skills";
-import { panelOptionListSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
+import {
+  panelGroupCountsSchema,
+  panelOptionListSchema,
+  panelRecordListSchema,
+  panelRecordQuerySchema,
+  panelRecordSchema,
+} from "@ontomato/contracts/panel-projection";
 import { installContentLayout } from "../../../content/layout";
-import { registerSkillProvider } from "../../../core/skills/providers";
+import { registerSkillProvider, type ProtectedSkillOffering, type SkillOffering } from "../../../core/skills/providers";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
@@ -141,85 +147,180 @@ it("queries the skill library with search, cursor/size paging, and read-only mar
     path.join(publicSkillDir, "SKILL.md"),
     "---\nname: builtin-guide\ndescription: Builtin guide skill\n---\nGuide body\n",
   );
+  let providerOfferings: Array<SkillOffering | ProtectedSkillOffering> = [
+    {
+      skill: { namespace: { kind: "domain", domainId: domain }, name: "ext-provider-skill" },
+      manifest: { name: "ext-provider-skill", description: "Provided from external studio" },
+      async provide() {
+        return {
+          skill: { namespace: { kind: "domain" as const, domainId: domain }, name: "ext-provider-skill" },
+          files: [
+            { path: "SKILL.md", content: "---\nname: ext-provider-skill\ndescription: Provided from external studio\n---\nExternal body\n" },
+          ],
+        };
+      },
+    },
+    {
+      kind: "protected",
+      sourceKey: "panel-internal",
+      entrances: [{ permissionCode: "skill-management", pageKey: "skills" }],
+      resourceIds: ["panel-internal"],
+      async readManifest(skill) {
+        return { name: skill.name, description: "Internal panel skill" };
+      },
+      async provide(skill) {
+        return {
+          skill,
+          files: [
+            { path: "SKILL.md", content: `---\nname: ${skill.name}\ndescription: Internal panel skill\n---\nInternal body\n` },
+          ],
+        };
+      },
+    },
+  ];
   registerSkillProvider({
     id: "provider-ext",
     name: "External Studio",
-    async list(context) {
-      return [
-        {
-          skill: { namespace: { kind: "domain", domainId: context.domainId }, name: "ext-provider-skill" },
-          manifest: { name: "ext-provider-skill", description: "Provided from external studio" },
-          async provide() {
-            return {
-              skill: { namespace: { kind: "domain" as const, domainId: context.domainId }, name: "ext-provider-skill" },
-              files: [
-                { path: "SKILL.md", content: "---\nname: ext-provider-skill\ndescription: Provided from external studio\n---\nExternal body\n" },
-              ],
-            };
-          },
+    async list() {
+      return providerOfferings;
+    },
+  });
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (String(url).endsWith("/platform/page-skills")) {
+      return Response.json({
+        success: true,
+        data: {
+          pageSkills: [{ permissionCode: "skill-management" }],
+          registeredSkills: [],
+          admittedEntrances: [{ permissionCode: "skill-management", pageKey: "skills" }],
         },
-      ];
-    },
-  });
+      });
+    }
+    if (String(url).endsWith("/product-governance/resources")) {
+      return Response.json({ ids: ["panel-internal"] });
+    }
+    return Response.json({ success: true, data: {} });
+  }));
 
-  const adapter = createSkillReadAdapter(owner, credentials);
+  try {
+    const adapter = createSkillReadAdapter(owner, credentials);
 
-  const page1 = panelRecordQuerySchema.parse(await adapter.query({ size: 2 }));
-  expect(page1.total).toBe(4);
-  expect(page1.nextCursor).toBe("2");
-  expect(page1.rows).toHaveLength(2);
+    const page1 = panelRecordQuerySchema.parse(await adapter.query({ size: 2 }));
+    expect(page1.total).toBe(5);
+    expect(page1.nextCursor).toBe("2");
+    expect(page1.rows).toHaveLength(2);
 
-  const page2 = panelRecordQuerySchema.parse(await adapter.query({ cursor: "2", size: 2 }));
-  expect(page2.total).toBe(4);
-  expect(page2.nextCursor).toBeUndefined();
-  expect(page2.rows).toHaveLength(2);
+    const page2 = panelRecordQuerySchema.parse(await adapter.query({ cursor: "2", size: 3 }));
+    expect(page2.total).toBe(5);
+    expect(page2.nextCursor).toBeUndefined();
+    expect(page2.rows).toHaveLength(3);
 
-  const all = panelRecordQuerySchema.parse(await adapter.query({}));
-  expect(all.rows.map(row => row.primaryKey)).toEqual([
-    "builtin-guide",
-    "alpha-helper",
-    "domain-helper",
-    "ext-provider-skill",
-  ]);
-  expect(all.rows[0]).toEqual({
-    primaryKey: "builtin-guide",
-    label: "builtin-guide",
-    subtitle: "Builtin guide skill",
-    fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
-    fields: {
-      description: "Builtin guide skill",
-      source: "Platform",
-      writeRestriction: "Built-in skills come with the product and cannot be deleted",
-    },
-  });
-  expect(all.rows[3]).toEqual({
-    primaryKey: "ext-provider-skill",
-    label: "ext-provider-skill",
-    subtitle: "Provided from external studio",
-    fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
-    fields: {
-      description: "Provided from external studio",
-      source: "External Studio",
-      writeRestriction: "Provided by External Studio and cannot be deleted here",
-    },
-  });
-  expect(all.rows.find(row => row.primaryKey === "alpha-helper")).toEqual({
-    primaryKey: "alpha-helper",
-    label: "alpha-helper",
-    subtitle: "Alpha domain skill",
-    fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
-    fields: {
-      description: "Alpha domain skill",
-      source: "This domain",
-      writeRestriction: "",
-    },
-  });
+    const all = panelRecordQuerySchema.parse(await adapter.query({}));
+    const protectedRow = all.rows.find(row => row.primaryKey.startsWith("pvt-"));
+    expect(protectedRow).toMatchObject({
+      subtitle: "Internal panel skill",
+      fields: {
+        description: "Internal panel skill",
+        source: "External Studio",
+        writeRestriction: "Provided by External Studio and cannot be deleted here",
+      },
+    });
+    expect(all.rows.map(row => row.primaryKey)).toEqual([
+      "builtin-guide",
+      "alpha-helper",
+      "domain-helper",
+      "ext-provider-skill",
+      protectedRow!.primaryKey,
+    ]);
+    expect(all.rows[0]).toEqual({
+      primaryKey: "builtin-guide",
+      label: "builtin-guide",
+      subtitle: "Builtin guide skill",
+      fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
+      fields: {
+        description: "Builtin guide skill",
+        source: "Platform",
+        writeRestriction: "Built-in skills come with the product and cannot be deleted",
+      },
+    });
+    expect(all.rows[3]).toEqual({
+      primaryKey: "ext-provider-skill",
+      label: "ext-provider-skill",
+      subtitle: "Provided from external studio",
+      fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
+      fields: {
+        description: "Provided from external studio",
+        source: "External Studio",
+        writeRestriction: "Provided by External Studio and cannot be deleted here",
+      },
+    });
+    expect(all.rows.find(row => row.primaryKey === "alpha-helper")).toEqual({
+      primaryKey: "alpha-helper",
+      label: "alpha-helper",
+      subtitle: "Alpha domain skill",
+      fieldLabels: { description: "Description", source: "Source", writeRestriction: "Write restriction" },
+      fields: {
+        description: "Alpha domain skill",
+        source: "This domain",
+        writeRestriction: "",
+      },
+    });
 
-  const searched = panelRecordQuerySchema.parse(await adapter.query({ search: "External" }));
-  expect(searched).toEqual({
-    rows: [all.rows[3]],
-    total: 1,
-  });
+    const searched = panelRecordQuerySchema.parse(await adapter.query({ search: "External" }));
+    expect(searched).toEqual({
+      rows: [all.rows[3]],
+      total: 1,
+    });
+
+    const domainOnly = panelRecordQuerySchema.parse(await adapter.query({ source: "domain" }));
+    expect(domainOnly.total).toBe(2);
+    expect(domainOnly.rows.map(row => row.primaryKey)).toEqual(["alpha-helper", "domain-helper"]);
+
+    const domainPage1 = panelRecordQuerySchema.parse(await adapter.query({ source: "domain", size: 1 }));
+    expect(domainPage1.total).toBe(2);
+    expect(domainPage1.nextCursor).toBe("1");
+    expect(domainPage1.rows.map(row => row.primaryKey)).toEqual(["alpha-helper"]);
+
+    const publicOnly = panelRecordQuerySchema.parse(await adapter.query({ source: "public" }));
+    expect(publicOnly.total).toBe(1);
+    expect(publicOnly.rows.map(row => row.primaryKey)).toEqual(["builtin-guide"]);
+
+    const providerOnly = panelRecordQuerySchema.parse(await adapter.query({ source: "provider" }));
+    expect(providerOnly.total).toBe(2);
+    expect(providerOnly.rows.map(row => row.primaryKey)).toEqual(["ext-provider-skill", protectedRow!.primaryKey]);
+
+    const allSource = panelRecordQuerySchema.parse(await adapter.query({ source: "all" }));
+    expect(allSource.total).toBe(5);
+
+    const counts = panelGroupCountsSchema.parse(await adapter.counts({ by: "source" }));
+    expect(counts).toEqual([
+      { key: "all", label: "All", count: 5 },
+      { key: "domain", label: "This domain", count: 2 },
+      { key: "public", label: "Platform", count: 1 },
+      { key: "provider", label: "Provider", count: 2 },
+    ]);
+
+    const searchedCounts = panelGroupCountsSchema.parse(await adapter.counts({ by: "source", search: "helper" }));
+    expect(searchedCounts).toEqual([
+      { key: "all", label: "All", count: 2 },
+      { key: "domain", label: "This domain", count: 2 },
+      { key: "public", label: "Platform", count: 0 },
+      { key: "provider", label: "Provider", count: 0 },
+    ]);
+
+    // When a domain has no provider skills, `counts` omits the provider bucket.
+    providerOfferings = [];
+    const withoutProvider = panelRecordQuerySchema.parse(await adapter.query({}));
+    expect(withoutProvider.rows.map(row => row.primaryKey)).toEqual(["builtin-guide", "alpha-helper", "domain-helper"]);
+    const countsWithoutProvider = panelGroupCountsSchema.parse(await adapter.counts({ by: "source" }));
+    expect(countsWithoutProvider).toEqual([
+      { key: "all", label: "All", count: 3 },
+      { key: "domain", label: "This domain", count: 2 },
+      { key: "public", label: "Platform", count: 1 },
+    ]);
+  } finally {
+    providerOfferings = [];
+  }
 });
 
 it("reads one skill record, its package files with path keys, and one file's content", async () => {

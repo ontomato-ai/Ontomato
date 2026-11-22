@@ -124,6 +124,8 @@ export const panelReadParameterSchemas = {
   feedbackCountField: z.enum(["sourceType", "rating"]),
   feedbackSourceType: z.enum(["all", "qa", "analysis_task"]),
   feedbackRating: z.enum(["all", "like", "dislike"]),
+  skillCountField: z.literal("source"),
+  skillSource: z.enum(["all", "domain", "public", "provider"]),
   skillFilePath: z.string().min(1),
 };
 
@@ -149,6 +151,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "feedbackCountField":
     case "feedbackSourceType":
     case "feedbackRating":
+    case "skillCountField":
+    case "skillSource":
     case "skillFilePath":
     case "productScope":
     case "productSort":

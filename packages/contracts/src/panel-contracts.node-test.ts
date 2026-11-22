@@ -616,17 +616,22 @@ test("feedback, governance records and the skill library read through their owne
   }).success, false);
 
   assert.deepEqual(result({
-    rows: { source: { type: platformType(SKILL) }, read: "query", params: { search: { literal: "report" } } },
+    rows: { source: { type: platformType(SKILL) }, read: "query", params: { search: { literal: "report" }, source: { literal: "domain" } } },
+    counts: { source: { type: platformType(SKILL) }, read: "counts", params: { by: { literal: "source" }, search: { literal: "report" } } },
     record: { source: object(SKILL), read: "record", params: {} },
     files: { source: object(SKILL), read: "files", params: {} },
     file: { source: object(SKILL), read: "file", params: { path: { literal: "SKILL.md" } } },
     options: { source: { type: platformType(SKILL) }, read: "options", params: {} },
-  }), { rows: "panelRecordQuery", record: "panelRecord", files: "panelRecordList", file: "panelRecord", options: "panelOptionList" });
+  }), { rows: "panelRecordQuery", counts: "panelGroupCounts", record: "panelRecord", files: "panelRecordList", file: "panelRecord", options: "panelOptionList" });
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, data: { rows: { source: { type: platformType(SKILL) }, read: "query", params: { source: { literal: "builtin" } } } },
+  }).success, false);
   const required = (type: string, read: string) => {
     const declaration = platformObjectTypes[type].reads?.[read];
     return declaration?.parameterMode === "fixed" ? declaration.requiredParams : undefined;
   };
   assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
+  assert.deepEqual(required(SKILL, "counts"), ["by"]);
   assert.deepEqual(required(SKILL, "file"), ["path"]);
   assert.deepEqual(platformObjectTypes[SKILL].operations, [IMPORT_SKILL, DELETE_SKILL, EXPORT_SKILL]);
   assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
