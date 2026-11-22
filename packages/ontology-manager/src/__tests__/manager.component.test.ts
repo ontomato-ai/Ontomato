@@ -666,8 +666,8 @@ describe("Manager pages in the service router", () => {
     await settle();
 
     expect(paths()).toEqual(
+      // The menu's own counts are the native pages' (metrics, product assets); the panel entries count themselves.
       expect.arrayContaining([
-        "/admin/getMetas",
         "/metricView/queryList",
       ])
     );
