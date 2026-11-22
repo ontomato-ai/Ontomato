@@ -5,13 +5,12 @@ import {
   ontologyAgentModelsSchema,
   type ModelOptions,
 } from "@ontomato/contracts/model-settings";
-import { platformRoutes } from "./routes";
 
 /**
- * Which application's "Models" page lists each ontology service agent, by the stable kind the data engine names it with.
- * The data engine owns the agents, their catalog and their selections; this is only where the platform shows each one,
- * declared once: the applications' model pages list their kinds from it, and the system settings name it when a renamed
- * model leaves an agent's choice unavailable. A kind no entry names is shown by no page.
+ * Which category of the system settings' "Agent models" page lists each ontology service agent, by the stable kind the
+ * data engine names it with. The data engine owns the agents, their catalog and their selections; this is only where
+ * the platform shows each one, declared once: the system settings' model tabs list their kinds from it, and the provider
+ * settings name it when a renamed model leaves an agent's choice unavailable. A kind no entry names is shown by no tab.
  */
 export const ontologyAgentModelPages = [
   // The data retrieval chain of the conversation: the retriever, the check of its questions, the description of a
@@ -19,12 +18,10 @@ export const ontologyAgentModelPages = [
   // an action's code and the generation of a metric view, which stay with the platform's models.
   {
     app: "agents",
-    path: platformRoutes.agentModels.path,
     kinds: ["retrieval", "quality", "describe", "dashboard", "explain", "metric"],
   },
   {
     app: "ontology",
-    path: platformRoutes.ontologyModels.path,
     kinds: ["actionCreation", "action", "function", "instantiate", "name"],
   },
 ] as const;

@@ -64,8 +64,8 @@ export function workbenchPages(
     ),
     // The application's prefix is no page: the old tab link lands on the skills, and anything else opens the conversation.
     { path: "/agents", redirect: (to) => capabilityTabLink(to) ?? { name: routes.chat.name, query: to.query } },
-    // The models of the platform's ontology service agents: a page of its navigation, so it opens with its permission.
-    { ...routes.agentModels, component, meta: { workbench: true, page: routes.agentModels.path } },
+    // The old agent platform models direct link forwards to the unified system settings models page.
+    { path: "/agents/settings/models", redirect: { name: routes.systemAgentModels.name, query: { category: "agents" } } },
     { ...observeRoutes.root, ...observe, children: observeRoutes.children },
   ];
 }

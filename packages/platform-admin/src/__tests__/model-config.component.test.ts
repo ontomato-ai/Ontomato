@@ -197,9 +197,10 @@ describe("model configuration page", () => {
     await flushPromises();
 
     const message = String(confirm.mock.calls[0]![0]);
-    // The dashboard generator chose it; it chooses again on the agent platform's model page.
+    // The dashboard generator chose it; it chooses again on the system settings' data analysis models tab.
     expect(message).toContain(t("admin.ontologyAgentKinds.dashboard"));
-    expect(message).toContain("app:agents");
+    expect(message).toContain("app:settings");
+    expect(message).toContain(t("platform.conversationAgentModels"));
     expect(message).toContain("gateway/vendor/chat-2");
     draft().save();
     await flushPromises();
