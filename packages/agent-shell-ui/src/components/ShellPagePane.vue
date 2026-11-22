@@ -240,6 +240,17 @@ const paneStyle = computed(() => ({
   width: min(760px, 100%);
   margin-inline: auto;
 }
+/* Folded with no pending questions, the dock leaves the page its whole height and pins the button to the corner. */
+.pane-dock:has(> .composer-unfold:only-child) {
+  padding: 0;
+  height: 0;
+}
+.pane-dock > :deep(.composer-unfold) {
+  position: absolute;
+  right: var(--spacing-lg);
+  bottom: var(--shell-composer-foot);
+  pointer-events: auto;
+}
 @media (max-width: 1100px) {
   .page-pane.side {
     position: fixed;

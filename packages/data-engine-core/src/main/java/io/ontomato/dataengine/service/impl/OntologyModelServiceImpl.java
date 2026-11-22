@@ -855,6 +855,14 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				checked.body().desc());
 	}
 
+	private static ObjectNode selectControl(List<JsonNode> options, String placeholder) {
+		ObjectNode control = object("kind", "select", "options", options);
+		if (placeholder != null && !placeholder.isBlank()) {
+			control.put("placeholder", placeholder);
+		}
+		return control;
+	}
+
 	private static ObjectNode textControl(boolean multiline) {
 		return textControl(multiline, null);
 	}
@@ -964,7 +972,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 			"fromField", "Admin.form.fromField",
 			"toclass", "Admin.form.toclass",
 			"toField", "Admin.form.toField",
-			"desc", "Admin.form.desc");
+			"desc", "Admin.form.relationDesc");
 
 	private Map<String, String> labels(Map<String, String> keys, String lang) {
 		Map<String, String> labels = new LinkedHashMap<>();
@@ -1034,28 +1042,49 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	private List<ObjectNode> relationshipFields(Map<String, Object> rule, boolean edit, Map<String, Object> values,
 			User user, String lang) {
 		Map<String, String> label = labels(RELATIONSHIP_LABEL_KEYS, lang);
-		String nameLabel = label.get("relationship");
+		String nameLabel = edit ? langService.get(lang, "Admin.form.apiName") : label.get("relationship");
 		String fromClassLabel = label.get("fromclass");
 		String fromFieldLabel = label.get("fromField");
 		String toClassLabel = label.get("toclass");
 		String toFieldLabel = label.get("toField");
 		String descLabel = label.get("desc");
+		String selectFromClass = langService.get(lang, "Admin.form.selectFromclass");
+		String enterFromField = langService.get(lang, "Admin.form.enterFromField");
+		String selectToClass = langService.get(lang, "Admin.form.selectToclass");
+		String enterToField = langService.get(lang, "Admin.form.enterToField");
 		boolean joinRequired = joinFieldsRequired(user);
-		List<JsonNode> classOptions = objectTypeOptions(rule);
+		String fromClass = formString(values, "fromclass");
+		String toClass = formString(values, "toclass");
 		List<ObjectNode> fields = new ArrayList<>();
-		fields.add(panelField("/relationship", nameLabel, true, textControl(false), stringSchema(nameLabel),
-				edit, null, false));
-		fields.add(panelField("/fromclass", fromClassLabel, true, object("kind", "select", "options", classOptions),
-				stringSchema(fromClassLabel), edit, null, true));
+		if (edit) {
+			// Match the detail view's edit fields: read-only API name, description, and the two join fields (ends are shown beside the form).
+			fields.add(panelField("/relationship", nameLabel, false, textControl(false), stringSchema(nameLabel),
+					true, null, false));
+			fields.add(panelField("/desc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
+					false, null, false));
+			fields.add(panelField("/fromField", fromFieldLabel, joinRequired,
+					selectControl(attributeOptions(rule, fromClass), enterFromField),
+					stringSchema(fromFieldLabel), false, null, false));
+			fields.add(panelField("/toField", toFieldLabel, joinRequired,
+					selectControl(attributeOptions(rule, toClass), enterToField),
+					stringSchema(toFieldLabel), false, null, false));
+			return fields;
+		}
+		List<JsonNode> classOptions = objectTypeOptions(rule);
+		fields.add(panelField("/relationship", nameLabel, true, textControl(false, 80), stringSchema(nameLabel, 80),
+				false, null, false));
+		fields.add(panelField("/fromclass", fromClassLabel, true, selectControl(classOptions, selectFromClass),
+				stringSchema(fromClassLabel), false, null, true));
 		fields.add(panelField("/fromField", fromFieldLabel, joinRequired,
-				object("kind", "select", "options", attributeOptions(rule, formString(values, "fromclass"))),
-				stringSchema(fromFieldLabel), false, null, false));
-		fields.add(panelField("/toclass", toClassLabel, true, object("kind", "select", "options", classOptions),
-				stringSchema(toClassLabel), edit, null, true));
+				selectControl(attributeOptions(rule, fromClass), enterFromField),
+				stringSchema(fromFieldLabel), fromClass.isEmpty(), null, false));
+		fields.add(panelField("/toclass", toClassLabel, true, selectControl(classOptions, selectToClass),
+				stringSchema(toClassLabel), false, null, true));
 		fields.add(panelField("/toField", toFieldLabel, joinRequired,
-				object("kind", "select", "options", attributeOptions(rule, formString(values, "toclass"))),
-				stringSchema(toFieldLabel), false, null, false));
-		fields.add(panelField("/desc", descLabel, true, textControl(true), stringSchema(descLabel), false, null, false));
+				selectControl(attributeOptions(rule, toClass), enterToField),
+				stringSchema(toFieldLabel), toClass.isEmpty(), null, false));
+		fields.add(panelField("/desc", descLabel, true, textControl(true, 400), stringSchema(descLabel, 400),
+				false, null, false));
 		return fields;
 	}
 

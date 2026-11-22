@@ -661,13 +661,11 @@ function reportDirty(page: KeptPage, dirty: boolean) {
 }
 /* A custom application frame fills the application area edge-to-edge without host inset. */
 .panel-application-frame {
-  --panel-host-padding-inline: 0px;
-  --panel-host-padding-top: 0px;
-  --panel-host-padding-bottom: 0px;
   flex: 1;
 }
 /* Fills the layout body or side pane as a definite-height flex column; carries the application theme beside a conversation. */
 .panel-application-area {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -675,7 +673,6 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   min-height: 0;
   min-width: 0;
   box-sizing: border-box;
-  padding-bottom: var(--pane-dock-space, 0px);
   overflow: hidden;
 }
 .panel-application-status {
@@ -684,19 +681,20 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   padding-block: var(--page-content-gap);
 }
 /*
- * At full page (and inside a frame's EntryUnit), the host's content box aligns horizontally with the page header's
- * gutter while keeping its scrollbar flush with the right edge (visual acceptance E-01).
+ * The page composer floats at the bottom edge of the application area without shortening the panel's content box,
+ * whether expanded or folded into its corner button.
  */
-.panel-host-page {
-  --panel-host-padding-inline: var(--page-gutter);
-  --panel-host-padding-top: var(--page-content-gap);
-  --panel-host-padding-bottom: var(--spacing-md);
-}
 .panel-page-foot {
-  flex-shrink: 0;
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
 }
 /* The page's own configuration error, where its composer would be: the reader is told, not left guessing. */
 .page-composer-error {
+  pointer-events: auto;
   width: min(760px, 100%);
   margin: 0 auto var(--spacing-md);
   color: var(--el-color-danger);

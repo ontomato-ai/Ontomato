@@ -2354,6 +2354,10 @@ watch(someVisibleChecked, () => {
   flex: 0 0 auto;
   flex-direction: column;
   gap: var(--spacing-xs);
+  border-bottom: 1px solid var(--ui-divider);
+}
+.sdk-object-list-row:last-child {
+  border-bottom: 0;
 }
 .sdk-object-list-row-main {
   align-items: center;
@@ -2370,7 +2374,7 @@ watch(someVisibleChecked, () => {
 .sdk-object-list-item-btn {
   background: none;
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xs);
   box-sizing: border-box;
   color: var(--el-text-color-primary);
   cursor: pointer;
@@ -2394,7 +2398,8 @@ watch(someVisibleChecked, () => {
   background: var(--ui-fill-tertiary);
 }
 .sdk-object-list-item-btn.chosen {
-  background: var(--ui-fill-secondary);
+  background: var(--brand-primary-tint, var(--ui-fill-secondary));
+  box-shadow: inset 3px 0 0 var(--el-color-primary);
   font-weight: var(--font-medium);
 }
 .sdk-object-list-item-head {

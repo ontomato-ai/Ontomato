@@ -89,6 +89,7 @@ function mountFormHarness(options: {
   values: PanelFormValues;
   createMode?: boolean;
   locale?: "en" | "zh-CN";
+  config?: Record<string, unknown>;
   onSave?: (values: PanelFormValues) => void;
 }) {
   const createMode = options.createMode ?? false;
@@ -101,7 +102,7 @@ function mountFormHarness(options: {
       ? { values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } }
       : { item: fnType, values: { kind: "json" }, changedField: { kind: "scalar", type: "string" } },
     outputs: {},
-    config: {},
+    config: options.config ?? {},
     data: createMode
       ? {
           createForm: {
@@ -338,6 +339,38 @@ describe("P3 ObjectForm save bar paradigm rules", () => {
       await vi.waitFor(() => expect(harness.savedEvents).toHaveLength(1));
     } finally {
       harness.dispose();
+    }
+  });
+
+  it("shows word limits on maxLength text fields, applies select placeholder, and honors create-only actions", async () => {
+    const fields: PanelFormField[] = [
+      { path: "/name", label: "Name", required: true, readOnly: false, valueSchema: { type: "string", maxLength: 80 }, control: { kind: "text", multiline: false, maxLength: 80 } },
+      { path: "/desc", label: "Description", required: false, readOnly: false, valueSchema: { type: "string", maxLength: 400 }, control: { kind: "text", multiline: true, maxLength: 400 } },
+      { path: "/source", label: "Source", required: true, readOnly: false, valueSchema: { type: "string" }, control: { kind: "select", options: [{ value: "a", label: "A", description: null, disabled: false, disabledReason: null }], placeholder: "Select source object type" } },
+    ];
+    const editHarness = mountFormHarness({ fields, values: { name: "rel", desc: "ok", source: "" }, config: { actions: "create-only" } });
+    try {
+      await vi.waitFor(() => expect(editHarness.element.querySelector('[data-field="/name"] input')).not.toBeNull());
+      expect(editHarness.element.querySelector('[data-field="/name"] .el-input__count')?.textContent?.replace(/\s+/g, " ").trim()).toBe("3 / 80");
+      expect(editHarness.element.querySelector('[data-field="/desc"] .el-input__count')?.textContent?.replace(/\s+/g, " ").trim()).toBe("2 / 400");
+      expect(editHarness.element.querySelector('[data-field="/source"]')?.textContent).toContain("Select source object type");
+      const nameInput = editHarness.element.querySelector<HTMLInputElement>('[data-field="/name"] input')!;
+      nameInput.value = "rel2";
+      nameInput.dispatchEvent(new Event("input"));
+      await nextTick();
+      // Edit mode with actions="create-only" keeps footer hidden so panel titlebar owns Save.
+      expect(editHarness.element.querySelector(".sdk-owner-form-actions")).toBeNull();
+    } finally {
+      editHarness.dispose();
+    }
+
+    const createHarness = mountFormHarness({ fields, values: { name: "", desc: "", source: "" }, createMode: true, config: { actions: "create-only" } });
+    try {
+      await vi.waitFor(() => expect(createHarness.element.querySelector(".sdk-owner-form-actions")).not.toBeNull());
+      const buttons = [...createHarness.element.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")];
+      expect(buttons.map((b) => b.textContent?.trim())).toEqual(["Cancel", "Create"]);
+    } finally {
+      createHarness.dispose();
     }
   });
 });

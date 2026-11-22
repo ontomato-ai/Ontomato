@@ -56,6 +56,9 @@
           "createForm": "createForm"
         },
         "operation": "platform:Relationship.save",
+        "config": {
+          "actions": "create-only"
+        },
         "id": "builtin-product-6063073e-28b1-4a47-bcff-64b305b1a600"
       },
       "remove": {
@@ -63,7 +66,9 @@
         "operation": "relationships.delete",
         "target": "selected",
         "config": {
-          "type": "danger"
+          "type": "danger",
+          "plain": true,
+          "icon": "trash"
         },
         "id": "builtin-product-655a5639-5fd3-4e29-9192-096597b6a77d"
       }
@@ -72,6 +77,7 @@
       "create": {
         "labelKey": "relations.command.create",
         "primary": true,
+        "icon": "plus",
         "do": {
           "set": {
             "fields": {

@@ -584,6 +584,7 @@ const simpleControls = [
     multiple: z.boolean().optional(),
     /** The owner permits adding a value to the selection. */
     allowCreate: z.boolean().optional(),
+    placeholder: z.string().nullish(),
   }).strict(),
   z.object({ kind: z.literal("switch") }).strict(),
   z.object({ kind: z.literal("markdown") }).strict(),
