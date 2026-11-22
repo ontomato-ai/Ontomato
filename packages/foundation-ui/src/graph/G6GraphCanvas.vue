@@ -226,11 +226,26 @@ function reportViewport(target: Graph) {
 }
 
 function edgeOptions() {
-  return { type: "line", state: { selected: { stroke: colors.primary, lineWidth: 3, opacity: 1 } } };
+  return {
+    type: "line",
+    state: {
+      selected: {
+        stroke: colors.primary,
+        lineWidth: 3.5,
+        opacity: 1,
+        labelFill: colors.text,
+        labelFontWeight: 600,
+        labelBackground: true,
+        labelBackgroundFill: colors.surface,
+        labelBackgroundOpacity: 1,
+        labelBackgroundPadding: [2, 5],
+      },
+    },
+  };
 }
 
 function nodeOptions() {
-  return { type: "circle", state: { selected: { stroke: colors.primary, lineWidth: 5, lineDash: [] } } };
+  return { type: "circle", state: { selected: { stroke: colors.primary, lineWidth: 6, lineDash: [] } } };
 }
 
 /** Which of two nodes keeps its name where names must give way: a chosen one, else the one with more relations. */
@@ -434,12 +449,30 @@ function nameBox(text: string) {
   measuring.font = `600 ${props.labelSize}px system-ui, sans-serif`;
   return { width: Math.min(measuring.measureText(text).width, props.labelWidth) + 8, height: props.labelSize * 1.2 + 2 };
 }
-/** The zoom below which two of the graph's names, held at their size on screen, would cover each other. */
+/** The zoom below which two of the graph's names, or a name and a node circle below it, would cover each other. */
 function namesApartZoom(target: Graph) {
   const names = target.getNodeData().filter((datum) => datum.style?.labelText).map((datum) => ({
     x: Number(datum.style!.x), y: Number(datum.style!.y), ...nameBox(String(datum.style!.labelText)),
   }));
-  return zoomKeepingNamesApart(names, 4);
+  let needed = zoomKeepingNamesApart(names, 4);
+  // Keep a node's fixed-screen-size label above the top edge of any node circle stacked beneath it.
+  const spare = 4;
+  for (let a = 0; a < names.length; a += 1) {
+    const upper = names[a]!;
+    const labelClearance = 6 + upper.height + spare;
+    for (let b = 0; b < names.length; b += 1) {
+      if (a === b) continue;
+      const lower = names[b]!;
+      const dy = lower.y - upper.y;
+      if (dy <= props.nodeSize) continue;
+      const dx = Math.abs(lower.x - upper.x);
+      if (dx < (upper.width + props.nodeSize) / 2) {
+        const verticalZoom = labelClearance / (dy - props.nodeSize);
+        if (verticalZoom > needed) needed = verticalZoom;
+      }
+    }
+  }
+  return needed;
 }
 
 defineExpose({

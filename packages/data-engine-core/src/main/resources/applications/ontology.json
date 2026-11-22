@@ -30,7 +30,7 @@
     "panelUses": [{
       "id": "ontology-playground", "pageKey": "ontology-playground", "panelId": "builtin-product-ontology-graph",
       "path": "/ontology/playground", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"en": "A graph of the owners' object types and relations: browse, select and go into modeling.", "zh-CN": "用属主的对象类型和关系画图，浏览、选择并进入建模。"},
+      "descriptions": {"en": "Explore object types, attributes, and relationships in the ontology", "zh-CN": "探索本体中对象类型、属性与关系的结构"},
       "names": {"en": "Ontology graph", "zh-CN": "本体图谱"}
     }, {
       "id": "ontology-visual-modeling", "pageKey": "ontology-visual-modeling", "panelId": "builtin-product-ontology-visual-modeling",

@@ -113,7 +113,11 @@
           },
           "nodeCategory": "/className",
           "nodeSize": 62,
-          "labelSize": 13
+          "labelSize": 13,
+          "layout": "force",
+          "highlightBanner": false,
+          "showFocusButton": false,
+          "hint": "单击节点查看详情，拖动可调整布局"
         },
         "id": "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378"
       }
