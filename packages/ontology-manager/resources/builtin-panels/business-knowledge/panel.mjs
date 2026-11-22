@@ -1,8 +1,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelBack, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:BusinessKnowledge";
-const NARROW_WIDTH = 720;
+const NARROW_WIDTH = 760;
 
 await mountPanel({
   setup() {
@@ -11,7 +11,15 @@ await mountPanel({
     const t = ctx.t ?? ((key) => key);
 
     const selected = computed(() => instance.state.values.value.selected ?? null);
+    const checked = computed(() => {
+      const value = instance.state.values.value.checked;
+      return Array.isArray(value) ? value : [];
+    });
     const formTarget = computed(() => instance.state.values.value.formTarget ?? null);
+    const search = computed({
+      get: () => instance.state.values.value.search ?? "",
+      set: (value) => instance.state.set("search", value === "" ? null : value),
+    });
     const mode = computed(() => {
       const value = instance.state.values.value.mode;
       return value === "edit" || value === "create" ? value : "view";
@@ -20,22 +28,44 @@ await mountPanel({
     const detailOpen = ref(mode.value !== "view");
     const narrow = ref(false);
     const root = ref(null);
-    const formProj = ref(null);
+    const returnTarget = ref(selected.value);
 
     const probe = usePanelData("probe", "rows", () => ({ size: 200 }));
-    const visibleKeys = computed(() => {
+    const detailData = usePanelData("detail", "record");
+
+    const probeRows = computed(() => {
       const result = probe.value?.status === "ready" ? probe.value.value : null;
-      const rows = Array.isArray(result) ? result : result?.rows;
-      return new Set((rows ?? []).map((row) => row.primaryKey).filter(Boolean));
+      return Array.isArray(result) ? result : (result?.rows ?? []);
+    });
+    const visibleKeys = computed(() => new Set(probeRows.value.map((row) => row.primaryKey).filter(Boolean)));
+    const probePendingByKey = computed(() => {
+      const map = new Map();
+      for (const row of probeRows.value) {
+        if (row?.primaryKey) map.set(row.primaryKey, row.tones?.status === "warning");
+      }
+      return map;
+    });
+    const checkedHasPending = computed(() => {
+      if (!checked.value.length) return false;
+      return checked.value.some((item) => {
+        const key = item?.primaryKey;
+        if (!key || !probePendingByKey.value.has(key)) return true;
+        return probePendingByKey.value.get(key) === true;
+      });
     });
 
-    const dirty = () => {
+    const detailReady = computed(() => detailData.value?.status === "ready");
+    const selectedIsPending = computed(
+      () => detailReady.value && detailData.value.value?.tones?.status === "warning",
+    );
+
+    const formDirty = computed(() => {
       try {
-        return Boolean(instance.dirty?.());
+        return Boolean(instance.forms?.dirty?.());
       } catch {
         return false;
       }
-    };
+    });
 
     const formBusy = computed(() => {
       try {
@@ -46,35 +76,68 @@ await mountPanel({
       }
     });
 
-    function discardForm() {
-      const el = formProj.value?.$el ?? formProj.value;
-      el?.querySelector?.(".sdk-owner-form-actions button")?.click();
+    async function confirmLeave() {
+      if (!formDirty.value) return true;
+      if (ctx.confirmLeaveUnsaved) return ctx.confirmLeaveUnsaved();
+      return true;
     }
 
     let silentDiscard = false;
     function requestDiscard() {
-      if (!dirty()) return;
+      if (!formDirty.value) return;
       silentDiscard = true;
-      discardForm();
+      try {
+        instance.forms?.discard?.("form");
+      } finally {
+        silentDiscard = false;
+      }
     }
 
-    let prevSelected = null;
-    watch(selected, (_value, old) => {
+    function exitEditing() {
+      requestDiscard();
+      const restore = formTarget.value ?? returnTarget.value ?? selected.value;
+      instance.state.setState({
+        mode: "view",
+        ...(restore ? { selected: restore, formTarget: restore } : { formTarget: null }),
+      });
+    }
+
+    const editBack = usePanelBack(() => editing.value, exitEditing, { pushHistory: true });
+    const narrowBack = usePanelBack(
+      () => narrow.value && detailOpen.value && !editing.value,
+      () => {
+        detailOpen.value = false;
+      },
+      { pushHistory: false },
+    );
+
+    let prevSelected = selected.value;
+    watch(selected, (value, old) => {
       prevSelected = old ?? null;
+      if (value && mode.value === "view") returnTarget.value = value;
     });
 
+    let revertingMode = false;
     watch(
       mode,
-      (next, prev) => {
+      async (next, prev) => {
+        if (revertingMode) {
+          revertingMode = false;
+          return;
+        }
         if (next === "create") {
           if (prev === "edit" && !(instance.draft?.value ?? instance.draft)) {
-            if (dirty() && !window.confirm(t("panel.discardConfirm"))) {
+            if (!(await confirmLeave())) {
+              revertingMode = true;
               instance.state.set("mode", "edit");
               return;
             }
             requestDiscard();
           }
-          if (formTarget.value !== null) instance.state.set("formTarget", null);
+          if (selected.value) returnTarget.value = selected.value;
+          if (selected.value !== null || formTarget.value !== null) {
+            instance.state.setState({ selected: null, formTarget: null });
+          }
           detailOpen.value = true;
         } else if (next === "edit") {
           if (!formTarget.value && selected.value) instance.state.set("formTarget", selected.value);
@@ -84,60 +147,66 @@ await mountPanel({
       { immediate: true },
     );
 
-    function onUserSelect() {
+    let revertingSelection = false;
+    async function onUserSelect(nextSelection) {
+      if (revertingSelection) {
+        revertingSelection = false;
+        return;
+      }
+      if (!nextSelection) return;
       detailOpen.value = true;
       if (!editing.value) return;
+
       const target = formTarget.value;
       const previousMissing = prevSelected != null && !visibleKeys.value.has(prevSelected.primaryKey);
-      if (previousMissing) {
-        // The list re-selected automatically because the previous row was
-        // filtered out; keep editing the form target. While creating, keep
-        // the previous row selected so cancel still lands on it.
-        if (target == null && prevSelected) instance.state.set("selected", prevSelected);
+      if (previousMissing && mode.value === "edit") return;
+
+      if (!(await confirmLeave())) {
+        revertingSelection = true;
+        instance.state.set("selected", mode.value === "create" ? null : (target ?? prevSelected));
         return;
       }
-      if (!dirty()) {
-        instance.state.setState({ mode: "view", formTarget: selected.value });
-        return;
-      }
-      if (window.confirm(t("panel.discardConfirm"))) {
-        requestDiscard();
-        instance.state.setState({ mode: "view", formTarget: selected.value });
-      } else {
-        instance.state.set("selected", target ?? prevSelected);
-      }
+      requestDiscard();
+      returnTarget.value = nextSelection;
+      instance.state.setState({ mode: "view", selected: nextSelection, formTarget: nextSelection });
     }
 
     function openEdit() {
       if (!selected.value) return;
+      returnTarget.value = selected.value;
       instance.state.setState({ formTarget: selected.value, mode: "edit" });
+      detailOpen.value = true;
     }
 
     function cancelEdit() {
-      if (dirty() && !window.confirm(t("panel.discardConfirm"))) return;
-      requestDiscard();
-      instance.state.setState({
-        mode: "view",
-        ...(formTarget.value ? { selected: formTarget.value } : {}),
-        formTarget: formTarget.value ?? selected.value,
-      });
+      void editBack.back();
+    }
+
+    function backToList() {
+      if (editing.value) {
+        void editBack.back().then((left) => {
+          if (left) detailOpen.value = false;
+        });
+        return;
+      }
+      void narrowBack.back();
     }
 
     function saveForm() {
       try {
-        instance.forms.submit("form");
+        void instance.forms.submit("form").catch(() => undefined);
       } catch {
-        // The built-in actions are hidden; a failed programmatic submit just
-        // leaves the form open for the user to retry.
+        // ObjectForm renders validation and owner refusal messages inline.
       }
     }
 
     function onDiscarded() {
-      if (silentDiscard) {
-        silentDiscard = false;
-        return;
-      }
-      instance.state.setState({ mode: "view", formTarget: selected.value });
+      if (silentDiscard) return;
+      const restore = formTarget.value ?? returnTarget.value ?? selected.value;
+      instance.state.setState({
+        mode: "view",
+        ...(restore ? { selected: restore, formTarget: restore } : { formTarget: null }),
+      });
     }
 
     function onSaved(object) {
@@ -146,6 +215,7 @@ await mountPanel({
         typeof key === "string" && key.length > 0
           ? { className: object?.className ?? TYPE, primaryKey: key }
           : (object?.className ? object : selected.value);
+      if (ref) returnTarget.value = ref;
       instance.state.setState({ ...(ref ? { selected: ref, formTarget: ref } : {}), mode: "view" });
       detailOpen.value = true;
     }
@@ -157,20 +227,15 @@ await mountPanel({
         detailOpen.value = true;
         if (draft.target?.id) {
           const ref = { className: TYPE, primaryKey: draft.target.id };
+          returnTarget.value = ref;
           instance.state.setState({ selected: ref, formTarget: ref, mode: "edit" });
         } else {
-          instance.state.setState({ formTarget: null, mode: "create" });
+          if (selected.value) returnTarget.value = selected.value;
+          instance.state.setState({ selected: null, formTarget: null, mode: "create" });
         }
       },
+      { immediate: true },
     );
-
-    // The panel stylesheet is scope-limited to outside member projections, so
-    // hide the form's own actions row with a document-level rule instead; the
-    // hidden discard button still drives programmatic discards.
-    const actionStyle = document.createElement("style");
-    actionStyle.textContent = ".sdk-owner-form-actions{display:none!important}";
-    document.head.appendChild(actionStyle);
-    onBeforeUnmount(() => actionStyle.remove());
 
     let observer;
     onMounted(() => {
@@ -185,17 +250,22 @@ await mountPanel({
 
     return {
       selected,
+      search,
       mode,
       editing,
       detailOpen,
+      detailReady,
+      selectedIsPending,
+      checkedHasPending,
       narrow,
       root,
-      formProj,
+      formDirty,
       formBusy,
       t,
       onUserSelect,
       openEdit,
       cancelEdit,
+      backToList,
       saveForm,
       onSaved,
       onDiscarded,

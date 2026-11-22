@@ -291,11 +291,23 @@ export class PanelFormAdapters {
     return [...this.#bySlot.values()].some((adapter) => adapter.dirty());
   }
 
+  /** Drops unsaved edits on every dirty registered form (used once leaving unsaved changes has been confirmed). */
+  discardAll(): void {
+    for (const adapter of this.#bySlot.values()) {
+      if (adapter.dirty()) adapter.discard();
+    }
+  }
+
   /** Saves what the form in a slot holds now. */
   submit(slot: string): Promise<unknown> {
     const adapter = this.#bySlot.get(slot);
     if (!adapter) throw new Error(`Slot '${slot}' holds no form`);
     return adapter.submit();
+  }
+
+  /** Drops unsaved edits in a slot's form, restoring its owner baseline. */
+  discard(slot: string): void {
+    this.#bySlot.get(slot)?.discard();
   }
 }
 

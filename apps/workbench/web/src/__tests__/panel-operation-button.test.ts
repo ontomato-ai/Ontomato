@@ -189,6 +189,8 @@ it("names what a delete removes in the host's dialog first, writes nothing on ca
   expect([...buttonOf(0).querySelector("button")!.classList]).toEqual(expect.arrayContaining(["el-button--danger", "is-text"]));
   await click(0);
   let box = await dialog();
+  // While the confirmation dialog is open, the button does not show a loading spinner yet.
+  expect(buttonOf(0).querySelector("button")!.classList.contains("is-loading")).toBe(false);
   expect(box.textContent).toContain(impact.summary);
   expect(box.textContent).toContain("Shipping note");
   dialogButton(box, "Cancel").click();

@@ -277,7 +277,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
     },
   },
-  [ROLE]: describeType("role", "governance"),
+  [ROLE]: {
+    ...describeType("role", "governance"),
+    reads: {
+      ...referenceReads,
+      options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
+    },
+  },
   [SDK_COMPONENT]: {
     ...describeType("sdkComponent", "product"),
     reads: {
@@ -321,7 +327,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       form: {
         ...modelReads.form,
-        params: { ...definitionFormParams, section: "applicationFormSection" },
+        params: { ...definitionFormParams, section: "applicationFormSection", entryId: "applicationEntryId" },
         requiredParams: ["section"],
       },
       createForm: modelReads.createForm,

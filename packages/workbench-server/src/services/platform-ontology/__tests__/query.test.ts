@@ -326,7 +326,7 @@ describe("platform-ontology composite query", () => {
     expect(sdkComponent?.operations).toBeUndefined();
 
     const role = byId.get(ROLE);
-    expect(role?.reads).toBeUndefined();
+    expect(Object.keys(role?.reads ?? {}).sort()).toEqual(["options", "resolve"]);
     expect(role?.operations).toBeUndefined();
   });
 

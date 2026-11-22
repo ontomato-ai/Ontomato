@@ -37,9 +37,31 @@ const props = withDefaults(
      * `ObjectHeader` or section heading above this summary already introduces the object.
      */
     showTitle?: boolean;
+    /**
+     * Visual layout: `"fields"` (default) draws a definition list of field labels and values; `"article"` draws a
+     * document reading layout with title and optional status badge on the top row, tags underneath when non-empty, a
+     * hairline divider, and full-width body prose.
+     */
+    layout?: "fields" | "article";
+    /** Field key drawn as a right-aligned status tag in `"article"` layout. */
+    statusField?: string;
+    /** Field key drawn as a row of tags below the heading in `"article"` layout when non-empty. */
+    tagsField?: string;
+    /** Field key drawn as full-width reading prose below the divider in `"article"` layout. */
+    bodyField?: string;
+    /** Optional panel message key shown in a centered empty state when no object is selected yet. */
+    emptyText?: string;
+    /** Optional panel message key shown when the requested object cannot be found or has been removed. */
+    missingText?: string;
   }>(),
   {
     showTitle: true,
+    layout: "fields",
+    statusField: undefined,
+    tagsField: undefined,
+    bodyField: undefined,
+    emptyText: undefined,
+    missingText: undefined,
   },
 );
 
@@ -66,8 +88,27 @@ const shown = computed(() => {
   return keys.filter(present);
 });
 
+const isArticle = computed(() => props.layout === "article");
+const articleExtraFields = computed(() => {
+  if (!isArticle.value) return shown.value;
+  const reserved = new Set([props.statusField, props.tagsField, props.bodyField].filter(Boolean));
+  return shown.value.filter((name) => !reserved.has(name));
+});
+
 const result = computed(() => recordData.value as DataStateResult<PlatformObjectRecord>);
 const labels = useDataStateLabels();
+const resolvedEmptyText = computed(() => (props.emptyText ? panel.t(props.emptyText) : ""));
+const resolvedMissingText = computed(() => (props.missingText ? panel.t(props.missingText) : ""));
+const showArticleEmpty = computed(
+  () => isArticle.value && Boolean(resolvedEmptyText.value) && result.value.status === "awaiting",
+);
+const showArticleMissing = computed(
+  () =>
+    isArticle.value
+    && Boolean(resolvedMissingText.value)
+    && result.value.status === "error"
+    && !("unreachable" in recordData.value && recordData.value.unreachable),
+);
 
 watch(record, (found) => {
   if (!found) return;
@@ -88,59 +129,117 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
 </script>
 
 <template>
-  <div class="sdk-object-summary">
-    <data-state :result="result" :labels="labels">
+  <div class="sdk-object-summary" :class="{ 'sdk-object-summary-article': isArticle, 'sdk-object-summary-centered': showArticleEmpty || showArticleMissing }">
+    <div v-if="showArticleEmpty || showArticleMissing" class="sdk-object-summary-empty" role="status">
+      <svg
+        class="sdk-object-summary-empty-icon"
+        width="48"
+        height="48"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.35"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M3 13h5l1.5 3h5L16 13h5"></path>
+        <path d="M5.5 5.5 3 13v5a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-5l-2.5-7.5a1 1 0 0 0-.95-.7H6.45a1 1 0 0 0-.95.7Z"></path>
+      </svg>
+      <p>{{ showArticleMissing ? resolvedMissingText : resolvedEmptyText }}</p>
+    </div>
+    <data-state v-else :result="result" :labels="labels">
       <template #default="{ value: current }">
-        <h3 v-if="showTitle" class="sdk-object-summary-title">
-          <template v-for="(part, index) in textHighlightSegments(current.label, current.highlights?.label)" :key="index">
-            <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-          </template>
-        </h3>
-        <dl>
-          <template v-for="name in shown" :key="name">
-            <dt>{{ current.fieldLabels?.[name] ?? name }}</dt>
-            <dd>
+        <template v-if="isArticle">
+          <div class="sdk-object-summary-article-head">
+            <h2 v-if="showTitle" class="sdk-object-summary-article-title">
+              <template v-for="(part, index) in textHighlightSegments(current.label, current.highlights?.label)" :key="index">
+                <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+              </template>
+            </h2>
+            <span
+              v-if="statusField && fieldText(current, statusField) !== ''"
+              class="sdk-object-summary-tag sdk-object-summary-status-badge"
+              :data-tone="current.tones?.[statusField] ?? 'default'"
+            >{{ fieldText(current, statusField) }}</span>
+          </div>
+          <div v-if="tagsField && recordFieldArrayItems(current, tagsField).length" class="sdk-object-summary-article-tags">
+            <template v-for="(item, itemIndex) in recordFieldArrayItems(current, tagsField)" :key="itemIndex">
               <button
-                v-if="isRecordReference(current.fields[name])"
+                v-if="isRecordReference(item)"
                 type="button"
                 class="sdk-object-ref-link"
-                @click="navigateTo(toFieldReference(current.fields[name]!), name)"
+                @click="navigateTo(toFieldReference(item), tagsField)"
               >
-                <template v-for="(part, index) in textHighlightSegments(referenceDisplayLabel(current.fields[name]!), current.highlights?.[name])" :key="index">
-                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                </template>
+                {{ referenceDisplayLabel(item) }}
               </button>
-              <span v-else-if="recordFieldArrayItems(current, name).length" class="sdk-object-summary-tags">
-                <template v-for="(item, itemIndex) in recordFieldArrayItems(current, name)" :key="itemIndex">
-                  <button
-                    v-if="isRecordReference(item)"
-                    type="button"
-                    class="sdk-object-ref-link"
-                    @click="navigateTo(toFieldReference(item), name)"
-                  >
-                    {{ referenceDisplayLabel(item) }}
-                  </button>
-                  <span v-else class="sdk-object-summary-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
-                </template>
-              </span>
-              <span
-                v-else-if="current.tones?.[name] && fieldText(current, name) !== ''"
-                class="sdk-object-summary-tag"
-                :data-tone="current.tones[name]"
-              >
-                <template v-for="(part, index) in textHighlightSegments(fieldText(current, name), current.highlights?.[name])" :key="index">
-                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                </template>
-              </span>
-              <span v-else-if="fieldText(current, name) !== ''" class="sdk-object-summary-text">
-                <template v-for="(part, index) in textHighlightSegments(fieldText(current, name), current.highlights?.[name])" :key="index">
-                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                </template>
-              </span>
-              <template v-else>—</template>
-            </dd>
-          </template>
-        </dl>
+              <span v-else class="sdk-object-summary-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+            </template>
+          </div>
+          <div v-if="bodyField" class="sdk-object-summary-article-body">
+            <template v-for="(part, index) in textHighlightSegments(fieldText(current, bodyField), current.highlights?.[bodyField])" :key="index">
+              <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+            </template>
+          </div>
+          <dl v-if="articleExtraFields.length" class="sdk-object-summary-article-extra">
+            <template v-for="name in articleExtraFields" :key="name">
+              <dt>{{ current.fieldLabels?.[name] ?? name }}</dt>
+              <dd>{{ fieldText(current, name) || "—" }}</dd>
+            </template>
+          </dl>
+        </template>
+        <template v-else>
+          <h3 v-if="showTitle" class="sdk-object-summary-title">
+            <template v-for="(part, index) in textHighlightSegments(current.label, current.highlights?.label)" :key="index">
+              <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+            </template>
+          </h3>
+          <dl>
+            <template v-for="name in shown" :key="name">
+              <dt>{{ current.fieldLabels?.[name] ?? name }}</dt>
+              <dd>
+                <button
+                  v-if="isRecordReference(current.fields[name])"
+                  type="button"
+                  class="sdk-object-ref-link"
+                  @click="navigateTo(toFieldReference(current.fields[name]!), name)"
+                >
+                  <template v-for="(part, index) in textHighlightSegments(referenceDisplayLabel(current.fields[name]!), current.highlights?.[name])" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </button>
+                <span v-else-if="recordFieldArrayItems(current, name).length" class="sdk-object-summary-tags">
+                  <template v-for="(item, itemIndex) in recordFieldArrayItems(current, name)" :key="itemIndex">
+                    <button
+                      v-if="isRecordReference(item)"
+                      type="button"
+                      class="sdk-object-ref-link"
+                      @click="navigateTo(toFieldReference(item), name)"
+                    >
+                      {{ referenceDisplayLabel(item) }}
+                    </button>
+                    <span v-else class="sdk-object-summary-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                  </template>
+                </span>
+                <span
+                  v-else-if="current.tones?.[name] && fieldText(current, name) !== ''"
+                  class="sdk-object-summary-tag"
+                  :data-tone="current.tones[name]"
+                >
+                  <template v-for="(part, index) in textHighlightSegments(fieldText(current, name), current.highlights?.[name])" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </span>
+                <span v-else-if="fieldText(current, name) !== ''" class="sdk-object-summary-text">
+                  <template v-for="(part, index) in textHighlightSegments(fieldText(current, name), current.highlights?.[name])" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </span>
+                <template v-else>—</template>
+              </dd>
+            </template>
+          </dl>
+        </template>
       </template>
     </data-state>
   </div>
@@ -155,6 +254,75 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+}
+.sdk-object-summary-article {
+  flex: 0 0 auto;
+  height: auto;
+  overflow: visible;
+}
+.sdk-object-summary-centered {
+  align-items: center;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 240px;
+}
+.sdk-object-summary-empty {
+  align-items: center;
+  color: var(--el-text-color-secondary);
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-sm);
+  gap: var(--spacing-sm);
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  text-align: center;
+}
+.sdk-object-summary-empty p {
+  margin: 0;
+}
+.sdk-object-summary-empty-icon {
+  color: var(--el-text-color-placeholder);
+  flex: none;
+}
+.sdk-object-summary-article-head {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  justify-content: space-between;
+}
+.sdk-object-summary-article-title {
+  color: var(--el-text-color-primary);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-lg, 1.4);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sdk-object-summary-status-badge {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  line-height: 22px;
+  padding: 2px var(--spacing-sm);
+}
+.sdk-object-summary-article-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-md);
+}
+.sdk-object-summary-article-body {
+  border-top: 1px solid var(--ui-divider);
+  color: var(--el-text-color-regular);
+  font-size: var(--text-sm);
+  line-height: 1.8;
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sdk-object-summary-article-extra {
+  margin-top: var(--spacing-md);
 }
 dl {
   display: grid;

@@ -152,7 +152,7 @@ One action a panel or its member hands to the enclosing page header in full-widt
 interface PanelDetailHeaderAction {
   id: string;
   label: string;
-  icon?: "plus" | "save" | "trash" | "sliders" | "table";
+  icon?: "plus" | "save" | "trash" | "sliders" | "table" | "book-open";
   primary?: boolean;
   danger?: boolean;
   inline?: boolean;

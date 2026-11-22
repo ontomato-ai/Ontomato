@@ -331,3 +331,14 @@ it("edits a list of strings as the owner's array", async () => {
   await context.instance.invoke("definition.save");
   expect(submitted(sent)[0]!.tags).toEqual(["billing"]);
 });
+
+it("discards unsaved edits programmatically via instance.forms.discard(slot)", async () => {
+  const { context } = await open();
+  type("/name", "Temporary edit");
+  await nextTick();
+  expect(context.instance.dirty()).toBe(true);
+  context.instance.forms.discard("definition");
+  await nextTick();
+  expect(context.instance.dirty()).toBe(false);
+  expect(context.instance.forms.handle("definition")!.values.value.name).toBe("Ship order");
+});

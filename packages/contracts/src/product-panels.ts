@@ -598,6 +598,8 @@ export const registerApplicationPanelUsesRequestSchema = z.object({
   /** Required when creating an application; omitted updates retain existing metadata and entry access. */
   declaration: applicationMetadataSchema.optional(),
   entryAccess: z.array(id).min(1).optional(),
+  /** Optional initial domain sharing intent when creating an application. */
+  shared: z.boolean().optional(),
   ...applicationEntrySettings,
 }).strict();
 export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplicationPanelUsesRequestSchema>;

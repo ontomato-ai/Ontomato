@@ -38,14 +38,24 @@ public class ApplicationController {
     public record PanelEntry(String path, String renderer) {}
     public record PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                     ApplicationCatalog.Declaration declaration, List<String> entryAccess,
-                                    String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery) {
+                                    String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery,
+                                    Boolean shared) {
         public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                  ApplicationCatalog.Declaration declaration, List<String> entryAccess) {
-            this(entry, panelUses, declaration, entryAccess, null, null, null);
+            this(entry, panelUses, declaration, entryAccess, null, null, null, null);
+        }
+        public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
+                                 ApplicationCatalog.Declaration declaration, List<String> entryAccess,
+                                 String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery) {
+            this(entry, panelUses, declaration, entryAccess, framePanelId, theme, delivery, null);
         }
     }
     public record CatalogueFormTarget(String kind, String id, String objectType, String primaryKey) {}
-    public record CatalogueFormRequest(String section, CatalogueFormTarget target, JSONObject values, String changedField) {}
+    public record CatalogueFormRequest(String section, CatalogueFormTarget target, JSONObject values, String changedField, String entryId) {
+        public CatalogueFormRequest(String section, CatalogueFormTarget target, JSONObject values, String changedField) {
+            this(section, target, values, changedField, null);
+        }
+    }
     public record IdentityUpdate(Map<String, String> names, Map<String, String> descriptions, String icon) {}
 
     @GetMapping("/platform/applications/catalogue")
@@ -57,8 +67,8 @@ public class ApplicationController {
     }
 
     @GetMapping("/platform/applications/catalogue/{id}")
-    public R<JSONObject> catalogueRecord(@PathVariable String id) {
-        return R.of(catalog.catalogueRecord(id, current()));
+    public R<JSONObject> catalogueRecord(@PathVariable String id, Locale locale) {
+        return R.of(catalog.catalogueRecord(id, current(), locale));
     }
 
     @PostMapping("/platform/applications/catalogue/form")

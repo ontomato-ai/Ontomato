@@ -14,10 +14,13 @@ const summary = applicationMetadataSchema.pick({ names: true, descriptions: true
   canEditEntries: z.boolean(),
   canGrant: z.boolean(),
   entryCount: z.number().int().nonnegative(),
+  updatedAt: z.string().optional(),
+  ownerName: z.string().optional(),
 });
 
 export const applicationCatalogueQueryResultSchema = z.object({
   rows: z.array(summary),
+  total: z.number().int().nonnegative().optional(),
   nextCursor: z.string().optional(),
 }).strict();
 
@@ -43,6 +46,7 @@ export const applicationCatalogueRecordSchema = summary
 
 export const applicationCatalogueFormRequestSchema = panelFormRequestSchema.extend({
   section: applicationFormSectionSchema,
+  entryId: z.string().min(1).optional(),
 });
 export type ApplicationCatalogueFormRequest = z.infer<typeof applicationCatalogueFormRequestSchema>;
 

@@ -1,23 +1,57 @@
 <style>
-  .bk { display: flex; flex-direction: column; gap: var(--spacing-md); min-height: 0; }
-  .bk-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-md); }
-  .bk-head-spacer { flex: 1; }
+  .bk {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--spacing-md) var(--page-gutter) var(--spacing-lg);
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .bk-head {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    min-height: 40px;
+    align-items: center;
+    gap: var(--spacing-md);
+  }
+  .bk-search {
+    flex: 0 1 360px;
+    min-width: 220px;
+    max-width: 100%;
+  }
+  .bk-search-icon {
+    color: var(--sdk-text-color-placeholder);
+  }
+  .bk-gov-slot:has(.sdk-conversation-entry-hosted) {
+    display: none;
+  }
   .bk-body {
     display: grid;
-    grid-template-columns: clamp(26rem, 42%, 29rem) minmax(0, 1fr);
-    height: max(24rem, calc(100vh - 15rem));
+    flex: 1 1 auto;
+    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+    min-width: 0;
     min-height: 0;
     overflow: hidden;
-    border: 1px solid var(--ui-divider);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
     border-radius: var(--radius-md);
     background: var(--sdk-bg-color);
   }
   .bk-list {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
     min-height: 0;
-    overflow-y: auto;
-    padding: var(--spacing-md);
-    border-right: 1px solid var(--ui-divider);
+    overflow: hidden;
+    border-right: 1px solid var(--sdk-border-color, var(--ui-border));
+  }
+  .bk-list-member {
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .bk-detail {
     display: flex;
@@ -26,56 +60,113 @@
     flex-direction: column;
     gap: var(--spacing-md);
     overflow-y: auto;
-    padding: var(--spacing-lg) var(--spacing-lg) 0;
+    padding: var(--page-section-padding, var(--spacing-lg)) var(--page-section-padding, var(--spacing-lg)) calc(var(--page-section-padding, var(--spacing-lg)) + 56px);
   }
-  .bk-back { display: none; }
-  .bk-detail-actions, .bk-form-actions {
+  .bk-back {
+    display: none;
+  }
+  .bk-form-title {
+    margin: 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    line-height: var(--leading-lg, 1.4);
+  }
+  .bk-btn-icon {
+    margin-inline-end: 6px;
+    flex-shrink: 0;
+  }
+  .bk-detail-actions,
+  .bk-form-actions {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: center;
     justify-content: flex-end;
     gap: var(--spacing-sm);
     flex-shrink: 0;
-    position: sticky;
-    bottom: 0;
-    padding: var(--spacing-sm) 0 var(--spacing-lg);
-    border-top: 1px solid var(--ui-divider);
-    background: var(--sdk-bg-color);
+    margin-top: var(--spacing-xs);
   }
-  .bk.narrow .bk-body { grid-template-columns: minmax(0, 1fr); }
-  .bk.narrow .bk-list { border-right: 0; }
-  .bk.narrow.detail-open .bk-list { display: none; }
-  .bk.narrow:not(.detail-open) .bk-detail { display: none; }
-  .bk.narrow .bk-back { display: inline-flex; align-items: center; gap: var(--spacing-xs); align-self: flex-start; padding: 0; border: 0; color: var(--brand-link); background: transparent; cursor: pointer; font-size: var(--text-base); }
+  .bk.narrow .bk-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bk.narrow .bk-list {
+    border-right: 0;
+  }
+  .bk.narrow.detail-open .bk-list {
+    display: none;
+  }
+  .bk.narrow:not(.detail-open) .bk-detail {
+    display: none;
+  }
+  .bk.narrow .bk-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    align-self: flex-start;
+    padding: 0;
+    border: 0;
+    color: var(--brand-link);
+    background: transparent;
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+  }
 </style>
 <div id="app">
   <section class="bk" :class="{ narrow, 'detail-open': detailOpen }" ref="root">
     <div class="bk-head">
-      <projection slot="governance"></projection>
-      <span class="bk-head-spacer"></span>
+      <sdk-input
+        v-model="search"
+        clearable
+        :placeholder="t('panel.searchPlaceholder')"
+        class="bk-search"
+      >
+        <template #prefix>
+          <svg class="bk-search-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+        </template>
+      </sdk-input>
       <projection slot="tabs"></projection>
+      <projection slot="governance" class="bk-gov-slot"></projection>
     </div>
     <div class="bk-body">
       <div class="bk-list">
-        <projection slot="list" @update:selected="onUserSelect">
+        <projection slot="list" class="bk-list-member" @update:selected="onUserSelect">
           <template #batch-actions>
-            <projection slot="approveAll"></projection>
+            <projection v-if="checkedHasPending" slot="approveAll"></projection>
             <projection slot="deleteAll"></projection>
           </template>
         </projection>
       </div>
       <div class="bk-detail">
-        <button type="button" class="bk-back" @click="detailOpen = false">‹ {{ t("panel.backToList") }}</button>
+        <button type="button" class="bk-back" @click="backToList">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m12 19-7-7 7-7" />
+            <path d="M19 12H5" />
+          </svg>
+          <span>{{ t("panel.backToList") }}</span>
+        </button>
         <projection slot="detail" v-show="mode === 'view'"></projection>
-        <div class="bk-detail-actions" v-show="mode === 'view'" v-if="selected">
-          <projection slot="approve"></projection>
-          <sdk-button @click="openEdit">{{ t("panel.edit") }}</sdk-button>
+        <div class="bk-detail-actions" v-show="mode === 'view'" v-if="selected && detailReady">
+          <projection v-if="selectedIsPending" slot="approve"></projection>
+          <sdk-button @click="openEdit">
+            <svg class="bk-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+              <path d="m15 5 4 4" />
+            </svg>
+            <span>{{ t("panel.edit") }}</span>
+          </sdk-button>
           <projection slot="remove"></projection>
         </div>
-        <projection slot="form" ref="formProj" v-show="editing" @saved="onSaved" @discarded="onDiscarded"></projection>
+        <h2 v-if="editing" class="bk-form-title">{{ t(mode === "create" ? "panel.add" : "panel.editTitle") }}</h2>
+        <projection slot="form" v-show="editing" @saved="onSaved" @discarded="onDiscarded"></projection>
         <div class="bk-form-actions" v-show="editing">
-          <sdk-button @click="cancelEdit">{{ t("panel.cancel") }}</sdk-button>
-          <sdk-button type="primary" :disabled="formBusy" @click="saveForm">{{ t("panel.save") }}</sdk-button>
+          <sdk-button :disabled="formBusy" @click="cancelEdit">{{ t("panel.cancel") }}</sdk-button>
+          <sdk-button type="primary" :loading="formBusy" :disabled="formBusy || (mode === 'edit' && !formDirty)" @click="saveForm">
+            {{ t("panel.save") }}
+          </sdk-button>
         </div>
       </div>
     </div>

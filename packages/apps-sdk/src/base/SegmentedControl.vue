@@ -190,9 +190,11 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
   align-self: flex-start;
   background: var(--ui-fill-tertiary);
   border-radius: var(--radius-md);
+  box-sizing: border-box;
   display: inline-flex;
   gap: calc(var(--spacing-xs) / 2);
-  padding: calc(var(--spacing-xs) / 2);
+  min-height: var(--control-height);
+  padding: 3px;
 }
 .sdk-segmented-option {
   align-items: center;

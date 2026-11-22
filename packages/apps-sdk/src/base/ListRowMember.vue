@@ -177,7 +177,7 @@ watch(
           : directInstance.memberData(memberKey, projection, () => inputs.value, () => localOwnParams.value);
         const operations = directInstance.rowMemberOperations(memberKey, projection, () => inputs.value);
         const rowOperation: PanelMemberRowOperation = {
-          async run(operationName, callerInput) {
+          async run(operationName, callerInput, hooks) {
             const sanitizedInput = assertNoBoundParamOverride(projection, operationName, callerInput);
             const itemKey = panelRecordItemKey(props.row);
             const memberPath = buildRowMemberPath(directInstance.memberPathOf(memberKey), itemKey);
@@ -190,7 +190,7 @@ watch(
             return directInstance.writeOperation(
               operationId,
               { call: { input: sanitizedInput } },
-              { memberPath, rowContext },
+              { memberPath, rowContext, ...(hooks?.onConfirmed ? { onConfirmed: hooks.onConfirmed } : {}) },
             );
           },
         };

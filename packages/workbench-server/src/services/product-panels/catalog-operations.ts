@@ -323,6 +323,30 @@ const applicationSave: PanelWriteServerOperation = {
 
       const id = target.primaryKey;
       if (submittedFields?.length === 0) return { primaryKey: id, data: { id } };
+      const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "access", "groupKey", "inputs", "defaultAgent", "count"]);
+      const isSingleEntry = !("panelUses" in values) && !("icon" in values) && (
+        submittedFields === undefined
+          ? ("pageKey" in values && "panelId" in values)
+          : submittedFields.some(pointer => singleEntryKeys.has(pointer.split("/", 2)[1] ?? ""))
+      );
+      if (isSingleEntry) {
+        const currentEntryId = typeof values.id === "string" && values.id.length > 0 ? values.id : "__new__";
+        const currentEntriesForm = await java.form({ section: "entries", target, changedField: null });
+        const entriesValues = applicationEntriesUpdateSchema.parse(currentEntriesForm.values);
+        const existingIndex = entriesValues.panelUses.findIndex(item => item.id === currentEntryId);
+        const baseEntry = (existingIndex >= 0
+          ? entriesValues.panelUses[existingIndex]
+          : { id: "", pageKey: "", panelId: "", path: `/applications/${id}/`, access: { kind: "domain-member" } }) as Parameters<typeof applySubmittedFields>[0];
+        const body = submittedFields === undefined
+          ? values
+          : applySubmittedFields(baseEntry, values, submittedFields);
+        const parsedEntry = formValues(applicationPanelUseSchema, body, async () =>
+          (await java.form({ section: "entry", entryId: existingIndex >= 0 ? currentEntryId : "__new__", target, changedField: null })).fields);
+        if (existingIndex >= 0) entriesValues.panelUses[existingIndex] = parsedEntry;
+        else entriesValues.panelUses.push(parsedEntry);
+        await java.saveEntries(id, entriesValues);
+        return { primaryKey: id, data: { id } };
+      }
       const entries = submittedFields === undefined ? "panelUses" in values
         : submittedFields.some(pointer => Object.hasOwn(applicationEntriesUpdateSchema.shape, pointer.split("/", 2)[1]));
       const section = entries ? "entries" : "identity";

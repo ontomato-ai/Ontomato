@@ -91,9 +91,14 @@ class BussinessKnowledgeFormTest {
 		assertFalse(title.getString("label").isBlank());
 		assertTrue(title.getBooleanValue("required"));
 		assertEquals("text", title.getJSONObject("control").getString("kind"));
+		assertFalse(title.getJSONObject("control").getString("placeholder").isBlank());
+		assertNotEquals("Admin.knowledge.form.titlePlaceholder", title.getJSONObject("control").getString("placeholder"));
 
 		JSONObject content = field(form, "/knowledgeText");
 		assertTrue(content.getJSONObject("control").getBooleanValue("multiline"));
+		assertEquals(8, content.getJSONObject("control").getIntValue("rows"));
+		assertFalse(content.getJSONObject("control").getString("placeholder").isBlank());
+		assertNotEquals("Admin.knowledge.form.contentPlaceholder", content.getJSONObject("control").getString("placeholder"));
 		assertTrue(content.getBooleanValue("required"));
 
 		JSONObject tags = field(form, "/knowledgeTags");
@@ -101,6 +106,8 @@ class BussinessKnowledgeFormTest {
 		assertEquals("select", tagsControl.getString("kind"));
 		assertTrue(tagsControl.getBooleanValue("multiple"));
 		assertTrue(tagsControl.getBooleanValue("allowCreate"));
+		assertFalse(tagsControl.getString("placeholder").isBlank());
+		assertNotEquals("Admin.knowledge.form.tagsPlaceholder", tagsControl.getString("placeholder"));
 		assertEquals(List.of("General", "Business", "Tech"),
 				List.of(tagsControl.getJSONArray("options").getJSONObject(0).getString("value"),
 						tagsControl.getJSONArray("options").getJSONObject(1).getString("value"),
@@ -108,6 +115,7 @@ class BussinessKnowledgeFormTest {
 		assertEquals("array", tags.getJSONObject("valueSchema").getString("type"));
 
 		JSONObject status = field(form, "/status");
+		assertEquals("radio", status.getJSONObject("control").getString("presentation"));
 		var statusOptions = status.getJSONObject("control").getJSONArray("options");
 		assertEquals(0, statusOptions.getJSONObject(0).getIntValue("value"));
 		assertEquals(1, statusOptions.getJSONObject(1).getIntValue("value"));

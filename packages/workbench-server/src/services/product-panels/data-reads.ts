@@ -12,7 +12,7 @@ import { authoredReadParameterSource, directReadDeclaration, panelReadParameterI
 import {
   AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
-  ONTOLOGY_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, TRIGGER, WORKFLOW,
+  ONTOLOGY_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
   type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -21,7 +21,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
-import type { ProductOwner } from "../product-governance/grants";
+import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
 
 import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
 import { createGeneralSettingsReads } from "../admin/general-settings-panel";
@@ -233,6 +233,24 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       }),
       resolve: async (_selection, params) => (await options()).users.resolve(params.values as readonly unknown[]),
     },
+    [ROLE]: {
+      options: async (_selection, params) => {
+        const keyword = panelReadParameterSchemas.keyword.optional().parse(params.keyword);
+        const page = panelReadParameterSchemas.page.optional().parse(params.page);
+        const { options: items } = await searchProductGrantPrincipals("role", keyword, page?.size ?? 100, viewer);
+        return { options: items.map(({ id, name }) => ({ primaryKey: id, value: id, label: name })) };
+      },
+      resolve: async (_selection, params) => {
+        const values = panelReadParameterSchemas.optionValues.parse(params.values);
+        const { options: items } = await searchProductGrantPrincipals("role", undefined, 100, viewer);
+        const byId = new Map(items.map(item => [item.id, item.name]));
+        return {
+          options: values
+            .filter((value): value is string => typeof value === "string" && value.length > 0)
+            .map(id => ({ primaryKey: id, value: id, label: byId.get(id) ?? id })),
+        };
+      },
+    },
     [SKILL]: {
       async options() {
         return (await skills()).options();
@@ -267,7 +285,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       entries: selection => applications.entries(selection.primaryKey!),
       grants: selection => applications.grants(selection.primaryKey!),
       form: (selection, params) => applications.form(selection.primaryKey!, {
-        ...formParams(params), section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
+        ...formParams(params),
+        section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
+        entryId: panelReadParameterSchemas.applicationEntryId.optional().parse(params.entryId),
       }),
       createForm: (_selection, params) => applications.createForm(formParams(params)),
     },

@@ -49,8 +49,17 @@ export interface PanelHumanOperations {
   ): Promise<PanelHumanOperationPreparation>;
 }
 
+/** Lifecycle hooks reported by the host while confirming and dispatching a prepared write. */
+export interface ConfirmPanelOperationHooks {
+  /** Called right after confirmation succeeds (or immediately when no confirmation is needed), before dispatch begins. */
+  onConfirmed?: () => void;
+}
+
 /** What the host does with a prepared write: confirms it where it must and dispatches it once, or the reader cancels. */
-export type ConfirmPanelOperation = (preparation: PanelHumanOperationPreparation) => Promise<AppBridgeConfirmPanelOperationResult>;
+export type ConfirmPanelOperation = (
+  preparation: PanelHumanOperationPreparation,
+  hooks?: ConfirmPanelOperationHooks,
+) => Promise<AppBridgeConfirmPanelOperationResult>;
 
 /** The coordinator's answer, or its refusal or failure with its own message. */
 async function sent(response: Promise<Response>): Promise<Response> {

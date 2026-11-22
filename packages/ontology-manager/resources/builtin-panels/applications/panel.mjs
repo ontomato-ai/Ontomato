@@ -1,452 +1,545 @@
 import { computed, reactive, ref, watch } from "vue";
-import { appIcon, mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
-
-/** The application catalogue uses the owner's declared reads, forms and operations. */
+import {
+  appIcon,
+  mountPanel,
+  usePanelBack,
+  usePanelContext,
+  usePanelData,
+  usePanelDetailHeader,
+} from "@ontomato/sdk/panel";
 
 const APPLICATION = "platform:Application";
 const PANEL = "platform:ProductPanel";
 const PROJECTION = "platform:ProductProjection";
 
-function localeRows(map) {
-  const locales = [...new Set([document.documentElement.lang, "en", ...Object.keys(map ?? {})])];
-  return locales.filter(key => map?.[key]).map(key => ({ key, value: map[key] }));
+function localizedText(map) {
+  if (!map || typeof map !== "object") return "";
+  const lang = typeof document !== "undefined" ? document.documentElement.lang : "";
+  if (lang && map[lang]) return map[lang];
+  if (map["zh-CN"]) return map["zh-CN"];
+  if (map.en) return map.en;
+  return Object.values(map).find((value) => typeof value === "string" && value.trim()) ?? "";
 }
 
-function localizedText(text) {
-  return localeRows(text)[0]?.value ?? "";
-}
-
-function secondaryName(names) {
-  return localeRows(names).find((item, index, rows) => index > 0 && item.value !== rows[0].value)?.value ?? "";
+function formatDateTime(iso) {
+  if (!iso || typeof iso !== "string") return "—";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  const locale = typeof document !== "undefined" && document.documentElement.lang ? document.documentElement.lang : undefined;
+  return parsed.toLocaleString(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function accessText(access) {
   if (!access) return "—";
   if (access.kind === "domain-member") return "本域成员";
-  if (access.permissionCode) return `权限码 ${access.permissionCode}`;
+  if (access.permissionCode) return access.permissionCode;
   return "—";
 }
 
 function agentText(agent) {
   if (!agent) return "通用助手";
-  if (agent.kind === "id") return `智能体 ${agent.id}`;
-  if (agent.kind === "preset") return `预置 ${agent.agentKind}`;
+  if (agent.kind === "id") return agent.id;
+  if (agent.kind === "preset") return agent.agentKind;
   return "通用助手";
 }
 
-function inputsText(inputs) {
-  const entries = Object.entries(inputs ?? {});
-  if (!entries.length) return "—";
-  return entries.map(([key, value]) => {
-    if (!value || typeof value !== "object") return `${key}=—`;
-    return `${key}=` + ("literal" in value ? JSON.stringify(value.literal) : `状态 ${value.frameState}`);
-  }).join("; ");
+function looksLikeColor(value) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  return /^(#|rgb\(|rgba\(|hsl\(|hsla\()/i.test(trimmed);
 }
 
-function themeText(theme) {
-  const parts = [];
-  for (const mode of ["light", "dark"]) {
-    const values = theme?.[mode] ?? {};
-    const keys = Object.keys(values);
-    if (keys.length) parts.push(`${mode}: ${keys.length} 项`);
-  }
-  return parts.join(" · ") || "—";
-}
-
-const Applications = {
+const ApplicationsPanel = {
   setup() {
-    const { instance, navigate, t } = usePanelContext();
+    const { instance, navigate, notify, t } = usePanelContext();
     const values = instance.state.values;
-    const selected = computed(() => values.value.selected ?? null);
-    const catalogue = usePanelData("catalogue", "rows");
-    const record = usePanelData("record", "record");
-    const entries = usePanelData("record", "entries");
-    const panelInfo = usePanelData("panelInfo", "panel");
-    const grants = usePanelData("record", "grants");
 
+    const selected = computed(() => values.value.selected ?? null);
+    const selectedKey = computed(() => selected.value?.primaryKey ?? "");
     const creating = computed({
       get: () => values.value.creating === true,
-      set(active) {
-        instance.state.set("creating", active ? true : null);
-      },
+      set: (active) => instance.state.set("creating", active ? true : null),
     });
     const mode = computed(() => (creating.value ? "create" : selected.value ? "detail" : "list"));
-    const busy = ref(false);
-    const listError = ref("");
-    const actionError = ref("");
-    const actionNote = ref("");
-    const classLinkNote = ref("");
 
-    const rows = computed(() => (catalogue.value.status === "ready" ? catalogue.value.value.rows ?? [] : []));
-    const nextCursor = computed(() => (catalogue.value.status === "ready" ? catalogue.value.value.nextCursor ?? null : null));
+    const scopeModel = computed({
+      get: () => values.value.scope || "visible",
+      set: (next) => instance.state.set("scope", next || "visible"),
+    });
+    const sortModel = computed({
+      get: () => values.value.sort || "id",
+      set: (next) => instance.state.set("sort", next || "id"),
+    });
+    const tabModel = computed({
+      get: () => values.value.tab || "identity",
+      set: (next) => instance.state.set("tab", next || "identity"),
+    });
+    const editingEntryId = computed({
+      get: () => values.value.editingEntryId ?? "",
+      set: (next) => instance.state.set("editingEntryId", next ? next : null),
+    });
+
+    const scopeOptions = computed(() => [
+      { value: "visible", label: t("scope.visible") },
+      { value: "maintainable", label: t("scope.maintainable") },
+    ]);
+
+    const record = usePanelData("record", "record");
+    const entries = usePanelData("entriesRead", "entries");
+    const grants = usePanelData("grantsRead", "grants");
+    const panelCatalogue = usePanelData("panelCatalogue", "rows");
+    const panelInfo = usePanelData("panelInfo", "panel");
+    const panelMembers = usePanelData("panelInfo", "members");
+    const userOptions = usePanelData("userOptions", "options");
+    const roleOptions = usePanelData("roleOptions", "options");
+
     const app = computed(() => (record.value.status === "ready" ? record.value.value : null));
     const entryData = computed(() => (entries.value.status === "ready" ? entries.value.value : null));
+    const entryRows = computed(() => entryData.value?.panelUses ?? []);
+    const appPath = computed(() => app.value?.fields?.path ?? "");
+    const grantRows = computed(() => (grants.value.status === "ready" ? grants.value.value?.grants ?? [] : []));
+    const isDomainShared = computed(() => (grants.value.status === "ready" ? Boolean(grants.value.value?.shared) : false));
 
-    const searchText = ref(values.value.search ?? "");
-    const scope = computed(() => values.value.scope ?? "visible");
-    const sort = computed(() => values.value.sort ?? "id");
-    const pageSize = computed(() => values.value.size ?? 20);
-    const cursors = ref([]);
-    const pageIndex = computed(() => cursors.value.length + 1);
-    const isFirstPage = computed(() => cursors.value.length === 0 && !values.value.cursor);
-    const listRegion = ref(null);
-    const listKey = () => JSON.stringify([values.value.search, scope.value, sort.value, pageSize.value, values.value.cursor]);
-    const positions = new Map();
-
-    function scrollContainer() {
-      for (let element = listRegion.value?.parentElement; element; element = element.parentElement) {
-        if (/^(auto|scroll)$/.test(getComputedStyle(element).overflowY)) return element;
+    const recordErrorText = computed(() => {
+      if (record.value.status === "failed") {
+        const message = record.value.error?.message;
+        if (message && message !== "Application not found") return message;
       }
-      return document.scrollingElement;
+      return t("detail.notFound");
+    });
+
+    const busy = ref(false);
+    const entriesBulkMode = ref(false);
+    const entryDialogOpen = computed({
+      get: () => Boolean(editingEntryId.value),
+      set: (open) => {
+        if (!open) editingEntryId.value = "";
+      },
+    });
+
+    // Save form handle for unified detail/create header actions
+    const saveHandle = computed(() => instance.forms.handle("save"));
+    const savingForm = computed(() => Boolean(saveHandle.value?.busy.value));
+    const saveDirty = computed(() => Boolean(saveHandle.value && instance.forms.dirty()));
+    const showIdentitySave = computed(
+      () => mode.value === "detail" && tabModel.value === "identity" && Boolean(app.value?.fields?.canMaintain),
+    );
+
+    async function submitSaveForm() {
+      if (!saveHandle.value || savingForm.value) return;
+      try {
+        await instance.forms.submit("save");
+      } catch {
+        // ObjectForm displays field-level or form-level owner refusals inline.
+      }
     }
 
-    watch(mode, (next, previous) => {
-      if (previous === "list") positions.set(listKey(), scrollContainer().scrollTop);
-    });
-    watch([listRegion, catalogue], ([region, data], _previous, onCleanup) => {
-      const position = positions.get(listKey());
-      if (!region || data.status !== "ready" || position === undefined) return;
-      // The list subtree is mounted separately from the mode change; let its table lay out first.
-      const frame = requestAnimationFrame(() => { scrollContainer().scrollTop = position; });
-      onCleanup(() => cancelAnimationFrame(frame));
-    }, { flush: "post" });
+    function discardSaveForm() {
+      instance.forms.discardAll();
+    }
 
-    watch(rows, (list) => {
-      instance.nameObjects(APPLICATION, list.map(({ primaryKey, label }) => ({ primaryKey, label })));
+    function closeDetail() {
+      instance.state.setState({
+        creating: null,
+        selected: null,
+        tab: "identity",
+        inspectedPanel: null,
+        editingEntryId: null,
+      });
+      entriesBulkMode.value = false;
+    }
+
+    const back = usePanelBack(() => mode.value !== "list", closeDetail, { pushHistory: true });
+    function handleBack() {
+      void back.back();
+    }
+
+    const detailTitle = computed(() => {
+      if (mode.value === "create") return t("action.create");
+      return app.value?.label || selectedKey.value;
+    });
+
+    const hasHeaderHost = usePanelDetailHeader(() => {
+      if (mode.value === "list") return null;
+      if (mode.value === "create") {
+        return {
+          backLabel: t("action.back"),
+          title: t("action.create"),
+          onBack: () => void back.back(),
+          actions: [
+            {
+              id: "cancel-create",
+              label: t("action.cancel"),
+              disabled: savingForm.value,
+              onClick: () => cancelCreate(),
+            },
+            {
+              id: "confirm-create",
+              label: t("action.confirmCreate"),
+              primary: true,
+              loading: savingForm.value,
+              disabled: !saveHandle.value || savingForm.value,
+              onClick: () => void submitSaveForm(),
+            },
+          ],
+        };
+      }
+      const actions = [];
+      if (showIdentitySave.value) {
+        if (saveDirty.value) {
+          actions.push({
+            id: "discard-identity",
+            label: t("action.discard"),
+            disabled: savingForm.value,
+            onClick: () => discardSaveForm(),
+          });
+        }
+        actions.push({
+          id: "save-identity",
+          label: t("action.save"),
+          icon: "save",
+          primary: true,
+          disabled: !saveDirty.value || savingForm.value,
+          loading: savingForm.value,
+          onClick: () => void submitSaveForm(),
+        });
+      }
+      return {
+        backLabel: t("action.back"),
+        title: detailTitle.value,
+        onBack: () => void back.back(),
+        actions,
+      };
+    });
+
+    watch(selectedKey, () => {
+      entriesBulkMode.value = false;
+      editingEntryId.value = "";
+      instance.state.set("inspectedPanel", null);
+    });
+
+    watch(app, (item) => {
+      if (!item) return;
+      instance.nameObjects(APPLICATION, [{ primaryKey: item.primaryKey, label: item.label }]);
+      if (!item.fields?.canGrant && tabModel.value === "grants") {
+        tabModel.value = "identity";
+      }
     }, { immediate: true });
 
-    watch(() => values.value.search, (value) => {
-      if ((value ?? "") !== searchText.value) searchText.value = value ?? "";
-    });
+    // Route agent drafts cleanly to the matching form/tab
+    watch(
+      instance.draft,
+      (draft) => {
+        if (!draft) return;
+        const id = draft.target?.id;
+        if (!id) {
+          instance.state.setState({ creating: true, selected: null });
+          return;
+        }
+        instance.state.setState({
+          creating: null,
+          selected: { className: APPLICATION, primaryKey: id },
+        });
+        if (draft.slot === "entriesForm") {
+          tabModel.value = "entries";
+          entriesBulkMode.value = true;
+        } else if (draft.slot === "entryForm") {
+          tabModel.value = "entries";
+          entriesBulkMode.value = false;
+          const draftEntryId = draft.form?.id;
+          editingEntryId.value = typeof draftEntryId === "string" && draftEntryId ? draftEntryId : "__new__";
+        } else {
+          tabModel.value = "identity";
+        }
+      },
+      { immediate: true },
+    );
 
-    let searchTimer;
-    function scheduleSearch() {
-      globalThis.clearTimeout(searchTimer);
-      searchTimer = globalThis.setTimeout(() => {
-        updateQuery({ search: searchText.value.trim() || null });
-      }, 250);
+    function onCreated(saved) {
+      instance.state.setState({
+        creating: null,
+        selected: saved?.primaryKey ? { className: APPLICATION, primaryKey: saved.primaryKey } : null,
+        tab: "identity",
+      });
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("notify.created") });
     }
 
-    function updateQuery(patch) {
-      cursors.value = [];
-      instance.state.setState({ ...patch, cursor: null });
+    function cancelCreate() {
+      void back.back();
     }
 
-    watch([() => values.value.search, scope, sort, pageSize], () => {
-      cursors.value = [];
-      if (values.value.cursor != null) instance.state.set("cursor", null);
-    }, { flush: "sync" });
-
-    const setScope = value => updateQuery({ scope: value });
-    const setSort = value => updateQuery({ sort: value });
-    const setSize = value => updateQuery({ size: value });
-
-    function nextPage() {
-      if (!nextCursor.value) return;
-      cursors.value = [...cursors.value, values.value.cursor ?? null];
-      instance.state.set("cursor", nextCursor.value);
+    function onSaved() {
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("notify.saved") });
     }
 
-    function previousPage() {
-      const previous = cursors.value.pop();
-      instance.state.set("cursor", previous ?? null);
+    function onEntriesFormSaved() {
+      entriesBulkMode.value = false;
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("entries.saved") });
     }
 
-    function firstPage() {
-      cursors.value = [];
-      instance.state.set("cursor", null);
+    function onEntryFormSaved() {
+      editingEntryId.value = "";
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("entries.saved") });
     }
 
-    function openRow(row) {
-      closeForm();
-      actionError.value = "";
-      actionNote.value = "";
-      classLinkNote.value = "";
-      creating.value = false;
-      instance.state.set("selected", { className: APPLICATION, primaryKey: row.primaryKey });
+    function closeEntryDialog() {
+      editingEntryId.value = "";
     }
 
-    function backToList() {
-      closeForm();
-      actionError.value = "";
-      actionNote.value = "";
-      classLinkNote.value = "";
-      creating.value = false;
-      instance.state.set("selected", null);
+    function onDeleteDone(outcome) {
+      if (outcome?.kind === "success") {
+        instance.refreshObjects();
+        closeDetail();
+        notify({ kind: "success", text: t("notify.deleted") });
+      }
     }
 
-    function createdApplication(saved) {
-      actionNote.value = "应用已新建。";
-      creating.value = false;
-      if (saved?.primaryKey) instance.state.set("selected", { className: APPLICATION, primaryKey: saved.primaryKey });
+    function retryRecord() {
       instance.refreshObjects();
     }
 
-    async function write(member, operation, input, target) {
-      busy.value = true;
-      actionError.value = "";
-      actionNote.value = "";
-      try {
-        const answer = await instance.writeOperation(`${member}.${operation}`, { call: { target, input } });
-        if (answer.decision === "cancel") return null;
-        const { response } = answer;
-        if (response.kind === "not-dispatched") throw new Error(response.message);
-        const outcome = response.outcome;
-        if (!outcome) return null;
-        if (outcome.kind === "success") {
-          instance.refreshObjects();
-          return outcome;
-        }
-        if (outcome.kind === "batch") throw new Error("属主按批量答的，这一页只会一次改一张应用。");
-        throw new Error(outcome.message || "属主没有给出结果");
-      } finally {
-        busy.value = false;
-      }
-    }
-
-    const target = computed(() => (app.value ? { kind: "object", objectType: APPLICATION, primaryKey: app.value.primaryKey } : null));
-
-
     async function openApplication() {
-      if (!app.value) return;
-      actionError.value = "";
+      const targetPath = app.value?.fields?.home || appPath.value;
+      if (!targetPath) return;
       try {
-        await navigate(app.value.fields.path);
+        await navigate(targetPath);
       } catch (reason) {
-        actionError.value = `打不开这个应用：${reason instanceof Error ? reason.message : String(reason)}`;
-      }
-    }
-
-    async function openClassCatalogue() {
-      classLinkNote.value = "";
-      try {
-        const state = JSON.stringify({ mode: "type", view: "list", selectedType: APPLICATION });
-        await navigate(`/ontology/assets/capability-map?${new globalThis.URLSearchParams({ state })}`);
-      } catch (reason) {
-        classLinkNote.value = `平台没有打开类目录：${reason instanceof Error ? reason.message : String(reason)}`;
+        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
       }
     }
 
     async function openCatalogueRecord(path, className, primaryKey) {
-      classLinkNote.value = "";
       try {
         const state = JSON.stringify({ selected: { className, primaryKey } });
         await navigate(`${path}?${new globalThis.URLSearchParams({ state })}`);
       } catch (reason) {
-        classLinkNote.value = reason instanceof Error ? reason.message : String(reason);
+        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
       }
     }
 
+    function openPanelCatalogue(panelId) {
+      if (!panelId) return;
+      void openCatalogueRecord("/ontology/panels", PANEL, panelId);
+    }
 
-    const openPanelCatalogue = id => openCatalogueRecord("/ontology/panels", PANEL, id);
-    const openMemberCatalogue = ({ className, primaryKey }) => openCatalogueRecord(
-      className === PROJECTION ? "/ontology/projections" : "/ontology/panels", className, primaryKey,
-    );
-
-    const usedPanels = computed(() => {
-      const ids = (entryData.value?.panelUses ?? []).map((use) => use.panelId);
-      return [...new Set(ids)];
-    });
-    const inspectedPanelId = computed(() => values.value.inspectedPanel?.primaryKey ?? "");
-    const inspectedMembers = computed(() => {
-      if (panelInfo.value.status !== "ready") return [];
-      const members = Object.values(panelInfo.value.value?.manifest?.members ?? {});
-      const records = new Map();
-      const add = (className, primaryKey) => records.set(`${className}:${primaryKey}`, { className, primaryKey });
-      for (const { target } of members) {
-        if ("projectionId" in target) add(PROJECTION, target.projectionId);
-        if ("panelId" in target) add(PANEL, target.panelId);
-        for (const id of target.candidates?.projectionIds ?? []) add(PROJECTION, id);
-        for (const id of target.candidates?.panelIds ?? []) add(PANEL, id);
+    function openMemberCatalogue(member) {
+      if (!member?.primaryKey) return;
+      if (member.className === PROJECTION) {
+        void openCatalogueRecord("/ontology/projections", PROJECTION, member.primaryKey);
+      } else {
+        openPanelCatalogue(member.primaryKey);
       }
-      return [...records.values()];
+    }
+
+    function onNavigateReference(reference) {
+      if (!reference) return;
+      if (reference.className === PANEL) openPanelCatalogue(reference.primaryKey);
+      else if (reference.className === PROJECTION) openMemberCatalogue(reference);
+    }
+
+    // --- Panel display name lookup & Panels/Projections tab (fixes A-30) ---
+    const panelNameMap = computed(() => {
+      if (panelCatalogue.value.status !== "ready") return {};
+      const list = panelCatalogue.value.value?.rows ?? [];
+      return Object.fromEntries(list.map((row) => [row.primaryKey, row.label || row.primaryKey]));
     });
+
+    function panelDisplayName(panelId) {
+      if (!panelId) return "—";
+      return panelNameMap.value[panelId] || panelId;
+    }
+
+    const usedPanels = computed(() => [...new Set(entryRows.value.map((row) => row.panelId).filter(Boolean))]);
+    const inspectedPanelId = computed(() => values.value.inspectedPanel?.primaryKey ?? "");
 
     function inspectPanel(panelId) {
       if (!panelId) return;
       instance.state.set("inspectedPanel", { className: PANEL, primaryKey: panelId });
     }
 
-    function groupText(groupKey) {
-      if (!groupKey) return "—";
-      const group = (entryData.value?.groups ?? []).find((item) => item.key === groupKey);
-      return group ? `${localizedText(group.names) || group.key} · ${group.sort}` : groupKey;
+    function inspectPanelAndOpenTab(panelId) {
+      inspectPanel(panelId);
+      tabModel.value = "assets";
     }
 
-    function permissionSummary(current) {
-      if (!current) return "—";
-      const parts = [];
-      if (current.canMaintain) parts.push("改身份、删除");
-      if (current.canEditEntries) parts.push("改入口");
-      if (current.canGrant) parts.push("授权");
-      return parts.length ? parts.join("、") : current.maintenance;
-    }
+    // Auto-select the first used panel when opening the Panels & Projections tab (fixes A-30)
+    watch(
+      [tabModel, usedPanels],
+      ([tab, panels]) => {
+        if (tab !== "assets" || panels.length === 0) return;
+        if (!inspectedPanelId.value || !panels.includes(inspectedPanelId.value)) {
+          inspectPanel(panels[0]);
+        }
+      },
+      { immediate: true },
+    );
 
-    const formSection = ref(null);
-
-    function closeForm() {
-      formSection.value = null;
-    }
-
-    function discardForm() {
-      if (creating.value) backToList();
-      else closeForm();
-    }
-
-    function finishForm(saved) {
-      if (creating.value) {
-        createdApplication(saved);
-        return;
+    const inspectedMembers = computed(() => {
+      if (panelMembers.value.status === "ready") {
+        const value = panelMembers.value.value;
+        const list = Array.isArray(value) ? value : value?.members ?? value?.rows ?? [];
+        if (list.length) {
+          return list.map((item) => ({
+            className: item.className || (item.kind === "panel" ? PANEL : PROJECTION),
+            primaryKey: item.primaryKey || item.projectionId || item.panelId || item.id,
+            label: item.label || item.name || item.primaryKey || item.projectionId || item.panelId,
+          })).filter((item) => Boolean(item.primaryKey));
+        }
       }
-      actionNote.value = formSection.value === "entries" ? "入口已保存。" : "身份已保存。";
-      closeForm();
-    }
-
-
-    const entryOpen = ref(false);
-    const entryEditing = ref(false);
-    const entryError = ref("");
-    const entry = reactive({
-      id: "", pageKey: "", panelId: "", path: "", nameZh: "", nameEn: "", groupKey: "",
-      accessKind: "domain-member", permissionCode: "", agentKind: "none", agentValue: "", inputsText: "",
+      if (panelInfo.value.status !== "ready") return [];
+      const members = panelInfo.value.value?.fields?.members ?? panelInfo.value.value?.members ?? [];
+      if (Array.isArray(members)) return members;
+      return Object.values(members)
+        .map((item) => item?.target?.projectionId)
+        .filter(Boolean)
+        .map((primaryKey) => ({ className: PROJECTION, primaryKey, label: primaryKey }));
     });
 
-    const groupChoices = computed(() => (entryData.value?.groups ?? []).map((group) => ({
-      key: group.key, label: `${localizedText(group.names) || group.key} · ${group.sort}`,
-    })));
-
-    function fillEntry(use) {
-      entry.id = use?.id ?? "";
-      entry.pageKey = use?.pageKey ?? "";
-      entry.panelId = use?.panelId ?? "";
-      entry.path = use?.path ?? "";
-      entry.nameZh = use?.names?.["zh-CN"] ?? "";
-      entry.nameEn = use?.names?.en ?? "";
-      entry.groupKey = use?.groupKey ?? "";
-      entry.accessKind = use?.access?.permissionCode ? "permissionCode" : "domain-member";
-      entry.permissionCode = use?.access?.permissionCode ?? "";
-      const agent = use?.defaultAgent;
-      entry.agentKind = agent?.kind ?? "none";
-      entry.agentValue = agent?.kind === "id" ? agent.id : agent?.kind === "preset" ? agent.agentKind : "";
-      entry.inputsText = use?.inputs ? JSON.stringify(use.inputs, null, 2) : "";
+    // --- Entries helpers & theme breakdown (fixes A-29, A-32) ---
+    function groupLabel(groupKey) {
+      if (!groupKey) return "—";
+      const found = (entryData.value?.groups ?? []).find((group) => group.key === groupKey);
+      return found ? localizedText(found.names) || groupKey : groupKey;
     }
 
-    function startAddEntry() {
-      fillEntry(null);
-      entry.pageKey = "";
-      entry.path = app.value ? `${app.value.fields.path}/` : "";
-      entryEditing.value = false;
-      entryError.value = "";
-      entryOpen.value = true;
+    const themeEntries = computed(() => {
+      const theme = entryData.value?.theme ?? {};
+      const toList = (bucket) =>
+        Object.entries(bucket ?? {}).map(([key, value]) => ({ key, value: String(value ?? "") }));
+      return { light: toList(theme.light), dark: toList(theme.dark) };
+    });
+    const hasThemeOverrides = computed(
+      () => themeEntries.value.light.length > 0 || themeEntries.value.dark.length > 0,
+    );
+
+    function openAddEntry() {
+      entriesBulkMode.value = false;
+      editingEntryId.value = "__new__";
     }
 
-    function startEditEntry(use) {
-      fillEntry(use);
-      entryEditing.value = true;
-      entryError.value = "";
-      entryOpen.value = true;
+    function openEditEntry(row) {
+      entriesBulkMode.value = false;
+      editingEntryId.value = row.id;
     }
 
-    function buildEntry() {
-      const id = entry.id.trim();
-      const panelId = entry.panelId.trim();
-      const path = entry.path.trim();
-      if (!id) throw new Error("入口 ID 不能为空。");
-      if (!panelId) throw new Error("面板 ID 不能为空。");
-      if (!path.startsWith("/") || path.startsWith("//") || /[?#\s]/u.test(path)) throw new Error("地址要写成 / 开头的规范地址，不带问号、井号和空白。");
-      if (path !== "/" && path.slice(1).split("/").some((segment) => !segment)) throw new Error("地址的每一段都要有名字：不要留空段，也不要以 / 结尾。");
-      const names = {};
-      if (entry.nameZh.trim()) names["zh-CN"] = entry.nameZh.trim();
-      if (entry.nameEn.trim()) names.en = entry.nameEn.trim();
-      const built = { id, pageKey: entry.pageKey.trim() || id, panelId, path };
-      if (Object.keys(names).length) built.names = names;
-      if (entry.groupKey) built.groupKey = entry.groupKey;
-      built.access = entry.accessKind === "permissionCode"
-        ? { permissionCode: entry.permissionCode.trim() }
-        : { kind: "domain-member" };
-      if (entry.accessKind === "permissionCode" && !entry.permissionCode.trim()) throw new Error("选了权限码就要写一个。");
-      if (entry.agentKind === "id" && entry.agentValue.trim()) built.defaultAgent = { kind: "id", id: entry.agentValue.trim() };
-      if (entry.agentKind === "preset" && entry.agentValue.trim()) built.defaultAgent = { kind: "preset", agentKind: entry.agentValue.trim() };
-      if (entry.inputsText.trim()) {
-        let parsed;
-        try {
-          parsed = JSON.parse(entry.inputsText);
-        } catch {
-          throw new Error("传入值要是一段 JSON。");
-        }
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("传入值要是一个 JSON 对象。");
-        built.inputs = parsed;
-      }
-      return built;
-    }
+    const appTarget = computed(() =>
+      selected.value ? { kind: "object", objectType: APPLICATION, primaryKey: selected.value.primaryKey } : null,
+    );
 
-    async function submitEntry() {
-      entryError.value = "";
+    async function runWrite(member, operation, input) {
+      if (!appTarget.value) return null;
+      busy.value = true;
       try {
-        const built = buildEntry();
-        const outcome = entryEditing.value
-          ? await write("updateEntry", "updateEntry", { entryId: entry.id, entry: built }, target.value)
-          : await write("addEntry", "addEntry", { entry: built }, target.value);
+        const outcome = await instance.runOperation(member, operation, input, appTarget.value);
+        if (outcome.kind === "cancelled") return null;
+        if (outcome.kind === "failed") throw new Error(outcome.message || "Operation failed");
+        instance.refreshObjects();
+        return outcome;
+      } finally {
+        busy.value = false;
+      }
+    }
+
+    const deleteEntryTarget = reactive({ open: false, id: "", name: "" });
+
+    function confirmRemoveEntry(row) {
+      deleteEntryTarget.id = row.id;
+      deleteEntryTarget.name = localizedText(row.names) || row.id;
+      deleteEntryTarget.open = true;
+    }
+
+    async function executeRemoveEntry() {
+      const entryId = deleteEntryTarget.id;
+      if (!entryId) return;
+      try {
+        const outcome = await runWrite("deleteEntry", "deleteEntry", { entryId });
         if (outcome) {
-          entryOpen.value = false;
-          actionNote.value = entryEditing.value ? "入口已保存。" : "入口已添加。";
+          deleteEntryTarget.open = false;
+          notify({ kind: "success", text: t("entries.deleted") });
         }
       } catch (reason) {
-        entryError.value = reason instanceof Error ? reason.message : String(reason);
+        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
       }
     }
 
-    async function removeEntry(use) {
-      try {
-        const outcome = await write("deleteEntry", "deleteEntry", { entryId: use.id }, target.value);
-        if (outcome) actionNote.value = "入口已删除。";
-      } catch (reason) {
-        actionError.value = reason instanceof Error ? reason.message : String(reason);
-      }
-    }
-
-
-    async function removeApplication() {
-      if (!app.value) return;
-      askConfirm(`删除应用「${app.value.label}」？删除后它的入口一起消失，不能撤回。`, doRemoveApplication);
-    }
-
-    async function doRemoveApplication() {
-      try {
-        const outcome = await write("deleteApp", "delete", {}, target.value);
-        if (outcome) {
-          creating.value = false;
-          instance.state.set("selected", null);
-          actionNote.value = "应用已删除。";
-        }
-      } catch (reason) {
-        actionError.value = reason instanceof Error ? reason.message : String(reason);
-      }
-    }
-
-
+    // --- Grants & Domain Sharing (fixes A-24, A-28) ---
     const grantOpen = ref(false);
     const grantError = ref("");
-    const grant = reactive({ principalKind: "principal", principalId: "", verb: "use" });
+    const grantDraft = reactive({ principalKind: "principal", principalId: "", verb: "use" });
 
-    function openGrant() {
+    const grantKindOptions = computed(() => [
+      { value: "principal", label: t("grants.principal") },
+      { value: "role", label: t("grants.role") },
+    ]);
+
+    watch(() => grantDraft.principalKind, () => {
+      grantDraft.principalId = "";
       grantError.value = "";
+    });
+
+    const activePrincipalOptions = computed(() => {
+      const source = grantDraft.principalKind === "role" ? roleOptions.value : userOptions.value;
+      if (source.status !== "ready") return [];
+      const list = source.value?.options ?? [];
+      return list
+        .filter((item) => typeof item.value === "string" && item.value.length > 0)
+        .map((item) => ({ value: item.value, label: item.label || item.value }));
+    });
+    const principalOptionsLoading = computed(() =>
+      (grantDraft.principalKind === "role" ? roleOptions.value.status : userOptions.value.status) === "loading",
+    );
+
+    function onPrincipalSearch(query) {
+      const term = typeof query === "string" ? query.trim() : "";
+      if (grantDraft.principalKind === "role") {
+        instance.state.set("roleKeyword", term || null);
+      } else {
+        instance.state.set("userKeyword", term || null);
+      }
+    }
+
+    function grantKindLabel(kind) {
+      if (kind === "role") return t("grants.role");
+      if (kind === "domain") return t("grants.domain");
+      return t("grants.principal");
+    }
+
+    function openGrantDialog() {
+      grantError.value = "";
+      grantDraft.principalKind = "principal";
+      grantDraft.principalId = "";
+      grantDraft.verb = "use";
+      instance.state.setState({ userKeyword: null, roleKeyword: null });
       grantOpen.value = true;
     }
 
-    async function submitGrant(remove) {
+    async function submitGrant() {
       grantError.value = "";
-      if (!grant.principalId.trim()) {
-        grantError.value = "要写授给谁的 ID。";
+      const principalId = String(grantDraft.principalId ?? "").trim();
+      if (!principalId) {
+        grantError.value = t("grants.needPrincipal");
         return;
       }
       try {
-        const outcome = await write("grant", "grant", {
-          principalKind: grant.principalKind, principalId: grant.principalId.trim(), verb: grant.verb, remove: Boolean(remove),
-        }, target.value);
+        const outcome = await runWrite("grant", "grant", {
+          principalKind: grantDraft.principalKind,
+          principalId,
+          verb: grantDraft.verb,
+          remove: false,
+        });
         if (outcome) {
           grantOpen.value = false;
-          actionNote.value = remove ? "授权已撤销。" : "授权已给出。";
+          notify({ kind: "success", text: t("grants.added") });
         }
       } catch (reason) {
         grantError.value = reason instanceof Error ? reason.message : String(reason);
@@ -454,68 +547,105 @@ const Applications = {
     }
 
     async function revokeExistingGrant(row) {
-      const { principalKind, principalId, verb } = row;
       try {
-        await write("grant", "grant", { principalKind, principalId, verb, remove: true }, target.value);
+        const outcome = await runWrite("grant", "grant", {
+          principalKind: row.principalKind,
+          principalId: row.principalId,
+          verb: row.verb,
+          remove: true,
+        });
+        if (outcome) notify({ kind: "success", text: t("grants.revoked") });
       } catch (reason) {
-        actionError.value = reason.message;
+        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
       }
     }
 
-    async function shareApplication(shared) {
+    async function toggleDomainShare(shared) {
       try {
-        await write("share", "share", { shared }, target.value);
+        const outcome = await runWrite("share", "share", { shared: Boolean(shared) });
+        if (outcome) notify({ kind: "success", text: t("grants.shareUpdated") });
       } catch (reason) {
-        actionError.value = reason.message;
+        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
       }
     }
-
-    const confirmState = reactive({ open: false, message: "", run: null });
-
-    function askConfirm(message, run) {
-      confirmState.message = message;
-      confirmState.run = run;
-      confirmState.open = true;
-    }
-
-    async function confirmRemove() {
-      const run = confirmState.run;
-      confirmState.open = false;
-      confirmState.run = null;
-      if (run) await run();
-    }
-
-    watch(creating, active => {
-      if (!active) return;
-      closeForm();
-      actionError.value = "";
-      actionNote.value = "";
-    }, { immediate: true });
-    watch(instance.draft, (draft) => {
-      if (!draft) return;
-      const id = draft.target.id;
-      if (!id) {
-        creating.value = true;
-        instance.state.set("selected", null);
-        return;
-      }
-      creating.value = false;
-      instance.state.set("selected", { className: APPLICATION, primaryKey: id });
-      formSection.value = draft.slot === "entriesForm" ? "entries" : "identity";
-    }, { immediate: true });
 
     return {
-      t, APPLICATION, catalogue, record, entries, entryData, grants, panelInfo, selected, rows, nextCursor, app, appIcon, mode, creating, busy,
-      searchText, scope, sort, pageSize, pageIndex, isFirstPage, listError, actionError, actionNote, classLinkNote,
-      listRegion, scheduleSearch, setScope, setSort, setSize, nextPage, previousPage, firstPage, openRow, backToList, createdApplication,
-      openApplication, openClassCatalogue, openPanelCatalogue, openMemberCatalogue, usedPanels, inspectedPanelId, inspectedMembers,
-      inspectPanel, groupText, permissionSummary, localeRows, localizedText, secondaryName,
-      accessText, agentText, inputsText, themeText,
-      formSection, closeForm, discardForm, finishForm,
-      entryOpen, entryEditing, entryError, entry, groupChoices, startAddEntry, startEditEntry, submitEntry, removeEntry,
-      removeApplication, confirmState, confirmRemove, grantOpen, grantError, grant, openGrant, submitGrant, revokeExistingGrant, shareApplication,
+      t,
+      appIcon,
+      mode,
+      hasHeaderHost,
+      detailTitle,
+      scopeModel,
+      scopeOptions,
+      sortModel,
+      tabModel,
+      editingEntryId,
+      entryDialogOpen,
+      record,
+      recordErrorText,
+      app,
+      appPath,
+      entries,
+      entryData,
+      entryRows,
+      grants,
+      grantRows,
+      isDomainShared,
+      panelInfo,
+      panelMembers,
+      busy,
+      entriesBulkMode,
+      savingForm,
+      saveDirty,
+      showIdentitySave,
+      handleBack,
+      submitSaveForm,
+      discardSaveForm,
+      cancelCreate,
+      onCreated,
+      onSaved,
+      onEntriesFormSaved,
+      onEntryFormSaved,
+      closeEntryDialog,
+      onDeleteDone,
+      retryRecord,
+      openApplication,
+      openPanelCatalogue,
+      openMemberCatalogue,
+      onNavigateReference,
+      panelDisplayName,
+      usedPanels,
+      inspectedPanelId,
+      inspectedMembers,
+      inspectPanel,
+      inspectPanelAndOpenTab,
+      groupLabel,
+      themeEntries,
+      hasThemeOverrides,
+      looksLikeColor,
+      localizedText,
+      formatDateTime,
+      accessText,
+      agentText,
+      openAddEntry,
+      openEditEntry,
+      deleteEntryTarget,
+      confirmRemoveEntry,
+      executeRemoveEntry,
+      grantOpen,
+      grantError,
+      grantDraft,
+      grantKindOptions,
+      activePrincipalOptions,
+      principalOptionsLoading,
+      onPrincipalSearch,
+      grantKindLabel,
+      openGrantDialog,
+      submitGrant,
+      revokeExistingGrant,
+      toggleDomainShare,
     };
   },
 };
 
-await mountPanel(Applications);
+await mountPanel(ApplicationsPanel);

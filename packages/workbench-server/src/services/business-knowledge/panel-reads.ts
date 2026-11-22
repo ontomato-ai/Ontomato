@@ -84,14 +84,33 @@ function textHighlights(text: string, terms: readonly string[]): PanelTextHighli
   return merged;
 }
 
+/** Strips common Markdown punctuation so compact list previews read cleanly as plain prose. */
+function plainSummaryText(text: string): string {
+  return text
+    .replace(/```[^\n]*\n?([\s\S]*?)```/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/(\*\*|__)([^\n]+?)\1/g, "$2")
+    .replace(/~~([^\n]+?)~~/g, "$1")
+    .replace(/(^|\s)\*([^*\n]+)\*(?=\s|[.,;:!?，。；：！？]|$)/g, "$1$2")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .replace(/^[ \t]*>[ \t]?/gm, "")
+    .replace(/^[ \t]*[-*+][ \t]+/gm, "")
+    .replace(/\r?\n+/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 /**
- * The content as a list row shows it under the title, as the page it replaces did: from shortly before the first hit,
- * so the hit is inside the two lines a row shows, and no longer than those lines can hold.
+ * The content as a list row shows it under the title, as the page it replaces did: plain prose stripped of raw Markdown
+ * syntax, starting shortly before the first hit so the match stays inside the two lines a row shows.
  */
 function contentSummary(text: string, terms: readonly string[]): string {
-  const lower = text.toLowerCase();
+  const plain = plainSummaryText(text);
+  const lower = plain.toLowerCase();
   const first = Math.min(...terms.map(term => lower.indexOf(term)).filter(index => index >= 0));
-  const from = Number.isFinite(first) && first > 24 ? `…${text.slice(first - 12)}` : text;
+  const from = Number.isFinite(first) && first > 24 ? `…${plain.slice(first - 12)}` : plain;
   return from.slice(0, 200);
 }
 
