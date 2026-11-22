@@ -26,7 +26,7 @@ import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
 import { createGeneralSettingsReads } from "../admin/general-settings-panel";
 import { createBuilderModelReads } from "../app-builder/panel-model";
 import { createDiagnosisModelReads } from "../ops-diagnosis/panel-model";
-import { readPublishedMcpService, readPublishedMcpServices } from "../mcp/panel-reads";
+import { readPublishedMcpService, readPublishedMcpServices, readPublishedMcpServiceTools } from "../mcp/panel-reads";
 import type { McpRequestLocation } from "../mcp/catalog";
 import { createDashboardCardReadAdapter } from "../dashboard/chart-sources";
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
@@ -133,6 +133,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [PUBLISHED_MCP_SERVICE]: {
       list: () => readPublishedMcpServices(viewer, location),
       record: selection => readPublishedMcpService(viewer, selection.primaryKey!, location),
+      tools: selection => readPublishedMcpServiceTools(viewer, selection.primaryKey!, location),
     },
     [AUDIT_LOG]: {
       query: (_selection, params) => audit.query(params),

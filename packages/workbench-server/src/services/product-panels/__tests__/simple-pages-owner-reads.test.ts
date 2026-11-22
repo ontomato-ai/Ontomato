@@ -72,7 +72,7 @@ configureI18n({
   },
 });
 
-const { readPublishedMcpService, readPublishedMcpServices } = await import("../../mcp/panel-reads");
+const { readPublishedMcpService, readPublishedMcpServices, readPublishedMcpServiceTools } = await import("../../mcp/panel-reads");
 const { createAuditLogPanelReads } = await import("../../admin/audit-log-panel-reads");
 const { BUILDER_MODELS_FORM_KEY, builderModelOperations, createBuilderModelReads } = await import("../../app-builder/panel-model");
 const { createDiagnosisModelReads } = await import("../../ops-diagnosis/panel-model");
@@ -93,6 +93,16 @@ describe("simple pages owner reads", () => {
     const single = await readPublishedMcpService(viewer, "ops-agent");
     expect(single.label).toBe("运维智能体服务");
     await expect(readPublishedMcpService(viewer, "missing")).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
+
+    const tools = await readPublishedMcpServiceTools(viewer, "analysis-agents");
+    expect(tools).toEqual([
+      expect.objectContaining({
+        primaryKey: "list_agents",
+        label: "List Agents",
+        fields: { name: "list_agents", inputSchema: "{}" },
+      }),
+    ]);
+    await expect(readPublishedMcpServiceTools(viewer, "missing")).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
   });
 
   it("localizes AuditLog business and operation fields with tones and uses page-number pagination", async () => {

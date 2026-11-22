@@ -35,3 +35,26 @@ export async function readPublishedMcpService(
   if (!service) throw new HttpError(404, "Published MCP service not found", "NOT_FOUND");
   return service;
 }
+
+export async function readPublishedMcpServiceTools(
+  viewer: AssistantCredentials, primaryKey: string, location?: McpRequestLocation,
+): Promise<PanelRecord[]> {
+  await assertPermission(viewer, ["mcp-service"]);
+  const { services } = await publishedMcpCatalogue(location, viewer.locale);
+  const service = services.find(item => item.name === primaryKey);
+  if (!service) throw new HttpError(404, "Published MCP service not found", "NOT_FOUND");
+  const fieldLabels = {
+    name: tForLocale(viewer.locale, "panels.agentForm.name"),
+    inputSchema: tForLocale(viewer.locale, "panels.simplePages.parameters"),
+  };
+  return service.tools.map(tool => ({
+    primaryKey: tool.name,
+    label: tool.title || tool.name,
+    ...(tool.description ? { subtitle: tool.description } : {}),
+    fields: {
+      name: tool.name,
+      ...(tool.inputSchema ? { inputSchema: JSON.stringify(tool.inputSchema, null, 2) } : {}),
+    },
+    fieldLabels,
+  }));
+}
