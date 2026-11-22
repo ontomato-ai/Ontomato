@@ -14,7 +14,7 @@ import type {
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 import {
-  affected, ownerEnvelopeSchema, ownerPost, ownerRecord, ownerWriteFailure, remove, save, savedIdSchema, targetLabel,
+  affected, ownerDeleteUnavailable, ownerEnvelopeSchema, ownerPost, ownerRecord, ownerWriteFailure, remove, save, savedIdSchema, targetLabel,
   valuesForTarget, type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
 
@@ -99,24 +99,6 @@ const deleteMetricViewImpact: PanelImpactInspector = {
     };
   },
 };
-/** The owner's reason a delete of this function would be refused, or null when it may go ahead. */
-const deleteRefusalEnvelopeSchema = ownerEnvelopeSchema.extend({
-  code: z.string().min(1).max(200).optional(),
-  data: z.object({ reason: z.string().min(1).max(500).nullable() }).strict().optional(),
-});
-
-/**
- * Why the delete is unavailable for this function right now, in the reader's language: the owner's own deletion rule
- * (a product, a system function, or one a metric, an action or a write task references), read when the panel describes
- * the delete. Nothing here judges the rule, and the delete still refuses for itself.
- */
-async function functionDeleteUnavailable(host: Host, target: PanelRecordTarget) {
-  const envelope = await ownerPost(host, "/function/deleteRefusal", { id: target.primaryKey }, deleteRefusalEnvelopeSchema);
-  if (!envelope.success) throw new HttpError(422, envelope.message ?? "The function cannot be read", envelope.code ?? "FUNCTION_UNAVAILABLE");
-  const reason = envelope.data?.reason;
-  return reason ? { reason } : undefined;
-}
-
 const deleteFunctionImpact: PanelImpactInspector = {
   handlerRef: `${DELETE_FUNCTION}.inspect-impact`,
   async inspect(host, calls) {
@@ -232,6 +214,8 @@ export const m5ServerOperations = [
     targetInput: "metric",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/metricView/queryById", "METRIC_VIEW_UNAVAILABLE"),
     inspectImpact: deleteMetricViewImpact,
+    unavailable: (host: Host, target: PanelRecordTarget) => ownerDeleteUnavailable(host, "/metricView/queryById",
+      { id: target.primaryKey, purpose: "delete-availability" }, "METRIC_VIEW_UNAVAILABLE"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected metric");
       return remove(host, "/metricView/delete", target, "METRIC_VIEW_DELETE_FAILED");
@@ -321,7 +305,8 @@ export const m5ServerOperations = [
     targetInput: "function",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/function/queryById", "FUNCTION_UNAVAILABLE"),
     inspectImpact: deleteFunctionImpact,
-    unavailable: functionDeleteUnavailable,
+    unavailable: (host: Host, target: PanelRecordTarget) => ownerDeleteUnavailable(host, "/function/deleteRefusal",
+      { id: target.primaryKey }, "FUNCTION_UNAVAILABLE", "The function cannot be read"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected function");
       return remove(host, "/function/delete", target, "FUNCTION_DELETE_FAILED");

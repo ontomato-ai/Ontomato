@@ -407,12 +407,26 @@ public class ActionServiceImpl implements ActionService {
 		Object[] exist = actionDao.queryById(id);
 		if (exist != null) {
 			Action existAction = (Action)exist[0];
-			if (Action.ORIGIN_SYSTEM.equals(existAction.getOrigin())) {
-				throw new OwnerRefusal("ACTION_SYSTEM", langService.get(lang, "Action.cannotDeleteSystem"));
-			}
+			OwnerRefusal refusal = systemDeletionRefusal(existAction, lang);
+			if (refusal != null) throw refusal;
 			actionDao.delete(id);
 		}
 	}
+
+  @Override
+  public String systemDeletionRefusal(String id, String domainId, String lang) {
+    Object[] row = actionDao.queryById(id);
+    Action action = row == null ? null : (Action) row[0];
+    if (action == null || !domainId.equals(action.getDomainId()))
+      throw new OwnerRefusal("ACTION_NOT_FOUND", langService.get(lang, "Action.notFound"));
+    OwnerRefusal refusal = systemDeletionRefusal(action, lang);
+    return refusal == null ? null : refusal.getMessage();
+  }
+
+  private OwnerRefusal systemDeletionRefusal(Action action, String lang) {
+    return OwnerRefusal.systemAssetDeletion(action.getOrigin(), "ACTION_SYSTEM",
+        () -> langService.get(lang, "Action.cannotDeleteSystem"));
+  }
 
   @Override
 	public Action queryById(String id) {

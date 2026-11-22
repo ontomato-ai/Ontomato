@@ -239,8 +239,9 @@ public class FunctionServiceImpl implements FunctionService {
 	private OwnerRefusal deletionRefusal(Function function, String lang) {
 		if (Function.OPERATION_PRODUCT.equals(function.getOperation()))
 			return new OwnerRefusal("FUNCTION_PRODUCT_IMMUTABLE", langService.get(lang, "Function.cannotDeleteProduct"));
-		if (Function.ORIGIN_SYSTEM.equals(function.getOrigin()))
-			return new OwnerRefusal("FUNCTION_SYSTEM", langService.get(lang, "Function.cannotDeleteSystem"));
+		OwnerRefusal system = OwnerRefusal.systemAssetDeletion(function.getOrigin(), "FUNCTION_SYSTEM",
+				() -> langService.get(lang, "Function.cannotDeleteSystem"));
+		if (system != null) return system;
 		String reason = referenceReason(function.getId(), lang);
 		return reason == null ? null : new OwnerRefusal("FUNCTION_REFERENCED", reason);
 	}

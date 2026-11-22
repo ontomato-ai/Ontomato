@@ -97,6 +97,9 @@ class ActionRefusalTest {
     Action stored = action("a1", Action.ORIGIN_SYSTEM, Action.STATUS_PENDING_REVIEW);
     when(actionDao.queryById("a1")).thenReturn(new Object[] {stored, "f-a1"});
 
+    assertEquals("Action.cannotDeleteSystem", service.systemDeletionRefusal("a1", "domain-a", "en"));
+    assertEquals("ACTION_NOT_FOUND", assertThrows(OwnerRefusal.class,
+        () -> service.systemDeletionRefusal("a1", "domain-b", "en")).code());
     OwnerRefusal error = assertThrows(OwnerRefusal.class, () -> service.delete("a1", "en"));
 
     assertEquals("ACTION_SYSTEM", error.code());
