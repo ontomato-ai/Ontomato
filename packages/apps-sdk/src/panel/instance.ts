@@ -238,8 +238,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     const preparation = writeOptions?.rowContext !== undefined
       ? await options.operations.prepare(operationId, invocation, path, writeOptions.rowContext)
       : await options.operations.prepare(operationId, invocation, path);
-    const hooks = writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : undefined;
-    return { ...await options.confirmOperation(preparation, hooks), named: namedTargets(preparation.confirmation) };
+    const confirmed = writeOptions?.onConfirmed
+      ? await options.confirmOperation(preparation, { onConfirmed: writeOptions.onConfirmed })
+      : await options.confirmOperation(preparation);
+    return { ...confirmed, named: namedTargets(preparation.confirmation) };
   }
   const commands = createPanelCommands(manifest, {
     state,

@@ -27,7 +27,7 @@ import type {PanelManifest} from '@ontomato/contracts/panel-manifest';
 import {METRIC_CHART_COMPONENT,productProjectionResponseSchema} from '@ontomato/contracts/product-panels';
 import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/page-draft';
 import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
-import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema,type PanelHumanOperationConfirmation,type PanelHumanOperationPreparation,type PanelUseRef} from '@ontomato/contracts/panel-agent';
+import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema,type PanelHumanOperationConfirmation,type PanelUseRef} from '@ontomato/contracts/panel-agent';
 import type {PanelOperationImpact} from '@ontomato/contracts/panel-operations';
 import {panelUploadSize} from '@ontomato/contracts/panel-upload';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
@@ -330,16 +330,12 @@ async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPa
  */
 export async function confirmPanelIntent(
   use:PanelUseRef,intentId:string,changed:(change:PanelObjectChange)=>void,admit?:(operationId:string)=>void,
-  options?:{prepared?:PanelHumanOperationPreparation;onConfirmed?:()=>void},
+  options?:{onConfirmed?:()=>void},
 ):Promise<AppBridgeConfirmPanelOperationResult>{
-  let prepared=options?.prepared;
-  if(!prepared){
-    const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(use)}`);
-    const intent=await read.json();
-    if(!read.ok)throw new Error(intent.error?.message??'Operation request unavailable');
-    prepared=panelHumanOperationPreparationSchema.parse(intent);
-  }
-  const {operationId,label,confirmation}=prepared;
+  const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(use)}`);
+  const intent=await read.json();
+  if(!read.ok)throw new Error(intent.error?.message??'Operation request unavailable');
+  const {operationId,label,confirmation}=panelHumanOperationPreparationSchema.parse(intent);
   admit?.(operationId);
   if(confirmation.kind!=='none'&&!await askPerson(label,confirmation))return {decision:'cancel'};
   options?.onConfirmed?.();

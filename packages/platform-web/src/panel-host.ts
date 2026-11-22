@@ -416,7 +416,7 @@ function directOptions(
       preparation.intentId,
       changed,
       undefined,
-      { prepared: preparation, onConfirmed: hooks?.onConfirmed },
+      hooks?.onConfirmed ? { onConfirmed: hooks.onConfirmed } : undefined,
     ),
     expandPageComposer: expandDeclaredComposer,
     navigate: panelNavigator(platformRouter(), beside),
