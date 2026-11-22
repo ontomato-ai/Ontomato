@@ -27,10 +27,17 @@ description: Build and register an Ontomato panel from its owner's reads and ope
    Use the [panel descriptor and member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel)
    to declare projections, and use `target.projectionId` for an existing projection.
    For graphs, see [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
-3. Write the template and interactions in Vue. Use [the SDK's `<sdk-*>` interface controls, `v-sdk-*` directives, `--sdk-*` theme tokens and `notify()`](CODE.md#panel-controls-and-platform-behavior),
+3. Write the template and interactions in Vue. Follow [content-box height and layout](CODE.md#content-box-height-and-layout)
+   (size against the host's definite-height content box with natural stacking or `height: 100%` plus a `rem`/`px`
+   `min-height` and no upper cap — never viewport units like `vh`/`vw`/`dvh`, viewport height subtraction, or
+   hand-drawn modal overlays; keep business counts and summaries in content, never in the page header), use
+   [the SDK's `<sdk-*>` interface controls, `v-sdk-*` directives, `--sdk-*` theme tokens and `notify()`](CODE.md#panel-controls-and-platform-behavior),
    follow the [direct runtime](CODE.md#write-a-vue-panel), and declare the
    [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
-4. Check and register the workspace, then open the registered entry. Use the page's input box
+4. Check and register the workspace, then open the registered entry. Whenever you re-run `panel register` or
+   `component register <directory> --revision <number>` to update an existing panel, projection, or domain component,
+   hard-reload any already-open browser tab (or reopen the entry) so the browser loads the new revision and freshly
+   compiled module instead of inspecting a cached copy. Use the page's input box
    for the [assistant check](#check-the-assistant-from-the-page). If the result looks wrong, follow
    [the browser and CLI checks](CODE.md#when-a-panel-looks-wrong).
 

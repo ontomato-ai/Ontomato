@@ -96,7 +96,7 @@ export function managementPanel(type, checks, typeTable, {
     ...(tabs ? [member("tabs")] : []), ...buttonKeys.map(key => member(key))];
   const details = [
     ...(members.detail ? [member("detail", ' v-if="selected"')] : []),
-    ...(edit ? [member("form", create ? ' v-if="selected || creating"' : ' v-if="selected"')] : []),
+    ...(edit ? [member("form", create ? ' v-show="selected || creating"' : ' v-show="selected"')] : []),
   ];
   const html = [
     "<style>",
