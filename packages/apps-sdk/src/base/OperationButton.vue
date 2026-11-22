@@ -1,21 +1,22 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
-import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
-import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
-import { readOperationInput } from "../panel/read-operation-input";
+import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
+import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { usePanelContext, useProjectionSlot } from "../panel/context";
+import { useMember, useMemberOperations } from "../panel/member";
+import { useDataStateLabels } from "./data-state-labels";
+import {
+  formatOperationLabel,
+  isOperationReady,
+  resolveOperationInputFields,
+  resolveOperationTarget,
+  useOperationRunner,
+  type OperationOutcome,
+} from "./operation-dispatch";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
-import { operationInputFields } from "./operation-input-schema";
-import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { useMember, useMemberOperations } from "../panel/member";
-import { stateObject, stateObjects } from "../panel/state";
-import type { PanelWriteResult } from "../panel/instance";
-import { useDataStateLabels } from "./data-state-labels";
 
 /**
  * The button of one operation a projection names, run as the reader the way an agent's call runs: the platform's
@@ -53,177 +54,89 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   /** A write was dispatched and its owner answered: the outcome, for the page to act on. */
-  done: [outcome: Outcome];
+  done: [outcome: OperationOutcome];
 }>();
+
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const member = useMember();
 const rowOperation = member.rowOperation ?? null;
-const running = ref(false);
-const failure = shallowRef<Error | null>(null);
+const labels = useDataStateLabels();
+
 /** The member's operations, as their owners admit them now. */
 const operations = useMemberOperations();
 if (!Object.hasOwn(slot.projection.operations ?? {}, props.operation))
   throw new Error(`The projection in member '${slot.slot}' names no operation '${props.operation}'`);
+
 /** The owner's description of this button's operation; absent while its owner does not admit it (nothing chosen yet). */
 const descriptor = computed<PanelOwnerOperationDescriptor | null>(() =>
-  operations.value.status === "ready" ? operations.value.value[props.operation] ?? null : null);
+  operations.value.status === "ready" ? operations.value.value[props.operation] ?? null : null,
+);
+
 /** What the button shows instead while there is nothing to press: the read in progress, or what it was answered. */
 const pending = computed<DataStateResult | null>(() => {
   if (operations.value.status !== "ready") return operations.value;
   return descriptor.value ? null : { status: "awaiting" };
 });
-const read = shallowRef<PanelReadOperationResult | null>(null);
-const receipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
-/** The targets the owner named when it prepared the last write. */
-const named = shallowRef<PanelWriteResult["named"]>([]);
-const operationId = computed(() => panel.instance.operationIdOf(slot.slot, props.operation));
+
+const {
+  running,
+  failure,
+  read,
+  receipt,
+  outcome,
+  batchItems: items,
+  batchDone: done,
+  inputDialogOpen,
+  said,
+  nameOf,
+  trigger,
+  confirmInput,
+  reset,
+} = useOperationRunner({
+  panel: () => panel,
+  slot: () => slot,
+  member: () => member,
+  t,
+  onDone: (_name, answered) => emit("done", answered),
+});
+
+const values = computed(() => panel.instance.state.values.value);
+const targetInfo = computed(() =>
+  resolveOperationTarget(panel, slot, member, descriptor.value, values.value),
+);
+
 /**
  * The button shows only once its description is read, so the owner's name, in the reader's language, is there. A batch
  * button also says how many objects it acts on, so it never reads as the single one beside it.
  */
-const label = computed(() => (batch.value
-  ? t("platform.operationChecked", { label: descriptor.value!.label, count: checkedObjects.value.length })
-  : descriptor.value!.label));
+const label = computed(() => formatOperationLabel(descriptor.value!, targetInfo.value, t));
 
-const fail = (reason: unknown) => {
-  failure.value = reason instanceof Error ? reason : new Error(String(reason));
-};
-
-const values = computed(() => panel.instance.state.values.value);
-/** The panel state of the input the owner's description names as the target: one object, or a list (a batch). */
-const targetState = computed(() => {
-  const described = descriptor.value?.target;
-  return described?.source === "input" ? slotInputState(panel.manifest, slot.slot, described.input) : null;
-});
-/** Whether the target is the panel's checked list: the button then runs one batch over every object in it. */
-const batch = computed(() => !rowOperation && targetState.value !== null && panel.manifest.state[targetState.value]!.type.kind === "list");
-/** The one object it acts on, when the target is a single object. */
-const target = computed<PanelOperationCall["target"]>(() => {
-  if (rowOperation) return null;
-  const selected = targetState.value === null || batch.value ? null : stateObject(values.value[targetState.value]);
-  return selected && { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey };
-});
-const checkedState = computed(() => (batch.value ? targetState.value : null));
-/** The checked objects: the list the target's panel state holds. */
-const checkedObjects = computed(() => (checkedState.value === null ? [] : stateObjects(values.value[checkedState.value])));
-const checkedTargets = computed(() =>
-  checkedObjects.value.map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey })));
 const targetKey = computed(() => (
   rowOperation
     ? JSON.stringify(member.inputs.value)
-    : target.value?.kind === "object" ? `${target.value.objectType}:${target.value.primaryKey}` : null
+    : targetInfo.value.target?.kind === "object"
+      ? `${targetInfo.value.target.objectType}:${targetInfo.value.target.primaryKey}`
+      : null
 ));
-const inputDialogOpen = ref(false);
-const hasDeclaredReadInputs = computed(() =>
-  panel.manifest.members[slot.slot]?.readOperationInputs?.[props.operation] !== undefined);
-/**
- * Editable parameter fields declared by the owner's `inputSchema.properties`.
- * Absent for file-upload actions, draft/readOperationInputs-bound reads, and keys already bound by `operation.params`.
- */
-const inputFields = computed(() => {
-  const described = descriptor.value;
-  if (!described || described.upload) return [];
-  if (described.effect === "read" && (described.target.source === "draft" || hasDeclaredReadInputs.value)) return [];
-  const boundParams = new Set(Object.keys(slot.projection.operations?.[props.operation]?.params ?? {}));
-  return operationInputFields(described.inputSchema, boundParams);
-});
+
+const inputFields = computed(() =>
+  resolveOperationInputFields(panel, slot, props.operation, descriptor.value),
+);
 
 watch(targetKey, () => {
-  inputDialogOpen.value = false;
-  failure.value = null;
-  read.value = null;
-  receipt.value = null;
+  reset();
 });
-const ready = computed(() => {
-  // The owner lists it but would refuse it now: the button is off, and says why beside it.
-  if (!descriptor.value || running.value || descriptor.value.unavailable) return false;
-  if (rowOperation) return true;
-  if (checkedState.value !== null) return checkedTargets.value.length > 0;
-  return descriptor.value.target.source !== "input" || target.value !== null;
-});
+
+const ready = computed(() =>
+  isOperationReady(descriptor.value, targetInfo.value, Boolean(rowOperation), running.value),
+);
 
 function onTriggerClick() {
-  if (inputFields.value.length > 0) {
-    failure.value = null;
-    inputDialogOpen.value = true;
-    return;
-  }
-  void run({});
+  if (!descriptor.value || !ready.value) return;
+  trigger(props.operation, descriptor.value);
 }
-
-async function run(providedInput: Record<string, RuntimeJsonValue> = {}) {
-  const described = descriptor.value!;
-  running.value = true;
-  failure.value = null;
-  read.value = null;
-  receipt.value = null;
-  try {
-    if (described.effect === "read") {
-      if (rowOperation) {
-        throw new Error(`Row operation '${props.operation}' must be a write operation`);
-      }
-      const { target: owned } = described;
-      // Trial runs bind a draft or declared readOperationInputs; unbound reads pass user-provided parameters (or {}).
-      const input = owned.source === "draft" || hasDeclaredReadInputs.value
-        ? readOperationInput(
-            panel.instance,
-            slot.slot,
-            props.operation,
-            owned.source === "draft" ? panel.instance.forms.handle(owned.slot)!.values.value : {},
-          )
-        : providedInput;
-      read.value = await panel.instance.readOperation(operationId.value, { target: target.value, input });
-      return;
-    }
-    const answer = rowOperation
-      ? await rowOperation.run(props.operation, providedInput)
-      : await (() => {
-          const [first, ...rest] = checkedTargets.value.map((object) => ({ target: object, input: providedInput }));
-          return panel.instance.writeOperation(
-            operationId.value, first ? { calls: [first, ...rest] } : { call: { target: target.value, input: providedInput } },
-          );
-        })();
-    if (answer.decision === "cancel") return;
-    named.value = answer.named;
-    keepUnchanged(answer.response);
-    const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
-    // A single write done is told where it outlasts the button; anything else stays beside it.
-    if (answered?.kind === "success") panel.notify({ kind: "success", text: said(answered) });
-    else receipt.value = answer.response;
-    if (answered) emit("done", answered);
-  } catch (reason) {
-    fail(reason);
-  } finally {
-    running.value = false;
-  }
-}
-
-/** A batch leaves checked only the objects it did not change. */
-function keepUnchanged(response: PanelHumanOperationDispatchResponse) {
-  if (checkedState.value === null || response.kind !== "dispatched" || response.outcome?.kind !== "batch") return;
-  const changed = new Set(response.outcome.items.filter(({ outcome }) => outcome.kind === "success")
-    .map(({ target: done }) => JSON.stringify([done.objectType, done.primaryKey])));
-  panel.instance.state.set(checkedState.value, checkedObjects.value.filter(({ className, primaryKey }) =>
-    !changed.has(JSON.stringify([className, primaryKey]))));
-}
-
-const labels = useDataStateLabels();
-
-type Outcome = NonNullable<Extract<PanelHumanOperationDispatchResponse, { kind: "dispatched" }>["outcome"]>;
-type Single = Exclude<Outcome, { kind: "batch" }>;
-/** One result in words: the owner's own message where it gave one. */
-const said = (outcome: Single) =>
-  outcome.kind === "success" ? outcome.message ?? t("platform.operationDone")
-    : outcome.kind === "unknown" ? t("platform.operationUnknown", { message: outcome.message })
-      : outcome.message;
-const outcome = computed(() => (receipt.value?.kind === "dispatched" ? receipt.value.outcome : null));
-const items = computed(() => (outcome.value?.kind === "batch" ? outcome.value.items : []));
-/** A batch item by the name its owner gave it when the batch was confirmed, else by its key. */
-const nameOf = (target: PanelObjectIdentity) => named.value.find(({ target: known }) =>
-  known.objectType === target.objectType && known.primaryKey === target.primaryKey)?.label ?? target.primaryKey;
-const done = computed(() => items.value.filter((item) => item.outcome.kind === "success").length);
 </script>
 
 <template>
@@ -238,7 +151,7 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
       :title="descriptor?.label"
       :fields="inputFields"
       :busy="running"
-      @confirm="run"
+      @confirm="confirmInput"
     ></operation-input-dialog>
     <p v-if="!pending && descriptor?.unavailable" class="sdk-operation-unavailable">{{ descriptor.unavailable.reason }}</p>
     <p v-if="failure" role="alert">{{ failure.message }}</p>

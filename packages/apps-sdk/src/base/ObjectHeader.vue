@@ -1,25 +1,26 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref, shallowRef, useSlots, watch } from "vue";
+import { computed, inject, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
-import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
+import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
+import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { panelContextKey, projectionKey, slotInputState } from "../panel/context";
-import type { PanelWriteResult } from "../panel/instance";
+import { panelContextKey, projectionKey } from "../panel/context";
 import { panelMemberKey, readerDataState } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
-import { readOperationInput } from "../panel/read-operation-input";
-import { stateObject, stateObjects } from "../panel/state";
 import { useDataStateLabels } from "./data-state-labels";
+import {
+  formatOperationLabel,
+  isOperationReady,
+  resolveOperationTarget,
+  useOperationRunner,
+  type OperationOutcome,
+} from "./operation-dispatch";
 import OperationButton from "./OperationButton.vue";
+import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
 import { displayFieldText, rawRecordField } from "./record-field";
-
-type OperationOutcome = NonNullable<Extract<PanelHumanOperationDispatchResponse, { kind: "dispatched" }>["outcome"]>;
-type SingleOperationOutcome = Exclude<OperationOutcome, { kind: "batch" }>;
 
 interface HeaderOperationItem {
   readonly name: string;
@@ -43,10 +44,11 @@ export type ObjectHeaderOperationSpec =
  * `title`), one-line subtitle (`subtitleField` or `subtitle`), status badge (`statusField` paired with `record.tones`,
  * or `status` + `statusTone`), and right-side action bar.
  *
- * When mounted as a projection member with declared `operations`, enforces the platform action layout automatically:
- * at most two regular operations appear inline via `OperationButton`, any remaining regular operations move into the
- * "More" menu, and delete/danger operations always sit last in the "More" menu using the platform's shared dispatch
- * and confirmation flow.
+ * When mounted as a projection member with declared `operations`, exposes up to `maxVisibleOperations` (default 2,
+ * configurable without upper cap) regular operations inline via `OperationButton`, moves remaining regular operations
+ * into the SDK dropdown "More" menu, and places dangerous operations (declared via the owner's `inspectImpact` or
+ * explicitly marked via `dangerOperations` / `{ danger: true }`) last in the "More" menu using the shared operation
+ * execution path.
  */
 const props = withDefaults(
   defineProps<{
@@ -70,7 +72,7 @@ const props = withDefaults(
     dangerOperations?: readonly string[];
     /** Projection operation local name emphasized as the primary inline button when exposed inline. */
     primaryOperation?: string;
-    /** Maximum number of regular operations exposed inline before overflowing to "More" (clamped to at most 2). */
+    /** Maximum number of regular operations exposed inline before overflowing to "More" (default 2; no upper limit). */
     maxVisibleOperations?: number;
   }>(),
   {
@@ -89,7 +91,6 @@ defineSlots<{
 }>();
 
 const { t, locale } = useI18n();
-const slots = useSlots();
 const panel = inject(panelContextKey, null);
 const slot = inject(projectionKey, null);
 const memberGetter = inject(panelMemberKey, null);
@@ -156,31 +157,48 @@ const resolvedStatusTone = computed(() => {
   return props.statusTone ?? "";
 });
 
+const moreAriaLabel = computed(() => {
+  const name = resolvedTitle.value.trim();
+  return name
+    ? t("platform.objectHeaderMoreActionsFor", { name })
+    : t("platform.objectHeaderMoreActions");
+});
+
+/**
+ * Dangerous operations follow the owner's declaration (`inspectImpact`) or explicit caller designation
+ * (`dangerOperations` / `{ danger: true }`), never name/handler regex guessing.
+ */
 function isDangerOperation(name: string, descriptor: PanelOwnerOperationDescriptor, explicitDanger?: boolean): boolean {
   if (explicitDanger) return true;
   if (props.dangerOperations?.includes(name)) return true;
-  if (/^(?:delete|remove)(?:$|[-_]|[A-Z])/.test(name) || /^(?:delete|remove)$/i.test(name)) return true;
-  return /(?:^|[./-])(?:delete|remove)(?:$|[./-]|[A-Z])/.test(descriptor.handlerRef)
-    || /(?:^|\.)(?:delete|remove)$/i.test(descriptor.handlerRef);
+  return Boolean(descriptor.inspectImpact);
 }
+
+const {
+  running: moreRunning,
+  failure: moreFailure,
+  read: moreRead,
+  receipt: moreReceipt,
+  outcome: moreOutcome,
+  batchItems: moreBatchItems,
+  batchDone: moreBatchDone,
+  inputDialogOpen: moreInputDialogOpen,
+  pendingDescriptor: morePendingDescriptor,
+  pendingInputFields: morePendingInputFields,
+  said,
+  nameOf,
+  trigger: triggerMoreOperation,
+  confirmInput: confirmMoreInput,
+  reset: resetMoreRunner,
+} = useOperationRunner({
+  panel: () => panel,
+  slot: () => slot,
+  member: () => member.value,
+  t,
+  onDone: (operationName, answered) => emit("done", operationName, answered),
+});
 
 const stateValues = computed(() => panel?.instance.state.values.value ?? {});
-
-function targetInfoFor(descriptor: PanelOwnerOperationDescriptor) {
-  if (!panel || !slot) {
-    return { batch: false, checkedState: null as string | null, checkedObjects: [] as ReturnType<typeof stateObjects>, target: null as PanelOperationCall["target"] };
-  }
-  const rowOperation = member.value?.rowOperation ?? null;
-  const targetState = descriptor.target.source === "input" ? slotInputState(panel.manifest, slot.slot, descriptor.target.input) : null;
-  const batch = !rowOperation && targetState !== null && panel.manifest.state[targetState]?.type.kind === "list";
-  const checkedState = batch ? targetState : null;
-  const checkedObjects = checkedState === null ? [] : stateObjects(stateValues.value[checkedState]);
-  const selected = rowOperation || targetState === null || batch ? null : stateObject(stateValues.value[targetState]);
-  const target: PanelOperationCall["target"] = selected
-    ? { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey }
-    : null;
-  return { batch, checkedState, checkedObjects, target };
-}
 
 const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
   const currentMember = member.value;
@@ -194,14 +212,9 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
   for (const spec of specs) {
     const descriptor = state.value[spec.name];
     if (!descriptor) continue;
-    const { batch, checkedState, checkedObjects, target } = targetInfoFor(descriptor);
-    const label = batch
-      ? t("platform.operationChecked", { label: descriptor.label, count: checkedObjects.length })
-      : descriptor.label;
-    const ready = !descriptor.unavailable && (
-      Boolean(currentMember.rowOperation)
-      || (checkedState !== null ? checkedObjects.length > 0 : descriptor.target.source !== "input" || target !== null)
-    );
+    const targetInfo = resolveOperationTarget(panel, slot, currentMember, descriptor, stateValues.value);
+    const label = formatOperationLabel(descriptor, targetInfo, t);
+    const ready = isOperationReady(descriptor, targetInfo, Boolean(currentMember.rowOperation), false);
     items.push({
       name: spec.name,
       descriptor,
@@ -214,10 +227,11 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
   return items;
 });
 
-const inlineLimit = computed(() => Math.max(0, Math.min(2, Math.floor(props.maxVisibleOperations))));
+const inlineLimit = computed(() => Math.max(0, Math.floor(props.maxVisibleOperations)));
 
 const inlineOperations = computed(() =>
-  admittedOperations.value.filter((item) => !item.danger).slice(0, inlineLimit.value));
+  admittedOperations.value.filter((item) => !item.danger).slice(0, inlineLimit.value),
+);
 
 const moreOperations = computed(() => {
   const normalOverflow = admittedOperations.value.filter((item) => !item.danger).slice(inlineLimit.value);
@@ -225,120 +239,18 @@ const moreOperations = computed(() => {
   return [...normalOverflow, ...dangerItems];
 });
 
-const hasActions = computed(() =>
-  Boolean(slots.actions) || inlineOperations.value.length > 0 || moreOperations.value.length > 0);
-
-const moreOpen = ref(false);
-const moreRootRef = ref<HTMLElement | null>(null);
-const runningMore = ref<string | null>(null);
-const moreFailure = shallowRef<Error | null>(null);
-const moreRead = shallowRef<PanelReadOperationResult | null>(null);
-const moreReceipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
-const moreNamed = shallowRef<PanelWriteResult["named"]>([]);
-
-function handleDocumentClick(event: MouseEvent) {
-  if (!moreOpen.value || !moreRootRef.value) return;
-  if (event.target instanceof Node && !moreRootRef.value.contains(event.target)) {
-    moreOpen.value = false;
-  }
-}
-
-watch(moreOpen, (open) => {
-  if (typeof document === "undefined") return;
-  if (open) document.addEventListener("click", handleDocumentClick);
-  else document.removeEventListener("click", handleDocumentClick);
-});
-
-onBeforeUnmount(() => {
-  if (typeof document !== "undefined") document.removeEventListener("click", handleDocumentClick);
-});
-
 watch(
   () => record.value?.primaryKey ?? props.title ?? null,
   () => {
-    moreOpen.value = false;
-    moreFailure.value = null;
-    moreRead.value = null;
-    moreReceipt.value = null;
+    resetMoreRunner();
   },
 );
 
-const said = (outcome: SingleOperationOutcome) =>
-  outcome.kind === "success" ? outcome.message ?? t("platform.operationDone")
-    : outcome.kind === "unknown" ? t("platform.operationUnknown", { message: outcome.message })
-      : outcome.message;
-
-const moreOutcome = computed(() => (moreReceipt.value?.kind === "dispatched" ? moreReceipt.value.outcome : null));
-const moreBatchItems = computed(() => (moreOutcome.value?.kind === "batch" ? moreOutcome.value.items : []));
-const moreBatchDone = computed(() => moreBatchItems.value.filter((item) => item.outcome.kind === "success").length);
-const nameOf = (target: PanelObjectIdentity) =>
-  moreNamed.value.find(({ target: known }) =>
-    known.objectType === target.objectType && known.primaryKey === target.primaryKey)?.label ?? target.primaryKey;
-
-async function runMoreOperation(item: HeaderOperationItem) {
-  if (!panel || !slot || item.disabled || runningMore.value !== null) return;
-  moreOpen.value = false;
-  runningMore.value = item.name;
-  moreFailure.value = null;
-  moreRead.value = null;
-  moreReceipt.value = null;
-  const { descriptor } = item;
-  const operationId = panel.instance.operationIdOf(slot.slot, item.name);
-  const rowOperation = member.value?.rowOperation ?? null;
-  const { checkedState, checkedObjects, target } = targetInfoFor(descriptor);
-
-  try {
-    if (descriptor.effect === "read") {
-      if (rowOperation) throw new Error(`Row operation '${item.name}' must be a write operation`);
-      const { target: owned } = descriptor;
-      const hasDeclaredInputs = panel.manifest.members[slot.slot]?.readOperationInputs?.[item.name] !== undefined;
-      const input = owned.source === "draft" || hasDeclaredInputs
-        ? readOperationInput(
-            panel.instance,
-            slot.slot,
-            item.name,
-            owned.source === "draft" ? panel.instance.forms.handle(owned.slot)!.values.value : {},
-          )
-        : {};
-      moreRead.value = await panel.instance.readOperation(operationId, { target, input });
-      return;
-    }
-    const answer = rowOperation
-      ? await rowOperation.run(item.name)
-      : await (() => {
-          const checkedTargets = checkedObjects.map(({ className, primaryKey }) => ({
-            kind: "object" as const,
-            objectType: className,
-            primaryKey,
-          }));
-          const [first, ...rest] = checkedTargets.map((object) => ({ target: object, input: {} }));
-          return panel.instance.writeOperation(
-            operationId,
-            first ? { calls: [first, ...rest] } : { call: { target, input: {} } },
-          );
-        })();
-    if (answer.decision === "cancel") return;
-    moreNamed.value = answer.named;
-    if (checkedState !== null && answer.response.kind === "dispatched" && answer.response.outcome?.kind === "batch") {
-      const changed = new Set(
-        answer.response.outcome.items
-          .filter(({ outcome }) => outcome.kind === "success")
-          .map(({ target: done }) => JSON.stringify([done.objectType, done.primaryKey])),
-      );
-      panel.instance.state.set(
-        checkedState,
-        checkedObjects.filter(({ className, primaryKey }) => !changed.has(JSON.stringify([className, primaryKey]))),
-      );
-    }
-    const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
-    if (answered?.kind === "success") panel.notify({ kind: "success", text: said(answered) });
-    else moreReceipt.value = answer.response;
-    if (answered) emit("done", item.name, answered);
-  } catch (reason) {
-    moreFailure.value = reason instanceof Error ? reason : new Error(String(reason));
-  } finally {
-    runningMore.value = null;
-  }
+function handleMoreCommand(command: string | number | Record<string, unknown>) {
+  if (typeof command !== "string") return;
+  const item = moreOperations.value.find((entry) => entry.name === command);
+  if (!item || item.disabled || moreRunning.value) return;
+  triggerMoreOperation(item.name, item.descriptor);
 }
 </script>
 
@@ -360,7 +272,7 @@ async function runMoreOperation(item: HeaderOperationItem) {
           </div>
           <p v-if="resolvedSubtitle" class="sdk-object-header-subtitle">{{ resolvedSubtitle }}</p>
         </div>
-        <div v-if="hasActions" class="sdk-object-header-actions">
+        <div v-if="$slots.actions || inlineOperations.length > 0 || moreOperations.length > 0" class="sdk-object-header-actions">
           <slot name="actions"></slot>
           <OperationButton
             v-for="item in inlineOperations"
@@ -369,52 +281,56 @@ async function runMoreOperation(item: HeaderOperationItem) {
             :type="item.primary ? 'primary' : 'default'"
             @done="(outcome) => emit('done', item.name, outcome)"
           />
-          <div
+          <el-dropdown
             v-if="moreOperations.length"
-            ref="moreRootRef"
+            trigger="click"
+            placement="bottom-end"
             class="sdk-object-header-more"
-            @keydown.escape="moreOpen = false"
+            :disabled="moreRunning"
+            @command="handleMoreCommand"
           >
             <button
               type="button"
               class="sdk-object-header-more-btn"
-              :aria-label="t('common.more')"
-              :title="t('common.more')"
-              aria-haspopup="menu"
-              :aria-expanded="moreOpen"
-              :disabled="runningMore !== null"
-              @click.stop="moreOpen = !moreOpen"
+              :aria-label="moreAriaLabel"
+              :title="moreAriaLabel"
+              :disabled="moreRunning"
             >
               <span aria-hidden="true">···</span>
             </button>
-            <div v-if="moreOpen" class="sdk-object-header-more-menu" role="menu">
-              <template v-for="(item, index) in moreOperations" :key="item.name">
-                <div
-                  v-if="item.danger && index > 0 && !moreOperations[index - 1]?.danger"
-                  class="sdk-object-header-more-divider"
-                  role="separator"
-                ></div>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="sdk-object-header-more-item"
-                  :class="{ 'is-danger': item.danger }"
+            <template #dropdown>
+              <el-dropdown-menu class="sdk-object-header-more-menu">
+                <el-dropdown-item
+                  v-for="(item, index) in moreOperations"
+                  :key="item.name"
+                  :command="item.name"
+                  :divided="item.danger && index > 0 && !moreOperations[index - 1]?.danger"
+                  :disabled="item.disabled || moreRunning"
+                  :class="['sdk-object-header-more-item', { 'is-danger': item.danger }]"
                   :data-operation="item.name"
                   :data-danger="item.danger ? 'true' : undefined"
-                  :disabled="item.disabled || runningMore !== null"
                   :title="item.descriptor.unavailable?.reason"
-                  @click="runMoreOperation(item)"
                 >
-                  <span class="sdk-object-header-more-label">{{ item.label }}</span>
-                  <span v-if="item.descriptor.unavailable" class="sdk-object-header-more-reason">
-                    {{ item.descriptor.unavailable.reason }}
+                  <span class="sdk-object-header-more-item-body">
+                    <span class="sdk-object-header-more-label">{{ item.label }}</span>
+                    <span v-if="item.descriptor.unavailable" class="sdk-object-header-more-reason">
+                      {{ item.descriptor.unavailable.reason }}
+                    </span>
                   </span>
-                </button>
-              </template>
-            </div>
-          </div>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
+      <operation-input-dialog
+        v-if="morePendingInputFields.length > 0"
+        v-model="moreInputDialogOpen"
+        :title="morePendingDescriptor?.label"
+        :fields="morePendingInputFields"
+        :busy="moreRunning"
+        @confirm="confirmMoreInput"
+      ></operation-input-dialog>
       <div v-if="moreFailure || moreRead || moreReceipt" class="sdk-object-header-feedback">
         <p v-if="moreFailure" class="sdk-object-header-alert" role="alert">{{ moreFailure.message }}</p>
         <OperationResult v-if="moreRead" :result="moreRead" />
@@ -520,9 +436,6 @@ async function runMoreOperation(item: HeaderOperationItem) {
   gap: var(--component-gap);
   min-width: 0;
 }
-.sdk-object-header-more {
-  position: relative;
-}
 .sdk-object-header-more-btn {
   display: inline-flex;
   align-items: center;
@@ -552,63 +465,6 @@ async function runMoreOperation(item: HeaderOperationItem) {
   cursor: not-allowed;
   color: var(--el-disabled-text-color);
 }
-.sdk-object-header-more-menu {
-  position: absolute;
-  inset-inline-end: 0;
-  inset-block-start: calc(100% + var(--spacing-xs));
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  min-width: 160px;
-  padding: var(--spacing-xs);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-md);
-  background: var(--el-bg-color-overlay);
-  box-shadow: var(--elevation-overlay);
-}
-.sdk-object-header-more-divider {
-  height: 1px;
-  margin: var(--spacing-xs) 0;
-  background: var(--ui-divider);
-}
-.sdk-object-header-more-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--el-text-color-primary);
-  font-family: var(--font-sans);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-  text-align: start;
-  cursor: pointer;
-  transition: background-color var(--transition-fast);
-}
-.sdk-object-header-more-item:hover:not(:disabled),
-.sdk-object-header-more-item:focus-visible {
-  background: var(--ui-fill-tertiary);
-  outline: none;
-}
-.sdk-object-header-more-item.is-danger {
-  color: var(--el-color-danger-text);
-}
-.sdk-object-header-more-item.is-danger:hover:not(:disabled) {
-  background: var(--el-color-danger-light-9);
-}
-.sdk-object-header-more-item:disabled {
-  cursor: not-allowed;
-  color: var(--el-disabled-text-color);
-}
-.sdk-object-header-more-reason {
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
 .sdk-object-header-feedback {
   display: flex;
   flex-direction: column;
@@ -629,5 +485,27 @@ async function runMoreOperation(item: HeaderOperationItem) {
 }
 .sdk-object-header-batch li:not([data-outcome="success"]) {
   color: var(--el-color-danger-text);
+}
+</style>
+
+<style>
+.sdk-object-header-more-menu .sdk-object-header-more-item-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.sdk-object-header-more-menu .el-dropdown-menu__item.sdk-object-header-more-item.is-danger {
+  color: var(--el-color-danger-text);
+}
+.sdk-object-header-more-menu .el-dropdown-menu__item.sdk-object-header-more-item.is-danger:not(.is-disabled):hover,
+.sdk-object-header-more-menu .el-dropdown-menu__item.sdk-object-header-more-item.is-danger:not(.is-disabled):focus {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger-text);
+}
+.sdk-object-header-more-menu .sdk-object-header-more-reason {
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
 }
 </style>
