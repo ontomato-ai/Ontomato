@@ -8,7 +8,7 @@
   .attrs-table { overflow: auto; border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); }
   .attrs-group { border-bottom: 1px solid var(--ui-divider); }
   .attrs-group:last-child { border-bottom: 0; }
-  .attrs-row { display: grid; grid-template-columns: minmax(12rem, 1.4fr) minmax(9rem, 1fr) minmax(6.5rem, 0.8fr) 5rem 5rem 1.25rem;
+  .attrs-row { display: grid; grid-template-columns: minmax(10.5rem, 1.35fr) minmax(7.5rem, 1fr) minmax(5.5rem, 0.75fr) 4.5rem 4.5rem 1.25rem;
     column-gap: var(--spacing-md); align-items: center; padding: var(--spacing-sm) var(--spacing-md);
     border-bottom: 1px solid var(--ui-divider); font-size: var(--text-sm); color: var(--el-text-color-regular); }
   .attrs-group > .attrs-row { border-bottom: 0; }
@@ -38,7 +38,7 @@
     padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--el-bg-color-overlay, var(--el-bg-color)); box-shadow: var(--el-box-shadow); overflow: hidden; }
   .attrs-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
   .attrs-modal-body { overflow-y: auto; min-height: 0; }
-  @container (max-width: 56rem) {
+  @container (max-width: 44rem) {
     .attrs-row { grid-template-columns: minmax(9rem, 1.4fr) minmax(6rem, 1fr) minmax(5rem, 0.8fr) 1.25rem; }
     .attrs-row > :nth-child(4), .attrs-row > :nth-child(5) { display: none; }
   }
