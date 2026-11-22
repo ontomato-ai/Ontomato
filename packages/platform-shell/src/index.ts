@@ -64,9 +64,18 @@ export {
   type PanelInstanceView,
 } from "./panel-host";
 export { adoptPanelStyle, scopedPanelStyle } from "./panel-content";
+export { confirmDanger } from "./confirm-danger";
+export {
+  createPanelBackController,
+  hasOpenOverlay,
+  type PanelBackController,
+  type PanelBackControllerOptions,
+  type PanelBackHandlerRegistration,
+} from "./panel-back";
 export {
   provideUnsavedChanges,
   useLeaveConfirmation,
+  useOptionalLeaveConfirmation,
   useUnsavedChanges,
   type LeaveConfirmation,
   type UnsavedChanges,

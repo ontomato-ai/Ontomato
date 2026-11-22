@@ -59,4 +59,78 @@ describe("page header actions", () => {
     expect(read!.value).toBeNull();
     app.unmount();
   });
+
+  it("keeps at most one primary button, moves danger actions last into more, and gives more a page-scoped accessible name", async () => {
+    const refresh = vi.fn();
+    const firstPrimary = vi.fn();
+    const secondPrimary = vi.fn();
+    const danger = vi.fn();
+    const copyLink = vi.fn();
+    const wrapper = mount(PlatformPageHeader, {
+      attachTo: document.body,
+      props: {
+        title: "Applications",
+        moreLabel: "More",
+        actions: [
+          { id: "refresh", label: "Refresh", icon: defineComponent({ render: () => h("svg") }), iconOnly: true, onClick: refresh },
+          { id: "create", label: "Create", primary: true, onClick: firstPrimary },
+          { id: "import", label: "Import", primary: true, onClick: secondPrimary },
+          { id: "delete", label: "Delete", danger: true, onClick: danger },
+        ],
+        more: [{ id: "copy-link", label: "Copy external link", onClick: copyLink }],
+      },
+    });
+    try {
+      const visible = wrapper.findAll<HTMLButtonElement>(".page-actions > button.action");
+      expect(visible.map((button) => button.text().trim())).toEqual(["Create", "Import"]);
+      expect(visible[0]!.classes()).toContain("primary");
+      expect(visible[1]!.classes()).toContain("secondary");
+      expect(visible[1]!.classes()).not.toContain("primary");
+
+      const moreTrigger = wrapper.get<HTMLButtonElement>(".page-more > button");
+      expect(moreTrigger.attributes("aria-label")).toBe("Applications More");
+      await moreTrigger.trigger("click");
+
+      const menuItems = wrapper.findAll<HTMLButtonElement>(".page-more-menu [role='menuitem']");
+      expect(menuItems.map((item) => item.text().trim())).toEqual(["Copy external link", "Delete"]);
+      expect(menuItems[1]!.classes()).toContain("danger");
+      expect(wrapper.find(".page-more-menu [role='separator']").exists()).toBe(true);
+
+      // Escape closes the menu and restores focus to the trigger.
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await nextTick();
+      expect(wrapper.find(".page-more-menu").exists()).toBe(false);
+      expect(document.activeElement).toBe(moreTrigger.element);
+
+      // Re-open and click danger item.
+      await moreTrigger.trigger("click");
+      await wrapper.findAll<HTMLButtonElement>(".page-more-menu [role='menuitem']")[1]!.trigger("click");
+      expect(danger).toHaveBeenCalledOnce();
+      expect(wrapper.find(".page-more-menu").exists()).toBe(false);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it("shows the more menu for danger actions even when props.more is empty and closes on outside pointerdown", async () => {
+    const wrapper = mount(PlatformPageHeader, {
+      attachTo: document.body,
+      props: {
+        title: "Triggers",
+        actions: [{ id: "delete", label: "Delete", danger: true, onClick: vi.fn() }],
+      },
+    });
+    try {
+      const moreTrigger = wrapper.get<HTMLButtonElement>(".page-more > button");
+      expect(moreTrigger.attributes("aria-label")).toBe("Triggers More");
+      await moreTrigger.trigger("click");
+      expect(wrapper.find(".page-more-menu").exists()).toBe(true);
+      expect(wrapper.find(".page-more-menu [role='separator']").exists()).toBe(false);
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      await nextTick();
+      expect(wrapper.find(".page-more-menu").exists()).toBe(false);
+    } finally {
+      wrapper.unmount();
+    }
+  });
 });

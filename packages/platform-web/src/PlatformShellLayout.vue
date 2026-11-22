@@ -3,9 +3,9 @@ import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import {readHomeState,HOME_PREFERENCES_CHANGED} from './features/home/api';
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { ElMessageBox } from "element-plus";
 import {
   agentModelLabelsKey,
+  confirmDanger,
   platformApplicationNameKey,
   pilotPageKey,
   platformPageAccessKey,
@@ -191,14 +191,10 @@ providePlatformPageCounter(router);
  * document is closed or reloaded. The drafts stay the pages'; this frame only asks.
  */
 const unsaved = provideUnsavedChanges(() =>
-  ElMessageBox.confirm(t("admin.leaveUnsavedConfirm"), t("admin.unsavedChanges"), {
-    type: "warning",
+  confirmDanger(t("admin.leaveUnsavedConfirm"), t("admin.unsavedChanges"), {
     confirmButtonText: t("admin.leaveWithoutSaving"),
     cancelButtonText: t("common.cancel"),
-  }).then(
-    () => true,
-    () => false,
-  ),
+  }),
 );
 const removeLeaveCheck = router.beforeEach((to) => unsaved.allows(to.path));
 function warnBeforeUnload(event: BeforeUnloadEvent) {

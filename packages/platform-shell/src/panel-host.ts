@@ -24,6 +24,7 @@ import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPa
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 import type { PlatformPageDraft } from "./page-actions";
+import type { PanelBackHandlerRegistration } from "./panel-back";
 
 /** An instance's deep-linkable state as the host carries it: what the host message hands the frame. */
 export type PanelHostState = PanelHostMessage["state"];
@@ -165,6 +166,10 @@ export interface DirectPanelRun {
    * with a `frame` segment in the address). Forwarded in `rowContext.frameState` for row-scoped operations.
    */
   frameState?: () => Readonly<Record<string, RuntimeJsonValue>> | undefined;
+  /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
+  registerBackHandler?: (registration: PanelBackHandlerRegistration) => () => void;
+  /** Unified host confirmation for leaving unsaved edits (danger confirm button, Cancel focused by default). */
+  confirmLeaveUnsaved?: () => Promise<boolean>;
 }
 
 /** A started panel instance, as its host drives it. */
@@ -332,6 +337,10 @@ export interface PanelInstanceOptions {
   frameState?: DirectPanelRun["frameState"];
   /** Whether the host mounting this panel has a page header that can carry a form's Save/Discard draft. */
   headerDraftHost?: boolean;
+  /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
+  registerBackHandler?: DirectPanelRun["registerBackHandler"];
+  /** Unified host confirmation for leaving unsaved edits. */
+  confirmLeaveUnsaved?: DirectPanelRun["confirmLeaveUnsaved"];
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -560,6 +569,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
       ...(options.frameState ? { frameState: options.frameState } : {}),
+      ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
+      ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
     };
   }
 

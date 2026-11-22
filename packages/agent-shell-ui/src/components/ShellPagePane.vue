@@ -225,18 +225,20 @@ const paneStyle = computed(() => ({
   left: 0;
   right: 0;
   bottom: 0;
-  width: min(760px, 100%);
-  margin-inline: auto;
-  padding: 0 16px var(--shell-composer-foot);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0 var(--spacing-lg) var(--shell-composer-foot);
   box-sizing: border-box;
   pointer-events: none;
 }
 .pane-dock > * {
   pointer-events: auto;
 }
-/* Folded with no pending questions, the dock leaves the page its whole height. */
-.pane-dock:has(> .composer-unfold:only-child) {
-  padding: 0;
+.pane-dock > :deep(.composer),
+.pane-dock > .shell-questions {
+  width: min(760px, 100%);
+  margin-inline: auto;
 }
 @media (max-width: 1100px) {
   .page-pane.side {

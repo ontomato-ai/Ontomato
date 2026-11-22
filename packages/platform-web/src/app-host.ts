@@ -1,7 +1,7 @@
 import type { AppExecutionContext } from "@ontomato/contracts/build-tests";
 import {BUILD_TEST_HEADER,BUILD_TEST_UNSUPPORTED} from '@ontomato/contracts/build-tests';
 import { watch,createVNode,render,h,type App } from "vue";
-import { ElMessageBox } from "element-plus";
+import { confirmDanger } from "@ontomato/platform-shell";
 import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import ProductRoute from './pages/ProductRoute.vue';
 import type { Router } from "vue-router";
@@ -362,7 +362,7 @@ function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirma
     ?[h('p',t('platform.confirmUploadFile',{name:confirmation.upload.name,size:panelUploadSize(confirmation.upload.size,locale.value)}))]:[];
   const message=h('div',confirmation.kind==='impact'?[...file,...impact(confirmation.impact)]
     :[...names(confirmation.targets),...(confirmation.impact?impact(confirmation.impact):[])]);
-  return ElMessageBox.confirm(message,label,{type:'warning',confirmButtonText:label,cancelButtonText:t('common.cancel')}).then(()=>true,()=>false);
+  return confirmDanger(message,label,{confirmButtonText:label,cancelButtonText:t('common.cancel')});
 }
 function executionContext(source: object) {
   const context=executionBindings.get(source);

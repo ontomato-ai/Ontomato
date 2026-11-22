@@ -80,6 +80,8 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       ...(run.currentEntry ? { currentEntry: run.currentEntry } : {}),
       ...(run.frameState ? { frameState: run.frameState } : {}),
       ...(run.headerDraft ? { reportHeaderDraft: run.headerDraft } : {}),
+      ...(run.registerBackHandler ? { registerBackHandler: run.registerBackHandler } : {}),
+      ...(run.confirmLeaveUnsaved ? { confirmLeaveUnsaved: () => (instance.dirty() ? run.confirmLeaveUnsaved!() : Promise.resolve(true)) } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
       // A draft a form could not take is the draft's problem: the reader is told, the panel goes on.

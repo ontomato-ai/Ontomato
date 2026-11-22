@@ -68,6 +68,10 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
    * Supplied only when the enclosing host draws a page header.
    */
   reportHeaderDraft?: (draft: PlatformPageDraft | null) => void;
+  /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
+  registerBackHandler?: DirectPanelRun["registerBackHandler"];
+  /** Unified host confirmation for leaving unsaved edits. */
+  confirmLeaveUnsaved?: DirectPanelRun["confirmLeaveUnsaved"];
   /** Reads an installed component package's current release, for a member whose component is the package's. */
   readComponentPackage: ComponentPackageReader;
   loadDomainComponent?(projection: DirectProjection): Promise<Component>;
@@ -210,6 +214,10 @@ export interface DirectPanelInstance extends PanelInstance {
    * header (`options.reportHeaderDraft`); absent in nested panels and headerless previews.
    */
   readonly registerHeaderDraft?: (slot: string, draft: () => PlatformPageDraft | null) => () => void;
+  /** Registers a panel-local back/close step (LIFO) with the enclosing host. */
+  readonly registerBackHandler?: DirectPanelRun["registerBackHandler"];
+  /** Unified host confirmation for leaving unsaved edits. */
+  readonly confirmLeaveUnsaved?: DirectPanelRun["confirmLeaveUnsaved"];
 }
 
 /**
@@ -511,6 +519,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       // The theme this panel gives where it places the other: the host lays it over that panel's own.
       ...(direct.members[member]!.theme ? { theme: direct.members[member]!.theme } : {}),
       ...(options.frameState ? { frameState: options.frameState } : {}),
+      ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
+      ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
     };
     const { element, mount } = await options.nested([nestedSegment(member)], run);
     scope.run(() => {
@@ -770,6 +780,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     },
     isDrawn: (member: string) => (drawnCounts.get(member) ?? 0) > 0,
     ...(registerHeaderDraft ? { registerHeaderDraft } : {}),
+    ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
+    ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
   });
   // A member placed from the panel's state is placed anew when that state chooses something else: what it held ends
   // (a placed panel is let go, its operations and context leave this instance) and whoever draws it draws the new one.
@@ -812,5 +824,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),
     ...(instance.registerHeaderDraft ? { registerHeaderDraft: instance.registerHeaderDraft } : {}),
+    ...(instance.registerBackHandler ? { registerBackHandler: instance.registerBackHandler } : {}),
+    ...(instance.confirmLeaveUnsaved ? { confirmLeaveUnsaved: instance.confirmLeaveUnsaved } : {}),
   };
 }

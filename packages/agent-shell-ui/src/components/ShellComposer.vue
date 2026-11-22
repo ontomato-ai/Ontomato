@@ -266,14 +266,11 @@ defineExpose({ focus: () => input.value?.focus() });
   background: var(--el-fill-color);
 }
 /*
- * Folded: a round button at the page's lower right, the room under it the same as under the box it folds from; the page
- * shows everywhere else. A floating box is the page's own, and the page reaches the window's lower right.
+ * Folded: a round button aligned to the foot's trailing edge in normal flow so it sits below the content box (or inside
+ * the measured page dock) and never overlaps page controls such as Save/Discard or pagination.
  */
 .composer-unfold {
-  position: fixed;
-  z-index: 5;
-  right: var(--spacing-lg);
-  bottom: var(--shell-composer-foot);
+  margin-inline-start: auto;
   width: var(--control-height-lg);
   height: var(--control-height-lg);
   border: 1px solid var(--el-border-color);
