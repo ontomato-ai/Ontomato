@@ -37,7 +37,8 @@
         },
         "config": {
           "statusField": "operation",
-          "fallbackToFirst": true
+          "fallbackToFirst": true,
+          "emptyText": "empty"
         },
         "name": "函数目录",
         "description": "按名称和说明搜索的函数列表，每条显示名称、说明和操作类型。",
@@ -90,11 +91,15 @@
     "messages": {
       "en": {
         "newFunction": "New function",
-        "choose": "Choose a function on the left to read or change it, or create one."
+        "choose": "Choose a function on the left to read or change it, or create one.",
+        "empty": "No functions found",
+        "saved": "Function saved"
       },
       "zh-CN": {
         "newFunction": "新建函数",
-        "choose": "选择左侧的一个函数查看或修改，也可以新建一个。"
+        "choose": "选择左侧的一个函数查看或修改，也可以新建一个。",
+        "empty": "未找到函数",
+        "saved": "函数已保存"
       }
     }
   }
