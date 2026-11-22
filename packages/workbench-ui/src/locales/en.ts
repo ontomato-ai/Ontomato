@@ -260,6 +260,7 @@ export default {
     "graphZoomOut": "Zoom out",
     "graphFocusSelected": "Centre the chosen node",
     "graphLargerThanCanvas": "The graph is larger than the canvas: drag to see the rest",
+    "graphEdgesForbidden": "Relations are hidden because you do not have access to them",
     "graphExpanding": "Loading neighbors...",
     "listSelectTypePrompt": "Select a type to list its objects",
     "relationsEmptySelection": "Select a node to inspect its relations",
