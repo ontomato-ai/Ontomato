@@ -11,11 +11,15 @@ Use these fields for a new member inside `manifest.members` in `panel.json`.
 | `target` | No | Panel state field holding the object for an object read or the object or object list targeted by an operation. |
 | `data` | No | Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: fieldName} or {literal: value}. |
 | `operation` | No | Operation ID from the owner's entry in the type table. |
+| `operationParams` | No | Bind operation input parameters to {literal: value}, {state: fieldName}, {input: portName}, or row bindings ({item: true}, {item: 'primaryKey' \| 'label'}, {itemField: fieldKey}). |
 | `draft` | No | Form member key in this panel. Required when the declared read operation takes a draft. |
 | `parameters` | No | Parameters for a draft read operation. Use {state: fieldName}, {formField: {slot, path}}, or {fields: {parameterName: source}}. Defaults to an empty object. |
 | `bindingId` | No | Optional binding ID for a draft read operation, from {state: fieldName} or {formField: {slot, path}}. |
 | `state` | No | Map typed component port names or owner read parameter names to panel state fields. |
+| `inputs` | No | Row and port inputs for a listColumn or listRowDetail member: {item: true}, {item: 'primaryKey' \| 'label'}, {itemField: fieldKey}, {state: fieldName}, or {literal: value}. |
 | `formField` | No | Connect this member to an ObjectForm field. Use {slot: formMember, path: ownerFieldPointer}, with itemPath for a field inside each array row. |
+| `listColumn` | No | Connect this member to a column of an ObjectList member in the same panel. Use {slot: listMember, column: columnKey}. |
+| `listRowDetail` | No | Connect this member to the expandable row detail area of an ObjectList member in the same panel. Use {slot: listMember}. |
 | `config` | No | Component configuration from the released SDK catalogue. |
 | `agent` | No | Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}. |
 | `prefill` | No | ConversationEntry text placed in the page composer without sending it. |

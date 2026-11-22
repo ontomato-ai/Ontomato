@@ -88,8 +88,19 @@ async function operationForUse(owner: AssistantOwner, credentials: AssistantCred
   return declaredOperation(owner, credentials, await requirePanelUse(credentials, ref), ref, target);
 }
 
-function invocationTarget(input: PanelOperationInvocation) {
+function invocationTarget(
+  input: PanelOperationInvocation | CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest,
+) {
   return "call" in input ? input.call.target : undefined;
+}
+
+function requireConcreteInvocation(
+  input: CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest,
+): PanelOperationInvocation {
+  if ("call" in input && input.call.target === undefined) {
+    throw new HttpError(400, "Row operation target resolution requires a concrete call.target", "ROW_OPERATION_TARGET_REQUIRED");
+  }
+  return input as PanelOperationInvocation;
 }
 
 function writeOperation(current: Awaited<ReturnType<typeof declaredOperation>>) {
@@ -162,10 +173,11 @@ function sourceMatches(intent: ReadableAgentIntent, session: AgentSessionRef) {
 }
 function matchingInvocation(intent: ReadableAgentIntent, request: CreatePanelOperationIntentRequest, session: AgentSessionRef, executionUserId: string | null) {
   sourceMatches(intent, session);
+  const concrete = requireConcreteInvocation(request);
   if (!isDeepStrictEqual(intent.use,{applicationId:request.applicationId,useId:request.useId}) || intent.operation.id !== request.operationId ||
     intent.root !== request.root ||
     !isDeepStrictEqual(intent.operation.memberPath, request.memberPath) ||
-    !isDeepStrictEqual(invocationOf(intent),invocationOf(request)) || intent.executionUserId !== executionUserId)
+    !isDeepStrictEqual(invocationOf(intent),invocationOf(concrete)) || intent.executionUserId !== executionUserId)
     throw new HttpError(409,"Changed call or executor requires a new intent","INTENT_CHANGED");
 }
 async function presentOutcome(
@@ -316,8 +328,9 @@ async function humanConfirmation(
 export async function prepareHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials,
   input: CreatePanelHumanOperationIntentRequest,
 ): Promise<PanelHumanOperationPreparation> {
-  const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input)));
-  const prepared = validateInvocation(current.handler, input, current.fixedTarget);
+  const concrete = requireConcreteInvocation(input);
+  const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(concrete)));
+  const prepared = validateInvocation(current.handler, concrete, current.fixedTarget);
   const staged = await withStagedFile(owner, input, current.handler, prepared, credentials.locale);
   const confirmation = await humanConfirmation(current.handler, operationHost({ owner, credentials }), staged.invocation, staged.upload?.file);
   const intent: PanelHumanOperationIntent = {
@@ -330,7 +343,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     projectionId: current.projection.id,
     binding: current.projection.binding,
     operation: current.operation,
-    ...invocationOf(input),
+    ...invocationOf(concrete),
     confirmation,
     dispatched: false,
     outcome: null,
@@ -401,13 +414,14 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   const root = rootOf(run);
   if (!root) throw new HttpError(409,"Execution has no authenticated human session","USER_SESSION_UNAVAILABLE");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
-  const prepared = validateInvocation(current.handler, input, current.fixedTarget);
+  const concrete = requireConcreteInvocation(input);
+  const prepared = validateInvocation(current.handler, concrete, current.fixedTarget);
   if (!record) {
     const settings = await store.settings(owner,root);
     record = agentRecord(await store.insert(owner,{
       intentId:input.intentId,source,rootSession:root,use:{applicationId:input.applicationId,useId:input.useId},
       panelId:current.rootPanelId,projectionId:current.projection.id,binding:current.projection.binding,
-      operation:current.operation,...invocationOf(input),initiator:owner,executionUserId:executor.executionUserId,
+      operation:current.operation,...invocationOf(concrete),initiator:owner,executionUserId:executor.executionUserId,
       confirmation:settings.confirmBeforeExecute?"required":"automatic",
       questionId:settings.confirmBeforeExecute && current.operation.kind !== "form.save" ? randomUUID() : null,
       answer:null,dispatched:false,outcome:null,

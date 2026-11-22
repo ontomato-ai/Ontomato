@@ -272,20 +272,38 @@ function checkOperations(id, projection, typeTable, placements, state, checks) {
       }
     }
     if (input === undefined) continue;
-    const portKind = projection.inputs[input].kind;
+    const expectedPort = projection.inputs[input];
     for (const [member, placement] of placements) {
       const value = placement.inputs?.[input];
-      const bound = value && (!("state" in value) || matched.some(([type, operation]) =>
-        checks.panelOperationTargetPort(state[value.state].type, type, operation.batch)?.kind === portKind));
+      const bound = value && (!("state" in value) || matched.some(([type, operation]) => {
+        const statePort = state[value.state].type;
+        const accepted = checks.panelOperationTargetPort(statePort, type, operation.batch);
+        if (!accepted) return false;
+        return expectedPort.kind === "json" || (checks.panelPortAccepts
+          ? checks.panelPortAccepts(expectedPort, statePort)
+          : accepted.kind === expectedPort.kind);
+      }));
       if (!bound) throw new Error(`member ${member} (projection ${id}): bind ${label}'s target input ${input} to an object or checked list`);
     }
   }
 }
 
-function checkProjectionData(id, projection, component, checks) {
+function checkProjectionData(id, projection, component, checks, placements = []) {
   if (!("data" in projection)) return;
+  for (const [member, placement] of placements) {
+    if (placement.listColumn !== undefined && Object.keys(projection.data).length > 0) {
+      throw new Error(`member ${member} (projection ${id}): listColumn members cannot declare independent data reads`);
+    }
+  }
   const { data } = component;
-  if (data === undefined) throw new Error(`projection ${id}: component ${projection.componentId} does not declare projection data`);
+  const hostMountedOnly = placements.length > 0 && placements.every(([, placement]) =>
+    checks.isHostMountedPanelMember
+      ? checks.isHostMountedPanelMember(placement)
+      : Boolean(placement.formField || placement.listColumn || placement.listRowDetail));
+  if (data === undefined) {
+    if (hostMountedOnly && Object.keys(projection.data).length === 0) return;
+    throw new Error(`projection ${id}: component ${projection.componentId} does not declare projection data`);
+  }
   for (const [name, declaration] of Object.entries(data)) {
     if (declaration.required && !Object.hasOwn(projection.data, name)) {
       throw new Error(`projection ${id}: data.${name} is required by ${projection.componentId}`);
@@ -461,7 +479,7 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
       if (!component) {
         throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable component ${record.componentId}`);
       }
-      checkProjectionData(id, record, component, checks);
+      checkProjectionData(id, record, component, checks, placements.get(id));
       if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);
       // A conversation entry's opening sentence named by key is the placing panel's own words, in each language it
       // declares: a reused projection's key counts as much as a new one's.
