@@ -48,6 +48,14 @@
           "kind": "object",
           "objectType": "platform:ProductPanel"
         }
+      },
+      "sort": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "id"
       }
     },
     "members": {
@@ -69,6 +77,9 @@
               },
               "size": {
                 "state": "size"
+              },
+              "sort": {
+                "state": "sort"
               }
             }
           }
@@ -210,7 +221,11 @@
         "grants.private": "Not shared with the domain",
         "grants.shareOn": "Share with the domain",
         "grants.shareOff": "Stop sharing with the domain",
-        "list.prev": "Previous page"
+        "list.prev": "Previous page",
+        "sort.label": "Sort",
+        "sort.id": "Default order",
+        "sort.name": "Name",
+        "sort.updated": "Recently updated"
       },
       "zh-CN": {
         "action.create": "新建应用",
@@ -231,7 +246,11 @@
         "grants.private": "未向域内共享",
         "grants.shareOn": "开启域内共享",
         "grants.shareOff": "关闭域内共享",
-        "list.prev": "上一页"
+        "list.prev": "上一页",
+        "sort.label": "排序",
+        "sort.id": "产品结构顺序",
+        "sort.name": "名称",
+        "sort.updated": "最近更新"
       },
       "zh-TW": {
         "grants.loading": "正在讀取授權…",
@@ -251,7 +270,11 @@
         "grants.private": "尚未在網域內共用",
         "grants.shareOn": "在網域內共用",
         "grants.shareOff": "停止在網域內共用",
-        "list.prev": "上一頁"
+        "list.prev": "上一頁",
+        "sort.label": "排序",
+        "sort.id": "產品結構順序",
+        "sort.name": "名稱",
+        "sort.updated": "最近更新"
       },
       "ja": {
         "grants.loading": "権限を読み込んでいます…",
@@ -271,7 +294,11 @@
         "grants.private": "ドメインに未共有",
         "grants.shareOn": "ドメインに共有",
         "grants.shareOff": "ドメインへの共有を停止",
-        "list.prev": "前のページ"
+        "list.prev": "前のページ",
+        "sort.label": "並び順",
+        "sort.id": "既定の順序",
+        "sort.name": "名前",
+        "sort.updated": "最近の更新"
       },
       "ar": {
         "grants.loading": "جارٍ قراءة الصلاحيات…",
@@ -291,7 +318,11 @@
         "grants.private": "غير مشارك مع النطاق",
         "grants.shareOn": "مشاركة مع النطاق",
         "grants.shareOff": "إيقاف المشاركة مع النطاق",
-        "list.prev": "الصفحة السابقة"
+        "list.prev": "الصفحة السابقة",
+        "sort.label": "الترتيب",
+        "sort.id": "الترتيب الافتراضي",
+        "sort.name": "الاسم",
+        "sort.updated": "آخر تحديث"
       },
       "fr": {
         "grants.loading": "Lecture des autorisations…",
@@ -311,7 +342,11 @@
         "grants.private": "Non partagé avec le domaine",
         "grants.shareOn": "Partager avec le domaine",
         "grants.shareOff": "Arrêter le partage avec le domaine",
-        "list.prev": "Page précédente"
+        "list.prev": "Page précédente",
+        "sort.label": "Tri",
+        "sort.id": "Ordre par défaut",
+        "sort.name": "Nom",
+        "sort.updated": "Dernière mise à jour"
       },
       "de": {
         "grants.loading": "Berechtigungen werden gelesen…",
@@ -331,7 +366,11 @@
         "grants.private": "Nicht für die Domäne freigegeben",
         "grants.shareOn": "Für die Domäne freigeben",
         "grants.shareOff": "Domänenfreigabe beenden",
-        "list.prev": "Vorherige Seite"
+        "list.prev": "Vorherige Seite",
+        "sort.label": "Sortierung",
+        "sort.id": "Standardreihenfolge",
+        "sort.name": "Name",
+        "sort.updated": "Zuletzt aktualisiert"
       },
       "it": {
         "grants.loading": "Lettura delle autorizzazioni…",
@@ -351,7 +390,11 @@
         "grants.private": "Non condiviso con il dominio",
         "grants.shareOn": "Condividi con il dominio",
         "grants.shareOff": "Interrompi la condivisione con il dominio",
-        "list.prev": "Pagina precedente"
+        "list.prev": "Pagina precedente",
+        "sort.label": "Ordinamento",
+        "sort.id": "Ordine predefinito",
+        "sort.name": "Nome",
+        "sort.updated": "Ultimo aggiornamento"
       }
     }
   }

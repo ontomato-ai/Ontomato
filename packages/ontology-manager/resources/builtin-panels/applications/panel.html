@@ -54,6 +54,11 @@
           <el-radio-button value="visible">全部可见</el-radio-button>
           <el-radio-button value="maintainable">我能维护的</el-radio-button>
         </el-radio-group>
+        <el-select :model-value="sort" :aria-label="t('sort.label')" style="width: 132px" @change="setSort">
+          <el-option value="id" :label="t('sort.id')"></el-option>
+          <el-option value="name" :label="t('sort.name')"></el-option>
+          <el-option value="updated" :label="t('sort.updated')"></el-option>
+        </el-select>
         <el-select :model-value="pageSize" aria-label="每页条数" style="width: 110px" @change="setSize">
           <el-option :value="10" label="10 条/页"></el-option>
           <el-option :value="20" label="20 条/页"></el-option>

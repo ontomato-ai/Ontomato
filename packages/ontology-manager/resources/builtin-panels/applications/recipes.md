@@ -7,6 +7,7 @@
 
 - 列表是 `platform:Application` 的 `query` 读，参数就是面板状态：`search`（按名称或 ID 匹配）、`scope`（`visible` 全部可见 /
   `maintainable` 我能维护的）、`cursor`（属主给的游标，`nextCursor` 是下一页）、`size`。
+- 排序由应用目录属主完成。深链状态 `sort` 为 `id`（默认顺序）、`name`（名称）或 `updated`（最近更新）。换搜索、范围、排序或页长会回到第一页，游标按原样传回属主。
 - 一行四个事实都是属主给的：`names`/`icon`、`source`（`builtin` 内置 / `domain` 域内）、`canMaintain`（我能不能维护）、`entryCount`。
 - 某个入口或面板不可用时，应用照样在列表里：不要因为读不到某一个入口就把它当成不存在。
 - 选中一张应用写进面板状态 `selected`；页面右侧（详情）是它的 `record` 读，带 `entry`、`panelUses`、`groups`，以及
