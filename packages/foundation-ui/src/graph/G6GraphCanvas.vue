@@ -456,6 +456,10 @@ defineExpose({
         whole = false;
         await target.zoomTo(least, false);
         return showAround(target, least, options.around, options.padding);
+      } else {
+        // fitView tells its zoom as a step from the last one, which the names held at their size read as the zoom
+        // itself: told again as a zoom, they are held at the size the view now has.
+        await target.zoomTo(zoom, false);
       }
       await target.fitCenter(false);
     });
