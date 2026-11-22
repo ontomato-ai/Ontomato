@@ -207,6 +207,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     // The upload control runs its operation through the platform's upload contract, in a frame and in the platform's page.
     assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwrite-on")?.required, false);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
+    const listLayout = declared.get("ObjectList").config.find(prop => prop.name === "layout");
+    assert.equal(listLayout?.required, false);
+    assert.match(listLayout?.type ?? "", /cards/);
     const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitle-lines");
     assert.equal(subtitleLines?.required, false);
     assert.match(subtitleLines?.type ?? "", /number/);
@@ -243,6 +246,17 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(componentsDoc, /`<sdk-button>`/);
     assert.match(componentsDoc, /`v-sdk-loading`/);
     assert.match(componentsDoc, /`--sdk-color-primary`/);
+    assert.match(
+      componentsDoc,
+      /## ObjectList[\s\S]*?Configuration types:\n\n```ts\n[\s\S]*?type ObjectListColumn = \{[\s\S]*?key: string;[\s\S]*?labelKey\?:[\s\S]*?subtitleKey\?:[\s\S]*?emptyKey\?:[\s\S]*?wrap\?:/u,
+      "docs/components.md must expand ObjectListColumn fields beside ObjectList config",
+    );
+    const columnTypeLine = componentsDoc.match(/type ObjectListColumn = [^\n]+/u)?.[0] ?? "";
+    for (const kind of ['"text"', '"tag"', '"tags"', '"reference"', '"time"']) {
+      assert.ok(columnTypeLine.includes(kind), `ObjectListColumn in docs/components.md must include kind ${kind}: ${columnTypeLine}`);
+    }
+    const referenceDoc = readFileSync(join(out, version, "docs/reference.md"), "utf8");
+    assert.doesNotMatch(referenceDoc, /type PanelComponent = PanelComponent;/u);
     assert.equal(
       readdirSync(join(out, version, "docs")).includes("element-plus.web-types.json"),
       false,

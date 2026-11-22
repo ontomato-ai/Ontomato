@@ -3,6 +3,7 @@ import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { firstTreeFile, buildPathTree, PathTree, type PathTreeItem } from "@ontomato/foundation-ui/tree";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { panelRecordFieldText } from "@ontomato/contracts/panel-projection";
 import { usePanelContext } from "../panel/context";
 import { useMemberData, useMemberParam } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
@@ -28,7 +29,7 @@ const props = withDefaults(
   { pathField: "path", fallbackToFirst: false, emptyText: undefined, label: undefined },
 );
 
-const { t } = useI18n();
+const { locale } = useI18n();
 const panel = usePanelContext();
 const files = useMemberData("files");
 /** The selected file's key: the panel state the placement binds, else the tree's own. */
@@ -36,7 +37,11 @@ const selected = useMemberParam("selected");
 
 const records = computed(() => (files.value.status === "ready" ? (files.value.value as unknown as PlatformObjectRecord[]) : []));
 const items = computed<readonly PathTreeItem[]>(() =>
-  records.value.map((record) => ({ key: record.primaryKey, path: record.fields[props.pathField] || record.primaryKey, label: record.label })));
+  records.value.map((record) => ({
+    key: record.primaryKey,
+    path: panelRecordFieldText(record.fields[props.pathField], locale.value) || record.primaryKey,
+    label: record.label,
+  })));
 const selectedKey = computed(() => (typeof selected.value.value === "string" ? selected.value.value : null));
 
 /**

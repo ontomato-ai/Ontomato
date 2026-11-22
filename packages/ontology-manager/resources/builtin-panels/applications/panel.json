@@ -91,6 +91,7 @@
         "target": "selected",
         "data": {
           "record": "record",
+          "entries": "entries",
           "grants": "grants"
         },
         "id": "builtin-product-039ac450-89cc-43df-a347-bf6862881a6e"
@@ -225,7 +226,9 @@
         "sort.label": "Sort",
         "sort.id": "Default order",
         "sort.name": "Name",
-        "sort.updated": "Recently updated"
+        "sort.updated": "Recently updated",
+        "entries.forbidden": "You cannot read these entries.",
+        "entries.loading": "Reading entries…"
       },
       "zh-CN": {
         "action.create": "新建应用",
@@ -250,7 +253,9 @@
         "sort.label": "排序",
         "sort.id": "产品结构顺序",
         "sort.name": "名称",
-        "sort.updated": "最近更新"
+        "sort.updated": "最近更新",
+        "entries.forbidden": "你没有权限读取入口。",
+        "entries.loading": "正在读取入口…"
       },
       "zh-TW": {
         "grants.loading": "正在讀取授權…",
@@ -274,7 +279,9 @@
         "sort.label": "排序",
         "sort.id": "產品結構順序",
         "sort.name": "名稱",
-        "sort.updated": "最近更新"
+        "sort.updated": "最近更新",
+        "entries.forbidden": "你沒有權限讀取入口。",
+        "entries.loading": "正在讀取入口…"
       },
       "ja": {
         "grants.loading": "権限を読み込んでいます…",
@@ -298,7 +305,9 @@
         "sort.label": "並び順",
         "sort.id": "既定の順序",
         "sort.name": "名前",
-        "sort.updated": "最近の更新"
+        "sort.updated": "最近の更新",
+        "entries.forbidden": "これらの入口を表示できません。",
+        "entries.loading": "入口を読み込んでいます…"
       },
       "ar": {
         "grants.loading": "جارٍ قراءة الصلاحيات…",
@@ -322,7 +331,9 @@
         "sort.label": "الترتيب",
         "sort.id": "الترتيب الافتراضي",
         "sort.name": "الاسم",
-        "sort.updated": "آخر تحديث"
+        "sort.updated": "آخر تحديث",
+        "entries.forbidden": "لا يمكنك قراءة هذه المداخل.",
+        "entries.loading": "جارٍ قراءة المداخل…"
       },
       "fr": {
         "grants.loading": "Lecture des autorisations…",
@@ -346,7 +357,9 @@
         "sort.label": "Tri",
         "sort.id": "Ordre par défaut",
         "sort.name": "Nom",
-        "sort.updated": "Dernière mise à jour"
+        "sort.updated": "Dernière mise à jour",
+        "entries.forbidden": "Vous ne pouvez pas lire ces entrées.",
+        "entries.loading": "Lecture des entrées…"
       },
       "de": {
         "grants.loading": "Berechtigungen werden gelesen…",
@@ -370,7 +383,9 @@
         "sort.label": "Sortierung",
         "sort.id": "Standardreihenfolge",
         "sort.name": "Name",
-        "sort.updated": "Zuletzt aktualisiert"
+        "sort.updated": "Zuletzt aktualisiert",
+        "entries.forbidden": "Sie können diese Einstiege nicht lesen.",
+        "entries.loading": "Einstiege werden gelesen…"
       },
       "it": {
         "grants.loading": "Lettura delle autorizzazioni…",
@@ -394,7 +409,9 @@
         "sort.label": "Ordinamento",
         "sort.id": "Ordine predefinito",
         "sort.name": "Nome",
-        "sort.updated": "Ultimo aggiornamento"
+        "sort.updated": "Ultimo aggiornamento",
+        "entries.forbidden": "Non puoi leggere questi ingressi.",
+        "entries.loading": "Lettura degli ingressi…"
       }
     }
   }

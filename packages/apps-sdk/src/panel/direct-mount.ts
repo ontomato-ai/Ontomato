@@ -127,7 +127,12 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     // to it, and the panel's own code reads its data, whether or not a layout or a template places it.
     // A member that cannot be read is that member's failure, not the panel's: whoever draws it (`<Projection>`) or reads
     // it (`usePanelData`) shows the reason in its place, from this same hold; the rest of the panel goes on.
-    for (const member of Object.keys(options.manifest.members)) void instance.placing(member).then(undefined, () => undefined);
+    const declaredMembers = Object.keys(options.manifest.members);
+    if (declaredMembers.length) {
+      instance.forms.setUndrawnReady(false);
+      void Promise.allSettled(declaredMembers.map((member) => instance.placing(member)))
+        .finally(() => instance.forms.setUndrawnReady(true));
+    }
     void panelRun.start().catch(run.failed);
     return {
       instance,

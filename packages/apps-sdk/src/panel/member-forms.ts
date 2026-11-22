@@ -1,13 +1,19 @@
+import { readonly, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormDescription, PanelFormRequest, PanelFormSaveInput, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { MemberDataState } from "./direct";
 import type { PanelInstance } from "./instance";
 import type { PanelMemberContext } from "./member";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { PlatformObjectRefusal } from "./platform-objects";
+import { PlatformObjectRefusal, selectedKey } from "./platform-objects";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { MemberOperationsState } from "./member-operations";
+import { slotInputState } from "./context";
+import { changedPaths, valueAt } from "./form-values";
+import { projectionElement } from "./projection-element";
+import type { PanelFieldValue } from "./state";
 
 /*
  * Where an owner form reads its description and saves: in a panel's frame, the resource module of the bound type; in a
@@ -46,6 +52,134 @@ export class MemberDataUnavailable extends Error {
     super(state.status === "error" ? state.message : state.status);
     this.name = "MemberDataUnavailable";
   }
+}
+
+/** A checked draft held for one form target until the form shows that target. */
+export interface HeldMemberDraft {
+  readonly target: string;
+  readonly baseline: PanelFormDescription;
+  readonly checked: PanelFormDescription;
+  readonly changed: ReadonlySet<string>;
+  readonly submitted: ReadonlySet<string>;
+}
+
+/** A draft result handed from a member-level draft receiver to ObjectForm once ObjectForm mounts (or finishes mounting). */
+export type PendingMemberFormDraft =
+  | { readonly kind: "accepted"; readonly into: PanelFormTarget; readonly held: HeldMemberDraft }
+  | { readonly kind: "refused"; readonly target: string; readonly baseline: PanelFormDescription; readonly reason: unknown };
+
+export interface MemberFormDraftChannel {
+  readonly pending: Readonly<Ref<PendingMemberFormDraft | null>>;
+  setPending(next: PendingMemberFormDraft | null): void;
+  takePending(): PendingMemberFormDraft | null;
+}
+
+export function createMemberFormDraftChannel(): MemberFormDraftChannel {
+  const pending = shallowRef<PendingMemberFormDraft | null>(null);
+  return {
+    pending: readonly(pending) as Readonly<Ref<PendingMemberFormDraft | null>>,
+    setPending(next) { pending.value = next; },
+    takePending() {
+      const current = pending.value;
+      if (current !== null) pending.value = null;
+      return current;
+    },
+  };
+}
+
+/** A comparable key for a form target: the object's primary key, "draft" for a create form, or empty for none. */
+export const formTargetKey = (value: PanelFormTarget | null) =>
+  value === null ? "" : value.kind === "object" ? value.primaryKey : "draft";
+
+/** Resolves a form member's bound state, current target and move helper from the projection and manifest. */
+export function formTargetState(member: PanelMemberContext, instance: PanelInstance) {
+  const objectType = projectionElement(member.projection).id;
+  const editInput = editedInput(member.projection);
+  const creates = Object.values(member.projection.data).some((data) => data.read === "createForm");
+  const state = editInput === undefined ? null : slotInputState(instance.manifest, member.key, editInput);
+  const currentKey = () => (
+    state !== null
+      ? selectedKey(instance.state.values.value[state])
+      : editInput === undefined
+        ? null
+        : selectedKey(member.inputs.value[editInput] as PanelFieldValue | undefined)
+  );
+  const currentTarget = (): PanelFormTarget | null => {
+    const key = currentKey();
+    if (key) return { kind: "object", objectType, primaryKey: key };
+    return creates ? { kind: "draft" } : null;
+  };
+  const moveTo = (next: PanelFormTarget) => {
+    if (state === null) return;
+    instance.state.set(state, next.kind === "object" ? { className: objectType, primaryKey: next.primaryKey } : null);
+  };
+  return { objectType, editInput, creates, state, currentKey, currentTarget, moveTo };
+}
+
+export interface EvaluatedMemberFormDraft {
+  readonly into: PanelFormTarget;
+  readonly baseline: PanelFormDescription;
+  readonly marked: ReadonlySet<string>;
+  readonly held: HeldMemberDraft | null;
+  readonly refusal: unknown | null;
+}
+
+/**
+ * Checks whether a draft belongs to this form member and, if so, asks the owner to validate it against the target form.
+ * Shared by mounted `ObjectForm` instances and member-level draft receivers for unmounted forms so both follow one rule.
+ */
+export async function evaluateMemberFormDraft(
+  member: PanelMemberContext,
+  instance: PanelInstance,
+  forms: FormSource,
+  draft: PageDraft<Record<string, unknown>>,
+): Promise<EvaluatedMemberFormDraft | null> {
+  const { objectType, creates, state, currentTarget } = formTargetState(member, instance);
+  // A draft for an object of another type is another form's: its owner is never asked about an object it does not hold.
+  if (draft.target.objectType !== objectType) return null;
+  const create = draft.target.id === undefined;
+  // A create draft is the form's of this type that creates (a page may keep a separate form for new objects) — unless
+  // an earlier save already created its object, which it then addresses.
+  if (create && !creates && !draft.created) return null;
+  // The target whose owner form names the draft's operation: the create target of a form that creates, otherwise the
+  // object the draft (or its earlier save) addresses.
+  const named: PanelFormTarget = create && creates
+    ? { kind: "draft" }
+    : { kind: "object", objectType, primaryKey: draft.target.id ?? draft.created!.id };
+  // A create draft saved once addresses the object it created from then on.
+  const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : named;
+  // A form whose input is not bound to panel state cannot move to another target; it only takes drafts for its own.
+  if (state === null && formTargetKey(currentTarget()) !== formTargetKey(into)) return null;
+  const namedForm = await forms.describe({ target: named, changedField: null });
+  if (namedForm.save.draftOperation !== draft.operation) return null;
+  const baseline = formTargetKey(into) === formTargetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
+  // The draft is this form's from here on: an owner that cannot check its values at all (a value it cannot read) has
+  // not taken it either, and that is said on this form, as a refusal is; the rest of the panel goes on.
+  let checked: PanelFormDescription;
+  try {
+    checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
+  } catch (reason) {
+    return { into, baseline, marked: new Set(), held: null, refusal: reason };
+  }
+  // A draft the owner does not accept is refused whole, with the fields and the reasons — said here, on this form, and
+  // nothing of it taken; it is this form's to say, so the rest of the panel goes on as it was.
+  if (checked.errors.length) {
+    return {
+      into,
+      baseline,
+      marked: new Set(),
+      held: null,
+      refusal: new PlatformObjectRefusal(checked.errors[0]!.message, fieldMessages(checked.errors)),
+    };
+  }
+  const marked = changedPaths(checked.fields, baseline.values, checked.values);
+  // What the draft wrote, by its presence: a field it left out is not submitted, though the owner's check returns it.
+  const written = new Set(checked.fields.filter((item) => valueAt(draft.form as PanelFormValues, item.path) !== undefined).map((item) => item.path));
+  // A draft is held for what it changed and for what it wrote: one that writes a field as it already is still submits it.
+  const held = marked.size || written.size
+    ? { target: formTargetKey(into), baseline, checked, changed: marked, submitted: written }
+    : null;
+  return { into, baseline, marked, held, refusal: null };
 }
 
 /**

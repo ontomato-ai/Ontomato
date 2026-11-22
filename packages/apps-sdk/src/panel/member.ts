@@ -5,6 +5,7 @@ import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { MemberData, MemberDataState, MemberInputs } from "./direct";
 import { usePanelContext } from "./context";
 import type { MemberOperationsState } from "./member-operations";
+import type { MemberFormDraftChannel } from "./member-forms";
 
 /*
  * The member a component is drawn as in a directly rendered panel (design 4.2): its projection with the named data it
@@ -19,6 +20,8 @@ export interface PanelMemberContext {
   readonly data: MemberData;
   /** The operations its projection names, as the owners admit them for its inputs now, by local name. */
   readonly operations: ComputedRef<MemberOperationsState>;
+  /** Pending draft channel held by a directly rendered ObjectForm member so unmounted forms hand off drafts on mount. */
+  readonly formDraft?: MemberFormDraftChannel;
 }
 
 /** The member a projection is drawn as, once its projection is loaded. */

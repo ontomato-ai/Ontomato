@@ -19,7 +19,7 @@ A workspace is the application source tree. Business definitions remain in Java;
 For a management page, start with the [complete example and wiring recipes](references/management-pages.md) or run `panel scaffold`.
 
 1. Inspect the owner's reads and operations with `panel type <type-id>` and compare their result shapes with the official component data ports in `sdk read docs/components.md`. If an owner read does not match the component's data port, address that gap on the owner or shared-record side rather than rendering business fields in the panel.
-2. Follow the lookup order: start with the official component's default rendering, add `config` for common variations, and write a focused component only as a last resort when a block, column or field still cannot be configured. Write the Vue panel for layout, typed public state in `panel.json` (`{manifest, content?}`), visibility, navigation, `recipes.md`, optional `content.messages`, and `manifest.commands`. Do not render business fields from a data port in `panel.html` or use third-party UI library tags/imports directly.
+2. Follow the lookup order: start with the official component's default rendering, add `config` for common variations, and write a focused small component only as a last resort when a single column (`listColumn`), row detail (`listRowDetail`), or form field (`formField`) still cannot be configured. Write the Vue panel for layout, typed public state in `panel.json` (`{manifest, content?, theme?, template?}`), visibility, navigation, `recipes.md`, optional `content.messages`, and `manifest.commands`. Use `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` theme tokens, and `usePanelContext().notify()` for panel chrome. Do not render business fields from a data port (`PanelData` / `usePanelData` or inline `defineComponent`) in `panel.html` / `panel.mjs`, and never write `el-*` tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations and references.
 4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
 
@@ -29,10 +29,13 @@ Create short members from the reads listed by `panel type`. For customer ontolog
 
 | Command | Result |
 | --- | --- |
-| `sdk read docs/components.md` | Current SDK component guide with data, configuration, outputs and events |
-| `sdk read components.json` | The same current SDK's machine-readable component catalogue |
+| `sdk read docs/components.md` | Current SDK component guide with data, configuration (including expanded structs such as `ObjectListColumn`), outputs, events, `<sdk-*>` UI primitives, `v-sdk-*` directives and `--sdk-*` theme tokens |
+| `sdk read components.json` | The same current SDK's machine-readable component, UI primitive (`uiPrimitives`, `uiDirectives`) and theme token (`themeTokens`) catalogue |
 | `sdk icons` | Icon choices for domain applications from the current SDK |
-| `sdk package <name>` | The deployment's installed release and component declarations for a named package |
+| `sdk package <name>` | Read-only lookup of a deployment-installed component package's release and component declarations |
+| `component list` | List visible domain-registered components in the current domain |
+| `component read <id>` | Read one domain-registered component's declaration, source and current revision |
+| `component register <directory> [--revision <number>]` | Register (create) or update (with `--revision`) a single domain component from `component.json`, `component.html` and optional `component.mjs` |
 | `panel type <type-id> [--read <name>]` | Read signature with its result schema. With no filter, list the type's reads and operations. |
 | `panel type --all` | The visible author type table as JSON, for offline checks |
 | `panel delete application\|panel <id>` | Delete a trial application or panel through its owner |
@@ -43,9 +46,16 @@ Create short members from the reads listed by `panel type`. For customer ontolog
 | `panel register <directory> [--material <file>]` | Register a panel from its workspace sources, including its inline projections |
 | `panel register <JSON or @file>` | Register selected current definitions and application uses under the author's permissions |
 
+### Domain components vs. installed component packages
+
+Custom components come from two distinct paths — do not confuse them:
+
+- **Domain-registered single components (author-managed).** When official components plus `config` still cannot cover a single cell, row detail, or field, authors register a small component in the current domain with `node "$SKILL/ontomato.mjs" component register <directory>` (and inspect or list with `component read <id>` and `component list`). Registration assigns `domain-component:<uuid>` and writes it back into `component.json`. See the [end-to-end domain component and `listColumn` example](references/panel-authoring/CODE.md#custom-list-columns-row-detail-and-per-row-operations).
+- **Deployment component packages (operator-installed only).** Versioned packages such as `@example/tools` are installed at the deployment level by deployment maintainers. **There is no author-side package upload CLI or HTTP endpoint.** `sdk package <name>` is read-only inspection of an already-installed package; do not probe internal package endpoints or bundled checker scripts looking for an upload route.
+
 ### Use an installed component package
 
-Look up the package before writing the member. Use its installed declaration for the exact component ID, data
+Look up an already-installed package before writing a member that references it. Use its installed declaration for the exact component ID, data
 names and accepted results, settings, ports and declared operations. For example:
 
 ```sh
@@ -236,7 +246,8 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `action re-explain` | Optional repeated IDs; `--missing` defaults false. Results identify individual failures. |
 | `vector-upload`, `vector-delete` | Required class, attribute and object ID; upload requires text and optionally file, delete requires resource path. Vector fields are rejected by ordinary object insert/update. |
 | `sdk current/read` | current has no body. read requires one file path relative to the current SDK release. |
-| `panel check` | Requires an authoring directory. Optional `--material` supplies registration JSON and `--sdk-dir` selects an installed SDK release for offline checks. The command reports structural errors and unresolved references without writing to the platform. |
+| `component list/read/register` | list takes no arguments; read requires one `domain-component:<uuid>` ID; register requires a directory with `component.json`, `component.html` and optional `component.mjs`, plus `--revision <n>` when updating an existing component. |
+| `panel check` | Requires an authoring directory. Optional `--material` supplies registration JSON and `--sdk-dir` selects an installed SDK release for offline checks. The command reports structural errors, third-party UI/token violations (`el-*`, `v-loading`, `--el-*`, `element-plus`), invalid `listColumn`/`listRowDetail` host bindings and unresolved references without writing to the platform. |
 | `workspace list/commits/sessions/tree` | Optional page/query JSON defaults to `{}`. IDs are required except for list. Page/query fields are checked by the workspace HTTP schema. |
 | `workspace create/get/rename/delete/content/diff/restore` | Required string positional arguments listed above; content's omitted commit reads the working tree. No body defaults invent missing IDs or commits. |
 | `workspace import` | Use a workspace ID, directory and explicit commit message to import a panel source tree. |

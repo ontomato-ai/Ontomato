@@ -1,11 +1,12 @@
 import { beforeAll, expect, it, vi } from "vitest";
-import { panelFormDescriptionSchema } from "@ontomato/contracts/panel-projection";
+import { applicationCatalogueRecordSchema } from "@ontomato/contracts/application-catalogue";
+import { panelFormDescriptionSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { backendGet } from "../../../utils/backend-client";
 import { readProductGrantRecords } from "../../product-governance/grants";
-import { createApplicationReadAdapter } from "../application-catalogue";
+import { createApplicationReadAdapter, toApplicationPanelRecord } from "../application-catalogue";
 import { createProductProjectionReadAdapter } from "../catalog-reads";
 
 vi.mock("../component-catalogue", () => ({
@@ -38,7 +39,14 @@ beforeAll(() => {
   installContentLayout({ runtimeRoot: process.cwd(), publicSkillsRoot: process.cwd(), prompts: [], runtimeResources: [] });
   configureI18n({
     defaultLocale: "en", appTextLocale: "en", languageSwitchEnabled: false,
-    packs: { en: { ...enLocaleMeta, messages: en } },
+    packs: {
+      en: { ...enLocaleMeta, messages: en },
+      fr: { ...enLocaleMeta, messages: {
+        "panels.productCatalog.application.source": "Origine",
+        "panels.productCatalog.application.builtin": "Intégrée",
+        "panels.productCatalog.application.readOnly": "Lecture seule",
+      } },
+    },
   });
 });
 
@@ -95,4 +103,64 @@ it("gets application grants only for an application whose owner allows edit, wit
   expect(readProductGrantRecords).not.toHaveBeenCalled();
   await expect(adapter.grants(row.id)).resolves.toEqual({ grants, shared: true });
   expect(readProductGrantRecords).toHaveBeenCalledWith(row.id, viewer);
+});
+
+
+const applicationSummary = {
+  id: "app-public",
+  names: { en: "Public app", fr: "Appli publique" },
+  descriptions: { en: "Public description", fr: "Description publique" },
+  icon: "layout-grid",
+  source: "builtin" as const,
+  canMaintain: false,
+  canEditEntries: false,
+  canGrant: false,
+  entryCount: 3,
+};
+
+it("maps a Java catalogue row to typed fields with localized display values and stable capability facts", () => {
+  const row = panelRecordSchema.parse(toApplicationPanelRecord(applicationSummary, "fr"));
+  expect(row).toMatchObject({
+    primaryKey: "app-public", className: "platform:Application",
+    label: "Appli publique", subtitle: "Description publique",
+    fields: {
+      names: { kind: "localized", values: applicationSummary.names },
+      descriptions: { kind: "localized", values: applicationSummary.descriptions },
+      icon: "layout-grid", entryCount: 3, canMaintain: false, canEditEntries: false, canGrant: false,
+      sourceKind: "builtin", source: "Intégrée", maintenance: "Lecture seule",
+    },
+    fieldLabels: { source: "Origine" },
+    tones: { source: "info", maintenance: "info" },
+  });
+  expect(row.fields).not.toHaveProperty("path");
+  expect(row.fieldLabels).not.toHaveProperty("canGrant");
+});
+
+it("omits unprovided detail fields and preserves a frame panel as a typed reference", () => {
+  const legacy = applicationCatalogueRecordSchema.parse({
+    ...applicationSummary,
+    names: { en: "Legacy app" }, descriptions: { en: "" },
+    entry: { path: "/applications/app-public" }, groups: [], panelUses: [],
+  });
+  const row = panelRecordSchema.parse(toApplicationPanelRecord(legacy, "fr"));
+  expect(row.label).toBe("Legacy app");
+  expect(row).not.toHaveProperty("subtitle");
+  expect(row.fields).toMatchObject({ path: legacy.entry.path });
+  expect(row.fields).not.toHaveProperty("home");
+  expect(row.fields).not.toHaveProperty("renderer");
+  expect(row.fields).not.toHaveProperty("framePanel");
+
+  const panels = applicationCatalogueRecordSchema.parse({
+    ...legacy, source: "domain", canMaintain: true, canEditEntries: true, canGrant: true,
+    entry: { ...legacy.entry, renderer: "panels", home: "/applications/app-public/start" },
+    framePanelId: "frame-panel",
+  });
+  expect(panelRecordSchema.parse(toApplicationPanelRecord(panels, "en"))).toMatchObject({
+    fields: {
+      home: "/applications/app-public/start", renderer: "panels",
+      framePanel: { kind: "reference", className: "platform:ProductPanel", primaryKey: "frame-panel", label: "frame-panel" },
+      canMaintain: true, canEditEntries: true, canGrant: true,
+    },
+    tones: { maintenance: "success" },
+  });
 });

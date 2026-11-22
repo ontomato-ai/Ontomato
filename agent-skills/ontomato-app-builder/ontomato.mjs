@@ -570,6 +570,9 @@ function usage() {
   sdk icons
   sdk read <relative path, e.g. docs/components.md>
   sdk package <name>
+  component list
+  component read <id>
+  component register <directory> [--revision <number>]
   panel applications
   panel type <id> [--read <name>]
   panel type --all

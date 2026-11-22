@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onErrorCaptured, onMounted, provide, ref, shallowRef, watch, type Component } from "vue";
+import { computed, onBeforeUnmount, onErrorCaptured, onMounted, provide, ref, shallowRef, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
@@ -29,6 +29,8 @@ const props = defineProps<{
 const { t } = useI18n();
 const declaration = props.instance.direct.members[props.member];
 if (!declaration) throw new Error(`The panel declares no member '${props.member}'`);
+const stopDrawn = props.instance.markDrawn(props.member);
+onBeforeUnmount(stopDrawn);
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ component: Component; slot: ProjectionSlot; member: PanelMemberContext } | null>(null);
 /** A panel the member places, run by the host: its element, placed in this member's container once both are there. */
@@ -59,6 +61,7 @@ void props.instance.placing(props.member).then(async (placing) => {
     loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
   }
 }).catch((reason: unknown) => {
+  stopDrawn();
   failure.value = reason instanceof Error ? reason : new Error(String(reason));
 });
 function placeNested() {
