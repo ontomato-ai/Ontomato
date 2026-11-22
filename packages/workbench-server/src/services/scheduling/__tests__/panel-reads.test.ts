@@ -32,6 +32,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("carries the owner's pause cause on both the card and the selected record", async () => {
+  const paused = { ...task, nextRunAt: null, pause: { code: "definition_changed", message: "The application form changed." } };
+  vi.stubGlobal("fetch", async (url: string) =>
+    Response.json(new URL(url).pathname.endsWith(`/${task.id}`) ? paused : { timeZone: task.timeZone, tasks: [paused] }));
+  const reads = createScheduledTaskReadAdapter(viewer);
+  const expected = { fields: { state: "paused: The application form changed.", pauseCode: "definition_changed" } };
+  await expect(reads.list()).resolves.toMatchObject([expected]);
+  await expect(reads.record(task.id)).resolves.toMatchObject(expected);
+});
+
 it("reads the viewer's task rows and selected summary, and recomputes the selected task's form", async () => {
   const fetchOwner = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
