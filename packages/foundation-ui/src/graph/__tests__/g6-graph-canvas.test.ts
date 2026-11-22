@@ -278,6 +278,28 @@ it("keeps a node's name readable when the reader zooms out, and hides only names
   wrapper.unmount();
 });
 
+// A name hidden because it would cover another (panelisation lead, 2026-11-22) is still the node's: the reader reads it
+// by pointing at the node, and the node they chose keeps its name in view before any other.
+it("tells a node's name on hover, and keeps the chosen node's name before others when names must give way", async () => {
+  const nodes = [{ id: "a", label: "A <b>", x: 0, y: 0 }, { id: "b", label: "B", x: 20, y: 0 }, { id: "c", label: "C", x: 40, y: 0 }];
+  const edges = [{ id: "ab", source: "a", target: "b" }, { id: "ac", source: "a", target: "c" }];
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes, edges, selected: ["c"], layout: { type: "preset" }, readableLabels: true } });
+  await flushPromises();
+  const tooltip = (view.options.plugins as any[]).find((plugin) => plugin.type === "tooltip");
+  expect(tooltip.enable({ targetType: "node" })).toBe(true);
+  expect(tooltip.enable({ targetType: "edge" })).toBe(false);
+  // The name as text, never as markup.
+  const shown = document.createElement("div");
+  shown.innerHTML = await tooltip.getContent({}, [{ id: "a", style: { labelText: "A <b>" } }]);
+  expect(shown.textContent).toBe("A <b>");
+  expect(shown.children).toHaveLength(0);
+  const adapt = (view.options.behaviors as any[]).find((behavior) => behavior.type === "auto-adapt-label");
+  const order = (ids: string[]) => [...ids].sort((one, other) => adapt.sortNode({ id: one }, { id: other }));
+  // The chosen node first, then the better connected.
+  expect(order(["a", "b", "c"])).toEqual(["c", "a", "b"]);
+  wrapper.unmount();
+});
+
 it("shows a graph too large to read whole from its own edge, around the node it is given, not past it into empty canvas", async () => {
   // Nodes from x 0 to 2000 and y 0 to 1000: at zoom 1 far wider and taller than the 800 by 600 view.
   const nodes = [{ id: "a", label: "A", x: 0, y: 0 }, { id: "b", label: "B", x: 2000, y: 1000 }];

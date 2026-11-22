@@ -229,6 +229,14 @@ function nodeOptions() {
   return { type: "circle", state: { selected: { stroke: colors.primary, lineWidth: 5, lineDash: [] } } };
 }
 
+/** Which of two nodes keeps its name where names must give way: a chosen one, else the one with more relations. */
+function nameBefore(one: { id: string | number }, other: { id: string | number }) {
+  const chosen = (id: string | number) => (props.selected.includes(String(id)) ? 1 : 0);
+  const relations = (id: string | number) => props.edges.filter(({ source, target }) => source === String(id) || target === String(id)).length;
+  return chosen(other.id) - chosen(one.id) || relations(other.id) - relations(one.id);
+}
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+
 async function create(width: number, height: number) {
   colors = readG6Colors(host.value!);
   const target = new Graph({
@@ -239,6 +247,16 @@ async function create(width: number, height: number) {
     padding: 48,
     animation: false,
     data: { nodes: [], edges: [] },
+    // A name that gave way is still told when the reader points at its node.
+    plugins: props.readableLabels ? [{
+      type: "tooltip", key: "names", position: "top",
+      enable: (event: { targetType?: string }) => event.targetType === "node",
+      getContent: async (_event: unknown, items: { style?: { labelText?: unknown } }[]) => escapeHtml(String(items[0]?.style?.labelText ?? "")),
+      style: { ".tooltip": {
+        background: "var(--el-bg-color-overlay)", color: "var(--el-text-color-primary)", border: "1px solid var(--ui-border)",
+        "border-radius": "var(--radius-md)", "box-shadow": "var(--el-box-shadow-light)", "font-size": "var(--text-xs)", padding: "2px 8px",
+      } },
+    }] : [],
     behaviors: [
       "drag-canvas",
       "zoom-canvas",
@@ -250,7 +268,8 @@ async function create(width: number, height: number) {
           type: "fix-element-size", key: "readable-labels", state: "", enable: true,
           node: [{ shape: "label" }], edge: [{ shape: "label" }],
         },
-        { type: "auto-adapt-label", key: "label-room", throttle: 100, padding: 2 },
+        // Where names would cover each other some give way: the chosen nodes' last, then the better connected's.
+        { type: "auto-adapt-label", key: "label-room", throttle: 100, padding: 2, sortNode: nameBefore },
       ] : []),
       {
         type: "create-edge",
