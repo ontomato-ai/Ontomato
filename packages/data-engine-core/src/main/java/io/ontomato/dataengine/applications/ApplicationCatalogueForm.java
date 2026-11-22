@@ -90,7 +90,7 @@ final class ApplicationCatalogueForm {
 
     JSONObject create(String id, JSONObject draft, Function<String, String> conflicts) {
         var values = draft == null ? JSONObject.of(
-            "declaration", JSONObject.of("names", JSONObject.of("en", ""), "descriptions", new JSONObject(),
+            "declaration", JSONObject.of("names", new JSONObject(), "descriptions", new JSONObject(),
                 "icon", "pages", "groups", List.of(), "permissions", List.of()),
             "entry", JSONObject.of("path", ApplicationCatalog.assignedPanelRoot(id), "renderer", "panels"),
             "entryAccess", List.of(DOMAIN_MEMBER), "panelUses", List.of()) : draft;
@@ -107,7 +107,7 @@ final class ApplicationCatalogueForm {
 
     private JSONArray identityFields() {
         return JSONArray.of(
-            field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true, "name.help"),
+            field("/names", "name", localizedText(List.of(), false), STRING_MAP, true, "name.help"),
             field("/descriptions", "description", localizedText(List.of(), true), STRING_MAP, true, "description.help"),
             field("/icon", "icon", JSONObject.of("kind", "application-icon"), STRING, true, "icon.help"));
     }
@@ -115,22 +115,22 @@ final class ApplicationCatalogueForm {
     private JSONObject groupsField() {
         var fields = JSONArray.of(
             field("/key", "groupKey", PanelFormFields.text(false), STRING, true),
-            field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true),
+            field("/names", "name", localizedText(List.of(), false), STRING_MAP, true),
             field("/sort", "groupSort", JSONObject.of("kind", "number"), INTEGER, true));
-        var empty = JSONObject.of("key", "", "names", JSONObject.of("en", ""), "sort", 0);
+        var empty = JSONObject.of("key", "", "names", new JSONObject(), "sort", 0);
         return field("/groups", "groups", PanelFormFields.objectArray(fields, empty, null), GROUPS_SCHEMA, true);
     }
 
     private JSONObject permissionsField(String id) {
         var code = field("/code", "permissionCode", PanelFormFields.text(false), STRING, true);
-        var names = field("/names", "name", localizedText(List.of("en"), false), STRING_MAP, true);
+        var names = field("/names", "name", localizedText(List.of(), false), STRING_MAP, true);
         // Edited permissions supply the entry access choices in the same draft.
         code.put("refreshOnChange", true);
         names.put("refreshOnChange", true);
         var fields = JSONArray.of(code, names,
             field("/groupKey", "groupKey", PanelFormFields.text(false), STRING, true),
             field("/sort", "groupSort", JSONObject.of("kind", "number"), INTEGER, true));
-        var empty = JSONObject.of("code", ApplicationCatalog.permissionPrefix(id), "names", JSONObject.of("en", ""),
+        var empty = JSONObject.of("code", ApplicationCatalog.permissionPrefix(id), "names", new JSONObject(),
             "groupKey", "", "sort", 0);
         var permissions = field("/permissions", "permissions", PanelFormFields.objectArray(fields, empty, null), PERMISSIONS_SCHEMA, true);
         permissions.put("refreshOnChange", true);
@@ -155,8 +155,8 @@ final class ApplicationCatalogueForm {
             if (!(permission.get("code") instanceof String code) || !ApplicationCatalog.ownsPermissionCode(id, code)) continue;
             var label = code;
             if (permission.get("names") instanceof Map<?, ?> names) {
-                if (names.get("en") instanceof String english && !english.isBlank()) label = english;
-                if (names.get(locale.toLanguageTag()) instanceof String localized && !localized.isBlank()) label = localized;
+                var localized = ApplicationCatalog.localizedText(names, locale);
+                if (localized != null) label = localized;
             }
             options.add(PanelFormFields.option(JSONObject.of("permissionCode", code), label));
         }
@@ -172,8 +172,8 @@ final class ApplicationCatalogueForm {
             field("/path", "address", PanelFormFields.text(false), STRING, true),
             field("/panelId", "panelId", PanelFormFields.text(false), STRING, true),
             inputs,
-            field("/names", "menuNames", localizedText(List.of("en"), false), STRING_MAP, false),
-            field("/descriptions", "entryDescriptions", localizedText(List.of("en"), true), STRING_MAP, false),
+            field("/names", "menuNames", localizedText(List.of(), false), STRING_MAP, false),
+            field("/descriptions", "entryDescriptions", localizedText(List.of(), true), STRING_MAP, false),
             field("/groupKey", "menuGroup", PanelFormFields.text(false), STRING, false),
             field("/access", "entryAccess", PanelFormFields.select(accessOptions), ACCESS, true),
             field("/defaultAgent", "defaultAgent", PanelFormFields.select(new JSONArray()), DEFAULT_AGENT, false));
@@ -228,7 +228,7 @@ final class ApplicationCatalogueForm {
     private static void validateNames(JSONObject values, String path, PanelFormErrors errors) {
         var names = errors.requiredObject(values, "names", path);
         if (names != null) {
-            if (!names.containsKey("en")) errors.required(path + "/en", "English name is required");
+            if (names.isEmpty()) errors.required(path, "At least one localized name is required");
             validateTranslations(names, path, true, errors);
         }
     }
@@ -309,11 +309,19 @@ final class ApplicationCatalogueForm {
                 errors.requiredString(use, key, path + "/" + key);
             var pageKey = errors.requiredString(use, "pageKey", path + "/pageKey");
             if (pageKey != null) validatePageKey(pageKey, path + "/pageKey", conflicts, errors);
+            if (use.containsKey("names")) {
+                var pointer = path + "/names";
+                var names = errors.requiredObject(use, "names", pointer);
+                if (names != null) {
+                    if (names.isEmpty()) errors.required(pointer, "At least one localized name is required");
+                    validateTranslations(names, pointer, true, errors);
+                }
+            }
             if (use.containsKey("descriptions")) {
                 var pointer = path + "/descriptions";
                 var descriptions = errors.requiredObject(use, "descriptions", pointer);
                 if (descriptions != null) {
-                    if (!descriptions.containsKey("en")) errors.required(pointer + "/en", "English description is required");
+                    if (descriptions.isEmpty()) errors.required(pointer, "At least one localized description is required");
                     for (var description : descriptions.entrySet()) {
                         if (!(description.getValue() instanceof String text) || ApplicationPanelUse.blankDescription(text))
                             errors.invalidObject(pointer + "/" + PanelFormFields.pointer(description.getKey()), "Expected a nonblank description");

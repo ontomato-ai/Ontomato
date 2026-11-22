@@ -13,9 +13,10 @@ const declarations = appDeclarations(generatedNavigation(), closedAccess(["busin
 describe("the platform's applications", () => {
   it("shows only the implemented workspace when an old workplace registration remains", () => {
     const catalog = catalogFixture();
-    const workspace = catalog.find(app => app.id === "personal-workspace")!;
+    const home = catalog.find(app => app.id === "home")!;
+    const workspace = { ...home, id: "personal-workspace", entry: { path: "/workspace", renderer: "personal-workspace" } };
     const stale = { ...workspace, id: "workplace", entry: { path: "/workplace", renderer: "workplace" } };
-    const partition = catalogPartition([...catalog, stale], "zh-CN");
+    const partition = catalogPartition([...catalog, workspace, stale], "zh-CN");
     expect(
       partition.filter(app => app.id === "personal-workspace" || app.id === "workplace").map(app => app.id)
     ).toEqual(["personal-workspace"]);

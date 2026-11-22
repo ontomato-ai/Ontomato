@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   applicationCatalogueCreateSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
 } from "@ontomato/contracts/application-catalogue";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, panelObjectIdentitySchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema, panelFormValuesSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
@@ -355,7 +356,7 @@ function applicationAction<Input extends Record<string, unknown>>(
     resultSchema: noData,
     async targetLabel(host, { primaryKey }) {
       const record = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
-      return record.names[host.locale ?? "en"] ?? record.names.en;
+      return localizedApplicationText(record.names, host.locale ?? "en") ?? record.id;
     },
     async execute({ locale, executor }, target, input) {
       return write(APPLICATION, async () => {

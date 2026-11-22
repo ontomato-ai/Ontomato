@@ -255,9 +255,31 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
   const descriptions = { en: "Review the current report", "zh-CN": "查看当前报告" };
   const use = { ...base, descriptions };
   assert.deepEqual(applicationPanelUseSchema.parse(base), base);
-  for (const invalid of [null, {}, { "zh-CN": "查看当前报告" }, { en: " " }, { en: "Report", "zh-CN": "" }, { en: null }]) {
+  assert.deepEqual(
+    applicationPanelUseSchema.parse({ ...base, names: { "zh-CN": "报告" }, descriptions: { "zh-CN": "查看当前报告" } }).names,
+    { "zh-CN": "报告" },
+  );
+  for (const invalid of [null, {}, { en: " " }, { en: "Report", "zh-CN": "" }, { en: null }]) {
     assert.equal(applicationPanelUseSchema.safeParse({ ...base, descriptions: invalid }).success, false);
   }
+  const { applicationMetadataSchema, localizedApplicationText } = await import("./application-metadata");
+  assert.equal(
+    applicationMetadataSchema.safeParse({
+      names: { "zh-CN": "中文应用" }, descriptions: {}, icon: "pages",
+      groups: [{ key: "main", names: { "zh-CN": "主分组" }, sort: 0 }],
+      permissions: [{ code: "app:zh:read", names: { "zh-CN": "查看" }, groupKey: "main", sort: 0 }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    applicationMetadataSchema.safeParse({
+      names: {}, descriptions: {}, icon: "pages", groups: [], permissions: [],
+    }).success,
+    false,
+  );
+  assert.equal(localizedApplicationText({ "zh-CN": "中文应用" }, "en"), "中文应用");
+  assert.equal(localizedApplicationText({ "zh-CN": "中文应用", en: "English App" }, "zh-CN"), "中文应用");
+  assert.equal(localizedApplicationText({ "zh-CN": "中文应用", en: "English App" }, "fr-FR"), "English App");
   const builtin = { ...use, panelId: BUILTIN_PRODUCT_ID_PREFIX + base.panelId };
   assert.deepEqual(builtinApplicationPanelUseSchema.parse(builtin), builtin);
   assert.deepEqual(registerApplicationPanelUsesRequestSchema.parse({ entry, panelUses: [use] }).panelUses, [use]);

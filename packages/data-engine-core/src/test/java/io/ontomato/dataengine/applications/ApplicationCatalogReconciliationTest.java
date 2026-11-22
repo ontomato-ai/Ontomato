@@ -235,10 +235,23 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             {"section":"entries","target":{"kind":"object","objectType":"platform:Application","primaryKey":"app-descriptions"}}
             """)).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.values.panelUses[0].descriptions.en").value("Read it here."));
-        for (var invalid : List.of("null", "{}", "{\"fr\":\"Explication\"}", "{\"en\":\"   \"}",
+        for (var invalid : List.of("null", "{}", "{\"en\":\"   \"}",
                 "{\"en\":\"Read it.\",\"fr\":\"  \"}", "{\"en\":42}", "{\"en\":null}", "{\"en\":\"\u00a0\ufeff\"}"))
             http.perform(put(writer).contentType(MediaType.APPLICATION_JSON)
                 .content(registrationWithEntryDescriptions(invalid))).andExpect(status().isBadRequest());
+
+        // Non-English-only entry descriptions are accepted too.
+        http.perform(put(writer).contentType(MediaType.APPLICATION_JSON)
+                .content(registrationWithEntryDescriptions("""
+                    {"fr":"Explication"}
+                    """)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.panelUses[0].descriptions.fr").value("Explication"));
+        http.perform(put(writer).contentType(MediaType.APPLICATION_JSON)
+                .content(registrationWithEntryDescriptions("""
+                    {"en":"Read it here.","fr-CA":"Consultez la fiche."}
+                    """)))
+            .andExpect(status().isOk());
 
         http.perform(get("/platform/applications/resolve-entry").param("applicationId", "app-descriptions").param("useId", "info"))
             .andExpect(status().isOk())
@@ -464,7 +477,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             var control = field.getJSONObject("control");
             assertEquals("localized-text", control.getString("kind"));
             assertEquals("zh-CN", control.getString("primaryLocale"));
-            assertEquals(List.of("en"), control.getList("requiredLocales", String.class));
+            assertEquals(List.of(), control.getList("requiredLocales", String.class));
             assertFalse(field.getBooleanValue("required"));
         }
         var inputsField = rowFields.stream().filter(item -> "/inputs".equals(item.getString("path"))).findFirst().orElseThrow();
@@ -714,7 +727,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.fields[0].control.fields[0].help").isNotEmpty())
             .andExpect(jsonPath("$.data.fields[0].control.fields[0].control.kind").value("localized-text"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[0].control.primaryLocale").value("zh-CN"))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[0].control.requiredLocales[0]").value("en"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[0].control.requiredLocales").isEmpty())
             .andExpect(jsonPath("$.data.fields[0].control.fields[1].label").value("说明"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[1].control.multiline").value(true))
             .andExpect(jsonPath("$.data.fields[0].control.fields[2].label").value("图标"))
@@ -738,7 +751,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.defaultItem.code").value("app:app-translated:"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[0].label").value("权限码"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].control.kind").value("localized-text"))
-            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].control.requiredLocales[0]").value("en"))
+            .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[1].control.requiredLocales").isEmpty())
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[2].path").value("/groupKey"))
             .andExpect(jsonPath("$.data.fields[0].control.fields[4].control.itemFields[3].control.kind").value("number"))
             .andExpect(jsonPath("$.data.values.declaration.permissions[0].names['zh-CN']").value("查看"))
@@ -797,6 +810,37 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.errors[0].field").value("/icon"))
             .andExpect(jsonPath("$.data.save.path").value("/platform/applications/" + id + "/identity"));
         assertEquals(before, records());
+
+        // A reader in a non-English locale can create an application with only their locale's name (no English required).
+        var zhForm = http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                    {"section":"create","target":{"kind":"draft"},"changedField":null}
+                    """)).andExpect(status().isOk()).andReturn();
+        var zhData = JSONObject.parseObject(zhForm.getResponse().getContentAsString()).getJSONObject("data");
+        var zhSave = zhData.getJSONObject("save").getString("path");
+        var zhValues = zhData.getJSONObject("values");
+        var zhId = zhValues.getJSONObject("entry").getString("path").substring("/applications/".length());
+        var zhDecl = zhValues.getJSONObject("declaration");
+        // Empty names map is still refused on /declaration/names.
+        http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JSONObject.of("section", "create", "target", JSONObject.of("kind", "draft", "id", zhId), "values", zhValues).toJSONString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.errors[0].field").value("/declaration/names"));
+        zhDecl.getJSONObject("names").put("zh-CN", "中文应用");
+        zhDecl.put("groups", List.of(JSONObject.of("key", "main", "names", JSONObject.of("zh-CN", "主菜单"), "sort", 0)));
+        zhDecl.put("permissions", List.of(JSONObject.of("code", ApplicationCatalog.permissionPrefix(zhId) + "view",
+            "names", JSONObject.of("zh-CN", "查看"), "groupKey", "main", "sort", 0)));
+        http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JSONObject.of("section", "create", "target", JSONObject.of("kind", "draft", "id", zhId), "values", zhValues).toJSONString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.errors").isEmpty());
+        http.perform(put(zhSave).contentType(MediaType.APPLICATION_JSON).content(zhValues.toJSONString()))
+            .andExpect(status().isOk());
+        http.perform(get(CATALOGUE).param("sort", "name").locale(Locale.ENGLISH))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.rows[?(@.id=='" + zhId + "')].names['zh-CN']").value("中文应用"));
     }
 
     @Test void resolvesNativePanelEntriesAndTheirMenusWithoutFrameThemeOrInputs() throws Exception {

@@ -280,7 +280,7 @@ export const applicationPanelUseSchema = z.object({
   names: applicationMetadataSchema.shape.names.optional(),
   /** Optional page heading text, independent of whether the entry is in the menu. */
   descriptions: z.record(z.string().refine(text => text.trim().length > 0, "Expected a nonblank description"))
-    .refine(text => Object.hasOwn(text, "en"), "An English description is required").optional(),
+    .refine(text => Object.keys(text).length > 0, "At least one localized description is required").optional(),
   inputs: applicationPanelInputsSchema.optional(),
   /**
    * A menu count from the named data read on a member of this entry's content panel.
