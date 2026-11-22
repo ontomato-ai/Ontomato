@@ -106,6 +106,7 @@ export const panelObjectRefSchema = z.object({
   className: z.string().min(1).max(200),
   primaryKey: z.string().min(1).max(1000),
 }).strict();
+export type PanelObjectRef = z.infer<typeof panelObjectRefSchema>;
 
 /** Values that can cross the address and deep-link state boundary. */
 export const panelDeepLinkStateValueSchema = z.union([
