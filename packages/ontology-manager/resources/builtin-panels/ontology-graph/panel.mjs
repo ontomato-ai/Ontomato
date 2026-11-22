@@ -20,6 +20,12 @@ await mountPanel({
     const relationRows = usePanelData("relations", "rows");
     const attributeRows = usePanelData("attributes", "rows");
 
+    const FILTERS = [
+      { value: "all", label: "全部" },
+      { value: "objects", label: "对象类型" },
+      { value: "relations", label: "关系类型" },
+    ];
+    const filter = ref("all");
     const pathFrom = ref("");
     const pathTo = ref("");
     const pathMessage = ref("");
@@ -92,6 +98,22 @@ await mountPanel({
     const selectedRelation = computed(() =>
       relations.value.find((relation) => relation.relationship === instance.state.values.value.relation?.primaryKey) ?? null,
     );
+    /** The left column's two sections: the classes and the relations the reader's query and filter leave. */
+    const matches = (values, term) => !term || values.some((value) => String(value ?? "").toLowerCase().includes(term));
+    const filteredObjects = computed(() => {
+      if (filter.value === "relations") return [];
+      const term = search.value.trim().toLowerCase();
+      return objects.value.filter((object) =>
+        matches([object.className, object.showName, object.classDesc, ...attributesOf(object.className).flatMap((item) => [item.name, item.showName])], term),
+      );
+    });
+    const filteredRelations = computed(() => {
+      if (filter.value === "objects") return [];
+      const term = search.value.trim().toLowerCase();
+      return drawableRelations.value.filter((relation) => matches([relation.relationship, relation.name, relation.desc], term));
+    });
+    const attributesOf = (className) => attributesByClass.value.get(className) ?? [];
+
     const selectedAttributes = computed(() => attributesByClass.value.get(selectedObject.value?.className ?? "") ?? []);
     const connectedRelations = computed(() =>
       selectedObject.value
@@ -124,12 +146,29 @@ await mountPanel({
       highlight([], []);
     }
 
+    /** What the page highlights: what the query and the filter leave, or nothing when both are open. */
+    function highlightBrowsed() {
+      if (!search.value.trim() && filter.value === "all") {
+        clearHighlight();
+        return;
+      }
+      highlight(
+        filteredObjects.value.map((object) => object.className),
+        filteredRelations.value.map((relation) => relation.relationship),
+      );
+    }
+    const setFilter = (value) => {
+      filter.value = value;
+      pathMessage.value = "";
+      highlightBrowsed();
+    };
+
     const setSearch = (value) => {
       search.value = value ?? "";
       pathMessage.value = "";
       const term = search.value.trim().toLowerCase();
       if (!term) {
-        clearHighlight();
+        highlightBrowsed();
         return;
       }
       const words = (className) => (attributesByClass.value.get(className) ?? []).flatMap((item) => [item.name, item.showName]);
@@ -185,15 +224,14 @@ await mountPanel({
       pathMessage.value = `找不到从「${classNameLabel(from)}」到「${classNameLabel(to)}」的路径`;
     }
 
+    function selectObject(className) {
+      navigationError.value = "";
+      instance.state.setState({ objectType: { className: OBJECT_TYPE, primaryKey: className }, relation: null });
+    }
+
     function selectRelation(relationship) {
       navigationError.value = "";
       instance.state.setState({ relation: { className: RELATIONSHIP, primaryKey: relationship }, objectType: null });
-    }
-
-    function closeInspector() {
-      navigationError.value = "";
-      if (!hasHighlight.value) pathMessage.value = "";
-      instance.state.setState({ objectType: null, relation: null });
     }
 
     async function openModeling() {
@@ -214,14 +252,8 @@ await mountPanel({
 
     // A selection clears the path it replaced, so the canvas shows what the reader chose, not both.
     watch([selectedObject, selectedRelation], ([object, relation]) => {
-      if ((object || relation) && !search.value.trim()) clearHighlight();
+      if ((object || relation) && !search.value.trim() && filter.value === "all") clearHighlight();
     });
-
-    const inspectorOpen = computed(() => Boolean(selectedObject.value || selectedRelation.value));
-    const inspectorTitle = computed(() => (selectedObject.value ? selectedObject.value.showName : selectedRelation.value?.name ?? ""));
-    const inspectorKey = computed(() =>
-      selectedObject.value ? selectedObject.value.className : selectedRelation.value?.relationship ?? "",
-    );
 
     // The agent names the selected object by the owner's label, not by its key alone.
     watch(
@@ -252,6 +284,12 @@ await mountPanel({
       relations,
       search,
       setSearch,
+      filter,
+      filterOptions: FILTERS,
+      setFilter,
+      filteredObjects,
+      filteredRelations,
+      selectObject,
       selectedObject,
       selectedRelation,
       selectedAttributes,
@@ -263,12 +301,8 @@ await mountPanel({
       findPath,
       clearHighlight,
       selectRelation,
-      closeInspector,
       openModeling,
       navigationError,
-      inspectorOpen,
-      inspectorTitle,
-      inspectorKey,
       classNameLabel,
     };
   },
