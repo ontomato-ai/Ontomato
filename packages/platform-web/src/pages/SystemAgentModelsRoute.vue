@@ -3,14 +3,15 @@ import {computed,defineComponent,h} from 'vue';
 import {useRoute,useRouter} from 'vue-router';
 import {useI18n} from 'vue-i18n';
 import {AgentModelsPage,PlatformTabs,ontologyAgentModelPages,ontologyAgentModelSource,usePageAccess,useLeaveConfirmation} from '@ontomato/platform-shell';
+import {platformRoutes} from '@ontomato/platform-shell/routes';
 import {nodeApiRequest} from '@ontomato/workbench-ui';
 import BuilderModelsRoute from './BuilderModelsRoute.vue';
 const route=useRoute(),router=useRouter(),{t}=useI18n(),canOpen=usePageAccess();
 const leave=useLeaveConfirmation();
 async function select(category:string){if(category===active.value)return;if(leave.leaves('/settings/model-config/agents/category')&&!await leave.confirm())return;await router.replace({query:{category}});}
 const options=computed(()=>[
- ...ontologyAgentModelPages.map(page=>({id:page.app,label:t(page.app==='ontology'?'platform.ontologyAgentModels':'platform.conversationAgentModels'),path:page.path})),
- {id:'builder',label:t('platform.builderAgentModels'),path:'/settings/model-config/app-builder'},
+ ...ontologyAgentModelPages.map(page=>({id:page.app,label:t(page.app==='ontology'?'platform.ontologyAgentModels':'platform.conversationAgentModels'),path:platformRoutes.usage.path})),
+ {id:'builder',label:t('platform.builderAgentModels'),path:platformRoutes.builderModels.path},
 ].filter(option=>canOpen(option.path)));
 const active=computed(()=>options.value.find(option=>option.id===route.query.category)?.id??options.value[0]?.id??'');
 const sources=new Map(ontologyAgentModelPages.map(page=>[page.app,ontologyAgentModelSource({async get(path){const response=await nodeApiRequest('/api/data-query'+path);const body=await response.json();return body.data??body;},async put(path,value){const response=await nodeApiRequest('/api/data-query'+path,{method:'PUT',body:JSON.stringify(value)});const body=await response.json();return body.data??body;}},page)]));

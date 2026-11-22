@@ -1,11 +1,10 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
-import { AgentModelsPage, ontologyAgentModelPages, ontologyAgentModelSource } from "@ontomato/platform-shell";
 import { defineAsyncComponent, defineComponent, h, ref, type PropType } from "vue";
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
-import { useManagerClient, useManagerCounts } from "./context";
+import { useManagerCounts } from "./context";
 import ManagerFrame from "./ManagerFrame.vue";
 import OntologyAssetCatalog from "./components/OntologyAssetCatalog.vue";
 import WorkflowCatalog from "./components/WorkflowCatalog.vue";
@@ -150,16 +149,6 @@ const TriggerPage = defineComponent({
   },
 });
 
-/** The ontology manager's models: the modeling agents', at the foot of its menu, over the Manager's own requests. */
-const OntologyModelsPage = defineComponent({
-  name: "ManagerOntologyModelsPage",
-  setup() {
-    const page = ontologyAgentModelPages.find((candidate) => candidate.app === "ontology")!;
-    const source = ontologyAgentModelSource(useManagerClient().dataEngine, page);
-    return () => h("section", { class: "models-surface" }, [h(AgentModelsPage, { source, path: page.path })]);
-  },
-});
-
 const stringParam = (name: string) => (route: { params: Record<string, unknown> }) => {
   const value = route.params[name];
   return { [name]: typeof value === "string" ? value : "" };
@@ -203,15 +192,16 @@ export function managerRoutes(): RouteRecordRaw[] {
         ]),
         { ...routes.workflows, component: WorkflowPage, meta: { page: managerPaths.workflows } },
         { ...routes.triggers, component: TriggerPage, meta: { page: managerPaths.triggers } },
-        { ...routes.ontologyModels, component: OntologyModelsPage, meta: { page: routes.ontologyModels.path } },
       ],
     },
   ];
 }
 
-/** Manager routes that redirect old standalone paths. */
+/** Manager routes that redirect old standalone paths to their unified destinations. */
 export function managerStandaloneRoutes(): RouteRecordRaw[] {
+  const ontologyModelsTarget = { name: routes.systemAgentModels.name, query: { category: "ontology" } };
   return [
-    { path: "/ontology/models", redirect: { name: routes.ontologyModels.name } },
+    { path: "/ontology/models", redirect: ontologyModelsTarget },
+    { path: "/settings/model-config/ontology", redirect: ontologyModelsTarget },
   ];
 }

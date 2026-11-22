@@ -1132,3 +1132,236 @@ it("tells an empty list from a search that matched nothing", async () => {
   await vi.waitFor(() => expect(state()?.dataset.empty).toBe("no-match"));
   expect(state()!.textContent?.trim()).toBe(publicEn.platform.dataNoMatch);
 });
+
+it("activates table rows from the keyboard without colliding with inner checkboxes or links", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "knowledge-table": {
+      ...meta,
+      id: "knowledge-table",
+      name: "Knowledge table",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {
+        selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        checked: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      },
+      config: {
+        toggleable: true,
+        columns: [
+          { key: "label", labelKey: "cols.title" },
+          { key: "owner", labelKey: "cols.owner" },
+        ],
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
+      checked: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "knowledge-table" },
+        outputs: { selected: { state: "selected" }, checked: { state: "checked" } },
+      },
+    },
+    commands: {},
+  });
+  const rows = [
+    { primaryKey: "k-1", label: "First rule", fields: { owner: "Alice" } },
+    { primaryKey: "k-2", label: "Second rule", fields: { owner: "Bob" } },
+    { primaryKey: "k-3", label: "Third rule", fields: { owner: "Cara" } },
+  ];
+  const { instance, element } = mountDirect(manifest, projections, () => ready({ rows, total: rows.length }), {
+    messages: { en: { "cols.title": "Title", "cols.owner": "Owner" } },
+  });
+  await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(3));
+  const tableRows = [...element.querySelectorAll<HTMLTableRowElement>("tbody tr")];
+  expect(tableRows.every((row) => row.getAttribute("tabindex") === "0")).toBe(true);
+
+  // Focusing a row and pressing Enter selects it.
+  tableRows[0]!.focus();
+  const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+  tableRows[0]!.dispatchEvent(enter);
+  await nextTick();
+  expect(enter.defaultPrevented).toBe(true);
+  expect(instance.state.values.value.selected).toEqual(knowledge("k-1"));
+  expect(tableRows[0]!.getAttribute("aria-selected")).toBe("true");
+
+  // Pressing Space on the selected row toggles it off when toggleable is enabled, preventing page scroll.
+  const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+  tableRows[0]!.dispatchEvent(space);
+  await nextTick();
+  expect(space.defaultPrevented).toBe(true);
+  expect(instance.state.values.value.selected).toBeNull();
+
+  // Modified keys on a row do not trigger selection.
+  tableRows[1]!.focus();
+  const ctrlEnter = new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true });
+  tableRows[1]!.dispatchEvent(ctrlEnter);
+  await nextTick();
+  expect(ctrlEnter.defaultPrevented).toBe(false);
+  expect(instance.state.values.value.selected).toBeNull();
+
+  // ArrowDown / ArrowUp / Home / End move focus between table rows.
+  tableRows[0]!.focus();
+  tableRows[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+  expect(document.activeElement).toBe(tableRows[1]);
+  tableRows[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
+  expect(document.activeElement).toBe(tableRows[2]);
+  tableRows[2]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+  expect(document.activeElement).toBe(tableRows[1]);
+  tableRows[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }));
+  expect(document.activeElement).toBe(tableRows[0]);
+
+  // Enter/Space originating from an inner checkbox or interactive button inside a cell does not activate the row.
+  const checkbox = tableRows[1]!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  checkbox.focus();
+  const checkboxSpace = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+  checkbox.dispatchEvent(checkboxSpace);
+  await nextTick();
+  expect(checkboxSpace.defaultPrevented).toBe(false);
+  expect(instance.state.values.value.selected).toBeNull();
+
+  const innerButton = document.createElement("button");
+  innerButton.type = "button";
+  tableRows[1]!.querySelector("td:last-child")!.appendChild(innerButton);
+  innerButton.focus();
+  const buttonEnter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+  innerButton.dispatchEvent(buttonEnter);
+  await nextTick();
+  expect(buttonEnter.defaultPrevented).toBe(false);
+  expect(instance.state.values.value.selected).toBeNull();
+});
+
+it("outputs listed references for the current batch (current page when paged, all rows when unpaged) without extra reads", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "knowledge-query": {
+      ...meta,
+      id: "knowledge-query",
+      name: "Knowledge query",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { search: { kind: "scalar", type: "string" } },
+      outputs: {
+        selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE },
+        listed: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+        search: { kind: "scalar", type: "string" },
+      },
+      config: { pageSize: 2 },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      keyword: { type: { kind: "scalar", type: "string" }, deepLink: true },
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true },
+      listed: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "knowledge-query" },
+        outputs: { selected: { state: "selected" }, listed: { state: "listed" }, search: { state: "keyword" } },
+      },
+    },
+    commands: {},
+  });
+
+  const allRows = [
+    { primaryKey: "k-1", label: "Alpha rule", fields: {} },
+    { primaryKey: "k-2", label: "Beta rule", fields: {} },
+    { primaryKey: "k-3", label: "Gamma rule", fields: {} },
+  ];
+  let deferredPage2: ((response: ProductPanelReadResponse) => void) | null = null;
+  let forceForbidden = false;
+
+  const { instance, element, reads } = mountDirect(manifest, projections, (request) => {
+    if (forceForbidden) return { status: "forbidden" };
+    const search = typeof request.inputs.search === "string" ? request.inputs.search.trim().toLowerCase() : "";
+    const matched = search ? allRows.filter((row) => row.label.toLowerCase().includes(search)) : allRows;
+    const cursor = request.runtimeParams?.cursor;
+    if (cursor === "page-2") {
+      return new Promise<ProductPanelReadResponse>((resolve) => {
+        deferredPage2 = resolve;
+      });
+    }
+    const pageRows = matched.slice(0, 2);
+    return ready({
+      rows: pageRows,
+      total: matched.length,
+      ...(matched.length > 2 ? { nextCursor: "page-2" } : {}),
+    });
+  });
+
+  // Page 1 publishes only the current page's refs without triggering a second read.
+  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([knowledge("k-1"), knowledge("k-2")]));
+  expect(reads).toHaveLength(1);
+  // Listed refs are collection state, never deep-linked or reported as user selection in pageContext.
+  expect(instance.deepLink()).toEqual({});
+  expect(instance.pageContext.value.selection).toEqual([]);
+
+  // While page 2 is still loading, listed retains page 1's refs instead of flickering to [].
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
+  await vi.waitFor(() => expect(deferredPage2).not.toBeNull());
+  expect(instance.state.values.value.listed).toEqual([knowledge("k-1"), knowledge("k-2")]);
+
+  // Once page 2 settles, listed updates to page 2's refs.
+  deferredPage2!(ready({ rows: [allRows[2]!], total: 3 }));
+  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([knowledge("k-3")]));
+  expect(reads).toHaveLength(2);
+
+  // Narrowing to zero matches clears listed to [].
+  const search = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
+  search.value = "nomatch";
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([]));
+
+  // Narrowing back to one match publishes that match, and a subsequent forbidden read clears it to [].
+  search.value = "beta";
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([knowledge("k-2")]));
+
+  forceForbidden = true;
+  search.value = "gamma";
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(instance.state.values.value.listed).toEqual([]));
+});
+
+it("outputs all matching references when the list read does not page", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "task-list": {
+      ...meta,
+      id: "task-list",
+      name: "Scheduled tasks",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {
+        listed: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } },
+      },
+      config: {},
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      listedTasks: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "task-list" },
+        outputs: { listed: { state: "listedTasks" } },
+      },
+    },
+    commands: {},
+  });
+  const rows = [
+    { primaryKey: "t-1", label: "Daily sync", fields: {} },
+    { primaryKey: "t-2", label: "Weekly audit", fields: {} },
+  ];
+  const { instance, reads } = mountDirect(manifest, projections, () => ready(rows));
+  await vi.waitFor(() => expect(instance.state.values.value.listedTasks).toEqual([
+    { className: SCHEDULED_TASK, primaryKey: "t-1" },
+    { className: SCHEDULED_TASK, primaryKey: "t-2" },
+  ]));
+  expect(reads).toHaveLength(1);
+});

@@ -7,7 +7,6 @@ import { computed } from "vue";
 import { Bot, Cable, Cpu, Puzzle, Plug } from "lucide-vue-next";
 import { skillLibraryCount } from "@ontomato/workbench-ui/features/workbench";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { ontologyAgentModelPages } from "@ontomato/platform-shell";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
 import { managerDestination } from "@ontomato/platform-admin/legacy-manager";
@@ -165,26 +164,10 @@ const systemIntegrationPages: readonly PlatformPage[] = [
   { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", descriptionKey: "mcp.publishedHint", icon: Plug, permissions: ["mcp-service"], group: "platform" },
 ];
 
-/**
- * Each application's "Models" page of its ontology service agents. It keeps the permission those agents' choices have
- * always had (`system-config`), so only an account that holds it sees the entry or may open the page, without being given
- * any other page of the application. The page draws its own header.
- */
-const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.map((page) => ({
-  path: page.path,
-  titleKey: page.app==='ontology'?'platform.ontologyAgentModels':'platform.conversationAgentModels',
-  descriptionKey: "platform.agentModels.description",
-  icon: Cpu,
-  permissions: ["system-config"],
-  group: page.app,
-  ownHeader: true,
-}));
-
 /** The native skill, integration and model pages shared by the edition assemblies. */
 export const applicationPages: readonly PlatformPage[] = [
   ...ontologyWorkspacePages,
   ...systemIntegrationPages,
-  ...agentModelPages,
 ];
 
 /**

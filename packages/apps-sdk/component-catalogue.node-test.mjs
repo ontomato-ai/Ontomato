@@ -191,6 +191,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(declared.get("ObjectList").outputs, {
       selected: { kind: "object", objectType: "@binding" },
       checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+      listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
     });
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
