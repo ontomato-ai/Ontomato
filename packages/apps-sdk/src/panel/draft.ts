@@ -89,14 +89,34 @@ export interface UnclaimedDraft {
 /** What a held draft is handed to once its form takes it: the draft as that form shows it. */
 type DraftTaken = (draft: ReceivedPanelDraft<Record<string, unknown>>) => void;
 
+/**
+ * Member-level draft receiver held for a directly rendered form projection whether or not its component is currently
+ * mounted in the DOM (e.g. behind `v-if`). Mounted form adapters are still tried first; this receiver acts when the
+ * form component has not mounted yet so the draft can still be checked, claimed and drive bound panel state.
+ */
+export interface PanelDraftReceiver {
+  receive(draft: PageDraft<Record<string, unknown>>): Promise<ReadonlySet<string> | null>;
+  /** Whether the member is currently placed in the DOM, so drawn members are offered drafts before hidden ones. */
+  isDrawn?(): boolean;
+  /**
+   * Verified after `taken` notified the panel's own watchers (such as `watch(instance.draft)` opening a create modal):
+   * returning false rolls back the claim and declines the slot instead of leaving an invisible dirty draft.
+   */
+  verifyDrawn?(draft: PageDraft<Record<string, unknown>>): Promise<boolean>;
+}
+
 /** The form adapters one panel instance's projections registered, by slot. */
 export class PanelFormAdapters {
   readonly #bySlot = shallowReactive(new Map<string, PanelFormAdapter>());
+  readonly #receivers = shallowReactive(new Map<string, PanelDraftReceiver>());
+  /** Whether undrawn member-level receivers may be offered a held draft (waits until initial member placings settle). */
+  readonly #undrawnReady = shallowRef(true);
   /** The draft this panel received and no registered form has taken yet, with the slots it was offered to. */
   readonly #held = shallowRef<{
     draft: PageDraft<Record<string, unknown>>;
     link: PageDraftLink;
     taken: DraftTaken;
+    rollback?: DraftTaken;
     current: () => boolean;
     /** The draft is in its form, or changes nothing there: the page is now what it opens. */
     opened: () => void;
@@ -107,7 +127,10 @@ export class PanelFormAdapters {
   /** Bumped when a form declines, so `unclaimed` is read again. */
   readonly #declines = shallowRef(0);
 
-  constructor(private readonly reportDraftError?: (reason: unknown) => void) {}
+  constructor(
+    private readonly reportDraftError?: (reason: unknown) => void,
+    private readonly memberOrder: readonly string[] = [],
+  ) {}
 
   register(slot: string, adapter: PanelFormAdapter): () => void {
     if (!slot) throw new Error("A form projection registers under the slot whose declaration names it");
@@ -117,16 +140,38 @@ export class PanelFormAdapters {
     return () => this.#bySlot.delete(slot);
   }
 
+  /** Registers a member-level draft receiver for a form slot, active for the member's lifetime even while unmounted. */
+  registerDraftReceiver(slot: string, receiver: PanelDraftReceiver): () => void {
+    if (!slot) throw new Error("A form draft receiver registers under the slot whose declaration names it");
+    this.#receivers.set(slot, receiver);
+    this.#offerNext();
+    return () => {
+      if (this.#receivers.get(slot) === receiver) this.#receivers.delete(slot);
+    };
+  }
+
+  /** Controls whether undrawn member-level receivers are eligible to be offered a held draft. */
+  setUndrawnReady(ready: boolean): void {
+    if (this.#undrawnReady.value === ready) return;
+    this.#undrawnReady.value = ready;
+    if (ready) this.#offerNext();
+  }
+
+  /** Re-evaluates a held draft after a drawn member unmounts or fails to load its form component. */
+  retryOffer(): void {
+    this.#offerNext();
+  }
+
   /**
-   * Holds a draft and offers it to the registered forms one at a time, in registration order, until one takes it; a
-   * form that registers later is offered it then. `taken` hears the draft as the form shows it; `opened` hears that a form
-   * took it, whether or not it changed anything there.
+   * Holds a draft and offers it to the registered forms one at a time until one takes it; a form that registers later is
+   * offered it then. `taken` hears the draft as the form shows it; `opened` hears that a form took it, whether or not it
+   * changed anything there.
    */
   hold(
     draft: PageDraft<Record<string, unknown>>, link: PageDraftLink, taken: DraftTaken, current: () => boolean = () => true,
-    opened: () => void = () => {},
+    opened: () => void = () => {}, rollback?: DraftTaken,
   ): void {
-    this.#held.value = { draft, link, taken, current, opened, offered: new Set(), declined: new Set(), offering: false };
+    this.#held.value = { draft, link, taken, rollback, current, opened, offered: new Set(), declined: new Set(), offering: false };
     this.#offerNext();
   }
 
@@ -134,31 +179,80 @@ export class PanelFormAdapters {
   unclaimed(formSlots: readonly string[]): UnclaimedDraft | null {
     void this.#declines.value;
     const held = this.#held.value;
-    return held !== null && formSlots.every((slot) => held.declined.has(slot))
+    return held !== null && held.current() && formSlots.every((slot) => held.declined.has(slot))
       ? { objectType: held.draft.target.objectType, operation: held.draft.operation } : null;
+  }
+
+  #orderedSlots(slots: Iterable<string>): string[] {
+    const list = [...slots];
+    if (!this.memberOrder.length) return list;
+    const rank = (slot: string) => {
+      const index = this.memberOrder.indexOf(slot);
+      return index === -1 ? this.memberOrder.length : index;
+    };
+    return list.sort((a, b) => rank(a) - rank(b));
+  }
+
+  #nextSlot(offered: ReadonlySet<string>): { slot: string; mounted: boolean; receiver: PanelDraftReceiver } | null {
+    // Tier 1: mounted form adapters, in manifest order.
+    for (const slot of this.#orderedSlots(this.#bySlot.keys())) {
+      if (!offered.has(slot)) return { slot, mounted: true, receiver: this.#bySlot.get(slot)! };
+    }
+    const receivers = this.#orderedSlots(this.#receivers.keys());
+    // Wait while any drawn form member is still loading its component chunk so its mounted adapter takes the draft
+    // directly and renders the form before `draftOpened` and `dirty` report to the host.
+    if (receivers.some((slot) => !offered.has(slot) && this.#receivers.get(slot)!.isDrawn?.())) return null;
+    // Tier 2: undrawn form members (e.g. behind `v-if`), once all initial member placings have settled so a drawn
+    // sibling that finished loading slightly later still gets priority.
+    if (!this.#undrawnReady.value) return null;
+    for (const slot of receivers) {
+      if (!offered.has(slot)) return { slot, mounted: false, receiver: this.#receivers.get(slot)! };
+    }
+    return null;
   }
 
   #offerNext() {
     const held = this.#held.value;
     if (!held || held.offering) return;
-    const next = [...this.#bySlot.keys()].find((slot) => !held.offered.has(slot));
-    if (!next) return;
+    if (!held.current()) {
+      this.#held.value = null;
+      return;
+    }
+    const candidate = this.#nextSlot(held.offered);
+    if (!candidate) return;
+    const { slot: next, mounted, receiver } = candidate;
     held.offered.add(next);
     held.offering = true;
     const { draft } = held;
-    this.#bySlot.get(next)!.receive(draft).then((changed) => {
-      held.offering = false;
-      if (!held.current() || this.#held.value !== held) return;
+    receiver.receive(draft).then(async (changed) => {
+      if (!held.current() || this.#held.value !== held) {
+        held.offering = false;
+        return;
+      }
       if (changed === null) {
+        held.offering = false;
         held.declined.add(next);
         this.#declines.value += 1;
         this.#offerNext();
         return;
       }
+      // A create draft saved once addresses the object it created from then on.
+      const received = changed.size
+        ? { slot: next, operation: draft.operation, target: addressed(draft), created: draft.created, form: draft.form, changed, link: held.link }
+        : null;
+      if (received) held.taken(received);
+      if (!mounted && receiver.verifyDrawn && !(await receiver.verifyDrawn(draft))) {
+        held.offering = false;
+        if (!held.current() || this.#held.value !== held) return;
+        if (received) held.rollback?.(received);
+        held.declined.add(next);
+        this.#declines.value += 1;
+        this.#offerNext();
+        return;
+      }
+      held.offering = false;
+      if (!held.current() || this.#held.value !== held) return;
       this.#held.value = null;
-      if (changed.size)
-        // A create draft saved once addresses the object it created from then on.
-        held.taken({ slot: next, operation: draft.operation, target: addressed(draft), created: draft.created, form: draft.form, changed, link: held.link });
       held.opened();
     }, (reason: unknown) => {
       held.offering = false;
@@ -197,9 +291,10 @@ export async function receivePanelDraft(
   taken: DraftTaken,
   current: () => boolean = () => true,
   opened: () => void = () => {},
+  rollback?: DraftTaken,
 ): Promise<void> {
   const draft = await source.readPageDraft(link.sessionId, link.runId, link.path);
   if (!current()) return;
   if (draft.pageKey !== pageKey) throw new PanelDraftUnusable(link.path, { kind: "otherPage", pageKey: draft.pageKey });
-  adapters.hold(draft, link, taken, current, opened);
+  adapters.hold(draft, link, taken, current, opened, rollback);
 }

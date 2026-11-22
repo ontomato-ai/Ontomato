@@ -14,7 +14,15 @@ import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { changedPaths, fieldAt, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
-import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
+import {
+  editedInput,
+  evaluateMemberFormDraft,
+  formTargetKey,
+  memberFormSource,
+  MemberDataUnavailable,
+  type FormSource,
+  type HeldMemberDraft,
+} from "../panel/member-forms";
 import { fieldControlKey, fieldControlsOf, formControlsKey } from "./form-controls";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldPlace from "./FormFieldPlace.vue";
@@ -96,7 +104,7 @@ const target = computed<PanelFormTarget | null>(() => {
   if (key.value) return { kind: "object", objectType, primaryKey: key.value };
   return creates ? { kind: "draft" } : null;
 });
-const targetKey = (value: PanelFormTarget | null) => (value === null ? "" : value.kind === "object" ? value.primaryKey : "draft");
+const targetKey = formTargetKey;
 
 /** Puts the panel's state where the form shows `next`: an existing object held, or the state emptied for a new one. */
 function moveTo(next: PanelFormTarget) {
@@ -200,9 +208,11 @@ const submitted = shallowRef<ReadonlySet<string>>(new Set());
 const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot || submitted.value.size > 0);
 
 /** A draft this form took, for the target it addresses, shown once the form is on that target. */
-let held: {
-  target: string; baseline: PanelFormDescription; checked: PanelFormDescription; changed: ReadonlySet<string>; submitted: ReadonlySet<string>;
-} | null = null;
+let held: HeldMemberDraft | null = null;
+/** A draft refusal received while this form was unmounted, shown on its baseline once mounted. */
+let heldRefusal: { target: string; baseline: PanelFormDescription; reason: unknown } | null = null;
+/** Whether this form component has mounted and performed its initial load. */
+let mounted = false;
 /** The target the form was last read for, so one change of target is one read. */
 let loaded: string | null = null;
 
@@ -252,6 +262,13 @@ function load(next: PanelFormTarget | null) {
     adopt(held.baseline, held.checked, held.changed, held.submitted);
     return;
   }
+  if (heldRefusal?.target === nextKey) {
+    const refused = heldRefusal;
+    heldRefusal = null;
+    adopt(refused.baseline);
+    showRefusal(refused.reason);
+    return;
+  }
   loading.value = true;
   void forms.describe({ target: next, changedField: null }).then(
     (answer) => { if (reading === latestRead && held?.target !== nextKey) adopt(answer); },
@@ -264,7 +281,10 @@ function fail(reason: unknown) {
   loading.value = false;
 }
 
-onMounted(() => load(target.value));
+onMounted(() => {
+  mounted = true;
+  load(target.value);
+});
 let pendingRefresh = false;
 /**
  * The form is moving itself to show a draft it just took: what it held before is that earlier draft's, not the reader's,
@@ -451,53 +471,48 @@ provide(formControlsKey, {
   },
 });
 
+function consumePendingDraft() {
+  const pending = member.formDraft?.takePending();
+  if (!pending) return;
+  if (pending.kind === "accepted") {
+    heldRefusal = null;
+    held = pending.held;
+    if (!mounted) return;
+    if (targetKey(target.value) === pending.held.target) load(target.value);
+    else {
+      movingForDraft = true;
+      moveTo(pending.into);
+    }
+    return;
+  }
+  held = null;
+  if (!mounted) {
+    heldRefusal = { target: pending.target, baseline: pending.baseline, reason: pending.reason };
+    return;
+  }
+  latestRead += 1;
+  if (ownerOpened.value === null) adopt(pending.baseline);
+  showRefusal(pending.reason);
+}
+if (member.formDraft) watch(() => member.formDraft!.pending.value, consumePendingDraft, { immediate: true });
+
 useProjectionForm({
   handle: { fields, values, errors, changed, busy: saving, set },
   async receive(draft) {
-    // A draft for an object of another type is another form's: its owner is never asked about an object it does not hold.
-    if (draft.target.objectType !== objectType) return null;
-    const create = draft.target.id === undefined;
-    // A create draft is the form's of this type that creates (a page may keep a separate form for new objects) — unless
-    // an earlier save already created its object, which it then addresses.
-    if (create && !creates && !draft.created) return null;
-    // The target whose owner form names the draft's operation: the create target of a form that creates, otherwise the
-    // object the draft (or its earlier save) addresses.
-    const named: PanelFormTarget = create && creates
-      ? { kind: "draft" }
-      : { kind: "object", objectType, primaryKey: draft.target.id ?? draft.created!.id };
-    // A create draft saved once addresses the object it created from then on.
-    const into: PanelFormTarget = draft.created ? { kind: "object", objectType, primaryKey: draft.created.id } : named;
-    // A form whose input is not bound to panel state cannot move to another target; it only takes drafts for its own.
-    if (state.value === null && targetKey(target.value) !== targetKey(into)) return null;
-    const namedForm = await forms.describe({ target: named, changedField: null });
-    if (namedForm.save.draftOperation !== draft.operation) return null;
-    const baseline = targetKey(into) === targetKey(named) ? namedForm : await forms.describe({ target: into, changedField: null });
-    // The draft is this form's from here on: an owner that cannot check its values at all (a value it cannot read) has
-    // not taken it either, and that is said on this form, as a refusal is; the rest of the panel goes on.
-    let checked: PanelFormDescription;
-    try {
-      checked = await forms.describe({ target: into, values: draft.form as PanelFormValues, changedField: null });
-    } catch (reason) {
-      showRefusal(reason);
+    const evaluated = await evaluateMemberFormDraft(member, panel.instance, forms, draft);
+    if (!evaluated) return null;
+    if (evaluated.refusal !== null) {
+      showRefusal(evaluated.refusal);
       return new Set();
     }
-    // A draft the owner does not accept is refused whole, with the fields and the reasons — said here, on this form, and
-    // nothing of it taken; it is this form's to say, so the rest of the panel goes on as it was.
-    if (checked.errors.length) {
-      showRefusal(new PlatformObjectRefusal(checked.errors[0]!.message, fieldMessages(checked.errors)));
-      return new Set();
-    }
-    const marked = changedPaths(checked.fields, baseline.values, checked.values);
-    // What the draft wrote, by its presence: a field it left out is not submitted, though the owner's check returns it.
-    const written = new Set(checked.fields.filter((item) => valueAt(draft.form as PanelFormValues, item.path) !== undefined).map((item) => item.path));
-    // A draft is held for what it changed and for what it wrote: one that writes a field as it already is still submits it.
-    held = marked.size || written.size ? { target: targetKey(into), baseline, checked, changed: marked, submitted: written } : null;
-    if (targetKey(target.value) === targetKey(into)) load(into);
+    heldRefusal = null;
+    held = evaluated.held;
+    if (targetKey(target.value) === targetKey(evaluated.into)) load(evaluated.into);
     else {
       movingForDraft = true;
-      moveTo(into);
+      moveTo(evaluated.into);
     }
-    return marked;
+    return evaluated.marked;
   },
   submit: () => write(),
   dirty: () => dirty.value,
@@ -506,6 +521,7 @@ useProjectionForm({
 
 function discard() {
   held = null;
+  heldRefusal = null;
   adopt(ownerOpened.value!);
   emit("discarded");
   void panel.instance.settleDraft(slot.slot).catch(showRefusal);

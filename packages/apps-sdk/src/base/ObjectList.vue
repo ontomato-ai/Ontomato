@@ -436,7 +436,7 @@ watch(
 );
 
 function applyFallback(listed: readonly PlatformObjectRecord[]) {
-  if (!props.fallbackToFirst || selectionCleared) return;
+  if (!props.fallbackToFirst || selectionCleared || panel.instance.draft.value !== null) return;
   if (chosenIdentity.value && listed.some((row) => rowIdentityKey(row) === chosenIdentity.value)) return;
   if (listed.length > 0) {
     setSelected(rowSelectionValue(listed[0]!));
