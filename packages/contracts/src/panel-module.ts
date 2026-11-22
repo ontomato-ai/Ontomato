@@ -125,7 +125,8 @@ export type SdkAuthoringViolationKind =
   | "forbidden-import"
   | "forbidden-directive"
   | "forbidden-token"
-  | "forbidden-export";
+  | "forbidden-export"
+  | "forbidden-viewport-unit";
 
 export interface SdkAuthoringViolation {
   readonly file: string;
@@ -135,6 +136,107 @@ export interface SdkAuthoringViolation {
   readonly found: string;
   readonly replacement: string | null;
   readonly message: string;
+}
+
+/**
+ * Single switch controlling whether panel authoring CSS checks reject viewport-relative length
+ * units (`vh`, `vw`, `vmin`, `vmax`, `vi`, `vb`, and their `s`/`l`/`d` variants).
+ *
+ * Kept `false` while existing built-in panels finish migrating off viewport height formulas and
+ * inline modal cards to normal content-box CSS and `<sdk-dialog>` / `<sdk-drawer>`. Flip this
+ * constant to `true` to enforce the rule globally across `panel check`, built-in checks, and CI.
+ */
+export const REJECT_VIEWPORT_UNITS = false;
+
+export interface CheckAuthoringStylesOptions {
+  readonly rejectViewportUnits?: boolean;
+}
+
+const CSS_VIEWPORT_UNIT_PATTERN =
+  /(?<![A-Za-z0-9_.#\\-])([+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?:[sld]?v(?:min|max|[whib])))(?![A-Za-z0-9_-])/giu;
+
+const VIEWPORT_UNIT_REPLACEMENT =
+  "fill the parent content box with normal CSS and a rem/px min-height, or use <sdk-dialog>/<sdk-drawer> for overlays";
+
+/**
+ * Blank CSS comments, quoted strings, and unquoted `url(...)` bodies with spaces while preserving
+ * line breaks so character offsets remain exact for line/column diagnostics.
+ */
+function stripCssCommentsAndStrings(css: string): string {
+  const out: string[] = [];
+  let i = 0;
+  const len = css.length;
+  while (i < len) {
+    const ch = css[i]!;
+    if (ch === "/" && css[i + 1] === "*") {
+      out.push("  ");
+      i += 2;
+      while (i < len) {
+        if (css[i] === "*" && css[i + 1] === "/") {
+          out.push("  ");
+          i += 2;
+          break;
+        }
+        out.push(css[i] === "\n" || css[i] === "\r" ? css[i]! : " ");
+        i++;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      out.push(" ");
+      i++;
+      while (i < len) {
+        const c = css[i]!;
+        if (c === "\\" && i + 1 < len) {
+          const next = css[i + 1]!;
+          out.push(" ", next === "\n" || next === "\r" ? next : " ");
+          i += 2;
+          continue;
+        }
+        out.push(c === "\n" || c === "\r" ? c : " ");
+        i++;
+        if (c === quote) break;
+      }
+      continue;
+    }
+    if (
+      (ch === "u" || ch === "U")
+      && (css[i + 1] === "r" || css[i + 1] === "R")
+      && (css[i + 2] === "l" || css[i + 2] === "L")
+      && css[i + 3] === "("
+      && (i === 0 || !/[A-Za-z0-9_-]/u.test(css[i - 1]!))
+    ) {
+      out.push(css.slice(i, i + 4));
+      i += 4;
+      while (i < len && (css[i] === " " || css[i] === "\t" || css[i] === "\n" || css[i] === "\r")) {
+        out.push(css[i]!);
+        i++;
+      }
+      if (i < len && css[i] !== '"' && css[i] !== "'") {
+        while (i < len) {
+          const c = css[i]!;
+          if (c === "\\" && i + 1 < len) {
+            const next = css[i + 1]!;
+            out.push(" ", next === "\n" || next === "\r" ? next : " ");
+            i += 2;
+            continue;
+          }
+          if (c === ")") {
+            out.push(")");
+            i++;
+            break;
+          }
+          out.push(c === "\n" || c === "\r" ? c : " ");
+          i++;
+        }
+      }
+      continue;
+    }
+    out.push(ch);
+    i++;
+  }
+  return out.join("");
 }
 
 function lineAndColumn(source: string, offset: number): { line: number; column: number } {
@@ -166,11 +268,19 @@ function makeViolation(
   return { file, line, column, kind, found, replacement, message };
 }
 
-/** Check a CSS block or stylesheet for third-party `--el-*` variables, suggesting canonical SDK tokens. */
-export function checkAuthoringStyles(css: string, file: string, baseOffset = 0, fullSource = css): SdkAuthoringViolation[] {
+/**
+ * Check a CSS block or stylesheet for third-party `--el-*` variables and (when enabled via
+ * `REJECT_VIEWPORT_UNITS` or `options.rejectViewportUnits`) viewport-relative length units.
+ */
+export function checkAuthoringStyles(
+  css: string,
+  file: string,
+  baseOffset = 0,
+  fullSource = css,
+  options: CheckAuthoringStylesOptions = {},
+): SdkAuthoringViolation[] {
   const violations: SdkAuthoringViolation[] = [];
-  // Blank out CSS comments while preserving exact offsets for line/column reporting.
-  const stripped = css.replace(/\/\*[\s\S]*?\*\//gu, match => match.replace(/[^\r\n]/gu, " "));
+  const stripped = stripCssCommentsAndStrings(css);
   for (const match of stripped.matchAll(/--el-[a-z0-9-]+/gu)) {
     const found = match[0];
     const replacement = sdkThemeTokenReplacement(found);
@@ -179,7 +289,16 @@ export function checkAuthoringStyles(css: string, file: string, baseOffset = 0, 
       : `Do not use third-party theme variable '${found}'; use a published --sdk-* or platform design token`;
     violations.push(makeViolation(fullSource, file, baseOffset + match.index!, "forbidden-token", found, replacement, message));
   }
-  return violations;
+  if (options.rejectViewportUnits ?? REJECT_VIEWPORT_UNITS) {
+    for (const match of stripped.matchAll(CSS_VIEWPORT_UNIT_PATTERN)) {
+      const found = match[0];
+      const message = `Do not use viewport unit '${found}'; ${VIEWPORT_UNIT_REPLACEMENT}`;
+      violations.push(makeViolation(
+        fullSource, file, baseOffset + match.index!, "forbidden-viewport-unit", found, VIEWPORT_UNIT_REPLACEMENT, message,
+      ));
+    }
+  }
+  return violations.sort((a, b) => a.line - b.line || a.column - b.column);
 }
 
 /** Check a panel or application `theme` override object for third-party `--el-*` keys. */
@@ -210,21 +329,37 @@ export function checkAuthoringTheme(
   return violations;
 }
 
-/** Check an HTML or Vue template (including any inline `<style>` blocks) for forbidden third-party names. */
+/** Check an HTML or Vue template (including inline `<style>` blocks and `style` attributes) for forbidden authoring patterns. */
 export function checkAuthoringTemplate(
   template: string,
   file: string,
-  options: { readonly allowedSdkTags?: ReadonlySet<string> } = {},
+  options: { readonly allowedSdkTags?: ReadonlySet<string>; readonly rejectViewportUnits?: boolean } = {},
 ): SdkAuthoringViolation[] {
   const violations: SdkAuthoringViolation[] = [];
+  const styleOptions: CheckAuthoringStylesOptions = options.rejectViewportUnits === undefined
+    ? {}
+    : { rejectViewportUnits: options.rejectViewportUnits };
   // Preserve offsets by blanking comments and script bodies while scanning <style> bodies separately.
   let sanitized = template.replace(/<!--[\s\S]*?-->/gu, match => match.replace(/[^\r\n]/gu, " "));
   sanitized = sanitized.replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, match => match.replace(/[^\r\n]/gu, " "));
   sanitized = sanitized.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/giu, (full, body: string, offset: number) => {
     const bodyOffset = offset + full.indexOf(body);
-    violations.push(...checkAuthoringStyles(body, file, bodyOffset, template));
+    violations.push(...checkAuthoringStyles(body, file, bodyOffset, template, styleOptions));
     return full.replace(/[^\r\n]/gu, " ");
   });
+
+  // Check static inline `style="..."` / `style='...'` attributes inside opening tags.
+  for (const tagMatch of sanitized.matchAll(/<[A-Za-z][^>]*>/gu)) {
+    const tagText = tagMatch[0];
+    const tagStart = tagMatch.index!;
+    for (const attr of tagText.matchAll(/(?<=[\s/])style\s*=\s*(?:"([^"]*)"|'([^']*)')/giu)) {
+      const value = attr[1] ?? attr[2] ?? "";
+      const quoteOffset = attr[0].indexOf(attr[1] !== undefined ? '"' : "'") + 1;
+      violations.push(
+        ...checkAuthoringStyles(value, file, tagStart + attr.index! + quoteOffset, template, styleOptions),
+      );
+    }
+  }
 
   // 1. Check opening tags for <el-*>, <El*>, unknown <sdk-*>, and renamed exports like <g6-graph-canvas>.
   for (const match of sanitized.matchAll(/<([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/gu)) {

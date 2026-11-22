@@ -441,3 +441,89 @@ test("checkPanelWorkspace reports actionable diagnostics for invalid listColumn 
     );
   }
 });
+
+test("checkPanelWorkspace leaves viewport units allowed by default and rejects them across panel.html and CSS files when enabled", (t) => {
+  const runWithViewportToggle = (directory, rejectViewportUnits) => {
+    const script = `
+      import * as baseChecks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+      import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
+      const checks = ${rejectViewportUnits}
+        ? {
+            ...baseChecks,
+            checkAuthoringStyles: (css, file, baseOffset = 0, fullSource = css) =>
+              baseChecks.checkAuthoringStyles(css, file, baseOffset, fullSource, { rejectViewportUnits: true }),
+            checkAuthoringTemplate: (template, file, options = {}) =>
+              baseChecks.checkAuthoringTemplate(template, file, { ...options, rejectViewportUnits: true }),
+          }
+        : baseChecks;
+      console.log(JSON.stringify(await checkPanelWorkspace(${JSON.stringify(directory)}, {
+        checks,
+        catalogue: { version: "1.0.0", components: [] },
+        version: "1.0.0",
+      })));
+    `;
+    return execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", script], {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  };
+
+  // Default (off): existing panels with viewport units continue to pass checkPanelWorkspace.
+  const defaultDir = mkdtempSync(join(tmpdir(), "panel-viewport-default-"));
+  t.after(() => rmSync(defaultDir, { recursive: true, force: true }));
+  writeWorkspace(defaultDir, {
+    html: `<style>.root { height: calc(100dvh - 120px); }</style>\n<div id="app"></div>\n`,
+    extraCss: `.pane { width: 50vw; min-height: 80svh; }\n`,
+  });
+  assert.equal(JSON.parse(runWithViewportToggle(defaultDir, false)).status, "valid");
+
+  // Enabled: rejects viewport units in both panel.html <style> and standalone CSS files with exact locations.
+  const badCases = [
+    {
+      label: "100vh in panel.html <style>",
+      files: { html: `<style>\n.root { height: 100vh; }\n</style>\n<div id="app"></div>\n` },
+      pattern: /panel\.html:2:17:.*100vh.*content box/u,
+    },
+    {
+      label: "calc(100dvh - 120px) in panel.html <style>",
+      files: { html: `<style>.root { height: calc(100dvh - 120px); }</style>\n<div id="app"></div>\n` },
+      pattern: /panel\.html:1:29:.*100dvh.*rem\/px min-height/u,
+    },
+    {
+      label: "50vw and 80svh in standalone CSS file",
+      files: { extraCss: `.pane { width: 50vw; }\n.side { min-height: 80svh; }\n` },
+      pattern: /extra\.css:1:16:.*50vw[\s\S]*extra\.css:2:21:.*80svh/u,
+    },
+  ];
+  for (const item of badCases) {
+    const dir = mkdtempSync(join(tmpdir(), "panel-viewport-bad-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    writeWorkspace(dir, item.files);
+    assert.throws(
+      () => runWithViewportToggle(dir, true),
+      (error) => {
+        const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
+        assert.match(output, item.pattern, `${item.label} diagnostic mismatch: ${output}`);
+        return true;
+      },
+      `${item.label} should fail when viewport unit rejection is enabled`,
+    );
+  }
+
+  // Enabled: accepts normal content-box CSS, comments, strings, and custom property names containing viewport substrings.
+  const okDir = mkdtempSync(join(tmpdir(), "panel-viewport-ok-"));
+  t.after(() => rmSync(okDir, { recursive: true, force: true }));
+  writeWorkspace(okDir, {
+    html: [
+      "<style>",
+      "  /* 100vh in comment is ignored */",
+      '  .root-100vh { height: 100%; min-height: 24rem; --pane-50vw: 320px; }',
+      '  .badge::after { content: "100dvh"; }',
+      "</style>",
+      '<div id="app" class="root-100vh"></div>',
+    ].join("\n"),
+    extraCss: `.pane { flex: 1; min-height: 0; overflow: auto; padding: 12px; width: 100%; }\n`,
+  });
+  assert.equal(JSON.parse(runWithViewportToggle(okDir, true)).status, "valid");
+});
