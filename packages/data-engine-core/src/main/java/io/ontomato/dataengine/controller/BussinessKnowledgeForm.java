@@ -77,20 +77,31 @@ public final class BussinessKnowledgeForm {
     private static JSONArray fields(String lang, LangService langService, KnowledgeTagConfig tagConfig) {
         JSONArray fields = new JSONArray();
         fields.add(field("/knowledgeTitle", langService.get(lang, "Admin.knowledge.form.title"),
-                new JSONObject().fluentPut("kind", "text").fluentPut("multiline", false).fluentPut("placeholder", null),
+                new JSONObject()
+                        .fluentPut("kind", "text")
+                        .fluentPut("multiline", false)
+                        .fluentPut("placeholder", langService.get(lang, "Admin.knowledge.form.titlePlaceholder")),
                 stringSchema(), true, ""));
         fields.add(field("/knowledgeText", langService.get(lang, "Admin.knowledge.form.content"),
-                new JSONObject().fluentPut("kind", "text").fluentPut("multiline", true).fluentPut("placeholder", null),
+                new JSONObject()
+                        .fluentPut("kind", "text")
+                        .fluentPut("multiline", true)
+                        .fluentPut("rows", 8)
+                        .fluentPut("placeholder", langService.get(lang, "Admin.knowledge.form.contentPlaceholder")),
                 stringSchema(), true, ""));
         fields.add(field("/knowledgeTags", langService.get(lang, "Admin.knowledge.form.tags"),
                 new JSONObject()
                         .fluentPut("kind", "select")
                         .fluentPut("multiple", true)
                         .fluentPut("allowCreate", true)
+                        .fluentPut("placeholder", langService.get(lang, "Admin.knowledge.form.tagsPlaceholder"))
                         .fluentPut("options", tagOptions(lang, langService, tagConfig)),
                 new JSONObject().fluentPut("type", "array").fluentPut("items", stringSchema()), false, new JSONArray()));
         fields.add(field("/status", langService.get(lang, "Admin.knowledge.form.status"),
-                new JSONObject().fluentPut("kind", "select").fluentPut("options", statusOptions(lang, langService)),
+                new JSONObject()
+                        .fluentPut("kind", "select")
+                        .fluentPut("presentation", "radio")
+                        .fluentPut("options", statusOptions(lang, langService)),
                 new JSONObject().fluentPut("type", "integer").fluentPut("enum", JSONArray.of(0, 1)), true, 1));
         fields.add(field("/knowledgeID", langService.get(lang, "Admin.knowledge.form.id"),
                 new JSONObject().fluentPut("kind", "hidden"), stringSchema(), false, ""));

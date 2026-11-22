@@ -188,12 +188,24 @@
     "value": "Knowledge title"
   },
   {
+    "key": "Admin.knowledge.form.titlePlaceholder",
+    "value": "Enter a knowledge title"
+  },
+  {
     "key": "Admin.knowledge.form.content",
     "value": "Knowledge content"
   },
   {
+    "key": "Admin.knowledge.form.contentPlaceholder",
+    "value": "Enter knowledge content"
+  },
+  {
     "key": "Admin.knowledge.form.tags",
     "value": "Tags"
+  },
+  {
+    "key": "Admin.knowledge.form.tagsPlaceholder",
+    "value": "Select or enter tags"
   },
   {
     "key": "Admin.knowledge.form.status",

@@ -117,7 +117,7 @@ function projectionIdsOf(shown: HostedPanelSource): string[] {
 export interface PanelDetailHeaderAction {
   id: string;
   label: string;
-  icon?: "plus" | "save" | "trash" | "sliders" | "table";
+  icon?: "plus" | "save" | "trash" | "sliders" | "table" | "book-open";
   primary?: boolean;
   danger?: boolean;
   inline?: boolean;

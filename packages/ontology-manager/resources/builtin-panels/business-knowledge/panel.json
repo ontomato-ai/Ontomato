@@ -57,7 +57,9 @@
         },
         "prefillKey": "panel.governancePrefill",
         "config": {
-          "labelKey": "panel.governance"
+          "labelKey": "panel.governance",
+          "placement": "header",
+          "icon": "book-open"
         },
         "id": "builtin-product-6fbcf139-2ed6-46d3-919f-f06e4ed7bb58"
       },
@@ -102,10 +104,14 @@
         },
         "config": {
           "statusField": "status",
+          "statusStyle": "dot",
           "tagsField": "knowledgeTags",
           "fallbackToFirst": true,
           "pageSize": 20,
-          "subtitleLines": 2
+          "subtitleLines": 2,
+          "searchable": false,
+          "emptyText": "panel.empty",
+          "noMatchText": "panel.noMatch"
         },
         "id": "builtin-product-16a4ae34-1731-4890-9484-30a2835f146f"
       },
@@ -123,6 +129,14 @@
             }
           }
         },
+        "config": {
+          "layout": "article",
+          "statusField": "status",
+          "tagsField": "knowledgeTags",
+          "bodyField": "knowledgeText",
+          "emptyText": "panel.selectHint",
+          "missingText": "panel.missing"
+        },
         "id": "builtin-product-44b10c95-3dd2-4372-8656-afb5a8b18de4"
       },
       "form": {
@@ -134,6 +148,9 @@
           "createForm": "createForm"
         },
         "operation": "platform:BusinessKnowledge.save",
+        "config": {
+          "actions": "none"
+        },
         "id": "builtin-product-02d94714-1db8-4cd9-84ae-abbc36df45d7"
       },
       "approve": {
@@ -142,7 +159,8 @@
         "operation": "knowledge.approve",
         "target": "selected",
         "config": {
-          "type": "primary"
+          "type": "primary",
+          "icon": "check"
         },
         "id": "builtin-product-e42f001a-b065-45af-aba9-b26c809b2297"
       },
@@ -152,7 +170,9 @@
         "operation": "knowledge.delete",
         "target": "selected",
         "config": {
-          "type": "danger"
+          "type": "danger",
+          "plain": true,
+          "icon": "trash"
         },
         "id": "builtin-product-09d5ea58-017f-4354-aca0-9d4f54f4ef9c"
       },
@@ -161,6 +181,10 @@
         "type": "platform:BusinessKnowledge",
         "operation": "knowledge.approve",
         "target": "checked",
+        "config": {
+          "size": "small",
+          "icon": "check"
+        },
         "id": "builtin-product-5bbc892f-1e45-47db-a991-23e7af1246dd"
       },
       "deleteAll": {
@@ -169,7 +193,9 @@
         "operation": "knowledge.delete",
         "target": "checked",
         "config": {
-          "type": "danger"
+          "type": "danger",
+          "size": "small",
+          "icon": "trash"
         },
         "id": "builtin-product-ef4e17ed-f3a4-4fb8-bcf3-d9d285772c6b"
       },
@@ -194,8 +220,9 @@
     },
     "commands": {
       "create": {
-        "labelKey": "panel.new",
+        "labelKey": "panel.add",
         "primary": true,
+        "icon": "plus",
         "do": {
           "set": {
             "fields": {
@@ -212,25 +239,35 @@
     "messages": {
       "zh-CN": {
         "panel.name": "业务知识",
-        "panel.governance": "知识治理",
+        "panel.governance": "业务知识治理",
         "panel.governancePrefill": "请帮我治理当前的业务知识，先从待审核的条目开始。",
-        "panel.new": "新增",
+        "panel.add": "添加知识",
+        "panel.editTitle": "编辑知识",
+        "panel.searchPlaceholder": "搜索标题、内容、标签，多个词用空格分隔",
         "panel.edit": "编辑",
         "panel.cancel": "取消",
         "panel.save": "保存",
         "panel.backToList": "返回列表",
-        "panel.discardConfirm": "有未保存的修改，是否放弃？"
+        "panel.empty": "暂无业务知识",
+        "panel.noMatch": "没有匹配的业务知识",
+        "panel.selectHint": "从左侧选择一条知识查看",
+        "panel.missing": "业务知识不存在或已删除"
       },
       "en": {
         "panel.name": "Business knowledge",
-        "panel.governance": "Knowledge governance",
+        "panel.governance": "Knowledge Governance",
         "panel.governancePrefill": "Help me govern the business knowledge on this page, starting with the entries pending review.",
-        "panel.new": "New",
+        "panel.add": "Add Knowledge",
+        "panel.editTitle": "Edit Knowledge",
+        "panel.searchPlaceholder": "Search titles, content and tags; separate terms with spaces",
         "panel.edit": "Edit",
         "panel.cancel": "Cancel",
         "panel.save": "Save",
         "panel.backToList": "Back to list",
-        "panel.discardConfirm": "Discard the unsaved changes?"
+        "panel.empty": "No business knowledge yet",
+        "panel.noMatch": "No matching business knowledge",
+        "panel.selectHint": "Select an entry on the left to read it",
+        "panel.missing": "Business knowledge does not exist or has been deleted"
       }
     }
   }

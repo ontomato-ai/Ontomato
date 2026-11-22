@@ -3,6 +3,7 @@ import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElInput } from "element-plus/es/components/input/index";
+import { ElRadio, ElRadioGroup } from "element-plus/es/components/radio/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
@@ -169,8 +170,8 @@ function setFrequency(next: FrequencyDraft) {
       <el-input
         :model-value="text"
         :type="control.kind === 'markdown' || control.multiline ? 'textarea' : 'text'"
-        :rows="control.kind === 'text' && control.multiline ? 3 : undefined"
-        :autosize="control.kind === 'markdown' ? { minRows: 6 } : undefined"
+        :rows="control.kind === 'text' && control.multiline && !control.rows ? 3 : undefined"
+        :autosize="control.kind === 'markdown' ? { minRows: 6 } : (control.kind === 'text' && control.multiline && control.rows ? { minRows: control.rows, maxRows: Math.max(control.rows, 24) } : undefined)"
         :placeholder="control.kind === 'text' ? control.placeholder ?? undefined : undefined"
         :maxlength="control.kind === 'text' ? control.maxLength : undefined"
         :show-word-limit="control.kind === 'text' && control.maxLength !== undefined && !off"
@@ -180,6 +181,19 @@ function setFrequency(next: FrequencyDraft) {
       <!-- Markdown says how long it is as the reader writes it, as the agent settings page did for its prompt. -->
       <p v-if="control.kind === 'markdown'" class="sdk-form-field-count">{{ t("platform.formCharacters", { count: text.length }) }} · Markdown</p>
     </template>
+    <el-radio-group
+      v-else-if="control.kind === 'select' && !control.multiple && !objectOptions && control.presentation === 'radio'"
+      :model-value="typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : ''"
+      :disabled="off"
+      @update:model-value="set($event as RuntimeJsonValue)"
+    >
+      <el-radio
+        v-for="(option, index) in control.options"
+        :key="index"
+        :value="typeof option.value === 'string' || typeof option.value === 'number' || typeof option.value === 'boolean' ? option.value : ''"
+        :disabled="option.disabled"
+      >{{ option.label }}</el-radio>
+    </el-radio-group>
     <!-- Options whose values are objects: chosen by place, shown as the declared option the value is, written whole. -->
     <el-select
       v-else-if="control.kind === 'select' && objectOptions"

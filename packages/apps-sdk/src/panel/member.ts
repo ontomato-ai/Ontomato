@@ -15,7 +15,11 @@ import type { PanelWriteResult } from "./instance";
  * cannot override the operation target or any `operation.params` bound by the panel member.
  */
 export interface PanelMemberRowOperation {
-  run(operationName: string, input?: Readonly<Record<string, unknown>>): Promise<PanelWriteResult>;
+  run(
+    operationName: string,
+    input?: Readonly<Record<string, unknown>>,
+    hooks?: { onConfirmed?: () => void },
+  ): Promise<PanelWriteResult>;
 }
 
 /*

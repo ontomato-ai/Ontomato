@@ -114,6 +114,8 @@ export function formatOperationOutcome(outcome: SingleOperationOutcome, t: Opera
 export interface OperationRunner {
   readonly running: ComputedRef<boolean>;
   readonly runningOperation: Ref<string | null>;
+  /** True only while the operation is actively executing on the server (never before or during a confirmation prompt). */
+  readonly dispatching: ComputedRef<boolean>;
   readonly failure: ShallowRef<Error | null>;
   readonly read: ShallowRef<PanelReadOperationResult | null>;
   readonly receipt: ShallowRef<PanelHumanOperationDispatchResponse | null>;
@@ -151,6 +153,8 @@ export function useOperationRunner(options: {
 }): OperationRunner {
   const runningOperation = ref<string | null>(null);
   const running = computed(() => runningOperation.value !== null);
+  const dispatchingOperation = ref<string | null>(null);
+  const dispatching = computed(() => dispatchingOperation.value !== null);
   const failure = shallowRef<Error | null>(null);
   const read = shallowRef<PanelReadOperationResult | null>(null);
   const receipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
@@ -222,6 +226,7 @@ export function useOperationRunner(options: {
     const operationId = panel.instance.operationIdOf(slot.slot, operationName);
 
     runningOperation.value = operationName;
+    dispatchingOperation.value = descriptor.effect === "read" ? operationName : null;
     failure.value = null;
     read.value = null;
     receipt.value = null;
@@ -244,13 +249,17 @@ export function useOperationRunner(options: {
         return;
       }
 
+      const onConfirmed = () => {
+        dispatchingOperation.value = operationName;
+      };
       const answer = rowOperation
-        ? await rowOperation.run(operationName, providedInput)
+        ? await rowOperation.run(operationName, providedInput, { onConfirmed })
         : await (() => {
             const [first, ...rest] = targetInfo.checkedTargets.map((object) => ({ target: object, input: providedInput }));
             return panel.instance.writeOperation(
               operationId,
               first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: providedInput } },
+              { onConfirmed },
             );
           })();
       if (answer.decision === "cancel") return;
@@ -279,12 +288,14 @@ export function useOperationRunner(options: {
       failure.value = reason instanceof Error ? reason : new Error(String(reason));
     } finally {
       runningOperation.value = null;
+      dispatchingOperation.value = null;
     }
   }
 
   return {
     running,
     runningOperation,
+    dispatching,
     failure,
     read,
     receipt,

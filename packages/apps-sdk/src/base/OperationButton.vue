@@ -50,8 +50,10 @@ const props = withDefaults(
     type?: "primary" | "danger" | "default";
     /** Draws a soft tinted bordered button (for example the detail titlebar's danger delete button). */
     plain?: boolean;
-    /** Optional leading icon on the button (`trash` for destructive removal). */
-    icon?: "trash";
+    /** Optional leading icon on the button (`trash` for destructive removal, `check` for approval). */
+    icon?: "trash" | "check";
+    /** Button size: `default` or compact `small` (for example in inline batch-action toolbars). */
+    size?: "small" | "default";
     /**
      * Where the button is rendered: `inline` (default) draws the button in place; `header` hands the action to the
      * enclosing platform page header (falling back to inline when no header host is present) while keeping dialogs and
@@ -59,7 +61,7 @@ const props = withDefaults(
      */
     placement?: "inline" | "header";
   }>(),
-  { type: "default", plain: false, icon: undefined, placement: "inline" },
+  { type: "default", plain: false, icon: undefined, size: "default", placement: "inline" },
 );
 
 const emit = defineEmits<{
@@ -92,6 +94,7 @@ const pending = computed<DataStateResult | null>(() => {
 
 const {
   running,
+  dispatching,
   failure,
   read,
   receipt,
@@ -156,12 +159,12 @@ watch(usesHeaderPlacement, (inHeader, _previous, onCleanup) => {
       ? {
           id: slot.slot,
           label: label.value,
-          icon: props.icon,
+          icon: props.icon === "trash" ? "trash" : undefined,
           primary: props.type === "primary",
           danger: props.type === "danger",
           inline: props.plain,
           disabled: !ready.value,
-          loading: running.value,
+          loading: dispatching.value,
           onClick: onTriggerClick,
         }
       : null
@@ -177,14 +180,15 @@ watch(usesHeaderPlacement, (inHeader, _previous, onCleanup) => {
     <el-button
       v-else-if="!usesHeaderPlacement"
       :type="type"
+      :size="size"
       :plain="plain"
       :text="type === 'danger' && !plain"
-      :loading="running"
+      :loading="dispatching"
       :disabled="!ready"
       @click="onTriggerClick"
     >
       <svg
-        v-if="icon === 'trash' && !running"
+        v-if="icon === 'trash' && !dispatching"
         class="sdk-operation-icon"
         viewBox="0 0 24 24"
         width="14"
@@ -201,6 +205,21 @@ watch(usesHeaderPlacement, (inHeader, _previous, onCleanup) => {
         <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
         <line x1="10" x2="10" y1="11" y2="17" />
         <line x1="14" x2="14" y1="11" y2="17" />
+      </svg>
+      <svg
+        v-else-if="icon === 'check' && !dispatching"
+        class="sdk-operation-icon"
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M20 6 9 17l-5-5" />
       </svg>
       <span>{{ label }}</span>
     </el-button>

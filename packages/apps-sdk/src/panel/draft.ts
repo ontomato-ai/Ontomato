@@ -297,6 +297,11 @@ export class PanelFormAdapters {
     if (!adapter) throw new Error(`Slot '${slot}' holds no form`);
     return adapter.submit();
   }
+
+  /** Drops unsaved edits in a slot's form, restoring its owner baseline. */
+  discard(slot: string): void {
+    this.#bySlot.get(slot)?.discard();
+  }
 }
 
 /**

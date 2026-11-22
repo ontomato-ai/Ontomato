@@ -9,6 +9,7 @@ import type { DataStateLabels } from "@ontomato/foundation-ui/data-state";
 export function useDataStateLabels(
   empty?: () => string,
   emptyHint?: () => string | undefined,
+  noMatch?: () => string,
 ): ComputedRef<DataStateLabels> {
   const { t } = useI18n();
   return computed(() => {
@@ -16,7 +17,7 @@ export function useDataStateLabels(
     return {
       empty: empty?.() ?? t("platform.dataEmpty"),
       ...(hint ? { emptyHint: hint } : {}),
-      noMatch: t("platform.dataNoMatch"),
+      noMatch: noMatch?.() ?? t("platform.dataNoMatch"),
       clearFilters: t("platform.clearFilters"),
       forbidden: t("platform.dataForbidden"),
       awaiting: t("platform.dataAwaiting"),

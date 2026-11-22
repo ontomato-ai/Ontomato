@@ -337,3 +337,74 @@ it("shows the configured compact summary and only clamps it when asked", async (
   await vi.waitFor(() => expect(plain.element.querySelector(".sdk-object-list-item-sub")?.textContent?.trim()).toBe("owner line"));
   expect(plain.element.querySelector(".sdk-object-list-item-sub")?.classList.contains("sdk-object-list-item-sub-clamped")).toBe(false);
 });
+
+it("renders ObjectList dot status style and ObjectSummary article layout with centered empty/missing states", async () => {
+  const configured: Record<string, DirectProjection> = {
+    ...baseProjections,
+    "schedules-tasks": {
+      ...baseProjections["schedules-tasks"]!,
+      config: { statusField: "status", statusStyle: "dot", subtitleLines: 2 },
+    },
+    "schedules-summary": {
+      ...baseProjections["schedules-summary"]!,
+      config: {
+        layout: "article",
+        statusField: "status",
+        tagsField: "tags",
+        bodyField: "body",
+        emptyText: "panel.selectHint",
+        missingText: "panel.missing",
+      },
+    },
+  };
+  let missingRecord = false;
+  const { instance, element } = mountDirect(
+    (request) => {
+      if (request.dataName === "rows") {
+        return ready([{
+          primaryKey: "t-1",
+          label: "Refund policy",
+          subtitle: "Returns within 7 days",
+          fields: { status: "Pending", body: "Returns within 7 days" },
+          tones: { status: "warning" },
+          tags: { tags: ["Business"] },
+        }]);
+      }
+      if (missingRecord) return { status: "error", message: "Not found" };
+      return ready({
+        primaryKey: "t-1",
+        label: "Refund policy",
+        fields: { status: "Pending", body: "Returns within 7 days" },
+        tones: { status: "warning" },
+        tags: { tags: ["Business"] },
+      });
+    },
+    {
+      projections: configured,
+      messages: {
+        en: {
+          "panel.selectHint": "Select an entry on the left",
+          "panel.missing": "Entry does not exist",
+        },
+      },
+    },
+  );
+
+  // Without a selected item, article layout displays its centered emptyText.
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-status-dot")).not.toBeNull());
+  expect(element.querySelector(".sdk-object-list-status-dot")?.getAttribute("data-tone")).toBe("warning");
+  instance.state.set("selectedTask", null);
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-empty")?.textContent).toContain("Select an entry on the left"));
+
+  // Selecting an item draws article header + status badge + tags + full-width body.
+  instance.state.set("selectedTask", task("t-1"));
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-article-title")?.textContent).toBe("Refund policy"));
+  expect(element.querySelector(".sdk-object-summary-status-badge")?.textContent).toBe("Pending");
+  expect(element.querySelector(".sdk-object-summary-article-tags")?.textContent).toContain("Business");
+  expect(element.querySelector(".sdk-object-summary-article-body")?.textContent).toBe("Returns within 7 days");
+
+  // Missing record shows centered missingText instead of raw error alert.
+  missingRecord = true;
+  instance.state.set("selectedTask", task("t-missing"));
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-empty")?.textContent).toContain("Entry does not exist"));
+});

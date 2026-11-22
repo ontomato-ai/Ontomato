@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelDetailHeader, type PanelDetailHeaderAction, type PanelHostLabels, type PanelHostPort } from "./panel-host";
-import { Plus, RefreshCw, Save, Settings2, Table2, Trash2, X as CloseIcon } from "lucide-vue-next";
+import { BookOpen, Plus, RefreshCw, Save, Settings2, Table2, Trash2, X as CloseIcon } from "lucide-vue-next";
 import { ElAlert, ElButton } from "element-plus";
 import { hasPageActions, usePageActions, type PlatformPageAction } from "./page-actions";
 import { confirmDanger } from "./confirm-danger";
@@ -217,7 +217,8 @@ const commands = computed<PlatformPageAction[]>(() => {
         : icon === "plus" ? Plus
           : icon === "sliders" ? Settings2
             : icon === "table" ? Table2
-              : undefined
+              : icon === "book-open" ? BookOpen
+                : undefined
   );
   const mapDetailAction = (action: PanelDetailHeaderAction): PlatformPageAction => ({
     id: action.id,
@@ -230,8 +231,8 @@ const commands = computed<PlatformPageAction[]>(() => {
     loading: action.loading,
     onClick: () => action.onClick(),
   });
+  const memberActions = view.headerActions.value.map(mapDetailAction);
   if (view.detailHeader.value) {
-    const memberActions = view.headerActions.value.map(mapDetailAction);
     const detailActions = (view.detailHeader.value.actions ?? []).map(mapDetailAction);
     return [...refresh, ...memberActions, ...detailActions];
   }
@@ -260,7 +261,7 @@ const commands = computed<PlatformPageAction[]>(() => {
       disabled: alreadyAtTarget(operation.id),
       onClick: () => void view.invoke(operation.id),
     }));
-  return [...refresh, ...shortcuts];
+  return [...refresh, ...memberActions, ...shortcuts];
 });
 usePageActions(() => (props.shown && view.source.value ? { actions: commands.value, draft: view.headerDraft.value } : null));
 

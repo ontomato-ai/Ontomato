@@ -67,10 +67,12 @@ export interface PanelInstanceOptions {
 /** A path that names at least one member: a nested publisher's, as the platform finds its operations by. */
 export type PublisherPath = [PanelMemberPath[number], ...PanelMemberPath];
 
-/** Explicit overrides for row-scoped write operations (`memberPath` carrying `itemKey` and host `rowContext`). */
+/** Explicit overrides for write operations (`memberPath` carrying `itemKey`, host `rowContext`, and lifecycle hooks). */
 export interface PanelWriteOperationOptions {
   memberPath?: PanelMemberPath;
   rowContext?: PanelOperationRowContext;
+  /** Called right after confirmation passes (or immediately when no confirmation is required), before dispatch begins. */
+  onConfirmed?: () => void;
 }
 
 /** What a panel placed in one of an instance's members publishes into it: its operations, its unsaved changes. */
@@ -236,7 +238,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     const preparation = writeOptions?.rowContext !== undefined
       ? await options.operations.prepare(operationId, invocation, path, writeOptions.rowContext)
       : await options.operations.prepare(operationId, invocation, path);
-    return { ...await options.confirmOperation(preparation), named: namedTargets(preparation.confirmation) };
+    const hooks = writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : undefined;
+    return { ...await options.confirmOperation(preparation, hooks), named: namedTargets(preparation.confirmation) };
   }
   const commands = createPanelCommands(manifest, {
     state,

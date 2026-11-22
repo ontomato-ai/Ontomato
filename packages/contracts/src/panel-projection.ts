@@ -567,6 +567,7 @@ const simpleControls = [
   z.object({
     kind: z.literal("text"), multiline: z.boolean().optional(),
     placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
+    rows: positiveInteger.optional(),
   }).strict(),
   /** Each locale edits a string keyed by locale code in the owner's JSON object. */
   z.object({
@@ -585,6 +586,8 @@ const simpleControls = [
     /** The owner permits adding a value to the selection. */
     allowCreate: z.boolean().optional(),
     placeholder: z.string().nullish(),
+    /** Visual presentation for a single-value select: dropdown (default) or inline radio group. */
+    presentation: z.enum(["dropdown", "radio"]).optional(),
   }).strict(),
   z.object({ kind: z.literal("switch") }).strict(),
   z.object({ kind: z.literal("markdown") }).strict(),

@@ -84,6 +84,7 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "layout",
   "columns",
   "statusField",
+  "statusStyle",
   "tagsField",
   "subtitleField",
   "subtitleLines",
@@ -92,8 +93,10 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "toggleable",
   "emptyText",
   "emptyHint",
+  "noMatchText",
   "creatingRow",
   "searchable",
+  "searchPlaceholder",
   "groupBy",
   "groupEmptyLabel",
   "localFilters",
@@ -134,6 +137,11 @@ const props = withDefaults(
      * record (`tones`): an owner that gives none has it shown as plain text, and the colour is the owner's to give.
      */
     statusField?: string;
+    /**
+     * How `statusField` is drawn on compact list items: `"tag"` (default) shows a tinted pill at the end of the title row,
+     * `"dot"` shows a subtle status dot before the item title.
+     */
+    statusStyle?: "tag" | "dot";
     /** The key in the owner's record `tags` whose values are shown as small tags beneath each compact item. */
     tagsField?: string;
     /**
@@ -160,14 +168,19 @@ const props = withDefaults(
     emptyText?: string;
     /** Optional panel message key for a secondary hint shown beneath the empty message (e.g. pointing to header create). */
     emptyHint?: string;
+    /** Optional panel message key for what a narrowed empty list (no search/filter match) says. */
+    noMatchText?: string;
     /** Controls visibility of the top `#create-row` inline form block; omitted, shown whenever `#create-row` has content. */
     creatingRow?: boolean;
     /**
      * Enables zero-request local search when the owner's read does not page (`pageMode === "none"`) and declares no
      * server `search` parameter. Omitted, local search is enabled automatically whenever the member binds `search`
-     * input or output state; set to `false` to hide the list's search input while still filtering by a bound `search`.
+     * input or output state; set to `false` to hide the list's built-in search input (for example when an outer toolbar
+     * provides the search box) while still reading the bound `search` state.
      */
     searchable?: boolean;
+    /** Optional panel message key for the built-in search input placeholder. */
+    searchPlaceholder?: string;
     /**
      * Record field key used to group filtered rows under collapsible section headers showing each group's label and
      * real-time filtered count (groups with zero matching rows are omitted). Works across list, table, and card layouts.
@@ -185,14 +198,17 @@ const props = withDefaults(
     layout: "auto",
     columns: undefined,
     statusField: undefined,
+    statusStyle: "tag",
     tagsField: undefined,
     pageSize: 20,
     fallbackToFirst: false,
     toggleable: false,
     emptyText: undefined,
     emptyHint: undefined,
+    noMatchText: undefined,
     creatingRow: undefined,
     searchable: undefined,
+    searchPlaceholder: undefined,
     groupBy: undefined,
     groupEmptyLabel: undefined,
     localFilters: undefined,
@@ -268,7 +284,7 @@ const isLocalSearchActive = computed(
   () => !hasServerSearch && pageMode === "none" && (props.searchable === true || searchStateBound),
 );
 const canSearch = computed(
-  () => hasServerSearch || (isLocalSearchActive.value && props.searchable !== false && !isFixedLiteral("search")),
+  () => props.searchable !== false && (hasServerSearch || (isLocalSearchActive.value && !isFixedLiteral("search"))),
 );
 const canCheck = Boolean(slotOutputState(panel.manifest, member.key, "checked"));
 const effectivePageSize = computed(() => (props.pageSize > 0 ? props.pageSize : 20));
@@ -465,7 +481,10 @@ if (nonPagingParamNames.length > 0) {
     filterSignature,
     (next, prev) => {
       if (next === prev) return;
-      if (initialLoadDone) pendingFilterFallback = true;
+      if (initialLoadDone) {
+        pendingFilterFallback = true;
+        pendingScrollToTop = true;
+      }
       if (pageMode !== "none") resetPaging();
     },
     { flush: "sync" },
@@ -878,7 +897,12 @@ const listResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(()
 const dataStateLabels = useDataStateLabels(
   () => (props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty")),
   () => resolvedEmptyHint.value || undefined,
+  () => (props.noMatchText ? panel.t(props.noMatchText) : t("platform.dataNoMatch")),
 );
+const resolvedSearchPlaceholder = computed(() =>
+  props.searchPlaceholder ? panel.t(props.searchPlaceholder) : t("platform.listSearchPlaceholder"),
+);
+const isStickyCheckBar = computed(() => !isTable.value && !isCards.value && !canSearch.value && canCheck);
 
 const ownerFieldLabels = computed<Readonly<Record<string, string>>>(
   () => rawRows.value[0]?.fieldLabels ?? rows.value[0]?.fieldLabels ?? {},
@@ -1471,33 +1495,38 @@ watch(someVisibleChecked, () => {
 </script>
 
 <template>
-  <div class="sdk-object-list">
-    <div v-if="showToolbar" class="sdk-object-list-toolbar">
+  <div class="sdk-object-list" :class="{ 'sdk-object-list-compact': !isTable && !isCards }">
+    <div v-if="showToolbar" class="sdk-object-list-toolbar" :class="{ 'sdk-object-list-toolbar-sticky': isStickyCheckBar }">
       <input
         v-if="canSearch"
         type="search"
         class="sdk-object-list-search"
         :value="searchText"
-        :placeholder="t('platform.listSearchPlaceholder')"
-        :aria-label="t('platform.listSearchPlaceholder')"
+        :placeholder="resolvedSearchPlaceholder"
+        :aria-label="resolvedSearchPlaceholder"
         @input="onSearchInput"
       />
       <div v-if="$slots.filters" class="sdk-object-list-filters">
         <slot name="filters"></slot>
       </div>
-      <label v-if="canCheck && !isTable" class="sdk-object-list-select-all">
-        <input
-          :ref="selectAllCheckboxRef"
-          type="checkbox"
-          :checked="allVisibleChecked"
-          :indeterminate.prop="someVisibleChecked"
-          :disabled="!rows.length"
-          @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
-        />
-        <span>{{ t("platform.listSelectAll") }}</span>
-      </label>
+      <div v-if="canCheck && !isTable" class="sdk-object-list-check-row">
+        <label class="sdk-object-list-select-all" :class="{ disabled: !rows.length }">
+          <input
+            :ref="selectAllCheckboxRef"
+            type="checkbox"
+            :checked="allVisibleChecked"
+            :indeterminate.prop="someVisibleChecked"
+            :disabled="!rows.length"
+            @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
+          />
+          <span>{{ t("platform.listSelectAll") }}</span>
+        </label>
+        <span v-if="checkedRefs.length > 0" class="sdk-object-list-selected-count" role="status">
+          {{ t("platform.listSelectedCount", { count: checkedRefs.length }) }}
+        </span>
+      </div>
       <div v-if="canCheck && checkedRefs.length > 0" class="sdk-object-list-batch-actions" role="group">
-        <span class="sdk-object-list-selected-count" role="status">
+        <span v-if="isTable" class="sdk-object-list-selected-count" role="status">
           {{ t("platform.listSelectedCount", { count: checkedRefs.length }) }}
         </span>
         <slot name="batch-actions" :checked="checkedRefs" :clear="clearChecked"></slot>
@@ -1936,14 +1965,21 @@ watch(someVisibleChecked, () => {
                 @click="choose(entry.row)"
                 @keydown="onListItemKeydown(entry.row, $event)"
               >
-                <span class="sdk-object-list-item-head">
+                <span class="sdk-object-list-item-head" :class="{ 'sdk-object-list-item-head-dot': statusStyle === 'dot' }">
+                  <span
+                    v-if="statusField && statusStyle === 'dot' && fieldValue(entry.row, statusField) !== ''"
+                    class="sdk-object-list-status-dot"
+                    :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                    :title="fieldValue(entry.row, statusField)"
+                    aria-hidden="true"
+                  ></span>
                   <span class="sdk-object-list-item-label">
                     <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
                       <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                     </template>
                   </span>
                   <span
-                    v-if="statusField && fieldValue(entry.row, statusField) !== ''"
+                    v-if="statusField && statusStyle !== 'dot' && fieldValue(entry.row, statusField) !== ''"
                     class="sdk-object-list-tag"
                     :data-tone="entry.row.tones?.[statusField] ?? 'default'"
                   >{{ fieldValue(entry.row, statusField) }}</span>
@@ -2066,12 +2102,34 @@ watch(someVisibleChecked, () => {
   min-height: 0;
   height: 100%;
 }
+.sdk-object-list-compact {
+  gap: 0;
+}
 .sdk-object-list-toolbar {
   align-items: center;
   display: flex;
   flex: 0 0 auto;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
+}
+.sdk-object-list-toolbar-sticky {
+  align-items: stretch;
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--ui-divider);
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+.sdk-object-list-check-row {
+  align-items: center;
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: space-between;
+  min-height: var(--control-height-sm);
+}
+.sdk-object-list-toolbar-sticky .sdk-object-list-batch-actions {
+  border-top: 1px solid var(--ui-divider);
+  padding-top: var(--spacing-xs);
 }
 .sdk-object-list-filters {
   align-items: center;
@@ -2313,10 +2371,16 @@ watch(someVisibleChecked, () => {
 }
 .sdk-object-list-select-all {
   align-items: center;
+  color: var(--el-text-color-primary);
   cursor: pointer;
   display: inline-flex;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   gap: var(--spacing-xs);
+}
+.sdk-object-list-select-all.disabled {
+  color: var(--el-disabled-text-color);
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 .sdk-object-list-cell-sub,
 .sdk-object-list-item-sub {
@@ -2324,7 +2388,7 @@ watch(someVisibleChecked, () => {
   font-size: var(--text-xs);
 }
 .sdk-object-list-item-sub {
-  line-height: var(--leading-xs);
+  line-height: 1.55;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2335,14 +2399,14 @@ watch(someVisibleChecked, () => {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  line-height: var(--leading-xs);
+  line-height: 1.55;
   white-space: normal;
 }
 .sdk-object-list-items {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: calc(var(--spacing-xs) / 2);
+  gap: 0;
   list-style: none;
   margin: 0;
   min-height: 0;
@@ -2355,24 +2419,37 @@ watch(someVisibleChecked, () => {
   flex-direction: column;
   gap: var(--spacing-xs);
   border-bottom: 1px solid var(--ui-divider);
+  transition: background-color var(--transition-fast);
+}
+.sdk-object-list-row:hover {
+  background: var(--ui-fill-tertiary);
+}
+.sdk-object-list-row.chosen {
+  background: var(--brand-primary-tint, var(--ui-fill-secondary));
+  box-shadow: inset 3px 0 0 var(--el-color-primary);
 }
 .sdk-object-list-row:last-child {
   border-bottom: 0;
 }
 .sdk-object-list-row-main {
-  align-items: center;
+  align-items: flex-start;
+  box-sizing: border-box;
   display: flex;
   flex: 0 0 auto;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
   min-width: 0;
+  padding: 0 var(--spacing-md);
   width: 100%;
 }
 .sdk-object-list-row-expand,
 .sdk-object-list-row-check {
   flex: 0 0 auto;
 }
+.sdk-object-list-row-check {
+  margin: calc(var(--spacing-sm) + 3px) 0 0;
+}
 .sdk-object-list-item-btn {
-  background: none;
+  background: transparent;
   border: 0;
   border-radius: var(--radius-xs);
   box-sizing: border-box;
@@ -2386,21 +2463,18 @@ watch(someVisibleChecked, () => {
   justify-content: center;
   min-height: var(--list-row-height, 44px);
   min-width: 0;
-  padding: var(--spacing-xs) var(--spacing-sm);
+  padding: var(--spacing-sm) 0;
   text-align: left;
-  transition: background-color var(--transition-fast);
   width: 100%;
 }
 .sdk-object-list-item-btn.sdk-object-list-item-two-line {
   min-height: var(--list-row-two-line-height, 60px);
 }
-.sdk-object-list-item-btn:hover {
-  background: var(--ui-fill-tertiary);
-}
 .sdk-object-list-item-btn.chosen {
-  background: var(--brand-primary-tint, var(--ui-fill-secondary));
-  box-shadow: inset 3px 0 0 var(--el-color-primary);
   font-weight: var(--font-medium);
+}
+.sdk-object-list-item-btn.sdk-object-list-item-two-line .sdk-object-list-item-label {
+  font-weight: var(--font-semibold);
 }
 .sdk-object-list-item-head {
   align-items: center;
@@ -2409,6 +2483,29 @@ watch(someVisibleChecked, () => {
   justify-content: space-between;
   min-width: 0;
   width: 100%;
+}
+.sdk-object-list-item-head-dot {
+  gap: var(--spacing-xs);
+  justify-content: flex-start;
+}
+.sdk-object-list-status-dot {
+  background: var(--el-text-color-placeholder);
+  border-radius: 50%;
+  flex: 0 0 auto;
+  height: 7px;
+  width: 7px;
+}
+.sdk-object-list-status-dot[data-tone="success"] {
+  background: var(--el-color-success);
+}
+.sdk-object-list-status-dot[data-tone="warning"] {
+  background: var(--el-color-warning);
+}
+.sdk-object-list-status-dot[data-tone="danger"] {
+  background: var(--el-color-danger);
+}
+.sdk-object-list-status-dot[data-tone="info"] {
+  background: var(--el-color-info);
 }
 .sdk-object-list-item-label {
   flex: 1 1 auto;
@@ -2535,6 +2632,11 @@ watch(someVisibleChecked, () => {
   gap: var(--spacing-xs);
   justify-content: flex-end;
   padding-top: var(--spacing-xs);
+}
+.sdk-object-list-compact .sdk-object-list-pagination {
+  background: var(--el-bg-color);
+  border-top: 1px solid var(--ui-divider);
+  padding: var(--spacing-sm) var(--spacing-md);
 }
 .sdk-object-list-page-total {
   color: var(--sdk-text-color-secondary);
