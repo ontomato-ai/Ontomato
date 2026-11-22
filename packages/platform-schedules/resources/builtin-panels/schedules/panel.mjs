@@ -45,7 +45,11 @@ await mountPanel({
       if ((values.value.compose ?? null) !== compose) instance.state.set("compose", compose);
     }
     watch([mode, editPane], ([next, pane]) => {
-      if (next === "edit") pane?.focus();
+      if (next !== "edit" || !pane) return;
+      // The host's template has to make the editor visible before the browser will accept focus.
+      requestAnimationFrame(() => {
+        if (mode.value === "edit" && editPane.value === pane) pane.focus();
+      });
     }, { flush: "post" });
     const busy = ref(new Set());
     const runs = ref([]);

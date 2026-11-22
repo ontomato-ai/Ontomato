@@ -3,7 +3,7 @@ import {
   type PanelHumanOperationPreparation, type PanelUseRef,
 } from "@ontomato/contracts/panel-agent";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
-import type { PanelMemberPath, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelMemberPath, PanelOperationCall, PanelOperationRowContext } from "@ontomato/contracts/panel-manifest";
 import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { PlatformRequests } from "./platform-objects";
 import type { ReadOperationInput } from "./read-operation-input";
@@ -20,7 +20,8 @@ import { attachmentName, savePanelFile } from "./save-file";
  */
 
 export type PanelOperationDescriptor = ReturnType<typeof panelOperationDescriptorResponseSchema.parse>;
-export type PanelWriteInvocation = { call: Omit<PanelOperationCall, "draft"> } | { calls: [WriteCall, ...WriteCall[]] };
+export type PanelSingleWriteCall = Omit<PanelOperationCall, "draft" | "target"> & { target?: PanelOperationCall["target"] };
+export type PanelWriteInvocation = { call: PanelSingleWriteCall } | { calls: [WriteCall, ...WriteCall[]] };
 type WriteCall = { target: { kind: "object"; objectType: string; primaryKey: string }; input: Record<string, unknown> };
 
 /** A read's call: the object or draft it acts on, if any, and its input — a trial run's, or a caller's own values. */
@@ -40,7 +41,12 @@ export interface PanelHumanOperations {
    */
   upload(operationId: string, file: File, memberPath?: PanelMemberPath): Promise<PanelUploadReceipt>;
   /** Freezes one write, of one call or a batch, for the host to confirm and dispatch. */
-  prepare(operationId: string, invocation: PanelWriteInvocation, memberPath?: PanelMemberPath): Promise<PanelHumanOperationPreparation>;
+  prepare(
+    operationId: string,
+    invocation: PanelWriteInvocation,
+    memberPath?: PanelMemberPath,
+    rowContext?: PanelOperationRowContext,
+  ): Promise<PanelHumanOperationPreparation>;
 }
 
 /** What the host does with a prepared write: confirms it where it must and dispatches it once, or the reader cancels. */
@@ -111,8 +117,13 @@ export function panelHumanOperations(use: PanelOperationUse | null, requests: Pl
       form.set("file", file, file.name);
       return panelUploadReceiptSchema.parse(await answer(requests.request(PANEL_UPLOADS_PATH, { method: "POST", body: form }, "")));
     },
-    async prepare(operationId, invocation, memberPath) {
-      return panelHumanOperationPreparationSchema.parse(await post("/panel-operations/intents", { ...of(operationId, memberPath), ...invocation }));
+    async prepare(operationId, invocation, memberPath, rowContext) {
+      const hasRowContext = rowContext !== undefined && Object.keys(rowContext).length > 0;
+      return panelHumanOperationPreparationSchema.parse(await post("/panel-operations/intents", {
+        ...of(operationId, memberPath),
+        ...(hasRowContext ? { rowContext } : {}),
+        ...invocation,
+      }));
     },
   };
 }

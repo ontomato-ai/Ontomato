@@ -91,8 +91,10 @@ describe("host content-box height stylesheets", () => {
   });
 
   it("propagates definite height through CurrentEntry, EntryUnit and nested panel wrappers", () => {
-    const memberCss = stylesOf("../../../../../packages/apps-sdk/src/panel/PanelMember.vue");
-    expect(memberCss).toMatch(/:where\(\.sdk-current-entry-slot\),\s*:where\(\.sdk-panel-member-nested\),\s*:where\(\.sdk-current-entry\)\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
+    const memberCss = source("../../../../../packages/apps-sdk/src/panel/panel-member.css");
+    expect(memberCss).toMatch(/:where\(\.sdk-current-entry-slot\)\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1 1 auto;[^}]*flex-direction:\s*column;[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
+    expect(memberCss).toMatch(/:where\(\.sdk-panel-member-nested\)\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1 1 auto;[^}]*flex-direction:\s*column;[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
+    expect(memberCss).toMatch(/:where\(\.sdk-current-entry\)\s*\{[^}]*display:\s*flex;[^}]*flex:\s*1 1 auto;[^}]*flex-direction:\s*column;[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
     expect(memberCss).toMatch(/:where\(\.sdk-panel-member-nested > \[data-panel-bare-root\]\)\s*\{[^}]*display:\s*contents;/s);
 
     const entryUnitCss = stylesOf("../../../../../packages/platform-web/src/pages/EntryUnit.vue");

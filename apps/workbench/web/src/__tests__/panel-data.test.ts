@@ -261,6 +261,69 @@ it("reads a list and its counts again when an operation reports their type chang
   run.dispose();
 });
 
+// The panel's own code keeping what it shows current (the scheduled tasks page polls while a run goes on): saying that
+// objects may have changed reads every datum it shows again, as the page header's refresh does (128, 2026-11-22: a
+// finished run stayed "running" until the reader pressed refresh).
+it("reads every datum again when the panel's own code says objects may have changed", async () => {
+  const counted: DirectProjection = {
+    ...base, id: "knowledge", name: "Knowledge", componentId: "@ontomato/sdk:PanelData",
+    inputs: {}, outputs: {}, config: {},
+    data: {
+      rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} },
+      counts: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "counts", params: { by: { literal: "status" } } },
+    },
+  };
+  const element = document.createElement("div");
+  document.body.append(element);
+  const reads: PanelMemberReadRequest[] = [];
+  let pending = 7;
+  let refreshObjects!: () => void;
+  let mounted!: (mount: DirectPanelMount) => void;
+  const mount = new Promise<DirectPanelMount>((resolve) => { mounted = resolve; });
+  const module = panelModuleFor({
+    mounted, element, template: `<p class="counts">{{ pendingCount }}</p><p class="rows">{{ rowCount }}</p>`,
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    manifest: definePanel({ state: {}, members: { board: { target: { projectionId: counted.id } } }, commands: {} }),
+    run: directRun({
+      pageKey: "board", url: () => "/board", label: () => "Board", initial: {},
+      failed: (reason) => { throw reason; },
+    }),
+    messages: {}, locale: ref("en"), defaultLocale: "en",
+    requests: { request: async () => Response.json({ projection: counted }) },
+    use: { applicationId: "app-board", useId: "board" },
+    expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
+    confirmOperation: noOperations.confirmOperation,
+    read: async (request): Promise<ProductPanelReadResponse> => {
+      reads.push(request);
+      if (request.operations) return { status: "ready", value: {} as never };
+      return request.dataName === "counts"
+        ? { status: "ready", value: [{ key: "pending", label: "Pending", count: pending }] as never }
+        : { status: "ready", value: { rows: Array.from({ length: pending }, (_, index) => record(`k-${index}`)) } as never };
+    },
+  });
+  await module.mountPanel({
+    setup() {
+      const { instance } = module.usePanelContext();
+      refreshObjects = () => instance.refreshObjects();
+      const counts = module.usePanelData("board", "counts");
+      const rows = module.usePanelData("board", "rows");
+      return {
+        pendingCount: computed(() => (counts.value.status === "ready" ? (counts.value.value as { count: number }[])[0]!.count : "…")),
+        rowCount: computed(() => (rows.value.status === "ready" ? (rows.value.value as { rows: unknown[] }).rows.length : "…")),
+      };
+    },
+  });
+  const run = await mount;
+  await vi.waitFor(() => expect(element.querySelector(".counts")?.textContent).toBe("7"));
+
+  // The run finished elsewhere; nothing reported it. The page's code asks again.
+  pending = 3;
+  refreshObjects();
+  await vi.waitFor(() => expect(element.querySelector(".counts")?.textContent).toBe("3"));
+  await vi.waitFor(() => expect(element.querySelector(".rows")?.textContent).toBe("3"));
+  run.dispose();
+});
+
 it("runs a member's operation from the panel's own code, found by the member and its name, once its owner admits it", async () => {
   const element = document.createElement("div");
   document.body.append(element);

@@ -2,7 +2,8 @@
 
 Write the Vue template and scoped panel styles in `panel.html`. Put the template inside `<div id="app">`. Place a
 declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
-Use Vue attributes, events, `v-if` and `v-for` for interactions. Adapt the layout to the container width.
+Use Vue attributes, events, `v-if` and `v-for` for interactions. Adapt the layout to the container width and
+[content-box height](#content-box-height-and-layout).
 Panel CSS positions member containers. Set colors, font sizes, spacing and corner radii with the platform's
 design variables (`--sdk-*`, `--text-*`, `--spacing-*`, `--radius-*`) from
 `node "$SKILL/ontomato.mjs" sdk read docs/components.md` (`Theme tokens`) or `sdk read components.json`
@@ -34,6 +35,32 @@ Use the flat `panel.name` key for the panel title, for example
 when present. Otherwise it uses the panel name in the reader's locale, then the platform's default locale and the
 name in `registration.json`. Keep the entry's menu metadata for entries that belong in the menu.
 
+## Content box height and layout
+
+Panels do not know where they are hosted — full page, beside a conversation, or inside a custom frame — and size only
+against the box given to them, never the browser window.
+
+- **Host content box.** Every entry receives a definite-height content box below the page header and above the bottom
+  composer. Its height tracks window resizes, composer expand/collapse, and banners; taller content scrolls inside the
+  box while the header and composer stay fixed. Full page, beside-conversation, and a custom frame's current-entry slot
+  share this exact contract. The panel root mounts directly inside that box (with no indeterminate-height wrapper
+  between them), so filling it works with normal CSS.
+- **Two normal-CSS height patterns (no extra manifest declaration):**
+  - **Flow / stack naturally:** Let content take its natural height and let the content box scroll. Use this for lists,
+    forms, and long pages — write nothing special.
+  - **Fill the content box:** Have the panel root fill the content box (for example `height: 100%` with a flex/grid
+    layout) and scroll inner panes independently (`min-height: 0; overflow: auto`). Use this for three-pane
+    workbenches, graphs, and list-plus-detail views. Give each filling region a `min-height` in `rem` or `px` and **no
+    upper cap** (`max-height`): when the box is shorter than `min-height`, or when the panel is placed inside another
+    panel's auto-height slot, it lays out at `min-height` and the outer box scrolls. When narrow widths stack columns
+    vertically, switch back to natural stacking.
+- **Member slots.** Panel CSS sizes each member container. Official components fill the slot they receive and fall back
+  to their own default height when the slot has no definite height.
+- **Forbidden.** Never write CSS viewport units (`vh`, `vw`, `vmin`, `vmax`, `vi`, `vb`, `sv*`, `lv*`, `dv*`) or
+  subtract magic header/composer constants from window height (`calc(100vh - ...)`). Never hand-draw viewport-sized
+  modal overlays or cards in a panel — use `<sdk-dialog>` or `<sdk-drawer>`, which handle viewport-relative overlay
+  sizing.
+
 ## Panel controls and platform behavior
 
 Use only the Ontomato SDK's own interface controls for panel chrome that does not render business fields:
@@ -58,8 +85,9 @@ Use only the Ontomato SDK's own interface controls for panel chrome that does no
   `const panel = usePanelContext()` in `setup()`, and call
   `panel.notify({ kind: "success", text: "Export complete" })` from the event handler (`kind` accepts `"success"`,
   `"info"`, `"warning"` or `"error"`).
-- **Forbidden patterns (`panel check` rejects all of these).** Never write `el-*` tags, `v-loading`, `--el-*`
-  CSS/theme variables, or `import ... from "element-plus"`. Do not use `mountPanel` to draw business data — neither
+- **Forbidden patterns.** Never write `el-*` tags, `v-loading`, `--el-*`
+  CSS/theme variables, `import ... from "element-plus"`, CSS viewport units (`vh`, `vw`, `dvh`, etc.), or hand-drawn
+  viewport-sized modal overlays. Do not use `mountPanel` to draw business data — neither
   by looping over `PanelData` / `usePanelData` records in `panel.html`, nor by defining an inline business component
   with `defineComponent({ template })` inside `panel.mjs` to bypass component registration.
 
@@ -72,11 +100,15 @@ Leave the following to the platform.
   Button clicks and assistant calls use the same confirmation rules, and the platform executes an accepted write once.
   Use local dialogs for interface choices.
 - **Form drafts.** The platform delivers drafts to the form. Follow the [form draft flow](#save-a-form-or-hand-off-a-draft).
-- **Page header and refresh.** The host renders the title, back control, commands and **Refresh** button. Clicking
-  the host Refresh button automatically re-reads every mounted projection and `usePanelData` datum in the panel
-  (including nested panels) — do not wire a manual refresh handler or call `refreshObjects()` for page-header refresh.
-  Declare page-header commands in `manifest.commands` (or `commands: {}` when none are needed) and keep the panel
-  template focused on page content.
+- **Page header and refresh (no business data in the header).** The host renders the title, description, back control,
+  commands and **Refresh** button solely from declared metadata — the host never reads business data to render the
+  header. Put counts, totals, and other business summaries inside the panel content, rendered by the component that
+  owns that data. Clicking the host Refresh button automatically re-reads every mounted projection and `usePanelData`
+  datum in the panel (including nested panels) — do not wire a manual refresh handler or call `refreshObjects()` for
+  page-header refresh. To keep what the page shows current while something runs elsewhere (a task run), call
+  `instance.refreshObjects()` on a timer and stop it when nothing runs: it reads everything shown again, exactly as the
+  header's Refresh does. Declare page-header commands in `manifest.commands` (or `commands: {}` when none are needed)
+  and keep the panel template focused on page content.
 
 ## Open a panel at a specific state
 
@@ -489,14 +521,19 @@ Keep `recipes.md` for page-specific business guidance. Use this section as the s
 
 For an assistant draft, look up the form's `objectType` in the entry's generated page skill. Read the owner form
 and copy `save.draftOperation` into the artifact's `operation`. Use the entry's `pageKey`. For an edit, include
-the opaque ID returned by the owner and put only the changed field values in `form`.
+the opaque ID returned by the owner and put only the changed field values in `form`. When an owner form field's
+JSON Pointer is a nested path (for example `/modelConfig/modelId`), organize `form` as nested objects
+(`{"modelConfig": {"modelId": "..."}}`) — never use a flat JSON Pointer string key such as `"/modelConfig/modelId"`.
 
 ```json
 {
   "pageKey": "example-vue-agent-directory-manage",
   "operation": "platform:AgentDefinition.save",
   "target": {"objectType": "platform:AgentDefinition", "id": "<selected agent ID>"},
-  "form": {"name": "Review assistant"}
+  "form": {
+    "name": "Review assistant",
+    "modelConfig": {"modelId": "default"}
+  }
 }
 ```
 

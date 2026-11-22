@@ -63,7 +63,19 @@ const props = withDefaults(defineProps<{
    * every save; while the state holds nothing, the field is not fixed.
    */
   fixedFields?: Record<string, { state: string; path?: string } | { literal: RuntimeJsonValue }>;
-}>(), { fixedFields: () => ({}) });
+  /**
+   * How top-level fields are arranged: `stacked` (default) draws each field's label above its control; `rows` draws
+   * each top-level field as a settings row with its name and help on the left, its control and messages in the middle,
+   * and Reset to default on the right when the owner declares a `defaultValue`.
+   */
+  layout?: "stacked" | "rows";
+  /**
+   * Where Save, Discard and the unsaved marker live: `footer` (default) keeps them sticky at the foot of the form;
+   * `header` hands the form's draft to the enclosing page header and hides the form's own action bar, falling back to
+   * the footer when no page header host is present (such as a nested panel or headerless preview).
+   */
+  actions?: "footer" | "header";
+}>(), { fixedFields: () => ({}), layout: "stacked", actions: "footer" });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created. */
   saved: [object: { className: string; primaryKey: string }];
@@ -329,7 +341,7 @@ function refreshWhenClean() {
 function reread() {
   const current = target.value;
   const currentKey = targetKey(current);
-  if (current === null || held?.target === currentKey) return load(current);
+  if (current === null || held?.target === currentKey || !description.value) return load(current);
   const reading = ++latestRead;
   failure.value = null;
   void forms.describe({ target: current, changedField: null }).then(
@@ -466,12 +478,19 @@ const sharedReadOnlyReasons = computed<ReadonlySet<string>>(() => {
   return new Set([...counts].filter(([, count]) => count > 1).map(([reason]) => reason));
 });
 
+const topLevelPaths = computed(() => new Set(fields.value.map((field) => field.path)));
+const hasDefaults = computed(() => fields.value.some((field) => field.control.kind !== "hidden" && field.defaultValue !== undefined));
+
 provide(formControlsKey, {
   values,
   errors: computed(() => ({ ...errors.value, ...invalid.value })),
   changed,
   busy: saving,
+  layout: computed(() => props.layout),
+  hasDefaults,
   sharedReadOnlyReasons,
+  isTopLevel: (path) => topLevelPaths.value.has(path),
+  hasInvalid: (path) => Object.hasOwn(invalid.value, path),
   set,
   remove,
   reorder,
@@ -667,58 +686,81 @@ const shown = computed<DataStateResult<PanelFormDescription>>(() => {
 });
 const labels = useDataStateLabels();
 
+/**
+ * When `actions: "header"` is configured and the enclosing host draws a page header, hand the form's Save/Discard draft
+ * to the page header and hide the form's own footer bar; otherwise keep the footer bar so the form stays usable in
+ * nested panels, headerless previews, and sandboxed frames.
+ */
+const usesHeaderActions = computed(() => props.actions === "header" && panel.registerHeaderDraft !== undefined);
+watch(usesHeaderActions, (inHeader, _previous, onCleanup) => {
+  if (!inHeader || !panel.registerHeaderDraft) return;
+  const stop = panel.registerHeaderDraft(slot.slot, () => (
+    shown.value.status === "ready"
+      ? {
+          dirty: canSettle.value,
+          saving: saving.value,
+          save: () => { if (!asking.value) void saveFromForm(); },
+          discard: () => { void confirmDiscard(); },
+        }
+      : null
+  ));
+  onCleanup(stop);
+}, { immediate: true });
+
 /** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
 </script>
 
 <template>
-  <div ref="formElement" class="sdk-owner-form">
+  <div ref="formElement" class="sdk-owner-form" :class="{ 'sdk-owner-form-rows': props.layout === 'rows' }">
     <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
-    <el-form label-position="top">
-      <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
-      <div v-if="sectionGroups" class="sdk-owner-form-sectioned">
-        <div class="sdk-owner-form-sections">
-          <section
-            v-for="group in sectionGroups"
-            :key="group.key"
-            class="sdk-owner-form-section"
-            :class="{ changed: group.changed }"
-            :data-form-section="group.key || undefined"
-          >
-            <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
-            <p v-if="group.hint" class="sdk-owner-form-section-hint">{{ group.hint }}</p>
-            <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
-            <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
-              <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
-            </form-advanced-section>
-          </section>
+    <el-form label-position="top" class="sdk-owner-form-inner">
+      <div class="sdk-owner-form-body">
+        <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
+        <div v-if="sectionGroups" class="sdk-owner-form-sectioned">
+          <div class="sdk-owner-form-sections">
+            <section
+              v-for="group in sectionGroups"
+              :key="group.key"
+              class="sdk-owner-form-section"
+              :class="{ changed: group.changed }"
+              :data-form-section="group.key || undefined"
+            >
+              <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
+              <p v-if="group.hint" class="sdk-owner-form-section-hint">{{ group.hint }}</p>
+              <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
+              <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
+                <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
+              </form-advanced-section>
+            </section>
+          </div>
+          <!-- The form's contents: each entry brings its section into view; every section stays on the page. -->
+          <nav class="sdk-owner-form-contents" :aria-label="t('platform.formSections')">
+            <button v-for="group in sectionGroups.filter((item) => item.title)" :key="group.key" type="button" @click="goToSection(group.key)">
+              {{ group.title }}
+            </button>
+          </nav>
         </div>
-        <!-- The form's contents: each entry brings its section into view; every section stays on the page. -->
-        <nav class="sdk-owner-form-contents" :aria-label="t('platform.formSections')">
-          <button v-for="group in sectionGroups.filter((item) => item.title)" :key="group.key" type="button" @click="goToSection(group.key)">
-            {{ group.title }}
+        <template v-else>
+          <form-field-place v-for="field in plain" :key="field.path" :field="field"></form-field-place>
+          <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
+            <form-field-place v-for="field in advanced" :key="field.path" :field="field"></form-field-place>
+          </form-advanced-section>
+        </template>
+        <slot name="after-fields"></slot>
+        <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
+          {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
+        </p>
+        <div v-if="refusalFoot" class="sdk-owner-form-refusal" role="alert">
+          <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
+            {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
           </button>
-        </nav>
+          <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
+        </div>
       </div>
-      <template v-else>
-        <form-field-place v-for="field in plain" :key="field.path" :field="field"></form-field-place>
-        <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
-          <form-field-place v-for="field in advanced" :key="field.path" :field="field"></form-field-place>
-        </form-advanced-section>
-      </template>
-      <slot name="after-fields"></slot>
-      <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
-        {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
-      </p>
-      <div v-if="refusalFoot" class="sdk-owner-form-refusal" role="alert">
-        <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
-          {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
-        </button>
-        <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
-      </div>
-      <div class="sdk-owner-form-actions">
+      <div v-if="!usesHeaderActions" class="sdk-owner-form-actions">
         <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">{{ t("platform.unsavedChanges") }}</span>
         <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
         <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
@@ -729,8 +771,10 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 </template>
 
 <style scoped>
-/* Save and Discard stay in reach at the foot of the view however long the form, never only at its end. */
+/* Save and Discard stay in reach at the foot of the view however long the form, both when filling a definite box
+   (the body scrolls above them) and when flowing down the page (they stick to the enclosing content box). */
 .sdk-owner-form-actions {
+  flex: 0 0 auto;
   position: sticky;
   bottom: 0;
   z-index: 1;
@@ -746,6 +790,25 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 /* Sections one after another at a reading width, a hairline between them; their list beside them while they scroll. */
 .sdk-owner-form {
   container: sdk-owner-form / inline-size;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.sdk-owner-form-inner {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.sdk-owner-form-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 .sdk-owner-form-sectioned {
   display: grid;

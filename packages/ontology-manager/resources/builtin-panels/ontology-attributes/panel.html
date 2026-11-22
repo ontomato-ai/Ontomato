@@ -33,11 +33,6 @@
   .attrs-editor-head small { display: block; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
   .attrs-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .attrs-spacer { flex: 1; }
-  .attrs-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: var(--sdk-overlay-color-lighter); }
-  .attrs-modal-card { width: min(32.5rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); display: flex; flex-direction: column; gap: var(--spacing-md);
-    padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--sdk-bg-color-overlay, var(--sdk-bg-color)); box-shadow: var(--elevation-overlay); overflow: hidden; }
-  .attrs-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
-  .attrs-modal-body { overflow-y: auto; min-height: 0; }
   @container (max-width: 44rem) {
     .attrs-row { grid-template-columns: minmax(9rem, 1.4fr) minmax(6rem, 1fr) minmax(5rem, 0.8fr) 1.25rem; }
     .attrs-row > :nth-child(4), .attrs-row > :nth-child(5) { display: none; }
@@ -132,17 +127,9 @@
       </template>
     </div>
 
-    <!-- Create attribute modal (mutually exclusive with inline editing since creating clears selected). -->
-    <div v-if="creating && !selected" class="attrs-modal" role="dialog" aria-modal="true" @click.self="closeEditor">
-      <div class="attrs-modal-card">
-        <div class="attrs-modal-head">
-          <span>{{ t("attr.creating") }}</span>
-          <sdk-button text size="small" @click="closeEditor">{{ t("attr.close") }}</sdk-button>
-        </div>
-        <div class="attrs-modal-body">
-          <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
-        </div>
-      </div>
-    </div>
+    <!-- Create attribute dialog (mutually exclusive with inline editing since creating clears selected). -->
+    <sdk-dialog v-model="createDialog" :title="t('attr.creating')" width="520px" append-to-body destroy-on-close>
+      <projection v-if="createDialog" slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
+    </sdk-dialog>
   </section>
 </div>

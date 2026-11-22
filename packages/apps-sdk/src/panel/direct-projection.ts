@@ -9,9 +9,10 @@ export const directMountKey: InjectionKey<DirectPanelMount> = Symbol("ontomato.p
 /**
  * `<Projection slot="…"/>` in a panel run in the platform's document: the run's member, drawn by the directly rendered
  * panel's own member component inside the member's container, as a directly rendered layout places each member. The
- * container is where the panel's own style stops: it can place the member, not restyle the component inside. As in a
- * frame, only what the panel's template listens to reaches the drawn component — and what it places in the component's
- * slots (`<template #batch-actions>`), other members' `<Projection>`s included, which the component draws where its slot is.
+ * container is where the panel's own style stops: `class` and `style` written on `<Projection>` size and place this
+ * container without configuring or restyling the component inside. As in a frame, only what the panel's template
+ * listens to reaches the drawn component — and what it places in the component's slots (`<template #batch-actions>`),
+ * other members' `<Projection>`s included, which the component draws where its slot is.
  */
 export default defineComponent({
   // eslint-disable-next-line vue/multi-word-component-names
@@ -30,8 +31,16 @@ export default defineComponent({
       useAppTheme(place, () => declaration.theme, () => (dark.value ? "dark" : "light"));
     }
     const isCurrentEntry = Boolean(declaration && "fromPlatform" in declaration.target);
-    return () => h("div", { ref: place, "data-member": props.slot, ...(isCurrentEntry ? { class: "sdk-current-entry-slot" } : {}) }, [
-      cloneVNode(mount.member(props.slot, slots), Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name)))),
-    ]);
+    return () => {
+      const containerProps: Record<string, unknown> = {
+        ref: place,
+        class: ["sdk-panel-member", isCurrentEntry ? "sdk-current-entry-slot" : null, attrs.class],
+        "data-member": props.slot,
+      };
+      if (attrs.style !== undefined) containerProps.style = attrs.style;
+      return h("div", containerProps, [
+        cloneVNode(mount.member(props.slot, slots), Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name)))),
+      ]);
+    };
   },
 });

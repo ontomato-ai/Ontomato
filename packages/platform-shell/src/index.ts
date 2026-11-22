@@ -16,6 +16,7 @@ export {default as ApplicationIconPicker} from './ApplicationIconPicker.vue';
 export { platformPath, platformRoutes } from "./routes";
 export { openApplicationKey } from './application-opening';
 export {
+  hasPageActions,
   providePageActions,
   usePageActions,
   type PlatformPageAction,

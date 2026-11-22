@@ -137,6 +137,15 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
 </template>
 
 <style scoped>
+.sdk-object-summary {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
 dl {
   display: grid;
   font-size: var(--text-sm);

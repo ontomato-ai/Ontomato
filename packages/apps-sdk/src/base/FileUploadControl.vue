@@ -201,6 +201,7 @@ async function onFileChange(event: Event) {
 
 <style scoped>
 .sdk-file-upload {
+  align-self: flex-start;
   display: inline-flex;
   flex-direction: column;
   gap: 6px;

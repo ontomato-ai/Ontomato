@@ -149,40 +149,6 @@
     color: var(--sdk-text-color-secondary);
     margin: 0;
   }
-  .vm-modal {
-    position: fixed;
-    inset: 0;
-    z-index: 2000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--sdk-overlay-color-lighter);
-  }
-  .vm-modal-card {
-    width: min(34rem, calc(100vw - 2rem));
-    max-height: calc(100vh - 4rem);
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
-    padding: var(--spacing-lg);
-    border-radius: var(--radius-lg);
-    background: var(--sdk-bg-color-overlay, var(--sdk-bg-color));
-    box-shadow: var(--elevation-overlay);
-    overflow: hidden;
-  }
-  .vm-modal-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
-    font-size: var(--text-base);
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-primary);
-  }
-  .vm-modal-body {
-    overflow-y: auto;
-    min-height: 0;
-  }
   @media (max-width: 64rem) {
     .vm-body {
       flex-direction: column;
@@ -292,27 +258,11 @@
     </aside>
   </div>
 
-  <div v-show="dialog === 'class'" class="vm-modal" role="dialog" aria-modal="true">
-    <div class="vm-modal-card">
-      <div class="vm-modal-head">
-        <span>{{ t("visualModeling.createClassTitle") }}</span>
-        <sdk-button text size="small" @click="closeDialog">{{ t("visualModeling.close") }}</sdk-button>
-      </div>
-      <div class="vm-modal-body">
-        <projection slot="classCreate" @saved="closeDialog"></projection>
-      </div>
-    </div>
-  </div>
+  <sdk-dialog v-model="classDialog" :title="t('visualModeling.createClassTitle')" width="540px" append-to-body destroy-on-close>
+    <projection v-if="classDialog" slot="classCreate" @saved="closeDialog" @discarded="closeDialog"></projection>
+  </sdk-dialog>
 
-  <div v-show="dialog === 'relation'" class="vm-modal" role="dialog" aria-modal="true">
-    <div class="vm-modal-card">
-      <div class="vm-modal-head">
-        <span>{{ t("visualModeling.createRelationTitle") }}</span>
-        <sdk-button text size="small" @click="closeDialog">{{ t("visualModeling.close") }}</sdk-button>
-      </div>
-      <div class="vm-modal-body">
-        <projection slot="relationCreate" @saved="closeDialog"></projection>
-      </div>
-    </div>
-  </div>
+  <sdk-dialog v-model="relationDialog" :title="t('visualModeling.createRelationTitle')" width="540px" append-to-body destroy-on-close>
+    <projection v-if="relationDialog" slot="relationCreate" @saved="closeDialog" @discarded="closeDialog"></projection>
+  </sdk-dialog>
 </div>

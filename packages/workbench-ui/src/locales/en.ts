@@ -175,6 +175,7 @@ export default {
     "unsavedChanges": "Unsaved changes",
     "formLeaveUnsaved": "This form has changes you have not saved. Discard them and open the other item?",
     "formDiscardConfirm": "Discard the changes you have not saved?",
+    "formResetToDefault": "Reset to default",
     "formSections": "Sections",
     "formCharacters": "1 character | {count} characters",
     "keepEditing": "Keep editing",

@@ -403,3 +403,33 @@ it("draws path-toned nodes and edges visually distinct from accent search highli
   expect(drawn["e-search"]!.style).toMatchObject({ stroke: "p", lineWidth: 2, opacity: 1 });
   expect(drawn["e-path"]!.style).toMatchObject({ stroke: "#e6a23c", lineWidth: 3, opacity: 1 });
 });
+
+it("creates the graph and emits resized when a canvas mounted at 0x0 later receives real dimensions", async () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 0, height: 0 } as DOMRect);
+  let onResize: ResizeObserverCallback | null = null;
+  const OriginalResizeObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(cb: ResizeObserverCallback) {
+      onResize = cb;
+    }
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  } as unknown as typeof ResizeObserver;
+  try {
+    view.options = null;
+    const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(2), layout: { type: "preset" } } });
+    await flushPromises();
+    expect(view.options).toBeNull();
+    expect(wrapper.emitted("resized")).toBeUndefined();
+
+    onResize!([{ contentRect: { width: 640, height: 420 } } as ResizeObserverEntry], {} as ResizeObserver);
+    await flushPromises();
+    expect(view.options).toMatchObject({ width: 640, height: 420 });
+    expect(of("add").length).toBeGreaterThan(0);
+    expect(wrapper.emitted("resized")).toEqual([[640, 420]]);
+    wrapper.unmount();
+  } finally {
+    globalThis.ResizeObserver = OriginalResizeObserver;
+  }
+});

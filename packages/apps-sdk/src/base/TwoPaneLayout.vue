@@ -25,30 +25,52 @@ defineSlots<{
 <style scoped>
 .sdk-two-pane {
   container-type: inline-size;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 .sdk-two-pane-block {
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: var(--shell-list-panel) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
   border: 1px solid var(--ui-divider);
   border-radius: var(--radius-md);
   background: var(--el-bg-color);
 }
 .sdk-two-pane-aside {
+  display: flex;
+  flex-direction: column;
   border-inline-end: 1px solid var(--ui-divider);
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--spacing-md);
 }
 .sdk-two-pane-main {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--page-section-padding);
 }
 @container (max-width: 640px) {
   .sdk-two-pane-block {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
   }
   .sdk-two-pane-aside {
     border-inline-end: 0;
     border-block-end: 1px solid var(--ui-divider);
+    overflow-y: visible;
+  }
+  .sdk-two-pane-main {
+    overflow-y: visible;
   }
 }
 </style>

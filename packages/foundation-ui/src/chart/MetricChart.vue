@@ -70,16 +70,28 @@ const failure = computed(() => filled.value.ok ? null : filled.value as ChartFai
     <template v-else-if="filled.ok">
       <p v-if="filled.truncation" class="state truncation" role="note">{{ filled.truncation.truncationHint }}</p>
       <p v-if="!filled.rowCount" class="state">{{ empty }}</p>
-      <EChart v-else-if="mapsReady" :option="option!" :theme="theme" :height="chartHeight" role="img" @resize="drawn = $event" />
+      <EChart v-else-if="mapsReady" class="metric-chart-canvas" :option="option!" :theme="theme" :height="chartHeight" role="img" @resize="drawn = $event" />
     </template>
   </div>
 </template>
 
 <style scoped>
 .metric-chart {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   padding: 12px 8px 6px;
 }
+.metric-chart-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .state {
+  flex: 0 0 auto;
   padding: 18px;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm, 13px);

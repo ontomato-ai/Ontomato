@@ -257,7 +257,7 @@ it("keeps what the reader types when the first read of the form is answered afte
     return owner(request);
   }, { selectedTask: task("t-1") });
   await vi.waitFor(() => expect(holdFirst).not.toBeNull());
-  instance.refreshAll();
+  instance.refreshObjects();
   await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
   const note = input(element, "/note");
   note.value = "Typed while the first read was on its way";
@@ -272,7 +272,7 @@ it("keeps what the reader types when the first read of the form is answered afte
 
   // Another refresh while the reader holds the edit waits until they save or discard: what they typed stays.
   const before = formReads;
-  instance.refreshAll();
+  instance.refreshObjects();
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(formReads).toBe(before);
   expect(input(element, "/note").value).toBe("Typed while the first read was on its way");

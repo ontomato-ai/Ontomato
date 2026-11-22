@@ -364,6 +364,7 @@ onMounted(() => {
     if (!width || !height) return;
     if (!graph) {
       void create(width, height);
+      emit("resized", width, height);
       return;
     }
     // Through the queue: a resize while G6 is still drawing its first props waits until it can report the view.
@@ -532,6 +533,8 @@ defineExpose({
 <style scoped>
 .g6-graph-canvas {
   position: relative;
+  flex: 1 1 auto;
+  width: 100%;
   height: 100%;
   min-height: 0;
 }

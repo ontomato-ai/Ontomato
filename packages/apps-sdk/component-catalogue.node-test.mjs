@@ -210,6 +210,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const listLayout = declared.get("ObjectList").config.find(prop => prop.name === "layout");
     assert.equal(listLayout?.required, false);
     assert.match(listLayout?.type ?? "", /cards/);
+    const formLayout = declared.get("ObjectForm").config.find(prop => prop.name === "layout");
+    assert.equal(formLayout?.required, false);
+    assert.match(formLayout?.type ?? "", /rows/);
+    const formActions = declared.get("ObjectForm").config.find(prop => prop.name === "actions");
+    assert.equal(formActions?.required, false);
+    assert.match(formActions?.type ?? "", /header/);
     const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitle-lines");
     assert.equal(subtitleLines?.required, false);
     assert.match(subtitleLines?.type ?? "", /number/);

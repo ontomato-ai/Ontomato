@@ -116,6 +116,9 @@ function addStyles(release: ComponentPackageResponse) {
 /** The package a component ID names: everything before its last `:`. */
 export const packageOf = (componentId: string) => componentId.slice(0, componentId.lastIndexOf(":"));
 
+/** Loaded package components cached by component ID, release version and release digest. */
+const loadedPackageComponents = new Map<string, Promise<Component>>();
+
 /** The component an installed package's current release declares under `componentId`, loaded with its styles. */
 export async function packageComponent(componentId: string, read: ComponentPackageReader): Promise<Component> {
   const release = await read(packageOf(componentId));
@@ -123,9 +126,20 @@ export async function packageComponent(componentId: string, read: ComponentPacka
   if (!declaration)
     throw new Error(`Package '${release.name}' ${release.version} declares no component '${componentId}'; it declares ${release.components.map(({ componentId: id }) => id).join(", ")}`);
   addStyles(release);
-  const root = new URL(release.artifactRoot, location.origin);
-  const module = await import(/* @vite-ignore */ await moduleAddress(release, new URL(release.entries[declaration.module]!, root).href, [])) as Record<string, unknown>;
-  const component = module[declaration.exportName];
-  if (!component) throw new Error(`Package '${release.name}' module '${declaration.module}' has no export '${declaration.exportName}'`);
-  return component as Component;
+  const cacheKey = `${componentId}\u0000${release.version}\u0000${release.digest}`;
+  let loading = loadedPackageComponents.get(cacheKey);
+  if (!loading) {
+    const root = new URL(release.artifactRoot, location.origin);
+    loading = (async () => {
+      const module = await import(/* @vite-ignore */ await moduleAddress(release, new URL(release.entries[declaration.module]!, root).href, [])) as Record<string, unknown>;
+      const component = module[declaration.exportName];
+      if (!component) throw new Error(`Package '${release.name}' module '${declaration.module}' has no export '${declaration.exportName}'`);
+      return component as Component;
+    })().catch((error: unknown) => {
+      if (loadedPackageComponents.get(cacheKey) === loading) loadedPackageComponents.delete(cacheKey);
+      throw error;
+    });
+    loadedPackageComponents.set(cacheKey, loading);
+  }
+  return loading;
 }

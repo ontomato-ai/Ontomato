@@ -38,11 +38,6 @@
   .relations-end strong { font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
   .relations-end code { color: var(--sdk-text-color-placeholder); font-size: var(--text-xs); font-family: var(--font-mono); }
   .relations-arrow { display: grid; place-items: center; color: var(--brand-link); font-size: var(--text-base); }
-  .relations-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: var(--sdk-overlay-color-lighter); }
-  .relations-modal-card { width: min(32.5rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); display: flex; flex-direction: column; gap: var(--spacing-md);
-    padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--sdk-bg-color-overlay, var(--sdk-bg-color)); box-shadow: var(--elevation-overlay); overflow: hidden; }
-  .relations-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
-  .relations-modal-body { overflow-y: auto; min-height: 0; }
   @container (max-width: 44rem) {
     .relations-row { grid-template-columns: minmax(11rem, 1fr) minmax(6rem, 1fr) 1.25rem; }
     .relations-row > :nth-child(2), .relations-row > :nth-child(4) { display: none; }
@@ -133,17 +128,9 @@
       </div>
     </template>
 
-    <!-- Create relation modal (mutually exclusive with detail view since creating clears selected). -->
-    <div v-if="creating && !selectedKey" class="relations-modal" role="dialog" aria-modal="true" @click.self="cancelCreate">
-      <div class="relations-modal-card">
-        <div class="relations-modal-head">
-          <span>新建关系类型</span>
-          <sdk-button text size="small" @click="cancelCreate">关闭</sdk-button>
-        </div>
-        <div class="relations-modal-body">
-          <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
-        </div>
-      </div>
-    </div>
+    <!-- Create relation dialog (mutually exclusive with detail view since creating clears selected). -->
+    <sdk-dialog v-model="createDialog" title="新建关系类型" width="520px" append-to-body destroy-on-close>
+      <projection v-if="createDialog" slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
+    </sdk-dialog>
   </section>
 </div>

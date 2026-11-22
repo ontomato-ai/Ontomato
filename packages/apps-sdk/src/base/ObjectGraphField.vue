@@ -3,12 +3,12 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElEmpty } from "element-plus/es/components/empty/index";
-import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { GraphCanvas } from "@ontomato/foundation-ui/graph";
 import { useFormField } from "../panel/context";
 import { useGraphRecords, type EdgeEndsConfig } from "./object-graph-data";
+import FormFieldFrame from "./FormFieldFrame.vue";
 
 /**
  * The graph as a form field's choice (an agent's data scope): choosing a node adds it to or removes it from the list of
@@ -58,13 +58,16 @@ function includeAdjacent() {
 </script>
 
 <template>
-  <el-form-item
+  <form-field-frame
     v-if="field.field.value"
-    class="sdk-object-graph"
-    :class="{ 'sdk-object-graph-changed': field.changed.value }"
-    :label="field.field.value.label"
+    :field="field.field.value"
+    :path="field.field.value.path"
     :error="field.error.value ?? readError ?? undefined"
-    :data-field="field.field.value.path"
+    :changed="field.changed.value"
+    :disabled="field.disabled.value"
+    :value="field.value.value"
+    :on-set="field.set"
+    :field-class="field.changed.value ? 'sdk-object-graph sdk-object-graph-changed' : 'sdk-object-graph'"
   >
     <el-skeleton v-if="loading" :rows="4" animated></el-skeleton>
     <template v-else-if="readError"></template>
@@ -112,17 +115,10 @@ function includeAdjacent() {
         <el-option v-for="node in nodes" :key="node.id" :label="node.label" :value="node.id"></el-option>
       </el-select>
     </div>
-    <p v-if="field.field.value.readOnly && field.field.value.readOnlyReason" class="sdk-object-graph-help">
-      {{ field.field.value.readOnlyReason }}
-    </p>
-    <p v-else-if="field.field.value.help" class="sdk-object-graph-help">{{ field.field.value.help }}</p>
-  </el-form-item>
+  </form-field-frame>
 </template>
 
 <style scoped>
-.sdk-object-graph {
-  display: block;
-}
 .sdk-object-graph-summary {
   margin: 0;
   color: var(--el-text-color-secondary);
@@ -177,14 +173,5 @@ function includeAdjacent() {
 }
 .sdk-object-graph-adjacent {
   align-self: flex-start;
-}
-.sdk-object-graph-changed :deep(.el-form-item__label) {
-  color: var(--brand-link);
-}
-.sdk-object-graph-help {
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  margin: var(--spacing-xs) 0 0;
 }
 </style>

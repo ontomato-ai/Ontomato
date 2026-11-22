@@ -15,7 +15,7 @@
       <projection slot="list" @update:selected="stopCreating"></projection>
       <div class="management-detail">
         <projection slot="detail" v-if="selected"></projection>
-        <projection slot="form" v-if="selected || creating"></projection>
+        <projection slot="form" v-show="selected || creating"></projection>
       </div>
     </div>
   </section>

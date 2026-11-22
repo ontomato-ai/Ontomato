@@ -2,7 +2,9 @@ package io.ontomato.dataengine.controller;
 
 import static io.ontomato.dataengine.service.agent.OntologyAgentStore.*;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import io.ontomato.dataengine.config.ControllerConst;
 import io.ontomato.dataengine.service.QueryAccessService;
 import io.ontomato.dataengine.service.QueryGrantService;
@@ -45,13 +47,20 @@ public class OntologyGenerationController {
     this.drafts = drafts;
   }
 
+  private static JSONObject body(Map<String, Object> input) {
+    // Preserve explicit null fields (such as DSL queryPackage.manifest.computation) when converting Spring's request map.
+    return input == null
+        ? new JSONObject()
+        : JSON.parseObject(JSON.toJSONString(input, JSONWriter.Feature.WriteMapNullValue));
+  }
+
   @PostMapping("/platform/{kind}/{operation}")
   public Object authoring(@PathVariable String kind, @PathVariable String operation,
       @RequestBody Map<String, Object> requestBody,
       @RequestHeader(value = "Accept-Language", defaultValue = "en") String language,
       HttpServletRequest request) throws Exception {
     access.service(request);
-    var body = JSONObject.from(requestBody);
+    var body = body(requestBody);
     switch (operation) {
       case "adopt" -> AuthoringContract.validate("adoptionRequest", body);
       case "read-test" -> AuthoringContract.validate("readTestRequest", body);
@@ -72,7 +81,7 @@ public class OntologyGenerationController {
   public void closeAuthoring(@PathVariable String run, @RequestBody Map<String, Object> requestBody,
       HttpServletRequest request) throws Exception {
     access.service(request);
-    var body = JSONObject.from(requestBody);
+    var body = body(requestBody);
     AgentJson.fields(body, "domainId", "ownerId", "sessionId", "outcome");
     platform.close(AgentJson.id(run), AgentJson.id(body.getString("sessionId")),
         new Owner(AgentJson.text(body, "ownerId"), AgentJson.text(body, "domainId")), AgentJson.text(body, "outcome"));
@@ -84,7 +93,7 @@ public class OntologyGenerationController {
       @PathVariable String operation, @RequestBody Map<String, Object> input,
       HttpServletRequest request) throws Exception {
     access.authenticated(request);
-    var body = JSONObject.from(input);
+    var body = body(input);
     AuthoringContract.validateOperation(kind, operation, body);
     return platform.operateExternal(AgentJson.id(run), kind, operation, body, access.current(request));
   }

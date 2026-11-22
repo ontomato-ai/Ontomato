@@ -16,6 +16,7 @@ import {
   componentOfficialSpecifiers,
   isComponentOfficialSpecifier,
   panelModuleImports,
+  REJECT_VIEWPORT_UNITS,
 } from "./panel-module";
 import {
   SDK_PLATFORM_THEME_TOKENS,
@@ -233,4 +234,74 @@ test("checkAuthoringScript, checkAuthoringStyles, and checkAuthoringTheme report
   assert.equal(themeViolations.length, 1);
   assert.equal(themeViolations[0]!.found, "--el-color-primary");
   assert.equal(themeViolations[0]!.replacement, "--sdk-color-primary");
+});
+
+test("checkAuthoringStyles and checkAuthoringTemplate reject all CSS viewport units when enabled and stay off by default", () => {
+  assert.equal(REJECT_VIEWPORT_UNITS, false);
+
+  const allUnits = [
+    "vh", "vw", "vmin", "vmax", "vi", "vb",
+    "svh", "svw", "svmin", "svmax", "svi", "svb",
+    "lvh", "lvw", "lvmin", "lvmax", "lvi", "lvb",
+    "dvh", "dvw", "dvmin", "dvmax", "dvi", "dvb",
+  ];
+  const allUnitsCss = allUnits.map((unit, idx) => `.u${idx} { height: ${idx + 1}${idx % 2 === 0 ? unit : unit.toUpperCase()}; }`).join("\n");
+
+  // Default switch is off: viewport units are not reported until enabled.
+  assert.deepEqual(checkAuthoringStyles(allUnitsCss, "style.css"), []);
+
+  // Enabled explicitly: every viewport unit is reported with exact file/line/column and replacement guidance.
+  const allHits = checkAuthoringStyles(allUnitsCss, "style.css", 0, allUnitsCss, { rejectViewportUnits: true });
+  assert.equal(allHits.length, allUnits.length);
+  allHits.forEach((violation, idx) => {
+    const unit = allUnits[idx]!;
+    const expectedFound = `${idx + 1}${idx % 2 === 0 ? unit : unit.toUpperCase()}`;
+    assert.equal(violation.file, "style.css");
+    assert.equal(violation.line, idx + 1);
+    assert.equal(violation.column, `.u${idx} { height: `.length + 1);
+    assert.equal(violation.kind, "forbidden-viewport-unit");
+    assert.equal(violation.found, expectedFound);
+    assert.match(violation.message, /content box.*rem\/px min-height.*<sdk-dialog>/u);
+  });
+
+  // Expressions, signs, decimals, scientific notation, and negative false-positive cases.
+  const mixedCss = [
+    "/* height: 100vh; don't break 50vw inside a comment */",
+    '.safe-100vh { --card-100vh: 24rem; --100vh: 320px; content: "100vh"; background: url(/img/50vw.png); }',
+    ".p50vw, #id100vh, #100vh { min-height: 24rem; width: 100%; padding: 12px 1.5em; height: 50cqh; }",
+    ".bad-expr { height: calc(100dvh - 120px); width: 50vw; min-height: 80svh; }",
+    ".bad-num { margin-top: -10vh; padding-left: .5Vw; max-height: 1e2LVH; }",
+  ].join("\n");
+  const mixedHits = checkAuthoringStyles(mixedCss, "panel.css", 0, mixedCss, { rejectViewportUnits: true });
+  assert.deepEqual(
+    mixedHits.map(v => ({ line: v.line, column: v.column, found: v.found })),
+    [
+      { line: 4, column: 26, found: "100dvh" },
+      { line: 4, column: 50, found: "50vw" },
+      { line: 4, column: 68, found: "80svh" },
+      { line: 5, column: 24, found: "-10vh" },
+      { line: 5, column: 45, found: ".5Vw" },
+      { line: 5, column: 63, found: "1e2LVH" },
+    ],
+  );
+
+  // Template check covers inline <style> blocks and static style="..." attributes, preserving exact offsets.
+  const html = [
+    "<!-- <style>.ignored { height: 100vh; }</style> -->",
+    "<style>",
+    "  .root { height: 100vh; min-height: 24rem; }",
+    "</style>",
+    '<div id="app" style="min-height: 80svh">',
+    "  <div :style=\"{ height: '100vh' }\"></div>",
+    "</div>",
+  ].join("\n");
+  assert.deepEqual(checkAuthoringTemplate(html, "panel.html"), []);
+  const templateHits = checkAuthoringTemplate(html, "panel.html", { rejectViewportUnits: true });
+  assert.deepEqual(
+    templateHits.map(v => ({ file: v.file, line: v.line, column: v.column, kind: v.kind, found: v.found })),
+    [
+      { file: "panel.html", line: 3, column: 19, kind: "forbidden-viewport-unit", found: "100vh" },
+      { file: "panel.html", line: 5, column: 34, kind: "forbidden-viewport-unit", found: "80svh" },
+    ],
+  );
 });

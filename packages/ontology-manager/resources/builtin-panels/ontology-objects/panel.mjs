@@ -155,6 +155,18 @@ await mountPanel({
       instance.state.set("selectedAttribute", null);
       attributeMode.value = "none";
     }
+    const createObjectDialog = computed({
+      get: () => creating.value && !selected.value,
+      set: value => {
+        if (!value && creating.value) backToCatalog();
+      },
+    });
+    const createAttributeDialog = computed({
+      get: () => Boolean(selected.value) && attributeMode.value === "create",
+      set: value => {
+        if (!value && attributeMode.value === "create") closeAttribute();
+      },
+    });
     function attributeSaved(object) {
       if (object?.primaryKey) instance.state.set("selectedAttribute", { className: ATTRIBUTE, primaryKey: object.primaryKey });
       attributeMode.value = "edit";
@@ -214,7 +226,7 @@ await mountPanel({
     })}`;
 
     return {
-      t, view, creating, search, catalog, filteredRows, catalogCount, relationCount, labels, detail, record, attributes, attributeRows, relations, relationRows,
+      t, view, creating, createObjectDialog, createAttributeDialog, search, catalog, filteredRows, catalogCount, relationCount, labels, detail, record, attributes, attributeRows, relations, relationRows,
       summary, primaryKeyCount, primaryKeyStatus, selected, selectedAttribute, editingAttribute, isPrimaryKey, attributeMode, attributeError, busy,
       deleteObjectOp, setPrimaryKeyOp, deleteAttributeOp,
       openClass, backToCatalog, objectSaved, formDiscarded, openAttribute, startCreateAttribute, closeAttribute,

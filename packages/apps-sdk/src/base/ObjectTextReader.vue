@@ -164,6 +164,15 @@ const labels = useDataStateLabels();
 </template>
 
 <style scoped>
+.sdk-object-text-reader {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
 .sdk-object-text-reader-whole {
   margin: 0;
   white-space: pre-wrap;

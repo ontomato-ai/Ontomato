@@ -12,6 +12,7 @@ import { readComponentPackage, readPageDraft, readProjectionForRender, recordDra
 import type { ComponentPackageResponse } from "@ontomato/contracts/component-packages";
 import { createPanelText } from "./text";
 import { draftRefusalText } from "./draft-refusal";
+import { isListAttachedPanelMember } from "./row-member";
 import PanelMember from "./PanelMember.vue";
 
 /*
@@ -77,6 +78,8 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       navigate: options.navigate,
       nested: options.nested,
       ...(run.currentEntry ? { currentEntry: run.currentEntry } : {}),
+      ...(run.frameState ? { frameState: run.frameState } : {}),
+      ...(run.headerDraft ? { reportHeaderDraft: run.headerDraft } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
       // A draft a form could not take is the draft's problem: the reader is told, the panel goes on.
@@ -115,7 +118,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       isDirty: () => instance.dirty(),
       readPageDraft: (sessionId, runId, path) => readPageDraft(requests, sessionId, runId, path),
       projectionChanged: (id, revision) => instance.projectionChanged(id, revision),
-      refreshObject: (target) => (target ? instance.refresh({ objects: [target], objectTypes: [] }) : instance.refreshAll()),
+      refreshObject: (target) => (target ? instance.refresh({ objects: [target], objectTypes: [] }) : instance.refreshObjects()),
       reports: { ...run, draftRefused: (refusal) => run.draftRefused(draftRefusalText(refusal, translate)) },
     });
     // A draft that none of this panel's forms performs is not this panel's: once every member has registered and none
@@ -127,7 +130,9 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     // to it, and the panel's own code reads its data, whether or not a layout or a template places it.
     // A member that cannot be read is that member's failure, not the panel's: whoever draws it (`<Projection>`) or reads
     // it (`usePanelData`) shows the reason in its place, from this same hold; the rest of the panel goes on.
-    const declaredMembers = Object.keys(options.manifest.members);
+    const declaredMembers = Object.entries(options.manifest.members)
+      .filter(([, member]) => !isListAttachedPanelMember(member))
+      .map(([memberKey]) => memberKey);
     if (declaredMembers.length) {
       instance.forms.setUndrawnReady(false);
       void Promise.allSettled(declaredMembers.map((member) => instance.placing(member)))

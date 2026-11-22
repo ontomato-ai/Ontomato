@@ -40,7 +40,7 @@
   .apps-confirm { border-color: var(--sdk-color-danger-light-5); }
   .apps-list-icon { display: inline-flex; vertical-align: middle; color: var(--sdk-text-color-regular); }
   .apps-list .el-table__cell, .apps-entry-table .el-table__cell { padding-inline: var(--spacing-xs) !important; }
-  .apps-list .cell, .apps-entry-table .cell { padding-inline: var(--spacing-xs); }
+  .apps-list .cell, .apps-entry-table .cell { padding-inline: var(--spacing-xs); word-break: normal; overflow-wrap: break-word; }
   .apps-entry-panel-id { display: block; max-inline-size: 100%; overflow: hidden; text-align: start; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
   .apps-list .el-tag { padding-inline: var(--spacing-xs); }
 </style>
@@ -70,14 +70,14 @@
       <p class="apps-error" v-if="listError" role="alert">{{ listError }}</p>
 
       <sdk-table class="apps-list" v-sdk-loading="catalogue.status === 'loading'" :data="rows" row-key="primaryKey" @row-click="openRow">
-        <sdk-table-column :label="rows[0]?.fieldLabels?.icon ?? '图标'" width="52">
+        <sdk-table-column :label="rows[0]?.fieldLabels?.icon ?? '图标'" width="56">
           <template #default="{ row }">
             <span class="apps-list-icon" :title="row.fields.icon">
               <component :is="appIcon(row.fields.icon)" :size="16" aria-hidden="true"></component>
             </span>
           </template>
         </sdk-table-column>
-        <sdk-table-column :label="rows[0]?.fieldLabels?.names ?? '名称'" min-width="110">
+        <sdk-table-column :label="rows[0]?.fieldLabels?.names ?? '名称'" min-width="160">
           <template #default="{ row }">
             <button class="apps-name-text" type="button" @click.stop="openRow(row)">
               <strong>{{ row.label }}</strong>
@@ -85,15 +85,15 @@
             </button>
           </template>
         </sdk-table-column>
-        <sdk-table-column :label="rows[0]?.fieldLabels?.source ?? '来源'" width="54">
+        <sdk-table-column :label="rows[0]?.fieldLabels?.source ?? '来源'" width="96">
           <template #default="{ row }">
             <sdk-tag size="small" :type="row.tones.source === 'default' ? 'primary' : row.tones.source">{{ row.fields.source }}</sdk-tag>
           </template>
         </sdk-table-column>
-        <sdk-table-column :label="rows[0]?.fieldLabels?.maintenance ?? '维护权限'" width="72">
+        <sdk-table-column :label="rows[0]?.fieldLabels?.maintenance ?? '维护权限'" width="156">
           <template #default="{ row }">{{ row.fields.maintenance }}</template>
         </sdk-table-column>
-        <sdk-table-column :label="rows[0]?.fieldLabels?.entryCount ?? '入口数'" width="62">
+        <sdk-table-column :label="rows[0]?.fieldLabels?.entryCount ?? '入口数'" width="104">
           <template #default="{ row }">{{ row.fields.entryCount }}</template>
         </sdk-table-column>
         <template #empty>
