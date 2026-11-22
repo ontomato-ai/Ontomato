@@ -12,7 +12,7 @@ import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
-import type { ProductOwner } from "../product-governance/grants";
+import { readProductGrantRecords, type ProductOwner } from "../product-governance/grants";
 import { listDefaultAgentOptions } from "../assistant/default-agents";
 
 const applicationPath = "/platform/applications";
@@ -102,6 +102,12 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
     withDefaultAgentChoices(await client.form(input), () => defaultAgentChoices(owner.domainId, viewer.locale));
   return {
     query, record,
+    async grants(primaryKey: string) {
+      if (!(await record(primaryKey)).canGrant)
+        throw new HttpError(403, "Application edit Grant required", "PRODUCT_FORBIDDEN");
+      const { grants } = await readProductGrantRecords(primaryKey, viewer);
+      return { grants, shared: grants.some(grant => grant.principalKind === "domain" && grant.verb === "use") };
+    },
     async form(primaryKey: string, { section, values, changedField = null }: EditFormParams) {
       const target = { kind: "object", objectType: APPLICATION, primaryKey } as const;
       const schema = section === "identity" ? applicationIdentityUpdateSchema : applicationEntriesUpdateSchema;

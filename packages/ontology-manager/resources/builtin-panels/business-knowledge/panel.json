@@ -104,7 +104,8 @@
           "statusField": "status",
           "tagsField": "knowledgeTags",
           "fallbackToFirst": true,
-          "pageSize": 200
+          "pageSize": 20,
+          "subtitleLines": 2
         },
         "id": "builtin-product-16a4ae34-1731-4890-9484-30a2835f146f"
       },

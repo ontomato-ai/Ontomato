@@ -5,6 +5,7 @@ import { appIcon, mountPanel, usePanelContext, usePanelData } from "@ontomato/sd
 
 const APPLICATION = "platform:Application";
 const PANEL = "platform:ProductPanel";
+const PROJECTION = "platform:ProductProjection";
 
 function localeRows(map) {
   const locales = [...new Set([document.documentElement.lang, "en", ...Object.keys(map ?? {})])];
@@ -54,12 +55,13 @@ function themeText(theme) {
 
 const Applications = {
   setup() {
-    const { instance, navigate } = usePanelContext();
+    const { instance, navigate, t } = usePanelContext();
     const values = instance.state.values;
     const selected = computed(() => values.value.selected ?? null);
     const catalogue = usePanelData("catalogue", "rows");
     const record = usePanelData("record", "record");
     const panelInfo = usePanelData("panelInfo", "panel");
+    const grants = usePanelData("record", "grants");
 
     const creating = computed({
       get: () => values.value.creating === true,
@@ -84,6 +86,24 @@ const Applications = {
     const cursors = ref([]);
     const pageIndex = computed(() => cursors.value.length + 1);
     const isFirstPage = computed(() => cursors.value.length === 0);
+    const listRegion = ref(null);
+    const listKey = () => JSON.stringify([values.value.search, scope.value, pageSize.value, values.value.cursor]);
+    const positions = new Map();
+
+    function scrollContainer() {
+      for (let element = listRegion.value?.parentElement; element; element = element.parentElement) {
+        if (/^(auto|scroll)$/.test(getComputedStyle(element).overflowY)) return element;
+      }
+      return document.scrollingElement;
+    }
+
+    watch(mode, (next, previous) => {
+      if (previous === "list") positions.set(listKey(), scrollContainer().scrollTop);
+    });
+    watch([mode, catalogue], ([next, data]) => {
+      if (next === "list" && data.status === "ready" && positions.has(listKey()))
+        scrollContainer().scrollTop = positions.get(listKey());
+    }, { flush: "post" });
 
     watch(rows, (list) => {
       instance.nameObjects(APPLICATION, list.map((row) => ({ primaryKey: row.id, label: localizedText(row.names) || row.id })));
@@ -119,6 +139,11 @@ const Applications = {
       if (!nextCursor.value) return;
       cursors.value = [...cursors.value, values.value.cursor ?? null];
       instance.state.set("cursor", nextCursor.value);
+    }
+
+    function previousPage() {
+      const previous = cursors.value.pop();
+      instance.state.set("cursor", previous ?? null);
     }
 
     function firstPage() {
@@ -195,32 +220,39 @@ const Applications = {
       }
     }
 
-    async function openPanelCatalogue(panelId) {
+    async function openCatalogueRecord(path, className, primaryKey) {
       classLinkNote.value = "";
       try {
-        const state = JSON.stringify({ selected: { className: PANEL, primaryKey: panelId } });
-        await navigate(`/ontology/panels?${new globalThis.URLSearchParams({ state })}`);
+        const state = JSON.stringify({ selected: { className, primaryKey } });
+        await navigate(`${path}?${new globalThis.URLSearchParams({ state })}`);
       } catch (reason) {
-        classLinkNote.value = `平台没有打开面板目录：${reason instanceof Error ? reason.message : String(reason)}`;
+        classLinkNote.value = reason instanceof Error ? reason.message : String(reason);
       }
     }
 
+
+    const openPanelCatalogue = id => openCatalogueRecord("/ontology/panels", PANEL, id);
+    const openMemberCatalogue = ({ className, primaryKey }) => openCatalogueRecord(
+      className === PROJECTION ? "/ontology/projections" : "/ontology/panels", className, primaryKey,
+    );
 
     const usedPanels = computed(() => {
       const ids = (app.value?.panelUses ?? []).map((use) => use.panelId);
       return [...new Set(ids)];
     });
     const inspectedPanelId = computed(() => values.value.inspectedPanel?.primaryKey ?? "");
-    const inspectedProjections = computed(() => {
+    const inspectedMembers = computed(() => {
       if (panelInfo.value.status !== "ready") return [];
       const members = Object.values(panelInfo.value.value?.manifest?.members ?? {});
-      const ids = [];
-      for (const member of members) {
-        if (member?.target?.projectionId) ids.push(member.target.projectionId);
-        if (member?.target?.panelId) ids.push(`panel ${member.target.panelId}`);
-        for (const candidate of member?.target?.candidates?.panelIds ?? []) ids.push(`panel ${candidate}`);
+      const records = new Map();
+      const add = (className, primaryKey) => records.set(`${className}:${primaryKey}`, { className, primaryKey });
+      for (const { target } of members) {
+        if ("projectionId" in target) add(PROJECTION, target.projectionId);
+        if ("panelId" in target) add(PANEL, target.panelId);
+        for (const id of target.candidates?.projectionIds ?? []) add(PROJECTION, id);
+        for (const id of target.candidates?.panelIds ?? []) add(PANEL, id);
       }
-      return [...new Set(ids)];
+      return [...records.values()];
     });
 
     function inspectPanel(panelId) {
@@ -414,6 +446,23 @@ const Applications = {
       }
     }
 
+    async function revokeExistingGrant(row) {
+      const { principalKind, principalId, verb } = row;
+      try {
+        await write("grant", "grant", { principalKind, principalId, verb, remove: true }, target.value);
+      } catch (reason) {
+        actionError.value = reason.message;
+      }
+    }
+
+    async function shareApplication(shared) {
+      try {
+        await write("share", "share", { shared }, target.value);
+      } catch (reason) {
+        actionError.value = reason.message;
+      }
+    }
+
     const confirmState = reactive({ open: false, message: "", run: null });
 
     function askConfirm(message, run) {
@@ -449,15 +498,15 @@ const Applications = {
     }, { immediate: true });
 
     return {
-      APPLICATION, catalogue, record, panelInfo, selected, rows, nextCursor, app, appIcon, mode, creating, busy,
+      t, APPLICATION, catalogue, record, grants, panelInfo, selected, rows, nextCursor, app, appIcon, mode, creating, busy,
       searchText, scope, pageSize, pageIndex, isFirstPage, listError, actionError, actionNote, classLinkNote,
-      scheduleSearch, setScope, setSize, nextPage, firstPage, openRow, backToList, createdApplication,
-      openApplication, openClassCatalogue, openPanelCatalogue, usedPanels, inspectedPanelId, inspectedProjections,
+      listRegion, scheduleSearch, setScope, setSize, nextPage, previousPage, firstPage, openRow, backToList, createdApplication,
+      openApplication, openClassCatalogue, openPanelCatalogue, openMemberCatalogue, usedPanels, inspectedPanelId, inspectedMembers,
       inspectPanel, groupText, permissionSummary, localeRows, localizedText, secondaryName,
       accessText, agentText, inputsText, themeText,
       formSection, closeForm, discardForm, finishForm,
       entryOpen, entryEditing, entryError, entry, groupChoices, startAddEntry, startEditEntry, submitEntry, removeEntry,
-      removeApplication, confirmState, confirmRemove, grantOpen, grantError, grant, openGrant, submitGrant,
+      removeApplication, confirmState, confirmRemove, grantOpen, grantError, grant, openGrant, submitGrant, revokeExistingGrant, shareApplication,
     };
   },
 };
