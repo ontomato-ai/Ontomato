@@ -1094,12 +1094,15 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
     dataRows[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
     expect(document.activeElement).toBe(dataRows[0]);
 
-    // Expand row 2 while row 1 is selected, click Archive inside row 2's detail -> targets row 2 without changing selection.
+    // Expand row 2 while row 1 is selected: row 1 automatically collapses (one expanded row at a time),
+    // and clicking Archive inside row 2's detail targets row 2 without changing selection.
     expandBtns[1]!.click();
     await vi.waitFor(() => {
-      expect(element.querySelectorAll(".sdk-object-list-detail-row .sdk-operation-button button")).toHaveLength(2);
+      expect(expandBtns[0]!.getAttribute("aria-expanded")).toBe("false");
+      expect(expandBtns[1]!.getAttribute("aria-expanded")).toBe("true");
+      expect(element.querySelectorAll(".sdk-object-list-detail-row .sdk-operation-button button")).toHaveLength(1);
     });
-    element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-detail-row .sdk-operation-button button")[1]!.click();
+    element.querySelector<HTMLButtonElement>(".sdk-object-list-detail-row .sdk-operation-button button")!.click();
     await vi.waitFor(() => {
       expect(preparedCalls).toHaveLength(1);
     });
@@ -1113,6 +1116,103 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
       },
     });
     expect(instance.state.values.value.selected).toEqual({ className: APPLICATION, primaryKey: "app-1" });
+  });
+
+  it("expands only one row detail at a time with row-specific aria-labels and scrolls expanded detail into view", async () => {
+    const scrollIntoViewSpy = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoViewSpy;
+    try {
+      const projections: Record<string, DirectProjection> = {
+        "entries-list": {
+          ...meta,
+          id: "entries-list",
+          name: "Entries",
+          componentId: "@ontomato/sdk:ObjectList",
+          inputs: {},
+          outputs: { selected: { kind: "object", objectType: APPLICATION } },
+          config: {},
+          data: { rows: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "query", params: {} } },
+        },
+        "row-detail": {
+          ...meta,
+          id: "row-detail",
+          name: "Row detail",
+          componentId: "@ontomato/sdk:ObjectSummary",
+          inputs: { target: { kind: "object", objectType: APPLICATION } },
+          outputs: {},
+          config: { fields: ["owner"] },
+          data: {
+            record: {
+              source: { object: { input: "target" } },
+              read: "record",
+              params: {},
+            },
+          },
+        },
+      };
+      const manifest = definePanel({
+        state: { selected: { type: { kind: "object", objectType: APPLICATION } } },
+        members: {
+          list: { target: { projectionId: "entries-list" }, outputs: { selected: { state: "selected" } } },
+          detail: {
+            target: { projectionId: "row-detail" },
+            listRowDetail: { slot: "list" },
+            inputs: { target: { item: true } },
+          },
+        },
+        commands: {},
+      });
+
+      const { element } = mountDirectTest({
+        manifest,
+        projections,
+        members: ["list"],
+        answer: (request) => {
+          if (request.dataName === "rows") {
+            return ready({
+              rows: [
+                { primaryKey: "app-1", label: "Alpha", fields: {} },
+                { primaryKey: "app-2", label: "Beta", fields: {} },
+              ],
+              total: 2,
+            });
+          }
+          const target = request.inputs.target as { primaryKey: string };
+          return ready({
+            primaryKey: target.primaryKey,
+            label: `Detail ${target.primaryKey}`,
+            fields: { owner: `Owner of ${target.primaryKey}` },
+            fieldLabels: { owner: "Owner" },
+          });
+        },
+      });
+
+      await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-expand-btn")).toHaveLength(2));
+      const expandBtns = element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-expand-btn");
+      expect(expandBtns[0]!.getAttribute("aria-label")).toBe("Expand Alpha");
+      expect(expandBtns[1]!.getAttribute("aria-label")).toBe("Expand Beta");
+
+      // Expand row 1 -> aria-label updates to Collapse Alpha and detail scrolls into view.
+      expandBtns[0]!.click();
+      await vi.waitFor(() => expect(element.textContent).toContain("Owner of app-1"));
+      expect(expandBtns[0]!.getAttribute("aria-expanded")).toBe("true");
+      expect(expandBtns[0]!.getAttribute("aria-label")).toBe("Collapse Alpha");
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({ block: "nearest" });
+
+      // Expand row 2 -> row 1 automatically collapses and row 2's detail scrolls into view.
+      scrollIntoViewSpy.mockClear();
+      expandBtns[1]!.click();
+      await vi.waitFor(() => expect(element.textContent).toContain("Owner of app-2"));
+      expect(element.querySelectorAll(".sdk-object-list-row-detail")).toHaveLength(1);
+      expect(expandBtns[0]!.getAttribute("aria-expanded")).toBe("false");
+      expect(expandBtns[0]!.getAttribute("aria-label")).toBe("Expand Alpha");
+      expect(expandBtns[1]!.getAttribute("aria-expanded")).toBe("true");
+      expect(expandBtns[1]!.getAttribute("aria-label")).toBe("Collapse Beta");
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({ block: "nearest" });
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 
   it("embeds ObjectForm inside listRowDetail expansion cleanly without height collapse or double-scroll rules", async () => {

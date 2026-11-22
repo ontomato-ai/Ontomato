@@ -2068,7 +2068,7 @@ it("clears search and optional filter parameters back to page 1 from the narrowe
   await vi.waitFor(() => expect(element.querySelector(".fui-data-state-message")?.textContent?.trim()).toBe(publicEn.platform.dataForbidden));
 });
 
-it("renders #filters, #bulk-actions, #toolbar-actions, and #create-row inline create block", async () => {
+it("renders #filters, #batch-actions, #toolbar-actions, and #create-row inline create block", async () => {
   const projections: Record<string, DirectProjection> = {
     "slotted-list": {
       ...meta,
@@ -2099,7 +2099,7 @@ it("renders #filters, #bulk-actions, #toolbar-actions, and #create-row inline cr
   });
 
   const showCreate = ref(false);
-  const bulkClicked = vi.fn();
+  const batchClicked = vi.fn();
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "slotted-list-test",
     url: () => "/panels/slotted-list",
@@ -2124,8 +2124,8 @@ it("renders #filters, #bulk-actions, #toolbar-actions, and #create-row inline cr
       { instance, member: "list" },
       {
         filters: () => h("span", { class: "test-filter-chip" }, "Status: All"),
-        "bulk-actions": (scope: { checked: readonly unknown[]; clear: () => void }) =>
-          h("button", { class: "test-bulk-btn", onClick: () => { bulkClicked(scope.checked.length); scope.clear(); } }, `Delete (${scope.checked.length})`),
+        "batch-actions": (scope: { checked: readonly unknown[]; clear: () => void }) =>
+          h("button", { class: "test-batch-btn", onClick: () => { batchClicked(scope.checked.length); scope.clear(); } }, `Delete (${scope.checked.length})`),
         "toolbar-actions": () => h("button", { class: "test-add-btn", onClick: () => { showCreate.value = true; } }, "Add item"),
         "create-row": () => (showCreate.value ? h("div", { class: "test-create-form" }, "New item form") : null),
       },
@@ -2142,18 +2142,204 @@ it("renders #filters, #bulk-actions, #toolbar-actions, and #create-row inline cr
   expect(element.querySelector(".sdk-object-list-toolbar-actions .test-add-btn")?.textContent).toBe("Add item");
   // `#create-row` is hidden while its slot returns no renderable content.
   expect(element.querySelector(".sdk-object-list-create-row")).toBeNull();
-  // `#bulk-actions` is hidden until at least one row is checked.
-  expect(element.querySelector(".sdk-object-list-bulk-actions")).toBeNull();
+  // `#batch-actions` is hidden until at least one row is checked.
+  expect(element.querySelector(".sdk-object-list-batch-actions")).toBeNull();
 
-  // Checking a row reveals `#bulk-actions` in the toolbar with `{ checked, clear }`.
+  // Checking a row reveals `#batch-actions` in the toolbar with `{ checked, clear }`.
   element.querySelector<HTMLInputElement>(".sdk-object-list-row-check")!.click();
-  await vi.waitFor(() => expect(element.querySelector(".test-bulk-btn")?.textContent).toBe("Delete (1)"));
-  element.querySelector<HTMLButtonElement>(".test-bulk-btn")!.click();
+  await vi.waitFor(() => expect(element.querySelector(".test-batch-btn")?.textContent).toBe("Delete (1)"));
+  element.querySelector<HTMLButtonElement>(".test-batch-btn")!.click();
   await nextTick();
-  expect(bulkClicked).toHaveBeenCalledWith(1);
-  expect(element.querySelector(".sdk-object-list-bulk-actions")).toBeNull();
+  expect(batchClicked).toHaveBeenCalledWith(1);
+  expect(element.querySelector(".sdk-object-list-batch-actions")).toBeNull();
 
   // Clicking "+ Add item" opens the inline `#create-row` block above the list.
   element.querySelector<HTMLButtonElement>(".test-add-btn")!.click();
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-create-row .test-create-form")?.textContent).toBe("New item form"));
+});
+
+it("enforces exact fallbackToFirst semantics across initial load, filter change, create/cancel, and refresh", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "fallback-list": {
+      ...meta,
+      id: "fallback-list",
+      name: "Fallback list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { status: { kind: "scalar", type: "string" } },
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: { fallbackToFirst: true },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      status: { type: { kind: "scalar", type: "string" }, default: "all" },
+      creating: { type: { kind: "scalar", type: "boolean" }, default: false },
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "fallback-list" },
+        inputs: { status: { state: "status" } },
+        outputs: { selected: { state: "selected" } },
+      },
+    },
+    commands: {},
+  });
+
+  const allEntries = [
+    { primaryKey: "k-1", label: "Alpha Approved", fields: { status: "approved" }, status: "approved" },
+    { primaryKey: "k-2", label: "Beta Pending", fields: { status: "pending" }, status: "pending" },
+  ];
+  let readCount = 0;
+
+  const { instance, element } = mountDirect(manifest, projections, (request) => {
+    readCount += 1;
+    const status = typeof request.inputs.status === "string" ? request.inputs.status : "all";
+    const search = typeof request.runtimeParams?.search === "string" ? request.runtimeParams.search.trim().toLowerCase() : "";
+    const filtered = allEntries
+      .filter((entry) => status === "all" || entry.status === status)
+      .filter((entry) => !search || entry.label.toLowerCase().includes(search))
+      .map(({ status: _s, ...row }) => row);
+    return ready({ rows: filtered, total: filtered.length });
+  });
+
+  // (a) Initial load selects first item when nothing is selected and no draft is active.
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-1")));
+
+  // (b) Changing filter so current selection disappears selects the new first item.
+  instance.state.set("status", "pending");
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-2")));
+
+  // (b) Changing search so no items match clears selection to null.
+  const searchInput = element.querySelector<HTMLInputElement>('input[type="search"]')!;
+  searchInput.value = "nonexistent";
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toBeNull());
+
+  // Clearing search while currently unselected must NOT auto-select.
+  searchInput.value = "";
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
+  expect(instance.state.values.value.selected).toBeNull();
+
+  // Manually select k-2, then enter create mode (clear selected to null) and refresh -> MUST stay null.
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-item-btn")!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-2")));
+
+  instance.state.set("creating", true);
+  instance.state.set("selected", null);
+  await nextTick();
+  const beforeCreateRefresh = readCount;
+  instance.refresh({ objects: [], objectTypes: [BUSINESS_KNOWLEDGE] });
+  await vi.waitFor(() => expect(readCount).toBeGreaterThan(beforeCreateRefresh));
+  await nextTick();
+  expect(instance.state.values.value.selected).toBeNull();
+
+  // Cancel create mode (selected remains null) and refresh -> STILL must NOT re-select.
+  instance.state.set("creating", false);
+  await nextTick();
+  const beforeCancelRefresh = readCount;
+  instance.refresh({ objects: [], objectTypes: [BUSINESS_KNOWLEDGE] });
+  await vi.waitFor(() => expect(readCount).toBeGreaterThan(beforeCancelRefresh));
+  await nextTick();
+  expect(instance.state.values.value.selected).toBeNull();
+});
+
+it("does not auto-select on subsequent refresh when initial list load was empty", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "initially-empty-list": {
+      ...meta,
+      id: "initially-empty-list",
+      name: "Initially empty list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: { fallbackToFirst: true },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "initially-empty-list" },
+        outputs: { selected: { state: "selected" } },
+      },
+    },
+    commands: {},
+  });
+
+  let rows: Array<{ primaryKey: string; label: string; fields: Record<string, never> }> = [];
+  const { instance, element } = mountDirect(manifest, projections, () => ready({ rows, total: rows.length }));
+
+  await vi.waitFor(() => expect(element.querySelector(".fui-data-state-empty")).not.toBeNull());
+  expect(instance.state.values.value.selected).toBeNull();
+
+  rows = [{ primaryKey: "k-1", label: "Added later", fields: {} }];
+  instance.refresh({ objects: [], objectTypes: [BUSINESS_KNOWLEDGE] });
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
+  expect(instance.state.values.value.selected).toBeNull();
+});
+
+it("scrolls the list scroll container back to top when switching pages", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "paged-scroll-objects": {
+      ...meta,
+      id: "paged-scroll-objects",
+      name: "Paged objects",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { type: { kind: "scalar", type: "string" } },
+      outputs: {},
+      config: { pageSize: 10 },
+      data: {
+        objects: {
+          source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
+          read: "objects",
+          params: { type: { input: "type" } },
+        },
+      },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selectedType: { type: { kind: "scalar", type: "string" } },
+    },
+    members: {
+      list: {
+        target: { projectionId: "paged-scroll-objects" },
+        inputs: { type: { state: "selectedType" } },
+      },
+    },
+    commands: {},
+  });
+
+  const { element } = mountDirect(
+    manifest,
+    projections,
+    (request) => {
+      const page = (request.runtimeParams?.page as { number: number; size: number } | undefined)?.number ?? 1;
+      return ready({
+        status: "ok",
+        type: USER,
+        layer: "governance",
+        page,
+        pageSize: 10,
+        total: 30,
+        items: [{ node: { className: USER, primaryKey: `u-${page}` }, label: `User page ${page}` }],
+      });
+    },
+    { initial: { selectedType: USER } },
+  );
+
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-items")).not.toBeNull());
+  const container = element.querySelector<HTMLElement>(".sdk-object-list-items")!;
+  container.scrollTop = 240;
+  expect(container.scrollTop).toBe(240);
+
+  element.querySelector<HTMLButtonElement>(".sdk-object-list-next")!.click();
+  await vi.waitFor(() => expect(element.textContent).toContain("User page 2"));
+  await vi.waitFor(() => expect(container.scrollTop).toBe(0));
 });

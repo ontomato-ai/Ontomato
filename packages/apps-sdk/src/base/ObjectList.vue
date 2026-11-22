@@ -87,9 +87,12 @@ const props = withDefaults(
     /** How many items a page holds when the owner's read pages (a query's cursor, or page numbers); 20 by default. */
     pageSize?: number;
     /**
-     * Keeps something selected: when nothing is selected (on first showing, too) or the selected item is no longer listed
-     * (deleted, or filtered out), the first listed item is selected; an empty list clears the selection. A selection the
-     * reader cleared on purpose is left cleared.
+     * Automatically selects the first listed item only in two cases (and never while a draft is active):
+     * (a) on first showing when nothing is selected yet, and
+     * (b) after the reader changes search or filter parameters and the previously selected item is no longer listed
+     *     (selecting the first new match, or clearing selection to null when no items match).
+     * Clearing selection elsewhere (entering or cancelling create, closing detail, manual deselect, or subsequent
+     * refreshes while nothing is selected) is never overridden.
      */
     fallbackToFirst?: boolean;
     /** Whether clicking the selected item again clears the selection; off, a click always selects. */
@@ -245,16 +248,25 @@ function listColumnMember(columnKey: string): string | null {
 const tableColumnCount = computed(
   () => (rowDetailMember.value ? 1 : 0) + (canCheck ? 1 : 0) + (props.columns?.length ?? 0),
 );
-const expandedKeys = ref<ReadonlySet<string>>(new Set());
+const scrollContainerRef = ref<HTMLElement | null>(null);
+const expandedKey = ref<string | null>(null);
+const detailElements = new Map<string, HTMLElement>();
+function setDetailElement(key: string, element: unknown) {
+  if (element instanceof HTMLElement) detailElements.set(key, element);
+  else detailElements.delete(key);
+}
 function isRowExpanded(row: PlatformObjectRecord): boolean {
-  return expandedKeys.value.has(rowIdentityKey(row));
+  return expandedKey.value === rowIdentityKey(row);
 }
 function toggleRowExpanded(row: PlatformObjectRecord) {
   const key = rowIdentityKey(row);
-  const next = new Set(expandedKeys.value);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
-  expandedKeys.value = next;
+  expandedKey.value = expandedKey.value === key ? null : key;
+}
+function rowExpandAriaLabel(row: PlatformObjectRecord): string {
+  const label = row.label || row.primaryKey;
+  return isRowExpanded(row)
+    ? t("platform.listCollapseRow", { label })
+    : t("platform.listExpandRow", { label });
 }
 
 const activeType = computed<string | null>(() => {
@@ -262,6 +274,13 @@ const activeType = computed<string | null>(() => {
   const value = currentParams.value.type;
   return typeof value === "string" && value ? value : null;
 });
+
+const filterSignature = computed(() =>
+  JSON.stringify(nonPagingParamNames.map((name) => currentParams.value[name] ?? null)),
+);
+let initialLoadDone = false;
+let pendingFilterFallback = false;
+let pendingScrollToTop = false;
 
 // Synchronously clear local search and reset paging when switching dynamic type, so useMemberData issues one read.
 if (datumName === "objects") {
@@ -278,11 +297,27 @@ if (datumName === "objects") {
   );
 }
 
-// Synchronously reset to page 1 whenever search or any filter input changes, before useMemberData's pre-flush watch runs.
-if (pageMode !== "none" && nonPagingParamNames.length > 0) {
+// Synchronously arm filter-change fallback and reset paging whenever search or any filter input changes,
+// before useMemberData's pre-flush watch runs.
+if (nonPagingParamNames.length > 0) {
   watch(
-    () => JSON.stringify(nonPagingParamNames.map((name) => currentParams.value[name] ?? null)),
-    () => resetPaging(),
+    filterSignature,
+    (next, prev) => {
+      if (next === prev) return;
+      if (initialLoadDone) pendingFilterFallback = true;
+      if (pageMode !== "none") resetPaging();
+    },
+    { flush: "sync" },
+  );
+}
+
+if (pageMode === "page") {
+  watch(
+    () => JSON.stringify(currentParams.value.page ?? null),
+    (next, prev) => {
+      if (next === prev || !initialLoadDone) return;
+      pendingScrollToTop = true;
+    },
     { flush: "sync" },
   );
 }
@@ -654,25 +689,26 @@ function setChecked(next: readonly ObjectListRef[]) {
   emit("update:checked", next);
 }
 
-// Once selection is explicitly cleared to null (e.g. entering create mode), do not auto-reselect the first row.
-let selectionCleared = false;
-watch(
-  chosenIdentity,
-  (next, prev) => {
-    if (next !== null) selectionCleared = false;
-    else if (prev !== null) selectionCleared = true;
-  },
-  { flush: "sync" },
-);
-
 function applyFallback(listed: readonly PlatformObjectRecord[]) {
-  if (!props.fallbackToFirst || selectionCleared || panel.instance.draft.value !== null) return;
-  if (chosenIdentity.value && listed.some((row) => rowIdentityKey(row) === chosenIdentity.value)) return;
-  if (listed.length > 0) {
-    setSelected(rowSelectionValue(listed[0]!));
-  } else if (chosenIdentity.value !== null) {
-    setSelected(null);
-    selectionCleared = false;
+  const isInitialLoad = !initialLoadDone;
+  initialLoadDone = true;
+  const filterChanged = pendingFilterFallback;
+  pendingFilterFallback = false;
+
+  if (!props.fallbackToFirst || panel.instance.draft.value !== null) return;
+
+  // (a) First showing with no selection yet: pick the first row when non-empty.
+  if (isInitialLoad) {
+    if (chosenIdentity.value === null && listed.length > 0) {
+      setSelected(rowSelectionValue(listed[0]!));
+    }
+    return;
+  }
+
+  // (b) After search/filters changed and the previously selected item disappeared: pick the first match or clear to null.
+  if (filterChanged && chosenIdentity.value !== null) {
+    if (listed.some((row) => rowIdentityKey(row) === chosenIdentity.value)) return;
+    setSelected(listed.length > 0 ? rowSelectionValue(listed[0]!) : null);
   }
 }
 
@@ -693,6 +729,7 @@ watch(
   (state) => {
     if (state.status === "loading") return;
     if (state.status === "empty") {
+      pendingScrollToTop = false;
       publishListed([]);
       applyFallback([]);
       return;
@@ -715,6 +752,12 @@ watch(
     for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
     publishListed(listed);
     applyFallback(listed);
+    if (pendingScrollToTop) {
+      pendingScrollToTop = false;
+      void nextTick(() => {
+        if (scrollContainerRef.value) scrollContainerRef.value.scrollTop = 0;
+      });
+    }
   },
   { immediate: true },
 );
@@ -729,6 +772,7 @@ function goPage(nextPage: number) {
   if (nextPage < 1 || nextPage === currentPage.value) return;
   if (pageMode === "page" && pageParam) {
     if (parsedData.value.hasTotal && nextPage > totalPages.value) return;
+    pendingScrollToTop = true;
     currentPage.value = nextPage;
     pageParam.set({ number: nextPage, size: effectivePageSize.value });
   }
@@ -770,16 +814,21 @@ watch(
   { immediate: true },
 );
 
+watch(expandedKey, (key) => {
+  if (!key) return;
+  void nextTick(() => {
+    const target = detailElements.get(key) ?? rowElements.get(key);
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ block: "nearest" });
+    }
+  });
+});
+
 watch(rows, (listed) => {
-  if (expandedKeys.value.size === 0) return;
-  const visible = new Set(listed.map(rowIdentityKey));
-  let changed = false;
-  const kept = new Set<string>();
-  for (const key of expandedKeys.value) {
-    if (visible.has(key)) kept.add(key);
-    else changed = true;
+  if (expandedKey.value === null) return;
+  if (!listed.some((row) => rowIdentityKey(row) === expandedKey.value)) {
+    expandedKey.value = null;
   }
-  if (changed) expandedKeys.value = kept;
 });
 
 function choose(row: PlatformObjectRecord) {
@@ -932,11 +981,10 @@ watch(someVisibleChecked, () => {
         />
         <span>{{ t("platform.listSelectAll") }}</span>
       </label>
-      <div v-if="canCheck && checkedRefs.length > 0" class="sdk-object-list-batch-actions sdk-object-list-bulk-actions" role="group">
+      <div v-if="canCheck && checkedRefs.length > 0" class="sdk-object-list-batch-actions" role="group">
         <span class="sdk-object-list-selected-count" role="status">
           {{ t("platform.listSelectedCount", { count: checkedRefs.length }) }}
         </span>
-        <slot name="bulk-actions" :checked="checkedRefs" :clear="clearChecked"></slot>
         <slot name="batch-actions" :checked="checkedRefs" :clear="clearChecked"></slot>
         <button type="button" class="sdk-object-list-link-btn" @click="clearChecked">
           {{ t("platform.listClearSelection") }}
@@ -964,7 +1012,7 @@ watch(someVisibleChecked, () => {
       <span v-if="queryReason" class="sdk-object-list-status-reason">{{ queryReason }}</span>
     </p>
     <data-state v-else :result="listResult" :labels="dataStateLabels">
-      <div v-if="isTable" class="sdk-object-list-table-wrap">
+      <div v-if="isTable" ref="scrollContainerRef" class="sdk-object-list-table-wrap">
         <table class="sdk-object-list-table">
           <thead>
             <tr>
@@ -999,7 +1047,7 @@ watch(someVisibleChecked, () => {
                     type="button"
                     class="sdk-object-list-expand-btn"
                     :aria-expanded="isRowExpanded(row)"
-                    :aria-label="isRowExpanded(row) ? t('common.collapse') : t('common.more')"
+                    :aria-label="rowExpandAriaLabel(row)"
                     @click="toggleRowExpanded(row)"
                   >
                     <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(row) }" aria-hidden="true">▸</span>
@@ -1075,7 +1123,11 @@ watch(someVisibleChecked, () => {
                   </div>
                 </td>
               </tr>
-              <tr v-if="rowDetailMember && isRowExpanded(row)" class="sdk-object-list-detail-row">
+              <tr
+                v-if="rowDetailMember && isRowExpanded(row)"
+                :ref="(el) => setDetailElement(rowIdentityKey(row), el)"
+                class="sdk-object-list-detail-row"
+              >
                 <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell">
                   <list-row-member
                     :member-key="rowDetailMember"
@@ -1091,7 +1143,7 @@ watch(someVisibleChecked, () => {
         </table>
       </div>
 
-      <div v-else-if="isCards" role="listbox" class="sdk-object-list-cards">
+      <div v-else-if="isCards" ref="scrollContainerRef" role="listbox" class="sdk-object-list-cards">
         <article
           v-for="row in rows"
           :key="rowIdentityKey(row)"
@@ -1110,7 +1162,7 @@ watch(someVisibleChecked, () => {
               type="button"
               class="sdk-object-list-expand-btn"
               :aria-expanded="isRowExpanded(row)"
-              :aria-label="isRowExpanded(row) ? t('common.collapse') : t('common.more')"
+              :aria-label="rowExpandAriaLabel(row)"
               @click.stop="toggleRowExpanded(row)"
             >
               <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(row) }" aria-hidden="true">▸</span>
@@ -1212,7 +1264,12 @@ watch(someVisibleChecked, () => {
               <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
             </template>
           </div>
-          <div v-if="rowDetailMember && isRowExpanded(row)" class="sdk-object-list-card-detail" @click.stop>
+          <div
+            v-if="rowDetailMember && isRowExpanded(row)"
+            :ref="(el) => setDetailElement(rowIdentityKey(row), el)"
+            class="sdk-object-list-card-detail"
+            @click.stop
+          >
             <list-row-member
               :member-key="rowDetailMember"
               kind="listRowDetail"
@@ -1224,7 +1281,7 @@ watch(someVisibleChecked, () => {
         </article>
       </div>
 
-      <ul v-else role="listbox" class="sdk-object-list-items" :data-row-density="listHasTwoLines ? 'two-line' : 'single'">
+      <ul v-else ref="scrollContainerRef" role="listbox" class="sdk-object-list-items" :data-row-density="listHasTwoLines ? 'two-line' : 'single'">
         <li
           v-for="row in rows"
           :key="rowIdentityKey(row)"
@@ -1238,7 +1295,7 @@ watch(someVisibleChecked, () => {
               type="button"
               class="sdk-object-list-expand-btn sdk-object-list-row-expand"
               :aria-expanded="isRowExpanded(row)"
-              :aria-label="isRowExpanded(row) ? t('common.collapse') : t('common.more')"
+              :aria-label="rowExpandAriaLabel(row)"
               @click.stop="toggleRowExpanded(row)"
             >
               <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(row) }" aria-hidden="true">▸</span>
@@ -1299,7 +1356,12 @@ watch(someVisibleChecked, () => {
               </span>
             </button>
           </div>
-          <div v-if="rowDetailMember && isRowExpanded(row)" class="sdk-object-list-row-detail" @click.stop>
+          <div
+            v-if="rowDetailMember && isRowExpanded(row)"
+            :ref="(el) => setDetailElement(rowIdentityKey(row), el)"
+            class="sdk-object-list-row-detail"
+            @click.stop
+          >
             <list-row-member
               :member-key="rowDetailMember"
               kind="listRowDetail"

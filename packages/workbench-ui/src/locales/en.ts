@@ -233,6 +233,8 @@ export default {
     "listPrevPage": "Previous",
     "listNextPage": "Next",
     "listLoadMore": "Load more",
+    "listExpandRow": "Expand {label}",
+    "listCollapseRow": "Collapse {label}",
     "clearFilters": "Clear filters",
     "booleanTrue": "Yes",
     "booleanFalse": "No",
