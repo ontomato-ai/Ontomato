@@ -2216,6 +2216,30 @@ test("a state placement selects a product's kind and carries the complete nested
     }],
   };
   assert.deepEqual(pageContextSchema.parse(context), context);
+  const withHighlights = {
+    ...context,
+    highlights: [
+      {
+        kind: "search" as const,
+        summary: "Search matches (1): Person",
+        items: [{ kind: "platform:ObjectType", id: "person", label: "Person" }],
+      },
+      {
+        kind: "path" as const,
+        summary: "Path from Person to Organization (1 hop): Person → Organization",
+        from: { kind: "platform:ObjectType", id: "person", label: "Person" },
+        to: { kind: "platform:ObjectType", id: "org", label: "Organization" },
+        found: true,
+        hops: 1,
+        nodes: [
+          { kind: "platform:ObjectType", id: "person", label: "Person" },
+          { kind: "platform:ObjectType", id: "org", label: "Organization" },
+        ],
+        edges: [{ kind: "platform:Relationship", id: "works-in", label: "Works in" }],
+      },
+    ],
+  };
+  assert.deepEqual(pageContextSchema.parse(withHighlights), withHighlights);
 });
 
 test("only the host can send frame activity messages", () => {

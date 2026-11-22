@@ -53,6 +53,47 @@ export const pageSelectionSchema = z.union([
 ]);
 export type PageSelection = z.infer<typeof pageSelectionSchema>;
 
+const pageHighlightedObjectSchema = z
+  .object({
+    kind: z.string().min(1).max(200),
+    id: z.string().min(1).max(1000),
+    label: z.string().min(1).max(500),
+  })
+  .strict();
+
+const pageSearchHighlightSchema = z
+  .object({
+    kind: z.literal("search"),
+    summary: z.string().min(1).max(500),
+    items: z.array(pageHighlightedObjectSchema).max(200).readonly(),
+    partialEdges: z.boolean().optional(),
+    memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
+  })
+  .strict();
+
+const pagePathHighlightSchema = z
+  .object({
+    kind: z.literal("path"),
+    summary: z.string().min(1).max(500),
+    from: pageHighlightedObjectSchema,
+    to: pageHighlightedObjectSchema,
+    found: z.boolean(),
+    hops: z.number().int().min(0).optional(),
+    nodes: z.array(pageHighlightedObjectSchema).max(200).readonly(),
+    edges: z.array(pageHighlightedObjectSchema).max(200).readonly(),
+    partialEdges: z.boolean().optional(),
+    partialNotice: z.string().min(1).max(500).optional(),
+    memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
+  })
+  .strict();
+
+/** What a component currently highlights on the page (search matches or a directed path result), distinct from selection. */
+export const pageHighlightSchema = z.discriminatedUnion("kind", [
+  pageSearchHighlightSchema,
+  pagePathHighlightSchema,
+]);
+export type PageHighlight = z.infer<typeof pageHighlightSchema>;
+
 export const pageContextSchema = z
   .object({
     /**
@@ -72,6 +113,8 @@ export const pageContextSchema = z
     label: z.string().max(500),
     /** What the page reports is selected in it; a page that reports nothing yet has none. */
     selection: z.array(pageSelectionSchema).max(100).readonly(),
+    /** What components on the page highlight (such as search hits or a directed path), separate from selection. */
+    highlights: z.array(pageHighlightSchema).max(20).readonly().optional(),
   })
   .strict();
 export type PageContext = z.infer<typeof pageContextSchema>;
@@ -118,6 +161,8 @@ export interface PageLinePrompts {
   /** The same line for a page the shell cannot name yet: the address alone. */
   pageAddress: (url: string) => string;
   selection: (label: string) => string;
+  /** Optional wrapper for highlighted graph/component results (search hits or a directed path). */
+  highlight?: (label: string) => string;
 }
 
 /** A run of escaped bytes beyond ASCII: the UTF-8 of characters a reader reads, such as a board's Chinese name. */
@@ -155,7 +200,20 @@ export function pageContextLine(page: PageContext, prompts: PageLinePrompts, car
   return [
     ...(carriesPage ? [pagePart(page, prompts)] : []),
     ...page.selection.map((item) => prompts.selection(selectionPart(item))),
+    ...(page.highlights ?? []).flatMap((item) => highlightParts(item, prompts.highlight)),
   ].join(PART_SEPARATOR);
+}
+
+/**
+ * A highlight entry as the line names it. When a path query ran on a graph with hidden edges, the permission notice
+ * rides as a separate clause so "no path in visible range" and "relations are incomplete" stay distinct.
+ */
+function highlightParts(item: PageHighlight, format: PageLinePrompts["highlight"]): string[] {
+  const wrap = (text: string) => (format ? format(text) : text);
+  const summary = item.memberPath ? `${item.summary} memberPath=${JSON.stringify(item.memberPath)}` : item.summary;
+  const parts = [wrap(summary)];
+  if (item.kind === "path" && item.partialNotice) parts.push(item.partialNotice);
+  return parts;
 }
 
 /**
@@ -265,7 +323,8 @@ export function writtenText(text: string, prompts: PageLinePrompts & { file: Fil
   if (at < 0) return text;
   const line = text.slice(at + 2);
   const told = line === prompts.closed || fileLinePath(line, prompts.file) !== null || pageLineAddress(line, prompts) !== null
-    || selectionLine(line, prompts.selection);
+    || selectionLine(line, prompts.selection)
+    || (prompts.highlight !== undefined && selectionLine(line, prompts.highlight));
   return told ? text.slice(0, at) : text;
 }
 
