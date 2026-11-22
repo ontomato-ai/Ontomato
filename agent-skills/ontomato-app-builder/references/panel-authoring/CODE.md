@@ -4,10 +4,13 @@ Write the Vue template and scoped panel styles in `panel.html`. Put the template
 declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
 Use Vue attributes, events, `v-if` and `v-for` for interactions. Adapt the layout to the container width.
 Panel CSS positions member containers. Set colors, font sizes, spacing and corner radii with the platform's
-design variables from `node "$SKILL/ontomato.mjs" sdk read styles/sdk.css` (`--text-*`, `--spacing-*`, `--radius-*`,
-and the released theme tokens). The product design guide in `docs/design/DESIGN.md` explains which roles to use.
+design variables (`--sdk-*`, `--text-*`, `--spacing-*`, `--radius-*`) from
+`node "$SKILL/ontomato.mjs" sdk read docs/components.md` (`Theme tokens`) or `sdk read components.json`
+(`themeTokens`). Never use `--el-*` variables in CSS or `panel.json` `theme`. The product design guide in
+`docs/design/DESIGN.md` explains which roles to use.
 
-Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
+Declare the panel descriptor (`{ manifest, content?, theme?, template? }`) and projections using the
+[panel descriptor and member fields](FIELDS.md), and declare public typed state in `panel.json`.
 Keep page-local state in Vue. An object state
 such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the address should restore the selection.
 Declare named page-header commands in `manifest.commands`. Give each command a `labelKey` and a `do`
@@ -33,13 +36,32 @@ name in `registration.json`. Keep the entry's menu metadata for entries that bel
 
 ## Panel controls and platform behavior
 
-Use only the Ontomato SDK's own interface controls for panel chrome that does not render business fields. Never write
-third-party UI library tags (such as Element Plus `el-*` tags) in `panel.html` or import `element-plus` in `panel.mjs`.
-In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel`.
-For transient feedback, import
-`usePanelContext` from `@ontomato/sdk/panel`, capture `const panel = usePanelContext()` in setup and call
-`panel.notify({ kind: "success", text: "Export complete" })` from the event handler. `kind` accepts
-`"success"`, `"info"`, `"warning"` or `"error"`.
+Use only the Ontomato SDK's own interface controls for panel chrome that does not render business fields:
+
+- **Template tags (`panel.html` and `component.html`).** Use `<sdk-*>` tags (such as `<sdk-button>`, `<sdk-tag>`,
+  `<sdk-dialog>`, `<sdk-alert>`, `<sdk-input>`, `<sdk-select>`, `<sdk-drawer>`) and `v-sdk-*` directives
+  (`v-sdk-loading`, `v-sdk-infinite-scroll`, `v-sdk-popover`) directly in templates without importing them.
+- **Theme variables.** Use `--sdk-*` and platform tokens (`--text-*`, `--spacing-*`, `--radius-*`) listed in
+  `sdk read docs/components.md` (`Theme tokens`) or `sdk read components.json` (`themeTokens`). Overridable tokens
+  may also be set in `panel.json` `theme.light` / `theme.dark`.
+- **Authoritative manifest.** The exact supported tags, props, events, slots, directives and theme tokens of the
+  target deployment are published in `sdk read docs/components.md` and `sdk read components.json` (`uiPrimitives`,
+  `uiDirectives`, `themeTokens`). Rely on that SDK manifest rather than assuming undocumented third-party APIs.
+- **Script imports.**
+  - In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel` (`mountPanel`, `usePanelContext`, `usePanelData`,
+    `usePanelOperation`, `draftTarget`, `appIcon`).
+  - In custom component packages, import `Sdk*` controls and `vSdk*` directives from `@ontomato/sdk/ui`.
+  - In domain-registered components (`component.mjs`), export Vue component options (`export default { ... }`) and
+    import only `vue` and `@ontomato/sdk/panel` (`useMember`, `useMemberData`, `useMemberOperations`,
+    `useMemberParam`, `useMemberRead`); use `<sdk-*>` / `v-sdk-*` directly in `component.html`.
+- **Transient notifications.** Import `usePanelContext` from `@ontomato/sdk/panel`, capture
+  `const panel = usePanelContext()` in `setup()`, and call
+  `panel.notify({ kind: "success", text: "Export complete" })` from the event handler (`kind` accepts `"success"`,
+  `"info"`, `"warning"` or `"error"`).
+- **Forbidden patterns (`panel check` rejects all of these).** Never write `el-*` tags, `v-loading`, `--el-*`
+  CSS/theme variables, or `import ... from "element-plus"`. Do not use `mountPanel` to draw business data — neither
+  by looping over `PanelData` / `usePanelData` records in `panel.html`, nor by defining an inline business component
+  with `defineComponent({ template })` inside `panel.mjs` to bypass component registration.
 
 If a dialog or drawer mounts at the page root, check its theme, stacking and keyboard focus in the
 application that opens it. Include a check when the panel is beside a conversation.
@@ -50,8 +72,11 @@ Leave the following to the platform.
   Button clicks and assistant calls use the same confirmation rules, and the platform executes an accepted write once.
   Use local dialogs for interface choices.
 - **Form drafts.** The platform delivers drafts to the form. Follow the [form draft flow](#save-a-form-or-hand-off-a-draft).
-- **Page header.** The host renders the title, back control, commands and refresh. Declare commands in
-  `manifest.commands` and keep the panel template focused on the page content.
+- **Page header and refresh.** The host renders the title, back control, commands and **Refresh** button. Clicking
+  the host Refresh button automatically re-reads every mounted projection and `usePanelData` datum in the panel
+  (including nested panels) — do not wire a manual refresh handler or call `refreshObjects()` for page-header refresh.
+  Declare page-header commands in `manifest.commands` (or `commands: {}` when none are needed) and keep the panel
+  template focused on page content.
 
 ## Open a panel at a specific state
 
@@ -92,7 +117,9 @@ Follow these three steps in order before writing any custom rendering code:
    `type`/`target`, and `data`). For common adjustments — columns, visible fields, subtitles, status/tags, node sizing
    and coloring, page size — check `sdk read docs/components.md` and add a `config` option.
 3. **Write a focused component only as a last resort.** When default rendering and `config` still leave a specific gap
-   (down to a single table cell or form field), write a small component for that slot and bind it through a projection.
+   — a single table column, an expandable row detail area, or a single form field — write a small component for that
+   slot and declare it as a `listColumn`, `listRowDetail`, or `formField` member (see
+   [Custom list columns, row detail and per-row operations](#custom-list-columns-row-detail-and-per-row-operations)).
    Do not wrap an entire page in a custom component or re-implement list selection, field validation, or write
    confirmation.
 
@@ -139,9 +166,21 @@ Configure the compact rows to show the knowledge text on up to two lines, the ow
 ```
 
 The toolbar displays a total when the search or paginated read returns one. For table mode, set `config.columns`
-instead of the compact-row settings. A column such as `{"key":"label","kind":"text","subtitleKey":"knowledgeText"}`
-shows the label and a second line. Use `kind: "tag"` for `status` and `kind: "tags"` for `knowledgeTags`.
-Use `labelKey` for a column heading from the panel's messages.
+instead of the compact-row settings (omitting `config.columns` renders compact rows). Each entry in `config.columns`
+is an `ObjectListColumn`:
+
+| Property | Type | Required | Default / behavior |
+| --- | --- | --- | --- |
+| `key` | `string` | Yes | Owner field key (or `"label"` for the record's primary label). Also the column identifier matched by a `listColumn` member's `column` field. |
+| `labelKey` | `string` | No | Flat key in `content.messages` for the column header. Omit to use the owner's `fieldLabels[key]`. |
+| `kind` | `"text" \| "tag" \| "tags" \| "reference" \| "time"` | No | Defaults to `"text"`. `"tag"` draws a status badge colored by the owner's `tones`; `"tags"` draws the field's tag list; `"reference"` draws a clickable link emitting `navigate`; `"time"` formats an ISO timestamp in the reader's locale and time zone (full string in title). |
+| `subtitleKey` | `string` | No | Second field key rendered as a subtle line beneath the primary cell value. |
+| `emptyKey` | `string` | No | Flat key in `content.messages` shown when the cell value is empty. |
+| `wrap` | `boolean` | No | Defaults to `false`. Set `true` to wrap long cell text across multiple lines. |
+
+For example, `{"key":"label","kind":"text","subtitleKey":"knowledgeText"}` shows the label with a second line,
+`{"key":"status","kind":"tag"}` renders the owner-toned badge, and `{"key":"knowledgeTags","kind":"tags"}` renders
+the tag list.
 
 Place the member with `<projection slot="list"></projection>`. In its template, `#toolbar-actions` adds a
 control to the visible toolbar and `#batch-actions="{ checked, clear }"` adds controls for checked rows.
@@ -171,6 +210,213 @@ List field names in `config.fields` to choose and order the visible facts. This 
   "data": {"record": "record"},
   "config": {"fields": ["status", "knowledgeTags"]}
 }
+```
+
+## Custom list columns, row detail and per-row operations
+
+When one column of an `ObjectList` needs custom rendering (such as an icon key beside a localized name) or a column
+must run an operation on an **unselected** row (such as revoking one grant row while another row or application is
+selected), attach a dedicated member to the list with `listColumn` instead of replacing the whole table.
+
+### 1. Write and register a small domain component
+
+Put `component.json`, `component.html`, and optional `component.mjs` in a directory (for example `./app-icon-name-cell/`).
+
+- **Inputs boundary.** Declare every row field the cell needs under `declaration.inputs`. The platform resolves
+  those inputs from the row's declared bindings and passes **only** those declared inputs to the component (via its
+  declared `props` or `useMember().inputs`) — never undeclared fields of the row.
+- **No independent data or outputs on `listColumn`.** Omit `data` and `outputs` for a column cell; the host
+  `ObjectList` owns the read, selection, keyboard navigation, and row container.
+- **SDK UI only.** Use `<sdk-*>` tags and `--sdk-*` tokens in `component.html`. In `component.mjs`, `export default`
+  a Vue component options object and import only `vue` and `@ontomato/sdk/panel` (`useMember`, `useMemberData`,
+  `useMemberOperations`, `useMemberParam`, `useMemberRead`).
+
+`app-icon-name-cell/component.json`:
+
+```json
+{
+  "name": "Application icon and localized name cell",
+  "visibility": "domain",
+  "declaration": {
+    "role": "presentation",
+    "meaning": "Displays an application's icon key badge beside its localized display name inside a list column.",
+    "inputs": {
+      "icon": { "kind": "scalar", "type": "string" },
+      "names": { "kind": "json" },
+      "fallbackLabel": { "kind": "scalar", "type": "string" }
+    },
+    "ports": { "props": [], "events": [], "slots": [] }
+  }
+}
+```
+
+`app-icon-name-cell/component.html`:
+
+```html
+<span class="app-icon-name-cell" style="display:inline-flex;align-items:center;gap:var(--spacing-xs);">
+  <sdk-tag v-if="icon" size="small" effect="plain">{{ icon }}</sdk-tag>
+  <span style="color:var(--sdk-text-color-primary);font-weight:500;">{{ displayName }}</span>
+</span>
+```
+
+`app-icon-name-cell/component.mjs`:
+
+```js
+import { computed } from "vue";
+
+export default {
+  // The host passes only the inputs declared in component.json and bound by the panel member.
+  props: {
+    icon: { type: String, default: "" },
+    names: { type: Object, default: null },
+    fallbackLabel: { type: String, default: "" },
+  },
+  setup(props) {
+    const displayName = computed(() => {
+      const map = props.names && typeof props.names === "object" ? props.names : null;
+      const locale = typeof document !== "undefined" ? document.documentElement.lang : "";
+      if (map) {
+        if (locale && typeof map[locale] === "string" && map[locale].trim()) return map[locale];
+        if (typeof map.en === "string" && map.en.trim()) return map.en;
+        const first = Object.values(map).find(value => typeof value === "string" && value.trim());
+        if (first) return first;
+      }
+      return props.fallbackLabel || "";
+    });
+    return { displayName };
+  },
+};
+```
+
+Register the component in the current domain using the exact `ontomato.mjs` commands:
+
+```sh
+# 1. Create the domain component — writes declaration.componentId ("domain-component:<uuid>") into component.json
+node "$SKILL/ontomato.mjs" component register ./app-icon-name-cell
+
+# 2. List visible domain components or inspect one component's declaration, source and revision
+node "$SKILL/ontomato.mjs" component list
+node "$SKILL/ontomato.mjs" component read domain-component:<uuid>
+
+# 3. Update an existing domain component using its current revision
+node "$SKILL/ontomato.mjs" component register ./app-icon-name-cell --revision 1
+```
+
+### 2. Mount the column cell and a per-row operation in `panel.json`
+
+Use the returned `domain-component:<uuid>` ID in a `listColumn` member, and use official `OperationButton` in another
+`listColumn` member for a per-row write operation. Host-mounted members (`listColumn`, `listRowDetail`, `formField`)
+are rendered by their host `ObjectList` / `ObjectForm` — **do not** place `<projection slot="appNameCell">` or
+`<projection slot="revokeGrant">` in `panel.html`.
+
+```json
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": { "kind": "object", "objectType": "platform:Application" },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "apps": {
+        "component": "ObjectList",
+        "type": "platform:Application",
+        "data": { "rows": "query" },
+        "state": { "selected": "selected" },
+        "config": {
+          "columns": [
+            { "key": "name", "labelKey": "col.app" },
+            { "key": "status", "labelKey": "col.status", "kind": "tag" }
+          ]
+        }
+      },
+      "appNameCell": {
+        "component": "domain-component:11111111-1111-4111-8111-111111111111",
+        "listColumn": { "slot": "apps", "column": "name" },
+        "inputs": {
+          "icon": { "itemField": "icon" },
+          "names": { "itemField": "names" },
+          "fallbackLabel": { "item": "label" }
+        }
+      },
+      "grants": {
+        "component": "ObjectList",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": { "rows": "grants" },
+        "config": {
+          "columns": [
+            { "key": "principalId", "labelKey": "col.principal" },
+            { "key": "verb", "labelKey": "col.verb", "kind": "tag" },
+            { "key": "actions", "labelKey": "col.actions" }
+          ]
+        }
+      },
+      "revokeGrant": {
+        "component": "OperationButton",
+        "listColumn": { "slot": "grants", "column": "actions" },
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.grant",
+        "operationParams": {
+          "principalKind": { "itemField": "principalKind" },
+          "principalId": { "itemField": "principalId" },
+          "verb": { "itemField": "verb" },
+          "remove": { "literal": true }
+        }
+      }
+    },
+    "commands": {}
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Applications",
+        "col.app": "Application",
+        "col.status": "Status",
+        "col.principal": "Principal",
+        "col.verb": "Permission",
+        "col.actions": "Actions"
+      }
+    }
+  }
+}
+```
+
+How per-row execution stays safe and works on **unselected** rows:
+
+- Clicking **Revoke** on row B while row A is selected resolves `target` (here the outer `platform:Application` from
+  `selected`) and `operationParams` (`principalKind`, `principalId`, `verb` from row B, plus `remove: true`) on the
+  platform side without changing panel selection.
+- When an operation targets the row itself rather than an outer parent object, omit `target` and pass
+  `"inputs": { "target": { "item": true } }` (plus any `{ "item": "primaryKey" }`, `{ "itemField": "..." }`,
+  `{ "state": "..." }`, or `{ "literal": ... }` entries in `operationParams`).
+- The confirmation dialog, execution, and generated page skill all read this same declaration, so the assistant can
+  also target an unselected row by name and confirm the exact row.
+
+### 3. Expandable row detail (`listRowDetail`)
+
+When clicking a row should expand an inline detail section beneath it (for example, listing tools inside an MCP
+service or child items under a record), declare one `listRowDetail` member pointing at the host `ObjectList`. Unlike
+`listColumn`, a `listRowDetail` member **may** declare its own `data` read bound to the row's identity via
+`{ "item": true }`:
+
+```json
+"rowDetail": {
+  "component": "ObjectSummary",
+  "listRowDetail": { "slot": "apps" },
+  "type": "platform:Application",
+  "inputs": { "target": { "item": true } },
+  "data": { "record": "record" }
+}
+```
+
+Check and register the panel workspace once the domain component is registered:
+
+```sh
+node "$SKILL/ontomato.mjs" panel check ./apps-panel
+node "$SKILL/ontomato.mjs" panel register ./apps-panel
 ```
 
 ## Bind read parameters and listen to component events

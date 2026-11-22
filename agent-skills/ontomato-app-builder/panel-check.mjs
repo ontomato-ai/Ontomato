@@ -154,7 +154,28 @@ function componentPackageName(componentId) {
   return name === "@ontomato/sdk" ? undefined : name;
 }
 
-async function expandInlineProjections(manifest, panel, checks, loadAuthoring, loadPackage, loadDomainComponent) {
+function formatManifestIssues(descriptorFile, manifest, error) {
+  const lines = [];
+  for (const issue of error.issues) {
+    if (issue.code === "invalid_union" && issue.path[0] === "members" && typeof issue.path[1] === "string") {
+      const raw = manifest?.members?.[issue.path[1]];
+      const branchIndex = raw && typeof raw === "object" && "component" in raw ? 0 : 1;
+      const branch = issue.unionErrors?.[branchIndex] ?? issue.unionErrors?.[0];
+      if (branch?.issues?.length) {
+        for (const inner of branch.issues) {
+          const fullPath = ["manifest", ...issue.path, ...inner.path].join(".");
+          lines.push(`${descriptorFile}: ${fullPath}: ${inner.message}`);
+        }
+        continue;
+      }
+    }
+    const fullPath = ["manifest", ...issue.path].join(".");
+    lines.push(`${descriptorFile}: ${fullPath}: ${issue.message}`);
+  }
+  return lines.join("\n");
+}
+
+async function expandInlineProjections(descriptorFile, manifest, panel, checks, loadAuthoring, loadPackage, loadDomainComponent) {
   const declared = Object.entries(manifest?.members ?? {}).filter(([, member]) => member?.component !== undefined);
   if (!declared.length) return { manifest, inline: [], charts: new Map() };
   for (const [member, item] of declared) {
@@ -164,7 +185,11 @@ async function expandInlineProjections(manifest, panel, checks, loadAuthoring, l
   if (!panel) throw new Error(`Member ${first}: a new projection needs a panel in the registration material`);
   if (!loadAuthoring) throw new Error(`Member ${first}: checking a new projection needs the author type table (online or --type-table)`);
 
-  const { state, members, ...definition } = checks.panelAuthoringManifestSchema.parse(manifest);
+  const parsedManifest = checks.panelAuthoringManifestSchema.safeParse(manifest);
+  if (!parsedManifest.success) {
+    throw new Error(formatManifestIssues(descriptorFile, manifest, parsedManifest.error));
+  }
+  const { state, members, ...definition } = parsedManifest.data;
   const { catalogue, typeTable } = await loadAuthoring();
   const packages = new Set(declared.map(([, member]) => componentPackageName(member.component)).filter(Boolean));
   const installed = await Promise.all([...packages].map(name => loadPackage?.(name)));
@@ -201,7 +226,7 @@ async function workspaceDefinition(directory, files, checks, panel, loadAuthorin
     throw new Error(`${descriptorFile}: expected an object with a manifest`);
   }
   const { content = {}, manifest, ...descriptor } = document;
-  const expanded = await expandInlineProjections(manifest, panel, checks, loadAuthoring, loadPackage, loadDomainComponent);
+  const expanded = await expandInlineProjections(descriptorFile, manifest, panel, checks, loadAuthoring, loadPackage, loadDomainComponent);
   if (content === null || typeof content !== "object" || Array.isArray(content) ||
       Object.keys(content).some(key => key !== "messages")) {
     throw new Error(`${descriptorFile}: content only accepts messages`);
@@ -292,7 +317,9 @@ function checkProjectionData(id, projection, component, checks, placements = [])
   if (!("data" in projection)) return;
   for (const [member, placement] of placements) {
     if (placement.listColumn !== undefined && Object.keys(projection.data).length > 0) {
-      throw new Error(`member ${member} (projection ${id}): listColumn members cannot declare independent data reads`);
+      throw new Error(
+        `member ${member} (projection ${id}, listColumn ${placement.listColumn.slot}.${placement.listColumn.column}): listColumn members cannot declare independent data reads. Pass row values through inputs ({ itemField } / { item }) or use listRowDetail when each expanded row reads child data.`,
+      );
     }
   }
   const { data } = component;
@@ -462,6 +489,7 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
     for (const id of target.candidates?.panelIds ?? []) references.set(`panel:${id}`, ["panel", id]);
   }
 
+  const resolvedProjections = new Map();
   for (const [kind, id] of references.values()) {
     const record = records.get(kind)?.get(id) ?? (lookup && await lookup(kind, id));
     if (record === null) {
@@ -469,6 +497,7 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
     } else if (record === undefined) {
       unchecked.push({ kind, id });
     } else if (kind === "projection") {
+      resolvedProjections.set(id, record);
       const packageName = componentPackageName(record.componentId);
       const release = packageName && await loadPackage?.(packageName);
       const component = domainComponentId(record.componentId)
@@ -490,6 +519,45 @@ export async function checkPanelWorkspace(directory, { checks, catalogue, versio
           const where = missing.map(({ locale }) => locale ?? "any locale").join(", ");
           throw new Error(`${resolve(directory, "panel.json")}: member ${members} (projection ${id}) prefillKey '${missing[0].key}' is not in content.messages (${where})`);
         }
+      }
+    }
+  }
+  const descriptorFile = resolve(directory, "panel.json");
+  for (const [memberKey, member] of Object.entries(manifest.members)) {
+    if (member.listColumn) {
+      const { slot, column } = member.listColumn;
+      const hostId = manifest.members[slot]?.target?.projectionId;
+      const host = hostId ? resolvedProjections.get(hostId) : undefined;
+      if (host) {
+        if (host.componentId !== "@ontomato/sdk:ObjectList") {
+          throw new Error(
+            `${descriptorFile}: manifest.members.${memberKey}.listColumn.slot: host member '${slot}' uses '${host.componentId}', not '@ontomato/sdk:ObjectList'. Bind listColumn.slot to an ObjectList member.`,
+          );
+        }
+        if (!Array.isArray(host.config?.columns)) {
+          throw new Error(
+            `${descriptorFile}: manifest.members.${memberKey}.listColumn.column: host ObjectList '${slot}' has no config.columns (compact list mode). Add { "key": "${column}" } to manifest.members.${slot}.config.columns.`,
+          );
+        }
+        const declaredColumns = host.config.columns
+          .filter(entry => entry && typeof entry === "object" && typeof entry.key === "string")
+          .map(entry => entry.key);
+        if (!declaredColumns.includes(column)) {
+          const available = declaredColumns.length ? declaredColumns.join(", ") : "none";
+          throw new Error(
+            `${descriptorFile}: manifest.members.${memberKey}.listColumn.column: column '${column}' is not declared in host ObjectList '${slot}' config.columns (${available}). Add { "key": "${column}" } to config.columns or fix listColumn.column.`,
+          );
+        }
+      }
+    }
+    if (member.listRowDetail) {
+      const { slot } = member.listRowDetail;
+      const hostId = manifest.members[slot]?.target?.projectionId;
+      const host = hostId ? resolvedProjections.get(hostId) : undefined;
+      if (host && host.componentId !== "@ontomato/sdk:ObjectList") {
+        throw new Error(
+          `${descriptorFile}: manifest.members.${memberKey}.listRowDetail.slot: host member '${slot}' uses '${host.componentId}', not '@ontomato/sdk:ObjectList'. Bind listRowDetail.slot to an ObjectList member.`,
+        );
       }
     }
   }
