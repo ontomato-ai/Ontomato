@@ -16,6 +16,7 @@ import {
   componentOfficialSpecifiers,
   isComponentOfficialSpecifier,
   panelModuleImports,
+  REJECT_PARADIGM_VIOLATIONS,
   REJECT_VIEWPORT_UNITS,
 } from "./panel-module";
 import {
@@ -304,4 +305,166 @@ test("checkAuthoringStyles and checkAuthoringTemplate reject all CSS viewport un
       { file: "panel.html", line: 5, column: 34, kind: "forbidden-viewport-unit", found: "80svh" },
     ],
   );
+});
+
+test("strictParadigm rejects hardcoded colors, hardcoded font sizes, and handwritten pane widths while staying off by default", () => {
+  assert.equal(REJECT_PARADIGM_VIOLATIONS, false);
+
+  const badCss = [
+    "#beef { color: #333; background: rgba(15, 23, 42, 0.12); border-color: hsl(210, 50%, 50%); }",
+    ".label { font-size: 12px; }",
+    ".sub { font-size: 0.875rem !important; }",
+    ".shorthand { font: 600 14px/1.5 sans-serif; }",
+    ".split { display: grid; grid-template-columns: clamp(26rem, 42%, 29rem) minmax(0, 1fr); }",
+    ".wb { display: grid; grid-template-columns: 264px minmax(320px, 1fr) 320px; }",
+    ".ratio { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }",
+    ".flex-pane { flex: 0 0 22rem; }",
+    ".aside-basis { flex-basis: 320px; }",
+    ".sidebar { width: 280px; }",
+    ".aside-flex { flex: 1 1 18rem; }",
+  ].join("\n");
+
+  // Default switch is off: legacy styles pass without paradigm errors.
+  assert.deepEqual(checkAuthoringStyles(badCss, "panel.css"), []);
+
+  const hits = checkAuthoringStyles(badCss, "panel.css", 0, badCss, { strictParadigm: true });
+  const colorHits = hits.filter(v => v.kind === "forbidden-hardcoded-color");
+  assert.deepEqual(
+    colorHits.map(v => ({ line: v.line, found: v.found })),
+    [
+      { line: 1, found: "#333" },
+      { line: 1, found: "rgba(15, 23, 42, 0.12)" },
+      { line: 1, found: "hsl(210, 50%, 50%)" },
+    ],
+  );
+  for (const hit of colorHits) {
+    assert.match(hit.message, /--sdk-text-color-primary.*--ui-divider/u);
+    assert.doesNotMatch(hit.message, /--el-/u);
+  }
+
+  const fontHits = hits.filter(v => v.kind === "forbidden-hardcoded-font-size");
+  assert.deepEqual(
+    fontHits.map(v => ({ line: v.line, found: v.found })),
+    [
+      { line: 2, found: "12px" },
+      { line: 3, found: "0.875rem" },
+      { line: 4, found: "14px" },
+    ],
+  );
+  for (const hit of fontHits) {
+    assert.match(hit.message, /--text-xs.*--text-sm.*--text-base.*--text-lg/u);
+  }
+
+  const paneHits = hits.filter(v => v.kind === "forbidden-pane-column-width");
+  assert.deepEqual(
+    paneHits.map(v => ({ line: v.line, found: v.found })),
+    [
+      { line: 5, found: "clamp(26rem, 42%, 29rem) minmax(0, 1fr)" },
+      { line: 6, found: "264px minmax(320px, 1fr) 320px" },
+      { line: 7, found: "minmax(0, 1.45fr) minmax(0, 1fr)" },
+      { line: 8, found: "22rem" },
+      { line: 9, found: "320px" },
+      { line: 10, found: "280px" },
+      { line: 11, found: "18rem" },
+    ],
+  );
+  for (const hit of paneHits) {
+    assert.match(hit.message, /<two-pane-layout>.*<workbench-layout>/u);
+  }
+
+  // Legitimate styles allowed under strictParadigm: ID selectors, comments, theme tokens, typography tokens,
+  // responsive form/card grids, equal splits, label-value grids, and small icons/controls.
+  const okCss = [
+    "/* color: #fff; font-size: 14px; grid-template-columns: 280px 1fr; */",
+    "#cafe { color: var(--sdk-text-color-primary); background: transparent; border: 1px solid var(--ui-divider /* #e5e7eb */); }",
+    ".tint { background: color-mix(in srgb, var(--sdk-bg-color) 88%, transparent); box-shadow: 0 0 0 1px rgba(var(--sdk-color-primary-rgb), 0.12); }",
+    '.note::after { content: "#123456 14px"; }',
+    ".text { font-size: var(--text-sm); font: inherit; color: currentColor; }",
+    ".inherit-size { font-size: inherit; }",
+    ".form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }",
+    ".cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }",
+    ".equal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }",
+    ".facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); }",
+    ".single { display: grid; grid-template-columns: minmax(0, 1fr); }",
+    ".tokenized { display: grid; grid-template-columns: var(--pane-aside-width) minmax(0, 1fr); }",
+    ".icon { flex: 0 0 28px; width: 24px; }",
+    ".search { width: 260px; max-width: 100%; flex: 1 1 200px; }",
+    ".pane { width: 100%; flex: 1 1 auto; }",
+  ].join("\n");
+  assert.deepEqual(checkAuthoringStyles(okCss, "clean.css", 0, okCss, { strictParadigm: true }), []);
+});
+
+test("strictParadigm rejects panel dialogs/drawers, SDK data-display primitives, and viewport units together", () => {
+  const html = [
+    "<!-- <sdk-dialog></sdk-dialog><sdk-table></sdk-table> -->",
+    "<style>",
+    "  .root { height: 100vh; color: #333; }",
+    "</style>",
+    '<div id="app" style="font-size: 13px">',
+    "  <sdk-dialog v-model=\"open\"></sdk-dialog>",
+    "  <SdkDrawer v-model=\"drawer\"></SdkDrawer>",
+    "  <el-dialog v-model=\"legacy\"></el-dialog>",
+    "  <el-drawer v-model=\"legacyDrawer\"></el-drawer>",
+    '  <component :is="\'sdk-dialog\'"></component>',
+    "  <sdk-table :data=\"rows\"></sdk-table>",
+    "  <sdk-pagination :total=\"10\"></sdk-pagination>",
+    "  <sdk-descriptions></sdk-descriptions>",
+    "  <sdk-tree :data=\"nodes\"></sdk-tree>",
+    '  <component is="sdk-tree"></component>',
+    "</div>",
+  ].join("\n");
+
+  // Default (off): only <el-dialog> and <el-drawer> are rejected by the baseline third-party tag rule.
+  const baseline = checkAuthoringTemplate(html, "panel.html");
+  assert.deepEqual(
+    baseline.map(v => ({ line: v.line, kind: v.kind, found: v.found })),
+    [
+      { line: 8, kind: "forbidden-tag", found: "el-dialog" },
+      { line: 9, kind: "forbidden-tag", found: "el-drawer" },
+    ],
+  );
+
+  // Strict paradigm enabled: rejects viewport unit + color + font-size + overlays + data-display primitives.
+  const strict = checkAuthoringTemplate(html, "panel.html", { strictParadigm: true });
+  assert.deepEqual(
+    strict.map(v => ({ line: v.line, kind: v.kind, found: v.found })),
+    [
+      { line: 3, kind: "forbidden-viewport-unit", found: "100vh" },
+      { line: 3, kind: "forbidden-hardcoded-color", found: "#333" },
+      { line: 5, kind: "forbidden-hardcoded-font-size", found: "13px" },
+      { line: 6, kind: "forbidden-panel-overlay", found: "sdk-dialog" },
+      { line: 7, kind: "forbidden-panel-overlay", found: "SdkDrawer" },
+      { line: 8, kind: "forbidden-panel-overlay", found: "el-dialog" },
+      { line: 9, kind: "forbidden-panel-overlay", found: "el-drawer" },
+      { line: 10, kind: "forbidden-panel-overlay", found: "sdk-dialog" },
+      { line: 11, kind: "forbidden-panel-data-display", found: "sdk-table" },
+      { line: 12, kind: "forbidden-panel-data-display", found: "sdk-pagination" },
+      { line: 13, kind: "forbidden-panel-data-display", found: "sdk-descriptions" },
+      { line: 14, kind: "forbidden-panel-data-display", found: "sdk-tree" },
+      { line: 15, kind: "forbidden-panel-data-display", found: "sdk-tree" },
+    ],
+  );
+
+  for (const hit of strict.filter(v => v.kind === "forbidden-panel-overlay")) {
+    assert.match(hit.message, /TwoPaneLayout.*WorkbenchLayout.*ObjectList.*OperationButton/u);
+  }
+  for (const hit of strict.filter(v => v.kind === "forbidden-panel-data-display")) {
+    assert.match(hit.message, /ObjectList.*ObjectSummary.*ObjectTree.*<projection>.*HTML/u);
+  }
+
+  // Compliant panel template passes strictParadigm cleanly.
+  const compliant = [
+    "<style>",
+    "  .hint { color: var(--sdk-text-color-secondary); font-size: var(--text-sm); }",
+    "</style>",
+    '<div id="app">',
+    "  <two-pane-layout>",
+    '    <template #aside><projection slot="list"></projection></template>',
+    '    <projection slot="summary"></projection>',
+    '    <projection slot="form"></projection>',
+    '    <p class="hint">Static explanation</p>',
+    "  </two-pane-layout>",
+    "</div>",
+  ].join("\n");
+  assert.deepEqual(checkAuthoringTemplate(compliant, "panel.html", { strictParadigm: true }), []);
 });
