@@ -39,6 +39,7 @@ await mountPanel({
     const setClassName = value => instance.state.setState({ className: value || null });
     const setSearch = value => instance.state.set("search", value || null);
     const isSelected = row => selected.value?.primaryKey === row.primaryKey;
+    const selectedVisible = computed(() => Boolean(selected.value && visibleRows.value.some(row => row.primaryKey === selected.value.primaryKey)));
     const selectRow = row => {
       setCreating(false);
       instance.state.set("selected", isSelected(row) ? null : { className: "platform:Attribute", primaryKey: row.primaryKey });
@@ -81,7 +82,7 @@ await mountPanel({
     }, { immediate: true });
 
     return {
-      selected, selectedKey, isPrimaryKey, className, search, typesData, rowsData, detail, creating, types, rows, visibleRows,
+      selected, selectedKey, selectedVisible, isPrimaryKey, className, search, typesData, rowsData, detail, creating, types, rows, visibleRows,
       ownerLabel, countText, setClassName, setSearch, isSelected, selectRow, closeEditor, onSaved, onDiscarded, yes, openOwner,
     };
   },

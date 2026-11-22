@@ -32,8 +32,9 @@
   }
   .og-grid {
     display: grid;
+    height: clamp(460px, calc(100vh - 280px), 780px);
     min-height: 0;
-    flex: 1;
+    flex: 0 0 auto;
     grid-template-columns: 264px minmax(320px, 1fr) 320px;
     overflow: hidden;
     border: 1px solid var(--ui-border);
@@ -61,15 +62,11 @@
     padding: var(--spacing-md);
     border-bottom: 1px solid var(--ui-divider);
   }
-  .og-search {
+  .og-search-box .el-input {
     width: 100%;
-    min-width: 0;
-    padding: var(--spacing-sm) var(--spacing-md);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-sm);
-    background: var(--el-bg-color);
-    color: var(--el-text-color-primary);
-    font: inherit;
+  }
+  .og-search-icon {
+    color: var(--el-text-color-placeholder);
   }
   .og-segments {
     display: flex;
@@ -203,16 +200,6 @@
     height: 100%;
     min-height: 0;
   }
-  /* The page's own tools sit at the graph's foot, as they always have; the canvas keeps its five, not its sixth. */
-  [data-graph-toolbar] {
-    top: auto !important;
-    right: auto !important;
-    bottom: 18px !important;
-    left: 18px !important;
-  }
-  [data-graph-action="focus-selected"] {
-    display: none !important;
-  }
   .og-hint {
     position: absolute;
     right: 18px;
@@ -274,12 +261,15 @@
   }
   .og-pick {
     min-width: 0;
-    padding: var(--spacing-sm);
+    width: 100%;
+    padding: 6px 24px 6px 8px;
     border: 1px solid var(--ui-border);
     border-radius: var(--radius-sm);
     background: var(--el-bg-color);
     color: var(--el-text-color-primary);
     font: inherit;
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
   }
   .og-primary {
     width: calc(100% - 24px);
@@ -503,6 +493,7 @@
     }
     .og-grid {
       display: grid;
+      height: auto;
       flex: none;
       grid-template-columns: 1fr;
       overflow: visible;
@@ -541,17 +532,20 @@
       show-icon
     ></el-alert>
 
-    <div class="og-grid">
+    <div v-if="!readErrors.length" class="og-grid">
       <aside class="og-explorer">
         <div class="og-search-box">
-          <input
-            class="og-search"
-            type="search"
-            :value="search"
+          <el-input
+            :model-value="search"
             placeholder="搜索本体资源"
             aria-label="搜索本体资源"
-            @input="setSearch($event.target.value)"
-          />
+            clearable
+            @update:model-value="setSearch"
+          >
+            <template #prefix>
+              <svg class="og-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+            </template>
+          </el-input>
           <div class="og-segments" role="group" aria-label="按类型筛选">
             <button
               v-for="option in filterOptions"

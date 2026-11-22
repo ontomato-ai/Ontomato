@@ -73,7 +73,10 @@
             "source": "/fromclass",
             "target": "/toclass"
           },
-          "editable": true
+          "editable": true,
+          "nodeCategory": "/className",
+          "nodeSize": 62,
+          "labelSize": 13
         },
         "state": {
           "selectedNode": "selectedNode",
