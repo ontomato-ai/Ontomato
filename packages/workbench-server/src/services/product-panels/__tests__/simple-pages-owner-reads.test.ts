@@ -93,7 +93,7 @@ describe("simple pages owner reads", () => {
   });
 
   it("localizes AuditLog business and operation fields with tones and uses page-number pagination", async () => {
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (_url: string, init?: { body?: unknown }) => {
       const body = JSON.parse(String(init?.body ?? "{}"));
       if (body.pageNum === 5) {
         return Response.json({ data: [], totalRows: 3, totalPages: 2 });
