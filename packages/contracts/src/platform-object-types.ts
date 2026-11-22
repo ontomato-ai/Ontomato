@@ -263,6 +263,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
       record: { ...catalogueRecord, result: "applicationRecord" },
       entries: { ...catalogueRecord, result: "applicationEntries" },
+      grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       form: {
         ...modelReads.form,
         params: { ...definitionFormParams, section: "applicationFormSection" },
@@ -272,7 +273,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [
       `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
-      "applications.deleteEntry", "applications.grant", RENEW_SCHEDULED_TASK_CREDENTIAL,
+      "applications.deleteEntry", "applications.grant", "applications.share", RENEW_SCHEDULED_TASK_CREDENTIAL,
     ],
   },
   [APPLICATION_PANEL_USE]: {

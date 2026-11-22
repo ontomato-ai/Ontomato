@@ -107,6 +107,8 @@
     cursor: pointer;
   }
   .pd-tab.active { background: var(--ui-fill-secondary); color: var(--brand-link); font-weight: var(--font-medium); }
+  .pd-name-button { display: block; max-inline-size: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+  .pd-name-button:focus-visible { box-shadow: var(--focus-ring); }
   .pd-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--spacing-xs) var(--spacing-md); margin: 0; }
   .pd-fields dt { color: var(--el-text-color-secondary); }
   .pd-fields dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -191,7 +193,9 @@
             @click="pick(row)"
           >
             <td>
-              <span class="pd-name" :title="row.name">{{ row.name }}</span>
+              <button type="button" class="pd-name-button" @click.stop="pick(row)">
+                <span class="pd-name" :title="row.name">{{ row.name }}</span>
+              </button>
               <span v-if="row.description" class="pd-sub" :title="row.description">{{ row.description }}</span>
             </td>
             <td>{{ ownerName(row.ownerId) }}</td>
@@ -208,6 +212,9 @@
       </table>
       <div class="pd-bar">
         <span class="pd-note">{{ t('list.count', { count: rows.length + unavailableRows.length }) }} · {{ t('list.paging', { page: page }) }}</span>
+        <select class="pd-select" :value="pageSize" :aria-label="t('list.pageSize')" @change="changePageSize">
+          <option v-for="size in [20, 50, 100]" :key="size" :value="size">{{ t('list.pageSizeValue', { count: size }) }}</option>
+        </select>
         <button type="button" class="pd-btn small" :disabled="page <= 1 || loading" @click="previousPage">{{ t('list.prev') }}</button>
         <button type="button" class="pd-btn small" :disabled="!nextCursor || loading" @click="nextPage">{{ t('list.next') }}</button>
       </div>
@@ -227,6 +234,30 @@
           </div>
         </div>
         <p v-if="mode === 'edit' && record && !record.editable" class="pd-hint">{{ t('detail.readonly') }}</p>
+        <form v-if="canPickMembers" class="pd-section" @submit.prevent="findMembers">
+          <h3>{{ t('members.addExisting') }}</h3>
+          <div class="pd-bar">
+            <select v-model="memberKind" class="pd-select" :aria-label="t('members.target')">
+              <option value="projection">{{ t('members.projection') }}</option>
+              <option value="panel">{{ t('members.panel') }}</option>
+            </select>
+            <input class="pd-input" type="search" v-model="memberSearch" :aria-label="t('members.search')" :placeholder="t('members.search')" />
+            <button class="pd-btn" type="submit" :disabled="memberSearchStatus === 'loading'">{{ t('members.search') }}</button>
+          </div>
+          <p class="pd-error" v-if="memberSearchStatus === 'forbidden'">{{ t('detail.forbidden') }}</p>
+          <p class="pd-note" v-if="memberSearchStatus === 'ready' && !memberChoices.length">{{ t('members.noMatches') }}</p>
+          <template v-if="memberChoices.length">
+            <div class="pd-bar">
+              <select v-model="memberChoiceId" class="pd-select" :aria-label="t('members.target')">
+                <option value="" disabled>{{ t('members.choose') }}</option>
+                <option v-for="choice in memberChoices" :key="choice.id" :value="choice.id">{{ choice.name }} · {{ choice.id }}</option>
+              </select>
+              <input class="pd-input" v-model="memberKey" :aria-label="t('members.member')" :placeholder="t('members.member')" />
+              <button class="pd-btn" type="button" :disabled="!memberChoiceId || !memberKey.trim()" @click="addPickedMember">{{ t('members.addExisting') }}</button>
+            </div>
+          </template>
+          <p v-if="memberError" class="pd-error" role="alert">{{ memberError }}</p>
+        </form>
         <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
       </div>
 
@@ -315,6 +346,12 @@
             <pre class="pd-code">{{ record.content.recipes || t('source.none') }}</pre>
             <h3>{{ t('source.messages') }}</h3>
             <pre class="pd-code">{{ messagesText }}</pre>
+            <details>
+              <summary>{{ t('source.manifest') }}</summary>
+              <pre class="pd-code">{{ sourceManifest }}</pre>
+              <h3>{{ t('source.theme') }}</h3>
+              <pre class="pd-code">{{ sourceTheme }}</pre>
+            </details>
           </section>
 
           <!-- members -->
@@ -337,6 +374,8 @@
                     <span class="pd-sub"><code>{{ row.reference }}</code></span>
                     <button v-if="row.projectionId" type="button" class="pd-btn small" style="margin-top:4px"
                       @click="inspectProjection(row.projectionId)">{{ t('action.viewProjection') }}</button>
+                    <button v-if="row.projectionId || row.panelId" type="button" class="pd-btn small"
+                      @click="openMember(row)">{{ t('members.openRecord') }}</button>
                   </td>
                   <td><span class="pd-sub">{{ row.inputs }}</span></td>
                   <td><span class="pd-sub">{{ row.outputs }}</span></td>

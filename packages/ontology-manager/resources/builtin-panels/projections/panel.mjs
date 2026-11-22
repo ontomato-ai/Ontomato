@@ -124,7 +124,7 @@ const newId = () => `projection-${Date.now().toString(36)}-${Math.random().toStr
 
 await mountPanel({
   setup() {
-    const { instance, navigate } = usePanelContext();
+    const { instance, navigate, t } = usePanelContext();
     const values = instance.state.values;
 
     const selected = computed(() => values.value.selected ?? null);
@@ -203,6 +203,7 @@ await mountPanel({
     const setPageSize = (value) => { pageSize.value = Number(value) || 20; };
 
     const record = usePanelData("record", "record");
+    const grants = usePanelData("record", "grants");
     const usedBy = usePanelData("usedBy", "usedBy");
     const usedPanels = computed(() => (usedBy.value.status === "ready" ? usedBy.value.value.panels ?? [] : []));
     const hiddenCount = computed(() => (usedBy.value.status === "ready" ? usedBy.value.value.hiddenCount ?? 0 : 0));
@@ -254,10 +255,33 @@ await mountPanel({
     ));
     const ownerName = id => ownerLabels.value[id] ?? "—";
 
+    function ownerAddress(binding) {
+      switch (binding?.kind) {
+        case "MetricView": return `/ontology/assets/metrics/${encodeURIComponent(binding.id)}`;
+        case "Action": return actionAddress(binding.id);
+        case "PlatformObjectType": return `${CLASSES_PAGE}/${encodeURIComponent(binding.id)}`;
+      }
+    }
+
+    function actionAddress(primaryKey) {
+      const state = JSON.stringify({ selected: { className: "platform:Action", primaryKey } });
+      return `/ontology/assets/actions?${new globalThis.URLSearchParams({ state })}`;
+    }
+
+    function dataAddress(source) {
+      const object = source?.object?.literal;
+      if (object?.className === "platform:Action") return actionAddress(object.primaryKey);
+      if (object?.className === "platform:MetricView")
+        return ownerAddress({ kind: "MetricView", id: object.primaryKey });
+      return ownerAddress(source?.type);
+    }
+
+    const openOwner = address => navigate(address).catch(report);
+
     const dataRows = computed(() =>
       Object.entries(current.value?.data ?? {}).map(([name, datum]) => ({
         name,
-        source: sourceText(datum.source),
+        source: sourceText(datum.source), address: dataAddress(datum.source),
         read: datum.read ?? "—",
         params: paramsText(datum.params),
       })));
@@ -265,7 +289,7 @@ await mountPanel({
     const operationRows = computed(() =>
       Object.entries(current.value?.operations ?? {}).map(([name, binding]) => ({
         name,
-        operation: `${binding.operation?.kind ?? ""} · ${binding.operation?.id ?? ""}`,
+        operation: `${binding.operation?.kind ?? ""} · ${binding.operation?.id ?? ""}`, address: ownerAddress(binding.operation),
         target: operationTargetText(binding.target),
       })));
 
@@ -347,12 +371,14 @@ await mountPanel({
 
     const grantForm = reactive({ principalKind: "principal", principalId: "", verb: "use" });
 
-    async function submitGrant(removeGrant) {
-      if (!grantForm.principalId) return;
-      const input = { principalKind: grantForm.principalKind, principalId: grantForm.principalId, verb: grantForm.verb };
+    async function submitGrant(removeGrant, row = grantForm) {
+      const { principalKind, principalId, verb } = row;
+      if (!principalId.trim()) return;
+      const input = { principalKind, principalId: principalId.trim(), verb };
       try {
         const answer = outcomeOf(await (removeGrant ? revoke : grant).run(input));
         if (!answer.ok) { say("error", answer.message); return; }
+        instance.refreshObjects();
         say("success", removeGrant ? "已撤销授权" : "已授予授权");
       } catch (reason) {
         report(reason);
@@ -363,6 +389,7 @@ await mountPanel({
       try {
         const answer = outcomeOf(await share.run({ shared }));
         if (!answer.ok) { say("error", answer.message); return; }
+        instance.refreshObjects();
         say("success", shared ? "已开启域内共享" : "已关闭域内共享");
       } catch (reason) {
         report(reason);
@@ -381,7 +408,7 @@ await mountPanel({
     return {
       selected, selectedKey, searchDraft, scope, sort, pageNumber, pageSize, nextCursor,
       list, rows, listStatusText, record, usedBy, usedPanels, hiddenCount, usedByCountText, current, ownerName, showDetail,
-      dataRows, operationRows, inputRows, outputRows,
+      t, dataRows, operationRows, inputRows, outputRows, grants, openOwner,
       copy, remove, grant, revoke, share, canGrant,
       mode, choose, startEdit, onSaved, onDiscarded: closeForm, nextPage, previousPage,
       setScope, setSort, setPageSize, copyDialog, copyForm, openCopy, submitCopy,
