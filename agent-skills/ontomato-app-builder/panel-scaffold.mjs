@@ -40,6 +40,7 @@ export function managementPanel(type, checks, typeTable, {
   const object = { kind: "object", objectType: type };
   const state = { selected: { type: object, deepLink: true } };
   const members = {};
+  const commands = {};
 
   const search = Object.hasOwn(list.params, "search");
   const counts = reads.counts;
@@ -79,6 +80,14 @@ export function managementPanel(type, checks, typeTable, {
   const edit = save?.effect === "write" && reads.form?.result === "panelFormDescription";
   const create = edit && reads.createForm?.result === "panelFormDescription";
   if (requestedSaves.length && !edit) throw new Error(`${save.id} has no declared form read`);
+  if (create) {
+    state.creating = { type: { kind: "scalar", type: "boolean" }, default: false, deepLink: true };
+    commands.create = {
+      labelKey: "command.new",
+      primary: true,
+      do: { set: { fields: { creating: { literal: true }, selected: { literal: null } } } },
+    };
+  }
   if (edit) {
     members.form = {
       component: "ObjectForm", target: "selected",
@@ -92,57 +101,89 @@ export function managementPanel(type, checks, typeTable, {
     return key;
   });
   const member = (key, attrs = "") => `<projection slot="${key}"${attrs}></projection>`;
-  const controls = [...(create ? ['<button type="button" @click="newRecord">New</button>'] : []),
-    ...(tabs ? [member("tabs")] : []), ...buttonKeys.map(key => member(key))];
+  const controls = [...(tabs ? [member("tabs")] : []), ...buttonKeys.map(key => member(key))];
   const details = [
     ...(members.detail ? [member("detail", ' v-if="selected"')] : []),
-    ...(edit ? [member("form", create ? ' v-show="selected || creating"' : ' v-show="selected"')] : []),
+    ...(edit ? [member("form", create ? ' v-show="selected || creating" @saved="stopCreating" @discarded="stopCreating"' : ' v-show="selected"')] : []),
   ];
   const html = [
     "<style>",
-    "  .management { display: grid; gap: 1rem; }",
-    "  .management-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; }",
-    "  .management-body { display: grid; gap: 1rem; }",
-    "  .management-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }",
-    "  .management-detail { display: grid; gap: 1rem; align-content: start; }",
-    "  @media (max-width: 36rem) { .management-columns { grid-template-columns: minmax(0, 1fr); } }",
+    "  .management { display: flex; flex-direction: column; height: 100%; min-height: 24rem; }",
+    ...(controls.length ? ["  .management-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--ui-divider); }"] : []),
+    "  .management-body { display: grid; flex: 1; min-height: 0; }",
+    ...(details.length ? [
+      "  .management-columns { grid-template-columns: minmax(0, var(--pane-list-width, 300px)) minmax(0, 1fr); }",
+      "  .management-columns.is-narrow { grid-template-columns: minmax(0, 1fr); }",
+      "  .management-list, .management-detail { min-height: 0; overflow: auto; padding: var(--spacing-md); }",
+      "  .management-columns:not(.is-narrow) .management-list { border-right: 1px solid var(--ui-divider); }",
+      "  .management-detail { display: flex; flex-direction: column; gap: var(--spacing-md); }",
+      "  .management-back { align-self: flex-start; }",
+    ] : ["  .management-list { min-height: 0; overflow: auto; padding: var(--spacing-md); }"]),
     "</style>",
     '<div id="app">',
-    '  <section class="management">',
+    `  <section${details.length ? ' ref="rootRef"' : ""} class="management">`,
     ...(controls.length ? ['    <div class="management-toolbar">', ...controls.map(control => `      ${control}`), "    </div>"] : []),
-    `    <div class="management-body${details.length ? " management-columns" : ""}">`,
-    `      ${member("list", create ? ' @update:selected="stopCreating"' : "")}`,
-    ...(details.length ? ['      <div class="management-detail">', ...details.map(detail => `        ${detail}`), "      </div>"] : []),
+    `    <div class="management-body${details.length ? ' management-columns" :class="{ \'is-narrow\': narrow }"' : '"'}>`,
+    `      <div class="management-list"${details.length ? ' v-show="!narrow || !hasDetail"' : ""}>`,
+    `        ${member("list", create ? ' @update:selected="stopCreating"' : "")}`,
+    "      </div>",
+    ...(details.length ? [
+      '      <div class="management-detail" v-show="!narrow || hasDetail">',
+      '        <div v-if="narrow && hasDetail" class="management-back">',
+      '          <sdk-button size="small" @click="back">{{ t("action.back") }}</sdk-button>',
+      "        </div>",
+      ...details.map(detail => `        ${detail}`),
+      "      </div>",
+    ] : []),
     "    </div>",
     "  </section>",
     "</div>",
     "",
   ].join("\n");
   const module = details.length ? [
-    `import { computed${create ? ", ref" : ""} } from "vue";`,
-    'import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";',
+    `import { computed, ref${create ? ", watch" : ""} } from "vue";`,
+    'import { mountPanel, usePanelBack, usePanelContext, usePanelNarrow } from "@ontomato/sdk/panel";',
     "",
     "await mountPanel({",
     "  setup() {",
     "    const { instance } = usePanelContext();",
+    "    const rootRef = ref(null);",
+    "    const narrow = usePanelNarrow(rootRef);",
     "    const selected = computed(() => instance.state.values.value.selected);",
     ...(create ? [
-      "    const creating = ref(false);",
-      "    function newRecord() {",
-      "      creating.value = true;",
+      "    const creating = computed(() => Boolean(instance.state.values.value.creating));",
+      "    const hasDetail = computed(() => Boolean(selected.value || creating.value));",
+      "    watch(instance.draft, draft => {",
+      '      if (draft && !selected.value && !creating.value) instance.state.set("creating", true);',
+      "    }, { immediate: true });",
+      "    function stopCreating() {",
+      '      if (creating.value) instance.state.set("creating", false);',
+      "    }",
+      "    function closeDetail() {",
+      "      instance.state.setState({ selected: null, creating: false });",
+      "    }",
+      "    const { back } = usePanelBack(() => narrow.value && hasDetail.value, closeDetail);",
+      "    return { rootRef, narrow, selected, creating, hasDetail, stopCreating, back };",
+    ] : [
+      "    const hasDetail = computed(() => Boolean(selected.value));",
+      "    function closeDetail() {",
       '      instance.state.set("selected", null);',
       "    }",
-      "    function stopCreating() {",
-      "      creating.value = false;",
-      "    }",
-      "    return { selected, creating, newRecord, stopCreating };",
-    ] : ["    return { selected };"]),
+      "    const { back } = usePanelBack(() => narrow.value && hasDetail.value, closeDetail);",
+      "    return { rootRef, narrow, selected, hasDetail, back };",
+    ]),
     "  },",
     "});",
     "",
   ].join("\n") : 'import { mountPanel } from "@ontomato/sdk/panel";\n\nawait mountPanel({});\n';
-  const manifest = { state, members, commands: {} };
+  const manifest = { state, members, commands };
   checks.panelAuthoringManifestSchema.parse(manifest);
+  const messages = {
+    "panel.name": title,
+    ...(create && { "command.new": "New" }),
+    ...(details.length && { "action.back": "Back" }),
+  };
+  const content = { messages: { en: messages } };
   const entry = `/applications/${id}`;
   const material = {
     panels: [{ id, mode: "create", input: { name: title, description: "", visibility: "domain" } }],
@@ -155,16 +196,16 @@ export function managementPanel(type, checks, typeTable, {
       },
     }],
   };
-  return { html, module, manifest, material };
+  return { html, module, manifest, content, material };
 }
 
-export async function writeManagementPanel(directory, { html, module, manifest, material }) {
+export async function writeManagementPanel(directory, { html, module, manifest, content, material }) {
   await mkdir(directory);
   const json = value => JSON.stringify(value, null, 2) + "\n";
   await Promise.all([
     writeFile(join(directory, "panel.html"), html),
     writeFile(join(directory, "panel.mjs"), module),
-    writeFile(join(directory, "panel.json"), json({ manifest })),
+    writeFile(join(directory, "panel.json"), json({ manifest, ...(content && { content }) })),
     writeFile(join(directory, "registration.json"), json(material)),
   ]);
 }

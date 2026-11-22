@@ -40,26 +40,32 @@ name in `registration.json`. Keep the entry's menu metadata for entries that bel
 Panels do not know where they are hosted — full page, beside a conversation, or inside a custom frame — and size only
 against the box given to them, never the browser window.
 
-- **Host content box.** Every entry receives a definite-height content box below the page header and above the bottom
-  composer. Its height tracks window resizes, composer expand/collapse, and banners; taller content scrolls inside the
-  box while the header and composer stay fixed. Full page, beside-conversation, and a custom frame's current-entry slot
-  share this exact contract. The panel root mounts directly inside that box (with no indeterminate-height wrapper
-  between them), so filling it works with normal CSS.
+- **Host content box.** Every entry receives a definite-height content box from below the page header to the bottom edge
+  of the page, with **no host padding** (outer spacing is controlled by the panel's CSS). Its height tracks window
+  resizes and banners; taller content scrolls inside the box while the header stays fixed. **The bottom composer floats
+  over the page and does not occupy content-box height.** Full page, beside-conversation, and a custom frame's
+  current-entry slot share this exact contract. The panel root mounts directly inside that box (with no
+  indeterminate-height wrapper between them), so filling it works with normal CSS.
+- **Layout belongs in the panel, not in layout components.** Write split panes, tabs, drawers, and workbenches with
+  normal HTML, CSS, and Vue inside `panel.html` / `panel.mjs` using platform design tokens (`--pane-list-width`,
+  `--pane-narrow-breakpoint`, `--spacing-*`, `--ui-divider`). Do not use legacy layout components (`TwoPaneLayout`,
+  `WorkbenchLayout`), which are being removed. To switch layout at narrow widths (including when hosted beside a
+  conversation), observe the panel's own container width with [`usePanelNarrow`](RUNTIME.md#usepanelnarrow) rather than
+  `window.innerWidth` or `@media` viewport queries. To wire browser Back, Escape, and the host's unified
+  unsaved-changes confirmation when leaving a narrow detail or sub-view, use [`usePanelBack`](RUNTIME.md#usepanelback).
 - **Two normal-CSS height patterns (no extra manifest declaration):**
   - **Flow / stack naturally:** Let content take its natural height and let the content box scroll. Use this for lists,
     forms, and long pages — write nothing special.
   - **Fill the content box:** Have the panel root fill the content box (for example `height: 100%` with a flex/grid
-    layout) and scroll inner panes independently (`min-height: 0; overflow: auto`). Use this for three-pane
-    workbenches, graphs, and list-plus-detail views. Give each filling region a `min-height` in `rem` or `px` and **no
-    upper cap** (`max-height`): when the box is shorter than `min-height`, or when the panel is placed inside another
-    panel's auto-height slot, it lays out at `min-height` and the outer box scrolls. When narrow widths stack columns
-    vertically, switch back to natural stacking.
+    layout) and scroll inner panes independently (`min-height: 0; overflow: auto`). Use this for workbenches, graphs,
+    and list-plus-detail views. Give each filling region a `min-height` in `rem` or `px`: when the box is shorter than
+    `min-height`, or when the panel is placed inside another panel's auto-height slot, it lays out at `min-height` and
+    the outer box scrolls.
 - **Member slots.** Panel CSS sizes each member container. Official components fill the slot they receive and fall back
   to their own default height when the slot has no definite height.
 - **Forbidden.** Never write CSS viewport units (`vh`, `vw`, `vmin`, `vmax`, `vi`, `vb`, `sv*`, `lv*`, `dv*`) or
-  subtract magic header/composer constants from window height (`calc(100vh - ...)`). Never hand-draw viewport-sized
-  modal overlays or cards in a panel — use `<sdk-dialog>` or `<sdk-drawer>`, which handle viewport-relative overlay
-  sizing.
+  subtract magic header/composer constants from window height (`calc(100vh - ...)`). Use `<sdk-dialog>` or
+  `<sdk-drawer>` for modal overlays so theme, stacking, and Escape handling stay consistent across hosts.
 
 ## Panel controls and platform behavior
 
@@ -75,8 +81,8 @@ Use only the Ontomato SDK's own interface controls for panel chrome that does no
   target deployment are published in `sdk read docs/components.md` and `sdk read components.json` (`uiPrimitives`,
   `uiDirectives`, `themeTokens`). Rely on that SDK manifest rather than assuming undocumented third-party APIs.
 - **Script imports.**
-  - In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel` (`mountPanel`, `usePanelContext`, `usePanelData`,
-    `usePanelOperation`, `draftTarget`, `appIcon`).
+  - In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel` (`mountPanel`, `usePanelContext`, `usePanelBack`,
+    `usePanelNarrow`, `usePanelData`, `usePanelOperation`, `savePanelFile`, `draftTarget`, `appIcon`).
   - In custom component packages, import `Sdk*` controls and `vSdk*` directives from `@ontomato/sdk/ui`.
   - In domain-registered components (`component.mjs`), export Vue component options (`export default { ... }`) and
     import only `vue` and `@ontomato/sdk/panel` (`useMember`, `useMemberData`, `useMemberOperations`,
@@ -86,10 +92,10 @@ Use only the Ontomato SDK's own interface controls for panel chrome that does no
   `panel.notify({ kind: "success", text: "Export complete" })` from the event handler (`kind` accepts `"success"`,
   `"info"`, `"warning"` or `"error"`).
 - **Forbidden patterns.** Never write `el-*` tags, `v-loading`, `--el-*`
-  CSS/theme variables, `import ... from "element-plus"`, CSS viewport units (`vh`, `vw`, `dvh`, etc.), or hand-drawn
-  viewport-sized modal overlays. Do not use `mountPanel` to draw business data — neither
-  by looping over `PanelData` / `usePanelData` records in `panel.html`, nor by defining an inline business component
-  with `defineComponent({ template })` inside `panel.mjs` to bypass component registration.
+  CSS/theme variables, `import ... from "element-plus"`, or CSS viewport units (`vh`, `vw`, `dvh`, etc.). Do not use
+  `mountPanel` to draw business data — neither by looping over `PanelData` / `usePanelData` records in `panel.html`, nor
+  by defining an inline business component with `defineComponent({ template })` inside `panel.mjs` to bypass component
+  registration.
 
 If a dialog or drawer mounts at the page root, check its theme, stacking and keyboard focus in the
 application that opens it. Include a check when the panel is beside a conversation.
@@ -233,16 +239,21 @@ The default displays the record's fields in the owner's order.
 {"component":"ObjectSummary","target":"selected","data":{"record":"record"}}
 ```
 
-List field names in `config.fields` to choose and order the visible facts. This shows status before tags.
+List field names in `config.fields` to choose and order the visible facts, and set `config.showTitle: false` when a
+separate `ObjectHeader` above the summary already renders the record's title. This shows status before tags.
 
 ```json
 {
   "component": "ObjectSummary",
   "target": "selected",
   "data": {"record": "record"},
-  "config": {"fields": ["status", "knowledgeTags"]}
+  "config": {"fields": ["status", "knowledgeTags"], "showTitle": false}
 }
 ```
+
+**ObjectHeader.** Use `ObjectHeader` for a selected record's detail header (title, optional `subtitleField` / `statusField`,
+inline regular operations, and an overflow "More" menu that places destructive operations last with danger styling).
+See `sdk read docs/components.md` for its full configuration.
 
 ## Custom list columns, row detail and per-row operations
 
@@ -513,15 +524,16 @@ Keep the form mounted with `v-show` so it can receive drafts while the detail is
 `discarded`. The save event carries the saved object as `{className, primaryKey}`. A failed save keeps the editor open.
 
 ```html
-<projection slot="form" v-show="mode === 'edit'"
-  @saved="mode = 'view'" @discarded="mode = 'view'"></projection>
+<projection slot="form" v-show="editing || creating"
+  @saved="closeEditor" @discarded="closeEditor"></projection>
 ```
 
 Keep `recipes.md` for page-specific business guidance. Use this section as the single reference for the draft format.
 
 For an assistant draft, look up the form's `objectType` in the entry's generated page skill. Read the owner form
 and copy `save.draftOperation` into the artifact's `operation`. Use the entry's `pageKey`. For an edit, include
-the opaque ID returned by the owner and put only the changed field values in `form`. When an owner form field's
+the opaque ID returned by the owner (and `itemKey` when drafting a child row inside a parent record's row-attached
+`ObjectForm`) and put only the changed field values in `form`. When an owner form field's
 JSON Pointer is a nested path (for example `/modelConfig/modelId`), organize `form` as nested objects
 (`{"modelConfig": {"modelId": "..."}}`) — never use a flat JSON Pointer string key such as `"/modelConfig/modelId"`.
 

@@ -7,6 +7,14 @@
           "objectType": "platform:AgentDefinition"
         },
         "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": true
       }
     },
     "members": {
@@ -37,6 +45,34 @@
         "operation": "platform:AgentDefinition.save"
       }
     },
-    "commands": {}
+    "commands": {
+      "create": {
+        "labelKey": "command.new",
+        "primary": true,
+        "do": {
+          "set": {
+            "fields": {
+              "creating": {
+                "literal": true
+              },
+              "selected": {
+                "literal": null
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Agent directory",
+        "command.new": "New agent",
+        "action.edit": "Edit",
+        "action.back": "Back",
+        "empty.prompt": "Select an agent or create one."
+      }
+    }
   }
 }

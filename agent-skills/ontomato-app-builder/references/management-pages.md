@@ -11,8 +11,9 @@ node "$SKILL/ontomato.mjs" panel register "$example"
 ```
 
 Open the example's application entry at `/applications/app-example-agent-management/manage`. Select an agent to edit it.
-The New control clears that selection and the owner supplies the create form. After a successful create, the host
-uses the object returned by the owner as the form's selection.
+The **New** command in the page header sets public state `creating: true` and clears `selected`, so the owner supplies the
+create form and the page assistant can open the same state. After a successful create, the host uses the object returned
+by the owner as the form's selection.
 
 Start your own page by choosing the registered platform type and your intended application ID.
 
@@ -38,7 +39,8 @@ declares both the form read and a `form.save` operation.
 | Status tabs with counts | Use a `SegmentedControl` with `data.counts` and `state.value` connected to status. Connect `state.status` on the list. Counts and rows can share the search state. The owner supplies the ordered `[{key, label, count}]` options. |
 | Pagination | Use an owner read with pagination parameters. The list supplies the values at runtime, with `config.pageSize` for a different page size. |
 | Select a row and show details | Connect the list's `state.selected` and the summary's `target` to the same object state. Set the summary's `data.record` to the owner read. |
-| New and edit in one form | Set `component` to `ObjectForm`, declare `data.form`, `data.createForm` and the owner save in `operation`, and connect `target` to the selected state. A Vue button clears the selection and opens the create form. |
+| New and edit in one form | Set `component` to `ObjectForm`, declare `data.form`, `data.createForm` and the owner save in `operation`, and connect `target` to the selected state. Declare a `deepLink: true` boolean `creating` state and a primary `manifest.commands.create` header command (`do.set` with `creating: true`, `selected: null`); keep the form mounted with `v-show` and clear `creating` on select, save, or discard. |
+| Detail header with actions | Use `ObjectHeader` with `target` bound to the selected state, `data.record` bound to the record read, and declared `operations`. Pair it with `ObjectSummary` (`config.showTitle: false`) when showing fields beneath the header. |
 | Single operation | Set `component` to `OperationButton` and put the owner ID in `operation`. Set `target` to the selected object state. |
 | Batch operation | Connect the list's `state.checked` and the button's `target` to the same list of object references. Use an owner operation that supports batch execution. |
 | Highlight search hits | Connect `state.search` on the detail when its record read declares `search`. The owner returns highlight ranges that ObjectList and ObjectSummary render. |
@@ -51,5 +53,7 @@ Use a read object `{read, params}` for explicit state or literal bindings. Compo
 parameters. For example, ObjectForm supplies `values` and `changedField` to the owner form read.
 
 Write the Vue template inside `<div id="app">` in `panel.html`, and place each member with `<projection slot="name"></projection>`.
-Use ordinary CSS for layout and Vue directives and events for interaction. In `panel.mjs`, call `mountPanel` and use the
-SDK panel context for public state. Put page instructions in `recipes.md`.
+Write layout in normal HTML, CSS, and Vue (not layout components) using platform design tokens, without CSS viewport units.
+In `panel.mjs`, call `mountPanel` and use `usePanelContext` for public state, `usePanelNarrow` to switch between split and
+single-column views by container width, and `usePanelBack` to wire browser Back, Escape, and the host's unsaved-changes guard.
+Put page instructions in `recipes.md`.

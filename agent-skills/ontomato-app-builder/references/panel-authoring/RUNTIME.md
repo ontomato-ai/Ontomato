@@ -93,6 +93,48 @@ interface PanelStateStore {
 }
 ```
 
+### usePanelBack
+
+Registers a panel-local back/close layer with the enclosing host (LIFO). While `active` is truthy:
+- Browser Back (when `pushHistory` is true, the default) runs `onBack` after the host's unified unsaved-changes guard.
+- Pressing Escape (when no modal dialog, drawer, dropdown, or popover is open) runs `onBack` after the same guard.
+- Calling the returned `back()` runs the same guard and then `onBack`, keeping UI back buttons and browser Back in sync.
+
+```ts
+function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, options?: UsePanelBackOptions | undefined): PanelBackHandle
+```
+
+### PanelBackHandle
+
+```ts
+interface PanelBackHandle {
+  /**
+   * Runs the same guarded back step as Escape or browser Back (for example from a "Back to list" button): asks the
+   * host's unified unsaved-changes confirmation first and calls `onBack` only if allowed. Resolves `true` when `onBack`
+   * ran, `false` when cancelled or when `active` is currently `false`.
+   */
+  back: () => Promise<boolean>;
+}
+```
+
+### usePanelNarrow
+
+Observes a panel container element's own inline width via `ResizeObserver` and reports whether it is narrow
+(`width > 0` and `width <= breakpoint`), resolving the breakpoint from a CSS design token on that element
+(default `--pane-narrow-breakpoint`). Never reads `window.innerWidth`.
+
+```ts
+function usePanelNarrow(element: MaybeRefOrGetter<HTMLElement | null | undefined>, options?: UsePanelNarrowOptions): ComputedRef<boolean>
+```
+
+### savePanelFile
+
+Saves one file for the reader, under its own name, and says what was saved.
+
+```ts
+function savePanelFile(file: { mime: "image/png" | "text/csv" | "application/zip"; bytes: ArrayBuffer | Uint8Array<ArrayBuffer> | Blob; suggestedName: string; }): { kind: "file"; name: string; mime: "image/png" | "text/csv" | "application/zip"; }
+```
+
 ## Reads and operations
 
 ### usePanelData
@@ -192,10 +234,11 @@ from `panel uses <application-id>` and, when needed, the destination's deep-link
 
 The host renders the page header solely from declared metadata (title, description, back control, `manifest.commands`,
 and Refresh) and never places business data there; render counts and summaries inside panel content via the owning
-component. Below the header and above the bottom composer, every entry (full page, beside a conversation, or inside a
-custom frame's current-entry slot) receives a definite-height content box. Style panels against that box with normal
-CSS (natural stacking, or filling the box with inner scrolling and a `rem`/`px` `min-height` with no upper cap) rather
-than CSS viewport units (`vh`, `vw`, `dvh`, etc.), and use `<sdk-dialog>` / `<sdk-drawer>` for overlays.
+component. Below the header to the bottom edge of the page, every entry (full page, beside a conversation, or inside a
+custom frame's current-entry slot) receives a definite-height content box with no host padding; the bottom composer
+floats over the page without occupying content-box height. Style panels against that box with normal HTML, CSS, and
+Vue (natural stacking, or filling the box with inner scrolling and a `rem`/`px` `min-height`) rather than layout
+components or CSS viewport units (`vh`, `vw`, `dvh`, etc.), and use `<sdk-dialog>` / `<sdk-drawer>` for overlays.
 
 The generated page skill's Panel commands section gives the assistant the address or operation for each command.
 `do.set` opens the current entry with the changed deep-linkable fields in `state`. `do.invoke` calls the listed
