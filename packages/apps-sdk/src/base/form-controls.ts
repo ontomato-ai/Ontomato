@@ -9,6 +9,8 @@ import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
  */
 export interface FormControls {
   readonly values: Readonly<Ref<PanelFormValues>>;
+  /** Effective values with inactive object-variant keys pruned, used for default equality checks. */
+  readonly prunedValues: Readonly<Ref<PanelFormValues>>;
   /** The owner's messages and this form's own (text that is not the field's value), by absolute path. */
   readonly errors: Readonly<Ref<Readonly<Record<string, string>>>>;
   readonly changed: Readonly<Ref<ReadonlySet<string>>>;
