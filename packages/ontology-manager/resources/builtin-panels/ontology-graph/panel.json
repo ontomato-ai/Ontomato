@@ -46,6 +46,18 @@
             "objectType": "platform:Relationship"
           }
         }
+      },
+      "pathFrom": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "pathTo": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
       }
     },
     "members": {
@@ -90,7 +102,9 @@
           "selectedEdge": "relation",
           "positions": "positions",
           "highlightedNodes": "highlightedNodes",
-          "highlightedEdges": "highlightedEdges"
+          "highlightedEdges": "highlightedEdges",
+          "pathFrom": "pathFrom",
+          "pathTo": "pathTo"
         },
         "config": {
           "edgeEnds": {

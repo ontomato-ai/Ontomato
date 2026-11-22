@@ -134,9 +134,24 @@ await mountPanel({
       edges: instance.state.values.value.highlightedEdges ?? [],
     }));
     const hasHighlight = computed(() => highlighted.value.nodes.length > 0 || highlighted.value.edges.length > 0);
+    const activePath = computed(() =>
+      Boolean(instance.state.values.value.pathFrom?.primaryKey && instance.state.values.value.pathTo?.primaryKey),
+    );
+    const hasBanner = computed(() => hasHighlight.value || activePath.value);
+
+    // Sync path dropdowns when state is updated externally (e.g. by the page's agent).
+    watch(
+      () => [instance.state.values.value.pathFrom?.primaryKey ?? "", instance.state.values.value.pathTo?.primaryKey ?? ""],
+      ([from, to]) => {
+        if (from && from !== pathFrom.value) pathFrom.value = from;
+        if (to && to !== pathTo.value) pathTo.value = to;
+      },
+    );
 
     function highlight(nodes, edges) {
       instance.state.setState({
+        pathFrom: null,
+        pathTo: null,
         highlightedNodes: nodes.map((className) => ({ className: OBJECT_TYPE, primaryKey: className })),
         highlightedEdges: edges.map((relationship) => ({ className: RELATIONSHIP, primaryKey: relationship })),
       });
@@ -195,32 +210,33 @@ await mountPanel({
         pathMessage.value = "先选起点和终点对象类型。";
         return;
       }
+      // Delegate path highlighting and reporting to ObjectGraph via its native pathFrom/pathTo bindings
+      // instead of writing path nodes into highlightedNodes (which the canvas renders as search hits).
+      instance.state.setState({
+        pathFrom: { className: OBJECT_TYPE, primaryKey: from },
+        pathTo: { className: OBJECT_TYPE, primaryKey: to },
+        highlightedNodes: [],
+        highlightedEdges: [],
+      });
       if (from === to) {
-        highlight([from], []);
         pathMessage.value = `「${classNameLabel(from)}」自己就是起点和终点。`;
         return;
       }
-      const queue = [{ node: from, nodes: [from], edges: [] }];
+      const queue = [{ node: from, hops: 0 }];
       const visited = new Set([from]);
       while (queue.length) {
         const current = queue.shift();
         for (const relation of drawableRelations.value) {
           if (relation.fromclass !== current.node || visited.has(relation.toclass)) continue;
-          const next = {
-            node: relation.toclass,
-            nodes: [...current.nodes, relation.toclass],
-            edges: [...current.edges, relation.relationship],
-          };
-          if (next.node === to) {
-            highlight(next.nodes, next.edges);
-            pathMessage.value = `找到路径：${next.edges.length} 跳`;
+          const hops = current.hops + 1;
+          if (relation.toclass === to) {
+            pathMessage.value = `找到路径：${hops} 跳`;
             return;
           }
-          visited.add(next.node);
-          queue.push(next);
+          visited.add(relation.toclass);
+          queue.push({ node: relation.toclass, hops });
         }
       }
-      highlight([], []);
       pathMessage.value = `找不到从「${classNameLabel(from)}」到「${classNameLabel(to)}」的路径`;
     }
 
@@ -249,33 +265,6 @@ await mountPanel({
         navigationError.value = reason instanceof Error ? reason.message : String(reason);
       }
     }
-
-    // Selecting an object type or relation highlights its neighbourhood and dims unrelated nodes and edges, matching the
-    // original graph explorer; clearing selection restores any active search/filter highlight.
-    watch([selectedObject, selectedRelation], ([object, relation]) => {
-      if (object) {
-        pathMessage.value = "";
-        const edges = drawableRelations.value.filter(
-          (item) => item.fromclass === object.className || item.toclass === object.className,
-        );
-        const nodes = new Set([object.className]);
-        for (const edge of edges) {
-          nodes.add(edge.fromclass);
-          nodes.add(edge.toclass);
-        }
-        highlight([...nodes], edges.map((edge) => edge.relationship));
-        return;
-      }
-      if (relation) {
-        pathMessage.value = "";
-        highlight(
-          [relation.fromclass, relation.toclass].filter((className) => objectNames.value.has(className)),
-          [relation.relationship],
-        );
-        return;
-      }
-      highlightBrowsed();
-    });
 
     // The agent names the selected object by the owner's label, not by its key alone.
     watch(
@@ -320,6 +309,7 @@ await mountPanel({
       pathTo,
       pathMessage,
       hasHighlight,
+      hasBanner,
       findPath,
       clearHighlight,
       selectRelation,

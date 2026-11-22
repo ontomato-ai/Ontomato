@@ -23,12 +23,12 @@
     align-items: center;
     gap: var(--spacing-xs);
   }
-  /* A steady canvas height: the details column scrolls inside it instead of changing the drawing's size. */
+  /* Fill the available viewport height without overflowing the page, keeping the details column scrolled inside. */
   .vm-body {
     display: flex;
     flex: 0 0 auto;
-    height: clamp(22rem, 62vh, 42rem);
-    min-height: 22rem;
+    height: clamp(24rem, calc(100vh - 172px), 52rem);
+    min-height: 24rem;
     gap: var(--spacing-md);
     align-items: stretch;
   }

@@ -44,7 +44,6 @@
   .ot-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .ot-title { flex: 1; min-width: 8rem; font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ot-detail-main .ot-table { overflow-x: auto; }
-  .ot-attr-grid > :nth-child(5) { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
   .ot-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: var(--sdk-overlay-color-lighter); }
   .ot-modal-card { width: min(32.5rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--sdk-bg-color-overlay, var(--sdk-bg-color)); box-shadow: var(--elevation-overlay); overflow: hidden; }
   .ot-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
@@ -162,7 +161,7 @@
                   <span class="ot-ellipsis">{{ row.fields.type }}</span>
                   <span>{{ row.fields.businessKey === "true" ? t("ot.yes") : "-" }}</span>
                   <span>{{ row.fields.primaryKey === "true" ? t("ot.yes") : "-" }}</span>
-                  <span class="ot-ellipsis">{{ row.fields.attrDesc || "-" }}</span>
+                  <span class="ot-ellipsis" :title="row.fields.attrDesc || ''">{{ row.fields.attrDesc || "-" }}</span>
                   <svg class="ot-chevron" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                     <path v-if="attributeMode === 'edit' && selectedAttribute && selectedAttribute.primaryKey === row.primaryKey" d="M3.5 10 8 5.5 12.5 10"/>
                     <path v-else d="M3.5 6 8 10.5 12.5 6"/>

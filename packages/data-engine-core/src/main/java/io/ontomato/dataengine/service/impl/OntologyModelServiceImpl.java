@@ -853,7 +853,15 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private static ObjectNode textControl(boolean multiline) {
-		return multiline ? object("kind", "text", "multiline", true) : object("kind", "text");
+		return textControl(multiline, null);
+	}
+
+	private static ObjectNode textControl(boolean multiline, Integer maxLength) {
+		ObjectNode control = multiline ? object("kind", "text", "multiline", true) : object("kind", "text");
+		if (maxLength != null) {
+			control.put("maxLength", maxLength);
+		}
+		return control;
 	}
 
 	private static ObjectNode switchControl() {
@@ -861,7 +869,15 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private static ObjectNode stringSchema(String label) {
-		return object("type", "string", "title", label);
+		return stringSchema(label, null);
+	}
+
+	private static ObjectNode stringSchema(String label, Integer maxLength) {
+		ObjectNode schema = object("type", "string", "title", label);
+		if (maxLength != null) {
+			schema.put("maxLength", maxLength);
+		}
+		return schema;
 	}
 
 	private static ObjectNode booleanSchema(String label) {
@@ -960,16 +976,24 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		String showNameLabel = label.get("showName");
 		String descLabel = label.get("classDesc");
 		List<ObjectNode> fields = new ArrayList<>();
-		fields.add(panelField("/className", classNameLabel, true, textControl(false), stringSchema(classNameLabel),
-				edit, null, false));
-		if (!edit) {
+		ObjectNode classNameField = panelField("/className", classNameLabel, true, textControl(false),
+				stringSchema(classNameLabel), edit, null, false);
+		ObjectNode showNameField = panelField("/showName", showNameLabel, true, textControl(false, 80),
+				stringSchema(showNameLabel, 80), false, null, false);
+		ObjectNode descField = panelField("/classDesc", descLabel, false, textControl(true, 400),
+				stringSchema(descLabel, 400), false, null, false);
+		if (edit) {
+			// Match the detail view's edit order: editable display name first, read-only API name second, description last.
+			fields.add(showNameField);
+			fields.add(classNameField);
+			fields.add(descField);
+		} else {
+			fields.add(classNameField);
 			fields.add(panelField("/primaryKeyName", primaryKeyNameLabel, true, textControl(false),
 					stringSchema(primaryKeyNameLabel), false, null, false));
+			fields.add(showNameField);
+			fields.add(descField);
 		}
-		fields.add(panelField("/showName", showNameLabel, true, textControl(false), stringSchema(showNameLabel),
-				false, null, false));
-		fields.add(panelField("/classDesc", descLabel, false, textControl(true), stringSchema(descLabel),
-				false, null, false));
 		return fields;
 	}
 

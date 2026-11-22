@@ -552,9 +552,11 @@ class OntologyModelServiceImplTest {
 	void theObjectTypeFormOpensAnEditWithItsNameReadOnlyAndTheStoredValues() {
 		var form = service.objectTypeForm(open("object", "platform:ObjectType", "Device"), user, "en");
 
-		assertEquals(List.of("/className", "/showName", "/classDesc"), paths(form));
+		assertEquals(List.of("/showName", "/className", "/classDesc"), paths(form));
 		assertTrue(fieldOf(form, "/className").get("readOnly").asBoolean());
 		assertFalse(fieldOf(form, "/showName").get("readOnly").asBoolean());
+		assertEquals(80, fieldOf(form, "/showName").get("control").get("maxLength").asInt());
+		assertEquals(400, fieldOf(form, "/classDesc").get("control").get("maxLength").asInt());
 		assertEquals(Map.of("className", "Device", "showName", "Device", "classDesc", ""), form.values());
 		assertEquals("Admin.form.className", fieldOf(form, "/className").get("label").asText());
 		assertEquals(List.of("className", "showName"), texts(form.save().bodySchema().get("required")));

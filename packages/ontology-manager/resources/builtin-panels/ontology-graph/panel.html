@@ -10,16 +10,24 @@
     height: 100%;
     container-type: inline-size;
   }
-  /* The domain's sizes sit at the right of the page's own top line, as the page header carries them. */
+  /* The domain's sizes ride on the canvas's top-left edge, on the same strip as its tools, so the page spends no
+     line of its own on them (G-01). Hidden while a search or path banner occupies that corner. */
   .og-summary {
+    position: absolute;
+    top: var(--spacing-sm);
+    left: var(--spacing-sm);
+    z-index: 2;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
     gap: var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--sdk-bg-color) 88%, transparent);
     color: var(--sdk-text-color-secondary);
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    pointer-events: none;
   }
   .og-summary span {
     display: flex;
@@ -32,7 +40,7 @@
   }
   .og-grid {
     display: grid;
-    height: clamp(460px, calc(100vh - 280px), 780px);
+    height: clamp(480px, calc(100vh - 156px), 840px);
     min-height: 0;
     flex: 0 0 auto;
     grid-template-columns: 264px minmax(320px, 1fr) 320px;
@@ -523,12 +531,6 @@
 </style>
 <div id="app">
   <section class="og">
-    <div class="og-summary" aria-label="本体资源统计">
-      <span :aria-busy="counts.objects === null"><strong>{{ counts.objects ?? "–" }}</strong> 对象类型</span>
-      <span :aria-busy="counts.attributes === null"><strong>{{ counts.attributes ?? "–" }}</strong> 属性</span>
-      <span :aria-busy="counts.relations === null"><strong>{{ counts.relations ?? "–" }}</strong> 关系类型</span>
-    </div>
-
     <sdk-alert
       v-for="message in readErrors"
       :key="message"
@@ -609,6 +611,11 @@
 
       <main class="og-graph">
         <div class="og-canvas" v-sdk-loading="loading">
+          <div v-show="!hasBanner" class="og-summary" aria-label="本体资源统计">
+            <span :aria-busy="counts.objects === null"><strong>{{ counts.objects ?? "–" }}</strong> 对象类型</span>
+            <span :aria-busy="counts.attributes === null"><strong>{{ counts.attributes ?? "–" }}</strong> 属性</span>
+            <span :aria-busy="counts.relations === null"><strong>{{ counts.relations ?? "–" }}</strong> 关系类型</span>
+          </div>
           <projection slot="graph"></projection>
         </div>
         <div v-if="!loading && !objects.length" class="og-graph-empty">
