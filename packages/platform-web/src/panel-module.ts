@@ -40,10 +40,10 @@ function namespaceModule(key: string, namespace: Readonly<Record<string, unknown
 }
 
 /**
- * Runs a panel's module once, with its bare imports naming `modules`. It resolves when the module has run — a panel's
- * module awaits its `mountPanel` — and refuses one that imports anything the platform does not give it.
+ * Evaluates an author's module with its bare imports naming `modules` and returns its exports.
+ * The module's import address belongs to this evaluation even if it has no imports.
  */
-export async function runPanelModule(source: string, modules: PanelModules): Promise<Record<string, unknown>> {
+export async function evaluatePanelModule(source: string, modules: PanelModules): Promise<Record<string, unknown>> {
   const imports = await panelModuleImports(source);
   const run = `panel-${++instances}`;
   const specifiers = Object.values(panelModuleSpecifiers);
@@ -66,4 +66,10 @@ export async function runPanelModule(source: string, modules: PanelModules): Pro
   } finally {
     for (const specifier of specifiers) evaluating.delete(`${run}:${specifier}`);
   }
+}
+
+
+/** A panel module mounts into its run and has no result for the caller. */
+export async function runPanelModule(source: string, modules: PanelModules): Promise<void> {
+  await evaluatePanelModule(source, modules);
 }

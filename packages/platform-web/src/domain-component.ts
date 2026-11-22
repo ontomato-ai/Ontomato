@@ -2,14 +2,14 @@ import * as Vue from "vue";
 import { useMember, useMemberData, useMemberOperations, useMemberParam, useMemberRead } from "@ontomato/apps-sdk/direct";
 import type { DomainComponentRuntime } from "@ontomato/contracts/domain-components";
 import { panelModuleSpecifiers } from "@ontomato/contracts/panel-module";
-import { runPanelModule, useTemplateCompiler } from "./panel-module";
+import { evaluatePanelModule, useTemplateCompiler } from "./panel-module";
 
 const components = new Map<string, { source: DomainComponentRuntime["source"]; component: Promise<Vue.Component> }>();
 
 async function load({ componentId, source }: DomainComponentRuntime): Promise<Vue.Component> {
   await useTemplateCompiler();
   if (source.module === undefined) return { template: source.template };
-  const { default: component } = await runPanelModule(source.module, {
+  const { default: component } = await evaluatePanelModule(source.module, {
     [panelModuleSpecifiers.vue]: Vue,
     [panelModuleSpecifiers.sdk]: { useMember, useMemberData, useMemberOperations, useMemberParam, useMemberRead },
   });
