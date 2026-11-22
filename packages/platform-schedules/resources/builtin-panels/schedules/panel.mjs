@@ -33,6 +33,8 @@ await mountPanel({
 
     // Page-local state.
     const search = ref("");
+    const schedulePage = ref(null);
+    const editPane = ref(null);
     // Draft links use the page state to open the owner's form before it checks the draft.
     const mode = computed(() => {
       if (values.value.compose === "new") return appsProblem.value ? "view" : "create";
@@ -42,6 +44,9 @@ await mountPanel({
       const compose = next === "create" ? "new" : next === "edit" ? "edit" : null;
       if ((values.value.compose ?? null) !== compose) instance.state.set("compose", compose);
     }
+    watch([mode, editPane], ([next, pane]) => {
+      if (next === "edit") pane?.focus();
+    }, { flush: "post" });
     const busy = ref(new Set());
     const runs = ref([]);
     const nextCursor = ref(null);
@@ -387,6 +392,11 @@ await mountPanel({
     function cancelForm() {
       setMode("view");
     }
+    function closeEditOnEscape(event) {
+      if (event.defaultPrevented) return;
+      cancelForm();
+      void nextTick(() => schedulePage.value?.querySelector(".card.is-selected .card-select")?.focus());
+    }
     // A draft an agent prepared opens in the form that took it; the reader saves or discards it there.
     watch(instance.draft, (draft) => {
       if (!draft) return;
@@ -396,12 +406,12 @@ await mountPanel({
     const selectedRow = computed(() => rows.value.find((row) => row.primaryKey === selectedId.value) ?? detailRow.value);
 
     return {
-      t, app, search, rowChips, moreChips, chosenMore, shown, rows, emptyText, tasksData, pickApp, appLabel, applicationIcon, appsProblem, renewalProblem, unavailableApps,
+      t, app, search, schedulePage, editPane, rowChips, moreChips, chosenMore, shown, rows, emptyText, tasksData, pickApp, appLabel, applicationIcon, appsProblem, renewalProblem, unavailableApps,
       taskState, nextText, statusLabel, moment, duration, runError, summaryText, resultPreview,
       selected, selectedId, selectedRow, record, form, detailRow, settings, revision, taskZone, paneOpen, mode,
       select, closePane, busy, toggle, runNow, askDelete, edit, command, showRecords,
       runGroups, historyRecords, runsLoading, runsFailure, nextCursor, loadingMore, loadMore, runId, expanded, toggleRun, hasDetails,
-      latestRun, latestResult, openResult, saved, created, cancelForm,
+      latestRun, latestResult, openResult, saved, created, cancelForm, closeEditOnEscape,
     };
   },
 });

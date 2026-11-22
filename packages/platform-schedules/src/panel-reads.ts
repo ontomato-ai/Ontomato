@@ -59,7 +59,7 @@ function taskRecord(task: PlatformTask, locale: string, translate: Translate): P
 
 function typedField(field: FormField): PanelFormField {
   const { key, label, required, defaultValue, help } = field;
-  const common = { path: taskFieldPath(key), label, required, defaultValue, help, readOnly: false };
+  const common = { path: taskFieldPath(key), label, required, defaultValue, help, readOnly: false, section: "application" };
   return field.type === "select"
     ? { ...common, control: { kind: "select", options: field.options }, valueSchema: { type: "string" },
       refreshOnChange: field.refreshOnChange }
@@ -113,7 +113,7 @@ async function checkDraft(readForm: FormReader, savedValues: FormValues, draft: 
 const taskFrequencyValueSchema = runtimeJsonObjectSchema.parse(zodToJsonSchema(platformTaskFrequencySchema));
 
 function settingsFields(
-  applications: readonly NamedApplication[], translate: Translate,
+  applications: readonly NamedApplication[], frequencyHelp: string, translate: Translate,
 ): PanelFormField[] {
   const field = (key: keyof ScheduledTaskPanelSettings, required = true) => ({
     path: formFieldPointer("/task/", key), label: translate(key === "appId" ? "platformSchedules.form.app" : `platformSchedules.panelSettings.${key}`), required,
@@ -131,9 +131,10 @@ function settingsFields(
         })),
       },
     },
-    { ...field("frequency"), control: { kind: "frequency" }, valueSchema: taskFrequencyValueSchema },
+    { ...field("frequency"), control: { kind: "frequency" }, valueSchema: taskFrequencyValueSchema, help: frequencyHelp },
     { ...field("timeZone"), control: { kind: "text" } },
-    { ...field("notifyEmail", false), control: { kind: "text" } },
+    { ...field("notifyEmail", false), section: "notifications", control: { kind: "text", maxLength: 320 },
+      help: translate("platformSchedules.form.notifyPlaceholder") },
   ];
 }
 
@@ -151,12 +152,20 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       const messageKey = isParameter ? "invalidDraftParameter" : "invalidDraftField";
       return { field, code: "invalid_format", message: translate(`platformSchedules.panelErrors.${messageKey}`, { field }) };
     });
-    const applicationList = api.applications();
+    const applications = await api.applications();
     if (!task && provided.appId === undefined && params.defaultAppId) {
-      const initial = (await applicationList).find(app => app.id === params.defaultAppId && app.available);
+      const initial = applications.find(app => app.id === params.defaultAppId && app.available);
       if (initial) current.appId = initial.id;
     }
     const settings = { ...current, ...provided };
+    const selectedApplication = applications.find(app => app.id === settings.appId);
+    const missingApplication = translate("platformSchedules.form.appUnknown");
+    const appOptions = task && !applications.some(app => app.id === task.appId) ? [
+      ...applications, { id: task.appId, name: task.appId, description: null, available: false,
+        unavailableReason: missingApplication, taskCount: 0 },
+    ] : applications;
+    if (settings.appId && !selectedApplication)
+      errors.push({ field: "/task/appId", code: "invalid_option", message: missingApplication });
     const field = draft.success ? params.changedField : null;
     const changedApplication = field === "/task/appId";
     const sameApp = settings.appId === current.appId;
@@ -167,16 +176,28 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
       values, changedField, taskId: sameApp ? task?.id ?? null : null, timeZone: zone.success ? zone.data : current.timeZone,
     });
     const readApplicationForm = () => {
-      if (!settings.appId) return undefined;
+      if (!selectedApplication) return undefined;
       if (!draft.success) return readForm(stored, null);
       const { parameters } = draft.data;
       if (params.values !== undefined && field == null) return checkDraft(readForm, stored, parameters);
       const changedKey = field == null || field.startsWith("/task/") ? null : formFieldKey(field, "/");
       return readForm(changedApplication ? {} : params.values === undefined ? stored : parameters, changedKey);
     };
-    const [applications, form] = await Promise.all([applicationList, readApplicationForm()]);
+    const form = await readApplicationForm();
+    const frequencyHelp = translate(task ? "platformSchedules.form.taskZone" : "platformSchedules.form.serviceZone", {
+      zone: settings.timeZone,
+    });
     return {
-      fields: [...settingsFields(applications, translate), ...(form?.fields.map(typedField) ?? [])],
+      fields: [...settingsFields(appOptions, frequencyHelp, translate), ...(form?.fields.map(typedField) ?? [])],
+      sections: [
+        ...(settings.appId ? [{
+          key: "application",
+          title: translate("platformSchedules.form.content", { app: selectedApplication?.name ?? settings.appId }),
+          ...(!selectedApplication ? { hint: missingApplication }
+            : form?.fields.length === 0 ? { hint: translate("platformSchedules.form.noFields") } : {}),
+        }] : []),
+        { key: "notifications", title: translate("platformSchedules.form.after") },
+      ],
       values: { ...form?.values, task: settings },
       errors: [
         ...errors,

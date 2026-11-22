@@ -8,7 +8,7 @@ import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
-import { findPanelFormOption } from "@ontomato/contracts/form-fields";
+import { findPanelFormOption, type PanelFormOption } from "@ontomato/contracts/form-fields";
 import { admitsNull, valueAt } from "../panel/form-values";
 import { agentAvatar, avatarIconOptions, darkAvatarColorOptions, lightAvatarColorOptions, storedAgentAvatar } from "@ontomato/agent-shell-ui/avatar";
 import { useDarkMode } from "@ontomato/foundation-ui/theme";
@@ -39,6 +39,7 @@ const off = computed(() => props.disabled || props.field.readOnly || controls.bu
 const control = computed(() => props.field.control);
 const set = (next: RuntimeJsonValue) => controls.set(props.path, next);
 const isObject = (held: RuntimeJsonValue | undefined) => held !== null && typeof held === "object" && !Array.isArray(held);
+const optionNote = ({ description, disabledReason }: PanelFormOption) => [description, disabledReason].filter(Boolean).join(" · ");
 /**
  * A choice whose values are objects (A's contract): its options are objects — the same options never mix them with plain
  * values — or it has none left and holds an object still.
@@ -182,6 +183,7 @@ function setFrequency(next: FrequencyDraft) {
       :filterable="control.allowCreate"
       :allow-create="control.allowCreate"
       :default-first-option="control.allowCreate"
+      :fit-input-width="control.options.some(optionNote)"
       :disabled="off"
       class="sdk-form-field-wide"
       @update:model-value="set($event)"
@@ -192,8 +194,12 @@ function setFrequency(next: FrequencyDraft) {
         :value="option.value"
         :label="option.label"
         :disabled="option.disabled"
-        :title="option.disabledReason ?? option.description ?? undefined"
-      ></el-option>
+        :title="optionNote(option) || undefined"
+        :class="{ 'sdk-reference-option-described': optionNote(option) }"
+      >
+        <span class="sdk-reference-option-label">{{ option.label }}</span>
+        <span v-if="optionNote(option)" class="sdk-reference-option-description">{{ optionNote(option) }}</span>
+      </el-option>
     </el-select>
     <el-switch
       v-else-if="control.kind === 'switch'"
@@ -441,3 +447,5 @@ function setFrequency(next: FrequencyDraft) {
   align-self: flex-start;
 }
 </style>
+
+<style scoped src="./form-option.css"></style>

@@ -42,6 +42,25 @@ it("carries the owner's pause cause on both the card and the selected record", a
   await expect(reads.record(task.id)).resolves.toMatchObject(expected);
 });
 
+it("keeps an uninstalled application's name and reason in the picker so the task can be moved", async () => {
+  const retired = { ...task, appId: "app-old-schedule" };
+  vi.stubGlobal("fetch", async (url: string) => {
+    const path = new URL(url).pathname;
+    if (path === "/platform/applications") return Response.json(catalogue);
+    if (path.endsWith("/platform/scheduled-tasks/applications")) return Response.json(examples.applicationsEnglish.response);
+    if (path.endsWith(`/${task.id}`)) return Response.json(retired);
+    throw new Error(`Unexpected owner request ${path}`);
+  });
+  const form = panelReadResultSchemas.panelFormDescription.parse(await createScheduledTaskReadAdapter(viewer).form(task.id, {}));
+  expect(form.values.task).toMatchObject({ appId: retired.appId });
+  expect(form.fields.find(({ path }) => path === "/task/appId")?.control).toMatchObject({
+    kind: "select", options: expect.arrayContaining([
+      expect.objectContaining({ value: retired.appId, label: retired.appId, disabled: true, disabledReason: "Not installed" }),
+    ]),
+  });
+  expect(form.errors).toContainEqual({ field: "/task/appId", code: "invalid_option", message: "Not installed" });
+});
+
 it("reads the viewer's task rows and selected summary, and recomputes the selected task's form", async () => {
   const fetchOwner = vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
     expect(new Headers(init.headers).get("tk")).toBe(viewer.token);
@@ -90,6 +109,15 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
   expect(form).toMatchObject({
     values: { ...task.content, task: { title: task.title, appId: task.appId, frequency: task.frequency, timeZone: task.timeZone } },
     revision: task.revision,
+    sections: [
+      { key: "application", title: "What Operations center gets" },
+      { key: "notifications", title: "After it runs" },
+    ],
+    fields: expect.arrayContaining([
+      expect.objectContaining({ path: "/task/frequency", help: `In this task's time zone (${task.timeZone}).` }),
+      expect.objectContaining({ path: "/task/notifyEmail", section: "notifications" }),
+      expect.objectContaining({ path: "/operation", section: "application" }),
+    ]),
   });
   expect(form.fields.map(field => field.path)).toEqual([
     "/task/title", "/task/appId", "/task/frequency", "/task/timeZone", "/task/notifyEmail", "/operation", "/caseSetId",

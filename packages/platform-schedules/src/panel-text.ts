@@ -13,7 +13,7 @@ export function scheduledTaskFieldLabels(translate: (key: string) => string) {
 }
 
 export interface ScheduledTaskPanelText {
-  form: { app: string };
+  form: Record<"app" | "appUnknown" | "serviceZone" | "taskZone" | "content" | "noFields" | "after" | "notifyPlaceholder", string>;
   action: { runNow: string };
   panelFields: { settings: string; state: string; nextRun: string; lastRun: string; lastRunAt: string; lastRunSummary: string; latestResultPath: string };
   frequency: { every: Record<"minute" | "hour" | "day", string>; daily: string; weekly: string; monthly: string; cron: string };
@@ -27,7 +27,7 @@ export interface ScheduledTaskPanelText {
 /** Exposes the same owner messages in the Node locale pack's flat format. */
 export function scheduledTaskPanelMessages(text: ScheduledTaskPanelText): Record<string, string> {
   return {
-    "platformSchedules.form.app": text.form.app,
+    ...Object.fromEntries(Object.entries(text.form).map(([key, value]) => [`platformSchedules.form.${key}`, value])),
     "platformSchedules.action.runNow": text.action.runNow,
     "platformSchedules.panelRunStarted": text.panelRunStarted,
     "platformSchedules.panelErrors.revisionConflict": text.panelErrors.revisionConflict,
@@ -44,7 +44,16 @@ export function scheduledTaskPanelMessages(text: ScheduledTaskPanelText): Record
 }
 
 export const scheduledTaskPanelTextEn = {
-  form: { app: "Application" },
+  form: {
+    app: "Application",
+    appUnknown: "Not installed",
+    serviceZone: "In the service's time zone ({zone}).",
+    taskZone: "In this task's time zone ({zone}).",
+    content: "What {app} gets",
+    noFields: "This application needs nothing more.",
+    after: "After it runs",
+    notifyPlaceholder: "Optional. One message after each run, success or failure.",
+  },
   action: { runNow: "Run now" },
   panelFields: { settings: "Settings", state: "Status", nextRun: "Next run", lastRun: "Last run", lastRunAt: "Last run time", lastRunSummary: "Last run summary", latestResultPath: "Latest result" },
   frequency: {
@@ -80,7 +89,16 @@ export const scheduledTaskPanelTextEn = {
 } satisfies ScheduledTaskPanelText;
 
 export const scheduledTaskPanelTextZhCn = {
-  form: { app: "应用" },
+  form: {
+    app: "应用",
+    appUnknown: "未安装",
+    serviceZone: "按服务时区（{zone}）。",
+    taskZone: "按这个任务的时区（{zone}）。",
+    content: "交给{app}的内容",
+    noFields: "这个应用不需要再填别的。",
+    after: "跑完以后",
+    notifyPlaceholder: "选填。跑完发一封信，成功、失败都发",
+  },
   action: { runNow: "立即运行" },
   panelFields: { settings: "配置", state: "状态", nextRun: "下次运行", lastRun: "上次运行", lastRunAt: "上次运行时间", lastRunSummary: "上次运行摘要", latestResultPath: "最近结果" },
   frequency: {

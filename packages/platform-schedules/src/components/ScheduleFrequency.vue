@@ -19,6 +19,11 @@ const { t, locale } = useScheduleText();
 const weekdays = computed(() =>
   [1, 2, 3, 4, 5, 6, 7].map((value) => ({ value, label: weekdayName(value, locale.value) })),
 );
+const hintKeys = { interval: "form.intervalHint", monthly: "form.monthEndHint", cron: "form.cronHint" } as const;
+const hint = computed(() => {
+  const kind = draft.value.kind;
+  return kind === "interval" || kind === "monthly" || kind === "cron" ? t(hintKeys[kind]) : null;
+});
 
 function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
   draft.value = { ...draft.value, [key]: value };
@@ -103,6 +108,7 @@ function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
       :aria-label="t('form.kind.cron')"
       @update:model-value="set('expression', String($event))"
     />
+    <p v-if="hint" class="frequency-hint">{{ hint }}</p>
   </div>
 </template>
 
@@ -114,6 +120,13 @@ function set<K extends keyof FrequencyDraft>(key: K, value: FrequencyDraft[K]) {
   width: 100%;
 }
 .frequency > * { max-width: 100%; }
+.frequency-hint {
+  width: 100%;
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
 .kind {
   width: 150px;
 }

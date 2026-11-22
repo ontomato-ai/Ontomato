@@ -170,31 +170,6 @@ function choose(keys: string | string[] | undefined) {
 .sdk-reference-picker-select {
   width: 100%;
 }
-/*
- * A described choice takes two lines in the list: its name, then what it does, as wide as the field (the list never
- * spreads past it over the page); a longer description ends in an ellipsis and is read whole in its title.
- */
-.sdk-reference-option-described {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  height: auto;
-  min-height: var(--control-height);
-  padding-block: var(--spacing-xs);
-  line-height: var(--leading-sm);
-}
-.sdk-reference-option-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sdk-reference-option-description {
-  overflow: hidden;
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .sdk-reference-picker-changed :deep(.el-form-item__label) {
   color: var(--brand-link);
 }
@@ -213,3 +188,5 @@ function choose(keys: string | string[] | undefined) {
   margin: var(--spacing-xs) 0 0;
 }
 </style>
+
+<style scoped src="./form-option.css"></style>

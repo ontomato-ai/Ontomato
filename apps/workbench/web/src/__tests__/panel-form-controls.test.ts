@@ -4,7 +4,7 @@ import { nextTick } from "vue";
 import { EditorView } from "../../../../../packages/foundation-ui/node_modules/@codemirror/view";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import type { PanelFormDescription, PanelFormRequest, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
@@ -36,7 +36,13 @@ const fields: Field[] = [
     itemFields: [
       field("/id", "ID", { kind: "hidden" }),
       field("/name", "Parameter", { kind: "text" }),
-      field("/type", "Type", { kind: "select", options: [option("string", "Text"), option("number", "Number")] },
+      field("/type", "Type", {
+        kind: "select", options: [
+          { ...option("string", "Text"), description: "Stores a text value" },
+          option("number", "Number"),
+          { ...option("legacy", "Legacy"), disabled: true, disabledReason: "No longer supported" },
+        ],
+      },
         { refreshOnChange: true }),
       field("/required", "Required", { kind: "switch" }),
     ],
@@ -91,13 +97,15 @@ const panel = panelRecord("panel-form-controls", "Form controls", manifest);
 const use = panelUse("use-form-controls", "form-controls", panel.id, "/ontology/agents");
 
 const formPath = "/api/assistant/agent-definitions/form";
-async function open(outcome: PanelOperationOutcome = { kind: "success", data: {} }, held: PanelFormValues = stored) {
+async function open(outcome: PanelOperationOutcome = { kind: "success", data: {} }, held: PanelFormValues = stored,
+  refresh?: (read: Pick<PanelFormRequest, "values" | "changedField">) => Response | Promise<Response>) {
   const intents = humanIntents(() => outcome, { source: "input", input: "agent" });
   const sent = installPlatform((request: Sent) => {
     if (request.path === `/api/product-projections/${projection.id}`) return Response.json({ projection });
     if (request.path === formPath) {
-      const { values } = request.body as { values?: PanelFormValues };
-      return Response.json({ fields, values: values ?? held, errors: [], save });
+      const read = request.body as Pick<PanelFormRequest, "values" | "changedField">;
+      if (read.changedField && refresh) return refresh(read);
+      return Response.json({ fields, values: read.values ?? held, errors: [], save });
     }
     return intents(request) ?? nothingAt(request);
   });
@@ -194,6 +202,41 @@ it("asks the owner again with a row field's absolute path when it refreshes the 
   const reads = () => sent.filter((request) => request.path === formPath);
   await vi.waitFor(() => expect(reads()).toHaveLength(2));
   expect(reads()[1]!.body).toMatchObject({ changedField: "/parameters/1/type" });
+});
+
+it("shows a plain choice's description and unavailable reason in the open list", async () => {
+  await open();
+  item("/parameters/1/type")!.querySelector<HTMLElement>(".el-select__wrapper")!.click();
+  await vi.waitFor(() => {
+    const options = [...document.querySelectorAll("[role=option]")].map(node => node.textContent);
+    expect(options.some(text => text?.includes("Text") && text.includes("Stores a text value"))).toBe(true);
+    expect(options.some(text => text?.includes("Legacy") && text.includes("No longer supported"))).toBe(true);
+  });
+});
+
+it("waits to save during a form reread, and retries a failure with the reader's changes", async () => {
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>(resolve => { finish = resolve; });
+  const refresh = vi.fn((read: Pick<PanelFormRequest, "values" | "changedField">): Response | Promise<Response> =>
+    Response.json({ fields, values: read.values, errors: [], save })).mockReturnValueOnce(pending);
+  const { context, sent } = await open(undefined, undefined, refresh);
+  type("/name", "Keep this name");
+  context.instance.forms.handle("definition")!.set("/parameters/1/type", "string");
+  await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+  expect(document.querySelector<HTMLButtonElement>(".sdk-owner-form-actions button:last-of-type")?.disabled).toBe(true);
+  await expect(context.instance.forms.submit("definition")).rejects.toThrow("Loading");
+  expect(submitted(sent)).toEqual([]);
+  finish(Response.json({ error: { message: "The form did not answer" } }, { status: 503 }));
+  const retry = await vi.waitFor(() => {
+    const control = [...document.querySelectorAll<HTMLButtonElement>("#app button")].find(button => button.textContent?.trim() === "Retry");
+    expect(control).toBeDefined();
+    return control!;
+  });
+  retry.click();
+  await vi.waitFor(() => expect(item("/name")?.querySelector("input")?.value).toBe("Keep this name"));
+  expect(refresh.mock.calls.map(([read]) => read.changedField)).toEqual(["/parameters/1/type", "/parameters/1/type"]);
+  expect(refresh.mock.calls[1]![0].values).toMatchObject({ name: "Keep this name" });
+  await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>(".sdk-owner-form-actions button:last-of-type")?.disabled).toBe(false));
 });
 
 it("keeps an omitted object absent, adds it from the owner's default and removes it as null", async () => {

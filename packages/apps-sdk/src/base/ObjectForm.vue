@@ -111,7 +111,7 @@ const errors = shallowRef<Readonly<Record<string, string>>>({});
 const invalid = shallowRef<Readonly<Record<string, string>>>({});
 const loading = ref(true);
 const saving = ref(false);
-const failure = shallowRef<Error | null>(null);
+const failure = shallowRef<{ reason: Error; retry: () => void } | null>(null);
 /** The owner's refusal of the last save, shown with the form the reader still holds; its fields' messages on the fields. */
 const refusal = shallowRef<Error | null>(null);
 
@@ -235,6 +235,8 @@ function load(next: PanelFormTarget | null) {
   const nextKey = targetKey(next);
   const reading = ++latestRead;
   loaded = nextKey;
+  failure.value = null;
+  askNext = null;
   if (next === null) {
     description.value = opened.value = ownerShown.value = ownerOpened.value = null;
     values.value = {};
@@ -248,12 +250,12 @@ function load(next: PanelFormTarget | null) {
   loading.value = true;
   void forms.describe({ target: next, changedField: null }).then(
     (answer) => { if (reading === latestRead && held?.target !== nextKey) adopt(answer); },
-    (reason: unknown) => { if (reading === latestRead) fail(reason); },
+    (reason: unknown) => { if (reading === latestRead) fail(reason, () => load(next)); },
   );
 }
 
-function fail(reason: unknown) {
-  failure.value = reason instanceof Error ? reason : new Error(String(reason));
+function fail(reason: unknown, retry: () => void) {
+  failure.value = { reason: reason instanceof Error ? reason : new Error(String(reason)), retry };
   loading.value = false;
 }
 
@@ -302,6 +304,7 @@ function reread() {
   const currentKey = targetKey(current);
   if (current === null || held?.target === currentKey) return load(current);
   const reading = ++latestRead;
+  failure.value = null;
   void forms.describe({ target: current, changedField: null }).then(
     (answer) => {
       if (reading !== latestRead || held?.target === currentKey) return;
@@ -311,7 +314,14 @@ function reread() {
       }
       adopt(answer);
     },
-    (reason: unknown) => { if (reading === latestRead) fail(reason); },
+    (reason: unknown) => {
+      if (reading !== latestRead) return;
+      if (canSettle.value || saving.value) {
+        pendingRefresh = true;
+        return;
+      }
+      fail(reason, reread);
+    },
   );
 }
 useProjectionObjectRefresh((id) => id === key.value, () => {
@@ -354,7 +364,7 @@ function edit(path: string, next: PanelFormValues) {
 let edits = 0;
 const editedAt = new Map<string, number>();
 /** A question to the owner on its way, and the field changed since that the next question is about. */
-let asking = false;
+const asking = ref(false);
 let askNext: string | null = null;
 /**
  * Asks the owner for its form again for the values as they are now, `changedField` the field that set it off. One
@@ -362,17 +372,18 @@ let askNext: string | null = null;
  * An answer is for the values it was asked with, so what the reader edited after asking stays as they left it.
  */
 function askOwner(changedField: string) {
-  if (asking) {
+  if (asking.value) {
     askNext = changedField;
     return;
   }
-  asking = true;
+  asking.value = true;
+  failure.value = null;
   const asked = target.value!;
-  const askedKey = targetKey(asked);
   const askedAt = edits;
+  const reading = latestRead;
   // The owner changes the fields for these edits; the opened reading, its revision and the discard baseline stay.
   void forms.describe({ target: asked, values: values.value, changedField }).then((answer) => {
-    if (loaded !== askedKey) return;
+    if (reading !== latestRead) return;
     ownerShown.value = answer;
     description.value = fixDescription(answer);
     values.value = [...editedAt].filter(([, at]) => at > askedAt).reduce((all, [edited]) => {
@@ -380,11 +391,13 @@ function askOwner(changedField: string) {
       return kept === undefined ? withoutValueAt(all, edited) : withValueAt(all, edited, kept);
     }, description.value.values);
     errors.value = fieldMessages(answer.errors);
-  }, fail).finally(() => {
-    asking = false;
+  }, (reason) => {
+    if (reading === latestRead) fail(reason, () => askOwner(changedField));
+  }).finally(() => {
+    asking.value = false;
     const again = askNext;
     askNext = null;
-    if (again !== null && loaded === askedKey) askOwner(again);
+    if (again !== null) askOwner(again);
   });
 }
 
@@ -576,6 +589,8 @@ function takeSavedFields(receipt: PlatformObjectRefusal) {
 async function write(): Promise<unknown> {
   const into = target.value;
   if (!into) throw new Error("This form edits one object, and none is selected");
+  if (failure.value) throw failure.value.reason;
+  if (loading.value || asking.value) throw new Error(t("common.loading"));
   if (Object.keys(invalid.value).length) throw new Error(t("platform.formFixInvalid"));
   saving.value = true;
   refusal.value = null;
@@ -613,8 +628,11 @@ async function write(): Promise<unknown> {
  * no permission, or the reason it could not be read.
  */
 const shown = computed<DataStateResult<PanelFormDescription>>(() => {
-  const reason = failure.value;
-  if (reason) return reason instanceof MemberDataUnavailable && reason.state.status !== "error" ? reason.state : { status: "error", message: reason.message };
+  if (failure.value) {
+    const { reason, retry } = failure.value;
+    return reason instanceof MemberDataUnavailable && reason.state.status !== "error"
+      ? reason.state : { status: "error", message: reason.message, retry };
+  }
   if (loading.value) return { status: "loading" };
   return description.value ? { status: "ready", value: description.value } : { status: "awaiting" };
 });
@@ -674,7 +692,7 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
       <div class="sdk-owner-form-actions">
         <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">{{ t("platform.unsavedChanges") }}</span>
         <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
-        <el-button type="primary" :disabled="!canSettle" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
+        <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
       </div>
     </el-form>
     </data-state>

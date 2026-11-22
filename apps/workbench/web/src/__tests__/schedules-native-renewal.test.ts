@@ -180,6 +180,11 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         selectedTask: { className: "platform:ScheduledTask", primaryKey: operationsRow.primaryKey },
         compose: "edit",
       }));
+      const editor = element.querySelector<HTMLElement>('[data-form="edit"]')!;
+      expect(document.activeElement).toBe(editor);
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await vi.waitFor(() => expect(editor.style.display).toBe("none"));
+      expect(document.activeElement).toBe(element.querySelector(".card.is-selected button.card-select"));
       const other = otherApplications.at(-1)!;
       await router.push(`/schedules?app=${other.fields.application}`);
       await vi.waitFor(() => expect(element.querySelector(".filter-more")?.textContent).toContain(other.fields.application));
