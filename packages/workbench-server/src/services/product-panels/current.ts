@@ -187,7 +187,18 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
       if ("projectionId" in target) projections.add(target.projectionId);
     }
   }
-  await Promise.all([...projections].map(id => loadCurrentProduct(domainId, "projection", id)));
+  const loadedProjections = new Map(await Promise.all([...projections].map(async id =>
+    [id, await loadCurrentProduct(domainId, "projection", id)] as const)));
+  for (const [panelId, panel] of panels) {
+    for (const [memberKey, member] of Object.entries(panel.manifest.members)) {
+      if (!member.listColumn || !("projectionId" in member.target)) continue;
+      const definition = loadedProjections.get(member.target.projectionId)?.definition;
+      const data = definition && typeof definition === "object" && "data" in definition ? definition.data : undefined;
+      if (data && typeof data === "object" && Object.keys(data).length > 0) {
+        throw new HttpError(400, `Panel '${panelId}', member '${memberKey}' – listColumn members cannot declare independent data reads`, "LIST_COLUMN_DATA_FORBIDDEN");
+      }
+    }
+  }
 
   const frame = framePanelId === undefined ? undefined : panels.get(framePanelId)!;
   let definitions: Awaited<ReturnType<typeof assistantStore.agents>> | undefined;

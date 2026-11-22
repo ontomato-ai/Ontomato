@@ -1,5 +1,6 @@
 import {
-  matchesDirectPanelValue, panelObjectRefSchema, panelPlacementSchema, type PanelMemberPath, type PanelMemberTarget, type PanelPlacement,
+  matchesDirectPanelValue, panelObjectRefSchema, panelPlacementSchema,
+  type PanelMember, type PanelMemberPath, type PanelMemberTarget, type PanelPlacement,
 } from "@ontomato/contracts/panel-manifest";
 import {
   productPanelSchema, productProjectionSchema,
@@ -22,6 +23,19 @@ type QueryClient = Pick<PoolClient, "query">;
 type Target = { kind: CurrentProductKind; id: string };
 type PanelPathRoot = Pick<ProductPanel, "manifest"> & { id?: string };
 type ReadPathSegment = ProductPanelNestedReadRequest["memberPath"][number];
+type AnyPathSegment = ReadPathSegment | PanelMemberPath[number];
+
+export interface ResolvedPanelPathStep {
+  parentPanel: PanelPathRoot;
+  childPanel: ProductPanel;
+  member: PanelMember | PanelPlacement;
+  selection?: AnyPathSegment["selection"];
+}
+
+export interface ResolvePanelMemberPathOptions {
+  /** Allow `itemKey` on the final projection segment for row-scoped operations. */
+  allowTerminalItemKey?: boolean;
+}
 
 function unavailable(): never {
   throw new HttpError(403, "Panel member is unavailable on this path", "PANEL_MEMBER_FORBIDDEN");
@@ -48,12 +62,12 @@ export async function requireRegisteredPanelRoot(
     throw new HttpError(404, "This entry does not use the requested application frame", "PANEL_FRAME_UNAVAILABLE");
 
   const record = await requireTarget(owner, viewer, { kind: "panel", id }, client);
-  return { panel: parseStoredDefinition(productPanelSchema, record, "Panel"), entry: use };
+  return { panel: parseStoredDefinition(productPanelSchema, record, "Panel"), entry: use, framePanelId };
 }
 
 async function declaredTarget(
   owner: ProductOwner, panel: PanelPathRoot, target: PanelMemberTarget,
-  selection: ReadPathSegment["selection"], entry?: ApplicationPanelUse, client?: QueryClient,
+  selection: AnyPathSegment["selection"], entry?: ApplicationPanelUse, client?: QueryClient,
 ): Promise<Target> {
   if ("fromState" in target) {
     if (!selection || !("stateValue" in selection)) unavailable();
@@ -91,7 +105,7 @@ async function declaredTarget(
 
 async function selectedPlacement(
   owner: ProductOwner, root: PanelPathRoot, panel: PanelPathRoot, keys: PanelStatePathKey[],
-  segment: ReadPathSegment, controlled: string[], client: QueryClient = getPostgresPool(),
+  segment: AnyPathSegment, controlled: string[], client: QueryClient = getPostgresPool(),
 ): Promise<PanelPlacement> {
   const name = segment.member.slice("$state.".length);
   const field = panel.manifest.state[name];
@@ -118,28 +132,40 @@ async function selectedPlacement(
   return placement;
 }
 
-function pathKey(segment: Pick<PanelMemberPath[number], "member" | "itemKey">): PanelStatePathKey {
-  if (segment.itemKey !== undefined) unavailable();
+function pathKey(
+  segment: Pick<PanelMemberPath[number], "member" | "itemKey">,
+  isFinal: boolean,
+  allowTerminalItemKey: boolean,
+): PanelStatePathKey {
+  if (segment.itemKey !== undefined) {
+    if (!allowTerminalItemKey) unavailable();
+    if (!isFinal) {
+      throw new HttpError(422, "Only the final memberPath segment may carry itemKey", "ROW_OPERATION_MEMBER_INVALID");
+    }
+  }
   return [segment.member];
 }
 
 /** Re-resolve the requested path from an authorized root. A denied member never supplies its definition. */
 export function resolvePanelMemberPath<Root extends PanelPathRoot>(
   owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: PanelMemberPath,
-  entry?: ApplicationPanelUse, client?: QueryClient,
+  entry?: ApplicationPanelUse, client?: QueryClient, options?: ResolvePanelMemberPathOptions,
 ) {
-  return resolveMemberPath(owner, viewer, root, memberPath, entry, client);
+  return resolveMemberPath(owner, viewer, root, memberPath, entry, client, options);
 }
 
 async function resolveMemberPath<Root extends PanelPathRoot>(
-  owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: readonly ReadPathSegment[],
-  entry?: ApplicationPanelUse, client?: QueryClient,
+  owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: readonly AnyPathSegment[],
+  entry?: ApplicationPanelUse, client?: QueryClient, options?: ResolvePanelMemberPathOptions,
 ) {
+  const allowTerminalItemKey = options?.allowTerminalItemKey === true;
   let panel: Root | ProductPanel = root;
   const ancestors = new Set(root.id === undefined ? [] : [root.id]);
   const keys: PanelStatePathKey[] = [];
+  const trail: ResolvedPanelPathStep[] = [];
   let controlled = Object.keys(entry && root.id === entry.panelId ? entry.inputs ?? {} : {});
   for (const [index, segment] of memberPath.entries()) {
+    const isFinal = index === memberPath.length - 1;
     const declared = panel.manifest.members[segment.member];
     const placement = segment.member.startsWith("$state.")
       ? await selectedPlacement(owner, root, panel, keys, segment, controlled, client) : undefined;
@@ -149,7 +175,7 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
       unavailable();
     }
     const member = declared ?? placement!;
-    const key = pathKey(segment);
+    const key = pathKey(segment, isFinal, allowTerminalItemKey);
     if (placement) keys.push([key[0], key[1], placement.id]);
     else keys.push(key);
     const target = await declaredTarget(owner, panel, member.target, placement ? undefined : segment.selection, entry, client);
@@ -157,14 +183,23 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
       throw new HttpError(409, `Panel member '${segment.member}' forms a cycle`, "PANEL_REFERENCE_CYCLE");
     const record = await requireTarget(owner, viewer, target, client);
     if (target.kind === "projection") {
-      if (index !== memberPath.length - 1) unavailable();
-      return { kind: "projection" as const, projection: parseStoredDefinition(productProjectionSchema, record, "Projection"), panel, member, keys };
+      if (!isFinal) unavailable();
+      return {
+        kind: "projection" as const,
+        projection: parseStoredDefinition(productProjectionSchema, record, "Projection"),
+        panel, member, keys, trail,
+      };
+    }
+    if ("itemKey" in segment && segment.itemKey !== undefined) {
+      throw new HttpError(422, "Row itemKey is only allowed on a projection member", "ROW_OPERATION_MEMBER_INVALID");
     }
     ancestors.add(target.id);
-    panel = parseStoredDefinition(productPanelSchema, record, "Panel");
+    const childPanel = parseStoredDefinition(productPanelSchema, record, "Panel");
+    trail.push({ parentPanel: panel, childPanel, member, selection: placement ? undefined : segment.selection });
+    panel = childPanel;
     controlled = Object.keys("fromPlatform" in member.target ? entry?.inputs ?? {} : member.inputs ?? {});
   }
-  return { kind: "panel" as const, panel, keys, controlled, ancestors };
+  return { kind: "panel" as const, panel, keys, controlled, ancestors, trail };
 }
 
 export async function readNestedPanel(

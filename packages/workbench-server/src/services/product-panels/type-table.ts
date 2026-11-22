@@ -80,6 +80,13 @@ function operationTargetCheck(loadActions?: () => ReturnType<ReturnType<typeof c
         return `operation '${name}' needs an edit target or the owner's create form`;
       if (wiring && target && "input" in target && !Object.hasOwn(wiring.inputs ?? {}, target.input))
         return `operation '${name}' expects input '${target.input}', but it is not connected`;
+      if (wiring) {
+        for (const [param, source] of Object.entries(binding.params ?? {})) {
+          if ("input" in source && !Object.hasOwn(wiring.inputs ?? {}, source.input)) {
+            return `operation '${name}' param '${param}' expects input '${source.input}', but it is not connected`;
+          }
+        }
+      }
       if (wiring && platform?.handler.effect === "read" && platform.handler.target.source === "draft" &&
         !wiring.readOperationInputs?.[name]?.draft)
         return `operation '${name}' must declare a form member in readOperationInputs.${name}.draft.slot`;
