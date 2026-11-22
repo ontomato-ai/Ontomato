@@ -330,6 +330,37 @@ async function readPlatformTypeTable(api, checks) {
   return table;
 }
 
+const domainComponentPath = id => `/domain-components${id === undefined ? "" : "/" + encodeURIComponent(id)}`;
+
+async function loadDomainComponentDeclaration(api, id) {
+  const result = await workbench(api, "GET", domainComponentPath(id), undefined,
+    response => response.status === 404 ? null : readJson(response));
+  return result?.component.declaration;
+}
+
+async function componentCommand(api, [command, ...args]) {
+  const revision = takeOption(args, "--revision");
+  if (command === "list" && args.length === 0) return print(await workbench(api, "GET", domainComponentPath()));
+  if (command === "read" && args.length === 1) return print(await workbench(api, "GET", domainComponentPath(args[0])));
+  if (command !== "register" || args.length !== 1) die("component list | read <id> | register <directory> [--revision <number>]");
+  const directory = args[0];
+  const file = path.join(directory, "component.json");
+  const definition = JSON.parse(fs.readFileSync(file, "utf8"));
+  const template = fs.readFileSync(path.join(directory, "component.html"), "utf8");
+  const moduleFile = path.join(directory, "component.mjs");
+  const module = fs.existsSync(moduleFile) ? fs.readFileSync(moduleFile, "utf8") : undefined;
+  const id = definition.declaration?.componentId;
+  if (revision !== null && (!id || !Number.isSafeInteger(Number(revision)) || Number(revision) <= 0))
+    die("Component update requires a saved component ID and a positive revision");
+  const body = { ...definition, source: { template, module }, ...(revision === null ? {} : { revision: Number(revision) }) };
+  const { component } = await workbench(api, revision === null ? "POST" : "PUT", domainComponentPath(revision === null ? undefined : id), body);
+  if (!id) {
+    definition.declaration.componentId = component.declaration.componentId;
+    fs.writeFileSync(file, JSON.stringify(definition, null, 2) + "\n");
+  }
+  print({ componentId: component.declaration.componentId, revision: component.revision });
+}
+
 async function checkCurrentPanel(api, directory, materialPath) {
   const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
   const release = await sdk.current();
@@ -349,6 +380,7 @@ async function checkCurrentPanel(api, directory, materialPath) {
   return print(await checkPanelWorkspace(directory, {
     checks, catalogue, version: release.version, digest: release.digest, typeTable, lookup, findChartSource, materialPath,
     loadPackage: name => sdk.componentPackage(name, checks),
+    loadDomainComponent: id => loadDomainComponentDeclaration(api, id),
   }));
 }
 
@@ -424,7 +456,7 @@ async function panelCommand(api, workspaceId, [command, ...args]) {
     return registerPanelWorkspace(source, materialPath, checks, client, report, async () => {
       const [catalogue, typeTable] = await Promise.all([sdk.components(release), readPlatformTypeTable(api, checks)]);
       return { catalogue, typeTable };
-    }, name => sdk.componentPackage(name, checks));
+    }, name => sdk.componentPackage(name, checks), id => loadDomainComponentDeclaration(api, id));
   }
   if (command === "delete") {
     const [kind, id] = args;
@@ -651,6 +683,7 @@ async function main() {
   }
   if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
   if (checkingPanel) return checkCurrentPanel(api, argv[2], materialPath);
+  if (cmd === "component") return componentCommand(api, argv.slice(1));
   if (cmd === "panel") return panelCommand(api, workspaceId, argv.slice(1));
   if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));
   if (cmd === "product") return productCommand(api, argv.slice(1));

@@ -14,6 +14,7 @@ import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
+import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -85,6 +86,7 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensureDomainComponentsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);
   for (const [id, name, ownerId] of [["one", "Alpha directory", "viewer"], ["two", "Beta directory", "author"], ["hidden", "Hidden directory", "author"]]) {
     await state.pool.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition)

@@ -23,7 +23,7 @@ import { z } from "zod";
 import {
   applicationPanelReferencesRequestSchema, chartProjectionLookupResponseSchema, chartProjectionTemplateSchema, METRIC_CHART_COMPONENT,
   PROJECTION_REUSE_PANEL_HEADER,
-  productCurrentIdParamsSchema, productPanelPageSkillContextQuerySchema, productPanelPageSkillContextResponseSchema,
+  productCurrentIdParamsSchema, productProjectionRenderResponseSchema, productPanelPageSkillContextQuerySchema, productPanelPageSkillContextResponseSchema,
   productPanelReadQuerySchema, type ProductPanelPageSkillContextQuery, type ProductPanelReadQuery,
   registerChartProjectionRequestSchema, registerChartProjectionResponseSchema,
   registerProductPanelRequestSchema,
@@ -202,8 +202,10 @@ productProjectionsRouter.get("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = productCurrentIdParamsSchema.parse(req.params);
   const rendering = req.header(PANEL_MEMBER_RENDER_HEADER) === "1";
   const projection = await readCurrentProjectionRecord(c.owner, c.credentials, id, !rendering);
-  if (rendering) await validateProjectionComponent(id, projection);
-  res.json({ projection });
+  const domainComponent = rendering
+    ? await validateProjectionComponent(id, projection, undefined, { domainId: projection.domainId })
+    : undefined;
+  res.json(productProjectionRenderResponseSchema.parse({ projection, ...(domainComponent && { domainComponent }) }));
 }));
 productProjectionsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);

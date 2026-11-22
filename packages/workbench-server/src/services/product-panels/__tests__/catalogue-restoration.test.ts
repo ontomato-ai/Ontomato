@@ -9,8 +9,9 @@ import { createApplicationReadAdapter } from "../application-catalogue";
 import { createProductProjectionReadAdapter } from "../catalog-reads";
 
 vi.mock("../component-catalogue", () => ({
-  readPanelComponentCatalogue: async () => ({
-    components: new Map([["@ontomato/sdk:Example", {
+  readAuthorComponentCatalogue: async () => new Map([["@ontomato/sdk:Example", {
+    label: "Example",
+    declaration: {
       componentId: "Example",
       data: {},
       config: [
@@ -18,8 +19,8 @@ vi.mock("../component-catalogue", () => ({
         { name: "pageSize", type: "number", required: false, description: "Rows per page." },
         { name: "layout", type: '"table" | "cards"', required: true, description: "Display style." },
       ],
-    }]]),
-  }),
+    },
+  }]]),
 }));
 vi.mock("../../product-governance/grants", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../product-governance/grants")>(),

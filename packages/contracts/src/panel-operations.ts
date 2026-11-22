@@ -9,7 +9,7 @@ import {
 } from "./panel-projection";
 import { actionDefinitionSchema, actionExplanationSchema } from "./action-panel";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
-import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
+import { productComponentDefinitionSchema } from "./apps-sdk";
 import {
   applicationEntryMenuSchema, currentPanelRecordSchema, currentProjectionRecordSchema,
   productPanelListResponseSchema, productPanelUsedBySchema, productProjectionListResponseSchema, productProjectionUsedBySchema,
@@ -86,7 +86,7 @@ export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorS
 });
 
 const sdkComponentDefinitionSchema: z.ZodType<z.infer<typeof runtimeJsonObjectSchema>> =
-  z.lazy(() => appsSdkComponentCatalogEntrySchema);
+  z.lazy(() => productComponentDefinitionSchema);
 
 /** Result schema identifiers used by the registered read declarations. */
 export const panelReadResultSchemas = {
