@@ -1,5 +1,6 @@
 import { computed, reactive, shallowRef, watch } from "vue";
 import type { ApplicationDeclaration, CatalogApplication } from "@ontomato/contracts/platform-identity";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { HostedRelease, WorkspaceCommit } from "@ontomato/contracts/workspaces";
 import { workbenchLanguage } from "../../i18n";
 import { builderApi } from "./api";
@@ -31,7 +32,7 @@ export function catalogDeclaration(app: CatalogApplication): ApplicationDeclarat
 }
 
 /** The application's name as the rail shows it in this language. */
-export const applicationName = (app: CatalogApplication, locale: string) => app.names[locale] ?? app.names.en!;
+export const applicationName = (app: CatalogApplication, locale: string) => localizedApplicationText(app.names, locale) ?? app.id;
 
 /** A commit with files to publish: every commit but the workspace's first, which is made empty. */
 export const publishable = (commit: WorkspaceCommit) => commit.parentIds.length > 0;

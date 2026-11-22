@@ -6,6 +6,7 @@ import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, 
 import { applicationPanelAddress, panelAddress, panelAddressState, panelUsePath, parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationFrameContextOf, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, type DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
@@ -399,9 +400,9 @@ const requestedState = computed(() => panelAddressState(opened.value));
  * The page's name is the application's: its use relation's display name in the reader's language. A relation without
  * one is named by what its panel reports.
  */
-const pageName = computed(() => use.value?.names?.[locale.value] ?? use.value?.names?.en ?? "");
+const pageName = computed(() => localizedApplicationText(use.value?.names, locale.value) ?? "");
 /** The line under the page's title, as a native page's header has it: the entry's description in the reader's language. */
-const pageDescription = computed(() => use.value?.descriptions?.[locale.value] ?? use.value?.descriptions?.en);
+const pageDescription = computed(() => localizedApplicationText(use.value?.descriptions, locale.value));
 
 const shownPage = computed(() => kept.value.find((page) => page.use.id === use.value?.id) ?? null);
 

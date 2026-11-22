@@ -102,7 +102,7 @@
       </sdk-table>
 
       <div class="apps-foot">
-        <sdk-button :disabled="!isFirstPage" @click="firstPage">回到第一页</sdk-button>
+        <sdk-button :disabled="isFirstPage" @click="firstPage">回到第一页</sdk-button>
         <sdk-button :disabled="isFirstPage" @click="previousPage">{{ t('list.prev') }}</sdk-button>
         <sdk-button :disabled="!nextCursor" @click="nextPage">下一页</sdk-button>
         <span class="apps-hint">翻页由属主的游标决定：下一页读的是当前这页之后的那一段。</span>

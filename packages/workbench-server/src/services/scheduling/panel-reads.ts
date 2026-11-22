@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { applicationCatalogSchema } from "@ontomato/contracts/platform-identity";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import {
   platformScheduleApplicationsSchema,
@@ -53,7 +54,7 @@ export function createScheduledTaskReadAdapter(viewer: AssistantCredentials, sig
       ]);
       const { applications } = platformScheduleApplicationsSchema.parse(JSON.parse(response.text));
       const { data } = applicationCatalogResponse.parse(JSON.parse(catalog.text));
-      const names = new Map(data.map(({ id, names }) => [id, names[locale] ?? names.en!]));
+      const names = new Map(data.map(({ id, names }) => [id, localizedApplicationText(names, locale) ?? id]));
       return applications.map(app => {
         const name = names.get(app.id);
         if (name === undefined) throw new Error(`The application catalog has no scheduled application '${app.id}'`);

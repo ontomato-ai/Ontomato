@@ -88,7 +88,7 @@ const Applications = {
     const pageSize = computed(() => values.value.size ?? 20);
     const cursors = ref([]);
     const pageIndex = computed(() => cursors.value.length + 1);
-    const isFirstPage = computed(() => cursors.value.length === 0);
+    const isFirstPage = computed(() => cursors.value.length === 0 && !values.value.cursor);
     const listRegion = ref(null);
     const listKey = () => JSON.stringify([values.value.search, scope.value, sort.value, pageSize.value, values.value.cursor]);
     const positions = new Map();

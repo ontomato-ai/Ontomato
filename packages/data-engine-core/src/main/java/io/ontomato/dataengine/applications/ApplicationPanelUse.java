@@ -119,12 +119,12 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
                 || use.access().permissionCode() != null && use.access().permissionCode().isBlank()
                 || use.access().kind() != null && !use.access().kind().equals("domain-member"))
                 throw ApplicationCatalog.bad("Invalid or duplicate panel use");
-            if (use.names() != null && (use.names().get("en") == null || use.names().get("en").isBlank()
-                || use.names().values().stream().anyMatch(name -> name == null || name.isEmpty())))
-                throw ApplicationCatalog.bad("A panel use's names require a nonblank English name and nonempty translations");
-            if (use.descriptions() != null && (!use.descriptions().containsKey("en")
+            if (use.names() != null && (use.names().isEmpty()
+                || use.names().values().stream().anyMatch(name -> name == null || name.isBlank())))
+                throw ApplicationCatalog.bad("A panel use's names require at least one nonblank localized name");
+            if (use.descriptions() != null && (use.descriptions().isEmpty()
                 || use.descriptions().values().stream().anyMatch(text -> text == null || blankDescription(text))))
-                throw ApplicationCatalog.bad("Panel entry " + use.pageKey() + " descriptions require nonblank English text and translations");
+                throw ApplicationCatalog.bad("Panel entry " + use.pageKey() + " descriptions require at least one nonblank localized description");
             if (use.inputs() != null) {
                 for (var input : use.inputs().entrySet()) {
                     var source = input.getValue();

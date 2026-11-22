@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { applicationMetadataSchema } from "@ontomato/contracts/application-metadata";
+import { applicationMetadataSchema, localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { productPanelUsedBySchema } from "@ontomato/contracts/product-panels";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
@@ -55,6 +55,6 @@ async function applicationEntriesUsingPanel(domainId: string, id: string, locale
     { headers: { "X-Ontomato-Query-Service-Token": environment.agentRuntime().queryServiceToken }, retries: 1 });
   const { data } = entryResponseSchema.parse(JSON.parse(response.text));
   return { applicationEntries: data.map(({ useId, names, ...entry }) => ({
-    ...entry, entryId: useId, applicationName: names[locale] ?? names.en,
+    ...entry, entryId: useId, applicationName: localizedApplicationText(names, locale) ?? entry.applicationId,
   })) };
 }

@@ -2,6 +2,7 @@ import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { AppPartition } from "./partition";
 export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "homePermission" | "entryHome" | "open" | "descriptionKey">;
@@ -144,13 +145,13 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
     // An entry's count is the one its declaration names, read as its page reads it, by the shell that draws the menu.
     const panelPages = panels ? app.panelUses?.flatMap(use => use.names ? [{
       id: panelUsePath(use.path),
-      label: use.names[locale] ?? use.names.en!,
+      label: localizedApplicationText(use.names, locale) ?? use.pageKey,
       ...use.count ? { count: entryCount(app.id, use) } : {},
     }] : []) ?? [] : [];
     // A native application's panel entries stand where its menu table lists their addresses.
     const entries = !panels && !embedded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
       id: panelUsePath(use.path),
-      label: use.names[locale] ?? use.names.en!,
+      label: localizedApplicationText(use.names, locale) ?? use.pageKey,
       ...use.count ? { count: entryCount(app.id, use) } : {},
     }] as const] : []) ?? []) : undefined;
     const layout: NativeLayout = panelPages.length > 1
@@ -161,7 +162,7 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
     };
     const entryHome = layout.entryHome && app.panelUses?.some(use => panelUsePath(use.path) === layout.entryHome)
       ? layout.entryHome : undefined;
-    return { ...layout, entryHome, entries, id: app.id, label: app.names[locale] ?? app.names.en!, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : app.descriptions.en ?? null), icon: app.icon, rail: app.rail, category: app.category,
+    return { ...layout, entryHome, entries, id: app.id, label: localizedApplicationText(app.names, locale) ?? app.id, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : localizedApplicationText(app.descriptions, locale) ?? null), icon: app.icon, rail: app.rail, category: app.category,
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
       prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
       home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home };

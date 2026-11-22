@@ -233,9 +233,24 @@ public class ApplicationCatalog {
     }
 
     private static String catalogueName(JSONObject app, Locale locale) {
-        var names = app.getJSONObject("names");
-        var name = names.getString(locale.toLanguageTag());
-        return name == null || name.isBlank() ? names.getString("en") : name;
+        var name = localizedText(app.getJSONObject("names"), locale);
+        return name != null ? name : app.getString("id");
+    }
+
+    static boolean validLocalizedNames(Map<String, String> names) {
+        return names != null && !names.isEmpty()
+            && names.values().stream().allMatch(value -> value != null && !value.isBlank());
+    }
+
+    static String localizedText(Map<?, ?> texts, Locale locale) {
+        if (texts == null || texts.isEmpty()) return null;
+        for (var tag : List.of(locale.toLanguageTag(), locale.getLanguage(), "en")) {
+            if (tag != null && !tag.isEmpty() && texts.get(tag) instanceof String value && !value.isBlank()) return value;
+        }
+        for (var value : texts.values()) {
+            if (value instanceof String text && !text.isBlank()) return text;
+        }
+        return null;
     }
 
     private static String catalogueCursor(CatalogueKey key, String sort, String cursorType) {
@@ -563,14 +578,14 @@ public class ApplicationCatalog {
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
     }
     static void validate(Declaration d) {
-        if (d == null || d.names() == null || d.names().get("en") == null || d.names().get("en").isBlank()
+        if (d == null || !validLocalizedNames(d.names())
             || d.descriptions() == null || d.icon() == null || d.groups() == null || d.permissions() == null) throw bad("Invalid application declaration");
         Set<String> groups = new HashSet<>(), codes = new HashSet<>();
         for (var group : d.groups()) {
-            if (group.key() == null || group.names() == null || !group.names().containsKey("en") || !groups.add(group.key())) throw bad("Invalid permission group");
+            if (group.key() == null || !validLocalizedNames(group.names()) || !groups.add(group.key())) throw bad("Invalid permission group");
         }
         for (var permission : d.permissions()) {
-            if (permission.code() == null || DOMAIN_MEMBER_ENTRY.equals(permission.code()) || permission.names() == null || !permission.names().containsKey("en") ||
+            if (permission.code() == null || DOMAIN_MEMBER_ENTRY.equals(permission.code()) || !validLocalizedNames(permission.names()) ||
                 !groups.contains(permission.groupKey()) || !codes.add(permission.code())) throw bad("Invalid permission declaration");
         }
         PageSkills.validate(d.pageSkills());

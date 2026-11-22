@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { CircleAlert, ExternalLink, ShieldCheck } from "lucide-vue-next";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { HostedRelease } from "@ontomato/contracts/workspaces";
 import { formatRelativeTime } from "../../../utils/relative-time";
 import { builderApi } from "../api";
@@ -83,7 +84,7 @@ async function publish() {
   try {
     const release = await builderApi.publish(workspace.value.id, commit.value!, declaration);
     await Promise.all([publication.loadReleases(), catalog.refresh()]);
-    const values = { name: declaration.names[locale.value] ?? declaration.names.en!, commit: shortCommit(release.commit) };
+    const values = { name: localizedApplicationText(declaration.names, locale.value) ?? "", commit: shortCommit(release.commit) };
     if (!app) ElMessage.success(t("appBuilder.published", values));
     else ElMessage.success(t(exported.has(release.releaseId) ? "appBuilder.publishedAgain" : "appBuilder.publishedVersion", values));
   } catch (error) {
