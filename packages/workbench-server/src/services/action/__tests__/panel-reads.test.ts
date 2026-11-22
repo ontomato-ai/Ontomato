@@ -75,8 +75,8 @@ describe("action catalog reads", () => {
     expect(records).toEqual([{
       primaryKey: "approve-order", label: "Approve order", subtitle: "Approve a pending order",
       fieldLabels: {
-        status: "Status", origin: "Origin", createdBy: "Created by", reviewedBy: "Reviewed by", function: "Function",
-        updatedAt: "Updated",
+        status: "Status", origin: "Origin", createdBy: "Created by", reviewedBy: "Last published by",
+        function: "Linked function", updatedAt: "Last updated",
       },
       fields: {
         status: "Published", origin: "User", createdBy: "Alice", reviewedBy: "", function: "approve_order",
