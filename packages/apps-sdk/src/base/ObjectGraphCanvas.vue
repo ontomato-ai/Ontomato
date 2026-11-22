@@ -17,11 +17,12 @@ import { findDirectedGraphPath } from "./object-graph-path";
  * G6 canvas. A chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`);
  * a click on empty canvas lets both go. Where the reader puts the nodes is the reader's own (`positions`, a personal
  * state), drawn again from there; a node never placed is placed by its relations, the most connected first, and nothing
- * is written for it. What the panel highlights (`highlightedNodes`, `highlightedEdges`: a path, a search's hits) stands
- * out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never
- * smaller than names can be read at: a graph too large for that is panned. On an editable graph a line drawn with
- * Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new edge —
- * the canvas draws no edge of its own and writes nothing to the owner.
+ * is written for it. What the panel highlights (`pathFrom`/`pathTo` or `highlightedNodes`/`highlightedEdges`) stands
+ * out and the rest fades, without being chosen; when neither is active, choosing a node or edge keeps its direct
+ * neighbourhood crisp while dimming unrelated elements without showing a highlight bar. The view opens on the chosen
+ * node, else the most connected, never smaller than names can be read at: a graph too large for that is panned. On an
+ * editable graph a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`,
+ * `connectTo`) for the owner's new edge — the canvas draws no edge of its own and writes nothing to the owner.
  */
 const props = withDefaults(defineProps<{
   edgeEnds?: EdgeEndsConfig; editable?: boolean; categories?: readonly string[]; nodeCategory?: string;
@@ -144,9 +145,38 @@ const highlightKind = computed<"path" | "search" | "none">(() => {
   if (searchHighlighted.value.nodes.size || searchHighlighted.value.edges.size) return "search";
   return "none";
 });
+/** Direct neighbourhood of the chosen node or edge, used to dim unrelated elements when no path or search is active. */
+const selectionFocus = computed(() => {
+  const nodes = new Set<string>();
+  const edges = new Set<string>();
+  const existingNodes = new Set(resolved.value.nodes.map((node) => node.id));
+  const chosenNodes = new Set(selectedNodes.value.filter((id) => existingNodes.has(id)));
+  if (chosenNodes.size) {
+    for (const id of chosenNodes) nodes.add(id);
+    for (const link of resolved.value.links) {
+      if (chosenNodes.has(link.source) || chosenNodes.has(link.target)) {
+        edges.add(link.id);
+        nodes.add(link.source);
+        nodes.add(link.target);
+      }
+    }
+  }
+  if (selectedEdges.value.length) {
+    const chosenEdges = new Set(selectedEdges.value);
+    for (const link of resolved.value.links) {
+      if (chosenEdges.has(link.id)) {
+        edges.add(link.id);
+        nodes.add(link.source);
+        nodes.add(link.target);
+      }
+    }
+  }
+  return { active: nodes.size > 0 || edges.size > 0, nodes, edges };
+});
 /**
  * Path queries use the distinct `path` tone when a path is found (and leave nodes plain when none is found so no
- * misleading highlight appears); search hits use `accent`, dimming everything else.
+ * misleading highlight appears); search hits use `accent`, dimming everything else; when neither is active, choosing
+ * a node or edge keeps its direct neighbourhood crisp while dimming unrelated elements without raising a banner.
  */
 const nodeToneOf = (id: string): GraphCanvasTone | undefined => {
   if (highlightKind.value === "path") {
@@ -156,6 +186,7 @@ const nodeToneOf = (id: string): GraphCanvasTone | undefined => {
     return undefined;
   }
   if (highlightKind.value === "search") return searchHighlighted.value.nodes.has(id) ? "accent" : "muted";
+  if (selectionFocus.value.active) return selectionFocus.value.nodes.has(id) ? undefined : "muted";
   return undefined;
 };
 const edgeToneOf = (id: string): GraphCanvasTone | undefined => {
@@ -166,6 +197,7 @@ const edgeToneOf = (id: string): GraphCanvasTone | undefined => {
     return undefined;
   }
   if (highlightKind.value === "search") return searchHighlighted.value.edges.has(id) ? "accent" : "muted";
+  if (selectionFocus.value.active) return selectionFocus.value.edges.has(id) ? undefined : "muted";
   return undefined;
 };
 
@@ -201,15 +233,29 @@ const searchHighlightItems = computed(() => {
     ...[...searchHighlighted.value.edges].map((id) => ({ kind: edgeType, id, label: edgeLabels.get(id) ?? id })),
   ];
 });
-const searchBannerSummary = computed(() => {
+const searchPreviewText = computed(() => {
   const items = searchHighlightItems.value;
   if (!items.length) return "";
   const preview = items.slice(0, 5).map((item) => item.label).join(", ");
+  return items.length > 5 ? `${preview}…` : preview;
+});
+const searchBannerSummary = computed(() => {
+  const items = searchHighlightItems.value;
+  if (!items.length) return "";
   return t("platform.graphSearchMatchesSummary", {
     count: items.length,
-    items: items.length > 5 ? `${preview}…` : preview,
+    items: searchPreviewText.value,
   });
 });
+const searchBannerTitle = computed(() => {
+  const items = searchHighlightItems.value;
+  if (!items.length) return "";
+  return t("platform.graphSearchMatchesSummary", {
+    count: items.length,
+    items: items.map((item) => item.label).join(", "),
+  });
+});
+const showGraph = computed(() => !resolved.value.loading && !resolved.value.error && resolved.value.nodes.length > 0 && room.value !== null);
 
 const reportedHighlight = computed<PageHighlight | null>(() => {
   if (resolved.value.loading || resolved.value.error) return null;
@@ -322,96 +368,102 @@ async function download() {
 </script>
 
 <template>
-  <div ref="element" class="sdk-object-graph-canvas" :data-graph-highlight-kind="highlightKind">
-    <el-skeleton v-if="resolved.loading" :rows="4" animated></el-skeleton>
-    <p v-else-if="resolved.error" class="sdk-object-graph-canvas-error" role="alert">{{ resolved.error }}</p>
-    <el-empty v-else-if="!resolved.nodes.length" :description="t('platform.graphEmpty')" :image-size="48"></el-empty>
-    <template v-else-if="room">
-      <G6GraphCanvas
-        ref="canvas"
-        :label="member.projection.name"
-        :nodes="drawnNodes"
-        :edges="drawnEdges"
-        :selected="selectedNodes"
-        :selected-edges="selectedEdges"
-        selection="single"
-        :layout="{ type: 'preset' }"
-        :categories="categories"
-        :node-size="look.nodeSize"
-        :label-size="look.labelSize"
-        readable-labels
-        :editable="editable"
-        @update:selected="choose(selectedNode, nodeType, $event)"
-        @update:selected-edges="choose(selectedEdge, edgeType, $event)"
-        @blank="letGo"
-        @connect="connect"
-        @move="move"
-        @viewport="viewed"
-        @resized="resized"
-      />
-      <div
-        v-if="highlightKind === 'path' && pathResult.status !== 'idle'"
-        class="sdk-object-graph-canvas-highlight sdk-object-graph-canvas-path"
-        :class="`status-${pathResult.status}`"
-        role="status"
-        data-graph-path-banner
-        :data-graph-path-status="pathResult.status"
-        :data-graph-path-hops="pathResult.hops ?? undefined"
-      >
-        <span class="sdk-object-graph-canvas-highlight-badge">{{ t("platform.graphPathHighlightLabel") }}</span>
-        <span v-if="pathResult.status === 'found'" class="sdk-object-graph-canvas-path-hops">{{ pathHopsLabel }}</span>
-        <span class="sdk-object-graph-canvas-highlight-text">{{ pathResult.status === "found" ? pathTrail : pathBannerText }}</span>
-      </div>
-      <div
-        v-else-if="highlightKind === 'search'"
-        class="sdk-object-graph-canvas-highlight sdk-object-graph-canvas-search"
-        role="status"
-        data-graph-search-banner
-      >
-        <span class="sdk-object-graph-canvas-highlight-badge">{{ t("platform.graphSearchHighlightLabel") }}</span>
-        <span class="sdk-object-graph-canvas-highlight-text">{{ searchBannerSummary }}</span>
-      </div>
-      <div v-if="partial || resolved.edgesNotice" class="sdk-object-graph-canvas-notices">
-        <p v-if="resolved.edgesNotice" class="sdk-object-graph-canvas-edge-notice" role="status" data-graph-edges-notice>
-          {{ resolved.edgesNotice }}
-        </p>
-        <p v-if="partial" class="sdk-object-graph-canvas-hint" :class="{ quiet: moved }" role="status" data-graph-hint>
-          {{ t("platform.graphLargerThanCanvas") }}
-        </p>
-      </div>
-      <div class="sdk-object-graph-canvas-tools" data-graph-toolbar>
-        <button type="button" data-graph-action="zoom-in" :title="t('platform.graphZoomIn')" :aria-label="t('platform.graphZoomIn')" @click="canvas?.zoomBy(ZOOM_STEP)">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M8 3.5v9M3.5 8h9" />
-          </svg>
-        </button>
-        <button type="button" data-graph-action="zoom-out" :title="t('platform.graphZoomOut')" :aria-label="t('platform.graphZoomOut')" @click="canvas?.zoomBy(1 / ZOOM_STEP)">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M3.5 8h9" />
-          </svg>
-        </button>
-        <button type="button" data-graph-action="fit" :title="t('platform.graphFit')" :aria-label="t('platform.graphFit')" @click="fit">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
-          </svg>
-        </button>
-        <button type="button" data-graph-action="focus-selected" :disabled="!selectedNodes.length" :title="t('platform.graphFocusSelected')" :aria-label="t('platform.graphFocusSelected')" @click="focusChosen">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <circle cx="8" cy="8" r="2.5" /><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" />
-          </svg>
-        </button>
-        <button type="button" data-graph-action="relayout" :title="t('platform.graphRelayout')" :aria-label="t('platform.graphRelayout')" @click="relayout">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M13.5 8a5.5 5.5 0 1 1-1.3-3.55M13.5 2.5v2.75h-2.75" />
-          </svg>
-        </button>
-        <button type="button" data-graph-action="download" :title="t('common.download')" :aria-label="t('common.download')" @click="download">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
-          </svg>
-        </button>
-      </div>
-    </template>
+  <div class="sdk-object-graph-canvas" :data-graph-highlight-kind="highlightKind">
+    <div
+      v-if="showGraph && highlightKind === 'path' && pathResult.status !== 'idle'"
+      class="sdk-object-graph-canvas-highlight sdk-object-graph-canvas-path"
+      :class="`status-${pathResult.status}`"
+      role="status"
+      data-graph-path-banner
+      :data-graph-path-status="pathResult.status"
+      :data-graph-path-hops="pathResult.hops ?? undefined"
+      :title="pathBannerText"
+    >
+      <span class="sdk-object-graph-canvas-highlight-badge">{{ t("platform.graphPathHighlightLabel") }}</span>
+      <span v-if="pathResult.status === 'found'" class="sdk-object-graph-canvas-path-hops">{{ pathHopsLabel }}</span>
+      <span class="sdk-object-graph-canvas-highlight-text">{{ pathResult.status === "found" ? pathTrail : pathBannerText }}</span>
+    </div>
+    <div
+      v-else-if="showGraph && highlightKind === 'search'"
+      class="sdk-object-graph-canvas-highlight sdk-object-graph-canvas-search"
+      role="status"
+      data-graph-search-banner
+      :title="searchBannerTitle"
+    >
+      <span class="sdk-object-graph-canvas-highlight-badge">
+        {{ t("platform.graphSearchHighlightLabel") }} ({{ searchHighlightItems.length }})
+      </span>
+      <span class="sdk-object-graph-canvas-highlight-text">{{ searchPreviewText }}</span>
+    </div>
+    <div ref="element" class="sdk-object-graph-canvas-stage">
+      <el-skeleton v-if="resolved.loading" :rows="4" animated></el-skeleton>
+      <p v-else-if="resolved.error" class="sdk-object-graph-canvas-error" role="alert">{{ resolved.error }}</p>
+      <el-empty v-else-if="!resolved.nodes.length" :description="t('platform.graphEmpty')" :image-size="48"></el-empty>
+      <template v-else-if="room">
+        <G6GraphCanvas
+          ref="canvas"
+          :label="member.projection.name"
+          :nodes="drawnNodes"
+          :edges="drawnEdges"
+          :selected="selectedNodes"
+          :selected-edges="selectedEdges"
+          selection="single"
+          :layout="{ type: 'preset' }"
+          :categories="categories"
+          :node-size="look.nodeSize"
+          :label-size="look.labelSize"
+          readable-labels
+          :editable="editable"
+          @update:selected="choose(selectedNode, nodeType, $event)"
+          @update:selected-edges="choose(selectedEdge, edgeType, $event)"
+          @blank="letGo"
+          @connect="connect"
+          @move="move"
+          @viewport="viewed"
+          @resized="resized"
+        />
+        <div v-if="partial || resolved.edgesNotice" class="sdk-object-graph-canvas-notices">
+          <p v-if="resolved.edgesNotice" class="sdk-object-graph-canvas-edge-notice" role="status" data-graph-edges-notice>
+            {{ resolved.edgesNotice }}
+          </p>
+          <p v-if="partial" class="sdk-object-graph-canvas-hint" :class="{ quiet: moved }" role="status" data-graph-hint>
+            {{ t("platform.graphLargerThanCanvas") }}
+          </p>
+        </div>
+        <div class="sdk-object-graph-canvas-tools" data-graph-toolbar>
+          <button type="button" data-graph-action="zoom-in" :title="t('platform.graphZoomIn')" :aria-label="t('platform.graphZoomIn')" @click="canvas?.zoomBy(ZOOM_STEP)">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M8 3.5v9M3.5 8h9" />
+            </svg>
+          </button>
+          <button type="button" data-graph-action="zoom-out" :title="t('platform.graphZoomOut')" :aria-label="t('platform.graphZoomOut')" @click="canvas?.zoomBy(1 / ZOOM_STEP)">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M3.5 8h9" />
+            </svg>
+          </button>
+          <button type="button" data-graph-action="fit" :title="t('platform.graphFit')" :aria-label="t('platform.graphFit')" @click="fit">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" />
+            </svg>
+          </button>
+          <button type="button" data-graph-action="focus-selected" :disabled="!selectedNodes.length" :title="t('platform.graphFocusSelected')" :aria-label="t('platform.graphFocusSelected')" @click="focusChosen">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <circle cx="8" cy="8" r="2.5" /><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" />
+            </svg>
+          </button>
+          <button type="button" data-graph-action="relayout" :title="t('platform.graphRelayout')" :aria-label="t('platform.graphRelayout')" @click="relayout">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M13.5 8a5.5 5.5 0 1 1-1.3-3.55M13.5 2.5v2.75h-2.75" />
+            </svg>
+          </button>
+          <button type="button" data-graph-action="download" :title="t('common.download')" :aria-label="t('common.download')" @click="download">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
+            </svg>
+          </button>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -419,8 +471,14 @@ async function download() {
 /* The canvas fills the box its member is placed in (a flex item stretched to the panel's space, or a fixed height): how
    tall that box is is the panel's, filling it is the canvas's own — G6 draws nothing in a box it measures at 0. */
 .sdk-object-graph-canvas {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  min-height: 0;
+}
+.sdk-object-graph-canvas-stage {
+  position: relative;
+  flex: 1;
   min-height: 0;
 }
 .sdk-object-graph-canvas-error {
@@ -429,47 +487,52 @@ async function download() {
   font-size: var(--text-sm);
 }
 .sdk-object-graph-canvas-highlight {
-  position: absolute;
-  inset-block-start: var(--spacing-sm);
-  inset-inline-start: var(--spacing-sm);
+  flex-shrink: 0;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-xs);
-  max-width: calc(100% - 220px);
+  min-width: 0;
   padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
-  border-radius: var(--radius-md);
+  border-bottom: 1px solid var(--ui-divider);
   background: var(--el-bg-color-overlay);
   font-size: var(--text-xs);
-  pointer-events: none;
+  line-height: 1.5;
 }
 .sdk-object-graph-canvas-path {
-  border: 1px solid var(--el-color-warning-light-5);
+  border-bottom-color: var(--el-color-warning-light-5);
   color: var(--el-text-color-primary);
 }
-.sdk-object-graph-canvas-path .sdk-object-graph-canvas-highlight-badge {
+.sdk-object-graph-canvas-highlight-badge {
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  background: var(--el-color-warning-light-9);
-  color: var(--el-color-warning-dark-2);
   font-weight: 600;
 }
+.sdk-object-graph-canvas-path .sdk-object-graph-canvas-highlight-badge {
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+}
 .sdk-object-graph-canvas-path-hops {
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--el-color-warning-dark-2);
   font-weight: 600;
 }
 .sdk-object-graph-canvas-search {
-  border: 1px solid var(--el-color-primary-light-5);
+  border-bottom-color: var(--el-color-primary-light-5);
   color: var(--el-text-color-primary);
 }
 .sdk-object-graph-canvas-search .sdk-object-graph-canvas-highlight-badge {
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
-  font-weight: 600;
 }
 .sdk-object-graph-canvas-highlight-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--el-text-color-regular);
 }
 .sdk-object-graph-canvas-notices {
