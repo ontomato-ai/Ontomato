@@ -32,6 +32,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -593,15 +594,14 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             END
             """);
 
-        var first = http.perform(get(CATALOGUE).locale(Locale.FRENCH).param("sort", "name").param("size", "2"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.rows[*].id").value(List.of("app-b", "app-c")))
-            .andReturn();
-        var cursor = JSON.parseObject(first.getResponse().getContentAsString()).getJSONObject("data").getString("nextCursor");
-        http.perform(get(CATALOGUE).locale(Locale.FRENCH).param("sort", "name").param("size", "2").param("cursor", cursor))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.rows[*].id").value(List.of("app-d", "app-a")))
-            .andExpect(jsonPath("$.data.nextCursor").doesNotExist());
+        var first = cataloguePage(get(CATALOGUE).locale(Locale.FRENCH).param("sort", "name").param("size", "2"));
+        assertEquals(List.of("app-b", "app-c"), catalogueIds(first));
+        var cursor = first.getString("nextCursor");
+        assertNotNull(cursor);
+        var second = cataloguePage(get(CATALOGUE).locale(Locale.FRENCH)
+            .param("sort", "name").param("size", "2").param("cursor", cursor));
+        assertEquals(List.of("app-d", "app-a"), catalogueIds(second));
+        assertFalse(second.containsKey("nextCursor"));
     }
 
     @Test void catalogueUpdatedOrderPagesByDescendingTimestampThenId() throws Exception {
@@ -613,15 +613,22 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         jdbc.update("UPDATE sys_application SET updated_at = '2026-01-01 00:00:00+00' WHERE id = 'app-a'");
         jdbc.update("UPDATE sys_application SET updated_at = '2026-01-01 00:00:00.000001+00' WHERE id IN ('app-b','app-c')");
 
-        var first = http.perform(get(CATALOGUE).param("sort", "updated").param("size", "1"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.rows[*].id").value(List.of("app-b")))
-            .andReturn();
-        var cursor = JSON.parseObject(first.getResponse().getContentAsString()).getJSONObject("data").getString("nextCursor");
-        http.perform(get(CATALOGUE).param("sort", "updated").param("cursor", cursor))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.rows[*].id").value(List.of("app-c", "app-a")))
-            .andExpect(jsonPath("$.data.nextCursor").doesNotExist());
+        var first = cataloguePage(get(CATALOGUE).param("sort", "updated").param("size", "1"));
+        assertEquals(List.of("app-b"), catalogueIds(first));
+        var cursor = first.getString("nextCursor");
+        assertNotNull(cursor);
+        var second = cataloguePage(get(CATALOGUE).param("sort", "updated").param("cursor", cursor));
+        assertEquals(List.of("app-c", "app-a"), catalogueIds(second));
+        assertFalse(second.containsKey("nextCursor"));
+    }
+
+    private JSONObject cataloguePage(MockHttpServletRequestBuilder request) throws Exception {
+        var result = http.perform(request).andExpect(status().isOk()).andReturn();
+        return JSON.parseObject(result.getResponse().getContentAsString()).getJSONObject("data");
+    }
+
+    private List<String> catalogueIds(JSONObject page) {
+        return page.getJSONArray("rows").toJavaList(JSONObject.class).stream().map(row -> row.getString("id")).toList();
     }
 
     @Test void catalogueReadsDifferFromNavigationAndKeepsAnAuthorizedEditorsCompleteEntryTable() throws Exception {
