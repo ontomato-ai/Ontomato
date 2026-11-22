@@ -79,6 +79,11 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
   coded(source: Source, run: DirectPanelRun, target: CodedPanelTarget): Promise<DirectPanelMount>;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
   /**
+   * Whether the latest `source()` call already verified access and reconciled revisions against a server snapshot
+   * before returning, so initial `load()` does not issue a duplicate snapshot immediately after mounting.
+   */
+  sourceReconciled?(): boolean;
+  /**
    * Whether the use relation this host opens is still the application's, bound to the same panel: what a kept page is
    * checked against when it is shown again. A candidate has no relation to check.
    */
@@ -433,7 +438,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       admitted.value = true;
       if (port.mode.kind === "author") follow(read);
       // A viewer's panel is reconciled with a short read; the frame does not wait for it.
-      else if (read.kind === "registered")
+      else if (read.kind === "registered" && !port.sourceReconciled?.())
         void port.snapshot(read.panel.id).then(snapshot => { if (active) return reconcileSnapshot(snapshot); })
           .catch(failure => { if (active) reportPanelUnavailable(failure); });
     } catch (failure) {

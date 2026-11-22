@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import ElementPlus from "element-plus";
 import { createApp, defineComponent, h, ref, type App } from "vue";
 import { createPinia } from "pinia";
@@ -14,6 +14,7 @@ import elementEn from "element-plus/es/locale/lang/en";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installAppHost, installProductEmbedding } from "../../../../../packages/platform-web/src/app-host";
+import { clearPanelDefinitionCache } from "../../../../../packages/platform-web/src/panel-definition-cache";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
 import { platformLayoutRoute } from "../../../../../packages/platform-web/src/layout-route";
 import { workbenchPages } from "../../../../../packages/platform-web/src/workbench-routes";
@@ -79,6 +80,10 @@ afterAll(async () => {
   await server?.close();
 });
 
+beforeEach(() => {
+  clearPanelDefinitionCache();
+});
+
 /** The agent platform at its own address with the entrance's page beside the conversation, as the platform mounts it. */
 async function openBeside(path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ ...platformRoutes.chat, component: { render: () => null } }] });
@@ -133,7 +138,9 @@ async function readOf(panelId: string) {
     return [panel!, skill!] as const;
   }, { timeout: 20000 });
   // The record names no page: what the page reaches is never worked out while the panel waits to be drawn.
-  expect(record.url.search).toBe("");
+  expect(record.url.search).toBe("?includeProjections=1");
+  expect(record.url.searchParams.has("applicationId")).toBe(false);
+  expect(record.url.searchParams.has("useId")).toBe(false);
   expect(record.answer).not.toHaveProperty("pageSkillContext");
   return (context.answer as { pageSkillContext: PageSkillContext }).pageSkillContext;
 }
@@ -217,8 +224,9 @@ describe("a panel entrance at its own address", () => {
     async (applicationId) => {
       const entry = server.entries.find((candidate) => candidate.applicationId === applicationId)!;
       apps.splice(0).forEach((app) => app.unmount());
-      // A new tab: no conversation held with the agent, so the page's message starts one.
+      // A new tab: no conversation held with the agent and no cached definitions, so the page's message starts one.
       sessionStorage.clear();
+      clearPanelDefinitionCache();
       seen.length = 0;
       const { root, router } = await openAt(entry.path);
 

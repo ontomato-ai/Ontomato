@@ -165,16 +165,19 @@ export function ingestBundledPanelProjections(
 /**
  * Reconciles cached panel and projection definitions against a fresh server snapshot:
  * - evicts any cached panel or projection whose revision differs from the snapshot;
- * - evicts any fixed projection whose member is reported `forbidden` for the current reader.
+ * - evicts any fixed projection whose member is reported `forbidden` for the current reader;
+ * - returns a mount-local map of forbidden fixed projections (403) so re-mounted cached panels
+ *   immediately report them unavailable without flashing cached definitions.
  */
 export function reconcileDefinitionCacheWithSnapshot(
   panelCacheKey: string,
   panel: ProductPanel | undefined,
   snapshot: PanelDefinitionSnapshot,
   scope?: DefinitionCacheScope | null,
-): void {
+): Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> {
+  const forbidden = new Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>>();
   const current = ensureScope();
-  if (!current || (scope !== undefined && !sameScope(current, scope))) return;
+  if (!current || (scope !== undefined && !sameScope(current, scope))) return forbidden;
   const cachedPanel = panels.get(panelCacheKey);
   const inspectedPanel = panel ?? cachedPanel?.panel;
   if (cachedPanel && cachedPanel.revision !== snapshot.panel.revision) {
@@ -192,11 +195,18 @@ export function reconcileDefinitionCacheWithSnapshot(
       if (member.status !== "forbidden" || member.memberPath.length !== 1) continue;
       const declaration = inspectedPanel.manifest.members[member.memberPath[0]!.member];
       if (declaration && "projectionId" in declaration.target) {
-        projections.delete(declaration.target.projectionId);
-        inFlightProjections.delete(declaration.target.projectionId);
+        const projectionId = declaration.target.projectionId;
+        projections.delete(projectionId);
+        inFlightProjections.delete(projectionId);
+        forbidden.set(projectionId, {
+          status: "unavailable",
+          httpStatus: 403,
+          message: "Product use Grant required",
+        });
       }
     }
   }
+  return forbidden;
 }
 
 /**

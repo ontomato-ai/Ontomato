@@ -144,29 +144,56 @@ export function platformPanelHost(
   const page = new URLSearchParams(read);
   let lastPanel: ProductPanel | undefined;
   let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
+  let sourceReconciled = false;
   return {
     // Opening reads the panel's record (bundled with its fixed projections on cache miss), and — beside it, not before
     // it — which page skill this page reaches: the panel is drawn as soon as its record is here, and only the page's
     // composer and conversation wait for the skill (a read of the record that also worked out the skill took 2.3 s on
     // 128, the record alone 0.5 s).
     async source() {
+      sourceReconciled = false;
+      let sourceFailed = false;
       void json(`${panelHostPaths.pageSkillContext(use.panelId)}?${page}`)
-        .then((answer) => pageSkill?.(productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext))
+        .then((answer) => {
+          if (!sourceFailed) pageSkill?.(productPanelPageSkillContextResponseSchema.parse(answer).pageSkillContext);
+        })
         // Without it the page's composer stays closed, as for a page that reaches no skill; the panel is unaffected.
         .catch(() => undefined);
-      const cached = getCachedPanel(use.panelId);
-      if (cached) {
-        lastPanel = cached;
-        mountUnavailable = undefined;
-        return { kind: "registered", applicationId, use, panel: cached };
+      try {
+        const cached = getCachedPanel(use.panelId);
+        if (cached) {
+          // Verify panel access and definition revisions before mounting a cached record, using the lightweight
+          // snapshot (no page query so Node skips pageSkillContext — that runs in parallel above).
+          const scope = currentDefinitionCacheScope();
+          let verified;
+          try {
+            verified = panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(use.panelId)));
+          } catch (failure) {
+            invalidateCachedPanel(use.panelId);
+            throw failure;
+          }
+          const forbidden = reconcileDefinitionCacheWithSnapshot(use.panelId, cached, verified, scope);
+          if (verified.panel.revision === cached.revision) {
+            lastPanel = cached;
+            mountUnavailable = forbidden;
+            sourceReconciled = true;
+            return { kind: "registered", applicationId, use, panel: cached };
+          }
+          invalidateCachedPanel(use.panelId);
+          sourceReconciled = true;
+        }
+        const scope = currentDefinitionCacheScope();
+        const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?includeProjections=1`));
+        setCachedPanel(use.panelId, answer.panel, scope);
+        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        lastPanel = answer.panel;
+        return { kind: "registered", applicationId, use, panel: answer.panel };
+      } catch (failure) {
+        sourceFailed = true;
+        throw failure;
       }
-      const scope = currentDefinitionCacheScope();
-      const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?includeProjections=1`));
-      setCachedPanel(use.panelId, answer.panel, scope);
-      mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
-      lastPanel = answer.panel;
-      return { kind: "registered", applicationId, use, panel: answer.panel };
     },
+    sourceReconciled: () => sourceReconciled,
     pageKey: use.pageKey,
     use: shown,
     async panel(panelId) {
@@ -208,7 +235,11 @@ export function platformPanelHost(
         invalidateCachedPanel(panelId);
         throw failure;
       }
-      reconcileDefinitionCacheWithSnapshot(panelId, lastPanel, answer, scope);
+      const forbidden = reconcileDefinitionCacheWithSnapshot(panelId, lastPanel, answer, scope);
+      if (mountUnavailable && answer.members !== undefined) {
+        mountUnavailable.clear();
+        for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
+      }
       pageSkill?.(pageSkillContextSchema.parse(answer.pageSkillContext));
       return answer;
     },
@@ -233,13 +264,29 @@ export function framePanelHost(
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
   let lastPanel: ProductPanel | undefined;
   let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
+  let sourceReconciled = false;
   return {
     async source() {
+      sourceReconciled = false;
       const cached = getCachedPanel(cacheKey);
       if (cached) {
-        lastPanel = cached;
-        mountUnavailable = undefined;
-        return { kind: "registered", applicationId, use, panel: cached };
+        const scope = currentDefinitionCacheScope();
+        let verified;
+        try {
+          verified = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(framePanelId)}?${query}`));
+        } catch (failure) {
+          invalidateCachedPanel(cacheKey);
+          throw failure;
+        }
+        const forbidden = reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
+        if (verified.panel.revision === cached.revision) {
+          lastPanel = cached;
+          mountUnavailable = forbidden;
+          sourceReconciled = true;
+          return { kind: "registered", applicationId, use, panel: cached };
+        }
+        invalidateCachedPanel(cacheKey);
+        sourceReconciled = true;
       }
       // Node answers the frame's record (bundled with its fixed projections) alone, with no page skill: the frame is no page of its own.
       const scope = currentDefinitionCacheScope();
@@ -249,6 +296,7 @@ export function framePanelHost(
       lastPanel = answer.panel;
       return { kind: "registered", applicationId, use, panel: answer.panel };
     },
+    sourceReconciled: () => sourceReconciled,
     pageKey: use.pageKey,
     use: shown,
     async panel(panelId) {
@@ -283,7 +331,11 @@ export function framePanelHost(
         invalidateCachedPanel(targetKey);
         throw failure;
       }
-      reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
+      const forbidden = reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
+      if (mountUnavailable && answer.members !== undefined) {
+        mountUnavailable.clear();
+        for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
+      }
       return answer;
     },
     mode: { kind: "view" },

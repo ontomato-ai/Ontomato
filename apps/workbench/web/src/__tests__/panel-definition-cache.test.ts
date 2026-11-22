@@ -389,28 +389,145 @@ describe("panel definition cache & bundled projections", () => {
       first.app.unmount();
     }
 
-    // 2. Revoke projection A: snapshot reports listA forbidden -> cache evicted -> projection A refetched -> 403.
+    // 2. Revoke projection A: pre-mount snapshot reports listA forbidden -> cache evicted & recorded in mountUnavailable
+    // so listA renders 403 immediately without flashing Title A v1 or issuing an extra projection GET.
     projARevoked = true;
     const second = mountPlatformPage(() => h(RouterView), router);
     try {
-      await vi.waitFor(() =>
-        expect(sent.filter((r) => r.path === `/api/product-projections/${PROJ_A_ID}`)).toHaveLength(1),
-      );
+      await vi.waitFor(() => expect(second.element.textContent).toContain("Title B v1"));
       expect(getCachedProjection(PROJ_A_ID)).toBeUndefined();
-      // Projection B remains intact.
-      expect(second.element.textContent).toContain("Title B v1");
+      expect(second.element.textContent).not.toContain("Title A v1");
+      expect(sent.filter((r) => r.path === `/api/product-projections/${PROJ_A_ID}`)).toHaveLength(0);
     } finally {
       second.app.unmount();
     }
 
-    // 3. Revoke panel itself: snapshot returns 403 -> panel cache evicted and error reported.
+    // 3. Revoke panel itself: pre-mount snapshot returns 403 -> panel cache evicted, never mounts, and error reported.
     panelRevoked = true;
+    const readsBeforeRevoked = sent.filter((r) => r.path === "/api/product-panels/read").length;
     const third = mountPlatformPage(() => h(RouterView), router);
     try {
       await vi.waitFor(() => expect(getCachedPanel(PANEL_ID)).toBeUndefined());
       await vi.waitFor(() => expect(third.element.textContent).toContain("Panel access revoked"));
+      expect(third.element.textContent).not.toContain("Banner v1");
+      expect(sent.filter((r) => r.path === "/api/product-panels/read")).toHaveLength(readsBeforeRevoked);
     } finally {
       third.app.unmount();
+    }
+  });
+
+  it("verifies cached panels before mounting: lightweight snapshot on match, direct refetch on upgrade without mounting stale v1, and no mount on 403", async () => {
+    let currentPanel = makePanel(1, "Banner v1");
+    const currentProjA = makeProjection(PROJ_A_ID, 1, "Title A v1");
+    const currentProjB = makeProjection(PROJ_B_ID, 1, "Title B v1");
+    let panelRevoked = false;
+
+    const answer = (request: Sent): Response => {
+      if (request.path === `/api/data-query/platform/applications/${APP_ID}/panel-uses`) {
+        return Response.json({
+          data: { applicationId: APP_ID, entry: { path: `/applications/${APP_ID}`, renderer: "panels" }, panelUses: [useEntry] },
+        });
+      }
+      if (request.path === `/api/product-panels/${PANEL_ID}`) {
+        const query = new URLSearchParams(request.search);
+        const pageSkillContext = pageSkillContextFor(currentPanel, request);
+        const projections: Record<string, BundledPanelProjection> | undefined =
+          query.get("includeProjections") === "1"
+            ? {
+                [PROJ_A_ID]: { status: "ready", projection: currentProjA },
+                [PROJ_B_ID]: { status: "ready", projection: currentProjB },
+              }
+            : undefined;
+        return Response.json({ panel: currentPanel, ...(pageSkillContext && { pageSkillContext }), ...(projections && { projections }) });
+      }
+      if (request.path === `/api/product-panels/${PANEL_ID}/snapshot`) {
+        if (panelRevoked) {
+          return Response.json({ error: { code: "FORBIDDEN", message: "Panel revoked before mount" } }, { status: 403 });
+        }
+        return panelSnapshot(currentPanel, { [PROJ_A_ID]: currentProjA, [PROJ_B_ID]: currentProjB }, request);
+      }
+      if (request.path === `/api/product-projections/${PROJ_A_ID}`) return Response.json({ projection: currentProjA });
+      if (request.path === `/api/product-projections/${PROJ_B_ID}`) return Response.json({ projection: currentProjB });
+      if (request.path === "/api/product-panels/read") {
+        const body = request.body as { operations?: true };
+        return Response.json(body.operations ? { status: "ready", value: {} } : { status: "ready", value: [] });
+      }
+      return nothingAt(request);
+    };
+
+    const { sent, router } = openPage(answer);
+    await router.push(useEntry.path);
+
+    // Warm the cache on cold open (revision 1).
+    const warm = mountPlatformPage(() => h(RouterView), router);
+    try {
+      await vi.waitFor(() => expect(warm.element.textContent).toContain("Title A v1"));
+      expect(getCachedPanel(PANEL_ID)?.revision).toBe(1);
+    } finally {
+      warm.app.unmount();
+    }
+
+    // 1. Cache hit with matching revision: exactly 1 lightweight /snapshot (without applicationId), 0 panel GETs, 0 projection GETs.
+    sent.length = 0;
+    const hit = mountPlatformPage(() => h(RouterView), router);
+    try {
+      await vi.waitFor(() => expect(hit.element.textContent).toContain("Banner v1"));
+      await vi.waitFor(() => expect(hit.element.textContent).toContain("Title A v1"));
+      await vi.waitFor(() => expect(hit.element.textContent).toContain("Title B v1"));
+      // Let any stray post-mount microtasks settle before asserting request counts.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const snapshots = sent.filter((r) => r.path === `/api/product-panels/${PANEL_ID}/snapshot`);
+      expect(snapshots).toHaveLength(1);
+      expect(new URLSearchParams(snapshots[0]!.search).has("applicationId")).toBe(false);
+      expect(snapshots[0]!.search).toBe("");
+      expect(sent.filter((r) => r.path === `/api/product-panels/${PANEL_ID}`)).toHaveLength(0);
+      expect(sent.filter((r) => r.path.startsWith("/api/product-projections/"))).toHaveLength(0);
+    } finally {
+      hit.app.unmount();
+    }
+
+    // 2. Cache hit when snapshot reports a newer panel revision (v2): never mounts stale v1 first; fetches v2 bundle directly.
+    currentPanel = makePanel(2, "Banner v2");
+    sent.length = 0;
+    const seenBanners: string[] = [];
+    const upgraded = mountPlatformPage(() => h(RouterView), router);
+    const observer = new MutationObserver(() => {
+      const banner = upgraded.element.querySelector(".banner")?.textContent;
+      if (banner) seenBanners.push(banner);
+    });
+    observer.observe(upgraded.element, { childList: true, subtree: true, characterData: true });
+    try {
+      await vi.waitFor(() => expect(upgraded.element.textContent).toContain("Banner v2"));
+      expect(seenBanners).not.toContain("Banner v1");
+      expect(getCachedPanel(PANEL_ID)?.revision).toBe(2);
+      const panelGets = sent.filter((r) => r.path === `/api/product-panels/${PANEL_ID}`);
+      expect(panelGets).toHaveLength(1);
+      expect(panelGets[0]!.search).toBe("?includeProjections=1");
+      expect(sent.filter((r) => r.path === `/api/product-panels/${PANEL_ID}/snapshot`)).toHaveLength(1);
+    } finally {
+      observer.disconnect();
+      upgraded.app.unmount();
+    }
+
+    // 3. Cache hit when snapshot returns 403: never mounts cached v2, evicts cache, sends 0 data reads, reports error.
+    panelRevoked = true;
+    sent.length = 0;
+    const revokedSeenBanners: string[] = [];
+    const revoked = mountPlatformPage(() => h(RouterView), router);
+    const revokedObserver = new MutationObserver(() => {
+      const banner = revoked.element.querySelector(".banner")?.textContent;
+      if (banner) revokedSeenBanners.push(banner);
+    });
+    revokedObserver.observe(revoked.element, { childList: true, subtree: true, characterData: true });
+    try {
+      await vi.waitFor(() => expect(revoked.element.textContent).toContain("Panel revoked before mount"));
+      expect(getCachedPanel(PANEL_ID)).toBeUndefined();
+      expect(revokedSeenBanners).toEqual([]);
+      expect(revoked.element.querySelector(".panel-host-coded > *")).toBeNull();
+      expect(sent.filter((r) => r.path === "/api/product-panels/read")).toHaveLength(0);
+    } finally {
+      revokedObserver.disconnect();
+      revoked.app.unmount();
     }
   });
 
