@@ -135,6 +135,7 @@ function choose(keys: string | string[] | undefined) {
       filterable
       remote
       :remote-method="search"
+      fit-input-width
       class="sdk-reference-picker-select"
       @update:model-value="choose"
     >
@@ -169,7 +170,10 @@ function choose(keys: string | string[] | undefined) {
 .sdk-reference-picker-select {
   width: 100%;
 }
-/* A described choice takes two lines in the list: its name, then what it does. */
+/*
+ * A described choice takes two lines in the list: its name, then what it does, as wide as the field (the list never
+ * spreads past it over the page); a longer description ends in an ellipsis and is read whole in its title.
+ */
 .sdk-reference-option-described {
   display: flex;
   flex-direction: column;

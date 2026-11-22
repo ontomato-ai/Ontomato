@@ -91,13 +91,13 @@ const panel = panelRecord("panel-form-controls", "Form controls", manifest);
 const use = panelUse("use-form-controls", "form-controls", panel.id, "/ontology/agents");
 
 const formPath = "/api/assistant/agent-definitions/form";
-async function open(outcome: PanelOperationOutcome = { kind: "success", data: {} }) {
+async function open(outcome: PanelOperationOutcome = { kind: "success", data: {} }, held: PanelFormValues = stored) {
   const intents = humanIntents(() => outcome, { source: "input", input: "agent" });
   const sent = installPlatform((request: Sent) => {
     if (request.path === `/api/product-projections/${projection.id}`) return Response.json({ projection });
     if (request.path === formPath) {
       const { values } = request.body as { values?: PanelFormValues };
-      return Response.json({ fields, values: values ?? stored, errors: [], save });
+      return Response.json({ fields, values: values ?? held, errors: [], save });
     }
     return intents(request) ?? nothingAt(request);
   });
@@ -243,6 +243,22 @@ it("saves Python as text and JSON as the owner's value, and never saves JSON tha
     schema: { type: "array", items: { type: "string" } },
     script: "def run(order):\n    return None",
   });
+});
+
+// An empty JSON value is drawn empty, as every other empty field is, never as the word null; emptying the text empties
+// the value instead of marking it as JSON that does not parse.
+it("draws an empty JSON value as empty and saves emptied text as no value", async () => {
+  const { context, sent } = await open(undefined, { ...stored, schema: null });
+  await vi.waitFor(() => expect(item("/schema")?.querySelector(".cm-editor")).toBeTruthy(), { timeout: 5000 });
+  expect(item("/schema")!.querySelector(".cm-content")!.textContent).toBe("");
+
+  code("/schema", '{"type": "string"}');
+  await nextTick();
+  code("/schema", "");
+  await nextTick();
+  expect(error("/schema")).toBeFalsy();
+  await context.instance.invoke("definition.save");
+  expect(submitted(sent)[0]!).toMatchObject({ schema: null });
 });
 
 it("discarding unparsed JSON shows the value the form holds again", async () => {

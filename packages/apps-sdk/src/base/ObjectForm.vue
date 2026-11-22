@@ -755,8 +755,8 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
   outline: none;
   box-shadow: var(--focus-ring);
 }
-/* Narrow, the list gives way to the sections. */
-@container sdk-owner-form (max-width: 900px) {
+/* Narrow, the list gives way to the sections: below this the fields beside it would be narrower than a line of text. */
+@container sdk-owner-form (max-width: 720px) {
   .sdk-owner-form-sectioned {
     grid-template-columns: minmax(0, 1fr);
   }
