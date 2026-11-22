@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, effectScope, inject, onBeforeUnmount, provide, ref, shallowRef, useAttrs, watch, type Component, type EffectScope } from "vue";
+import { computed, effectScope, inject, onBeforeUnmount, onErrorCaptured, provide, ref, shallowRef, useAttrs, watch, type Component, type EffectScope } from "vue";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
@@ -47,6 +47,12 @@ let registered: (() => void) | undefined;
 let operationsScope: EffectScope | undefined;
 let readGeneration = 0;
 let requestedRevision = 0;
+
+// Keep a projection component's render or lifecycle error in its own place instead of failing the whole panel.
+onErrorCaptured((reason: unknown) => {
+  failure.value ??= reason instanceof Error ? reason : new Error(String(reason));
+  return false;
+});
 
 function start(revision = 0) {
   const generation = ++readGeneration;
