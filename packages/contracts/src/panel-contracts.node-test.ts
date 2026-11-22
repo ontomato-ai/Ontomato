@@ -563,6 +563,33 @@ test("knowledge lists accept scalar status and counts preserve the owner's order
   assert.equal(panelGroupCountsSchema.safeParse({ all: 3, pending: 1, approved: 2 }).success, false);
 });
 
+test("metric and function catalogue queries bind owner filters to enum inputs", async () => {
+  const { panelReadInputMatches } = await import("./panel-projection");
+  const list = {
+    name: "Catalogue", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
+    inputs: {}, outputs: {}, config: {},
+  };
+  const metricQuery = {
+    source: { type: platformType(METRIC_VIEW) }, read: "query",
+    params: { status: { literal: "PUBLISHED" }, origin: { literal: "USER" } },
+  };
+  const functionQuery = {
+    source: { type: platformType(FUNCTION) }, read: "query",
+    params: { operation: { literal: "OPERATION_READ" } },
+  };
+  assert.equal(productProjectionInputSchema.safeParse({ ...list, data: { rows: metricQuery } }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...list, data: { rows: { ...metricQuery, params: { status: { literal: "DRAFT" } } } },
+  }).success, false);
+  assert.equal(productProjectionInputSchema.safeParse({ ...list, data: { rows: functionQuery } }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...list, data: { rows: { ...functionQuery, params: { operation: { literal: "OPERATION_DELETE" } } } },
+  }).success, false);
+  assert.equal(panelReadInputMatches("metricViewStatus", { kind: "scalar", type: "string" }), true);
+  assert.equal(panelReadInputMatches("metricViewOrigin", { kind: "scalar", type: "string" }), true);
+  assert.equal(panelReadInputMatches("functionOperation", { kind: "scalar", type: "string" }), true);
+});
+
 test("audit log queries bind filters to string inputs", () => {
   const projection = {
     name: "Audit log", description: "", visibility: "domain", componentId: "@ontomato/sdk:PanelData",

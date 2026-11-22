@@ -125,6 +125,9 @@ export const panelReadParameterSchemas = {
   feedbackSourceType: z.enum(["all", "qa", "analysis_task"]),
   feedbackRating: z.enum(["all", "like", "dislike"]),
   skillFilePath: z.string().min(1),
+  functionOperation: z.enum(["OPERATION_READ", "OPERATION_WRITE", "OPERATION_PRODUCT"]),
+  metricViewStatus: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]),
+  metricViewOrigin: z.enum(["USER", "SYSTEM"]),
 };
 
 type ReadInput = DirectProjectionPorts["inputs"][string];
@@ -150,6 +153,9 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "feedbackSourceType":
     case "feedbackRating":
     case "skillFilePath":
+    case "functionOperation":
+    case "metricViewStatus":
+    case "metricViewOrigin":
     case "productScope":
     case "productSort":
     case "applicationScope":
