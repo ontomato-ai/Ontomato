@@ -10,7 +10,8 @@ import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
-    const { instance } = usePanelContext();
+    const panel = usePanelContext();
+    const { instance } = panel;
     const values = instance.state.values;
     const selected = computed(() => values.value.selected ?? null);
     const creating = computed(() => values.value.creating === true);
@@ -28,8 +29,10 @@ await mountPanel({
     function showFunction() {
       setCreating(false);
     }
+    // The owner saved it: say so, as the page always did, and go back to reading it.
     function saved() {
       setCreating(false);
+      panel.notify({ kind: "success", text: panel.t("saved") });
     }
     function discard() {
       setCreating(false);

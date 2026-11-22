@@ -27,11 +27,11 @@ it("opens the old creation address as the catalog, and leaves the page's own add
   expect(open("/ontology/assets/actions")).toBeNull();
 });
 
-it("opens a function's detail address as the functions panel with the function selected, and the old creation address as the catalog", () => {
+it("opens a function's detail address as the functions panel with the function selected, and the old creation address as its blank form", () => {
   expect(open("/ontology/assets/functions/fn%201?back=products")).toEqual({
     path: "/ontology/assets/functions", state: { selected: { className: FUNCTION, primaryKey: "fn 1" } },
   });
-  expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: {} });
+  expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: { creating: true } });
   expect(open("/ontology/assets/functions")).toBeNull();
 });
 
