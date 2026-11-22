@@ -4,7 +4,7 @@
       "id": "builtin-product-ontology-graph",
       "input": {
         "name": "本体图谱",
-        "description": "用属主的对象类型和关系画图，浏览、选择并进入建模"
+        "description": "探索本体中对象类型、属性与关系的结构"
       }
     }
   ]

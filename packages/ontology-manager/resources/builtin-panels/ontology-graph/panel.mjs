@@ -1,261 +1,276 @@
-import { computed, ref, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { computed, nextTick, ref, watch } from "vue";
+import { mountPanel, usePanelBack, usePanelContext, usePanelNarrow } from "@ontomato/sdk/panel";
 
 /*
- * The ontology graph: the owner's object types and relation types on the platform's shared graph canvas (the same one
- * visual modeling draws on). The canvas draws, selects, keeps each reader's node places, and shows what the page
- * highlights; this page decides what a search finds, which path exists between two classes, and what an inspector says
- * about the chosen one. Nothing here draws or lays out the graph.
+ * Ontology Graph — Workbench Template.
+ *
+ * All business data is read and rendered strictly by official SDK projections (ObjectCount, ReferencePicker,
+ * ObjectList, ObjectGraph, ObjectHeader, ObjectSummary). All shared interaction state lives in panel.json so
+ * human readers, deep links, and the page assistant observe and drive one source of truth.
  */
 
 const OBJECT_TYPE = "platform:ObjectType";
-const RELATIONSHIP = "platform:Relationship";
 
-const recordsOf = (state) => (state.value.status === "ready" ? state.value.value : []);
+function refsSignature(list) {
+  return Array.isArray(list) ? list.map((item) => `${item?.className ?? ""}:${item?.primaryKey ?? ""}`).join("|") : "";
+}
 
 await mountPanel({
   setup() {
-    const { instance } = usePanelContext();
-    const objectRows = usePanelData("objectTypes", "rows");
-    const relationRows = usePanelData("relations", "rows");
-    const attributeRows = usePanelData("attributes", "rows");
+    const { instance, t } = usePanelContext();
+    const state = instance.state.values;
 
-    const FILTERS = [
-      { value: "all", label: "全部" },
-      { value: "objects", label: "对象类型" },
-      { value: "relations", label: "关系类型" },
-    ];
-    const filter = ref("all");
-    const pathFrom = ref("");
-    const pathTo = ref("");
-    const pathMessage = ref("");
+    const rootRef = ref(null);
+    const detailScrollRef = ref(null);
+    const narrow = usePanelNarrow(rootRef, { token: "--workbench-narrow-breakpoint" });
+
+    // Local presentation toggles: desktop left-pane collapse and mutually exclusive narrow overlay drawer.
+    const leftCollapsed = ref(false);
+    const narrowDrawer = ref("none");
     const navigationError = ref("");
 
-    const countOf = (rows) => (rows.value.status === "ready" ? rows.value.value.length : null);
-    const counts = computed(() => ({
-      objects: countOf(objectRows),
-      attributes: countOf(attributeRows),
-      relations: countOf(relationRows),
-    }));
-    const loading = computed(() => [objectRows, relationRows, attributeRows].some((rows) => rows.value.status === "loading"));
-    const readErrors = computed(() =>
-      [
-        ["对象类型", objectRows],
-        ["关系类型", relationRows],
-        ["属性", attributeRows],
-      ].flatMap(([name, rows]) => {
-        const state = rows.value;
-        if (state.status === "error") return [`${name}读取失败：${state.message}`];
-        if (state.status === "forbidden") return [`没有权限读取${name}`];
-        return [];
-      }),
-    );
+    // Latest locally-filtered references emitted by the two catalog ObjectList members.
+    const listedObjects = ref([]);
+    const listedRelations = ref([]);
+    const objectsReady = ref(false);
+    const relationsReady = ref(false);
 
-    const objects = computed(() =>
-      recordsOf(objectRows).map((record) => ({
-        className: record.fields.className || record.primaryKey,
-        showName: record.label || record.fields.showName || record.primaryKey,
-        classDesc: record.fields.classDesc || "",
-      })),
-    );
-    const relations = computed(() =>
-      recordsOf(relationRows).map((record) => ({
-        relationship: record.primaryKey,
-        name: record.label || record.primaryKey,
-        desc: record.fields.desc || "",
-        fromclass: record.fields.fromclass || "",
-        toclass: record.fields.toclass || "",
-      })),
-    );
-    const attributes = computed(() =>
-      recordsOf(attributeRows).map((record) => ({
-        className: record.fields.className || "",
-        name: record.fields.name || record.primaryKey,
-        showName: record.label || record.fields.name || record.primaryKey,
-        type: record.fields.type || "",
-      })),
-    );
-    const attributesByClass = computed(() => {
-      const grouped = new Map();
-      for (const attribute of attributes.value) {
-        const list = grouped.get(attribute.className);
-        if (list) list.push(attribute);
-        else grouped.set(attribute.className, [attribute]);
-      }
-      return grouped;
-    });
-    const objectNames = computed(() => new Map(objects.value.map((object) => [object.className, object.showName])));
-    const classNameLabel = (className) => objectNames.value.get(className) ?? (className || "（未知对象类型）");
+    const selectedObjectRef = computed(() => state.value.objectType ?? null);
+    const selectedRelationRef = computed(() => state.value.relation ?? null);
+    const hasSelection = computed(() => Boolean(selectedObjectRef.value || selectedRelationRef.value));
 
-    // The page's public state: the reader's selection, search and what stands out, which its agent reads too.
     const search = computed({
-      get: () => instance.state.values.value.search ?? "",
+      get: () => state.value.search ?? "",
       set: (value) => instance.state.set("search", value ?? ""),
     });
-    const selectedObject = computed(() =>
-      objects.value.find((object) => object.className === instance.state.values.value.objectType?.primaryKey) ?? null,
-    );
-    const selectedRelation = computed(() =>
-      relations.value.find((relation) => relation.relationship === instance.state.values.value.relation?.primaryKey) ?? null,
-    );
-    /** The left column's two sections: the classes and the relations the reader's query and filter leave. */
-    const matches = (values, term) => !term || values.some((value) => String(value ?? "").toLowerCase().includes(term));
-    const filteredObjects = computed(() => {
-      if (filter.value === "relations") return [];
-      const term = search.value.trim().toLowerCase();
-      return objects.value.filter((object) =>
-        matches([object.className, object.showName, object.classDesc, ...attributesOf(object.className).flatMap((item) => [item.name, item.showName])], term),
-      );
+    const searchTerm = computed(() => search.value.trim());
+
+    const scope = computed({
+      get: () => {
+        const current = state.value.scope;
+        return current === "objects" || current === "relations" ? current : "all";
+      },
+      set: (value) => {
+        const next = value === "objects" || value === "relations" ? value : "all";
+        instance.state.set("scope", next);
+      },
     });
-    const filteredRelations = computed(() => {
-      if (filter.value === "objects") return [];
-      const term = search.value.trim().toLowerCase();
-      return drawableRelations.value.filter((relation) => matches([relation.relationship, relation.name, relation.desc], term));
+
+    const scopeOptions = computed(() => [
+      { value: "all", label: t("og.scope.all") },
+      { value: "objects", label: t("og.scope.objects") },
+      { value: "relations", label: t("og.scope.relations") },
+    ]);
+
+    const hasPathEndpoints = computed(() => Boolean(state.value.pathFrom?.primaryKey || state.value.pathTo?.primaryKey));
+
+    // Three-pane visibility state machine:
+    // - Wide: left pane collapsible, right pane collapsed by default and auto-opened on selection.
+    // - Narrow: at most one overlay drawer open at a time (opening left closes right and vice versa).
+    const showLeftPane = computed(() => (narrow.value ? narrowDrawer.value === "left" : !leftCollapsed.value));
+    const showRightPane = computed(() => hasSelection.value && (!narrow.value || narrowDrawer.value === "right"));
+
+    const leftToggleText = computed(() => (narrow.value ? t("og.explorer.toggle") : showLeftPane.value ? t("og.explorer.collapse") : t("og.explorer.expand")));
+    const leftToggleLabel = computed(() => (showLeftPane.value ? t("og.explorer.collapse") : t("og.explorer.expand")));
+
+    // In "all" scope while searching, avoid rendering two empty lists stacked together.
+    const showUnifiedSearchEmpty = computed(
+      () =>
+        scope.value === "all"
+        && searchTerm.value !== ""
+        && objectsReady.value
+        && relationsReady.value
+        && listedObjects.value.length === 0
+        && listedRelations.value.length === 0,
+    );
+    const showObjectsSection = computed(() => {
+      if (scope.value === "relations") return false;
+      if (scope.value === "objects") return true;
+      if (!searchTerm.value || !objectsReady.value) return true;
+      return listedObjects.value.length > 0;
     });
-    const attributesOf = (className) => attributesByClass.value.get(className) ?? [];
+    const showRelationsSection = computed(() => {
+      if (scope.value === "objects") return false;
+      if (scope.value === "relations") return true;
+      if (!searchTerm.value || !relationsReady.value) return true;
+      return listedRelations.value.length > 0;
+    });
 
-    const selectedAttributes = computed(() => attributesByClass.value.get(selectedObject.value?.className ?? "") ?? []);
-    const connectedRelations = computed(() =>
-      selectedObject.value
-        ? relations.value.filter(
-            (relation) =>
-              relation.fromclass === selectedObject.value.className || relation.toclass === selectedObject.value.className,
-          )
-        : [],
+    function scrollDetailToTop() {
+      void nextTick(() => {
+        if (detailScrollRef.value) detailScrollRef.value.scrollTop = 0;
+      });
+    }
+
+    function toggleLeftPane() {
+      if (narrow.value) {
+        narrowDrawer.value = narrowDrawer.value === "left" ? "none" : "left";
+      } else {
+        leftCollapsed.value = !leftCollapsed.value;
+      }
+    }
+
+    function clearSelection() {
+      navigationError.value = "";
+      if (narrowDrawer.value === "right") narrowDrawer.value = "none";
+      if (state.value.objectType || state.value.relation || state.value.selectedClassName) {
+        instance.state.setState({ objectType: null, relation: null, selectedClassName: null });
+      }
+    }
+
+    // Host back stack (LIFO):
+    // - Detail pane (wide or narrow): closes on Escape, browser Back, or the header Close button.
+    // - Narrow left catalog overlay: closes on Escape without adding a browser history entry.
+    const detailBack = usePanelBack(hasSelection, clearSelection);
+    const leftDrawerBack = usePanelBack(
+      () => narrow.value && narrowDrawer.value === "left",
+      () => {
+        narrowDrawer.value = "none";
+      },
+      { pushHistory: false },
     );
 
-    /** The relations the canvas can draw: both ends are object types of this domain. */
-    const drawableRelations = computed(() =>
-      relations.value.filter((relation) => objectNames.value.has(relation.fromclass) && objectNames.value.has(relation.toclass)),
-    );
+    function closeNarrowDrawer() {
+      if (narrowDrawer.value === "right") {
+        closeDetail();
+        return;
+      }
+      if (narrow.value && narrowDrawer.value === "left") {
+        void leftDrawerBack.back();
+        return;
+      }
+      narrowDrawer.value = "none";
+    }
 
-    const highlighted = computed(() => ({
-      nodes: instance.state.values.value.highlightedNodes ?? [],
-      edges: instance.state.values.value.highlightedEdges ?? [],
-    }));
-    const hasHighlight = computed(() => highlighted.value.nodes.length > 0 || highlighted.value.edges.length > 0);
-    const activePath = computed(() =>
-      Boolean(instance.state.values.value.pathFrom?.primaryKey && instance.state.values.value.pathTo?.primaryKey),
-    );
-    const hasBanner = computed(() => hasHighlight.value || activePath.value);
+    function closeDetail() {
+      if (hasSelection.value) {
+        void detailBack.back();
+        return;
+      }
+      clearSelection();
+    }
 
-    // Sync path dropdowns when state is updated externally (e.g. by the page's agent).
+    function clearSearch() {
+      search.value = "";
+    }
+
+    function clearPath() {
+      if (!hasPathEndpoints.value) return;
+      instance.state.setState({ pathFrom: null, pathTo: null });
+    }
+
+    // Keep objectType and relation mutually exclusive, keep selectedClassName synced for detail list reads,
+    // and open the narrow right overlay automatically when a selection is made.
     watch(
-      () => [instance.state.values.value.pathFrom?.primaryKey ?? "", instance.state.values.value.pathTo?.primaryKey ?? ""],
+      () => state.value.objectType?.primaryKey ?? "",
+      (next) => {
+        const expectedClassName = next || null;
+        const patch = {};
+        if ((state.value.selectedClassName ?? null) !== expectedClassName) {
+          patch.selectedClassName = expectedClassName;
+        }
+        if (next) {
+          navigationError.value = "";
+          if (state.value.relation) patch.relation = null;
+          scrollDetailToTop();
+          if (narrow.value) narrowDrawer.value = "right";
+        } else if (!state.value.relation && narrowDrawer.value === "right") {
+          narrowDrawer.value = "none";
+        }
+        if (Object.keys(patch).length) instance.state.setState(patch);
+      },
+      { immediate: true },
+    );
+
+    watch(
+      () => state.value.relation?.primaryKey ?? "",
+      (next) => {
+        if (next) {
+          navigationError.value = "";
+          const patch = {};
+          if (state.value.objectType) patch.objectType = null;
+          if (state.value.selectedClassName) patch.selectedClassName = null;
+          if (Object.keys(patch).length) instance.state.setState(patch);
+          scrollDetailToTop();
+          if (narrow.value) narrowDrawer.value = "right";
+        } else if (!state.value.objectType && narrowDrawer.value === "right") {
+          narrowDrawer.value = "none";
+        }
+      },
+      { immediate: true },
+    );
+
+    // When container transitions from wide to narrow, start clean on the canvas with no stacked overlays.
+    watch(narrow, (isNarrow) => {
+      if (!isNarrow) narrowDrawer.value = "none";
+    });
+
+    // Only highlight graph elements when search text is non-empty; switching scope with empty search never dims the graph.
+    function syncSearchHighlights() {
+      if (!searchTerm.value) {
+        if ((state.value.highlightedNodes?.length ?? 0) > 0 || (state.value.highlightedEdges?.length ?? 0) > 0) {
+          instance.state.setState({ highlightedNodes: [], highlightedEdges: [] });
+        }
+        return;
+      }
+      const nextNodes = scope.value === "relations" ? [] : listedObjects.value;
+      const nextEdges = scope.value === "objects" ? [] : listedRelations.value;
+      const sameNodes = refsSignature(state.value.highlightedNodes) === refsSignature(nextNodes);
+      const sameEdges = refsSignature(state.value.highlightedEdges) === refsSignature(nextEdges);
+      const needsPathClear = hasPathEndpoints.value;
+      if (sameNodes && sameEdges && !needsPathClear) return;
+      instance.state.setState({
+        ...(needsPathClear ? { pathFrom: null, pathTo: null } : {}),
+        highlightedNodes: nextNodes,
+        highlightedEdges: nextEdges,
+      });
+    }
+
+    function onObjectsListed(refs) {
+      objectsReady.value = true;
+      listedObjects.value = Array.isArray(refs) ? refs : [];
+      syncSearchHighlights();
+    }
+
+    function onRelationsListed(refs) {
+      relationsReady.value = true;
+      listedRelations.value = Array.isArray(refs) ? refs : [];
+      syncSearchHighlights();
+    }
+
+    watch([searchTerm, scope], () => {
+      syncSearchHighlights();
+    });
+
+    // When both directed-path endpoints are set, clear any search highlights so path mode stays visually distinct.
+    watch(
+      () => [state.value.pathFrom?.primaryKey ?? "", state.value.pathTo?.primaryKey ?? ""],
       ([from, to]) => {
-        if (from && from !== pathFrom.value) pathFrom.value = from;
-        if (to && to !== pathTo.value) pathTo.value = to;
+        if (!from || !to) return;
+        if ((state.value.highlightedNodes?.length ?? 0) > 0 || (state.value.highlightedEdges?.length ?? 0) > 0) {
+          instance.state.setState({ highlightedNodes: [], highlightedEdges: [] });
+        }
       },
     );
 
-    function highlight(nodes, edges) {
-      instance.state.setState({
-        pathFrom: null,
-        pathTo: null,
-        highlightedNodes: nodes.map((className) => ({ className: OBJECT_TYPE, primaryKey: className })),
-        highlightedEdges: edges.map((relationship) => ({ className: RELATIONSHIP, primaryKey: relationship })),
-      });
-    }
-    function clearHighlight() {
-      pathMessage.value = "";
-      highlight([], []);
-    }
-
-    /** What the page highlights: what the query and the filter leave, or nothing when both are open. */
-    function highlightBrowsed() {
-      if (!search.value.trim() && filter.value === "all") {
-        clearHighlight();
-        return;
-      }
-      highlight(
-        filteredObjects.value.map((object) => object.className),
-        filteredRelations.value.map((relation) => relation.relationship),
-      );
-    }
-    const setFilter = (value) => {
-      filter.value = value;
-      pathMessage.value = "";
-      highlightBrowsed();
-    };
-
-    const setSearch = (value) => {
-      search.value = value ?? "";
-      pathMessage.value = "";
-      const term = search.value.trim().toLowerCase();
-      if (!term) {
-        highlightBrowsed();
-        return;
-      }
-      const words = (className) => (attributesByClass.value.get(className) ?? []).flatMap((item) => [item.name, item.showName]);
-      const hitObjects = objects.value.filter((object) =>
-        [object.className, object.showName, object.classDesc, ...words(object.className)].some((value) =>
-          String(value ?? "").toLowerCase().includes(term),
-        ),
-      );
-      const hitRelations = drawableRelations.value.filter((relation) =>
-        [relation.relationship, relation.name, relation.desc].some((value) =>
-          String(value ?? "").toLowerCase().includes(term),
-        ),
-      );
-      highlight(
-        hitObjects.map((object) => object.className),
-        hitRelations.map((relation) => relation.relationship),
-      );
-    };
-
-    function findPath() {
-      const from = pathFrom.value;
-      const to = pathTo.value;
-      if (!from || !to) {
-        pathMessage.value = "先选起点和终点对象类型。";
-        return;
-      }
-      // Delegate path highlighting and reporting to ObjectGraph via its native pathFrom/pathTo bindings
-      // instead of writing path nodes into highlightedNodes (which the canvas renders as search hits).
-      instance.state.setState({
-        pathFrom: { className: OBJECT_TYPE, primaryKey: from },
-        pathTo: { className: OBJECT_TYPE, primaryKey: to },
-        highlightedNodes: [],
-        highlightedEdges: [],
-      });
-      if (from === to) {
-        pathMessage.value = `「${classNameLabel(from)}」自己就是起点和终点。`;
-        return;
-      }
-      const queue = [{ node: from, hops: 0 }];
-      const visited = new Set([from]);
-      while (queue.length) {
-        const current = queue.shift();
-        for (const relation of drawableRelations.value) {
-          if (relation.fromclass !== current.node || visited.has(relation.toclass)) continue;
-          const hops = current.hops + 1;
-          if (relation.toclass === to) {
-            pathMessage.value = `找到路径：${hops} 跳`;
-            return;
-          }
-          visited.add(relation.toclass);
-          queue.push({ node: relation.toclass, hops });
-        }
-      }
-      pathMessage.value = `找不到从「${classNameLabel(from)}」到「${classNameLabel(to)}」的路径`;
-    }
-
-    function selectObject(className) {
+    function onSummaryNavigate(reference) {
+      if (!reference?.primaryKey) return;
       navigationError.value = "";
-      instance.state.setState({ objectType: { className: OBJECT_TYPE, primaryKey: className }, relation: null });
-    }
-
-    function selectRelation(relationship) {
-      navigationError.value = "";
-      instance.state.setState({ relation: { className: RELATIONSHIP, primaryKey: relationship }, objectType: null });
+      if (reference.className === OBJECT_TYPE) {
+        instance.state.setState({
+          objectType: { className: OBJECT_TYPE, primaryKey: reference.primaryKey },
+          relation: null,
+          selectedClassName: reference.primaryKey,
+        });
+      }
     }
 
     async function openModeling() {
       navigationError.value = "";
-      const target = selectedObject.value
-        ? { focus: "object", id: selectedObject.value.className }
-        : selectedRelation.value
-          ? { focus: "relation", id: selectedRelation.value.relationship }
+      const target = selectedObjectRef.value
+        ? { focus: "object", id: selectedObjectRef.value.primaryKey }
+        : selectedRelationRef.value
+          ? { focus: "relation", id: selectedRelationRef.value.primaryKey }
           : null;
       if (!target) return;
       const address = `/ontology/visual-modeling?focus=${target.focus}&id=${encodeURIComponent(target.id)}&back=playground`;
@@ -266,56 +281,39 @@ await mountPanel({
       }
     }
 
-    // The agent names the selected object by the owner's label, not by its key alone.
-    watch(
-      objects,
-      (list) => {
-        if (list.length)
-          instance.nameObjects(OBJECT_TYPE, list.map((object) => ({ primaryKey: object.className, label: object.showName })));
-      },
-      { immediate: true },
-    );
-    watch(
-      relations,
-      (list) => {
-        if (list.length)
-          instance.nameObjects(
-            RELATIONSHIP,
-            list.map((relation) => ({ primaryKey: relation.relationship, label: relation.name })),
-          );
-      },
-      { immediate: true },
-    );
-
     return {
-      loading,
-      readErrors,
-      counts,
-      objects,
-      relations,
+      rootRef,
+      detailScrollRef,
+      narrow,
+      narrowDrawer,
       search,
-      setSearch,
-      filter,
-      filterOptions: FILTERS,
-      setFilter,
-      filteredObjects,
-      filteredRelations,
-      selectObject,
-      selectedObject,
-      selectedRelation,
-      selectedAttributes,
-      connectedRelations,
-      pathFrom,
-      pathTo,
-      pathMessage,
-      hasHighlight,
-      hasBanner,
-      findPath,
-      clearHighlight,
-      selectRelation,
-      openModeling,
+      scope,
+      scopeOptions,
+      selectedObjectRef,
+      selectedRelationRef,
+      hasSelection,
+      hasPathEndpoints,
+      showLeftPane,
+      showRightPane,
+      leftToggleText,
+      leftToggleLabel,
+      listedObjects,
+      listedRelations,
+      objectsReady,
+      relationsReady,
+      showUnifiedSearchEmpty,
+      showObjectsSection,
+      showRelationsSection,
       navigationError,
-      classNameLabel,
+      toggleLeftPane,
+      closeNarrowDrawer,
+      closeDetail,
+      clearSearch,
+      clearPath,
+      onObjectsListed,
+      onRelationsListed,
+      onSummaryNavigate,
+      openModeling,
     };
   },
 });

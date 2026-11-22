@@ -15,6 +15,12 @@
         },
         "deepLink": true
       },
+      "selectedClassName": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
       "search": {
         "type": {
           "kind": "scalar",
@@ -22,6 +28,14 @@
         },
         "deepLink": true,
         "default": ""
+      },
+      "scope": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "all"
       },
       "positions": {
         "type": {
@@ -61,29 +75,96 @@
       }
     },
     "members": {
-      "objectTypes": {
-        "component": "PanelData",
+      "objectTypesCount": {
+        "component": "ObjectCount",
         "type": "platform:ObjectType",
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-5b62b06c-8063-4692-bb5c-9483a593cda9"
+        "config": {
+          "items": [
+            {
+              "labelKey": "og.count.objectTypes"
+            },
+            {
+              "labelKey": "og.count.attributes",
+              "sumField": "attributeCount"
+            }
+          ]
+        }
       },
-      "relations": {
-        "component": "PanelData",
+      "relationsCount": {
+        "component": "ObjectCount",
         "type": "platform:Relationship",
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-c94f4166-6043-4ba2-bc01-36cf0736ee2d"
+        "config": {
+          "labelKey": "og.count.relations"
+        }
       },
-      "attributes": {
-        "component": "PanelData",
-        "type": "platform:Attribute",
+      "pathFromPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ObjectType",
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-aeef6b97-7fa9-4527-ad62-94ba087c06fb"
+        "state": {
+          "selected": "pathFrom"
+        },
+        "config": {
+          "placeholderKey": "og.path.from",
+          "clearable": true,
+          "size": "small"
+        }
+      },
+      "pathToPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "pathTo"
+        },
+        "config": {
+          "placeholderKey": "og.path.to",
+          "clearable": true,
+          "size": "small"
+        }
+      },
+      "objectList": {
+        "component": "ObjectList",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "objectType",
+          "search": "search"
+        },
+        "config": {
+          "layout": "list",
+          "subtitleField": "className",
+          "searchable": false,
+          "emptyText": "og.empty.objects"
+        }
+      },
+      "relationList": {
+        "component": "ObjectList",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "relation",
+          "search": "search"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "emptyText": "og.empty.relations"
+        }
       },
       "graph": {
         "component": "ObjectGraph",
@@ -116,11 +197,162 @@
           "labelSize": 13
         },
         "id": "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378"
+      },
+      "objectHeader": {
+        "component": "ObjectHeader",
+        "target": "objectType",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitleField": "className"
+        }
+      },
+      "objectSummary": {
+        "component": "ObjectSummary",
+        "target": "objectType",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "fields": [
+            "classDesc"
+          ]
+        }
+      },
+      "objectAttributes": {
+        "component": "ObjectList",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "state": "selectedClassName"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "list",
+          "subtitleField": "name",
+          "statusField": "type",
+          "searchable": false,
+          "emptyText": "og.empty.attributes"
+        }
+      },
+      "objectRelations": {
+        "component": "ObjectList",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "state": "selectedClassName"
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "relation"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "emptyText": "og.empty.objectRelations"
+        }
+      },
+      "relationHeader": {
+        "component": "ObjectHeader",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        }
+      },
+      "relationSummary": {
+        "component": "ObjectSummary",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "fields": [
+            "fromObject",
+            "toObject",
+            "fromField",
+            "toField",
+            "desc"
+          ]
+        }
       }
     },
     "commands": {}
   },
   "content": {
-    "messages": {}
+    "messages": {
+      "zh-CN": {
+        "og.count.objectTypes": "对象类型",
+        "og.count.attributes": "属性",
+        "og.count.relations": "关系类型",
+        "og.search.placeholder": "搜索对象类型、属性或关系",
+        "og.search.clear": "清除搜索",
+        "og.scope.all": "全部",
+        "og.scope.objects": "对象类型",
+        "og.scope.relations": "关系类型",
+        "og.explorer.title": "资源目录",
+        "og.explorer.toggle": "目录",
+        "og.explorer.collapse": "收起目录",
+        "og.explorer.expand": "展开目录",
+        "og.path.label": "路径查找",
+        "og.path.from": "起点对象",
+        "og.path.to": "终点对象",
+        "og.path.clear": "清除路径",
+        "og.section.objects": "对象类型",
+        "og.section.relations": "关系类型",
+        "og.section.attributes": "所属属性",
+        "og.section.connectedRelations": "关联关系",
+        "og.action.modeling": "去建模",
+        "og.action.close": "关闭",
+        "og.action.closeDetail": "关闭详情",
+        "og.action.closeExplorer": "关闭目录",
+        "og.empty.objects": "暂无对象类型",
+        "og.empty.relations": "暂无关系类型",
+        "og.empty.attributes": "该对象类型暂无属性",
+        "og.empty.objectRelations": "该对象类型暂无关联关系",
+        "og.empty.search": "没有匹配的资源"
+      },
+      "en": {
+        "og.count.objectTypes": "Object types",
+        "og.count.attributes": "Attributes",
+        "og.count.relations": "Relation types",
+        "og.search.placeholder": "Search object types, attributes, or relations",
+        "og.search.clear": "Clear search",
+        "og.scope.all": "All",
+        "og.scope.objects": "Object types",
+        "og.scope.relations": "Relations",
+        "og.explorer.title": "Catalog",
+        "og.explorer.toggle": "Catalog",
+        "og.explorer.collapse": "Collapse catalog",
+        "og.explorer.expand": "Expand catalog",
+        "og.path.label": "Path",
+        "og.path.from": "Start object",
+        "og.path.to": "Target object",
+        "og.path.clear": "Clear path",
+        "og.section.objects": "Object types",
+        "og.section.relations": "Relation types",
+        "og.section.attributes": "Attributes",
+        "og.section.connectedRelations": "Connected relations",
+        "og.action.modeling": "Open in modeling",
+        "og.action.close": "Close",
+        "og.action.closeDetail": "Close details",
+        "og.action.closeExplorer": "Close catalog",
+        "og.empty.objects": "No object types yet",
+        "og.empty.relations": "No relation types yet",
+        "og.empty.attributes": "No attributes on this object type",
+        "og.empty.objectRelations": "No relations connected to this object type",
+        "og.empty.search": "No matching resources"
+      }
+    }
   }
 }
