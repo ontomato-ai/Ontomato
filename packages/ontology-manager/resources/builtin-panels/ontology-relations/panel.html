@@ -11,7 +11,7 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: var(--manager-content-gap) var(--page-gutter) calc(var(--manager-module-gap) + 56px);
+    padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px);
   }
   .relations-toolbar {
     display: flex;
@@ -33,7 +33,7 @@
   }
   .relations-table {
     overflow: auto;
-    margin-top: var(--manager-content-gap);
+    margin-top: var(--spacing-lg);
     border: 1px solid var(--sdk-border-color, var(--ui-border));
     border-radius: var(--radius-md);
     background: var(--sdk-bg-color);
@@ -162,15 +162,15 @@
   .relations-detail-body {
     display: grid;
     grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr);
-    gap: var(--manager-module-gap);
-    padding: var(--manager-module-gap) var(--page-gutter) calc(var(--manager-module-gap) + 56px);
-    align-items: start;
+    gap: var(--page-content-gap);
+    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    align-items: stretch;
   }
   .relations-card {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: var(--manager-module-padding);
+    padding: var(--page-section-padding, var(--spacing-lg-xl, 20px));
     border: 1px solid var(--sdk-border-color, var(--ui-border));
     border-radius: var(--radius-md);
     background: var(--sdk-bg-color);
@@ -182,7 +182,7 @@
     font-weight: var(--font-semibold);
   }
   .relations-form-wrap {
-    margin-top: var(--manager-content-gap);
+    margin-top: var(--spacing-lg);
   }
   .relations-form-wrap .sdk-owner-form,
   .relations-form-wrap .sdk-owner-form-inner {
@@ -196,7 +196,7 @@
     grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr);
     align-items: stretch;
     gap: var(--spacing-sm);
-    margin-top: var(--manager-content-gap);
+    margin-top: var(--spacing-lg);
   }
   .relations-end {
     min-width: 0;
@@ -248,7 +248,7 @@
     color: var(--sdk-color-primary, var(--brand-link));
   }
   .relations-connection-note {
-    margin: var(--manager-content-gap) 0 0;
+    margin: var(--spacing-lg) 0 0;
     background-color: var(--sdk-color-primary-light-9, var(--brand-primary-tint));
     color: var(--sdk-color-primary, var(--brand-link));
   }
@@ -291,8 +291,8 @@
   @container relations-page (max-width: 850px) {
     .relations-detail-body {
       grid-template-columns: minmax(0, 1fr);
-      padding-block: var(--spacing-md) calc(var(--manager-module-gap) + 56px);
-      gap: var(--manager-module-gap);
+      padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
+      gap: var(--page-content-gap);
     }
     .relations-divider {
       display: none;
