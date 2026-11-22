@@ -30,10 +30,11 @@ export default defineComponent({
       const dark = useDarkMode();
       useAppTheme(place, () => declaration.theme, () => (dark.value ? "dark" : "light"));
     }
+    const isCurrentEntry = Boolean(declaration && "fromPlatform" in declaration.target);
     return () => {
       const containerProps: Record<string, unknown> = {
         ref: place,
-        class: ["sdk-panel-member", attrs.class],
+        class: ["sdk-panel-member", isCurrentEntry ? "sdk-current-entry-slot" : null, attrs.class],
         "data-member": props.slot,
       };
       if (attrs.style !== undefined) containerProps.style = attrs.style;

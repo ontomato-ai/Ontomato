@@ -9,10 +9,19 @@
   min-width: 0;
   min-height: 0;
 }
+:where(.sdk-current-entry-slot) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
 :where(.sdk-panel-member-nested) {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  height: 100%;
   min-width: 0;
   min-height: 0;
 }
@@ -21,10 +30,17 @@
   min-width: 0;
   min-height: 0;
 }
+:where(.sdk-panel-member-nested > [data-panel-bare-root]) {
+  display: contents;
+}
+:where(.sdk-panel-member-nested > [data-panel-bare-root] > *) {
+  flex-shrink: 0;
+}
 :where(.sdk-current-entry) {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  height: 100%;
   min-width: 0;
   min-height: 0;
 }

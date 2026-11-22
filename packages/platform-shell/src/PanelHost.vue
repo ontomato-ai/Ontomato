@@ -186,6 +186,15 @@ defineExpose({ ...view, operations, commands });
     <p v-if="!view.error.value && view.draftOpening.value && view.admitted.value" role="status" class="panel-host-draft-opening">
       {{ labels.draft.opening }}
     </p>
+    <!-- A host notice stands above the content box so the box height adjusts around it and never scrolls the notice. -->
+    <p
+      v-if="!view.error.value && view.direct.value && view.notice.value"
+      v-show="view.admitted.value && !view.draftOpening.value"
+      role="status"
+      class="panel-host-notice"
+    >
+      {{ view.notice.value }}
+    </p>
     <!-- Drawn while Java's answer is coming, so its members read at once; shown only once that answer names the page. -->
     <div
       v-if="!view.error.value && view.direct.value"
@@ -193,7 +202,6 @@ defineExpose({ ...view, operations, commands });
       class="panel-host-direct"
       :data-panel-instance="view.instance"
     >
-      <p v-if="view.notice.value" role="status" class="panel-host-notice">{{ view.notice.value }}</p>
       <div :ref="placeCoded" class="panel-host-coded" />
     </div>
     <iframe
@@ -209,35 +217,44 @@ defineExpose({ ...view, operations, commands });
 
 <style scoped>
 .panel-host {
+  --panel-host-padding-inline: var(--spacing-md, 12px);
+  --panel-host-padding-top: var(--spacing-md, 12px);
+  --panel-host-padding-bottom: var(--spacing-md, 12px);
   display: flex;
   flex: 1;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
   min-width: 0;
 }
 .panel-host-title {
-  padding: 4px 12px;
+  flex-shrink: 0;
+  padding: 4px var(--panel-host-padding-inline);
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .panel-host-error {
-  padding: 12px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: var(--panel-host-padding-top) var(--panel-host-padding-inline);
   color: var(--el-color-danger);
 }
 .panel-host-notice {
-  margin: 0 0 var(--spacing-sm, 8px);
+  flex-shrink: 0;
+  margin: var(--spacing-sm, 8px) var(--panel-host-padding-inline) 0;
   color: var(--el-color-warning);
   font-size: 12px;
 }
 .panel-host-draft-opening {
+  flex-shrink: 0;
   margin: 0;
-  padding: var(--spacing-md, 12px);
+  padding: var(--panel-host-padding-top) var(--panel-host-padding-inline);
   color: var(--el-text-color-secondary);
 }
 .panel-host-draft {
   position: relative;
   flex-shrink: 0;
-  margin: var(--spacing-md, 12px) var(--spacing-md, 12px) 0;
+  margin: var(--panel-host-padding-top) var(--panel-host-padding-inline) 0;
 }
 .panel-host-draft :deep(.el-alert) {
   padding-right: calc(var(--spacing-md, 12px) + 24px);
@@ -281,9 +298,33 @@ defineExpose({ ...view, operations, commands });
   width: 100%;
 }
 .panel-host-direct {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: auto;
-  padding: var(--spacing-md, 12px);
+  box-sizing: border-box;
+  padding: var(--panel-host-padding-top) var(--panel-host-padding-inline) var(--panel-host-padding-bottom);
+}
+/* Transparent to layout so the mounted `#app` element sits directly inside the definite-height content box. */
+.panel-host-coded {
+  display: contents;
+}
+</style>
+
+<style>
+/*
+ * A bare `#app` mount wrapper (carrying neither class nor style) is transparent to layout so the panel's own root
+ * element sits directly inside the definite-height content box. Direct flex items of `.panel-host-direct` default to
+ * `flex-shrink: 0` at zero specificity so flow-down panels never collapse and fill panels (`height: 100%` or `flex: 1`)
+ * take over cleanly without inheriting a forced flex direction or height from the host.
+ */
+:where(.panel-host-direct > .panel-host-coded > [data-panel-bare-root]) {
+  display: contents;
+}
+:where(.panel-host-direct > .panel-host-coded > *),
+:where(.panel-host-direct > .panel-host-coded > [data-panel-bare-root] > *) {
+  flex-shrink: 0;
 }
 </style>

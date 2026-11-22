@@ -234,6 +234,10 @@ const paneStyle = computed(() => ({
 .pane-dock > * {
   pointer-events: auto;
 }
+/* Folded with no pending questions, the dock leaves the page its whole height. */
+.pane-dock:has(> .composer-unfold:only-child) {
+  padding: 0;
+}
 @media (max-width: 1100px) {
   .page-pane.side {
     position: fixed;

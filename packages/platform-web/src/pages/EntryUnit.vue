@@ -36,8 +36,11 @@ const actions = providePageActions();
       @save="actions?.draft?.save()"
       @discard="actions?.draft?.discard()"
     />
-    <div class="panel-entry-unit-body platform-page-gutter">
+    <div class="panel-entry-unit-body">
       <slot />
+    </div>
+    <div v-if="$slots.foot" class="panel-entry-unit-foot platform-page-gutter">
+      <slot name="foot" />
     </div>
   </div>
 </template>
@@ -47,13 +50,20 @@ const actions = providePageActions();
   display: flex;
   flex: 1;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 .panel-entry-unit-body {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.panel-entry-unit-foot {
+  flex-shrink: 0;
 }
 </style>
