@@ -107,7 +107,9 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
     [owner.domainId, id],
   );
   if (collision.rows.length) throw new HttpError(409, "Product identity already belongs to another collection", "PRODUCT_ID_CONFLICT");
-  if ("componentId" in input) await validateProjectionComponent(id, input);
+  if ("componentId" in input) await validateProjectionComponent(id, input, undefined, {
+    domainId: owner.domainId, authorId: owner.userId, client,
+  });
   await registerProductResource(owner, id, input.visibility === "domain");
   await requireProductGrant(id, "edit", credentials);
   const result = await client.query(`INSERT INTO ${t(currentProductTables[kind])} (domain_id,id,owner_id,definition) VALUES($1,$2,$3,$4::jsonb) ON CONFLICT DO NOTHING RETURNING ${currentProductColumns}`, [owner.domainId, id, owner.userId, JSON.stringify(input)]);
@@ -117,9 +119,11 @@ export async function insertCurrentProduct(client: PoolClient, owner: ProductOwn
 
 async function save(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string,
   input: CurrentDefinition, revision: number, solePanelId?: string) {
-  if (revision !== 0 && "componentId" in input) await validateProjectionComponent(id, input);
   const row = await transaction(async client => {
     await lockProducts(client, owner);
+    if (revision !== 0 && "componentId" in input) await validateProjectionComponent(id, input, undefined, {
+      domainId: owner.domainId, authorId: owner.userId, client,
+    });
     if (solePanelId !== undefined) {
       const users = await findPanelUsers(owner.domainId, "projection", id, client);
       if (users.length !== 1 || users[0]!.id !== solePanelId)

@@ -13,6 +13,7 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import examples from "../../../../../packages/contracts/examples/platform-schedules.json";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
+import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../packages/platform-web/src/detail-selection";
 import { panelEntryGuard, unknownAddressRoute } from "../../../../../packages/platform-web/src/panel-entries";
 import { catalogFixture } from "../../../../../packages/platform-web/src/__tests__/fixtures";
 import source from "../../../../../packages/platform-schedules/resources/builtin-panels/schedules/panel.json";
@@ -27,12 +28,28 @@ const operationId = "renew.renewCredential";
 const taskId = "10000000-0000-4000-8000-000000000001";
 const runId = "20000000-0000-4000-8000-000000000001";
 const run = { ...examples.runs.find(item => item.response.status === "completed")!.response, id: runId, taskId };
+const olderRun = {
+  ...run, id: "20000000-0000-4000-8000-000000000002", result: "Earlier run result",
+  executionDetails: { source: "owner snapshot" },
+};
 const row = {
   primaryKey: taskId, label: "Nightly test", fields: {
     application: "agents", frequency: "Every Monday", state: "off", nextRun: "", timeZone: "UTC",
     lastRun: "completed", lastRunAt: "2026-11-21T00:00:00Z", lastRunSummary: "**Finished**",
   },
 };
+const operationsRow = {
+  ...row, primaryKey: "10000000-0000-4000-8000-000000000002", label: "Operations test",
+  fields: { ...row.fields, application: "operations", lastRunSummary: "" },
+};
+const pausedRow = {
+  ...operationsRow,
+  fields: { ...operationsRow.fields, state: "paused: The application form changed.", pauseCode: "definition_changed" },
+};
+const otherApplications = Array.from({ length: 4 }, (_, index) => ({
+  ...row, primaryKey: `10000000-0000-4000-8000-00000000000${index + 3}`, label: `Application ${index + 1} task`,
+  fields: { ...row.fields, application: `app-schedule-fixture-${index + 1}`, lastRunSummary: "" },
+}));
 const target = { kind: "object", objectType: "platform:Application", primaryKey: "schedules" };
 const objectTypes = Object.fromEntries(Object.entries(platformObjectTypes).map(([type, entry]) => [
   type,
@@ -74,7 +91,10 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { ...platformRoutes.layout, component: RouterView, children: [] }, unknownAddressRoute,
   ] });
+  router.beforeEach(detailSelectionGuard(DETAIL_SELECTIONS));
   router.beforeEach(panelEntryGuard(router));
+  const historyReads: Array<string | null> = [];
+  let checkHistory = false;
   const sent = installPlatform(request => {
     const { path } = request;
     if (path === "/api/data-query/platform/applications/schedules/panel-uses")
@@ -91,10 +111,19 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         },
       } : {} });
       switch (body.dataName) {
-        case "rows": return Response.json({ status: "ready", value: [row] });
+        case "rows": return Response.json({ status: "ready", value: [row, pausedRow, ...otherApplications] });
         case "record": return Response.json({ status: "ready", value: row });
-        case "runs": return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });
-        case "run": return Response.json({ status: "ready", value: run });
+        case "runs": {
+          if (!checkHistory) return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });
+          const cursor = body.runtimeParams?.cursor === "older" ? "older" : null;
+          const firstAttempt = !historyReads.includes(cursor);
+          historyReads.push(cursor);
+          if (firstAttempt) return Response.json({ status: "error", message: "Run records unavailable" });
+          return Response.json({
+            status: "ready", value: { runs: cursor ? [olderRun] : [run], nextCursor: cursor ? null : "older" },
+          });
+        }
+        case "run": return Response.json({ status: "ready", value: body.inputs.runId === olderRun.id ? olderRun : run });
         default: return Response.json({ status: "empty" });
       }
     }
@@ -134,6 +163,57 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       await vi.waitFor(() => expect(element.querySelector(".schedules [data-run].focused")).not.toBeNull());
     }
     await vi.waitFor(() => expect(element.querySelector('.schedules [data-task] [title="Finished"]')?.textContent).toBe("Finished"));
+    if (!refused) {
+      const list = element.querySelector(".schedules");
+      await router.push("/schedules?app=operations");
+      expect(router.currentRoute.value.query.app).toBeUndefined();
+      expect(JSON.parse(String(router.currentRoute.value.query.state))).toEqual({ app: "operations" });
+      await vi.waitFor(() => expect(element.querySelector('.schedules [data-app="operations"]')?.getAttribute("aria-pressed")).toBe("true"));
+      expect(Array.from(element.querySelectorAll(".schedules [data-task]"), item => item.getAttribute("data-task"))).toEqual([operationsRow.primaryKey]);
+      expect(element.querySelector(".schedules")).toBe(list);
+      const pause = element.querySelector<HTMLDetailsElement>(".schedules [data-task] details");
+      expect(pause?.open).toBe(false);
+      expect(pause?.querySelector("p")?.textContent).toBe("The application form changed.");
+      element.querySelector<HTMLButtonElement>(".schedules [data-task] .pause-review")!.click();
+      await vi.waitFor(() => expect(element.querySelector<HTMLElement>('[data-form="edit"]')?.style.display).toBe(""));
+      await vi.waitFor(() => expect(JSON.parse(String(router.currentRoute.value.query.state))).toMatchObject({
+        selectedTask: { className: "platform:ScheduledTask", primaryKey: operationsRow.primaryKey },
+        compose: "edit",
+      }));
+      const other = otherApplications.at(-1)!;
+      await router.push(`/schedules?app=${other.fields.application}`);
+      await vi.waitFor(() => expect(element.querySelector(".filter-more")?.textContent).toContain(other.fields.application));
+      expect(element.querySelectorAll(".schedules .chips > button")).toHaveLength(6);
+      expect(element.querySelector(".filter-more [aria-pressed]")?.getAttribute("aria-pressed")).toBe("true");
+      expect(element.querySelector(".schedules [data-task]")?.getAttribute("data-task")).toBe(other.primaryKey);
+
+      checkHistory = true;
+      await router.push(`/schedules?taskId=${taskId}&runId=${olderRun.id}`);
+      const linked = `[data-run="${olderRun.id}"]`;
+      await vi.waitFor(() => expect(element.querySelector(`${linked} .details`)?.textContent ?? "").toContain("Earlier run result"));
+      expect(element.querySelector(`${linked} .details`)?.textContent).toContain("owner snapshot");
+      expect(element.querySelector(`${linked} .result-link`)).not.toBeNull();
+      const retryHistory = async () => {
+        const retry = await vi.waitFor(() => {
+          const button = element.querySelector<HTMLButtonElement>('[data-action="retry-history"]');
+          expect(button).not.toBeNull();
+          return button!;
+        });
+        retry.click();
+      };
+      await retryHistory();
+      const more = await vi.waitFor(() => {
+        const button = element.querySelector<HTMLButtonElement>('[data-action="more-history"]');
+        expect(button).not.toBeNull();
+        return button!;
+      });
+      more.click();
+      await retryHistory();
+      await vi.waitFor(() => expect(historyReads).toEqual([null, null, "older", "older"]));
+      await vi.waitFor(() => expect(element.querySelectorAll(`.runs ${linked}`)).toHaveLength(1));
+      expect(element.querySelectorAll(".runs [data-run]")).toHaveLength(2);
+      expect(element.querySelector(`${linked} .details`)?.textContent).toContain("Earlier run result");
+    }
   } finally {
     app.unmount();
   }

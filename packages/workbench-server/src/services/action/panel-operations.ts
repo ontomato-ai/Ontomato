@@ -10,7 +10,7 @@ import type {
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
 import {
-  affected, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, remove, save, savedIdSchema, targetLabel,
+  affected, ownerDeleteUnavailable, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, remove, save, savedIdSchema, targetLabel,
   valuesForTarget, type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
 
@@ -142,7 +142,10 @@ export const m6ServerOperations = [
     resultSchema: deletedSchema,
     targetInput: "action",
     targetLabel: (host: Host, target: PanelRecordTarget) => targetLabel(host, target, "/action/queryById", "ACTION_UNAVAILABLE"),
+    done: (host, name) => tForLocale(host.locale, "panels.action.deleted", { name }),
     inspectImpact: deleteActionImpact,
+    unavailable: (host: Host, target: PanelRecordTarget) => ownerDeleteUnavailable(host, "/action/queryById",
+      { id: target.primaryKey, purpose: "delete-availability" }, "ACTION_UNAVAILABLE"),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected action");
       return remove(host, "/action/delete", target, "ACTION_DELETE_FAILED");

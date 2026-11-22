@@ -52,6 +52,10 @@ export class MemberDataUnavailable extends Error {
  * The form of a directly rendered member: an object's from its `form` datum, a new one's from its `createForm` datum
  * (the type's create form), and either saved through its owner's `save`.
  */
+function fieldMessages(errors: readonly { field: string; message: string }[] = []) {
+  return Object.fromEntries(errors.map(({ field, message }) => [field, message]));
+}
+
 export function memberFormSource(member: PanelMemberContext, instance: PanelInstance): FormSource {
   const { projection } = member;
   /** The datum a target's form is read from, and the run inputs that read it for the target and the form's values. */
@@ -93,9 +97,9 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
         if (created.length !== 1) throw new Error("The owner did not report the one object it created");
         return { primaryKey: created[0]!.primaryKey };
       }
-      if (outcome.kind === "refusal") {
+      if (outcome.kind === "refusal" || outcome.kind === "failure") {
         // The owner names each refused field by its JSON Pointer.
-        throw new PlatformObjectRefusal(outcome.message, Object.fromEntries((outcome.errors ?? []).map(({ field, message }) => [field, message])));
+        throw new PlatformObjectRefusal(outcome.message, fieldMessages(outcome.errors), undefined, outcome.savedFields);
       }
       if (outcome.kind === "batch") throw new Error("A form's save is one call, not a batch");
       throw new Error(outcome.message);

@@ -169,7 +169,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists the owner's records of the projection's type, compact or as a table (`columns`), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). What it offers follows the read and the placement: a search box when the read takes `search`, paging when it pages, checkboxes when the placement binds `checked`, and the status filter when it binds `status`; each is the list's own value unless the placement binds it to the panel's state. Clicking an item selects it (`selected`); search matches are highlighted, and a reference field is a link the page hears as `navigate`. Compact lists can cap a summary's visible lines with `subtitleLines`. A successful read with zero rows shows the empty message (`emptyText` can supply its message key). Missing required inputs show the waiting state.",
+      "Lists the owner's records of the projection's type, compact or as a table (`columns`), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). What it offers follows the read and the placement: a search box when the read takes `search`, paging when it pages, checkboxes when the placement binds `checked`, and the status filter when it binds `status`; each is the list's own value unless the placement binds it to the panel's state. Clicking an item or pressing Enter/Space on a focused table row selects it (`selected`), and arrow keys move focus between table rows without interfering with interactive controls inside a cell; search matches are highlighted, and a reference field is a link the page hears as `navigate`. `listed` outputs the object references of the current result batch — the current page when the owner's read pages (`cursor` or `page`), or all matching rows when the read does not page (empty when no rows are shown) — so another member such as a graph can follow the list's hits without issuing a second read. Compact lists can cap a summary's visible lines with `subtitleLines`. A successful read with zero rows shows the empty message (`emptyText` can supply its message key). Missing required inputs show the waiting state.",
     effects: "Reads the bound type's list, query or ontology objects datum as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
     // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
@@ -182,6 +182,8 @@ export const components: readonly ComponentMetadata[] = [
     outputs: {
       selected: { kind: "object", objectType: "@binding" },
       checked: { kind: "list", items: { kind: "object", objectType: "@binding" } },
+      // References of the current batch: current page when paged, or all matching rows when unpaged.
+      listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
     },
   }),
@@ -202,7 +204,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectForm",
     role: "control",
     meaning:
-      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, and takes an agent's draft for its object. Hidden owner fields have no control. Link a reference picker to its owner field through `formField`; a reference without a picker is shown as unavailable to edit. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It tells the page `saved` (with the object) and `discarded`, and asks the reader before the panel moves it off unsaved changes.",
+      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, and takes an agent's draft for its object. Hidden owner fields have no control. Link a reference picker (or a graph choosing a list) to its owner field through `formField`: the form draws it in that field's place, so the owner's order and sections hold; a reference without one is shown as unavailable to edit. An owner may group its fields into `sections` (each a title and a hint, in order); the form draws them one after another with a list of them beside, and keeps Save and Discard in reach at the foot of the view. It says when it holds unsaved changes and asks before Discard throws them away. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It tells the page `saved` (with the object) and `discarded`, and asks the reader before the panel moves it off unsaved changes.",
     effects: "Reads the owner's form and saves through the owner's own interface; it saves through the owner's form save its projection names.",
     bindsElement: ["PlatformObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
@@ -218,10 +220,22 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OperationButton",
     role: "control",
     meaning:
-      "The button of one operation its projection names (`config.operation`, the projection's local name for it): it shows the owner's label and runs it on the object, or the checked objects, its target input holds.",
+      "The button of one operation its projection names (`config.operation`, the projection's local name for it): it shows the owner's label and runs it on the object, or the checked objects, its target input holds. A single write done is said in the platform's message in the owner's words, naming what it acted on (the button often goes with what it deleted); a batch is reported beside the button item by item; a refusal or failure stays beside it. The page hears every outcome as the `done` event. What a write removed is let go of by the panel: a selection holding it is cleared and a checked list drops it.",
     effects: "Runs the named operation as the reader, as its owner admits it now.",
     bindsElement: ["PlatformOperation:*"],
     // The button reads no datum: its operation is the projection's, described by its owner as admitted now.
+    data: {},
+  }),
+  defineComponentMeta({
+    componentId: "FileUploadControl",
+    module: "@ontomato/sdk/base",
+    exportName: "FileUploadControl",
+    role: "control",
+    meaning:
+      "The control of one operation its projection names (`config.operation`) whose owner takes a file (it declares an `upload`, such as `skills.import`): it opens the file picker for the declared kinds, checks the file's kind and size, uploads it and runs the operation once with it, and shows the owner's answer with the file's name and size. Optional `intro` and `rules` are shown before the picker. With `overwrite-on` set to the owner's refusal code for an existing item (for `skills.import`, `SKILL_EXISTS`), it sends the same file again with `overwrite: true`, and the platform's confirmation, naming the file and what it replaces, is the one question the reader answers.",
+    effects: "Uploads the picked file for the named operation and runs it as the reader, as its owner admits it now.",
+    bindsElement: ["PlatformOperation:*"],
+    // The control reads no datum: its operation is the projection's, described by its owner as admitted now.
     data: {},
   }),
   defineComponentMeta({
@@ -230,7 +244,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ReferencePicker",
     role: "control",
     meaning:
-      "Chooses the value of one reference field of a form in the same panel from the catalogue of the type the projection binds, writing the owner's own value (a skill's whole reference, a model's key) into that form, so the choice is saved, discarded and drafted with it. Place the picker with `target.projectionId` and `formField: { slot, path }`, where `slot` is the form member and `path` is the owner's JSON Pointer. An optional `itemPath` binds the field in each row of the array at `path`. The field controls single or multiple selection. `options` finds choices and `selected` resolves the values already in the form. A value the catalogue no longer offers stays listed, unavailable, with the owner's reason.",
+      "Chooses the value of one reference field of a form in the same panel from the catalogue of the type the projection binds, writing the owner's own value (a skill's whole reference, a model's key) into that form, so the choice is saved, discarded and drafted with it. Declare the picker with `target.projectionId` and `formField: { slot, path }`, where `slot` is the form member and `path` is the owner's JSON Pointer; the form draws it in that field's place (or, with an optional `itemPath`, in each row of the array at `path`), wherever the panel mounts it. A choice the owner describes is offered with its description, and an empty value the owner names (a default followed) shows as that choice. The field controls single or multiple selection. `options` finds choices and `selected` resolves the values already in the form. A value the catalogue no longer offers stays listed, unavailable, with the owner's reason.",
     effects: "Reads the bound type's choices as the reader; it writes only the form field its slot's field port names.",
     bindsElement: ["PlatformObjectType:*"],
     // The catalogue it offers, and the held values it lists beside it: both are the member's own reads.
@@ -246,17 +260,20 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectGraph",
     role: "control",
     meaning:
-      "Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Bound to a form field through `formField`, it chooses that field's list of node keys: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling: a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `node-positions` state) and drawn again from there, a node never placed is placed by its relations (the most connected first, each node one relation on in the next column) and nothing is written for it, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. Each edge is drawn with its record's label; edges between the same two nodes fan out. What the panel highlights (`highlightedNodes`, `highlightedEdges`: a path it found, a search's hits) stands out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never smaller than names can be read at; a larger graph is panned. The canvas carries zoom in and out, fit, centring the chosen node, relayout (which lets the reader's places go) and a PNG of the view; names keep their size however far the reader zooms out, a name with no room being hidden until there is; the graph is fitted again once its container settles at a new size; and its zoom is a port (`zoom`), read and set by the page. The canvas fills the height of the box its member is placed in; give that box a height (in a flex column, `flex: 1` with `min-height: 0`), or nothing is drawn. Each node takes its category's colour of the platform palette when `nodeCategory` (a JSON Pointer into each node record's fields) and `categories` (the order of the colours) are configured. It decides nothing about what the nodes stand for or who may read them.",
+      "Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Bound to a form field through `formField`, it chooses that field's list of node keys, drawn by the form in the field's place: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all; a line sums the choice up, a legend names the three looks, and a list offers the same choice by name. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling: a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `node-positions` state) and drawn again from there, a node never placed is placed by its relations (the most connected first, each node one relation on in the next column) and nothing is written for it, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. When `nodes` are readable and `edges` are forbidden, all readable nodes are still drawn with a non-blocking notice explaining that relations cannot be viewed; when `nodes` are forbidden the graph shows the access refusal. Each edge is drawn with its record's label; edges between the same two nodes fan out. Given `pathFrom` and `pathTo` bound to panel state, the canvas finds the shortest directed path along visible edges, highlights it distinctly from search matches (`highlightedNodes`, `highlightedEdges`), displays the path trail and hop count on the canvas, and reports what is highlighted — search matches vs a directed path with start, target, outcome and hops — into `pageContext.highlights`; when edges are partially or fully forbidden, 'no path found in the visible graph' and the hidden-relations permission notice are reported separately. What the panel highlights stands out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never smaller than names can be read at; a larger graph is panned. The canvas carries zoom in and out, fit, centring the chosen node, relayout (which lets the reader's places go) and a PNG of the view; names keep their size however far the reader zooms out, a name with no room being hidden until there is; the graph is fitted again once its container settles at a new size; and its zoom is a port (`zoom`), read and set by the page. The canvas fills the height of the box its member is placed in; give that box a height (in a flex column, `flex: 1` with `min-height: 0`), or nothing is drawn. Each node takes its category's colour of the platform palette when `nodeCategory` (a JSON Pointer into each node record's fields) and `categories` (the order of the colours) are configured; `nodeSize` and `labelSize` (screen pixels) draw the nodes and their names larger or smaller than the platform's own, and the placement leaves rows to fit them. It decides nothing about what the nodes stand for or who may read them.",
     effects: "Reads the node and edge types' lists as the reader; it writes the form field its slot's field port names, or the panel state its outputs bind, never the owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
       nodes: { results: ["panelRecordList"], required: true },
       edges: { results: ["panelRecordList"], required: true },
     },
-    // What the panel marks on the graph for the reader: drawn standing out, never chosen.
+    // What the panel marks on the graph for the reader: search hits or a directed path query, never chosen.
     inputs: {
       highlightedNodes: { kind: "list", items: { kind: "object", objectType: "@data:nodes" } },
       highlightedEdges: { kind: "list", items: { kind: "object", objectType: "@data:edges" } },
+      // Start and target of a directed shortest-path query on the visible graph, bound to panel state.
+      pathFrom: { kind: "object", objectType: "@data:nodes" },
+      pathTo: { kind: "object", objectType: "@data:nodes" },
       // The zoom the page sets: the canvas zooms to it.
       zoom: { kind: "scalar", type: "number" },
     },
@@ -294,12 +311,12 @@ export const components: readonly ComponentMetadata[] = [
       "Draws the nodes and edges it is given as a light SVG graph, each node in the tone its caller gives it and marked when its ID is among the selected ones, and hands back the selection a reader's choice results in and the part of the graph in view. What the nodes are, which may be chosen and what a choice implies are its caller's: it reads nothing and decides nothing about them.",
   }),
   defineComponentMeta({
-    componentId: "G6GraphCanvas",
+    componentId: "InteractiveGraphCanvas",
     module: "@ontomato/sdk/graph",
-    exportName: "G6GraphCanvas",
+    exportName: "InteractiveGraphCanvas",
     role: "control",
     meaning:
-      "Draws the nodes and edges it is given with G6, for graphs a reader pans, zooms and drags: the graph canvas's interface, plus each node coloured by its category from the edition's palette, edges labelled, dashed or weighted as given, and invisible anchors for aggregated edges. It hands back the selection a reader's choice results in, the part of the graph in view, a double-click, a dragged node's new place and a click on empty canvas, and gives its caller the current positions and an image of the view. What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.",
+      "Draws the nodes and edges it is given as an interactive canvas that a reader pans, zooms and drags: each node coloured by its category from the edition's palette, edges labelled, dashed or weighted as given, and invisible anchors for aggregated edges. It hands back the selection a reader's choice results in, the part of the graph in view, a double-click, a dragged node's new place and a click on empty canvas, and gives its caller the current positions and an image of the view. What the nodes are, what a choice means, and where positions and images are kept are its caller's: it reads and stores nothing.",
   }),
   defineComponentMeta({
     componentId: "OntologyGraph",
@@ -448,7 +465,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "PanelData",
     role: "presentation",
     meaning:
-      "Draws nothing: it hands the data its projection declares to the panel's own code, which reads each datum with usePanelData(member, name) and draws it in the page's own way. A projection names it for the part of a page the panel draws itself; the panel's own buttons run the projection's operations with instance.invoke.",
+      "Draws nothing: a non-rendering member for reading declared data through usePanelData(member, name) to coordinate panel state, visibility or navigation (prefer a component's own output when available), or for declaring operations invoked through usePanelOperation(member, name). Do not use PanelData to render business fields in a panel template; use an official component, configure it, or write a component for that slot.",
     // Any datum the projection names, under the author's own name, with any read result and the run-time values the
     // other components give; the read's own signature still bounds them. The catalogue test keeps these lists whole.
     data: {
@@ -466,7 +483,8 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "by", "changedField", "className", "cursor", "defaultAppId", "keyword", "layers", "limit", "node", "page", "path", "rating", "relationKinds",
+          "business", "by", "changedField", "className", "cursor", "defaultAppId", "keyword", "layers", "limit", "node",
+          "operation", "page", "path", "rating", "relationKinds",
           "runId", "scope", "search", "section", "size", "sort", "source", "sourceType", "status", "template", "type", "values",
         ],
       },

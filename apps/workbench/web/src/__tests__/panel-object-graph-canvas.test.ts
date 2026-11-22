@@ -7,7 +7,7 @@ import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
-import { G6_READABLE_ZOOM, type GraphCanvasEdge, type GraphCanvasNode, type GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
+import { type GraphCanvasEdge, type GraphCanvasNode, type GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import { createDirectPanelInstance } from "../../../../../packages/apps-sdk/src/panel/direct";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
@@ -35,6 +35,8 @@ const canvas = {
   zooms: [] as unknown[],
   categories: [] as readonly string[],
   readableLabels: false,
+  /** The node and name sizes the member asks for; undefined is the canvas's own. */
+  look: {} as Record<string, unknown>,
   /** Whether the canvas's next fit holds the whole graph. */
   fitsWhole: true,
 };
@@ -48,6 +50,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
       selection: { type: String, default: "single" }, layout: { type: Object, default: () => ({ type: "grid" }) },
       editable: { type: Boolean, default: false }, maxHeight: { type: Number, default: undefined },
       categories: { type: Array, default: () => [] }, readableLabels: { type: Boolean, default: false },
+      nodeSize: { type: Number, default: undefined }, labelSize: { type: Number, default: undefined },
     },
     emits: ["update:selected", "update:selectedEdges", "blank", "connect", "move", "activate", "viewport", "resized"],
     setup(props, { emit, expose }) {
@@ -65,6 +68,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
         canvas.editable = props.editable;
         canvas.categories = props.categories as never;
         canvas.readableLabels = props.readableLabels;
+        canvas.look = { nodeSize: props.nodeSize, labelSize: props.labelSize };
         return h("div", { class: "mock-g6-canvas" });
       };
     },
@@ -73,11 +77,13 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
 });
 
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
-const graph = (editable: boolean): DirectProjection => ({
+const graph = (editable: boolean, look: Record<string, unknown> = {}): DirectProjection => ({
   ...record, id: editable ? "model-graph-editable" : "model-graph", name: "Model graph", componentId: "@ontomato/sdk:ObjectGraph",
   inputs: {
     highlightedNodes: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } },
     highlightedEdges: { kind: "list", items: { kind: "object", objectType: RELATIONSHIP } },
+    pathFrom: { kind: "object", objectType: OBJECT_TYPE },
+    pathTo: { kind: "object", objectType: OBJECT_TYPE },
   },
   outputs: {
     selectedNode: { kind: "object", objectType: OBJECT_TYPE }, selectedEdge: { kind: "object", objectType: RELATIONSHIP },
@@ -87,7 +93,7 @@ const graph = (editable: boolean): DirectProjection => ({
   config: {
     edgeEnds: { source: "/fromclass", target: "/toclass" }, ...(editable ? { editable: true } : {}),
     // The layer each class is drawn in the colour of, in a fixed order.
-    categories: ["fact", "capability"], nodeCategory: "/layer",
+    categories: ["fact", "capability"], nodeCategory: "/layer", ...look,
   },
   data: {
     nodes: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} },
@@ -103,12 +109,17 @@ const manifest = (projectionId: string): DirectPanelManifest => ({
     positions: { type: { kind: "node-positions" }, personal: true, deepLink: false, external: false },
     pathClasses: { type: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } }, personal: false, deepLink: false, external: false },
     pathRelations: { type: { kind: "list", items: { kind: "object", objectType: RELATIONSHIP } }, personal: false, deepLink: false, external: false },
+    pathFrom: { type: { kind: "object", objectType: OBJECT_TYPE }, personal: false, deepLink: false, external: false },
+    pathTo: { type: { kind: "object", objectType: OBJECT_TYPE }, personal: false, deepLink: false, external: false },
     graphZoom: { type: { kind: "scalar", type: "number" }, personal: false, deepLink: false, external: false },
   },
   members: {
     graph: {
       target: { projectionId },
-      inputs: { highlightedNodes: { state: "pathClasses" }, highlightedEdges: { state: "pathRelations" }, zoom: { state: "graphZoom" } },
+      inputs: {
+        highlightedNodes: { state: "pathClasses" }, highlightedEdges: { state: "pathRelations" },
+        pathFrom: { state: "pathFrom" }, pathTo: { state: "pathTo" }, zoom: { state: "graphZoom" },
+      },
       outputs: {
         selectedNode: { state: "selectedClass" }, selectedEdge: { state: "selectedRelation" },
         connectFrom: { state: "connectFrom" }, connectTo: { state: "connectTo" }, positions: { state: "positions" }, zoom: { state: "graphZoom" },
@@ -130,18 +141,24 @@ const mounted: { unmount(): void }[] = [];
 afterEach(() => {
   for (const app of mounted.splice(0)) app.unmount();
   document.body.innerHTML = "";
-  Object.assign(canvas, { nodes: [], edges: [], selected: [], selectedEdges: [], editable: false, emit: null, fits: [], zooms: [], categories: [], fitsWhole: true });
+  Object.assign(canvas, { nodes: [], edges: [], selected: [], selectedEdges: [], editable: false, emit: null, fits: [], zooms: [], categories: [], look: {}, fitsWhole: true });
 });
 
-function mount(editable: boolean, initial: Record<string, unknown> = {}) {
-  const projection = graph(editable);
+function mount(
+  editable: boolean,
+  initial: Record<string, unknown> = {},
+  look: Record<string, unknown> = {},
+  overrides: { nodes?: ProductPanelReadResponse; edges?: ProductPanelReadResponse } = {},
+) {
+  const projection = graph(editable, look);
   const instance = createDirectPanelInstance(manifest(projection.id), {
     pageKey: "modeling", url: () => "/modeling", label: () => "Modeling", initial: initial as never,
     text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
     readProjection: async () => projection,
     read: async (request) => {
       if (request.operations) return ready({});
-      return ready(request.dataName === "nodes" ? classes : relations);
+      if (request.dataName === "nodes") return overrides.nodes ?? ready(classes);
+      return overrides.edges ?? ready(relations);
     },
   });
   const element = document.createElement("div");
@@ -203,12 +220,12 @@ it("places classes nobody placed by their relations, and opens on the chosen cla
     expect(x("paper")).toBeGreaterThan(x("award"));
     // Each edge drawn with its relationship's name.
     expect(canvas.edges.map(({ label }) => label)).toContain("person to org");
-    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ minZoom: G6_READABLE_ZOOM, around: "person" })]));
+    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ keepNames: true, around: "person" })]));
 
     for (const app of mounted.splice(0)) app.unmount();
     canvas.fits = [];
     mount(false, { selectedClass: { className: OBJECT_TYPE, primaryKey: "paper" } });
-    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ minZoom: G6_READABLE_ZOOM, around: "paper" })]));
+    await vi.waitFor(() => expect(canvas.fits).toEqual([expect.objectContaining({ keepNames: true, around: "paper" })]));
   } finally {
     classes = twoClasses;
     relations = oneRelation;
@@ -279,6 +296,14 @@ it("colours each class by the category its record names, in the order the projec
   expect(canvas.nodes.map(({ id, category }) => [id, category])).toEqual([["org", "fact"], ["person", "capability"]]);
 });
 
+// A page that draws its graph as the ontology graph always did sets its nodes' and names' sizes (原页面对照《本体图谱》:
+// 62 and 13); the rows of the layout make room for them.
+it("draws its nodes and names at the sizes the projection sets, with rows to fit them", async () => {
+  mount(false, {}, { nodeSize: 62, labelSize: 13 });
+  await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
+  expect(canvas.look).toEqual({ nodeSize: 62, labelSize: 13 });
+});
+
 // A graph larger than the canvas at a readable size is shown in part (panelisation lead, 2026-11-22: never shrunk until its
 // names cannot be read): a light line says so, and once the reader moves the view it steps back, never a pop-up.
 it("says when the graph is larger than the canvas, and steps back once the reader moves the view", async () => {
@@ -297,4 +322,181 @@ it("says nothing when the whole graph is in view", async () => {
   await vi.waitFor(() => expect(canvas.fits).toHaveLength(1));
   await nextTick();
   expect(element.querySelector("[data-graph-hint]")).toBeNull();
+});
+
+it("keeps readable nodes and explains what is hidden when edges are forbidden, while node refusal still blocks the graph", async () => {
+  const partial = mount(false, {}, {}, { edges: { status: "forbidden" } });
+  await vi.waitFor(() => expect(canvas.nodes.map((node) => node.id)).toEqual(["org", "person"]));
+  expect(canvas.edges).toEqual([]);
+  expect(partial.element.querySelector('[role="alert"]')).toBeNull();
+  const notice = partial.element.querySelector<HTMLElement>("[data-graph-edges-notice]");
+  expect(notice?.textContent?.trim()).toBe(publicEn.platform.graphEdgesForbidden);
+
+  const blocked = mount(false, {}, {}, { nodes: { status: "forbidden" } });
+  await vi.waitFor(() => expect(blocked.element.querySelector('[role="alert"]')?.textContent?.trim()).toBe(publicEn.platform.dataForbidden));
+});
+
+it("finds the shortest directed path from pathFrom to pathTo, highlights it with path tone, shows trail and hops, and reports path details in pageContext", async () => {
+  classes = [
+    { primaryKey: "person", label: "Person", fields: { layer: "fact" } },
+    { primaryKey: "team", label: "Team", fields: { layer: "fact" } },
+    { primaryKey: "dept", label: "Department", fields: { layer: "fact" } },
+    { primaryKey: "org", label: "Organization", fields: { layer: "capability" } },
+    { primaryKey: "isolated", label: "Isolated", fields: { layer: "capability" } },
+  ];
+  // Two directed paths from person -> org: 2 hops (person -> team -> org) and 3 hops (person -> team -> dept -> org).
+  relations = [
+    { primaryKey: "r-pt", label: "In team", fields: { fromclass: "person", toclass: "team" } },
+    { primaryKey: "r-td", label: "Under dept", fields: { fromclass: "team", toclass: "dept" } },
+    { primaryKey: "r-do", label: "Part of org", fields: { fromclass: "dept", toclass: "org" } },
+    { primaryKey: "r-to", label: "Belongs to", fields: { fromclass: "team", toclass: "org" } },
+  ];
+  try {
+    const { instance, element } = mount(false);
+    await vi.waitFor(() => expect(canvas.nodes).toHaveLength(5));
+    expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("none");
+    expect(instance.pageContext.value.highlights).toBeUndefined();
+
+    // Shortest directed path: person -> team -> org (2 hops).
+    instance.state.setState({
+      pathFrom: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+      pathTo: { className: OBJECT_TYPE, primaryKey: "org" } as never,
+    });
+    await vi.waitFor(() => expect(element.querySelector("[data-graph-path-banner]")).not.toBeNull());
+    expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("path");
+    const banner = element.querySelector<HTMLElement>("[data-graph-path-banner]")!;
+    expect(banner.dataset.graphPathStatus).toBe("found");
+    expect(banner.dataset.graphPathHops).toBe("2");
+    expect(banner.textContent).toContain("2 hops");
+    expect(banner.textContent).toContain("Person → Team → Organization");
+    expect(canvas.nodes.map(({ id, tone }) => [id, tone])).toEqual([
+      ["person", "path"],
+      ["team", "path"],
+      ["dept", "muted"],
+      ["org", "path"],
+      ["isolated", "muted"],
+    ]);
+    expect(canvas.edges.map(({ id, tone }) => [id, tone])).toEqual([
+      ["r-pt", "path"],
+      ["r-td", "muted"],
+      ["r-do", "muted"],
+      ["r-to", "path"],
+    ]);
+    expect(instance.pageContext.value.highlights).toEqual([{
+      kind: "path",
+      summary: "Path from Person to Organization (2 hops): Person → Team → Organization",
+      from: { kind: OBJECT_TYPE, id: "person", label: "Person" },
+      to: { kind: OBJECT_TYPE, id: "org", label: "Organization" },
+      found: true,
+      hops: 2,
+      nodes: [
+        { kind: OBJECT_TYPE, id: "person", label: "Person" },
+        { kind: OBJECT_TYPE, id: "team", label: "Team" },
+        { kind: OBJECT_TYPE, id: "org", label: "Organization" },
+      ],
+      edges: [
+        { kind: RELATIONSHIP, id: "r-pt", label: "In team" },
+        { kind: RELATIONSHIP, id: "r-to", label: "Belongs to" },
+      ],
+    }]);
+
+    // Reverse direction (org -> person) has no directed path and leaves nodes plain without misleading highlight.
+    instance.state.setState({
+      pathFrom: { className: OBJECT_TYPE, primaryKey: "org" } as never,
+      pathTo: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+    });
+    await vi.waitFor(() => expect(element.querySelector<HTMLElement>("[data-graph-path-banner]")?.dataset.graphPathStatus).toBe("not-found"));
+    expect(element.querySelector("[data-graph-path-banner]")?.textContent).toContain("No directed path from Organization to Person");
+    expect(canvas.nodes.map(({ tone }) => tone ?? "default")).toEqual(["default", "default", "default", "default", "default"]);
+    expect(instance.pageContext.value.highlights).toEqual([{
+      kind: "path",
+      summary: "No directed path from Organization to Person",
+      from: { kind: OBJECT_TYPE, id: "org", label: "Organization" },
+      to: { kind: OBJECT_TYPE, id: "person", label: "Person" },
+      found: false,
+      nodes: [],
+      edges: [],
+    }]);
+
+    // Same start and target reports 0 hops and highlights only that node with path tone.
+    instance.state.setState({
+      pathFrom: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+      pathTo: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+    });
+    await vi.waitFor(() => expect(element.querySelector<HTMLElement>("[data-graph-path-banner]")?.dataset.graphPathStatus).toBe("same-node"));
+    expect(element.querySelector("[data-graph-path-banner]")?.textContent).toContain("Person is both start and target (0 hops)");
+    expect(canvas.nodes.find((node) => node.id === "person")?.tone).toBe("path");
+    expect(canvas.nodes.find((node) => node.id === "org")?.tone).toBe("muted");
+    expect(instance.pageContext.value.highlights?.[0]).toMatchObject({ kind: "path", found: true, hops: 0 });
+  } finally {
+    classes = twoClasses;
+    relations = oneRelation;
+  }
+});
+
+it("distinguishes search hits from path results visually, in banners, and in pageContext.highlights", async () => {
+  const { instance, element } = mount(false);
+  await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
+
+  // Search hit uses accent tone + search banner + kind:"search" in pageContext.
+  instance.state.set("pathClasses", [{ className: OBJECT_TYPE, primaryKey: "person" }] as never);
+  await vi.waitFor(() => expect(element.querySelector("[data-graph-search-banner]")).not.toBeNull());
+  expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("search");
+  expect(element.querySelector("[data-graph-path-banner]")).toBeNull();
+  expect(canvas.nodes.map(({ id, tone }) => [id, tone])).toEqual([["org", "muted"], ["person", "accent"]]);
+  expect(instance.pageContext.value.highlights).toEqual([{
+    kind: "search",
+    summary: "Search matches (1): Person",
+    items: [{ kind: OBJECT_TYPE, id: "person", label: "Person" }],
+  }]);
+
+  // Setting pathFrom + pathTo switches cleanly to path tone + path banner + kind:"path" in pageContext.
+  instance.state.setState({
+    pathFrom: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+    pathTo: { className: OBJECT_TYPE, primaryKey: "org" } as never,
+  });
+  await vi.waitFor(() => expect(element.querySelector("[data-graph-path-banner]")).not.toBeNull());
+  expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("path");
+  expect(element.querySelector("[data-graph-search-banner]")).toBeNull();
+  expect(canvas.nodes.map(({ id, tone }) => [id, tone])).toEqual([["org", "path"], ["person", "path"]]);
+  expect(canvas.edges.map(({ id, tone }) => [id, tone])).toEqual([["works-in", "path"]]);
+  expect(instance.pageContext.value.highlights?.[0]).toMatchObject({ kind: "path", found: true, hops: 1 });
+
+  // Clearing path endpoints restores the active search highlight.
+  instance.state.setState({ pathFrom: null, pathTo: null });
+  await vi.waitFor(() => expect(element.querySelector("[data-graph-search-banner]")).not.toBeNull());
+  expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("search");
+  expect(instance.pageContext.value.highlights?.[0]).toMatchObject({ kind: "search" });
+});
+
+it("separates 'no path found in the visible graph' from 'relations hidden due to permissions' when edges are forbidden", async () => {
+  const { instance, element } = mount(
+    false,
+    {
+      pathFrom: { className: OBJECT_TYPE, primaryKey: "person" },
+      pathTo: { className: OBJECT_TYPE, primaryKey: "org" },
+    },
+    {},
+    { edges: { status: "forbidden" } },
+  );
+  await vi.waitFor(() => expect(canvas.nodes.map((node) => node.id)).toEqual(["org", "person"]));
+  expect(canvas.edges).toEqual([]);
+
+  const pathBanner = element.querySelector<HTMLElement>("[data-graph-path-banner]");
+  const edgeNotice = element.querySelector<HTMLElement>("[data-graph-edges-notice]");
+  expect(pathBanner?.dataset.graphPathStatus).toBe("not-found");
+  expect(pathBanner?.textContent).toContain("No path found in the visible graph from Person to Organization");
+  expect(edgeNotice?.textContent?.trim()).toBe(publicEn.platform.graphEdgesForbidden);
+
+  expect(instance.pageContext.value.highlights).toEqual([{
+    kind: "path",
+    summary: "No path found in the visible graph from Person to Organization",
+    from: { kind: OBJECT_TYPE, id: "person", label: "Person" },
+    to: { kind: OBJECT_TYPE, id: "org", label: "Organization" },
+    found: false,
+    nodes: [],
+    edges: [],
+    partialEdges: true,
+    partialNotice: publicEn.platform.graphEdgesForbidden,
+  }]);
 });

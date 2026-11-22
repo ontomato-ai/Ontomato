@@ -1,16 +1,16 @@
 import type { RouteLocation } from "vue-router";
-import { panelAddress } from "@ontomato/contracts/panel-host";
+import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, AGENT_DEFINITION, FUNCTION, OBJECT_TYPE, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
  * A page's detail address once a panel has taken the page over: the address a link, a bookmark, an agent's answer or a
  * knowledge text still names opens the panel at its use path with that object selected. One conversion, made where an
  * address enters a page: the router, before any route is entered, and the page beside a conversation, before its
- * address is resolved to a page. The panel knows only its own address and state. Of the query, only a draft's stays:
- * what else a detail address carried (where its old page's "back" went) the panel has no use for.
+ * address is resolved to a page. For a replaced detail path, the draft's query is kept. A conversion that consumes
+ * legacy query keys at an existing entry keeps the rest of that entry's address.
  *
  * A detail address is either one of its own (`/ontology/objects/:className`) or the panel's own path naming the
  * selection in its query (modelling's `?focus=&id=`); an entry's state says which addresses it selects from.
@@ -23,6 +23,8 @@ export interface DetailSelection {
   path: string;
   /** The use path of the panel that took the page over. */
   use: string;
+  /** Legacy keys consumed at this entry. Other query keys and explicitly supplied state stay. */
+  consumeQuery?: readonly string[];
   /** The panel state the address selects, or null for an address that selects nothing (the panel's own address). */
   state(params: Readonly<Record<string, string>>, query: URLSearchParams): Record<string, PanelStateValue> | null;
 }
@@ -50,6 +52,22 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     path: platformRoutes.relation.path,
     use: platformRoutes.relations.path,
     state: ({ relationship }) => ({ selected: { className: RELATIONSHIP, primaryKey: relationship! } }),
+  },
+  {
+    path: platformRoutes.schedules.path,
+    use: platformRoutes.schedules.path,
+    consumeQuery: ["app", "taskId", "runId"],
+    state: (_params, query): Record<string, PanelStateValue> | null => {
+      const app = query.get("app");
+      const taskId = query.get("taskId");
+      const runId = query.get("runId");
+      if (!app && !taskId && !runId) return null;
+      return {
+        ...(app && { app }),
+        ...(taskId && { selectedTask: { className: SCHEDULED_TASK, primaryKey: taskId } }),
+        ...(runId && { runId }),
+      };
+    },
   },
   // The visual modeling page: the graph's "go to modeling" carries the class or relation to select.
   {
@@ -79,13 +97,29 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     state: ({ id }): Record<string, PanelStateValue> =>
       id === "new" ? {} : { selected: { className: ACTION, primaryKey: id! } },
   },
-  // The functions page: a function's detail selects it; the old page's `new` opens the catalog, whose own button starts a
-  // new function.
+  // The functions page: a function's detail selects it; the old page's `new` opens the owner's blank form, as the page's
+  // own "New function" command does.
   {
     path: platformRoutes.function.path,
     use: platformRoutes.functions.path,
     state: ({ id }): Record<string, PanelStateValue> =>
-      id === "new" ? {} : { selected: { className: FUNCTION, primaryKey: id! } },
+      id === "new" ? { creating: true } : { selected: { className: FUNCTION, primaryKey: id! } },
+  },
+  // The metric views page: a metric's detail selects it; the old page's `new` opens the owner's blank form, as the
+  // page's own "New Metric View" command does.
+  {
+    path: platformRoutes.metric.path,
+    use: platformRoutes.metrics.path,
+    state: ({ id }): Record<string, PanelStateValue> =>
+      id === "new" ? { creating: true } : { selected: { className: METRIC_VIEW, primaryKey: id! } },
+  },
+  // The skill library: a skill's detail address opens the library with that skill selected.
+  {
+    path: platformRoutes.ontologySkill.path,
+    use: platformRoutes.ontologySkills.path,
+    state: ({ skillId }): Record<string, PanelStateValue> => ({
+      selected: { className: SKILL, primaryKey: skillId! },
+    }),
   },
 ];
 
@@ -105,6 +139,11 @@ export function detailSelectionAddress(entries: readonly DetailSelection[], addr
     });
     const state = matches ? entry.state(params, url.searchParams) : null;
     if (!state) continue;
+    if (entry.consumeQuery) {
+      const query = new URLSearchParams(url.search);
+      for (const key of entry.consumeQuery) query.delete(key);
+      return panelAddress(`${entry.use}?${query}`, { ...state, ...panelAddressState(address) });
+    }
     const kept = new URLSearchParams();
     for (const key of PAGE_DRAFT_QUERY_KEYS) {
       const value = url.searchParams.get(key);

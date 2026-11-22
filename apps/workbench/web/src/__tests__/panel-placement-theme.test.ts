@@ -25,7 +25,7 @@ const summary: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: {},
   members: {
-    themed: { target: { projectionId: summary.id }, theme: { light: { "--el-color-primary": "#0a7d4f" }, dark: { "--el-color-primary": "#5fd39b" } } },
+    themed: { target: { projectionId: summary.id }, theme: { light: { "--sdk-color-primary": "#0a7d4f" }, dark: { "--sdk-color-primary": "#5fd39b" } } },
     plain: { target: { projectionId: summary.id } },
   },
   commands: {},
@@ -60,9 +60,12 @@ it("sets a placement's theme on the member's place, in the reader's mode, and on
   await module.mountPanel({});
   await mount;
   const place = (member: string) => element.querySelector<HTMLElement>(`[data-member="${member}"]`)!;
-  await vi.waitFor(() => expect(place("themed").style.getPropertyValue("--el-color-primary")).toBe("#0a7d4f"));
+  await vi.waitFor(() => expect(place("themed").style.getPropertyValue("--sdk-color-primary")).toBe("#0a7d4f"));
+  expect(place("themed").style.getPropertyValue("--el-color-primary")).toBe("#0a7d4f");
+  expect(place("plain").style.getPropertyValue("--sdk-color-primary")).toBe("");
   expect(place("plain").style.getPropertyValue("--el-color-primary")).toBe("");
 
   document.documentElement.classList.add("dark");
-  await vi.waitFor(() => expect(place("themed").style.getPropertyValue("--el-color-primary")).toBe("#5fd39b"));
+  await vi.waitFor(() => expect(place("themed").style.getPropertyValue("--sdk-color-primary")).toBe("#5fd39b"));
+  expect(place("themed").style.getPropertyValue("--el-color-primary")).toBe("#5fd39b");
 });

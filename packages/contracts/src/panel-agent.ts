@@ -13,7 +13,8 @@ import { ontologyElementRefSchema } from "./ontology-element-ref";
 import { EXECUTE_OBJECT_ACTION } from "./platform-object-types";
 import { applicationFrameSourceSchema, panelUseRefSchema } from "./product-panels";
 import { pageDraftSchema } from "./page-draft";
-import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
+import { panelUploadFileSchema } from "./panel-upload";
+import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 
 const key = z.string().min(1).max(200);
 
@@ -38,6 +39,12 @@ export const panelOperationRefSchema = panelUseRefSchema.extend({
   memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
 }).strict();
 export type PanelOperationRef = z.infer<typeof panelOperationRefSchema>;
+
+/**
+ * Multipart fields of `POST /api/panel-operations/uploads` besides the `file` part: `operation` is this ref as JSON text.
+ * The file is kept for the reader and that operation only, and its receipt goes into the call's declared file input.
+ */
+export const panelUploadRequestSchema = z.object({ operation: panelOperationRefSchema }).strict();
 
 /** Resolve the declared read under the caller's authority without creating a write intent. */
 export const readPanelOperationRequestSchema = panelOperationRefSchema.extend({
@@ -77,7 +84,12 @@ export type CreatePanelHumanOperationIntentRequest = z.infer<typeof createPanelH
 /** A multi-target batch names its targets. A single call confirms only when its owner inspects the impact. */
 export const panelHumanOperationConfirmationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") }).strict(),
-  z.object({ kind: z.literal("impact"), impact: panelOperationImpactSchema }).strict(),
+  z.object({
+    kind: z.literal("impact"),
+    impact: panelOperationImpactSchema,
+    /** The staged file the call hands its owner, named beside what the owner said it affects. */
+    upload: panelUploadFileSchema.optional(),
+  }).strict(),
   z.object({
     kind: z.literal("batch"),
     targets: panelOperationImpactSchema.omit({ summary: true }),
@@ -101,6 +113,13 @@ export const panelHumanOperationIntentParamsSchema = z.object({ intentId: runtim
 /** The host dispatches the frozen intent once after confirmation. */
 export const dispatchPanelHumanOperationIntentRequestSchema = dispatchPanelOperationIntentRequestSchema;
 
+const rejectedFormFields = {
+  errors: z.array(formFieldErrorSchema).optional(),
+  /** Acknowledged values, keyed by field pointer, when a save stopped after already saving some fields. */
+  savedFields: z.record(formFieldErrorSchema.shape.field, runtimeJsonValueSchema).optional(),
+  affected: panelOperationAffectedSchema.optional(),
+};
+
 const singleOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("success"),
@@ -112,10 +131,11 @@ const singleOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("refusal"), code: key, message: z.string(), details: runtimeJsonObjectSchema.optional(),
     /** Field validation failures use the same pointers and codes as form reads. */
-    errors: z.array(formFieldErrorSchema).optional(),
+    ...rejectedFormFields,
   }).strict(),
   z.object({
     kind: z.literal("failure"), code: key, message: z.string(), details: runtimeJsonObjectSchema.optional(),
+    ...rejectedFormFields,
   }).strict(),
   /** A dispatch with no authoritative answer is never released for redispatch. */
   z.object({ kind: z.literal("unknown"), message: z.string() }).strict(),

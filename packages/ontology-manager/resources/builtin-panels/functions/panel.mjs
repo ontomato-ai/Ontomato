@@ -10,7 +10,8 @@ import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
-    const { instance } = usePanelContext();
+    const panel = usePanelContext();
+    const { instance } = panel;
     const values = instance.state.values;
     const selected = computed(() => values.value.selected ?? null);
     const creating = computed(() => values.value.creating === true);
@@ -20,21 +21,27 @@ await mountPanel({
     watch(instance.draft, (draft) => {
       if (draft) setCreating(true);
     }, { immediate: true });
-    // 从列表里选了另一条，就不再是新建。
+    // 从列表里选了一条，就不再是新建。打开时就在新建（旧的 /ontology/assets/functions/new 地址）的例外：列表第一次显示时
+    // 会替空着的选中挑第一条，这一次自动挑的放下，空白表单留着；之后再选才算离开新建。
+    let openedToCreate = creating.value && !selected.value;
     watch(selected, (next) => {
-      if (next) setCreating(false);
-    });
-
-    function showFunction() {
+      if (!next) return;
+      if (openedToCreate) {
+        openedToCreate = false;
+        instance.state.set("selected", null);
+        return;
+      }
       setCreating(false);
-    }
+    });
+    // The owner saved it: say so, as the page always did, and go back to reading it.
     function saved() {
       setCreating(false);
+      panel.notify({ kind: "success", text: panel.t("saved") });
     }
     function discard() {
       setCreating(false);
     }
 
-    return { selected, creating, showFunction, saved, discard };
+    return { selected, creating, saved, discard };
   },
 });

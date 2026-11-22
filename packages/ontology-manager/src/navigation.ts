@@ -13,6 +13,7 @@ import {
   MousePointerClick,
   Network,
   PanelsTopLeft,
+  Puzzle,
   Share2,
   SquareFunction,
   Table2,
@@ -101,15 +102,14 @@ function page(
 
 const pages = [
   page(managerPaths.graph, "nav.ontologyGraph", Network, "ontology", MODELING),
-  page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology", MODELING, "objects"),
-  page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING, "attributes"),
-  page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING, "relations"),
+  page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology", MODELING),
+  page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING),
+  page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING),
   page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
   page(managerPaths.triggers, "nav.triggerManagement", AlarmClock, "ontology", ["action-management"]),
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
-  page(managerPaths.metrics, "nav.metrics", ChartColumn, "assets", MODELING, "metrics"),
   page(managerPaths.products, "platform.productAssets", Shapes, "assets", MODELING, "products"),
 ];
 
@@ -120,8 +120,10 @@ const pages = [
  */
 const entries: readonly { path: string; icon: Component; count?: keyof OntologyResourceCounts }[] = [
   { path: managerPaths.knowledge, icon: BookOpen },
+  { path: managerPaths.metrics, icon: ChartColumn },
   { path: managerPaths.functions, icon: SquareFunction },
   { path: managerPaths.actions, icon: MousePointerClick },
+  { path: routes.ontologySkills.path, icon: Puzzle },
   { path: managerPaths.capabilityMap, icon: Share2 },
   { path: "/ontology/components", icon: ComponentIcon },
   { path: "/ontology/projections", icon: Layers },

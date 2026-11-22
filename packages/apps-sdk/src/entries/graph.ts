@@ -1,7 +1,7 @@
-// Interactive G6 graph components: a dedicated module because G6 is large, so panels that draw no G6 graph (or only
-// the light SVG canvas of `@ontomato/sdk/base`) never download it.
+// Interactive graph components: a dedicated module because the canvas engine is large, so panels that draw no
+// interactive graph (or only the light SVG canvas of `@ontomato/sdk/base`) never download it.
 export {
-  G6GraphCanvas,
+  G6GraphCanvas as InteractiveGraphCanvas,
   type GraphCanvasEdge,
   type GraphCanvasElement,
   type GraphCanvasLayout,

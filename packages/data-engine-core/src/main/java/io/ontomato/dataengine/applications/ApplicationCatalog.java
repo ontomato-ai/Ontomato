@@ -8,6 +8,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.service.BuiltinProductIds;
 import java.nio.charset.StandardCharsets;
+import java.text.Collator;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -106,18 +110,26 @@ public class ApplicationCatalog {
         this.panels = panels; this.grants = grants;
     }
     public List<JSONObject> all() {
+        return loadApplications(false);
+    }
+
+    private List<JSONObject> loadApplications(boolean includeUpdatedAt) {
         return db.query("SELECT * FROM sys_application WHERE kind IS NOT NULL ORDER BY CASE rail WHEN 'top' THEN 0 WHEN 'apps' THEN 1 ELSE 2 END,sort,id",
-            (row, index) -> JSONObject.of("id", row.getString("id"), "domainId", row.getString("domain_id"),
-                "ownerService", row.getString("owner_service"), "ownerUserId", row.getString("owner_user_id"),
-                "kind", row.getString("kind"), "names", JSON.parseObject(row.getString("names")),
-                "descriptions", JSON.parseObject(row.getString("descriptions")), "icon", row.getString("icon"),
-                "rail", row.getString("rail"), "category", row.getString("category"), "sort", row.getInt("sort"), "entry", JSON.parseObject(row.getString("entry")),
-                "entryAccess", JSON.parseArray(row.getString("entry_access")), "scheduleAdapter", row.getString("schedule_adapter"),
-                "releaseId", row.getString("release_id"), "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Mapping.class),
-                "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class),
-                "groups", JSON.parseArray(row.getString("groups"), Group.class),
-                "permissions", JSON.parseArray(row.getString("declaration_permissions"), Permission.class),
-                "panelSettings", JSON.parseObject(row.getString("panel_settings"))));
+            (row, index) -> {
+                var app = JSONObject.of("id", row.getString("id"), "domainId", row.getString("domain_id"),
+                    "ownerService", row.getString("owner_service"), "ownerUserId", row.getString("owner_user_id"),
+                    "kind", row.getString("kind"), "names", JSON.parseObject(row.getString("names")),
+                    "descriptions", JSON.parseObject(row.getString("descriptions")), "icon", row.getString("icon"),
+                    "rail", row.getString("rail"), "category", row.getString("category"), "sort", row.getInt("sort"), "entry", JSON.parseObject(row.getString("entry")),
+                    "entryAccess", JSON.parseArray(row.getString("entry_access")), "scheduleAdapter", row.getString("schedule_adapter"),
+                    "releaseId", row.getString("release_id"), "pageSkills", JSON.parseArray(row.getString("page_skills"), PageSkills.Mapping.class),
+                    "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class),
+                    "groups", JSON.parseArray(row.getString("groups"), Group.class),
+                    "permissions", JSON.parseArray(row.getString("declaration_permissions"), Permission.class),
+                    "panelSettings", JSON.parseObject(row.getString("panel_settings")));
+                if (includeUpdatedAt) app.put("updatedAt", row.getObject("updated_at", OffsetDateTime.class).toInstant());
+                return app;
+            });
     }
     public PageSkills.Projection pageSkills(User user) {
         var domainId = user.getDomainId();
@@ -174,26 +186,81 @@ public class ApplicationCatalog {
         return apps.stream().filter(app -> canEnter(app, user) && hasAssignedPanelPaths(app))
             .map(app -> view(app, user, pageKeys)).toList();
     }
-    public JSONObject catalogue(User user, String search, String scope, String cursor, int size) {
+    private record CatalogueKey(String id, String name, Instant updatedAt) {}
+    private record CatalogueRow(JSONObject app, CatalogueKey key) {}
+
+    public JSONObject catalogue(User user, String search, String scope, String cursor, int size, String sort, Locale locale) {
         if (!"visible".equals(scope) && !"maintainable".equals(scope))
             throw bad("Catalogue scope must be visible or maintainable");
         if (size < 1 || size > 100) throw bad("Catalogue size must be between 1 and 100");
-        if (cursor != null) validateId(cursor);
+
+        var byId = Comparator.comparing(CatalogueKey::id);
+        var order = switch (sort) {
+            case "id" -> byId;
+            case "name" -> {
+                // Compare display names in the reader's locale, respecting accents and case.
+                var collator = Collator.getInstance(locale);
+                collator.setStrength(Collator.TERTIARY);
+                collator.setDecomposition(Collator.CANONICAL_DECOMPOSITION);
+                yield Comparator.comparing(CatalogueKey::name, collator).thenComparing(byId);
+            }
+            case "updated" -> Comparator.comparing(CatalogueKey::updatedAt).reversed().thenComparing(byId);
+            default -> throw bad("Catalogue sort must be id, name or updated");
+        };
+        var cursorType = "name".equals(sort) ? "name-" + locale.toLanguageTag() : sort;
+        var after = cursor == null ? null : parseCatalogueCursor(cursor, sort, cursorType);
         var keyword = search.strip().toLowerCase(Locale.ROOT);
         var rows = new ArrayList<JSONObject>();
-        var apps = applicationsInDomain(user.getDomainId()).stream()
-            .sorted(Comparator.comparing(app -> app.getString("id"))).toList();
+        var apps = loadApplications("updated".equals(sort)).stream()
+            .filter(app -> app.getString("domainId") == null || inDomain(app, user)).toList();
         var pageKeys = new BuiltinPageKeys(apps);
-        for (var app : apps) {
-            var id = app.getString("id");
-            if ((cursor != null && id.compareTo(cursor) <= 0) || !matchesCatalogue(app, keyword)) continue;
+        var ordered = apps.stream().filter(app -> matchesCatalogue(app, keyword))
+            .map(app -> new CatalogueRow(app, new CatalogueKey(app.getString("id"),
+                "name".equals(sort) ? catalogueName(app, locale) : null, (Instant) app.get("updatedAt"))))
+            .filter(row -> after == null || order.compare(row.key(), after) > 0)
+            .sorted(Comparator.comparing(CatalogueRow::key, order)).toList();
+        CatalogueKey last = null;
+        for (var row : ordered) {
+            var app = row.app();
             boolean maintain = canMaintainCatalogue(app, user);
             if (!maintain && ("maintainable".equals(scope) || !canEnter(app, user))) continue;
             if (rows.size() == size)
-                return JSONObject.of("rows", rows, "nextCursor", rows.getLast().getString("id"));
+                return JSONObject.of("rows", rows, "nextCursor", catalogueCursor(last, sort, cursorType));
             rows.add(catalogueSummary(app, user, maintain, catalogueEntries(app, user, maintain, pageKeys).size()));
+            last = row.key();
         }
         return JSONObject.of("rows", rows);
+    }
+
+    private static String catalogueName(JSONObject app, Locale locale) {
+        var names = app.getJSONObject("names");
+        var name = names.getString(locale.toLanguageTag());
+        return name == null || name.isBlank() ? names.getString("en") : name;
+    }
+
+    private static String catalogueCursor(CatalogueKey key, String sort, String cursorType) {
+        if ("id".equals(sort)) return key.id();
+        var value = "name".equals(sort) ? key.name() : key.updatedAt().toString();
+        return cursorType + "." + key.id() + "." +
+            Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static CatalogueKey parseCatalogueCursor(String cursor, String sort, String cursorType) {
+        if ("id".equals(sort)) {
+            validateId(cursor);
+            return new CatalogueKey(cursor, null, null);
+        }
+        var parts = cursor.split("\\.", 3);
+        if (parts.length != 3 || !cursorType.equals(parts[0]) || parts[2].isEmpty())
+            throw bad("Invalid catalogue cursor for this sort and locale");
+        validateId(parts[1]);
+        try {
+            var value = new String(Base64.getUrlDecoder().decode(parts[2]), StandardCharsets.UTF_8);
+            return "name".equals(sort) ? new CatalogueKey(parts[1], value, null)
+                : new CatalogueKey(parts[1], null, Instant.parse(value));
+        } catch (IllegalArgumentException | DateTimeParseException ex) {
+            throw bad("Invalid catalogue cursor");
+        }
     }
 
     public JSONObject catalogueRecord(String id, User user) {

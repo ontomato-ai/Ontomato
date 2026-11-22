@@ -72,10 +72,25 @@
   .ac-line-text { flex: 1 1 auto; color: var(--el-text-color-regular); }
   .ac-segments { display: flex; flex-direction: column; gap: var(--spacing-xs); max-height: 30rem; overflow: auto; }
   .ac-seg {
-    display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); padding: var(--spacing-xs) var(--spacing-sm); border: 1px solid var(--ui-divider);
+    display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--ui-divider); border-left: 3px solid var(--kind-color, var(--ui-border));
     border-radius: var(--radius-xs); background: none; text-align: left; cursor: pointer; font: inherit; font-size: var(--text-xs);
   }
-  .ac-seg[aria-current="true"] { border-color: var(--el-color-primary); background: var(--ui-fill-secondary); }
+  .ac-seg[aria-current="true"] { border-color: var(--el-color-primary); border-left-color: var(--kind-color, var(--el-color-primary)); background: var(--ui-fill-secondary); }
+  .ac-seg-toggle {
+    margin-left: auto; padding: 0 var(--spacing-xs); border: none; background: none; color: var(--brand-link);
+    cursor: pointer; font: inherit; font-size: var(--text-xs);
+  }
+  .ac-seg-detail {
+    display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+    margin: calc(var(--spacing-xs) / 2) 0 0; padding-top: var(--spacing-xs); border-top: 1px solid var(--ui-divider);
+  }
+  .ac-seg-detail dt { color: var(--el-text-color-secondary); }
+  .ac-seg-detail dd { margin: 0; color: var(--el-text-color-regular); word-break: break-word; }
+  .ac-seg-pane { display: flex; flex-direction: column; gap: var(--spacing-xs); min-width: 0; }
+  .ac-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); font-size: var(--text-xs); }
+  .ac-legend-item { display: inline-flex; align-items: center; gap: calc(var(--spacing-xs) / 2); color: var(--el-text-color-secondary); }
+  .ac-legend-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; }
   .ac-seg[data-depth="1"] { margin-left: var(--spacing-md); }
   .ac-seg[data-depth="2"] { margin-left: var(--spacing-xl); }
   .ac-seg[data-depth="3"] { margin-left: var(--spacing-2xl); }
@@ -88,6 +103,16 @@
   .ac-effect-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-xs); font-size: var(--text-sm); }
   .ac-effect-kind { color: var(--brand-link); }
   .ac-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-xs); word-break: break-word; }
+  /* A parameter named in a derived rule: clicking it takes the reader to the parameter table. */
+  .ac-param {
+    padding: 0 2px; border: none; border-radius: var(--radius-xs); background: none; color: var(--brand-link);
+    cursor: pointer; font: inherit;
+  }
+  .ac-param:hover, .ac-param:focus-visible { text-decoration: underline; }
+  .ac-join { margin-right: var(--spacing-xs); color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .ac-table tbody tr.is-hit { background: var(--el-color-primary-light-9); transition: background-color var(--transition-fast); }
+  .ac-chevron-head { width: 1.5rem; }
+  .ac-chevron { width: 1.5rem; color: var(--el-text-color-tertiary); text-align: right; }
 </style>
 <div id="app" v-cloak>
   <section class="ac">
@@ -137,6 +162,7 @@
                 <th>{{ columnLabel("createdBy") }}</th>
                 <th>{{ columnLabel("reviewedBy") }}</th>
                 <th>{{ columnLabel("updatedAt") }}</th>
+                <th class="ac-chevron-head" aria-label=""></th>
               </tr>
             </thead>
             <tbody>
@@ -146,7 +172,7 @@
                 </td>
                 <td class="ac-main">
                   <div class="ac-name">{{ row.label }}</div>
-                  <div class="ac-sub">{{ row.subtitle }}</div>
+                  <div class="ac-sub">{{ row.subtitle || t("noDescription") }}</div>
                 </td>
                 <td class="ac-nowrap">{{ row.fields.function }}</td>
                 <td class="ac-nowrap">{{ row.fields.origin }}</td>
@@ -154,6 +180,8 @@
                 <td class="ac-nowrap">{{ row.fields.createdBy }}</td>
                 <td class="ac-nowrap">{{ row.fields.reviewedBy }}</td>
                 <td class="ac-nowrap">{{ formatTime(row.fields.updatedAt) }}</td>
+                <!-- The whole row opens the action; the chevron says so, as the original page's row did. -->
+                <td class="ac-chevron" aria-hidden="true">›</td>
               </tr>
             </tbody>
           </table>
@@ -217,11 +245,23 @@
               </div>
               <div class="ac-row" v-if="effectFields(effect)">
                 <span class="ac-label">{{ t("fields") }}</span>
-                <span class="ac-value ac-mono">{{ effectFields(effect) }}</span>
+                <span class="ac-value ac-mono">
+                  <template v-for="(part, partIndex) in textParts(effectFields(effect))" :key="'field-' + partIndex">
+                    <button v-if="part.parameter" type="button" class="ac-param" :title="t('paramLocate')"
+                      @click="locateParameter(part.parameter)">{{ part.text }}</button>
+                    <span v-else>{{ part.text }}</span>
+                  </template>
+                </span>
               </div>
               <div class="ac-row" v-if="effectChecks(effect)">
                 <span class="ac-label">{{ t("checks") }}</span>
-                <span class="ac-value ac-mono">{{ effectChecks(effect) }}</span>
+                <span class="ac-value ac-mono">
+                  <template v-for="(part, partIndex) in textParts(effectChecks(effect))" :key="'check-' + partIndex">
+                    <button v-if="part.parameter" type="button" class="ac-param" :title="t('paramLocate')"
+                      @click="locateParameter(part.parameter)">{{ part.text }}</button>
+                    <span v-else>{{ part.text }}</span>
+                  </template>
+                </span>
               </div>
               <p class="ac-hint" v-if="effect.narrative">{{ effect.narrative }}</p>
             </div>
@@ -240,7 +280,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="parameter in parameters" :key="parameter.name">
+                <tr v-for="parameter in parameters" :key="parameter.name" :data-parameter-row="parameter.name">
                   <td class="ac-name ac-mono">{{ parameter.name }}</td>
                   <td class="ac-mono">{{ parameter.type }}</td>
                   <td>{{ parameter.description }}</td>
@@ -254,10 +294,27 @@
           <p class="ac-hint" v-if="conditions.length === 0">{{ t("noConditions") }}</p>
           <ul class="ac-list" v-else>
             <li v-for="(condition, index) in conditions" :key="'condition-' + index">
-              <span class="ac-mono">{{ conditionText(condition) }}</span>
+              <span v-if="index > 0" class="ac-join">{{ conditionJoin }}</span>
+              <span class="ac-mono">
+                <template v-for="(part, partIndex) in textParts(conditionText(condition))" :key="'cond-' + partIndex">
+                  <button v-if="part.parameter" type="button" class="ac-param" :title="t('paramLocate')"
+                    @click="locateParameter(part.parameter)">{{ part.text }}</button>
+                  <span v-else>{{ part.text }}</span>
+                </template>
+              </span>
               <span v-if="condition.message || condition.failureMessage"> — {{ condition.message || condition.failureMessage }}</span>
             </li>
           </ul>
+          <!-- What the owner could not express as a condition, in its own words. -->
+          <template v-if="customChecks.length > 0">
+            <h3>{{ t("customChecks") }}</h3>
+            <ul class="ac-list">
+              <li v-for="(check, index) in customChecks" :key="'check-' + index">
+                <span>{{ check.description }}</span>
+                <span class="ac-hint" v-if="check.reason">（{{ check.reason }}）</span>
+              </li>
+            </ul>
+          </template>
         </template>
       </section>
 
@@ -282,16 +339,45 @@
                 <span class="ac-line-text">{{ line.text }}</span>
               </div>
             </div>
-            <div class="ac-segments">
-              <button type="button" class="ac-seg" v-for="segment in segments" :key="segment.id" :data-depth="segment.depth"
-                :aria-current="activeSegmentId === segment.id" @click="pickSegment(segment)">
-                <span class="ac-seg-head">
-                  <span class="ac-seg-kind">{{ segment.kindLabel }}</span>
-                  <span class="ac-seg-title">{{ segment.title }}</span>
-                  <span class="ac-seg-range">{{ t("segLine", { start: segment.codeRange.start, end: segment.codeRange.end }) }}</span>
+            <div class="ac-seg-pane">
+              <!-- The kinds this explanation uses, each with the colour its card carries, as the original page listed them. -->
+              <div class="ac-legend" v-if="presentKinds.length > 0">
+                <span class="ac-hint">{{ t("segKinds") }}</span>
+                <span class="ac-legend-item" v-for="item in presentKinds" :key="item.kind">
+                  <span class="ac-legend-dot" :style="{ background: item.color }"></span>
+                  {{ item.label }}
                 </span>
-                <span class="ac-seg-note" v-if="segment.note">{{ segment.note }}</span>
-              </button>
+              </div>
+              <div class="ac-segments">
+                <div class="ac-seg" v-for="segment in segments" :key="segment.id" :data-depth="segment.depth"
+                  :data-open="segmentOpen(segment)" :aria-current="activeSegmentId === segment.id" tabindex="0"
+                  :style="{ '--kind-color': kindColor(segment.kind) }"
+                  @click="pickSegment(segment)" @keydown.enter.prevent="pickSegment(segment)" @keydown.space.prevent="pickSegment(segment)">
+                  <span class="ac-seg-head">
+                    <span class="ac-seg-kind">{{ segment.kindLabel }}</span>
+                    <span class="ac-seg-title">{{ segment.title }}</span>
+                    <span class="ac-seg-range">{{ t("segLine", { start: segment.codeRange.start, end: segment.codeRange.end }) }}</span>
+                    <button v-if="segmentDetails(segment).length" type="button" class="ac-seg-toggle"
+                      :aria-expanded="segmentOpen(segment)" @click.stop="toggleSegment(segment)">
+                      {{ segmentOpen(segment) ? t("segCollapse") : t("segExpand") }}
+                    </button>
+                  </span>
+                  <span class="ac-seg-note" v-if="segment.note">{{ segment.note }}</span>
+                  <!-- What the owner wrote into this part: only what it carries, in its own wording. -->
+                  <dl class="ac-seg-detail" v-if="segmentOpen(segment)" @click.stop>
+                    <template v-for="(row, rowIndex) in segmentDetails(segment)" :key="'detail-' + rowIndex">
+                      <dt>{{ t(row.label) }}</dt>
+                      <dd class="ac-mono">
+                        <template v-for="(part, partIndex) in textParts(row.text)" :key="'seg-' + rowIndex + '-' + partIndex">
+                          <button v-if="part.parameter" type="button" class="ac-param" :title="t('paramLocate')"
+                            @click="locateParameter(part.parameter)">{{ part.text }}</button>
+                          <span v-else>{{ part.text }}</span>
+                        </template>
+                      </dd>
+                    </template>
+                  </dl>
+                </div>
+              </div>
             </div>
           </div>
 

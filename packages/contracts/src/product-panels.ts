@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
 import {
-  panelChildObjectIdentitySchema, panelFormTargetSchema, panelManifestSchema, panelMessageKeySchema,
+  panelChildObjectIdentitySchema, panelFormTargetSchema, panelManifestSchema, panelMemberPathSegmentSchema, panelMessageKeySchema,
   panelObjectRefSchema, panelThemeOverridesSchema,
 } from "./panel-manifest";
 import {
@@ -21,7 +22,7 @@ export { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-el
 import { objectDetailUsedByResponseSchema } from "./object-detail";
 import { productCatalogCursorSchema } from "./product-catalog-query";
 export { productCatalogQuerySchema, type ProductCatalogQuery } from "./product-catalog-query";
-import { builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema, productCurrentIdParamsSchema } from "./product-record-id";
+import { builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema, isDomainComponentId, productCurrentIdParamsSchema } from "./product-record-id";
 export {
   BUILTIN_PRODUCT_ID_PREFIX, builtinProductIdSchema, domainProductIdParamsSchema, domainProductIdSchema,
   isBuiltinProductId, productCurrentIdParamsSchema,
@@ -146,7 +147,7 @@ function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.Ref
 const builtinProjectionDefinition = projectionDefinition.extend({
   visibility: builtinVisibility,
   componentId: projectionDefinition.shape.componentId.refine(
-    componentId => componentId !== METRIC_CHART_COMPONENT, domainProjectionBinding("componentId"),
+    componentId => componentId !== METRIC_CHART_COMPONENT && !isDomainComponentId(componentId), domainProjectionBinding("componentId"),
   ),
 });
 export const builtinProductProjectionInputSchema = builtinProjectionDefinition.superRefine(validateBuiltinProjection);
@@ -277,6 +278,16 @@ export const applicationPanelUseSchema = z.object({
   descriptions: z.record(z.string().refine(text => text.trim().length > 0, "Expected a nonblank description"))
     .refine(text => Object.hasOwn(text, "en"), "An English description is required").optional(),
   inputs: applicationPanelInputsSchema.optional(),
+  /**
+   * A menu count from the named data read on a member of this entry's content panel.
+   * Two entries can supply different fixed inputs to the same panel and receive different counts.
+   * Use the result's total when present or the length of an array result. An empty read counts as zero.
+   * Omit the count for forbidden or failed reads.
+   */
+  count: z.object({
+    member: panelMemberPathSegmentSchema.shape.member,
+    data: directProjectionPortsSchema.shape.data.keySchema,
+  }).strict().optional(),
   groupKey: applicationMetadataSchema.shape.groups.element.shape.key.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
@@ -404,6 +415,11 @@ export const registerDirectProjectionRequestSchema = registerProductProjectionRe
 /** GET and PUT return the same current record; neither accepts a historical revision selector. */
 export const productProjectionResponseSchema = z.object({ projection: currentProjectionRecordSchema }).strict();
 export type ProductProjectionResponse = z.infer<typeof productProjectionResponseSchema>;
+
+/** The authorized render read may include source for the one component the projection names. */
+export const productProjectionRenderResponseSchema = productProjectionResponseSchema.extend({
+  domainComponent: domainComponentRuntimeSchema.optional(),
+});
 
 /**
  * Source registration accepts only the card identity. The owner authorizes the source and derives the binding,

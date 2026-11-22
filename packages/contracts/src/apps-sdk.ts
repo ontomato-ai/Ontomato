@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { directPanelPortTypeSchema } from "./panel-manifest";
 import { panelReadResultIdSchema } from "./panel-operations";
-import { directProjectionInputTypeSchema } from "./panel-projection";
+import { directProjectionInputTypeSchema, panelLocalOperationNameSchema } from "./panel-projection";
+import { componentDataSchema, componentDeclarationBase, componentConfigSchema, componentPortSchema } from "./component-declaration";
+import { componentIdSchema } from "./product-record-id";
+import { SDK_UI_ENTRY_SPECIFIER } from "./sdk-ui-map";
 import { workspacePathSchema } from "./workspaces";
 
 /** Written by the image build beside its exact SDK version directory. */
@@ -43,67 +46,71 @@ export const appsSdkCurrentSchema = appsSdkBuildSchema.extend({
 }).strict();
 export type AppsSdkCurrent = z.infer<typeof appsSdkCurrentSchema>;
 
-const name = z.string().min(1);
-const componentPortSchema = z.object({
-  name,
-  type: z.string(),
-  description: z.string(),
-}).strict();
-const componentPropSchema = componentPortSchema.extend({
-  required: z.boolean(),
-  default: z.string().optional(),
-});
-const componentConfigSchema = z.array(componentPropSchema);
-/** Use named entries, or a single optional "*" entry for all datum names declared by a projection. */
-export const appsSdkComponentDataSchema = z.record(name, z.object({
-  results: z.array(z.lazy(() => panelReadResultIdSchema)).min(1),
-  required: z.boolean(),
-  /** Read parameters this component can supply for this datum at runtime. */
-  runtimeParams: z.array(name).optional(),
-}).strict()).superRefine((data, ctx) => {
-  if (!Object.hasOwn(data, "*")) return;
-  if (Object.keys(data).length !== 1) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["*"], message: "Wildcard data cannot be combined with named entries" });
-  }
-  if (data["*"].required) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["*", "required"], message: "Wildcard data cannot be required" });
-  }
-});
+export const appsSdkComponentDataSchema = componentDataSchema(z.lazy(() => panelReadResultIdSchema));
 export type AppsSdkComponentData = z.infer<typeof appsSdkComponentDataSchema>;
 
-/** Resolve the catalogue declaration for a projection's datum. */
-export function appsSdkComponentDatum(
-  data: AppsSdkComponentData | undefined,
-  datum: string,
-): AppsSdkComponentData[string] | undefined {
+export function appsSdkComponentDatum(data: AppsSdkComponentData | undefined, datum: string) {
   return data && Object.hasOwn(data, datum) ? data[datum] : data?.["*"];
 }
 
-export const appsSdkComponentCatalogEntrySchema = z.object({
-  componentId: name,
-  module: name,
-  exportName: name,
-  role: z.enum(["presentation", "control"]),
-  meaning: name,
-  effects: z.string().optional(),
-  bindsElement: z.array(name).optional(),
-  /** Omit this declaration for components that do not consume platform-supplied data. */
-  data: appsSdkComponentDataSchema.optional(),
-  config: componentConfigSchema.optional(),
-  inputs: z.record(name, z.lazy(() => directProjectionInputTypeSchema)).optional(),
-  /** State bindings use typed outputs. Event-only signals are listed in ports.events. */
-  outputs: z.record(name, z.lazy(() => directPanelPortTypeSchema)).optional(),
-  ports: z.object({
-    props: componentConfigSchema,
-    events: z.array(componentPortSchema),
-    slots: z.array(componentPortSchema),
-  }).strict(),
-}).strict();
+const componentDeclarationBaseSchema = componentDeclarationBase(
+  appsSdkComponentDataSchema, z.lazy(() => directProjectionInputTypeSchema), z.lazy(() => directPanelPortTypeSchema),
+);
+const operations = z.array(z.object({
+  name: z.lazy(() => panelLocalOperationNameSchema),
+  handlerRef: z.string().trim().min(1),
+}).strict()).optional();
+
+export const componentDeclarationSchema = componentDeclarationBaseSchema.extend({
+  componentId: componentIdSchema, operations,
+});
+export type ComponentDeclaration = z.infer<typeof componentDeclarationSchema>;
+
+export const appsSdkComponentCatalogEntrySchema = componentDeclarationBaseSchema.extend({
+  module: z.string().min(1),
+  exportName: z.string().min(1),
+});
 export type AppsSdkComponentCatalogEntry = z.infer<typeof appsSdkComponentCatalogEntrySchema>;
+
+/** The product catalogue includes declarations with either deployment or domain source. */
+export const productComponentDefinitionSchema = appsSdkComponentCatalogEntrySchema
+  .partial({ module: true, exportName: true }).extend({ operations });
+
+/** Public UI primitive entry declared by the SDK itself (no third-party library names exposed). */
+export const appsSdkUiPrimitiveEntrySchema = z.object({
+  tag: z.string().regex(/^sdk-[a-z][a-z0-9-]*$/u, "Expected an sdk-* template tag"),
+  exportName: z.string().regex(/^Sdk[A-Z][A-Za-z0-9]*$/u, "Expected an Sdk* export name"),
+  module: z.literal(SDK_UI_ENTRY_SPECIFIER),
+  description: z.string().optional(),
+  props: componentConfigSchema,
+  events: z.array(componentPortSchema),
+  slots: z.array(componentPortSchema),
+}).strict();
+export type AppsSdkUiPrimitiveEntry = z.infer<typeof appsSdkUiPrimitiveEntrySchema>;
+
+/** Public UI directive exposed under `v-sdk-*` and `@ontomato/sdk/ui`. */
+export const appsSdkUiDirectiveEntrySchema = z.object({
+  name: z.string().regex(/^v-sdk-[a-z][a-z0-9-]*$/u, "Expected a v-sdk-* directive name"),
+  exportName: z.string().regex(/^vSdk[A-Z][A-Za-z0-9]*$/u, "Expected a vSdk* directive export name"),
+  module: z.literal(SDK_UI_ENTRY_SPECIFIER),
+  description: z.string().min(1),
+}).strict();
+export type AppsSdkUiDirectiveEntry = z.infer<typeof appsSdkUiDirectiveEntrySchema>;
+
+/** Author-facing CSS custom property declared by the SDK theme token catalogue. */
+export const appsSdkThemeTokenEntrySchema = z.object({
+  name: z.string().regex(/^--[a-z][a-z0-9-]*$/u, "Expected a CSS custom property name"),
+  kind: z.enum(["color", "length", "elevation", "font", "shadow"]),
+  overridable: z.boolean(),
+}).strict();
+export type AppsSdkThemeTokenEntry = z.infer<typeof appsSdkThemeTokenEntrySchema>;
 
 /** The generated components.json for one release. */
 export const appsSdkComponentCatalogSchema = z.object({
   version: appsSdkBuildSchema.shape.version,
   components: z.array(appsSdkComponentCatalogEntrySchema),
+  uiPrimitives: z.array(appsSdkUiPrimitiveEntrySchema).optional(),
+  uiDirectives: z.array(appsSdkUiDirectiveEntrySchema).optional(),
+  themeTokens: z.array(appsSdkThemeTokenEntrySchema).optional(),
 }).strict();
 export type AppsSdkComponentCatalog = z.infer<typeof appsSdkComponentCatalogSchema>;

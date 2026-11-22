@@ -33,6 +33,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -430,16 +431,22 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
              "delivery":{"panels":["panel-frame","panel-school"],"projections":["projection-school"],"packages":[],"agents":[],"skills":[]},
              "panelUses":[
                {"id":"school","pageKey":"school","panelId":"panel-school","path":"/applications/app-school/main","access":{"kind":"domain-member"},
-                "names":{"en":"School"},"groupKey":"school","inputs":{"term":{"literal":null}}},
+                "names":{"en":"School"},"groupKey":"school","inputs":{"term":{"literal":null}},"count":{"member":"list","data":"rows"}},
                {"id":"private","pageKey":"private","panelId":"panel-school","path":"/applications/app-school/private",
-                "access":{"permissionCode":"app:app-school:private"}}]}
+                "access":{"permissionCode":"app:app-school:private"},"count":{"member":"list","data":"totals"}}]}
             """)).andExpect(status().isOk());
 
         http.perform(get(path).param("purpose", "management")).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(2))
             .andExpect(jsonPath("$.data.declaration.permissions[0].code").value("app:app-school:private"))
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
-            .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"));
+            .andExpect(jsonPath("$.data.delivery.projections[0]").value("projection-school"))
+            .andExpect(jsonPath("$.data.panelUses[0].count.member").value("list"))
+            .andExpect(jsonPath("$.data.panelUses[0].count.data").value("rows"))
+            .andExpect(jsonPath("$.data.panelUses[1].count.data").value("totals"));
+        http.perform(get(CATALOGUE + "/app-school")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.panelUses[0].count.data").value("rows"))
+            .andExpect(jsonPath("$.data.panelUses[1].count.data").value("totals"));
 
         var form = http.perform(post(CATALOGUE + "/form").locale(Locale.SIMPLIFIED_CHINESE)
                 .contentType(MediaType.APPLICATION_JSON).content("""
@@ -484,7 +491,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.framePanelId").value("panel-frame"))
             .andExpect(jsonPath("$.data.theme.light['--el-color-primary']").value("#123456"))
             .andExpect(jsonPath("$.data.use.inputs.term.literal").hasJsonPath())
+            .andExpect(jsonPath("$.data.use.count.member").value("list"))
+            .andExpect(jsonPath("$.data.use.count.data").value("rows"))
             .andExpect(jsonPath("$.data.menu.panelUses[0].inputs.term.literal").hasJsonPath())
+            .andExpect(jsonPath("$.data.menu.panelUses[0].count.data").value("rows"))
             .andExpect(jsonPath("$.data.delivery").doesNotHaveJsonPath()).andReturn().getResponse().getContentAsString();
         var byUse = http.perform(get(resolve).param("applicationId", "app-school").param("useId", "school"))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -570,6 +580,57 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
           {"id":"public","pageKey":"public","panelId":"panel-public","path":"/applications/app-catalogue/public","access":{"kind":"domain-member"}},
           {"id":"hidden","pageKey":"hidden","panelId":"panel-hidden","path":"/applications/app-catalogue/hidden","access":{"kind":"domain-member"}}]}
         """;
+
+    @Test void catalogueNameOrderUsesReaderLanguageAndPagesAcrossEqualNames() throws Exception {
+        var owner = new QueryAccessService.GrantUser("owner", "domain");
+        when(identity.getCurrentUser()).thenReturn(owner);
+        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        for (var id : List.of("app-a", "app-b", "app-c", "app-d"))
+            catalog.publish(id, builtin(id, "native").declaration(), "release", owner);
+        jdbc.update("""
+            UPDATE sys_application SET names = CASE id
+                WHEN 'app-a' THEN '{"en":"Alpha","fr":"Zulu"}'::jsonb
+                WHEN 'app-d' THEN '{"en":"Alpha","fr":"Bravo"}'::jsonb
+                ELSE '{"en":"Bravo"}'::jsonb
+            END
+            """);
+
+        var first = cataloguePage(get(CATALOGUE).locale(Locale.FRENCH).param("sort", "name").param("size", "2"));
+        assertEquals(List.of("app-b", "app-c"), catalogueIds(first));
+        var cursor = first.getString("nextCursor");
+        assertNotNull(cursor);
+        var second = cataloguePage(get(CATALOGUE).locale(Locale.FRENCH)
+            .param("sort", "name").param("size", "2").param("cursor", cursor));
+        assertEquals(List.of("app-d", "app-a"), catalogueIds(second));
+        assertFalse(second.containsKey("nextCursor"));
+    }
+
+    @Test void catalogueUpdatedOrderPagesByDescendingTimestampThenId() throws Exception {
+        var owner = new QueryAccessService.GrantUser("owner", "domain");
+        when(identity.getCurrentUser()).thenReturn(owner);
+        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        for (var id : List.of("app-a", "app-b", "app-c"))
+            catalog.publish(id, builtin(id, "native").declaration(), "release", owner);
+        jdbc.update("UPDATE sys_application SET updated_at = '2026-01-01 00:00:00+00' WHERE id = 'app-a'");
+        jdbc.update("UPDATE sys_application SET updated_at = '2026-01-01 00:00:00.000001+00' WHERE id IN ('app-b','app-c')");
+
+        var first = cataloguePage(get(CATALOGUE).param("sort", "updated").param("size", "1"));
+        assertEquals(List.of("app-b"), catalogueIds(first));
+        var cursor = first.getString("nextCursor");
+        assertNotNull(cursor);
+        var second = cataloguePage(get(CATALOGUE).param("sort", "updated").param("cursor", cursor));
+        assertEquals(List.of("app-c", "app-a"), catalogueIds(second));
+        assertFalse(second.containsKey("nextCursor"));
+    }
+
+    private JSONObject cataloguePage(MockHttpServletRequestBuilder request) throws Exception {
+        var result = http.perform(request).andExpect(status().isOk()).andReturn();
+        return JSON.parseObject(result.getResponse().getContentAsString()).getJSONObject("data");
+    }
+
+    private List<String> catalogueIds(JSONObject page) {
+        return page.getJSONArray("rows").toJavaList(JSONObject.class).stream().map(row -> row.getString("id")).toList();
+    }
 
     @Test void catalogueReadsDifferFromNavigationAndKeepsAnAuthorizedEditorsCompleteEntryTable() throws Exception {
         var owner = new QueryAccessService.GrantUser("owner", "domain");
@@ -743,7 +804,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
         var use = new ApplicationPanelUse("overview", "native-frame-demo-overview", "builtin-product-overview",
             "/native-frame-demo/overview", new ApplicationPanelUse.Access(null, "domain-member"), null,
             Map.of("en", "Overview"), Map.of("en", "Explain the overview"),
-            Map.of("term", Map.of("literal", "autumn")), "main");
+            Map.of("term", Map.of("literal", "autumn")), "main", new ApplicationPanelUse.Count("list", "rows"));
         var metadata = new ApplicationCatalog.Declaration(Map.of("en", "Native example"), Map.of(), "pages",
             List.of(new ApplicationCatalog.Group("main", Map.of("en", "Main"), 1)), List.of(), List.of(), List.of(use));
         catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(declared.id(), declared.kind(),
@@ -765,7 +826,10 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             .andExpect(jsonPath("$.data.theme").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data.use.inputs").doesNotHaveJsonPath())
             .andExpect(jsonPath("$.data.use.descriptions.en").value("Explain the overview"))
+            .andExpect(jsonPath("$.data.use.count.member").value("list"))
+            .andExpect(jsonPath("$.data.use.count.data").value("rows"))
             .andExpect(jsonPath("$.data.menu.groups[0].key").value("main"))
+            .andExpect(jsonPath("$.data.menu.panelUses[0].count.data").value("rows"))
             .andExpect(jsonPath("$.data.menu.panelUses[0].id").value("overview"))
             .andExpect(jsonPath("$.data.menu.panelUses[0].inputs").doesNotHaveJsonPath())
             .andReturn().getResponse().getContentAsString();

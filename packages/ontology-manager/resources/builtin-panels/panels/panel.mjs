@@ -10,6 +10,7 @@ import { mountPanel, usePanelContext, usePanelData, usePanelOperation } from "@o
 
 const PAGE_SIZE = 20;
 const PANEL_TYPE = "platform:ProductPanel";
+const PROJECTION_TYPE = "platform:ProductProjection";
 
 const formatTimestamp = (value) => new Date(value).toLocaleString(document.documentElement.lang, {
   year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
@@ -185,6 +186,7 @@ const PanelsDirectory = {
         key,
         targetLabel: label,
         projectionId,
+        panelId,
         reference,
         inputs: bindingText(member?.inputs),
         outputs: bindingText(member?.outputs),
@@ -195,6 +197,70 @@ const PanelsDirectory = {
     function inspectProjection(id) {
       projectionId.value = id;
       state.set("memberProjection", { className: "platform:ProductProjection", primaryKey: id });
+    }
+
+    function openMember(row) {
+      const className = row.projectionId ? PROJECTION_TYPE : PANEL_TYPE;
+      const selected = { className, primaryKey: row.projectionId ?? row.panelId };
+      const query = new globalThis.URLSearchParams({ state: JSON.stringify({ selected }) });
+      openAddress(`/ontology/${row.projectionId ? "projections" : "panels"}?${query}`);
+    }
+
+    const memberKind = ref("projection");
+    const memberSearch = ref("");
+    const memberKey = ref("");
+    const memberChoiceId = ref("");
+    const memberChoices = ref([]);
+    const memberSearchStatus = ref("idle");
+    const memberError = ref("");
+    const memberForm = computed(() => instance.forms.handle("form"));
+    const memberField = computed(() => memberForm.value?.fields.value.find(field => field.path === "/manifest/members"));
+    const canPickMembers = computed(() => memberField.value && !memberField.value.readOnly && !memberForm.value.busy.value);
+    const sourceManifest = computed(() => JSON.stringify(record.value?.manifest, null, 2));
+    const sourceTheme = computed(() => record.value?.theme ? JSON.stringify(record.value.theme, null, 2) : t("source.none"));
+
+    let memberSearchVersion = 0;
+    watch([mode, memberKind, memberSearch], () => {
+      memberSearchVersion += 1;
+      memberChoiceId.value = "";
+      memberChoices.value = [];
+      memberError.value = "";
+      memberSearchStatus.value = "idle";
+    }, { flush: "sync" });
+
+    async function findMembers() {
+      const version = ++memberSearchVersion;
+      memberSearchStatus.value = "loading";
+      memberError.value = "";
+      memberChoiceId.value = "";
+      const slot = memberKind.value === "panel" ? "memberPanelChoices" : "memberProjectionChoices";
+      const member = await instance.memberContext(slot);
+      const result = await member.data.read("rows", { search: memberSearch.value.trim() || null, size: PAGE_SIZE });
+      if (version !== memberSearchVersion) return;
+      memberSearchStatus.value = result.status;
+      if (result.status === "error") memberError.value = result.message;
+      if (result.status === "ready")
+        memberChoices.value = result.value.items.filter(row => slot !== "memberPanelChoices" || row.id !== selected.value?.primaryKey);
+    }
+
+    function addPickedMember() {
+      const key = memberKey.value.trim();
+      const current = memberForm.value.values.value.manifest?.members ?? {};
+      if (Object.hasOwn(current, key)) {
+        memberError.value = t("members.keyExists");
+        return;
+      }
+      const id = memberChoiceId.value;
+      const target = memberKind.value === "panel" ? { panelId: id } : { projectionId: id };
+      memberForm.value.set("/manifest/members", { ...current, [key]: { target } });
+      memberKey.value = "";
+      memberChoiceId.value = "";
+      memberError.value = "";
+    }
+
+    function changePageSize(event) {
+      resetPaging();
+      pageSize.value = Number(event.target.value);
     }
 
     function resetPaging() {
@@ -475,11 +541,13 @@ const PanelsDirectory = {
       t,
       selected, search: searchText, searchText, scope, sort,
       mode, showDetail, hasFilters, tab, tabs, busy, failure, message, receipt,
-      rows, visibleRows, unavailableRows, loading, rowsError, page, nextCursor,
+      rows, visibleRows, unavailableRows, loading, rowsError, page, pageSize, changePageSize, nextCursor,
       templateFilter, onTemplateFilter,
       grantRows, grantsShared, grantsError, grantKindLabel, verbLabel, revokeGrant,
       ownerName, visibilityLabel, formatTimestamp, messagesText,
-      memberRows, projectionId, projectionRecord, inspectProjection,
+      memberRows, projectionId, projectionRecord, inspectProjection, openMember, sourceManifest, sourceTheme,
+      memberKind, memberSearch, memberKey, memberChoiceId, memberChoices, memberError, memberSearchStatus,
+      canPickMembers, findMembers, addPickedMember,
       record, recordState, unavailableSelection,
       applicationEntries, usingPanels, classNames, hiddenCount,
       onSearchInput, onScope, onSort,

@@ -487,9 +487,10 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(projectionForm).toContain(`"operation":"projection.update","target":{"objectType":"${PRODUCT_PROJECTION}","id":"<owner object id>"}`);
     expect(projectionForm).toContain(`"operation":"projection.create","target":{"objectType":"${PRODUCT_PROJECTION}"}`);
     expect(draftSection).not.toContain("validate the complete values");
-    expect(draftSection).toContain("Each run has its own artifact area. Use a distinct path for each draft written in the same run.");
-    expect(draftSection).toContain("`draftRunId` to that run's `$ONTOMATO_RUN_ID`");
-    expect(draftSection).toContain("For a draft written in a later run, build a new link using that run's ID.");
+    expect(draftSection).toContain("Write each draft to a fresh output path.");
+    expect(draftSection).toContain("test -s \"$ONTOMATO_OUTPUT_DIR/drafts/<name>.page-draft.json\" && printenv ONTOMATO_SESSION_ID ONTOMATO_RUN_ID");
+    expect(draftSection).toContain("check that this is the file you just wrote and use the IDs printed by that call");
+    expect(draftSection).toContain("Never copy a run ID from the conversation, a previous link, or an earlier run.");
     expect(draftSection).toContain("preserve the entry's existing query parameters");
     expect(draftSection).toContain("site-relative address starting with a single `/`");
     expect(draftSection).toContain("Do not prefix it with `$ONTOMATO_BASE_URL`, a hostname, or a URL scheme.");

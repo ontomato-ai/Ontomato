@@ -6,7 +6,7 @@ import type { PanelFormDescription, PanelFormSaveInput, PanelFormValues } from "
 import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { formSaveCalls, humanIntents, ignoreChanges,
+import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -369,6 +369,7 @@ it("tells the host the draft is settled once the reader discarded it, and writes
   const { context, settled, sent } = await openWithDraft({ ...stored, name: "Analyst v2" });
   await vi.waitFor(() => expect(context.draft.value?.changed).toEqual(new Set(["/name"])), { timeout: 5000 });
   button("Discard").click();
+  await confirmDiscard();
   await vi.waitFor(() => expect(settled).toEqual([link]));
   expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst");
   expect(context.instance.dirty()).toBe(false);

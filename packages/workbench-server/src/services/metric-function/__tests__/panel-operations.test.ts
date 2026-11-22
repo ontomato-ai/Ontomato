@@ -159,7 +159,10 @@ describe("metric and function panel server operations", () => {
     const remove = hostWith(() => Response.json({ success: true }));
     expect(await operation.execute(remove.host, metricTarget)).toEqual({
       kind: "success", data: {},
-      affected: { objects: [{ objectType: METRIC_VIEW, primaryKey: metricTarget.primaryKey }], objectTypes: [METRIC_VIEW] },
+      affected: {
+        objects: [{ objectType: METRIC_VIEW, primaryKey: metricTarget.primaryKey }], objectTypes: [METRIC_VIEW],
+        removed: [{ objectType: METRIC_VIEW, primaryKey: metricTarget.primaryKey }],
+      },
     });
     expect(remove.sent[0]?.path).toBe("/api/data-query/metricView/delete");
     expect(JSON.parse(String(remove.sent[0]?.init.body))).toEqual({ id: "m1" });
@@ -179,6 +182,18 @@ describe("metric and function panel server operations", () => {
     const outage = hostWith(() => Response.json({ message: "Owner unavailable" }, { status: 503 }));
     await expect(operation.targetLabel(outage.host, metricTarget))
       .rejects.toMatchObject({ status: 503, message: "Owner unavailable", code: "METRIC_VIEW_UNAVAILABLE" });
+  });
+
+  it("reads the system-metric delete reason from its owner and allows an ordinary metric", async () => {
+    const operation = action(DELETE_METRIC_VIEW);
+    const reason = "系统自带指标不能删除";
+    const protectedMetric = hostWith(() => Response.json({ success: true, data: { reason } }));
+    expect(await operation.unavailable!(protectedMetric.host, metricTarget)).toEqual({ reason });
+    expect(protectedMetric.sent[0]?.path).toBe("/api/data-query/metricView/queryById");
+    expect(JSON.parse(String(protectedMetric.sent[0]?.init.body))).toEqual({ id: "m1", purpose: "delete-availability" });
+
+    const ordinary = hostWith(() => Response.json({ success: true, data: { reason: null } }));
+    expect(await operation.unavailable!(ordinary.host, metricTarget)).toBeUndefined();
   });
 
   it("describes the metric delete impact with the bindings it takes along", async () => {
@@ -377,7 +392,10 @@ describe("metric and function panel server operations", () => {
     const deleted = hostWith(() => Response.json({ success: true }));
     expect(await remove.execute(deleted.host, functionTarget)).toEqual({
       kind: "success", data: {},
-      affected: { objects: [{ objectType: FUNCTION, primaryKey: functionTarget.primaryKey }], objectTypes: [FUNCTION] },
+      affected: {
+        objects: [{ objectType: FUNCTION, primaryKey: functionTarget.primaryKey }], objectTypes: [FUNCTION],
+        removed: [{ objectType: FUNCTION, primaryKey: functionTarget.primaryKey }],
+      },
     });
     expect(deleted.sent[0]?.path).toBe("/api/data-query/function/delete");
     const deleteRefused = hostWith(() => Response.json({

@@ -35,6 +35,23 @@ export async function ownerPost<Envelope>(
   return schema.parse(await response.json());
 }
 
+const deleteAvailabilitySchema = z.discriminatedUnion("success", [
+  ownerEnvelopeSchema.extend({
+    success: z.literal(true),
+    data: z.object({ reason: z.string().min(1).max(500).nullable() }).strict(),
+  }),
+  ownerEnvelopeSchema.extend({ success: z.literal(false), code: ownerRefusalCodeSchema }),
+]);
+
+export async function ownerDeleteUnavailable(
+  host: DataQueryOperationHost, path: string, body: unknown, fallbackCode: string,
+  fallbackMessage = "The owner could not read the target",
+) {
+  const result = await ownerPost(host, path, body, deleteAvailabilitySchema);
+  if (!result.success) throw new HttpError(422, result.message ?? fallbackMessage, result.code ?? fallbackCode);
+  return result.data.reason === null ? undefined : { reason: result.data.reason };
+}
+
 /** The owner's record for one target; an unreadable target is the owner's error, never an id standing in for a name. */
 export async function ownerRecord(host: DataQueryOperationHost, target: PanelRecordTarget, path: string, code: string): Promise<unknown> {
   const response = await requestOwnerPost(host, path, { id: target.primaryKey });
@@ -96,6 +113,6 @@ export async function remove(
 ): Promise<SinglePanelOperationOutcome> {
   const envelope = await ownerPost(host, path, { id: target.primaryKey }, ownerEnvelopeSchema);
   return envelope.success
-    ? { kind: "success", data: {}, affected: affected(target.objectType, target.primaryKey, [target.objectType]) }
+    ? { kind: "success", data: {}, affected: { ...affected(target.objectType, target.primaryKey, [target.objectType]), removed: [{ objectType: target.objectType, primaryKey: target.primaryKey }] } }
     : ownerWriteFailure(envelope, failureCode, "The owner could not delete the record");
 }

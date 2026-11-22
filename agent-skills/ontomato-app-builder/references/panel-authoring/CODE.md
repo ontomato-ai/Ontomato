@@ -2,13 +2,10 @@
 
 Write the Vue template and scoped panel styles in `panel.html`. Put the template inside `<div id="app">`. Place a
 declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
-Use Vue attributes, events, `v-if` and `v-for` for
-interactions. Adapt the layout to the container width. The host draws the page title and back control.
+Use Vue attributes, events, `v-if` and `v-for` for interactions. Adapt the layout to the container width.
 Panel CSS positions member containers. Set colors, font sizes, spacing and corner radii with the platform's
-design variables. Run `node "$SKILL/ontomato.mjs" sdk read styles/sdk.css` to find the released
-`--text-*`, `--spacing-*` and `--radius-*` variables. In the browser, inspect the page's computed styles for
-the active brand colors, such as `--el-bg-color` and `--el-text-color-primary`. The product design guide
-in `docs/design/DESIGN.md` explains which roles to use.
+design variables from `node "$SKILL/ontomato.mjs" sdk read styles/sdk.css` (`--text-*`, `--spacing-*`, `--radius-*`,
+and the released theme tokens). The product design guide in `docs/design/DESIGN.md` explains which roles to use.
 
 Declare projections using the [member fields](FIELDS.md) and declare public typed state in `panel.json`.
 Keep page-local state in Vue. An object state
@@ -24,10 +21,7 @@ configuration and ports, use `sdk read docs/components.md`. The repository's
 `packages/apps-sdk/src/panel/mount.ts` implements the legacy iframe runtime.
 
 Use the platform’s interface components directly in the template: `<markdown-view>`, `<code-editor readonly>`
-for code viewing, `<e-chart>`, `<table-preview>`, `<html-preview>` and `<form-fields>`. Import only `vue` and
-`@ontomato/sdk/panel` in the module. For feedback after an operation, call
-`usePanelContext().notify({ kind, text })` via the context captured in setup. For a message that stays on the page,
-use `<el-alert>`.
+for code viewing, `<e-chart>`, `<table-preview>`, `<html-preview>` and `<form-fields>`.
 
 For translations, put flat message keys under locale tags in `panel.json`'s `content.messages`. For example,
 `{"en":{"panel.greeting":"Hello, {name}"}}` is a message table. Use `t("panel.greeting", { name })` in the
@@ -36,6 +30,28 @@ Use the flat `panel.name` key for the panel title, for example
 `{"zh-CN":{"panel.name":"治理报告"},"en":{"panel.name":"Governance report"}}`. The host uses an entry's menu name
 when present. Otherwise it uses the panel name in the reader's locale, then the platform's default locale and the
 name in `registration.json`. Keep the entry's menu metadata for entries that belong in the menu.
+
+## Panel controls and platform behavior
+
+Use only the Ontomato SDK's own interface controls for panel chrome that does not render business fields. Never write
+third-party UI library tags (such as Element Plus `el-*` tags) in `panel.html` or import `element-plus` in `panel.mjs`.
+In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel`.
+For transient feedback, import
+`usePanelContext` from `@ontomato/sdk/panel`, capture `const panel = usePanelContext()` in setup and call
+`panel.notify({ kind: "success", text: "Export complete" })` from the event handler. `kind` accepts
+`"success"`, `"info"`, `"warning"` or `"error"`.
+
+If a dialog or drawer mounts at the page root, check its theme, stacking and keyboard focus in the
+application that opens it. Include a check when the panel is beside a conversation.
+
+Leave the following to the platform.
+
+- **Write confirmation and execution.** Have the button invoke the [declared owner operation](#invoke-declared-owner-operations).
+  Button clicks and assistant calls use the same confirmation rules, and the platform executes an accepted write once.
+  Use local dialogs for interface choices.
+- **Form drafts.** The platform delivers drafts to the form. Follow the [form draft flow](#save-a-form-or-hand-off-a-draft).
+- **Page header.** The host renders the title, back control, commands and refresh. Declare commands in
+  `manifest.commands` and keep the panel template focused on the page content.
 
 ## Open a panel at a specific state
 
@@ -47,33 +63,123 @@ Give `URLSearchParams` raw JSON once. Give readers page and draft links as site-
 a single `/`. Include any needed query parameters and omit the scheme and hostname.
 See [header commands and navigation](RUNTIME.md#header-commands-and-navigation) when wiring a button to an entry.
 
+## Component vs. panel responsibility
+
+Judge by responsibility, not by HTML tag: **whoever turns business fields into reader-visible text, graphics, options,
+or executable business operations is a component.** The **panel** coordinates layout, visibility, selection, navigation,
+and passing references between members based on what components emit.
+
+- Put coordination state that the assistant must be able to describe or restore (such as path-finding start and end) in
+  declared `manifest.state`. Keep transient UI-only toggles (such as a local expand/collapse flag) in Vue.
+- Reading declared data in panel code is legitimate only for coordination, and should prefer a component's own output
+  whenever available. Do not pull a data port into `panel.html` to render business fields.
+
+| Case | Wrong (rendering business data in the panel) | Right (component renders, panel coordinates) |
+| --- | --- | --- |
+| Path-finding start and end dropdowns | Looping over business records in `panel.html` to generate `<option>` items | An object-picker component renders the names and outputs object references; the panel only stores both endpoints and triggers path lookup. Mapping business records into dropdown options is still rendering business data and belongs in a component. |
+| Section heading `"Attributes · 37"` | Interpolating the owner-returned count into a panel heading | Write the static label `"Attributes"` in the panel; let the component reading that data display the count. |
+| `"Revoke"` inside a grant row | A plain panel button that first mutates panel selection and then invokes an operation | The component invokes a declared per-row operation whose target and parameters come from that row. |
+
+### Choose an official component before writing one
+
+Follow these three steps in order before writing any custom rendering code:
+
+1. **Match the owner's read to an official component's data port.** Run `panel type <type-id> --read <name>` and
+   compare `result` and `resultSchema` with the component's Data section in `sdk read docs/components.md`. If they do
+   not match, that is a gap on the owner or shared-record side — report or extend the owner/contract rather than
+   rendering business fields by hand in the panel.
+2. **Use the default first, then check `config`.** Start with the component's default appearance (`component`,
+   `type`/`target`, and `data`). For common adjustments — columns, visible fields, subtitles, status/tags, node sizing
+   and coloring, page size — check `sdk read docs/components.md` and add a `config` option.
+3. **Write a focused component only as a last resort.** When default rendering and `config` still leave a specific gap
+   (down to a single table cell or form field), write a small component for that slot and bind it through a projection.
+   Do not wrap an entire page in a custom component or re-implement list selection, field validation, or write
+   confirmation.
+
 ## Read declared data
 
-Before designing a view, inspect its read with `panel type <type-id> --read <name>`. For example, run
+Before binding a member, inspect its read with `panel type <type-id> --read <name>`. For example, run
 `node "$SKILL/ontomato.mjs" panel type platform:Action --read definition` for `actionDefinition`. Read its
 `resultSchema` next to `result`, and use `params` and `requiredParams` for inputs. Omit `--read` to list the
 type's reads and the operations with their effect, target, batch support and input schema.
 
 Use the [generated member fields](FIELDS.md) to connect each component's named datum to an owner read and
 its parameters. Bind an output by its port name in the short member's `state` map, with the declared panel
-state field as its value. Place an official component when it fits the view. For a custom Vue view, choose `PanelData`
-and consume each datum with [the SDK read hooks](RUNTIME.md#reads-and-operations) in synchronous setup,
-before any `await`. Use the return states
-to show loading, missing inputs, empty data, denied access or an error in the view. Read each ready value
-according to the type table's result shape.
+state field as its value.
+
+A non-rendering `PanelData` member and [`usePanelData`](RUNTIME.md#usepaneldata) (called in synchronous setup, before
+any `await`) remain available for **coordination reads** when no component output already carries the value (for
+example, deciding visibility, navigation or follow-up state) or for declaring operations invoked via
+[`usePanelOperation`](RUNTIME.md#usepaneloperation). Never use `PanelData` and `usePanelData` to render business fields
+in `panel.html`.
 
 For an assistant's named read, pass the member and datum separately. For the `detail` member's
 `data.record`, send `memberPath: [{member: "detail"}]` and `dataName: "record"`. Use the entry source
-and declared inputs shown in the page skill. The Vue equivalent is `usePanelData("detail", "record")`.
+and declared inputs shown in the page skill.
+
+### Configure an official list or summary
+
+These short members go in `manifest.members`. Each example uses the business knowledge owner's standard reads.
+
+**ObjectList.** Start with the compact list and its owner-supplied labels and subtitles.
+
+```json
+{"component":"ObjectList","type":"platform:BusinessKnowledge","data":{"rows":"query"}}
+```
+
+Configure the compact rows to show the knowledge text on up to two lines, the owner status and tags, and 20 rows per page.
+
+```json
+{
+  "component": "ObjectList",
+  "type": "platform:BusinessKnowledge",
+  "data": {"rows": "query"},
+  "config": {"subtitleField": "knowledgeText", "subtitleLines": 2, "statusField": "status", "tagsField": "knowledgeTags", "pageSize": 20}
+}
+```
+
+The toolbar displays a total when the search or paginated read returns one. For table mode, set `config.columns`
+instead of the compact-row settings. A column such as `{"key":"label","kind":"text","subtitleKey":"knowledgeText"}`
+shows the label and a second line. Use `kind: "tag"` for `status` and `kind: "tags"` for `knowledgeTags`.
+Use `labelKey` for a column heading from the panel's messages.
+
+Place the member with `<projection slot="list"></projection>`. In its template, `#toolbar-actions` adds a
+control to the visible toolbar and `#batch-actions="{ checked, clear }"` adds controls for checked rows.
+For example, place an already declared `review` member in the toolbar.
+
+```html
+<projection slot="list">
+  <template #toolbar-actions>
+    <projection slot="review"></projection>
+  </template>
+</projection>
+```
+
+**ObjectSummary.** Bind `target` to an object state field of type `platform:BusinessKnowledge`, here `selected`.
+The default displays the record's fields in the owner's order.
+
+```json
+{"component":"ObjectSummary","target":"selected","data":{"record":"record"}}
+```
+
+List field names in `config.fields` to choose and order the visible facts. This shows status before tags.
+
+```json
+{
+  "component": "ObjectSummary",
+  "target": "selected",
+  "data": {"record": "record"},
+  "config": {"fields": ["status", "knowledgeTags"]}
+}
+```
 
 ## Bind read parameters and listen to component events
 
 Use the component's Data and Events sections in `sdk read docs/components.md`. Use
 `panel type <type-id> --read <name>` for the chosen owner's parameter names, types and required inputs.
 Explicit `data.<name>.params` map read parameters to `{state: "fieldName"}` or `{literal: value}`.
-A short member can also bind a named read parameter through its `state` map. The component supplies its
-catalogued runtime parameters when the author leaves them unbound. With `PanelData`, provide supported
-run-time values such as a cursor through [the SDK read hook](RUNTIME.md#usepaneldata).
+A short member can also bind a named read parameter through its `state` map. The component supplies its catalogued runtime parameters when the author leaves them unbound. When a non-rendering
+coordination read requires runtime parameters, pass them through [the SDK read hook](RUNTIME.md#usepaneldata).
 
 Listen on the placed `<projection>` using Vue's event binding. For the `ObjectList` event `navigate`,
 for example, wire `<projection slot="list" @navigate="openReference"></projection>` to the Vue handler

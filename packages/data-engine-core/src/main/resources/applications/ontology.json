@@ -12,8 +12,7 @@
     "ontology-modeling",
     "action-management",
     "business-knowledge",
-    "skill-management",
-    "system-config"
+    "skill-management"
   ],
   "scheduleAdapter": "java:ontology",
   "declaration": {
@@ -42,17 +41,20 @@
       "id": "ontology-objects", "pageKey": "ontology-objects", "panelId": "builtin-product-ontology-objects",
       "path": "/ontology/objects", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Object types: the catalogue, a new type, and one type's details with its attributes and relations.", "zh-CN": "对象类型的目录、新建，以及一个类的详情：基本信息、属性与关系。"},
-      "names": {"en": "Object types", "zh-CN": "对象类型"}
+      "names": {"en": "Object types", "zh-CN": "对象类型"},
+      "count": {"member": "catalog", "data": "rows"}
     }, {
       "id": "ontology-attributes", "pageKey": "ontology-attributes", "panelId": "builtin-product-ontology-attributes",
       "path": "/ontology/attributes", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Every object type's attributes: filter by type, then create, edit, set the primary key or delete one.", "zh-CN": "各对象类型的属性：按类筛选，新建、修改、设为主键和删除。"},
-      "names": {"en": "Attributes", "zh-CN": "属性"}
+      "names": {"en": "Attributes", "zh-CN": "属性"},
+      "count": {"member": "attributes", "data": "rows"}
     }, {
       "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
       "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Define relationships and their endpoints between object types", "zh-CN": "定义对象类型之间的关系及其关联端点"},
-      "names": {"en": "Relation types", "zh-CN": "关系类型"}
+      "names": {"en": "Relation types", "zh-CN": "关系类型"},
+      "count": {"member": "catalogue", "data": "rows"}
     }, {
       "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
       "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
@@ -61,7 +63,7 @@
     }, {
       "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
       "path": "/ontology/assets/capability-map", "access": {"permissionCode": "action-management"},
-      "descriptions": {"en": "Explore how roles, processes, and capabilities relate", "zh-CN": "治理层与能力层涉及的全部对象画成一张图：主体拥有角色，角色可执行动作、可编写流程，流程指定动作，触发启动一次执行。颜色区分类别；选择节点查看它的关系。指标视图、函数与 Skill 画在流程对象一侧，因为模型中它们还没有与流程相连。"},
+      "descriptions": {"en": "Explore four-layer platform types and how roles, processes, capabilities, and products relate", "zh-CN": "查看四层平台类型及角色、流程、能力与产品对象之间的关系"},
       "names": {"en": "Capability map", "zh-CN": "能力图谱"}
     }, {
       "id": "ontology-components", "pageKey": "ontology-components", "panelId": "builtin-product-sdk-components",
@@ -89,15 +91,46 @@
       "descriptions": {"en": "The agents of this domain: choose one to read or change its name, avatar, instructions, model and skills, or create one.", "zh-CN": "本域的智能体：选中一个查看或修改它的名称、头像、提示词、模型和技能，也可以新建一个。"},
       "names": {"en": "Agent settings", "zh-CN": "智能体设置"}, "groupKey": "products"
     }, {
+      "id": "ontology-metric-views", "pageKey": "metric-views", "panelId": "builtin-product-ontology-metric-views",
+      "path": "/ontology/assets/metrics", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Define business metrics and the queries used to calculate them", "zh-CN": "定义业务指标及其计算查询"},
+      "names": {"en": "Metric Views", "zh-CN": "指标视图"},
+      "count": {"member": "list", "data": "rows"}
+    }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Read functions keep a query package and column labels; write functions keep parameters and Python code. A name is edited once, here.", "zh-CN": "读函数维护查询逻辑包和列标签，写函数维护参数和 Python 代码；名称只在这里编辑一次。"},
-      "names": {"en": "Functions", "zh-CN": "函数"}
+      "names": {"en": "Functions", "zh-CN": "函数"},
+      "count": {"member": "list", "data": "rows"}
     }, {
       "id": "business-knowledge", "pageKey": "business-knowledge", "panelId": "builtin-product-business-knowledge",
       "path": "/ontology/knowledge", "access": {"permissionCode": "business-knowledge"},
       "descriptions": {"en": "Maintain business rules and terminology, and review pending knowledge", "zh-CN": "维护业务规则与术语，审核待确认的知识"},
       "names": {"en": "Business knowledge", "zh-CN": "业务知识"}
+    }, {
+      "id": "ontology-skills", "pageKey": "skills-library", "panelId": "builtin-product-skills-library",
+      "path": "/ontology/skills", "access": {"permissionCode": "skill-management"},
+      "descriptions": {
+        "en": "Manage skills available to agents",
+        "zh-CN": "管理可供智能体使用的 Skill",
+        "zh-TW": "管理可供智慧體使用的 Skill",
+        "ja": "エージェントが利用できる Skill を管理",
+        "ar": "إدارة المهارات المتاحة للوكلاء",
+        "fr": "Gérer les Skills disponibles pour les agents",
+        "de": "Verfügbare Skills für Agenten verwalten",
+        "it": "Gestisci gli Skill disponibili per gli agenti"
+      },
+      "names": {
+        "en": "Skill",
+        "zh-CN": "Skill",
+        "zh-TW": "Skill",
+        "ja": "Skill",
+        "ar": "Skill",
+        "fr": "Skill",
+        "de": "Skill",
+        "it": "Skill"
+      },
+      "count": {"member": "list", "data": "rows"}
     }]
   }
 }

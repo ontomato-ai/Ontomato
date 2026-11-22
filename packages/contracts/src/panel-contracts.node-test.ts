@@ -351,6 +351,137 @@ test("owner rows may give a status tone and a field's values as tags", async () 
   assert.equal(panelRecordSchema.safeParse({ ...row, tags: { knowledgeTags: "Business" } }).success, false);
 });
 
+test("panel records carry optional className and strongly typed field values", async () => {
+  const { panelRecordFieldValueSchema, panelRecordSchema } = await import("./panel-projection");
+  const record = {
+    primaryKey: "mcp-1",
+    className: "platform:PublishedMcpService",
+    label: "Order MCP",
+    fields: {
+      status: "enabled",
+      toolCount: 3,
+      enabled: true,
+      title: { kind: "localized" as const, values: { "zh-CN": "订单服务", en: "Order Service" } },
+      owner: { kind: "reference" as const, className: "platform:User", primaryKey: "u-1", label: "Alice" },
+      tools: {
+        kind: "json" as const,
+        value: [{ name: "query_order", inputSchema: { type: "object", required: ["id"] } }],
+      },
+      tags: ["production", 2, false, { kind: "reference" as const, className: "platform:Action", primaryKey: "a-1", label: "Sync" }],
+    },
+  };
+  assert.deepEqual(panelRecordSchema.parse(record), record);
+
+  // Empty values must omit the key rather than carrying null or undefined; non-finite numbers are rejected.
+  assert.equal(panelRecordFieldValueSchema.safeParse(null).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse(undefined).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse(Number.NaN).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse(Number.POSITIVE_INFINITY).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse(Number.NEGATIVE_INFINITY).success, false);
+  assert.equal(panelRecordSchema.safeParse({ primaryKey: "k-1", label: "Row", fields: { missing: null } }).success, false);
+  assert.equal(panelRecordSchema.safeParse({ primaryKey: "k-1", label: "Row", fields: { missing: undefined } }).success, false);
+
+  // Strict tagged shapes and bounded className / array item unions.
+  assert.equal(panelRecordSchema.safeParse({ ...record, className: "" }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "localized", values: { "": "bad" } }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "localized", values: { en: "ok" }, extra: true }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "reference", className: "", primaryKey: "p-1", label: "x" }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "reference", className: "platform:User", primaryKey: "u-1", label: "Alice", extra: 1 }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "json", value: { ok: true }, extra: 1 }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse({ kind: "json", value: Number.POSITIVE_INFINITY }).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse([{ kind: "localized", values: { en: "nested" } }]).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse([{ kind: "json", value: {} }]).success, false);
+  assert.equal(panelRecordFieldValueSchema.safeParse([null]).success, false);
+});
+
+test("panelRecordObjectRef resolves record className with fallback and rejects missing className", async () => {
+  const { panelRecordObjectRef } = await import("./panel-projection");
+  assert.deepEqual(
+    panelRecordObjectRef({ primaryKey: "act-1", className: "platform:Action" }, "platform:ObjectType"),
+    { className: "platform:Action", primaryKey: "act-1" },
+  );
+  assert.deepEqual(
+    panelRecordObjectRef({ primaryKey: "task-1" }, "platform:ScheduledTask"),
+    { className: "platform:ScheduledTask", primaryKey: "task-1" },
+  );
+  assert.throws(
+    () => panelRecordObjectRef({ primaryKey: "task-1" }),
+    /no className and no fallbackClassName/u,
+  );
+  assert.throws(
+    () => panelRecordObjectRef({ primaryKey: "task-1" }, ""),
+    /no className and no fallbackClassName/u,
+  );
+  assert.throws(() => panelRecordObjectRef({ primaryKey: "", className: "platform:ScheduledTask" }));
+});
+
+test("panelRecordFieldText formats scalars, localized maps, references, arrays and json payloads", async () => {
+  const { panelRecordFieldText } = await import("./panel-projection");
+  assert.equal(panelRecordFieldText(undefined, "zh-CN"), "");
+  assert.equal(panelRecordFieldText("hello", "zh-CN"), "hello");
+  assert.equal(panelRecordFieldText(42, "zh-CN"), "42");
+  assert.equal(panelRecordFieldText(0, "zh-CN"), "0");
+  assert.equal(panelRecordFieldText(true, "zh-CN"), "true");
+  assert.equal(panelRecordFieldText(false, "zh-CN"), "false");
+
+  // Localized fallback chain: zh-CN -> zh -> fallbackLocale -> first non-empty entry.
+  assert.equal(
+    panelRecordFieldText({ kind: "localized", values: { "zh-CN": "订单", zh: "订单简", en: "Order" } }, "zh-CN", "en"),
+    "订单",
+  );
+  assert.equal(
+    panelRecordFieldText({ kind: "localized", values: { zh: "订单简", en: "Order" } }, "zh-CN", "en"),
+    "订单简",
+  );
+  assert.equal(
+    panelRecordFieldText({ kind: "localized", values: { "zh-CN": "  ", en: "Order", ja: "注文" } }, "zh-CN", "en-US"),
+    "Order",
+  );
+  assert.equal(
+    panelRecordFieldText({ kind: "localized", values: { ja: "注文", fr: "Commande" } }, "zh-CN", "en"),
+    "注文",
+  );
+  assert.equal(panelRecordFieldText({ kind: "localized", values: {} }, "zh-CN", "en"), "");
+
+  // References prefer label and fall back to primaryKey.
+  assert.equal(
+    panelRecordFieldText({ kind: "reference", className: "platform:User", primaryKey: "u-1", label: "Alice" }),
+    "Alice",
+  );
+  assert.equal(
+    panelRecordFieldText({ kind: "reference", className: "platform:User", primaryKey: "u-1", label: "" }),
+    "u-1",
+  );
+
+  // Arrays join non-empty element texts cleanly.
+  assert.equal(
+    panelRecordFieldText([
+      "core",
+      "",
+      3,
+      true,
+      { kind: "reference", className: "platform:Skill", primaryKey: "sk-1", label: "SQL" },
+      { kind: "reference", className: "platform:Skill", primaryKey: "sk-2", label: "" },
+    ]),
+    "core, 3, true, SQL, sk-2",
+  );
+  assert.equal(panelRecordFieldText([]), "");
+
+  // Structured JSON payloads: scalar to string, null to empty string, object/array via JSON.stringify.
+  assert.equal(panelRecordFieldText({ kind: "json", value: null }), "");
+  assert.equal(panelRecordFieldText({ kind: "json", value: "raw" }), "raw");
+  assert.equal(panelRecordFieldText({ kind: "json", value: 99 }), "99");
+  assert.equal(panelRecordFieldText({ kind: "json", value: false }), "false");
+  assert.equal(
+    panelRecordFieldText({ kind: "json", value: [{ name: "search" }] }),
+    '[{"name":"search"}]',
+  );
+  assert.equal(
+    panelRecordFieldText({ kind: "json", value: { ok: true, count: 2 } }),
+    '{"ok":true,"count":2}',
+  );
+});
+
 test("skill catalogues expose authorized diagnostics and panel reads carry only display text", async () => {
   const { assistantSkillCatalogSchema } = await import("./assistant-chat");
   const { panelOptionListSchema, panelRecordQuerySchema } = await import("./panel-projection");
@@ -428,6 +559,17 @@ test("knowledge lists accept scalar status and counts preserve the owner's order
   assert.equal(panelGroupCountsSchema.safeParse({ all: 3, pending: 1, approved: 2 }).success, false);
 });
 
+test("audit log queries bind filters to string inputs", () => {
+  const projection = {
+    name: "Audit log", description: "", visibility: "domain", componentId: "@ontomato/sdk:PanelData",
+    inputs: { business: { kind: "scalar", type: "string" }, operation: { kind: "scalar", type: "string" } },
+    outputs: {}, config: {},
+    data: { rows: { source: { type: platformType("platform:AuditLog") }, read: "query",
+      params: { business: { input: "business" }, operation: { input: "operation" } } } },
+  };
+  assert.equal(productProjectionInputSchema.safeParse(projection).success, true);
+});
+
 test("ontology object lists use search while reference options keep keyword", () => {
   const projection = {
     name: "Find an ontology object", description: "", visibility: "domain", componentId: "@ontomato/sdk:ObjectList",
@@ -482,7 +624,7 @@ test("feedback, governance records and the skill library read through their owne
   };
   assert.deepEqual(required(FEEDBACK_RECORD, "counts"), ["by"]);
   assert.deepEqual(required(SKILL, "file"), ["path"]);
-  assert.deepEqual(platformObjectTypes[SKILL].operations, [DELETE_SKILL, EXPORT_SKILL]);
+  assert.deepEqual(platformObjectTypes[SKILL].operations, [IMPORT_SKILL, DELETE_SKILL, EXPORT_SKILL]);
   assert.deepEqual(platformObjectTypes[FEEDBACK_RECORD].operations, [EXPORT_FEEDBACK]);
 });
 
@@ -1607,6 +1749,39 @@ test("a panel download validates the same basename and media type for the file a
   assert.equal(readPanelOperationResponseSchema.safeParse(receipt).success, false);
 });
 
+test("an upload declaration names a file input whose value is a staged upload, and the confirmation names the file", async () => {
+  const {
+    PANEL_UPLOAD_MAX_BYTES, panelFileInputSchema, panelUploadAccepted, panelUploadDeclarationSchema, panelUploadReceiptSchema,
+  } = await import("./panel-upload");
+  const { panelHumanOperationConfirmationSchema, panelUploadRequestSchema } = await import("./panel-agent");
+  const declaration = { input: "file", accept: [{ mime: "application/zip", extension: ".zip" }], maxBytes: 20 * 1024 * 1024 };
+  assert.deepEqual(panelUploadDeclarationSchema.parse(declaration), declaration);
+  for (const invalid of [{ maxBytes: PANEL_UPLOAD_MAX_BYTES + 1 }, { accept: [] }, { accept: [{ mime: "application/zip", extension: "zip" }] }])
+    assert.equal(panelUploadDeclarationSchema.safeParse({ ...declaration, ...invalid }).success, false);
+  assert.equal(panelUploadAccepted(declaration, "Report.ZIP")?.mime, "application/zip");
+  assert.equal(panelUploadAccepted(declaration, "report.zip.exe"), undefined);
+
+  const uploadId = "00000000-0000-4000-8000-000000000001";
+  assert.deepEqual(panelFileInputSchema.parse({ kind: "upload", uploadId }), { kind: "upload", uploadId });
+  // Only the staged branch exists; a bare id or another source is not a file input yet.
+  assert.equal(panelFileInputSchema.safeParse({ uploadId }).success, false);
+  assert.equal(panelFileInputSchema.safeParse({ kind: "artifact", uploadId }).success, false);
+  const receipt = { uploadId, name: "技能.zip", size: 1024, mime: "application/zip" };
+  assert.deepEqual(panelUploadReceiptSchema.parse(receipt), receipt);
+  assert.equal(panelUploadReceiptSchema.safeParse({ ...receipt, name: "../x.zip" }).success, false);
+  assert.equal(panelUploadReceiptSchema.safeParse({ ...receipt, size: 0 }).success, false);
+
+  const operation = { applicationId: "skills", useId: "library", operationId: "list.import" };
+  assert.deepEqual(panelUploadRequestSchema.parse({ operation }), { operation });
+  const { uploadId: _id, ...file } = receipt;
+  const confirmation = {
+    kind: "impact", upload: file,
+    impact: { summary: "Overwrites skill Alpha", total: 1, objects: [{ target: { objectType: "skill", primaryKey: "alpha" }, label: "Alpha" }] },
+  };
+  assert.deepEqual(panelHumanOperationConfirmationSchema.parse(confirmation), confirmation);
+  assert.equal(panelHumanOperationConfirmationSchema.safeParse({ ...confirmation, upload: receipt }).success, false);
+});
+
 test("a read-only trial carries the current draft and parameters without a write intent", () => {
   const input = { draft: { query: { select: ["name"] } }, parameters: { limit: 3 } };
   const request = {
@@ -1722,7 +1897,6 @@ test("knowledge, feedback and skill reads stay at their declared owners", () => 
     [APPROVE_KNOWLEDGE, "POST", "/data-query", "/admin/editBussinessKnowledge"],
     [DELETE_KNOWLEDGE, "POST", "/data-query", "/admin/delBussinessKnowledge"],
     [DELETE_SKILL, "DELETE", "", "/skills/skill"],
-    [IMPORT_SKILL, "POST", "", "/skills/import?overwrite=true"],
     [EXPORT_SKILL, "GET", "", "/skills/skill/export"],
     [EXPORT_FEEDBACK, "GET", "", "/feedback/export?keyword=sample"],
   ] as const) {
@@ -1731,6 +1905,11 @@ test("knowledge, feedback and skill reads stay at their declared owners", () => 
     assert.ok(!panelClientReads(key).some(read => read.path.test(path)));
   }
 
+  // An import stages its file through the panel upload contract; a frame never posts to the old route.
+  const importBinding = bindingKey({ kind: "PlatformOperation", id: IMPORT_SKILL });
+  assert.ok(!clientSends([importBinding], "POST", "", "/skills/import"));
+  assert.ok(clientSends([importBinding], "POST", "", "/panel-operations/uploads"));
+  assert.ok(!clientSends([binding(SKILL)], "POST", "", "/panel-operations/uploads"));
   assert.ok(!clientSends([binding(SKILL)], "GET", "", "/skills/skill/export"));
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/export"));
   assert.ok(!clientSends([binding(FEEDBACK_RECORD)], "GET", "", "/feedback/state"));
@@ -2168,6 +2347,30 @@ test("a state placement selects a product's kind and carries the complete nested
     }],
   };
   assert.deepEqual(pageContextSchema.parse(context), context);
+  const withHighlights = {
+    ...context,
+    highlights: [
+      {
+        kind: "search" as const,
+        summary: "Search matches (1): Person",
+        items: [{ kind: "platform:ObjectType", id: "person", label: "Person" }],
+      },
+      {
+        kind: "path" as const,
+        summary: "Path from Person to Organization (1 hop): Person → Organization",
+        from: { kind: "platform:ObjectType", id: "person", label: "Person" },
+        to: { kind: "platform:ObjectType", id: "org", label: "Organization" },
+        found: true,
+        hops: 1,
+        nodes: [
+          { kind: "platform:ObjectType", id: "person", label: "Person" },
+          { kind: "platform:ObjectType", id: "org", label: "Organization" },
+        ],
+        edges: [{ kind: "platform:Relationship", id: "works-in", label: "Works in" }],
+      },
+    ],
+  };
+  assert.deepEqual(pageContextSchema.parse(withHighlights), withHighlights);
 });
 
 test("only the host can send frame activity messages", () => {

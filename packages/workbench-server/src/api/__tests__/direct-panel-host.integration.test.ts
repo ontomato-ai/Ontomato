@@ -10,6 +10,8 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { appsSdkComponentCatalogSchema } from "@ontomato/contracts/apps-sdk";
 import { domainApplicationIconKeys } from "@ontomato/contracts/application-icons";
+import { DOMAIN_COMPONENTS_PATH, domainComponentResponseSchema } from "@ontomato/contracts/domain-components";
+import { PANEL_MEMBER_RENDER_HEADER } from "@ontomato/contracts/panel-host";
 import { COMPONENT_PACKAGES_PATH } from "@ontomato/contracts/component-packages";
 import { cataloguePath as installedPackagePath, componentId, release, upload } from "../../__tests__/fixtures/component-packages";
 import { createComponentPackagesRouter } from "../routes/component-packages";
@@ -36,6 +38,7 @@ import { readSseFrames } from "../../infrastructure/agent-runtime/client";
 import { ensureAssistantDefaultPromptSchema } from "../../infrastructure/postgres-migrations/20261105-assistant-default-prompts/schema";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
+import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { configureI18n } from "../../i18n";
@@ -104,6 +107,7 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensureDomainComponentsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);
   await ensureAssistantSchema(state.pool);
   await ensureAssistantDefaultPromptSchema(state.pool);
@@ -124,14 +128,23 @@ beforeAll(async () => {
     grants.add(req.body.id);
     res.json({ success: true });
   });
+  app.post("/product-governance/unregister", (req, res) => {
+    grants.delete(req.body.id);
+    res.json({ success: true });
+  });
   app.post("/product-governance/check", (req, res) => {
     const token = req.header("tk");
     const allowed = isBuiltinProductId(req.body.id)
       ? (token === "host-reader" || token === "host-no-entry") && req.body.verb === "use"
-      : token === "host-reader" && grants.has(req.body.id);
+      : (token === "host-reader" && grants.has(req.body.id)) ||
+        (token === "domain-component-reader" && req.body.id === "domain-component-projection" && req.body.verb === "use");
     res.json({ allowed });
   });
   app.post("/product-governance/resources", (req, res) => {
+    if (req.header("tk") === "domain-component-reader") {
+      res.json({ ids: req.body.verb === "use" ? ["domain-component-projection"] : [] });
+      return;
+    }
     if (req.header("tk") === undefined) expect(req.body).toEqual({ verb: "use" });
     else expect(req.header("tk")).toBe("host-reader");
     res.json({ ids: [...grants] });
@@ -219,11 +232,12 @@ beforeAll(async () => {
     res.json(scheduledRun);
   });
   app.use("/api", (req, _res, next) => {
-    Object.assign(req, { domainId: req.header("X-Test-Domain") ?? "pilot", userId: "reader",
+    Object.assign(req, { domainId: req.header("X-Test-Domain") ?? "pilot", userId: req.header("X-Test-User") ?? "reader",
       token: req.header("X-Test-Token") ?? "host-reader", locale: "en" });
     next();
   });
   app.use(COMPONENT_PACKAGES_PATH, createComponentPackagesRouter(platformService, checkComponentPackageUpgrade));
+  app.use(DOMAIN_COMPONENTS_PATH, (await import("../routes/domain-components")).domainComponentsRouter);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api", panelOperationsRouter);
@@ -860,7 +874,7 @@ it("uses the authorized frame root for its record, snapshot, member reads, neste
     ...panel, manifest: { state: {}, members: {}, commands: {} },
   });
   expect(content.status, await content.text()).toBe(200);
-  const theme = { light: { "--el-color-primary": "#123456" } };
+  const theme = { light: { "--sdk-color-primary": "#123456" } };
   const frame = await request("PUT", `product-panels/${frameHostPanelId}`, {
     ...panel, theme, manifest: {
       state: { term: { type: { kind: "scalar", type: "string" }, personal: true } }, commands: {},
@@ -1118,4 +1132,59 @@ it("rejects an unavailable default agent before accepting a proposed application
     message: "这个默认智能体在本域不存在。",
   });
   expect(missingBody.details).toEqual({ useId: "new-entry" });
+});
+
+it("stores domain components as source and protects every projection using their declarations", async () => {
+  const collection = state.base + DOMAIN_COMPONENTS_PATH;
+  const call = (url: string, method: string, body?: object, headers: Record<string, string> = {}) =>
+    fetch(url, { method, headers: { "Content-Type": "application/json", ...headers }, body: body && JSON.stringify(body) });
+  const definition = {
+    name: "Domain component",
+    visibility: "private",
+    declaration: {
+      role: "presentation", meaning: "Shows a configuration value", data: {},
+      config: [{ name: "caption", type: "string", description: "Caption", required: false }],
+      ports: { props: [], events: [], slots: [] },
+    },
+    source: { template: "<span>{{ caption }}</span>", module: "export default { props: ['caption'] }" },
+  };
+  const created = await call(collection, "POST", definition);
+  expect(created.status).toBe(201);
+  const { component } = domainComponentResponseSchema.parse(await created.json());
+  const { componentId } = component.declaration;
+  expect(componentId).toMatch(/^domain-component:[0-9a-f-]+$/u);
+  expect(component.revision).toBe(1);
+  const url = collection + "/" + encodeURIComponent(componentId);
+  const projectionUrl = state.base + "/api/product-projections/domain-component-projection";
+  const projection = {
+    name: "Domain component projection", description: "", visibility: "domain", revision: 0,
+    componentId, inputs: {}, outputs: {}, data: {}, config: { caption: "Example" },
+  };
+  const badDomain = { "X-Test-Domain": "other-domain" };
+  expect((await call(url, "GET", undefined, badDomain)).status).toBe(404);
+  expect((await (await call(collection, "GET", undefined, badDomain)).json()).components).toEqual([]);
+  expect((await call(projectionUrl, "PUT", projection, badDomain)).status).toBe(400);
+  expect((await call(projectionUrl, "PUT", projection, { "X-Test-User": "another-author" })).status).toBe(400);
+  expect((await call(projectionUrl, "PUT", projection)).status).toBe(200);
+
+  const render = () => call(projectionUrl, "GET", undefined, {
+    [PANEL_MEMBER_RENDER_HEADER]: "1", "X-Test-Token": "domain-component-reader",
+  });
+  expect(await (await render()).json()).toMatchObject({ domainComponent: { domainId: "pilot", componentId, revision: 1 } });
+  const updated = { ...definition, declaration: component.declaration, revision: 1, source: { ...definition.source, template: "<em>{{ caption }}</em>" } };
+  expect((await call(url, "PUT", updated)).status).toBe(200);
+  expect(await (await render()).json()).toMatchObject({ domainComponent: { revision: 2, source: updated.source } });
+  expect((await call(url, "PUT", updated)).status).toBe(409);
+  expect(await (await call(url + "/used-by", "GET")).json()).toMatchObject({
+    projections: [{ id: "domain-component-projection" }], hiddenProjectionCount: 0,
+  });
+
+  const incompatible = await call(url, "PUT", { ...updated, revision: 2, declaration: { ...updated.declaration, config: [] } });
+  expect(incompatible.status).toBe(409);
+  expect(await incompatible.json()).toMatchObject({ error: { code: "COMPONENT_INCOMPATIBLE" }, details: { fields: ["config.caption"] } });
+  const deletion = await call(url + "?revision=2", "DELETE");
+  expect(deletion.status).toBe(409);
+  expect(await deletion.json()).toMatchObject({ error: { code: "COMPONENT_IN_USE" } });
+  expect((await call(projectionUrl + "?revision=1", "DELETE")).status).toBe(200);
+  expect((await call(url + "?revision=2", "DELETE")).status).toBe(204);
 });

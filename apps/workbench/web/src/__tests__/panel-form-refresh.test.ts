@@ -3,7 +3,7 @@ import { nextTick } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { formSaveCalls, humanIntents, ignoreChanges,
+import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
   SCHEDULED_TASK, inside, inspectionTaskForm, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord,
   panelUse, projections, registered, task, writePanelDocument, type Sent,
 } from "./panel-frame";
@@ -161,6 +161,7 @@ it("reads again once the reader discards what they typed while a read was on its
   expect(instruction()!.value).toBe("Something else");
 
   [...document.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")].find((button) => button.textContent?.trim() === "Discard")!.click();
+  await confirmDiscard();
   await vi.waitFor(() => expect(formReads(platform.sent)).toBe(reads + 1));
   await vi.waitFor(() => expect(instruction()!.value).toBe(inspection.content.instruction));
 });

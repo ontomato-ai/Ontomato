@@ -37,7 +37,7 @@ await mountPanel({
       if (catalogue.value.status !== "ready") return "";
       const shown = rows.value.length;
       const total = allRows.value.length;
-      return search.value.trim() && shown !== total ? `${shown} / ${total} 条` : `${total} 条`;
+      return search.value.trim() && shown !== total ? `${shown} / ${total} 项` : `${total} 项`;
     });
 
     // A new relation is being made: set by the header's "新建关系类型" command, so an address can open the empty form.
@@ -62,6 +62,9 @@ await mountPanel({
     function open(row) {
       setCreating(false);
       instance.state.set("selected", { className: TYPE, primaryKey: row.primaryKey });
+    }
+    function backToCatalog() {
+      instance.state.setState({ selected: null, creating: false });
     }
     function cancelCreate() {
       setCreating(false);
@@ -104,7 +107,7 @@ await mountPanel({
 
     return {
       catalogue, detail, types, allRows, rows, countText, selectedKey, search, creating, editing, title, idleNote,
-      typeLabel, open, cancelCreate, onSaved, onDiscarded, openType,
+      typeLabel, open, backToCatalog, cancelCreate, onSaved, onDiscarded, openType,
     };
   },
 });

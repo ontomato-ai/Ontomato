@@ -26,11 +26,12 @@ export interface FormControls {
   /** The field at `path` holds text that is not a value of the owner's (a message), or no longer does (null). */
   invalid(path: string, message: string | null): void;
   /**
-   * What draws the row field `itemPath` of the array at `path` in each row: the component another slot's projection
-   * registered for it (drawn with the row field's absolute `path`), null while that declared projection has not drawn
-   * yet, or undefined when no slot of the panel declares one.
+   * What draws the field at `path` — or, with `itemPath`, the row field `itemPath` of the array at `path` in each row —
+   * when a projection of the panel is declared for it: the component that projection registered (drawn with the field's
+   * absolute `path`), null while it has not drawn yet, or undefined when no slot of the panel declares one, and the form
+   * draws the field itself.
    */
-  rowControl(path: string, itemPath: string): Component | null | undefined;
+  fieldControl(path: string, itemPath?: string): Component | null | undefined;
 }
 
 export const formControlsKey: InjectionKey<FormControls> = Symbol("form-controls");
@@ -42,15 +43,16 @@ export function useFormControls(): FormControls {
 }
 
 /**
- * The row field controls of one panel instance, by form slot, array path and row path: a projection whose `formField`
- * port names an `itemPath` registers here the component that draws its field at one absolute path, and the form draws
- * it in each row. The projection is read, registered and admitted once, under its own binding.
+ * The field controls of one panel instance, by form slot, field path and row path: a projection whose `formField` port
+ * names a field registers here the component that draws it at one absolute path, and the form draws it where the field
+ * is — in its place among the form's fields, or in each row of an array for a port with an `itemPath`. The projection is
+ * read, registered and admitted once, under its own binding.
  */
-const rowControls = new WeakMap<object, Map<string, Component>>();
-export const rowControlKey = (formSlot: string, path: string, itemPath: string) => JSON.stringify([formSlot, path, itemPath]);
+const fieldControls = new WeakMap<object, Map<string, Component>>();
+export const fieldControlKey = (formSlot: string, path: string, itemPath?: string) => JSON.stringify([formSlot, path, itemPath ?? null]);
 
-export function rowControlsOf(instance: object): Map<string, Component> {
-  let controls = rowControls.get(instance);
-  if (!controls) rowControls.set(instance, (controls = shallowReactive(new Map())));
+export function fieldControlsOf(instance: object): Map<string, Component> {
+  let controls = fieldControls.get(instance);
+  if (!controls) fieldControls.set(instance, (controls = shallowReactive(new Map())));
   return controls;
 }

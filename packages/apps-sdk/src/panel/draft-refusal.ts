@@ -20,7 +20,7 @@ export class PanelDraftUnusable extends Error {
 }
 
 /** Why the platform could not read a draft, by the code it answered with: its run is gone, its file is not there, or the reader may not read it. */
-type DraftReadReason = "run" | "file" | "forbidden";
+type DraftReadReason = "run" | "file" | "fileInAnotherRun" | "forbidden";
 const READ_REASONS: Readonly<Record<string, DraftReadReason>> = {
   NOT_FOUND: "run",
   PAGE_DRAFT_NOT_FOUND: "file",
@@ -32,13 +32,17 @@ const READ_REASONS: Readonly<Record<string, DraftReadReason>> = {
  * the reason its code gives, with its own text for a code the page does not know.
  */
 export function unreadableDraft(file: string, failure: unknown): PanelDraftUnusable {
-  const payload = (failure as { payload?: { error?: { code?: string }; details?: { issues?: { path?: readonly (string | number)[] }[] } } } | null)?.payload;
+  const payload = (failure as { payload?: { error?: { code?: string }; details?: {
+    issues?: { path?: readonly (string | number)[] }[]; samePathInAnotherRun?: boolean;
+  } } } | null)?.payload;
   const fields = (payload?.details?.issues ?? []).map(({ path }) => (path ?? []).join(".")).filter(Boolean);
   if (fields.length) return new PanelDraftUnusable(file, { kind: "fields", fields: [...new Set(fields)] });
   const code = payload?.error?.code;
+  const reason = code === "PAGE_DRAFT_NOT_FOUND" && payload?.details?.samePathInAnotherRun === true
+    ? "fileInAnotherRun" : code === undefined ? null : READ_REASONS[code] ?? null;
   return new PanelDraftUnusable(file, {
     kind: "read",
-    reason: code === undefined ? null : READ_REASONS[code] ?? null,
+    reason,
     message: failure instanceof Error ? failure.message : String(failure),
   });
 }
@@ -46,6 +50,7 @@ export function unreadableDraft(file: string, failure: unknown): PanelDraftUnusa
 const READ_WORDS: Readonly<Record<DraftReadReason, string>> = {
   run: "platform.draftRunMissing",
   file: "platform.draftFileMissing",
+  fileInAnotherRun: "platform.draftFileInAnotherRun",
   forbidden: "platform.draftForbidden",
 };
 

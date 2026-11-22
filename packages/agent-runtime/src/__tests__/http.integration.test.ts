@@ -505,6 +505,22 @@ describe("standard runtime real HTTP/PG/processes", () => {
     expect(prompt).toContain("fixture-skill");
     expect(prompt).not.toContain(skillBody);
   });
+  it("reports a matching artifact in a later run of the same session without returning it", async () => {
+    const ownSession = await session();
+    const empty = await run(ownSession, "vary");
+    await settle(empty.id);
+    const matchingPath = "outputs/result.txt";
+    const lookup = `/v1/runs/${empty.id}/artifacts?path=${encodeURIComponent(matchingPath)}&checkOtherRuns=true`;
+
+    const unrelated = await run(await session(), "create");
+    expect((await settle(unrelated.id)).artifacts[0]?.path).toBe(matchingPath);
+    expect((await api(lookup)).body).toEqual({ artifacts: [] });
+
+    const later = await run(ownSession, "create");
+    expect((await settle(later.id)).artifacts[0]?.path).toBe(matchingPath);
+    expect((await api(lookup)).body).toEqual({ artifacts: [], samePathInAnotherRun: true });
+    expect((await api(lookup.replace("&checkOtherRuns=true", ""))).body).toEqual({ artifacts: [] });
+  });
   it("tells a waiting host when the run stops, and only then", async () => {
     const s = await session(),
       r = await run(s, "hang");

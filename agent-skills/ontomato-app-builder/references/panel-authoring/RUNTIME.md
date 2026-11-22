@@ -45,8 +45,8 @@ interface PanelContext {
   navigate(address: string): Promise<void>;
   /**
    * Tells the reader briefly how something the page did went — "Exported", "Deleted", why a call failed — in the
-   * platform's own message at the top of the window, as its pages do; it fades by itself. A note that belongs on the
-   * page and stays is `<el-alert>` in the template. A panel the platform runs has it; a frame has none.
+   * platform's own message at the top of the window, as its pages do. It fades by itself and is available in panels
+   * that run directly on the platform.
    */
   notify(message: { kind: "success" | "info" | "warning" | "error"; text: string }): void;
 }
@@ -95,6 +95,9 @@ interface PanelStateStore {
 One datum of one member, kept current while the calling component is mounted. Call it in a component's setup,
 before any `await`.
 
+- Use this hook for panel coordination (such as deciding visibility, navigation or follow-up state when no component
+  output already carries the value). Do not use it to render business fields in the panel template; render business
+  data through an official component, its configuration, or a dedicated component.
 - `member` is a member the panel declares; `name` is a datum its projection names under `data.<name>`. The read, its
   mappings and the object it needs are the projection's: nothing about the read is written in the page.
 - The member's inputs come from the panel state its placement binds; the datum is read again whenever that state

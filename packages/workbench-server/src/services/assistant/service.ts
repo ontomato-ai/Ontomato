@@ -501,16 +501,17 @@ export const assistantService = {
     runId: string,
     path: string,
     owner: AssistantOwner,
+    checkOtherRuns = false,
   ) {
     await this.ownRun(sessionId, runId, owner);
     const result = z
-      .object({ artifacts: z.array(runtimeArtifactSchema) })
+      .object({ artifacts: z.array(runtimeArtifactSchema), samePathInAnotherRun: z.literal(true).optional() })
       .parse(
         await new RuntimeClient(owner.domainId, undefined, owner.userId).request(
-          `/v1/runs/${runId}/artifacts?path=${encodeURIComponent(path)}`,
+          `/v1/runs/${runId}/artifacts?path=${encodeURIComponent(path)}${checkOtherRuns ? "&checkOtherRuns=true" : ""}`,
         ),
       );
-    return { artifact: result.artifacts.at(-1) ?? null };
+    return { artifact: result.artifacts.at(-1) ?? null, ...(result.samePathInAnotherRun && { samePathInAnotherRun: true }) };
   },
   /**
    * The page draft a run wrote: its own artifact read, then the envelope every page receives. A create draft whose first
@@ -522,9 +523,10 @@ export const assistantService = {
     path: string,
     owner: AssistantOwner,
   ): Promise<PageDraft<Record<string, unknown>>> {
-    const { artifact } = await this.resolve(sessionId, runId, path, owner);
+    const { artifact, samePathInAnotherRun } = await this.resolve(sessionId, runId, path, owner, true);
     if (!artifact || artifact.runId !== runId || artifact.sessionId !== sessionId) {
-      throw new HttpError(404, "Page draft not found", "PAGE_DRAFT_NOT_FOUND");
+      throw new HttpError(404, "Page draft not found", "PAGE_DRAFT_NOT_FOUND",
+        samePathInAnotherRun ? { samePathInAnotherRun } : undefined);
     }
     const bytes = await this.content(sessionId, artifact.id, owner);
     let value: unknown;

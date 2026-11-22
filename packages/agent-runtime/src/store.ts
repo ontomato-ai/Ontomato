@@ -759,6 +759,18 @@ export class RuntimeStore {
         latest.set(row.path, this.artifactRow(row));
     return [...latest.values()];
   }
+  async hasArtifactInAnotherRun(scope: Scope, runId: string, path: string): Promise<boolean> {
+    const { rows } = await this.pool.query<{ found: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM ${this.table("runs")} r
+         JOIN ${this.table("artifacts")} a
+           ON a.host_id=r.host_id AND a.domain_id=r.domain_id AND a.session_id=r.session_id
+         WHERE r.host_id=$1 AND r.domain_id=$2 AND r.id=$3 AND a.run_id<>r.id AND a.path=$4
+       ) AS found`,
+      [...values(scope), runId, path],
+    );
+    return rows[0].found;
+  }
   async registerArtifact(
     scope: Scope,
     runId: string,

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Graph, type EdgeData, type NodeData } from "@antv/g6";
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { G6_LABEL_WIDTH, G6_LOOP_DIST, G6_LOOP_STEP, G6_NODE_SIZE, g6Edges, g6Node, g6NodeStyle, readG6Colors, type G6Colors } from "./g6-elements";
+import { G6_LABEL_SIZE, G6_LABEL_WIDTH, G6_LOOP_DIST, G6_LOOP_STEP, G6_NODE_SIZE, g6Edges, g6Node, g6NodeStyle, readG6Colors, type G6Colors } from "./g6-elements";
+import { zoomKeepingNamesApart } from "./name-room";
 import { MARGIN, NODE_HEIGHT, NODE_WIDTH, placeNodes } from "./layout";
 import type {
   GraphCanvasEdge,
@@ -48,6 +49,10 @@ const props = withDefaults(
     categories?: readonly string[];
     /** The widest a node's name is drawn, in graph units; a longer one ends in an ellipsis. 160 when absent. */
     labelWidth?: number;
+    /** The nodes' diameter, for a page that draws them at its own size (the ontology graph's 62). */
+    nodeSize?: number;
+    /** The names' size, for a page that draws them at its own (the ontology graph's 13). */
+    labelSize?: number;
     /**
      * Keeps names readable however far the reader zooms: a node's and an edge's name stay their size on screen, and a
      * name that would then overlap another is hidden until there is room for it again.
@@ -59,7 +64,7 @@ const props = withDefaults(
      */
     editable?: boolean;
   }>(),
-  { edges: () => [], selected: () => [], selectedEdges: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH, readableLabels: false, editable: false },
+  { edges: () => [], selected: () => [], selectedEdges: () => [], selection: "single", layout: () => ({ type: "grid" }), maxHeight: undefined, categories: () => [], labelWidth: G6_LABEL_WIDTH, nodeSize: G6_NODE_SIZE, labelSize: G6_LABEL_SIZE, readableLabels: false, editable: false },
 );
 const emit = defineEmits<{
   /** The selection a reader's choice results in: every chosen ID, in the order they were chosen. */
@@ -125,7 +130,7 @@ async function sync(target: Graph) {
   const nodes = new Map(props.nodes.map((node) => [node.id, node]));
   const positions = positionsOf(props.nodes);
   const choosable = props.selection !== "none";
-  const nodeStyles = new Map(props.nodes.map((node) => [node.id, g6NodeStyle(node, colors, props.categories, choosable, props.labelWidth)]));
+  const nodeStyles = new Map(props.nodes.map((node) => [node.id, g6NodeStyle(node, colors, props.categories, choosable, look())]));
   const edges = g6Edges(props.edges, nodes, colors);
   const edgeKeys = new Map(edges.map((edge) => [String(edge.id), JSON.stringify(edge)]));
 
@@ -228,6 +233,14 @@ function nodeOptions() {
   return { type: "circle", state: { selected: { stroke: colors.primary, lineWidth: 5, lineDash: [] } } };
 }
 
+/** Which of two nodes keeps its name where names must give way: a chosen one, else the one with more relations. */
+function nameBefore(one: { id: string | number }, other: { id: string | number }) {
+  const chosen = (id: string | number) => (props.selected.includes(String(id)) ? 1 : 0);
+  const relations = (id: string | number) => props.edges.filter(({ source, target }) => source === String(id) || target === String(id)).length;
+  return chosen(other.id) - chosen(one.id) || relations(other.id) - relations(one.id);
+}
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+
 async function create(width: number, height: number) {
   colors = readG6Colors(host.value!);
   const target = new Graph({
@@ -238,6 +251,17 @@ async function create(width: number, height: number) {
     padding: 48,
     animation: false,
     data: { nodes: [], edges: [] },
+    // A name that gave way is still told when the reader points at its node, as text, never as markup. A name in view
+    // is told again too: G6 5.1 gives no steady sign of whether a label gave way (only its shapes' own visibility).
+    plugins: props.readableLabels ? [{
+      type: "tooltip", key: "names", position: "top",
+      enable: (event: { targetType?: string }) => event.targetType === "node",
+      getContent: async (_event: unknown, items: { style?: { labelText?: unknown } }[]) => escapeHtml(String(items[0]?.style?.labelText ?? "")),
+      style: { ".tooltip": {
+        background: "var(--el-bg-color-overlay)", color: "var(--el-text-color-primary)", border: "1px solid var(--ui-border)",
+        "border-radius": "var(--radius-md)", "box-shadow": "var(--el-box-shadow-light)", "font-size": "var(--text-xs)", padding: "2px 8px",
+      } },
+    }] : [],
     behaviors: [
       "drag-canvas",
       "zoom-canvas",
@@ -249,7 +273,8 @@ async function create(width: number, height: number) {
           type: "fix-element-size", key: "readable-labels", state: "", enable: true,
           node: [{ shape: "label" }], edge: [{ shape: "label" }],
         },
-        { type: "auto-adapt-label", key: "label-room", throttle: 100, padding: 2 },
+        // Where names would cover each other some give way: the chosen nodes' last, then the better connected's.
+        { type: "auto-adapt-label", key: "label-room", throttle: 100, padding: 2, sortNode: nameBefore },
       ] : []),
       {
         type: "create-edge",
@@ -277,7 +302,14 @@ async function create(width: number, height: number) {
   target.on("canvas:click", () => emit("blank"));
   target.on("node:dblclick", (event: any) => emit("activate", { kind: "node", id: String(event.target.id) }));
   target.on("edge:dblclick", (event: any) => emit("activate", { kind: "edge", id: String(event.target.id) }));
+  // A drag with Shift on an editable canvas draws a relation (`create-edge`), and G6 still ends a drag for the node it
+  // started from: that node moved nowhere, so its end is no move.
+  let drawingRelation = false;
+  target.on("node:dragstart", (event: any) => {
+    drawingRelation = props.editable && event.shiftKey;
+  });
   target.on("node:dragend", (event: any) => {
+    if (drawingRelation) return;
     const id = String(event.target.id);
     const [x, y] = target.getElementPosition(id);
     emit("move", id, { x, y });
@@ -312,7 +344,7 @@ function restyle() {
 }
 
 watch(
-  () => [props.nodes, props.edges, props.layout.type, props.categories, props.selection, props.labelWidth],
+  () => [props.nodes, props.edges, props.layout.type, props.categories, props.selection, props.labelWidth, props.nodeSize, props.labelSize],
   () => void enqueue(sync),
 );
 watch(
@@ -350,7 +382,7 @@ onBeforeUnmount(() => {
 });
 
 /** How far a drawn node reaches from its centre: half its name's width across, its size above, and its name below. */
-const REACH = { x: () => props.labelWidth / 2, top: G6_NODE_SIZE / 2, bottom: G6_NODE_SIZE / 2 + 6 + 18 };
+const REACH = { x: () => props.labelWidth / 2, top: () => props.nodeSize / 2, bottom: () => props.nodeSize / 2 + 6 + props.labelSize * 1.5 };
 
 /**
  * At a zoom the whole graph does not fit at, the part around `around` (the graph's middle when absent), moved no further
@@ -361,7 +393,7 @@ async function showAround(target: Graph, zoom: number, around: string | undefine
   // A node with loops reaches as far above it as its outermost loop.
   const loops = new Map<string, number>();
   for (const edge of target.getEdgeData()) if (edge.source === edge.target) loops.set(String(edge.source), (loops.get(String(edge.source)) ?? 0) + 1);
-  const above = (id: string) => (loops.has(id) ? REACH.top + G6_LOOP_DIST + (loops.get(id)! - 1) * G6_LOOP_STEP : REACH.top);
+  const above = (id: string) => (loops.has(id) ? REACH.top() + G6_LOOP_DIST + (loops.get(id)! - 1) * G6_LOOP_STEP : REACH.top());
   const nodes = target.getNodeData().filter((node) => !node.data?.anchor);
   const points = nodes.map((node) => ({ x: Number(node.style!.x), y: Number(node.style!.y), top: above(String(node.id)) }));
   if (!points.length) return;
@@ -369,7 +401,7 @@ async function showAround(target: Graph, zoom: number, around: string | undefine
   const { width, height } = frame.value!.getBoundingClientRect();
   const bounds = {
     minX: Math.min(...points.map(({ x }) => x)) - REACH.x(), maxX: Math.max(...points.map(({ x }) => x)) + REACH.x(),
-    minY: Math.min(...points.map(({ y, top }) => y - top)), maxY: Math.max(...points.map(({ y }) => y)) + REACH.bottom,
+    minY: Math.min(...points.map(({ y, top }) => y - top)), maxY: Math.max(...points.map(({ y }) => y)) + REACH.bottom(),
   };
   const focus = around === undefined ? undefined : target.getNodeData().find((node) => String(node.id) === around);
   const wanted = focus
@@ -392,24 +424,48 @@ async function afterChanges(task: (target: Graph) => Promise<void>) {
   await enqueue(task);
 }
 
+/** The look the page sets for its nodes and names. */
+const look = () => ({ nodeSize: props.nodeSize, labelSize: props.labelSize, labelWidth: props.labelWidth });
+/** A name's box on screen as G6 draws it: one line of its bold label font, no wider than `labelWidth`, on its padded backing. */
+let measuring: CanvasRenderingContext2D | null = null;
+function nameBox(text: string) {
+  measuring ??= document.createElement("canvas").getContext("2d")!;
+  measuring.font = `600 ${props.labelSize}px system-ui, sans-serif`;
+  return { width: Math.min(measuring.measureText(text).width, props.labelWidth) + 8, height: props.labelSize * 1.2 + 2 };
+}
+/** The zoom below which two of the graph's names, held at their size on screen, would cover each other. */
+function namesApartZoom(target: Graph) {
+  const names = target.getNodeData().filter((datum) => datum.style?.labelText).map((datum) => ({
+    x: Number(datum.style!.x), y: Number(datum.style!.y), ...nameBox(String(datum.style!.labelText)),
+  }));
+  return zoomKeepingNamesApart(names, 4);
+}
+
 defineExpose({
   /**
    * Shows the whole graph, no larger than `maxZoom`, keeping `padding` pixels clear (one value, or top, right, bottom,
-   * left). With `minZoom` it is never shown smaller: a graph that would be is shown at `minZoom` around the node
-   * `around` (its middle when absent) as far as the graph's own edges allow, and the reader pans to the rest — names
-   * stay readable rather than all in view. Resolves whether the whole graph is in view.
+   * left). With `minZoom` it is never shown smaller; with `keepNames` (names held at their size on screen) never smaller
+   * than its names stay apart at. A graph that would be is shown at that zoom around the node `around` (its middle when
+   * absent) as far as the graph's own edges allow, and the reader pans to the rest — every name shown rather than all
+   * in view. Resolves whether the whole graph is in view.
    */
-  fit: async (options: { maxZoom?: number; minZoom?: number; around?: string; padding?: number | [number, number, number, number] } = {}) => {
+  fit: async (options: { maxZoom?: number; minZoom?: number; keepNames?: true; around?: string; padding?: number | [number, number, number, number] } = {}) => {
+    if (options.keepNames && !props.readableLabels) throw new Error("A fit keeps names apart only on a canvas that holds its names at their size");
     let whole = true;
     await afterChanges(async (target) => {
       if (options.padding !== undefined) target.setOptions({ padding: options.padding });
       await target.fitView({ when: "always", direction: "both" });
       const zoom = target.getZoom();
+      const least = options.keepNames ? Math.min(namesApartZoom(target), options.maxZoom ?? Infinity) : options.minZoom;
       if (options.maxZoom !== undefined && zoom > options.maxZoom) await target.zoomTo(options.maxZoom, false);
-      else if (options.minZoom !== undefined && zoom < options.minZoom) {
+      else if (least !== undefined && zoom < least) {
         whole = false;
-        await target.zoomTo(options.minZoom, false);
-        return showAround(target, options.minZoom, options.around, options.padding);
+        await target.zoomTo(least, false);
+        return showAround(target, least, options.around, options.padding);
+      } else {
+        // fitView tells its zoom as a step from the last one, which the names held at their size read as the zoom
+        // itself: told again as a zoom, they are held at the size the view now has.
+        await target.zoomTo(zoom, false);
       }
       await target.fitCenter(false);
     });

@@ -14,9 +14,9 @@ import { changedPaths, fieldAt, movedPath, valueAt, withValueAt, withoutValueAt 
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
 import { editedInput, memberFormSource, MemberDataUnavailable, type FormSource } from "../panel/member-forms";
-import { formControlsKey, rowControlKey, rowControlsOf } from "./form-controls";
-import FormFieldControl from "./FormFieldControl.vue";
+import { fieldControlKey, fieldControlsOf, formControlsKey } from "./form-controls";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
+import FormFieldPlace from "./FormFieldPlace.vue";
 import { fieldShowing } from "./form-placement";
 import { useDataStateLabels } from "./data-state-labels";
 
@@ -146,18 +146,40 @@ function fixDescription(next: PanelFormDescription): PanelFormDescription {
 }
 
 const fields = computed(() => description.value?.fields ?? []);
-/** Whether a member of the panel draws this reference field, choosing from its own catalogue. */
-const drawnElsewhere = (path: string) => Object.values(panel.manifest.members).some(({ formField }) =>
-  formField?.slot === slot.slot && formField.path === path && formField.itemPath === undefined);
 /**
- * The fields this form draws: all but a hidden one, which no control draws, and a reference a member of the panel draws.
- * A reference no member draws is drawn here too, saying it cannot be edited here — never left out without a word.
+ * The fields this form draws, in its owner's order: all but a hidden one, which no control draws. One a projection of the
+ * panel is declared for is drawn by that projection in the field's place; a reference no projection draws says it
+ * cannot be edited here — never left out without a word.
  */
-const drawn = computed(() => fields.value.filter((field) =>
-  field.control.kind !== "hidden" && !(field.control.kind === "reference" && drawnElsewhere(field.path))));
+const drawn = computed(() => fields.value.filter((field) => field.control.kind !== "hidden"));
 /** Of those, the owner's advanced ones, drawn after the others in one section. */
 const advanced = computed(() => drawn.value.filter((field) => field.advanced === true));
 const plain = computed(() => drawn.value.filter((field) => field.advanced !== true));
+/**
+ * The owner's sections with the fields that name them, in its order (原页面对照《智能体设置》): fields that name no
+ * section come first, untitled. A field naming a section its owner does not declare is the owner's mistake, said here.
+ * Null for a form without sections, drawn as one list.
+ */
+const sectionGroups = computed(() => {
+  const declared = description.value?.sections ?? [];
+  if (!declared.length) return null;
+  const keys = new Set(declared.map(({ key }) => key));
+  const stray = drawn.value.find((field) => field.section !== undefined && !keys.has(field.section));
+  if (stray) throw new Error(`The form's field ${stray.path} names a section '${stray.section}' its owner does not declare`);
+  const group = (fields: readonly PanelFormField[]) => ({
+    plain: fields.filter((field) => field.advanced !== true),
+    advanced: fields.filter((field) => field.advanced === true),
+    changed: fields.some((field) => changed.value.has(field.path)),
+  });
+  const loose = drawn.value.filter((field) => field.section === undefined);
+  return [
+    ...(loose.length ? [{ key: "", title: null, hint: null, ...group(loose) }] : []),
+    ...declared.map((section) => ({ ...section, hint: section.hint ?? null, ...group(drawn.value.filter((field) => field.section === section.key)) })),
+  ];
+});
+function goToSection(key: string) {
+  formElement.value!.querySelector<HTMLElement>(`[data-form-section="${CSS.escape(key)}"]`)!.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 /** Changed values, or text a reader typed that is no value yet (JSON that does not parse): either is unsaved. */
 const dirty = computed(() => opened.value !== null
   && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
@@ -414,11 +436,11 @@ provide(formControlsKey, {
   remove,
   reorder,
   invalid: markInvalid,
-  rowControl(path, itemPath) {
+  fieldControl(path, itemPath) {
     const declared = Object.values(panel.manifest.members).some(({ formField }) =>
       formField?.slot === slot.slot && formField.path === path && formField.itemPath === itemPath);
     if (!declared) return undefined;
-    return rowControlsOf(panel.instance).get(rowControlKey(slot.slot, path, itemPath)) ?? null;
+    return fieldControlsOf(panel.instance).get(fieldControlKey(slot.slot, path, itemPath)) ?? null;
   },
 });
 
@@ -480,6 +502,14 @@ function discard() {
   void panel.instance.settleDraft(slot.slot).catch(showRefusal);
 }
 
+/** The reader's Discard: what they have not saved is thrown away only once they say so (原页面对照《智能体设置》). */
+async function confirmDiscard() {
+  const confirmed = await ElMessageBox.confirm(t("platform.formDiscardConfirm"), t("platform.discard"), {
+    confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
+  }).then(() => true, () => false);
+  if (confirmed) discard();
+}
+
 async function saveFromForm() {
   try {
     await panel.instance.forms.submit(slot.slot);
@@ -520,6 +550,23 @@ function showRefusal(reason: unknown) {
   errors.value = reason instanceof PlatformObjectRefusal ? reason.fields : {};
 }
 
+function takeSavedFields(receipt: PlatformObjectRefusal) {
+  const saved = Object.entries(receipt.savedFields);
+  if (!saved.length) return;
+  const previous = ownerOpened.value!;
+  const baseline = { ...previous, values: saved.reduce(
+    (all, [path, value]) => withValueAt(all, path, value), previous.values,
+  ) };
+  ownerOpened.value = baseline;
+  opened.value = fixDescription(baseline);
+  const savedPaths = new Set(saved.map(([path]) => path));
+  const stillChanged = changedPaths(fields.value, opened.value.values, values.value);
+  const keep = (path: string) => !savedPaths.has(path) || stillChanged.has(path);
+  submitted.value = new Set([...submitted.value].filter(keep));
+  changed.value = new Set([...changed.value].filter(keep));
+  if (held) held = { ...held, baseline, submitted: submitted.value, changed: changed.value };
+}
+
 /**
  * Writes the form through its owner — the selected object's update, or the create — with the revision it was read at
  * where the owner has one. An owner that refuses has its reason shown beside the form and its field messages on the
@@ -553,6 +600,7 @@ async function write(): Promise<unknown> {
     await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);
     return saved;
   } catch (reason) {
+    if (reason instanceof PlatformObjectRefusal && targetKey(target.value) === targetKey(into)) takeSavedFields(reason);
     showRefusal(reason);
     throw reason;
   } finally {
@@ -583,10 +631,36 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
          submit handler runs: the reader's save is the button's own click. -->
     <el-form label-position="top">
       <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
-      <form-field-control v-for="field in plain" :key="field.path" :field="field" :path="field.path"></form-field-control>
-      <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
-        <form-field-control v-for="field in advanced" :key="field.path" :field="field" :path="field.path"></form-field-control>
-      </form-advanced-section>
+      <div v-if="sectionGroups" class="sdk-owner-form-sectioned">
+        <div class="sdk-owner-form-sections">
+          <section
+            v-for="group in sectionGroups"
+            :key="group.key"
+            class="sdk-owner-form-section"
+            :class="{ changed: group.changed }"
+            :data-form-section="group.key || undefined"
+          >
+            <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
+            <p v-if="group.hint" class="sdk-owner-form-section-hint">{{ group.hint }}</p>
+            <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
+            <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
+              <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
+            </form-advanced-section>
+          </section>
+        </div>
+        <!-- The form's contents: each entry brings its section into view; every section stays on the page. -->
+        <nav class="sdk-owner-form-contents" :aria-label="t('platform.formSections')">
+          <button v-for="group in sectionGroups.filter((item) => item.title)" :key="group.key" type="button" @click="goToSection(group.key)">
+            {{ group.title }}
+          </button>
+        </nav>
+      </div>
+      <template v-else>
+        <form-field-place v-for="field in plain" :key="field.path" :field="field"></form-field-place>
+        <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
+          <form-field-place v-for="field in advanced" :key="field.path" :field="field"></form-field-place>
+        </form-advanced-section>
+      </template>
       <slot name="after-fields"></slot>
       <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
         {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
@@ -598,7 +672,8 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
         <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
       </div>
       <div class="sdk-owner-form-actions">
-        <el-button :disabled="saving || !canSettle" @click="discard">{{ t("platform.discard") }}</el-button>
+        <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">{{ t("platform.unsavedChanges") }}</span>
+        <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
         <el-button type="primary" :disabled="!canSettle" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
       </div>
     </el-form>
@@ -607,10 +682,87 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 </template>
 
 <style scoped>
+/* Save and Discard stay in reach at the foot of the view however long the form, never only at its end. */
 .sdk-owner-form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   justify-content: flex-end;
   margin-block-start: var(--spacing-md);
+  padding-block: var(--spacing-sm);
+  border-top: 1px solid var(--ui-divider);
+  background: var(--el-bg-color);
+}
+/* Sections one after another at a reading width, a hairline between them; their list beside them while they scroll. */
+.sdk-owner-form {
+  container: sdk-owner-form / inline-size;
+}
+.sdk-owner-form-sectioned {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: var(--spacing-2xl);
+  align-items: start;
+}
+.sdk-owner-form-section {
+  min-width: 0;
+  padding-block: var(--spacing-lg);
+  scroll-margin-top: var(--spacing-sm);
+}
+.sdk-owner-form-section + .sdk-owner-form-section {
+  border-top: 1px solid var(--ui-divider);
+}
+.sdk-owner-form-section-title {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--el-text-color-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+}
+.sdk-owner-form-section.changed .sdk-owner-form-section-title {
+  color: var(--brand-link);
+}
+.sdk-owner-form-section-hint {
+  margin: 0 0 var(--spacing-md);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-sm);
+}
+.sdk-owner-form-contents {
+  position: sticky;
+  top: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--spacing-lg);
+}
+.sdk-owner-form-contents button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: start;
+  cursor: pointer;
+}
+.sdk-owner-form-contents button:hover {
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-primary);
+}
+.sdk-owner-form-contents button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+/* Narrow, the list gives way to the sections: below this the fields beside it would be narrower than a line of text. */
+@container sdk-owner-form (max-width: 720px) {
+  .sdk-owner-form-sectioned {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sdk-owner-form-contents {
+    display: none;
+  }
 }
 .sdk-owner-form-readonly {
   margin: 0 0 var(--spacing-md);
@@ -642,5 +794,10 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
   font: inherit;
   padding: 0;
   text-decoration: underline;
+}
+.sdk-owner-form-unsaved {
+  margin-inline-end: auto;
+  color: var(--el-color-warning);
+  font-size: var(--text-sm);
 }
 </style>

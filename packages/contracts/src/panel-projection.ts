@@ -1,11 +1,12 @@
 import {
-  applicationCatalogueScopeSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
+  applicationCatalogueScopeSchema, applicationCatalogueSortSchema, applicationFormSectionSchema, productCatalogQuerySchema, productPanelCatalogQuerySchema,
 } from "./product-catalog-query";
 import { z } from "zod";
+import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { directPanelPortTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
+import { directPanelPortTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelObjectRef, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
@@ -73,7 +74,7 @@ export const projectionOperationBindingSchema = z.object({
 export type ProjectionOperationBinding = z.infer<typeof projectionOperationBindingSchema>;
 
 export const directProjectionPortsSchema = z.object({
-  componentId: z.string().regex(/^(?:@[^@\s/:]+\/)?[^@\s/:]+:[^@\s/:]+$/u, "Expected a package-qualified component name"),
+  componentId: componentIdSchema,
   inputs: z.record(readKey, directProjectionInputTypeSchema),
   outputs: z.record(readKey, directPanelPortTypeSchema),
   data: z.record(readKey, directProjectionDataSchema),
@@ -92,6 +93,7 @@ export const panelReadParameterSchemas = {
   productSort: productCatalogQuerySchema.shape.sort.removeDefault(),
   productTemplate: productPanelCatalogQuerySchema.shape.template.unwrap(),
   applicationScope: applicationCatalogueScopeSchema,
+  applicationSort: applicationCatalogueSortSchema,
   applicationFormSection: applicationFormSectionSchema.exclude(["create"]),
   formValues: formValuesSchema,
   panelFormValues: panelFormValuesSchema,
@@ -110,6 +112,8 @@ export const panelReadParameterSchemas = {
   cursor: z.string(),
   scheduledRunId: runtimeIdSchema,
   size: positiveInteger,
+  auditLogBusiness: z.enum(["BKNOWLEDGE", "BTERM", "BEXAMPLE", "SCHEMA", "ANALYSIS"]),
+  auditLogOperation: z.enum(["ADD", "UPD", "DEL"]),
   knowledgeCountField: z.literal("status"),
   knowledgeStatus: z.enum(["all", "pending", "approved"]),
   feedbackCountField: z.enum(["sourceType", "rating"]),
@@ -133,6 +137,8 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "className":
     case "cursor":
     case "scheduledRunId":
+    case "auditLogBusiness":
+    case "auditLogOperation":
     case "knowledgeCountField":
     case "knowledgeStatus":
     case "feedbackCountField":
@@ -142,6 +148,7 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "productScope":
     case "productSort":
     case "applicationScope":
+    case "applicationSort":
     case "applicationFormSection":
       return input?.kind === "scalar" && input.type === "string";
     case "productTemplate":
@@ -289,11 +296,64 @@ export type PanelTextHighlightRange = z.infer<typeof panelTextHighlightRangeSche
 export const panelFieldToneSchema = z.enum(["default", "info", "success", "warning", "danger"]);
 export type PanelFieldTone = z.infer<typeof panelFieldToneSchema>;
 
-export const panelRecordSchema = z.object({
+/** Scalar field values carried directly in a generic panel record. */
+export const panelRecordFieldScalarSchema = z.union([
+  z.string(),
+  z.number().finite(),
+  z.boolean(),
+]);
+export type PanelRecordFieldScalar = z.infer<typeof panelRecordFieldScalarSchema>;
+
+/** Localized display text keyed by BCP 47 locale tag (for example `zh-CN`, `en`). */
+export const panelRecordLocalizedFieldValueSchema = z.object({
+  kind: z.literal("localized"),
+  values: z.record(z.string().min(1), z.string()),
+}).strict();
+export type PanelRecordLocalizedFieldValue = z.infer<typeof panelRecordLocalizedFieldValueSchema>;
+
+/** Clickable reference to another ontology object carried directly as a record field value. */
+export const panelRecordReferenceFieldValueSchema = z.object({
+  kind: z.literal("reference"),
+  className: panelObjectRefSchema.shape.className,
   primaryKey: panelObjectRefSchema.shape.primaryKey,
   label: z.string(),
+}).strict();
+export type PanelRecordReferenceFieldValue = z.infer<typeof panelRecordReferenceFieldValueSchema>;
+
+/** Structured JSON payload carried by a record field (for example nested tool lists or schemas). */
+export const panelRecordJsonFieldValueSchema = z.object({
+  kind: z.literal("json"),
+  value: runtimeJsonValueSchema,
+}).strict();
+export type PanelRecordJsonFieldValue = z.infer<typeof panelRecordJsonFieldValueSchema>;
+
+/** Allowed element types inside an array-valued record field. */
+export const panelRecordFieldArrayItemSchema = z.union([
+  panelRecordFieldScalarSchema,
+  panelRecordReferenceFieldValueSchema,
+]);
+export type PanelRecordFieldArrayItem = z.infer<typeof panelRecordFieldArrayItemSchema>;
+
+/**
+ * Strongly typed value of one field in `PanelRecord.fields`.
+ * Empty values must omit the field key rather than storing `null` or `undefined`.
+ */
+export const panelRecordFieldValueSchema = z.union([
+  panelRecordFieldScalarSchema,
+  panelRecordLocalizedFieldValueSchema,
+  panelRecordReferenceFieldValueSchema,
+  panelRecordJsonFieldValueSchema,
+  z.array(panelRecordFieldArrayItemSchema),
+]);
+export type PanelRecordFieldValue = z.infer<typeof panelRecordFieldValueSchema>;
+
+export const panelRecordSchema = z.object({
+  primaryKey: panelObjectRefSchema.shape.primaryKey,
+  /** Optional real object type when a query returns heterogeneous or dynamically selected records. */
+  className: panelObjectRefSchema.shape.className.optional(),
+  label: z.string(),
   subtitle: z.string().optional(),
-  fields: z.record(z.string()),
+  fields: z.record(panelRecordFieldValueSchema),
   /** Field names supplied by the owner in the reader's locale, keyed by the names in fields. */
   fieldLabels: z.record(z.string()).optional(),
   /** The tone of a field that shows as a status tag, by field name. */
@@ -306,6 +366,86 @@ export const panelRecordSchema = z.object({
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
 export const panelRecordListSchema = z.array(panelRecordSchema);
+
+/**
+ * Resolve a record's real ontology object reference (`className` + `primaryKey`), preferring the record's own
+ * `className` for heterogeneous lists and falling back to the query/member's known object type.
+ */
+export function panelRecordObjectRef(
+  record: Pick<PanelRecord, "primaryKey" | "className">,
+  fallbackClassName?: string,
+): PanelObjectRef {
+  const className = record.className ?? fallbackClassName;
+  if (!className) {
+    throw new Error(`Record '${record.primaryKey}' has no className and no fallbackClassName was provided`);
+  }
+  return panelObjectRefSchema.parse({ className, primaryKey: record.primaryKey });
+}
+
+function localeFallbackChain(locale: string | undefined): string[] {
+  if (!locale) return [];
+  const normalized = locale.trim();
+  if (!normalized) return [];
+  const parts = normalized.split("-").filter(Boolean);
+  const candidates: string[] = [];
+  for (let len = parts.length; len >= 1; len -= 1) {
+    candidates.push(parts.slice(0, len).join("-"));
+  }
+  return candidates;
+}
+
+function lookupLocalizedValue(values: Readonly<Record<string, string>>, tag: string): string | undefined {
+  if (Object.hasOwn(values, tag)) {
+    const exact = values[tag];
+    if (exact !== undefined && exact.trim().length > 0) return exact;
+  }
+  const lower = tag.toLowerCase();
+  for (const [key, text] of Object.entries(values)) {
+    if (key.toLowerCase() === lower && text.trim().length > 0) return text;
+  }
+  return undefined;
+}
+
+/**
+ * Extract plain display/search text from any `PanelRecordFieldValue`:
+ * - `localized`: resolves `locale` (for example `zh-CN` -> `zh`) -> `fallbackLocale` -> first non-empty entry in `values`.
+ * - `reference`: returns `label || primaryKey`.
+ * - `json`: scalar converts to string (`null` -> `""`), object/array serializes with `JSON.stringify`.
+ * - array: joins non-empty element texts with `", "`.
+ * - boolean: returns `"true"` / `"false"` for search and plain-text fallback; UI layers such as `ObjectList` and
+ *   `ObjectSummary` localize boolean values for the reader's language.
+ */
+export function panelRecordFieldText(
+  value: PanelRecordFieldValue | undefined,
+  locale?: string,
+  fallbackLocale?: string,
+): string {
+  if (value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value
+      .map(item => panelRecordFieldText(item, locale, fallbackLocale))
+      .filter(part => part.length > 0)
+      .join(", ");
+  }
+  if (value.kind === "reference") return value.label || value.primaryKey;
+  if (value.kind === "localized") {
+    for (const tag of [...localeFallbackChain(locale), ...localeFallbackChain(fallbackLocale)]) {
+      const matched = lookupLocalizedValue(value.values, tag);
+      if (matched !== undefined) return matched;
+    }
+    for (const text of Object.values(value.values)) {
+      if (text.trim().length > 0) return text;
+    }
+    return "";
+  }
+  const payload = value.value;
+  if (payload === null) return "";
+  if (typeof payload === "string") return payload;
+  if (typeof payload === "number" || typeof payload === "boolean") return String(payload);
+  return JSON.stringify(payload);
+}
 
 /** Plain-text notices localized by the read owner and displayed alongside the available results. */
 const panelReadDiagnostics = z.array(z.string()).optional();
@@ -424,6 +564,9 @@ const fieldShape = z.object({
   advanced: z.literal(true).optional().describe(
     "Group this field with the advanced fields at the end of its form, object, or array row. The group starts collapsed and opens when it contains a field error.",
   ),
+  section: z.string().min(1).optional().describe(
+    "The key of the form section, among the form's sections, this top-level field is drawn in.",
+  ),
 }).strict();
 
 export type PanelFormField = z.infer<typeof fieldShape> & {
@@ -467,8 +610,18 @@ const formSaveRequestSchema = z.object({
 }).strict();
 
 /** Values and description returned together by the owner for the current target and caller. */
+/** A part of an owner's form, drawn under its title and hint with the fields that name it, in the order given. */
+export const panelFormSectionSchema = z.object({
+  key: z.string().min(1),
+  title: z.string().min(1),
+  hint: z.string().min(1).optional(),
+}).strict();
+export type PanelFormSection = z.infer<typeof panelFormSectionSchema>;
+
 export const panelFormDescriptionSchema = z.object({
   fields: z.array(panelFormFieldSchema),
+  /** The form's sections in order; a form without them is one list of fields. */
+  sections: z.array(panelFormSectionSchema).optional(),
   values: panelFormValuesSchema,
   /** Owner validation is part of a successful form read, alongside the current values. */
   errors: z.array(formFieldErrorSchema),

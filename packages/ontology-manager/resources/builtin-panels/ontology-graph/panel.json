@@ -96,7 +96,10 @@
           "edgeEnds": {
             "source": "/fromclass",
             "target": "/toclass"
-          }
+          },
+          "nodeCategory": "/className",
+          "nodeSize": 62,
+          "labelSize": 13
         },
         "id": "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378"
       }

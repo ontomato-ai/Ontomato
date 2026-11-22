@@ -20,6 +20,7 @@ import { installContentLayout } from "../../content/layout";
 import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-sdk";
 import { vuePanelContent } from "../../__tests__/fixtures/vue-panel";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
+import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { ensureAgentExecutionSchema } from "../../infrastructure/postgres-migrations/20261117-agent-execution/schema";
@@ -98,6 +99,7 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensureDomainComponentsSchema(state.pool);
   await ensureAssistantSchema(state.pool);
   await ensureAgentExecutionSchema(state.pool);
 

@@ -1,6 +1,7 @@
+import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
-import type { PageContext } from "@ontomato/contracts/page-context";
+import type { PageContext, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
   type PanelStateValue,
@@ -8,7 +9,10 @@ import {
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { createPanelCommands } from "./commands";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { childObjectNameKey, createPanelState, objectNameKey, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
+import {
+  childObjectNameKey, createPanelState, objectNameKey, panelSelection, stateObject, stateObjects, type PanelInitialState, type PanelObjectRef,
+  type PanelStateStore,
+} from "./state";
 import type { PanelText } from "./text";
 import { panelOperations } from "./operations";
 import type { PanelProjectionRegistration } from "./ports";
@@ -115,6 +119,8 @@ export interface PanelInstance {
   runHandler(handlerRef: string, call: PanelOperationCall): Promise<unknown>;
   /** The owner's description of one of this panel's operations, by its ID. */
   describeOperation(operationId: string): Promise<PanelOperationDescriptor>;
+  /** Stages a file the reader picked for one of this panel's operations that declares an upload (see `PanelHumanOperations.upload`). */
+  uploadFile(operationId: string, file: File): Promise<PanelUploadReceipt>;
   /** Runs a read-only operation as the reader: what it read, with nothing written and nothing reported changed. */
   readOperation(operationId: string, call: { target: PanelOperationCall["target"]; input: ReadOperationInput }): Promise<PanelReadOperationResult>;
   /**
@@ -125,6 +131,11 @@ export interface PanelInstance {
    */
   writeOperation(operationId: string, invocation: PanelWriteInvocation): Promise<PanelWriteResult>;
   objectChanged(object: PanelObjectIdentity): void;
+  /**
+   * Lets go of objects a write removed: a state holding one is cleared, a list state drops it, so nothing keeps choosing
+   * or reading what is no longer there.
+   */
+  letGo(removed: readonly PanelObjectIdentity[]): void;
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
   /** Reads a projection record by ID, as the reader. */
@@ -146,6 +157,11 @@ export interface PanelInstance {
   operationPath(operationId: string): PanelMemberPath | undefined;
   /** A panel placed in one of this instance's members publishes into it, until the returned function ends that. */
   publish(member: string, publisher: Readonly<Ref<NestedPublisher>>): () => void;
+  /**
+   * Publishes what one member currently highlights (such as search matches or a directed path result) into
+   * `pageContext.highlights`, until the returned disposer runs.
+   */
+  reportHighlight(member: string, highlight: Readonly<Ref<PageHighlight | null>>): () => void;
   /** The state an address or an open request may carry, for this instance. */
   deepLink(): Record<string, PanelDeepLinkStateValue>;
 }
@@ -227,18 +243,30 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const forms = new PanelFormAdapters(options.reportDraftError);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
+  const highlights = shallowReactive(new Map<string, Readonly<Ref<PageHighlight | null>>>());
   const translate = options.translate ?? ((key: string) => key);
-  const pageContext = computed<PageContext>(() => ({
-    pageKey: options.pageKey,
-    url: options.url(),
-    label: options.label(),
-    selection: [
-      // A placed panel's own selections say which placed panel they are, by its path.
-      ...panelSelection(manifest, state.values.value, names, translate)
-        .map((selected) => (prefix.length ? { ...selected, memberPath: prefix as PublisherPath } : selected)),
-      ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.selection ?? []),
-    ],
-  }));
+  const pageContext = computed<PageContext>(() => {
+    const reportedHighlights = [
+      ...[...highlights.values()].flatMap((entry) => {
+        const value = entry.value;
+        if (!value) return [];
+        return [prefix.length ? { ...value, memberPath: prefix as PublisherPath } : value];
+      }),
+      ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.highlights ?? []),
+    ];
+    return {
+      pageKey: options.pageKey,
+      url: options.url(),
+      label: options.label(),
+      selection: [
+        // A placed panel's own selections say which placed panel they are, by its path.
+        ...panelSelection(manifest, state.values.value, names, translate)
+          .map((selected) => (prefix.length ? { ...selected, memberPath: prefix as PublisherPath } : selected)),
+        ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.selection ?? []),
+      ],
+      ...(reportedHighlights.length ? { highlights: reportedHighlights } : {}),
+    };
+  });
   return {
     manifest,
     state,
@@ -312,8 +340,23 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     describeOperation: (operationId) => options.operations.describe(operationId, operationPath(operationId)),
     readOperation: (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
+    uploadFile: (operationId, file) => options.operations.upload(operationId, file, operationPath(operationId)),
     writeOperation,
     objectChanged,
+    letGo(removed) {
+      const gone = (object: PanelObjectRef) =>
+        removed.some(({ objectType, primaryKey }) => objectType === object.className && primaryKey === object.primaryKey);
+      for (const [name, { type }] of Object.entries(manifest.state)) {
+        const value = state.values.value[name];
+        if (type.kind === "object") {
+          const held = stateObject(value);
+          if (held && gone(held)) state.set(name, null);
+        } else if (type.kind === "list" && type.items.kind === "object") {
+          const held = stateObjects(value);
+          if (held.some(gone)) state.set(name, held.filter((object) => !gone(object)));
+        }
+      }
+    },
     refreshObjects: () => objectChanged(null),
     onObjectChanged(listener) {
       objectListeners.add(listener);
@@ -334,6 +377,12 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       publishers.set(member, publisher);
       return () => {
         if (publishers.get(member) === publisher) publishers.delete(member);
+      };
+    },
+    reportHighlight(member, highlight) {
+      highlights.set(member, highlight);
+      return () => {
+        if (highlights.get(member) === highlight) highlights.delete(member);
       };
     },
     deepLink: () => state.deepLinkable(),

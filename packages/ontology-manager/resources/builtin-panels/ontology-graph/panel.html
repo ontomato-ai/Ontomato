@@ -1,92 +1,192 @@
 <style>
+  /* The page is the three columns the ontology graph has always had: the browse list, the graph, the inspector. */
   .og {
     display: flex;
+    flex: 1;
     flex-direction: column;
-    gap: var(--spacing-md);
+    gap: var(--spacing-sm);
     min-width: 0;
     min-height: 0;
     height: 100%;
     container-type: inline-size;
   }
-  .og-counts {
+  /* The domain's sizes sit at the right of the page's own top line, as the page header carries them. */
+  .og-summary {
     display: flex;
     align-items: center;
-    gap: var(--spacing-lg);
+    justify-content: flex-end;
+    gap: var(--spacing-md);
     color: var(--el-text-color-secondary);
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
-  .og-counts strong {
+  .og-summary span {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .og-summary strong {
     color: var(--el-text-color-primary);
     font-weight: var(--font-semibold);
   }
-  .og-toolbar {
+  .og-grid {
+    display: grid;
+    height: clamp(460px, calc(100vh - 280px), 780px);
+    min-height: 0;
+    flex: 0 0 auto;
+    grid-template-columns: 264px minmax(320px, 1fr) 320px;
+    overflow: hidden;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-sm);
+  }
+  .og-explorer,
+  .og-side {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+  }
+  .og-explorer {
+    border-right: 1px solid var(--ui-border);
+  }
+  .og-side {
+    border-left: 1px solid var(--ui-border);
+    overflow: auto;
+  }
+  /* The search box: one query line, then the three-way filter, as the page always had. */
+  .og-search-box {
+    display: grid;
+    min-width: 0;
     gap: var(--spacing-sm);
+    padding: var(--spacing-sm) 12px;
+    border-bottom: 1px solid var(--ui-divider);
   }
-  .og-search {
-    flex: 1 1 16rem;
-    min-width: 10rem;
-    padding: var(--spacing-sm) var(--spacing-md);
-    border: 1px solid var(--ui-border);
+  .og-search-box .el-input {
+    width: 100%;
+  }
+  .og-search-icon {
+    color: var(--el-text-color-placeholder);
+  }
+  .og-segments {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    padding: 2px;
     border-radius: var(--radius-sm);
-    background: var(--el-bg-color);
-    color: var(--el-text-color-primary);
-    font: inherit;
-  }
-  .og-pick {
-    padding: var(--spacing-sm) var(--spacing-sm);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-sm);
-    background: var(--el-bg-color);
-    color: var(--el-text-color-primary);
-    font: inherit;
-    max-width: 12rem;
-  }
-  .og-plain {
-    padding: var(--spacing-sm) var(--spacing-lg);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--el-text-color-primary);
-    font: inherit;
-    cursor: pointer;
-  }
-  .og-plain:hover {
     background: var(--ui-fill-tertiary);
   }
-  .og-note {
-    margin: 0;
+  .og-segment {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 2px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
     color: var(--el-text-color-secondary);
+    font: inherit;
+    font-size: var(--text-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .og-segment.active {
+    background: var(--el-bg-color);
+    color: var(--el-text-color-primary);
+    font-weight: var(--font-semibold);
+  }
+  .og-list {
+    flex: 1;
+    overflow: auto;
+    padding: var(--spacing-sm);
+  }
+  .og-list-section + .og-list-section {
+    margin-top: var(--spacing-md);
+  }
+  .og-list-section > p {
+    margin: 0 6px 5px;
+    color: var(--el-text-color-tertiary);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+  }
+  .og-row {
+    display: flex;
+    width: 100%;
+    min-height: 46px;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 6px 8px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--el-text-color-secondary);
+    text-align: left;
+    cursor: pointer;
+  }
+  .og-row:hover {
+    background: var(--el-fill-color-light);
+  }
+  .og-row.active {
+    color: var(--brand-link);
+    background: var(--ui-fill-tertiary);
+  }
+  .og-row-copy {
+    min-width: 0;
+    flex: 1;
+  }
+  .og-row strong,
+  .og-row small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .og-row strong {
+    color: var(--el-text-color-primary);
     font-size: var(--text-sm);
   }
-  .og-failure {
-    color: var(--el-color-danger-text);
+  .og-row small {
+    color: var(--el-text-color-tertiary);
+    font-size: var(--text-xs);
   }
-  .og-body {
-    position: relative;
+  .og-icon {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    flex: 1 1 auto;
-    /* The frame takes a height from the page and keeps it: the inspector's lists scroll inside it, so choosing a class
-       with many attributes never stretches the page (and never moves the canvas out from under the view). */
-    height: clamp(420px, calc(100vh - 360px), 760px);
-    min-height: 0;
-    border: 1px solid var(--ui-border);
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    place-items: center;
     border-radius: var(--radius-sm);
-    overflow: hidden;
   }
-  .og-body {
-    grid-template-rows: minmax(0, 1fr);
+  .og-icon-object {
+    color: var(--brand-link);
+    background: var(--ui-fill-tertiary);
   }
-  .og-canvas {
+  .og-icon-relation {
+    color: var(--el-text-color-secondary);
+    background: var(--ui-fill-tertiary);
+  }
+  .og-list-empty {
+    margin: var(--spacing-xl) 0;
+    color: var(--el-text-color-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+  /* The graph keeps its own ground: the area's tone with the page's dot grid. */
+  .og-graph {
     position: relative;
     min-width: 0;
     min-height: 0;
-    height: 100%;
+    overflow: hidden;
     background-color: var(--el-bg-color-page);
+    background-image: radial-gradient(var(--ui-border) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .og-canvas {
+    position: absolute;
+    inset: 0;
+    min-width: 0;
+    min-height: 0;
   }
   /* The host wraps a placed member in its own element: the canvas fills it, as the capability map's canvas does. */
   .og-canvas > [data-member] {
@@ -101,129 +201,329 @@
     height: 100%;
     min-height: 0;
   }
-  .og-inspector {
-    min-height: 0;
+  .og-hint {
     position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 2;
-    display: none;
-    flex-direction: column;
-    width: min(320px, 85%);
-    border-left: 1px solid var(--ui-border);
-    background: var(--el-bg-color);
-    box-shadow: var(--el-box-shadow-light);
-    overflow: auto;
-  }
-  .og-inspector.open {
-    display: flex;
-  }
-  .og-inspector-head {
+    right: 18px;
+    bottom: 20px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-bottom: 1px solid var(--ui-border);
-  }
-  .og-inspector-head strong {
-    color: var(--el-text-color-primary);
-    font-size: var(--text-base);
-  }
-  .og-inspector-head code {
     color: var(--el-text-color-tertiary);
     font-size: var(--text-xs);
+    pointer-events: none;
   }
-  .og-inspector-body {
-    display: flex;
-    flex-direction: column;
+  .og-hint span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--el-color-success);
+  }
+  .og-graph-empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
     gap: var(--spacing-sm);
-    padding: var(--spacing-md);
-  }
-  .og-subhead {
-    margin: 0;
     color: var(--el-text-color-secondary);
-    font-size: var(--text-xs);
-    font-weight: var(--font-semibold);
+    pointer-events: none;
   }
-  .og-rows {
-    display: flex;
-    flex-direction: column;
-    margin: 0;
-    padding: 0;
-    list-style: none;
+  .og-graph-empty strong {
+    color: var(--el-text-color-primary);
   }
-  .og-rows li {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-xs) 0;
-    border-bottom: 1px solid var(--ui-divider);
-    color: var(--el-text-color-regular);
+  .og-graph-empty span {
     font-size: var(--text-sm);
   }
-  .og-rows li:last-child {
-    border-bottom: 0;
+  .og-path {
+    padding-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--ui-border);
   }
-  .og-rows small {
-    color: var(--el-text-color-tertiary);
-    font-size: var(--text-xs);
+  .og-path-head {
+    display: flex;
+    height: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--spacing-md);
+    border-bottom: 1px solid var(--ui-border);
+    color: var(--el-text-color-secondary);
   }
-  .og-ends {
+  .og-path-head strong {
+    color: var(--el-text-color-primary);
+    font-size: var(--text-sm);
+  }
+  .og-path-controls {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    gap: var(--spacing-xs);
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+  }
+  .og-pick {
+    min-width: 0;
+    width: 100%;
+    padding: 6px 24px 6px 8px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-sm);
+    background: var(--el-bg-color);
+    color: var(--el-text-color-primary);
+    font: inherit;
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
+  }
+  .og-primary {
+    width: calc(100% - 24px);
+    margin: 0 var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border: 1px solid var(--brand-link);
+    border-radius: var(--radius-sm);
+    background: var(--ui-fill-tertiary);
+    color: var(--brand-link);
+    font: inherit;
+    cursor: pointer;
+  }
+  .og-primary:disabled {
+    border-color: var(--ui-border);
+    color: var(--el-text-color-disabled);
+    cursor: default;
+  }
+  .og-detail {
+    display: flex;
+    min-height: 260px;
+    flex: 1;
+    flex-direction: column;
+  }
+  .og-detail-content {
+    padding: var(--spacing-md);
+  }
+  .og-detail-title {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--ui-divider);
+  }
+  .og-detail-title .og-icon {
+    margin-top: 1px;
+  }
+  .og-detail-copy {
+    min-width: 0;
+    flex: 1;
+  }
+  .og-detail-copy h2 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--el-text-color-primary);
+    font-size: var(--text-sm);
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .og-detail-copy code {
+    display: block;
+    overflow: hidden;
+    color: var(--el-text-color-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .og-modeling {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--el-text-color-primary);
+    font: inherit;
+    font-size: var(--text-xs);
+    cursor: pointer;
+  }
+  .og-modeling:hover {
+    background: var(--ui-fill-tertiary);
+  }
+  .og-description {
+    margin: var(--spacing-sm) 0 0;
+    color: var(--el-text-color-secondary);
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
+  }
+  .og-section {
+    margin-top: var(--spacing-md);
+  }
+  .og-section-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--ui-divider);
+    color: var(--el-text-color-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+  }
+  .og-section-label small {
+    color: var(--el-text-color-tertiary);
+  }
+  .og-attribute {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: 8px 0;
+    border-bottom: 1px solid var(--ui-divider);
+  }
+  .og-attribute strong {
+    display: block;
     color: var(--el-text-color-regular);
     font-size: var(--text-sm);
   }
-  .og-ends span:last-child {
+  .og-attribute code {
+    display: block;
+    color: var(--el-text-color-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .og-type {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-sm);
+    color: var(--el-text-color-secondary);
+    font-size: var(--text-xs);
+  }
+  .og-connection {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 8px 0;
+    border: 0;
+    border-bottom: 1px solid var(--ui-divider);
+    background: transparent;
+    color: var(--el-text-color-regular);
+    font: inherit;
+    font-size: var(--text-xs);
+    text-align: left;
+    cursor: pointer;
+  }
+  .og-connection span:first-child,
+  .og-connection span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .og-connection span:last-child {
     text-align: right;
   }
-  .og-arrow {
+  .og-connection-name {
+    max-width: 94px;
+    overflow: hidden;
     color: var(--brand-link);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .og-empty {
+  .og-flow {
+    display: grid;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+  }
+  .og-flow button {
+    min-height: 42px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--radius-sm);
+    background: var(--ui-fill-tertiary);
+    color: var(--el-text-color-primary);
+    font: inherit;
+    cursor: pointer;
+  }
+  .og-flow span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--brand-link);
+    font-size: var(--text-xs);
+  }
+  .og-side-empty {
     display: grid;
     flex: 1;
     place-content: center;
     justify-items: center;
-    gap: var(--spacing-xs);
+    gap: 7px;
     padding: var(--spacing-xl);
     color: var(--el-text-color-secondary);
-    font-size: var(--text-xs);
     text-align: center;
   }
-  .og-empty strong {
+  .og-side-empty .og-empty-mark {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--ui-fill-tertiary);
+    color: var(--brand-link);
+  }
+  .og-side-empty strong {
     color: var(--el-text-color-primary);
     font-size: var(--text-sm);
   }
-  @container (min-width: 62rem) {
-    .og-body {
-      grid-template-columns: minmax(0, 1fr) 320px;
-    }
-    .og-inspector {
-      position: static;
-      display: flex;
-      width: auto;
-      box-shadow: none;
-    }
-    .og-inspector-close {
-      display: none;
+  .og-side-empty span {
+    max-width: 100%;
+    font-size: var(--text-xs);
+    line-height: var(--leading-relaxed);
+  }
+  .og-note {
+    margin: var(--spacing-sm) var(--spacing-md) 0;
+    color: var(--el-text-color-secondary);
+    font-size: var(--text-xs);
+  }
+  .og-failure {
+    color: var(--el-color-danger);
+  }
+  @container (max-width: 1120px) {
+    .og-grid {
+      grid-template-columns: 210px minmax(260px, 1fr) 270px;
     }
   }
-  @container (max-width: 40rem) {
-    .og-pick {
-      max-width: none;
-      flex: 1 1 8rem;
+  @container (max-width: 860px) {
+    .og-grid {
+      grid-template-columns: 196px minmax(240px, 1fr) 248px;
+    }
+  }
+  @container (max-width: 700px) {
+    .og {
+      overflow: auto;
+    }
+    .og-grid {
+      display: grid;
+      height: auto;
+      flex: none;
+      grid-template-columns: 1fr;
+      overflow: visible;
+    }
+    .og-explorer,
+    .og-side {
+      border: 0;
+      border-bottom: 1px solid var(--ui-border);
+    }
+    .og-list {
+      max-height: 260px;
+    }
+    .og-graph {
+      min-height: 520px;
+      order: -1;
+    }
+    .og-hint {
+      display: none;
     }
   }
 </style>
 <div id="app">
   <section class="og">
-    <div class="og-counts">
+    <div class="og-summary" aria-label="本体资源统计">
       <span :aria-busy="counts.objects === null"><strong>{{ counts.objects ?? "–" }}</strong> 对象类型</span>
       <span :aria-busy="counts.attributes === null"><strong>{{ counts.attributes ?? "–" }}</strong> 属性</span>
       <span :aria-busy="counts.relations === null"><strong>{{ counts.relations ?? "–" }}</strong> 关系类型</span>
@@ -238,76 +538,189 @@
       show-icon
     ></el-alert>
 
-    <div class="og-toolbar">
-      <input
-        class="og-search"
-        type="search"
-        :value="search"
-        placeholder="搜索对象类型、属性和关系，命中的在图上标出来"
-        aria-label="搜索对象类型、属性和关系"
-        @input="setSearch($event.target.value)"
-      />
-      <select class="og-pick" :value="pathFrom" aria-label="起点对象类型" @change="pathFrom = $event.target.value">
-        <option value="">起点对象类型</option>
-        <option v-for="object in objects" :key="object.className" :value="object.className">{{ object.showName }}</option>
-      </select>
-      <span class="og-arrow" aria-hidden="true">→</span>
-      <select class="og-pick" :value="pathTo" aria-label="终点对象类型" @change="pathTo = $event.target.value">
-        <option value="">终点对象类型</option>
-        <option v-for="object in objects" :key="object.className" :value="object.className">{{ object.showName }}</option>
-      </select>
-      <button type="button" class="og-plain" @click="findPath">查找路径</button>
-      <button v-if="hasHighlight" type="button" class="og-plain" @click="clearHighlight">清除高亮</button>
-    </div>
-
-    <p v-if="pathMessage" class="og-note" role="status">{{ pathMessage }}</p>
-
-    <div class="og-body">
-      <div class="og-canvas" v-loading="loading">
-        <projection slot="graph"></projection>
-      </div>
-
-      <aside class="og-inspector" :class="{ open: inspectorOpen }">
-        <div class="og-inspector-head">
-          <div>
-            <strong>{{ inspectorTitle }}</strong>
-            <code v-if="inspectorKey">{{ inspectorKey }}</code>
+    <div v-if="!readErrors.length" class="og-grid">
+      <aside class="og-explorer">
+        <div class="og-search-box">
+          <el-input
+            :model-value="search"
+            placeholder="搜索本体资源"
+            aria-label="搜索本体资源"
+            clearable
+            @update:model-value="setSearch"
+          >
+            <template #prefix>
+              <svg class="og-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+            </template>
+          </el-input>
+          <div class="og-segments" role="group" aria-label="按类型筛选">
+            <button
+              v-for="option in filterOptions"
+              :key="option.value"
+              type="button"
+              class="og-segment"
+              :class="{ active: filter === option.value }"
+              @click="setFilter(option.value)"
+            >{{ option.label }}</button>
           </div>
-          <button type="button" class="og-plain og-inspector-close" aria-label="关闭检查器" @click="closeInspector">关闭</button>
         </div>
-        <div v-if="selectedObject" class="og-inspector-body">
-          <p class="og-note">{{ selectedObject.classDesc || "没有业务说明。" }}</p>
-          <p class="og-subhead">属性 · {{ selectedAttributes.length }}</p>
-          <ul class="og-rows">
-            <li v-for="attribute in selectedAttributes" :key="attribute.name">
-              <span>{{ attribute.showName }}</span>
-              <small>{{ attribute.type }}</small>
-            </li>
-          </ul>
-          <p class="og-subhead">关系 · {{ connectedRelations.length }}</p>
-          <ul class="og-rows">
-            <li v-for="relation in connectedRelations" :key="relation.relationship">
-              <button type="button" class="og-plain" @click="selectRelation(relation.relationship)">{{ relation.name }}</button>
-              <small>{{ relation.fromclass === selectedObject.className ? "→ " + classNameLabel(relation.toclass) : classNameLabel(relation.fromclass) + " →" }}</small>
-            </li>
-          </ul>
-          <button type="button" class="og-plain" @click="openModeling">去建模</button>
-          <p v-if="navigationError" class="og-note og-failure">{{ navigationError }}</p>
-        </div>
-        <div v-else-if="selectedRelation" class="og-inspector-body">
-          <div class="og-ends">
-            <span>{{ classNameLabel(selectedRelation.fromclass) }}</span>
-            <span class="og-arrow" aria-hidden="true">→</span>
-            <span>{{ classNameLabel(selectedRelation.toclass) }}</span>
+        <div class="og-list">
+          <div v-if="filteredObjects.length" class="og-list-section">
+            <p>对象类型 · {{ filteredObjects.length }}</p>
+            <button
+              v-for="object in filteredObjects"
+              :key="object.className"
+              type="button"
+              class="og-row"
+              :class="{ active: selectedObject?.className === object.className }"
+              @click="selectObject(object.className)"
+            >
+              <span class="og-icon og-icon-object" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.8 14 4.6v6.8L8 14.2 2 11.4V4.6z"/><path d="M2 4.6 8 7.4l6-2.8M8 7.4v6.8"/></svg>
+              </span>
+              <span class="og-row-copy">
+                <strong>{{ object.showName }}</strong>
+                <small>{{ object.className }}</small>
+              </span>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
+            </button>
           </div>
-          <p class="og-note">{{ selectedRelation.desc || "没有说明。" }}</p>
-          <button type="button" class="og-plain" @click="openModeling">去建模</button>
-          <p v-if="navigationError" class="og-note og-failure">{{ navigationError }}</p>
+          <div v-if="filteredRelations.length" class="og-list-section">
+            <p>关系类型 · {{ filteredRelations.length }}</p>
+            <button
+              v-for="relation in filteredRelations"
+              :key="relation.relationship"
+              type="button"
+              class="og-row"
+              :class="{ active: selectedRelation?.relationship === relation.relationship }"
+              @click="selectRelation(relation.relationship)"
+            >
+              <span class="og-icon og-icon-relation" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3.5" cy="8" r="1.6"/><circle cx="12.5" cy="8" r="1.6"/><path d="M5.3 8h5.4"/></svg>
+              </span>
+              <span class="og-row-copy">
+                <strong>{{ relation.name }}</strong>
+              </span>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
+            </button>
+          </div>
+          <p v-if="!filteredObjects.length && !filteredRelations.length" class="og-list-empty">没有匹配的资源</p>
         </div>
-        <div v-else class="og-empty">
-          <strong>选择对象类型或关系类型</strong>
-          <span>点画布上的节点或边，或者用上面的搜索找它们，就能看它的属性和关系。</span>
+      </aside>
+
+      <main class="og-graph">
+        <div class="og-canvas" v-loading="loading">
+          <projection slot="graph"></projection>
         </div>
+        <div v-if="!loading && !objects.length" class="og-graph-empty">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M9 3v6M15 3v6M6 9h12v4a6 6 0 0 1-6 6 6 6 0 0 1-6-6z"/></svg>
+          <strong>没有对象类型</strong>
+          <span>先在对象类型页建一个，图上才有东西可看。</span>
+        </div>
+        <div class="og-hint">
+          <span aria-hidden="true"></span>
+          拖动节点、滚轮缩放，点节点或关系看详情
+        </div>
+      </main>
+
+      <aside class="og-side">
+        <section class="og-path">
+          <div class="og-path-head">
+            <strong title="沿着关系方向，在两类之间找一条最短的路径">路径查找</strong>
+            <svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="3" cy="12" r="1.6"/><circle cx="13" cy="4" r="1.6"/><path d="M4.4 11 11.6 5"/></svg>
+          </div>
+          <div class="og-path-controls">
+            <select class="og-pick" :value="pathFrom" aria-label="起点对象类型" @change="pathFrom = $event.target.value">
+              <option value="">起点对象类型</option>
+              <option v-for="object in objects" :key="object.className" :value="object.className">{{ object.showName }}</option>
+            </select>
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
+            <select class="og-pick" :value="pathTo" aria-label="终点对象类型" @change="pathTo = $event.target.value">
+              <option value="">终点对象类型</option>
+              <option v-for="object in objects" :key="object.className" :value="object.className">{{ object.showName }}</option>
+            </select>
+          </div>
+          <button type="button" class="og-primary" :disabled="!pathFrom || !pathTo" @click="findPath">查找路径</button>
+          <p v-if="pathMessage" class="og-note" role="status">{{ pathMessage }}</p>
+        </section>
+
+        <section class="og-detail">
+          <div v-if="selectedObject" class="og-detail-content">
+            <div class="og-detail-title">
+              <span class="og-icon og-icon-object" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.8 14 4.6v6.8L8 14.2 2 11.4V4.6z"/><path d="M2 4.6 8 7.4l6-2.8M8 7.4v6.8"/></svg>
+              </span>
+              <div class="og-detail-copy">
+                <h2>{{ selectedObject.showName }}</h2>
+                <code>{{ selectedObject.className }}</code>
+              </div>
+              <button type="button" class="og-modeling" @click="openModeling">去建模</button>
+            </div>
+            <p v-if="selectedObject.classDesc" class="og-description">{{ selectedObject.classDesc }}</p>
+            <div class="og-section">
+              <div class="og-section-label">
+                <span>属性</span>
+                <small>{{ selectedAttributes.length }}</small>
+              </div>
+              <div v-for="attribute in selectedAttributes" :key="attribute.name" class="og-attribute">
+                <span>
+                  <strong>{{ attribute.showName }}</strong>
+                  <code>{{ attribute.name }}</code>
+                </span>
+                <span class="og-type">{{ attribute.type }}</span>
+              </div>
+              <p v-if="!selectedAttributes.length" class="og-note">这个对象类型还没有属性。</p>
+            </div>
+            <div class="og-section">
+              <div class="og-section-label">
+                <span>关系</span>
+                <small>{{ connectedRelations.length }}</small>
+              </div>
+              <button
+                v-for="relation in connectedRelations"
+                :key="relation.relationship"
+                type="button"
+                class="og-connection"
+                @click="selectRelation(relation.relationship)"
+              >
+                <span>{{ classNameLabel(relation.fromclass) }}</span>
+                <span class="og-connection-name">{{ relation.name }}</span>
+                <span>{{ classNameLabel(relation.toclass) }}</span>
+              </button>
+            </div>
+            <p v-if="navigationError" class="og-note og-failure">{{ navigationError }}</p>
+          </div>
+
+          <div v-else-if="selectedRelation" class="og-detail-content">
+            <div class="og-detail-title">
+              <span class="og-icon og-icon-relation" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3.5" cy="8" r="1.6"/><circle cx="12.5" cy="8" r="1.6"/><path d="M5.3 8h5.4"/></svg>
+              </span>
+              <div class="og-detail-copy">
+                <h2>{{ selectedRelation.name }}</h2>
+                <code>{{ selectedRelation.relationship }}</code>
+              </div>
+              <button type="button" class="og-modeling" @click="openModeling">去建模</button>
+            </div>
+            <div class="og-flow">
+              <button type="button" @click="selectObject(selectedRelation.fromclass)">{{ classNameLabel(selectedRelation.fromclass) }}</button>
+              <span>
+                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="3.5" cy="8" r="1.6"/><circle cx="12.5" cy="8" r="1.6"/><path d="M5.3 8h5.4"/></svg>
+                {{ selectedRelation.name }}
+              </span>
+              <button type="button" @click="selectObject(selectedRelation.toclass)">{{ classNameLabel(selectedRelation.toclass) }}</button>
+            </div>
+            <p v-if="selectedRelation.desc" class="og-description">{{ selectedRelation.desc }}</p>
+            <p v-if="navigationError" class="og-note og-failure">{{ navigationError }}</p>
+          </div>
+
+          <div v-else class="og-side-empty">
+            <div class="og-empty-mark">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M9 3v3M15 3v3M4.5 8.5h15v3a7.5 7.5 0 0 1-15 0z"/><path d="M12 19v2"/></svg>
+            </div>
+            <strong>选择一个对象类型或关系类型</strong>
+            <span>点画布上的节点或边，或者用左边的列表找它们，就能看它的属性和关系。</span>
+          </div>
+        </section>
       </aside>
     </div>
   </section>

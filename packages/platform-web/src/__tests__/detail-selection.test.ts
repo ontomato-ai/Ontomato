@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import { ACTION, AGENT_DEFINITION, FUNCTION, OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
+import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import { DETAIL_SELECTIONS, detailSelectionAddress } from "../detail-selection";
 
 /*
@@ -27,12 +27,20 @@ it("opens the old creation address as the catalog, and leaves the page's own add
   expect(open("/ontology/assets/actions")).toBeNull();
 });
 
-it("opens a function's detail address as the functions panel with the function selected, and the old creation address as the catalog", () => {
+it("opens a function's detail address as the functions panel with the function selected, and the old creation address as its blank form", () => {
   expect(open("/ontology/assets/functions/fn%201?back=products")).toEqual({
     path: "/ontology/assets/functions", state: { selected: { className: FUNCTION, primaryKey: "fn 1" } },
   });
-  expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: {} });
+  expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: { creating: true } });
   expect(open("/ontology/assets/functions")).toBeNull();
+});
+
+it("opens a metric view's detail address as the metric views panel with that metric selected, and the old creation address as its blank form", () => {
+  expect(open("/ontology/assets/metrics/mv%201?back=products")).toEqual({
+    path: "/ontology/assets/metrics", state: { selected: { className: METRIC_VIEW, primaryKey: "mv 1" } },
+  });
+  expect(open("/ontology/assets/metrics/new")).toEqual({ path: "/ontology/assets/metrics", state: { creating: true } });
+  expect(open("/ontology/assets/metrics")).toBeNull();
 });
 
 
@@ -58,4 +66,22 @@ it.each(["/ontology/agents", "/agents/settings"])("routes the settings detail at
 
 it.each(["capabilities", "skills", "mcp", "models"])("leaves the separate agent platform %s page address alone", (page) => {
   expect(open(`/agents/settings/${page}`)).toBeNull();
+});
+
+it("moves legacy schedule filters and run selection into state without losing other query or explicit state", () => {
+  const query = new URLSearchParams({
+    app: "operations", taskId: "task-1", runId: "run-1", external: "true",
+    state: JSON.stringify({ app: "agents", compose: "edit" }),
+    draftSessionId: "session-1", draftRunId: "run-2", draftPath: "outputs/drafts/task.page-draft.json",
+  });
+  const converted = detailSelectionAddress(DETAIL_SELECTIONS, `/schedules?${query}`)!;
+  expect(panelAddressState(converted)).toEqual({
+    app: "agents", compose: "edit", selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" }, runId: "run-1",
+  });
+  const result = new URL(converted, "http://page.invalid");
+  result.searchParams.delete("state");
+  expect(Object.fromEntries(result.searchParams)).toEqual({
+    external: "true", draftSessionId: "session-1", draftRunId: "run-2", draftPath: "outputs/drafts/task.page-draft.json",
+  });
+  expect(detailSelectionAddress(DETAIL_SELECTIONS, converted)).toBeNull();
 });

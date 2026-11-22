@@ -3,6 +3,9 @@
   .projections { display: flex; flex-direction: column; gap: var(--spacing-md); min-height: 0; padding-block-end: var(--spacing-4xl); }
   .projections-toolbar { display: flex; align-items: center; gap: var(--spacing-sm); flex-wrap: wrap; }
   .projections-search { width: 240px; }
+  .projection-name-button { display: block; width: 100%; border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+  .projection-name-button :is(.cell-name, .cell-desc) { display: block; }
+  .projection-name-button:focus-visible { box-shadow: var(--focus-ring); }
   .projections-sort { width: 132px; }
   .projections-count { margin-inline-start: auto; color: var(--el-text-color-secondary); font-size: var(--el-font-size-small); }
   .projections-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-md); align-items: start; }
@@ -73,8 +76,10 @@
           @row-click="choose" empty-text="没有符合条件的投影">
           <el-table-column label="名称" min-width="98">
             <template #default="scope">
-              <div class="cell-name">{{ scope.row.name }}</div>
-              <div class="cell-desc" v-if="scope.row.description">{{ scope.row.description }}</div>
+              <button class="projection-name-button" type="button" @click.stop="choose(scope.row)">
+                <span class="cell-name">{{ scope.row.name }}</span>
+                <span class="cell-desc" v-if="scope.row.description">{{ scope.row.description }}</span>
+              </button>
             </template>
           </el-table-column>
           <el-table-column label="所用组件" min-width="88">
@@ -155,7 +160,12 @@
               <h3>来处、读法</h3>
               <el-table :data="dataRows" size="small" border empty-text="这条投影不读数据">
                 <el-table-column prop="name" label="数据" width="96" />
-                <el-table-column prop="source" label="来处" min-width="150" />
+                <el-table-column prop="source" label="来处" min-width="150">
+                  <template #default="{ row }">
+                    <el-button v-if="row.address" link @click="openOwner(row.address)">{{ row.source }}</el-button>
+                    <span v-else>{{ row.source }}</span>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="read" label="读法" width="104" />
                 <el-table-column prop="params" label="参数从哪来" min-width="160" />
               </el-table>
@@ -164,6 +174,10 @@
             <section class="detail-section">
               <h3>配置</h3>
               <pre class="json">{{ jsonText(record.value.config) }}</pre>
+              <details>
+                <summary>{{ t('source.definition') }}</summary>
+                <pre class="json">{{ jsonText(record.value) }}</pre>
+              </details>
             </section>
 
             <section class="detail-section">
@@ -190,13 +204,37 @@
               <h3>属主登记的操作</h3>
               <el-table :data="operationRows" size="small" border empty-text="这条投影不登记操作">
                 <el-table-column prop="name" label="名字" width="96" />
-                <el-table-column prop="operation" label="操作" min-width="180" />
+                <el-table-column prop="operation" label="操作" min-width="180">
+                  <template #default="{ row }">
+                    <el-button v-if="row.address" link @click="openOwner(row.address)">{{ row.operation }}</el-button>
+                    <span v-else>{{ row.operation }}</span>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="target" label="目标" min-width="120" />
               </el-table>
             </section>
 
             <section class="detail-section">
               <h3>使用与编辑授权<small>业务读写由属主按真实身份裁决</small></h3>
+              <template v-if="canGrant">
+                <p v-if="grants.status === 'error'" role="alert">{{ grants.message }}</p>
+                <p v-else-if="grants.status === 'forbidden'" role="alert">{{ t('grants.forbidden') }}</p>
+                <p v-else-if="grants.status !== 'ready'" class="hint">{{ t('grants.loading') }}</p>
+                <el-table v-else :data="grants.value.grants" size="small" :empty-text="t('grants.none')">
+                  <el-table-column :label="t('grants.kind')">
+                    <template #default="{ row }">{{ t('grants.' + row.principalKind) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="principalId" :label="t('grants.id')"></el-table-column>
+                  <el-table-column :label="t('grants.verb')">
+                    <template #default="{ row }">{{ t('grants.' + row.verb) }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('grants.actions')">
+                    <template #default="{ row }">
+                      <el-button v-if="row.principalKind !== 'domain'" link @click="submitGrant(true, row)">{{ t('grants.revoke') }}</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </template>
               <div class="grant-row">
                 <el-select v-model="grantForm.principalKind" class="kind" size="small">
                   <el-option label="成员" value="principal" />

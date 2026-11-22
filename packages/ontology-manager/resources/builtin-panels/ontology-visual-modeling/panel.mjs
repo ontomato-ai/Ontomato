@@ -14,6 +14,19 @@ await mountPanel({
     const graphNodes = usePanelData("graph", "nodes");
     const graphEdges = usePanelData("graph", "edges");
 
+    const selectedNodeLabel = computed(() => {
+      const key = selectedNode.value?.primaryKey;
+      if (!key) return "";
+      const list = graphNodes.value.status === "ready" ? graphNodes.value.value : [];
+      return list.find(row => row.primaryKey === key)?.label || key;
+    });
+    const selectedEdgeLabel = computed(() => {
+      const key = selectedEdge.value?.primaryKey;
+      if (!key) return "";
+      const list = graphEdges.value.status === "ready" ? graphEdges.value.value : [];
+      return list.find(row => row.primaryKey === key)?.label || key;
+    });
+
     // The attribute reads take the chosen object type's key as a plain string.
     watch(
       selectedNode,
@@ -37,6 +50,15 @@ await mountPanel({
       const edge = selectedEdge.value;
       if (edge && !stillListed(graphEdges, edge.primaryKey)) instance.state.set("selectedEdge", null);
     });
+
+    // A line drawn with Shift from one node to another hands the page both ends: that is a new relation, so the owner's
+    // create form opens with them filled in. Opening it from the header clears them first, which leaves this alone.
+    watch(
+      () => [values.value.connectFrom, values.value.connectTo],
+      ([from, to]) => {
+        if (from && to && values.value.dialog !== "relation") instance.state.set("dialog", "relation");
+      },
+    );
 
     const openClassDialog = () => instance.state.set("dialog", "class");
     const openRelationDialog = () => {
@@ -83,6 +105,8 @@ await mountPanel({
       t,
       selectedNode,
       selectedEdge,
+      selectedNodeLabel,
+      selectedEdgeLabel,
       selectedAttribute,
       dialog,
       attributes,

@@ -16,12 +16,12 @@ const controls = useFormControls();
 <template>
   <template v-if="field.control.kind === 'reference'">
     <component
-      :is="controls.rowControl(path, field.path)"
-      v-if="controls.rowControl(path, field.path)"
+      :is="controls.fieldControl(path, field.path)"
+      v-if="controls.fieldControl(path, field.path)"
       class="sdk-form-field"
       :path="path + '/' + index + field.path"
     ></component>
-    <p v-else-if="controls.rowControl(path, field.path) === undefined" role="alert" class="sdk-form-field-unavailable">
+    <p v-else-if="controls.fieldControl(path, field.path) === undefined" role="alert" class="sdk-form-field-unavailable">
       {{ field.label }}: {{ t("platform.formControlUnavailable") }}
     </p>
   </template>

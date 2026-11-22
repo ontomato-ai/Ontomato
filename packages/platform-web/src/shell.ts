@@ -4,10 +4,8 @@ import "element-plus/theme-chalk/dark/css-vars.css";
 // Design foundation shared with the workbench (type, spacing, shape, density, elevation, motion, component variables).
 import "@ontomato/design-tokens/foundation.css";
 import { computed } from "vue";
-import { Bot, Cable, Cpu, Puzzle, Plug } from "lucide-vue-next";
-import { skillLibraryCount } from "@ontomato/workbench-ui/features/workbench";
+import { Bot, Cable, Cpu, Plug } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
-import { ontologyAgentModelPages } from "@ontomato/platform-shell";
 import { useTheme } from "@ontomato/workbench-ui/composables/useTheme";
 import { workbenchI18n, type SupportedLocale } from "@ontomato/workbench-ui/i18n";
 import { managerDestination } from "@ontomato/platform-admin/legacy-manager";
@@ -149,11 +147,10 @@ export function createServiceManager(options: {
   });
 }
 
-/** The ontology manager's pages the agent platform's pages draw: the skills, beside its capabilities. */
+/** The model settings pages the platform shell mounts directly. */
 const ontologyWorkspacePages: readonly PlatformPage[] = [
   {path:platformRoutes.systemAgentModels.path,titleKey:'platform.systemAgentModels',descriptionKey:'platform.systemAgentModelsDescription',icon:Bot,permissions:['system-config','app-builder'],group:'platform',ownHeader:true},
   {path:platformRoutes.builderModels.path,titleKey:'platform.builderAgentModels',icon:Cpu,permissions:['app-builder'],group:'platform',ownHeader:true},
-  { path: platformRoutes.ontologySkills.path, titleKey: "capabilities.skillTitle", icon: Puzzle, permissions: ["skill-management"], group: "assets", ownHeader: true, count: skillLibraryCount },
 ];
 
 /**
@@ -165,26 +162,10 @@ const systemIntegrationPages: readonly PlatformPage[] = [
   { path: platformRoutes.publishedMcp.path, titleKey: "mcp.publishedSettingsTitle", descriptionKey: "mcp.publishedHint", icon: Plug, permissions: ["mcp-service"], group: "platform" },
 ];
 
-/**
- * Each application's "Models" page of its ontology service agents. It keeps the permission those agents' choices have
- * always had (`system-config`), so only an account that holds it sees the entry or may open the page, without being given
- * any other page of the application. The page draws its own header.
- */
-const agentModelPages: readonly PlatformPage[] = ontologyAgentModelPages.map((page) => ({
-  path: page.path,
-  titleKey: page.app==='ontology'?'platform.ontologyAgentModels':'platform.conversationAgentModels',
-  descriptionKey: "platform.agentModels.description",
-  icon: Cpu,
-  permissions: ["system-config"],
-  group: page.app,
-  ownHeader: true,
-}));
-
 /** The native skill, integration and model pages shared by the edition assemblies. */
 export const applicationPages: readonly PlatformPage[] = [
   ...ontologyWorkspacePages,
   ...systemIntegrationPages,
-  ...agentModelPages,
 ];
 
 /**

@@ -48,6 +48,8 @@ public interface ActionService {
 	public ExplainedDraft explainDraft(String code, List<Parameter> parameters, Owner owner, String lang);
 	
 	public void delete(String id, String lang) throws Exception;
+
+	String systemDeletionRefusal(String id, String domainId, String lang);
 	
 	public Action queryById(String id);
 	

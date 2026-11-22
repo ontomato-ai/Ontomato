@@ -149,6 +149,22 @@
             "rule": "usable"
           }
         }
+      },
+      "memberPanelChoices": {
+        "component": "PanelData",
+        "type": "platform:ProductPanel",
+        "data": {
+          "rows": "query"
+        },
+        "id": "builtin-product-32b3c6b9-49ab-48b0-a8c1-e825d7d07f2e"
+      },
+      "memberProjectionChoices": {
+        "component": "PanelData",
+        "type": "platform:ProductProjection",
+        "data": {
+          "rows": "query"
+        },
+        "id": "builtin-product-041e7470-7fcb-4959-a372-daaac00e5f77"
       }
     },
     "commands": {
@@ -301,7 +317,17 @@
         "grants.shared": "Shared in the domain",
         "grants.notShared": "Not shared",
         "grants.empty": "Read the grants again to see who may use or edit this panel.",
-        "visibility.platform": "Built in"
+        "visibility.platform": "Built in",
+        "list.pageSize": "Rows per page",
+        "list.pageSizeValue": "{count} rows per page",
+        "source.manifest": "Manifest and theme",
+        "source.theme": "Theme",
+        "members.openRecord": "Open record",
+        "members.addExisting": "Add an existing member",
+        "members.search": "Search by name",
+        "members.noMatches": "No matching members",
+        "members.choose": "Select a record",
+        "members.keyExists": "This member name is already used."
       },
       "zh-CN": {
         "list.search": "搜索名称或说明",
@@ -432,7 +458,89 @@
         "grants.shared": "域内共享",
         "grants.notShared": "未共享",
         "grants.empty": "重新读取授权后，这里列出谁可以使用或编辑这个面板。",
-        "visibility.platform": "平台自带"
+        "visibility.platform": "平台自带",
+        "list.pageSize": "每页条数",
+        "list.pageSizeValue": "{count} 条/页",
+        "source.manifest": "公开声明与主题",
+        "source.theme": "主题",
+        "members.openRecord": "打开记录",
+        "members.addExisting": "添加已有成员",
+        "members.search": "按名称搜索",
+        "members.noMatches": "没有符合条件的成员",
+        "members.choose": "选择一条记录",
+        "members.keyExists": "这个成员名称已在使用。"
+      },
+      "zh-TW": {
+        "list.pageSize": "每頁筆數",
+        "list.pageSizeValue": "每頁 {count} 筆",
+        "source.manifest": "公開宣告與主題",
+        "source.theme": "主題",
+        "members.openRecord": "開啟記錄",
+        "members.addExisting": "新增既有成員",
+        "members.search": "依名稱搜尋",
+        "members.noMatches": "沒有符合條件的成員",
+        "members.choose": "選擇一筆記錄",
+        "members.keyExists": "這個成員名稱已被使用。"
+      },
+      "ja": {
+        "list.pageSize": "ページごとの件数",
+        "list.pageSizeValue": "1 ページ {count} 件",
+        "source.manifest": "マニフェストとテーマ",
+        "source.theme": "テーマ",
+        "members.openRecord": "レコードを開く",
+        "members.addExisting": "既存のメンバーを追加",
+        "members.search": "名前で検索",
+        "members.noMatches": "条件に一致するメンバーがありません",
+        "members.choose": "レコードを選択",
+        "members.keyExists": "このメンバー名はすでに使われています。"
+      },
+      "ar": {
+        "list.pageSize": "عدد الصفوف في الصفحة",
+        "list.pageSizeValue": "{count} صف في الصفحة",
+        "source.manifest": "البيان والسمة",
+        "source.theme": "السمة",
+        "members.openRecord": "فتح السجل",
+        "members.addExisting": "إضافة عضو موجود",
+        "members.search": "البحث بالاسم",
+        "members.noMatches": "لا يوجد أعضاء مطابقون",
+        "members.choose": "اختر سجلًا",
+        "members.keyExists": "اسم العضو هذا مستخدم بالفعل."
+      },
+      "fr": {
+        "list.pageSize": "Lignes par page",
+        "list.pageSizeValue": "{count} lignes par page",
+        "source.manifest": "Manifeste et thème",
+        "source.theme": "Thème",
+        "members.openRecord": "Ouvrir la fiche",
+        "members.addExisting": "Ajouter un membre existant",
+        "members.search": "Rechercher par nom",
+        "members.noMatches": "Aucun membre correspondant",
+        "members.choose": "Sélectionner une fiche",
+        "members.keyExists": "Ce nom de membre est déjà utilisé."
+      },
+      "de": {
+        "list.pageSize": "Einträge pro Seite",
+        "list.pageSizeValue": "{count} Einträge pro Seite",
+        "source.manifest": "Manifest und Design",
+        "source.theme": "Design",
+        "members.openRecord": "Datensatz öffnen",
+        "members.addExisting": "Vorhandenes Mitglied hinzufügen",
+        "members.search": "Nach Namen suchen",
+        "members.noMatches": "Keine passenden Mitglieder",
+        "members.choose": "Datensatz auswählen",
+        "members.keyExists": "Dieser Mitgliedsname wird bereits verwendet."
+      },
+      "it": {
+        "list.pageSize": "Righe per pagina",
+        "list.pageSizeValue": "{count} righe per pagina",
+        "source.manifest": "Manifesto e tema",
+        "source.theme": "Tema",
+        "members.openRecord": "Apri scheda",
+        "members.addExisting": "Aggiungi un membro esistente",
+        "members.search": "Cerca per nome",
+        "members.noMatches": "Nessun membro corrispondente",
+        "members.choose": "Seleziona una scheda",
+        "members.keyExists": "Questo nome è già usato da un membro."
       }
     }
   }

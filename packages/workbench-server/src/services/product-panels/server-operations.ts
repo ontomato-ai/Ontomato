@@ -9,10 +9,14 @@ import {
   type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelReadOperationJsonResultSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelUploadDeclaration } from "@ontomato/contracts/panel-upload";
 import type { AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { OntologyElementRef } from "@ontomato/contracts/product-panels";
+import { generalSettingsOperations } from "../admin/general-settings-panel";
+import { builderModelOperations } from "../app-builder/panel-model";
+import { diagnosisModelOperations } from "../ops-diagnosis/panel-model";
 import { feedbackExportOperation } from "../admin/feedback-panel-reads";
 import { m6ServerOperations } from "../action/panel-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
@@ -32,7 +36,11 @@ export type PanelOperationInvocation = z.infer<typeof panelSingleInvocationSchem
 export type PanelBatchCalls = z.infer<typeof panelBatchInvocationSchema>["calls"];
 export interface PanelImpactInspector {
   handlerRef: string;
-  inspect(host: PanelOperationHost, calls: readonly PanelOperationCall[]): Promise<z.infer<typeof panelOperationImpactSchema>>;
+  /**
+   * What the calls affect, or null when this call needs no confirmation. A declared file input arrives as the staged
+   * `PanelUploadedFile`.
+   */
+  inspect(host: PanelOperationHost, calls: readonly PanelOperationCall[]): Promise<z.infer<typeof panelOperationImpactSchema> | null>;
 }
 export interface PanelOperationActor {
   owner: AssistantOwner;
@@ -55,14 +63,22 @@ interface ServerOperation {
   /** The current reader's display reason, only looked up for a concrete record on the operations read. */
   unavailable?(host: PanelOperationHost, target: PanelRecordTarget): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
   targetType: string;
-  targetSchema: z.ZodType<PanelOperationTarget>;
   inputSchema: z.ZodType<Record<string, unknown>>;
   resultSchema: z.ZodTypeAny;
   projectResult?(data: Record<string, RuntimeJsonValue>, view: AssistantSkillView): Record<string, RuntimeJsonValue>;
+}
+/** The input was checked against `inputSchema`. */
+interface TargetedExecution {
+  targetSchema: z.ZodType<PanelOperationTarget>;
   execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
 }
+/** A declared upload input holds the staged `PanelUploadedFile`, which is discarded once the call succeeds. */
+interface UntargetedExecution {
+  targetSchema: z.ZodType<null>;
+  execute(host: PanelOperationHost, target: null, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
+}
 export type PanelWriteServerOperation = ServerOperation & (
-  {
+  TargetedExecution & {
     kind: "form.save";
     batch: false;
     draftOperation(target: PanelOperationTarget): string;
@@ -73,13 +89,30 @@ export type PanelWriteServerOperation = ServerOperation & (
       createdObject(data: unknown): PanelObjectIdentity;
     };
   } |
-  ({
-    kind: "action";
-    targetInput: string;
-    targetLabel(host: PanelOperationHost, target: PanelRecordTarget): Promise<string>;
-  } & (
-    { batch: false } |
-    { batch: true; executeBatch(host: PanelOperationHost, calls: readonly PanelBatchCalls[number][], intentId: string): Promise<PanelOperationOutcome> }
+  ({ kind: "action" } & (
+    (TargetedExecution & {
+      targetInput: string;
+      targetLabel(host: PanelOperationHost, target: PanelRecordTarget): Promise<string>;
+      /**
+       * The owner's sentence for one call it completed, naming what it acted on by the target's `targetLabel`
+       * ("Function “Refund” deleted"), in the host's language. The platform reads the name before the call runs (a delete
+       * leaves nothing to read after) and gives the sentence as the success's message, for the reader and an agent.
+       */
+      done?(host: PanelOperationHost, name: string): string;
+      upload?: undefined;
+    } & (
+      { batch: false } |
+      { batch: true; executeBatch(host: PanelOperationHost, calls: readonly PanelBatchCalls[number][], intentId: string): Promise<PanelOperationOutcome> }
+    )) |
+    UntargetedExecution & {
+      /** An action that acts on no selected object, such as creating one from a file. */
+      targetInput?: undefined;
+      targetLabel?: undefined;
+      done?: undefined;
+      batch: false;
+      /** The input that is a file the person stages before the call. */
+      upload?: PanelUploadDeclaration;
+    }
   ))
 );
 
@@ -108,6 +141,9 @@ export type PanelServerOperation = PanelWriteServerOperation | PanelReadServerOp
 const registrations: readonly PanelServerOperation[] = [
   ...scheduledTaskServerOperations,
   ...agentDefinitionOperations,
+  ...generalSettingsOperations,
+  ...builderModelOperations,
+  ...diagnosisModelOperations,
   ...m5ServerOperations,
   ...m6ServerOperations,
   ...m7ServerOperations,
@@ -117,11 +153,24 @@ const registrations: readonly PanelServerOperation[] = [
   ...ontologyModelServerOperations,
   ...productCatalogServerOperations,
 ];
+const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });
 const operations = new Map(registrations.map(operation => {
   requirePanelOperationLabelKey(operation);
+  requireDeclaredUploadInput(operation);
   return [operation.handlerRef, operation];
 }));
-const jsonSchema = (schema: z.ZodTypeAny) => zodToJsonSchema(schema, { effectStrategy: "input" });
+
+function requireDeclaredUploadInput(handler: PanelServerOperation) {
+  const upload = panelOperationUpload(handler);
+  const properties = upload && (jsonSchema(handler.inputSchema) as { properties?: Record<string, unknown> }).properties;
+  if (upload && !properties?.[upload.input])
+    throw new Error(`Owner operation '${handler.handlerRef}' declares upload input '${upload.input}' outside its input schema`);
+}
+
+/** The declared file input of a write action without a target. */
+export function panelOperationUpload(handler: PanelServerOperation) {
+  return handler.effect === "write" && handler.kind === "action" ? handler.upload : undefined;
+}
 
 export function operationDeclaration(handler: PanelServerOperation) {
   return panelOperationDeclarationSchema.parse({
@@ -130,9 +179,11 @@ export function operationDeclaration(handler: PanelServerOperation) {
     effect: handler.effect,
     batch: handler.batch,
     target: handler.effect === "read" && handler.target.source !== "draft" ? handler.target
-      : handler.kind === "action" && handler.effect === "write" ? { source: "input", input: handler.targetInput }
+      : handler.kind === "action" && handler.effect === "write"
+        ? handler.targetInput === undefined ? { source: "none" } : { source: "input", input: handler.targetInput }
       : { source: "draft" },
     inputSchema: jsonSchema(handler.inputSchema),
+    ...(panelOperationUpload(handler) && { upload: panelOperationUpload(handler) }),
   });
 }
 

@@ -5,7 +5,7 @@ import type { DisplayPageAddressInput } from "@ontomato/contracts/agent-presenta
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
-import { SCHEDULED_TASK, draftScenario, installPlatform, leaveFrame, mountPlatformPage, task, caseSetLabel } from "./panel-frame";
+import { confirmDiscard, SCHEDULED_TASK, draftScenario, installPlatform, leaveFrame, mountPlatformPage, task, caseSetLabel } from "./panel-frame";
 
 /*
  * The same draft opened beside a conversation: the conversation carries the page's address (`?page=`) and the platform's
@@ -50,6 +50,7 @@ describe("a draft at a panel application's page beside the conversation", () => 
     const discard = document.querySelector<HTMLButtonElement>(".sdk-owner-form-actions button")!;
     expect(discard.textContent?.trim()).toBe("Discard");
     discard.click();
+    await confirmDiscard();
     await vi.waitFor(() => expect(document.querySelector(".sdk-owner-form-changed")).toBeNull());
     expect(sent.filter((request) => request.method === "PUT")).toEqual([]);
     page.unmount();

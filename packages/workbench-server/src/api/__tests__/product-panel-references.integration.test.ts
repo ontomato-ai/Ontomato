@@ -23,6 +23,7 @@ import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-
 import { ensureAssistantSchema } from "../../infrastructure/postgres-migrations/20261028-assistant/schema";
 import { installContentLayout } from "../../content/layout";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
+import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
 import { panelStateKey } from "../../services/product-panels/personal-state-key";
@@ -85,6 +86,7 @@ beforeAll(async () => {
   await ensureAssistantSchema(state.pool);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensureDomainComponentsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);
 
   contentRoot = await mkdtemp(join(tmpdir(), "product-panel-references-"));
@@ -242,7 +244,7 @@ it("reads a selected nested panel or projection and freezes its actual publisher
     componentId: "@ontomato/sdk:OperationButton", inputs: { agent: agentPort }, outputs: {}, config: { operation: "remove" },
     data: {}, operations: { remove: { operation: { kind: "PlatformOperation", id: DELETE_AGENT }, target: { input: "agent" } } },
   });
-  const theme = { dark: { "--el-color-primary": "#3758ca" } };
+  const theme = { dark: { "--sdk-color-primary": "#3758ca" } };
   for (const id of [child, alternate]) {
     await save(`product-panels/${id}`, {
       ...(id === child && { theme }),

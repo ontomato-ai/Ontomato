@@ -193,6 +193,12 @@ export function brandProperties(brand: BrandSource, mode: BrandMode): Record<str
     "--brand-accent-soft": c.accentSoft,
   };
   if (c.brandMark) properties["--brand-mark"] = c.brandMark;
+  // Expose the same colour/surface/fill/border/text roles under the public `--sdk-*` prefix so authors never write `--el-*`.
+  for (const [name, value] of Object.entries(properties)) {
+    if (!name.startsWith("--el-")) continue;
+    if (name.startsWith("--el-color-error") || name === "--el-text-color-tertiary" || name === "--el-disabled-text-color") continue;
+    properties[`--sdk-${name.slice(5)}`] = value;
+  }
   palette.forEach((color, index) => (properties[`--chart-${index + 1}`] = color));
   chartSequential(brand, mode).forEach((color, index) => (properties[`--chart-sequential-${index + 1}`] = color));
   return properties;
@@ -219,36 +225,50 @@ const THEMED_FAMILIES = ["primary", "success", "warning", "danger", "info"] as c
 const cssMix = (name: string, toward: string, weight: number) => `color-mix(in srgb, var(${name}), var(${toward}) ${Math.round(weight * 100)}%)`;
 
 /** A family's shades in CSS, by the rule `family` and `statusFamily` apply to the brand, from the area's own colours. */
-function cssFamily(name: string, assigned: string) {
-  const color = `--el-color-${name}`;
+function cssFamily(prefix: "--sdk-color" | "--el-color", name: string, assigned: string, surface: string, text: string) {
+  const color = `${prefix}-${name}`;
   const properties: Record<string, string> = {};
-  for (const step of LADDER) properties[`${color}-light-${step}`] = cssMix(color, "--el-bg-color", step / 10);
-  properties[`${color}-light-9`] = cssMix(color, "--el-bg-color", SOFT);
-  properties[`${color}-dark-2`] = cssMix(color, "--el-text-color-primary", PRESS);
+  for (const step of LADDER) properties[`${color}-light-${step}`] = cssMix(color, surface, step / 10);
+  properties[`${color}-light-9`] = cssMix(color, surface, SOFT);
+  properties[`${color}-dark-2`] = cssMix(color, text, PRESS);
   const rgb = literalRgbTriplet(assigned);
   if (rgb !== undefined) properties[`${color}-rgb`] = rgb;
   return properties;
 }
 
 /**
- * What an area must declare besides the values a theme assigns there (product-layer standard, the theme layers): the
- * shades of each colour family it recolours, which Element Plus works out once on the page's root and so would stay the
- * platform's, and the platform's roles that follow primary — its soft fill, a hovered primary button, and link text
- * where the theme sets none. Each is worked out where it is declared, from the area's own colour and surface, so a
- * layer inside the area that recolours again has its own worked out over it; the rule is the brand's own (`family`).
+ * What an area must declare besides the values a theme assigns there (product-layer standard, the theme layers):
+ * - internal `--el-*` mirrors for any `--sdk-*` overrides so underlying UI primitives recolour inside the area;
+ * - the shades of each colour family it recolours (both `--sdk-color-*` and internal `--el-color-*`), which are worked
+ *   out once on the page's root and so would otherwise stay the platform's;
+ * - the platform's roles that follow primary — its soft fill, a hovered primary button, and link text where none is set.
+ * Each is worked out where it is declared, from the area's own colour and surface, so a layer inside the area that
+ * recolours again has its own worked out over it; the rule is the brand's own (`family`).
  */
 export function themeDerivedProperties(assigned: Readonly<Record<string, string>>): Record<string, string> {
   const properties: Record<string, string> = {};
-  for (const name of THEMED_FAMILIES) {
-    const value = assigned[`--el-color-${name}`];
-    if (value === undefined) continue;
-    Object.assign(properties, cssFamily(name, value));
-    if (name === "danger") Object.assign(properties, { "--el-color-error": "var(--el-color-danger)" }, cssFamily("error", value));
+  for (const [name, value] of Object.entries(assigned)) {
+    if (name.startsWith("--sdk-")) {
+      properties[`--el-${name.slice(6)}`] = value;
+    }
   }
-  if (assigned["--el-color-primary"] !== undefined) {
-    properties["--brand-primary-tint"] = cssMix("--el-color-primary", "--el-bg-color", SOFT);
-    properties["--brand-primary-hover"] = "var(--el-color-primary-light-3)";
-    if (assigned["--brand-link"] === undefined) properties["--brand-link"] = "var(--el-color-primary)";
+  for (const name of THEMED_FAMILIES) {
+    const value = assigned[`--sdk-color-${name}`];
+    if (value === undefined) continue;
+    Object.assign(properties, cssFamily("--sdk-color", name, value, "--sdk-bg-color", "--sdk-text-color-primary"));
+    Object.assign(properties, cssFamily("--el-color", name, value, "--el-bg-color", "--el-text-color-primary"));
+    if (name === "danger") {
+      Object.assign(
+        properties,
+        { "--el-color-error": "var(--el-color-danger)" },
+        cssFamily("--el-color", "error", value, "--el-bg-color", "--el-text-color-primary"),
+      );
+    }
+  }
+  if (assigned["--sdk-color-primary"] !== undefined) {
+    properties["--brand-primary-tint"] = cssMix("--sdk-color-primary", "--sdk-bg-color", SOFT);
+    properties["--brand-primary-hover"] = "var(--sdk-color-primary-light-3)";
+    if (assigned["--brand-link"] === undefined) properties["--brand-link"] = "var(--sdk-color-primary)";
   }
   return properties;
 }

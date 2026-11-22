@@ -2,19 +2,20 @@ import { productPanelCatalogQuerySchema } from "@ontomato/contracts/product-cata
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
 import { directProjectionPortsSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
 import {
   METRIC_CHART_COMPONENT, productCatalogQuerySchema,
   productPanelInputSchema, productVisibilitySchema, registerProductPanelRequestSchema, type ProductVisibility,
   registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
+import type { ComponentDeclaration } from "@ontomato/contracts/component-declaration";
 import { domainProductIdSchema } from "@ontomato/contracts/product-record-id";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { ProductOwner } from "../product-governance/grants";
 import { currentProductGrants, currentProductUsedBy, listCurrentProducts } from "./catalog";
-import { readPanelComponentCatalogue } from "./component-catalogue";
+import { readAuthorComponentCatalogue } from "./component-catalogue";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 
 const jsonSchema = (schema: z.ZodTypeAny) => runtimeJsonObjectSchema.parse(zodToJsonSchema(schema, { effectStrategy: "input" }));
@@ -35,11 +36,11 @@ async function catalogueGrants(owner: ProductOwner, viewer: AssistantCredentials
 function formFields(locale: string | undefined, editable: boolean, creating: boolean, builtin: boolean) {
   const label = (name: string) => tForLocale(locale, `panels.productCatalog.${name}`);
   const field = (path: string, schema: z.ZodTypeAny, control: PanelFormField["control"],
-    { required = true, readOnly = !editable, help, labelKey = path.split("/").at(-1)! }: {
-      required?: boolean; readOnly?: boolean; help?: string; labelKey?: string;
+    { required = true, readOnly = !editable, help, labelKey = path.split("/").at(-1)!, labelText, refreshOnChange }: {
+      required?: boolean; readOnly?: boolean; help?: string; labelKey?: string; labelText?: string; refreshOnChange?: boolean;
     } = {}): PanelFormField => ({
-    path, label: label(labelKey), valueSchema: jsonSchema(schema), control, required, readOnly,
-    ...(help && { help }),
+    path, label: labelText ?? label(labelKey), valueSchema: jsonSchema(schema), control, required, readOnly,
+    ...(help && { help }), ...(refreshOnChange && { refreshOnChange }),
   });
   const common = productPanelInputSchema.shape;
   const visibility = builtin ? productVisibilitySchema : common.visibility;
@@ -52,6 +53,41 @@ function formFields(locale: string | undefined, editable: boolean, creating: boo
     }, { readOnly: !creating }),
   ];
   return { field, fields };
+}
+
+function configurationControl(type: string): [z.ZodTypeAny, PanelFormField["control"]] {
+  switch (type) {
+    case "boolean": return [z.boolean(), { kind: "switch" }];
+    case "number": return [z.number(), { kind: "number" }];
+    case "string": return [z.string(), { kind: "text" }];
+    case "string[]": return [z.array(z.string()), { kind: "string-array" }];
+  }
+  const literals = type.split("|").map(value => /^"([^"]+)"$/.exec(value.trim())?.[1]);
+  if (literals.length > 1 && literals.every(value => value !== undefined)) {
+    const options = literals.map(value => option(value!, value!));
+    return [z.union([z.literal(literals[0]!), z.literal(literals[1]!), ...literals.slice(2).map(value => z.literal(value!))]),
+      { kind: "select", options }];
+  }
+  return [runtimeJsonValueSchema, { kind: "code", language: "json" }];
+}
+
+type FormField = ReturnType<typeof formFields>["field"];
+function projectionConfigurationFields(field: FormField, component: ComponentDeclaration | undefined, config: unknown) {
+  if (!component?.config?.length) return [
+    field("/config", directProjectionPortsSchema.shape.config, { kind: "code", language: "json" }),
+  ];
+  const keyPath = (key: string) => `/config/${key.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+  const fields = component.config.map(property => {
+    const [schema, control] = configurationControl(property.type);
+    return field(keyPath(property.name), schema, control, {
+      required: property.required, labelText: property.name, help: property.description,
+    });
+  });
+  for (const key of Object.keys(runtimeJsonObjectSchema.parse(config ?? {}))) {
+    if (!component.config.some(property => property.name === key))
+      fields.push(field(keyPath(key), runtimeJsonValueSchema, { kind: "code", language: "json" }, { labelText: key, required: false }));
+  }
+  return fields;
 }
 
 function formResult(
@@ -145,19 +181,17 @@ export function createProductProjectionReadAdapter(owner: ProductOwner, viewer: 
   async function describeForm(id: string, values: Record<string, unknown>, editable: boolean, revision?: number, chart = false) {
     const { field, fields } = formFields(viewer.locale, editable, revision === undefined, values.visibility === "platform");
     if (chart) return formResult("projection", id, fields, values, revision);
-    const { components } = await readPanelComponentCatalogue();
-    const candidates = [...components].filter(([key, item]) => key !== METRIC_CHART_COMPONENT && item.data !== undefined);
-    const component = candidates.find(([key]) => key === values.componentId)?.[1];
+    const components = await readAuthorComponentCatalogue(owner);
+    const candidates = [...components].filter(([key, item]) => key !== METRIC_CHART_COMPONENT && item.declaration.data !== undefined);
+    const component = typeof values.componentId === "string" ? components.get(values.componentId)?.declaration : undefined;
     const schema = directProjectionPortsSchema.shape;
     return formResult("projection", id, [
       ...fields,
       field("/componentId", schema.componentId, {
-        kind: "select", options: candidates.map(([value, item]) => option(value, item.componentId)),
-      }, { labelKey: "component" }),
+        kind: "select", options: candidates.map(([value, item]) => option(value, item.label)),
+      }, { labelKey: "component", refreshOnChange: true }),
       field("/data", schema.data, { kind: "code", language: "json" }),
-      field("/config", schema.config, { kind: "code", language: "json" }, {
-        help: component?.config?.map(property => `${property.name}: ${property.type}`).join("\n"),
-      }),
+      ...projectionConfigurationFields(field, component, values.config),
       field("/inputs", schema.inputs, { kind: "code", language: "json" }),
       field("/outputs", schema.outputs, { kind: "code", language: "json" }),
       field("/operations", schema.operations, { kind: "code", language: "json" }, { required: false }),

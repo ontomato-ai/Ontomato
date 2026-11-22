@@ -180,9 +180,10 @@ it("names what a delete removes in the host's dialog first, writes nothing on ca
   await click(0);
   box = await dialog();
   dialogButton(box, "Delete").click();
-  await vi.waitFor(() => expect(buttonOf(0).querySelector("[data-outcome=success]")?.textContent).toBe("Done"));
-  expect(writes(sent).filter((path) => path.endsWith("/dispatch"))).toHaveLength(1);
   // What the owner reported changed goes to the host's refresh port once; the frame rereads nothing from the receipt.
+  // (A frame has no platform message to say it was done in: panel-direct-operation-receipt covers that.)
+  await vi.waitFor(() => expect(hostChanges).toHaveLength(1));
+  expect(writes(sent).filter((path) => path.endsWith("/dispatch"))).toHaveLength(1);
   expect(hostChanges).toEqual([{ target: null, affected: { objects: [knowledge("a")], objectTypes: [BUSINESS_KNOWLEDGE] } }]);
   expect(changed).toEqual([]);
 });

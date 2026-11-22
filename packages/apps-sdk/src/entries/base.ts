@@ -11,6 +11,7 @@ export { default as ObjectRelations } from "../base/ObjectRelations.vue";
 export { default as ObjectSummary } from "../base/ObjectSummary.vue";
 export { default as ObjectForm } from "../base/ObjectForm.vue";
 export { default as OperationButton } from "../base/OperationButton.vue";
+export { default as FileUploadControl } from "../base/FileUploadControl.vue";
 export { default as SegmentedControl } from "../base/SegmentedControl.vue";
 export type { SegmentedControlOption } from "../base/segmented-control-types";
 export { default as TwoPaneLayout } from "../base/TwoPaneLayout.vue";

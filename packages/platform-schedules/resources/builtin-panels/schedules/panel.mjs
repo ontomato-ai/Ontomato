@@ -3,6 +3,7 @@ import { appIcon, mountPanel, usePanelContext, usePanelData, usePanelOperation }
 
 const TASK = "platform:ScheduledTask";
 const DAY = 86_400_000;
+const ROW_APPS = 5;
 
 await mountPanel({
   setup() {
@@ -29,29 +30,6 @@ await mountPanel({
     const opDelete = usePanelOperation("opDelete", "delete");
     const opRenew = usePanelOperation("renew", "renewCredential");
     const renewalProblem = ref("");
-
-    // Keep the links issued by the original page and execution results working at their original address.
-    onMounted(async () => {
-      const address = new URL(instance.pageContext.value.url, window.location.origin);
-      const params = address.searchParams;
-      const legacyApp = params.get("app");
-      const legacyTask = params.get("taskId");
-      const legacyRun = params.get("runId");
-      if (!legacyApp && !legacyTask && !legacyRun) return;
-      const state = Object.fromEntries(["app", "selectedTask", "runId", "compose"].flatMap(key => {
-        const value = values.value[key];
-        return value == null ? [] : [[key, value]];
-      }));
-      if (legacyApp && !Object.hasOwn(state, "app")) state.app = legacyApp;
-      if (legacyTask && !Object.hasOwn(state, "selectedTask")) {
-        state.selectedTask = { className: TASK, primaryKey: legacyTask };
-      }
-      if (legacyRun && !Object.hasOwn(state, "runId")) state.runId = legacyRun;
-      for (const key of ["app", "taskId", "runId"]) params.delete(key);
-      params.set("state", JSON.stringify(state));
-      await navigate(address.pathname + address.search);
-      instance.state.setState(state);
-    });
 
     // Page-local state.
     const search = ref("");
@@ -105,12 +83,16 @@ await mountPanel({
       const counts = new Map();
       for (const row of rows.value) counts.set(row.fields.application, (counts.get(row.fields.application) ?? 0) + 1);
       const ordered = [...appOptions.value.map((option) => option.value), ...counts.keys()];
+      if (app.value) ordered.push(app.value);
       const ids = [...new Set(ordered)].filter((id) => counts.has(id) || id === app.value);
       return [
         { id: null, label: t("filter.all"), count: rows.value.length },
         ...ids.map((id) => ({ id, label: appLabel(id), count: counts.get(id) ?? 0 })),
       ];
     });
+    const rowChips = computed(() => chips.value.slice(0, ROW_APPS + 1));
+    const moreChips = computed(() => chips.value.slice(ROW_APPS + 1));
+    const chosenMore = computed(() => moreChips.value.find(chip => chip.id === app.value));
     const query = computed(() => search.value.trim().toLocaleLowerCase(locale.value));
     const shown = computed(() =>
       rows.value.filter((row) =>
@@ -234,13 +216,23 @@ await mountPanel({
       nextCursor.value = page.nextCursor;
     }, { immediate: true });
     const runsLoading = computed(() => runsData.value.status === "loading" && runs.value.length === 0);
-    const runsFailed = computed(() => ["error", "forbidden"].includes(runsData.value.status) && runs.value.length === 0);
+    const runsFailure = computed(() => ["error", "forbidden"].includes(runsData.value.status) ? runsData.value : null);
     const loadingMore = computed(() => runsData.value.status === "loading" && !!cursor.value);
     function loadMore() {
       if (nextCursor.value) cursor.value = nextCursor.value;
     }
     const focusRun = computed(() => (focusData.value.status === "ready" ? focusData.value.value : null));
     const pinned = computed(() => (focusRun.value && !runs.value.some((run) => run.id === focusRun.value.id) ? focusRun.value : null));
+    const runGroups = computed(() => [
+      ...(pinned.value ? [{ key: "linked", runs: [pinned.value] }] : []),
+      { key: "history", runs: runs.value },
+    ]);
+    const historyRecords = ref(null);
+    const visibleFocus = computed(() => mode.value === "view" && runId.value &&
+      (pinned.value?.id === runId.value || runs.value.some(run => run.id === runId.value)) ? runId.value : null);
+    watch(visibleFocus, (id) => {
+      if (id) historyRecords.value?.querySelector("[data-run].focused")?.scrollIntoView({ block: "nearest" });
+    }, { flush: "post" });
     watch(runId, (id) => { if (id) expanded.value = new Set(expanded.value).add(id); }, { immediate: true });
     watch(focusData, (state) => {
       if (runId.value && ["empty", "error", "forbidden"].includes(state.status)) {
@@ -262,7 +254,7 @@ await mountPanel({
     function showRecords(id) {
       select(id);
       setMode("view");
-      void nextTick(() => document.querySelector("[data-records]")?.scrollIntoView?.({ block: "nearest" }));
+      void nextTick(() => historyRecords.value?.scrollIntoView({ block: "nearest" }));
     }
 
     // ---------- polling while something runs ----------
@@ -404,11 +396,11 @@ await mountPanel({
     const selectedRow = computed(() => rows.value.find((row) => row.primaryKey === selectedId.value) ?? detailRow.value);
 
     return {
-      t, app, search, chips, shown, rows, emptyText, tasksData, pickApp, appLabel, applicationIcon, appsProblem, renewalProblem, unavailableApps,
+      t, app, search, rowChips, moreChips, chosenMore, shown, rows, emptyText, tasksData, pickApp, appLabel, applicationIcon, appsProblem, renewalProblem, unavailableApps,
       taskState, nextText, statusLabel, moment, duration, runError, summaryText, resultPreview,
       selected, selectedId, selectedRow, record, form, detailRow, settings, revision, taskZone, paneOpen, mode,
       select, closePane, busy, toggle, runNow, askDelete, edit, command, showRecords,
-      runs, runsLoading, runsFailed, nextCursor, loadingMore, loadMore, pinned, runId, expanded, toggleRun, hasDetails,
+      runGroups, historyRecords, runsLoading, runsFailure, nextCursor, loadingMore, loadMore, runId, expanded, toggleRun, hasDetails,
       latestRun, latestResult, openResult, saved, created, cancelForm,
     };
   },

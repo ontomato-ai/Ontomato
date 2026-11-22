@@ -20,7 +20,7 @@ import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { createLogger } from "../../logging/logger";
 import { tForLocale } from "../../i18n";
-import { changeProductGrant } from "../product-governance/grants";
+import { changeProductDomainGrant, changeProductGrant } from "../product-governance/grants";
 import { defaultAgentSchema } from "@ontomato/contracts/default-agent";
 import { applicationCatalogueClient, applicationDraftIdSchema } from "./application-catalogue";
 import {
@@ -336,7 +336,7 @@ const applicationSave: PanelWriteServerOperation = {
 };
 
 function applicationAction<Input extends Record<string, unknown>>(
-  name: "delete" | "grant" | "addEntry" | "updateEntry" | "deleteEntry",
+  name: "delete" | "grant" | "share" | "addEntry" | "updateEntry" | "deleteEntry",
   inputSchema: z.ZodType<Input>,
   run: (actor: PanelOperationHost["executor"], id: string, input: Input) => Promise<void>,
 ): PanelWriteServerOperation {
@@ -389,6 +389,9 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
   applicationSave,
   applicationAction("delete", noData, async ({ credentials }, id) => applicationCatalogueClient(credentials).remove(id)),
   applicationAction("grant", changeProductGrantRequestSchema, async ({ credentials }, id, input) => changeProductGrant(id, input, credentials)),
+  applicationAction("share", changeProductDomainGrantRequestSchema, async ({ credentials }, id, { shared }) => {
+    await changeProductDomainGrant(id, shared, credentials);
+  }),
   applicationAction("addEntry", z.object({ entry: applicationPanelUseSchema }).strict(),
     async ({ credentials }, id, { entry }) => editEntries(credentials, id, entries => { entries.push(entry); })),
   applicationAction("updateEntry", entryInput.extend({ entry: applicationPanelUseSchema }),

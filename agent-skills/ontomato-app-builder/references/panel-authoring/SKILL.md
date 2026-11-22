@@ -8,15 +8,24 @@ description: Build and register an Ontomato panel from its owner's reads and ope
 1. **Discover the owner's contract before writing code.** Run `node "$SKILL/ontomato.mjs" panel type <type-id>`
    for the owner's reads, operations and result shapes. Use `--read <name>` for one read's signature,
    required parameters and `resultSchema`. Use these commands as the authoring reference for owner APIs.
-2. Compare the original page's visible behavior with the owner's reads, forms and actions. Keep business rules,
-   confirmation and permissions with their owner. For official components, use
-   `node "$SKILL/ontomato.mjs" sdk read docs/components.md` for
-   behavior, configuration, outputs and events. For third-party components, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
-   Use the [member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel) to declare projections. Choose an official display component or
-   [PanelData](CODE.md#read-declared-data) for custom Vue, and use `target.projectionId` for an existing projection.
+2. Compare the original page's visible behavior with the owner's reads, forms and actions. Keep business rules
+   and permissions with their owner. Use the platform's write confirmation. Follow the
+   [three-step component lookup](CODE.md#choose-an-official-component-before-writing-one):
+   - First, match the owner's read (`panel type <type-id> --read <name>`) against an official component's data port
+     (`node "$SKILL/ontomato.mjs" sdk read docs/components.md`). If the shapes do not match, that gap belongs on the
+     owner or shared record contract — do not draw business fields in the panel to work around it.
+   - Second, once the data matches, start from the official component's default rendering, then check its `config`
+     for common adjustments (see [default and configured list and summary examples](CODE.md#configure-an-official-list-or-summary)).
+   - Third, write a dedicated component only as a last resort when default and `config` still leave a gap (such as a
+     single column cell or form field). Keep [component vs. panel responsibility](CODE.md#component-vs-panel-responsibility)
+     clear: panels coordinate layout, state, visibility and navigation, and do not render business fields.
+   For third-party components, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
+   Use the [member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel)
+   to declare projections, and use `target.projectionId` for an existing projection.
    For graphs, see [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
-3. Write the template and interactions in Vue. Follow the [direct runtime and import rules](CODE.md#write-a-vue-panel)
-   and declare the [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
+3. Write the template and interactions in Vue. Use [the SDK's interface controls](CODE.md#panel-controls-and-platform-behavior),
+   follow the [direct runtime](CODE.md#write-a-vue-panel), and declare the
+   [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
 4. Check and register the workspace, then open the registered entry. Use the page's input box
    for the [assistant check](#check-the-assistant-from-the-page). If the result looks wrong, follow
    [the browser and CLI checks](CODE.md#when-a-panel-looks-wrong).
@@ -78,3 +87,9 @@ For a read-only page, verify the read and any declared read operations. Mark dra
 applicable. Candidate availability and page skill behavior are verified through the input box and its results.
 
 Use the [Vue authoring guide](CODE.md) for panel sources, owner operations, forms and draft links.
+
+### Registering a component in the current domain
+
+Keep `component.json` (name, visibility, and component declaration), `component.html` (Vue template), and an optional `component.mjs` (default export of Vue component options) together. The module can use the member's declared ports through `@ontomato/sdk/panel`. Register with `node ontomato.mjs component register <directory>`. It writes the assigned `componentId` into `component.json`. Use that full ID in a projection's `componentId` or an inline member's `component`.
+
+Run `component read <id>` to inspect the current declaration, source and revision. To update it, pass that revision to `component register <directory> --revision <number>`. Deliver the same source files and register them in the target domain with the saved ID.

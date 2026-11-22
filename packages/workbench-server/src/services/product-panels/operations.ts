@@ -15,11 +15,15 @@ import {
   type PanelUseRef, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
-import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import {
+  AGENT_UPLOAD_UNSUPPORTED, panelFileInputSchema, panelUploadAccepted, panelUploadFileSchema, type PanelUploadFile, type PanelUploadReceipt,
+} from "@ontomato/contracts/panel-upload";
+import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { assistantService } from "../assistant/service";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { HttpError } from "../../utils/errors";
+import { tForLocale } from "../../i18n";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { credentialsForRun, runForOwner } from "../assistant/execution";
@@ -31,13 +35,14 @@ import { declaredDirectOperation, type PlacedOperationTarget } from "./direct-op
 import { requireRegisteredPanelRoot } from "./member-path";
 import { requirePanelUse } from "./application-use";
 import {
-  panelResultProjection, type PanelBatchCalls, type PanelOperationInvocation,
+  panelOperationUpload, panelResultProjection, type PanelBatchCalls, type PanelOperationInvocation, type SinglePanelOperationOutcome,
   type PanelWriteServerOperation, type PanelOperationHost, type PanelOperationTarget, type PanelRecordTarget, type PanelImpactInspector,
 } from "./server-operations";
 import { panelConfirmation } from "./confirmation";
 import { publishObjectChanged } from "../agent-host/presentation";
 import { operationHost } from "./operation-host";
 import { panelOperationStore as store } from "./operation-store";
+import { panelUploadStore as uploads } from "./upload-store";
 
 type PanelRun = Awaited<ReturnType<typeof runForOwner>>;
 type SingleIntent = Extract<PanelAgentOperationIntent, { call: PanelOperationCall }>;
@@ -123,8 +128,11 @@ function validateCall(handler: PanelWriteServerOperation, call: PanelOperationCa
     throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
   if (handler.kind === "form.save") requireFormFieldNames(call.input.values, "values");
   handler.inputSchema.parse(call.input);
-  if (handler.kind === "form.save") handler.draftInput(call.input, target);
-  if (call.draft && (handler.kind !== "form.save" || !handler.create || target.kind !== "draft"))
+  if (handler.kind === "form.save") {
+    if (!target) throw new HttpError(400, "A form save requires a target", "INVALID_REQUEST");
+    handler.draftInput(call.input, target);
+  }
+  if (call.draft && (handler.kind !== "form.save" || !handler.create || target?.kind !== "draft"))
     throw new HttpError(400, "A creation draft requires a create target", "INVALID_REQUEST");
   return target;
 }
@@ -209,16 +217,63 @@ function concreteCalls(invocation: CheckedInvocation): readonly PanelOperationCa
 }
 
 async function ownerImpact(inspector: PanelImpactInspector, host: PanelOperationHost, invocation: CheckedInvocation) {
-  return panelOperationImpactSchema.parse(await inspector.inspect(host, concreteCalls(invocation)));
+  const impact = await inspector.inspect(host, concreteCalls(invocation));
+  return impact && panelOperationImpactSchema.parse(impact);
+}
+
+/**
+ * Hands the owner the file the reader staged for this operation in place of the call's file input. The staged file is
+ * the only kind of file input today; nothing else reaches an owner as a file.
+ */
+async function withStagedFile(owner: AssistantOwner, ref: PanelOperationRef, handler: PanelWriteServerOperation,
+  invocation: CheckedInvocation, locale?: string,
+): Promise<{ invocation: CheckedInvocation; upload?: { id: string; file: PanelUploadFile } }> {
+  const declared = panelOperationUpload(handler);
+  if (!declared || !("call" in invocation)) return { invocation };
+  const { uploadId } = panelFileInputSchema.parse(invocation.call.input[declared.input]);
+  const { bytes, ...file } = await uploads.read(owner, ref, uploadId, locale);
+  const call = { ...invocation.call, input: { ...invocation.call.input, [declared.input]: { ...file, bytes } } };
+  return { invocation: { ...invocation, call }, upload: { id: uploadId, file } };
+}
+
+/**
+ * Keeps a file the reader picked for an operation that declares an upload, after checking it against that operation's
+ * declaration. A newer file for the same operation replaces the reader's earlier one.
+ */
+export async function stagePanelUpload(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef,
+  picked: { name: string; bytes: Buffer } | undefined,
+): Promise<PanelUploadReceipt> {
+  const { handler } = writeOperation(await operationForUse(owner, credentials, ref));
+  const declared = panelOperationUpload(handler);
+  if (!declared) throw new HttpError(422, "This operation does not take a file", "OPERATION_UPLOAD_UNSUPPORTED");
+  const { locale } = credentials;
+  if (!picked) throw new HttpError(400, tForLocale(locale, "panels.upload.fileRequired"), "UPLOAD_FILE_REQUIRED");
+  const accepted = panelUploadAccepted(declared, picked.name);
+  const extensions = declared.accept.map(kind => kind.extension);
+  if (!accepted) throw new HttpError(400, tForLocale(locale, "panels.upload.typeUnsupported", { extensions: extensions.join(", ") }),
+    "UPLOAD_TYPE_UNSUPPORTED", { extensions });
+  if (picked.bytes.length > declared.maxBytes)
+    throw new HttpError(413, tForLocale(locale, "panels.upload.tooLarge", { megabytes: declared.maxBytes / 1024 / 1024 }),
+      "UPLOAD_TOO_LARGE", { maxBytes: declared.maxBytes });
+  const file = panelUploadFileSchema.safeParse({ name: picked.name, size: picked.bytes.length, mime: accepted.mime });
+  if (!file.success) throw new HttpError(400, tForLocale(locale, "panels.upload.fileInvalid"), "UPLOAD_FILE_INVALID");
+  return uploads.stage(owner, ref, { ...file.data, bytes: picked.bytes });
+}
+
+function refuseAgentUpload(handler: PanelWriteServerOperation, locale?: string) {
+  if (panelOperationUpload(handler))
+    throw new HttpError(422, tForLocale(locale, "panels.upload.agentUnsupported"), AGENT_UPLOAD_UNSUPPORTED);
 }
 
 export async function inspectPanelOperationImpact(owner: AssistantOwner, credentials: AssistantCredentials,
   input: z.infer<typeof inspectPanelOperationImpactRequestSchema>,
 ) {
   const { handler, fixedTarget } = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input)));
-  if (!handler.inspectImpact)
-    throw new HttpError(422, "The owner has no impact description for this operation", "OPERATION_IMPACT_UNAVAILABLE");
-  return ownerImpact(handler.inspectImpact, operationHost({ owner, credentials }), validateInvocation(handler, input, fixedTarget));
+  const staged = handler.inspectImpact &&
+    await withStagedFile(owner, input, handler, validateInvocation(handler, input, fixedTarget), credentials.locale);
+  const impact = staged && await ownerImpact(handler.inspectImpact!, operationHost({ owner, credentials }), staged.invocation);
+  if (!impact) throw new HttpError(422, "The owner has no impact description for this operation", "OPERATION_IMPACT_UNAVAILABLE");
+  return impact;
 }
 
 function humanPreparation(intent: PanelHumanOperationIntent): PanelHumanOperationPreparation {
@@ -240,10 +295,14 @@ export async function projectPanelOperationIntent(owner: AssistantOwner, id: str
 }
 
 async function humanConfirmation(
-  handler: PanelWriteServerOperation, host: PanelOperationHost, invocation: CheckedInvocation,
+  handler: PanelWriteServerOperation, host: PanelOperationHost, invocation: CheckedInvocation, upload?: PanelUploadFile,
 ): Promise<PanelHumanOperationConfirmation> {
   const impact = handler.inspectImpact && ownerImpact(handler.inspectImpact, host, invocation);
-  if ("call" in invocation) return impact ? { kind: "impact", impact: await impact } : { kind: "none" };
+  if ("call" in invocation) {
+    // A call whose owner finds nothing to confirm goes ahead; an inspected upload also names the file it hands over.
+    const details = await impact;
+    return details ? { kind: "impact", impact: details, ...(upload && { upload }) } : { kind: "none" };
+  }
   const [objects, details] = await Promise.all([
     Promise.all(invocation.calls.map(async ({ target }) => ({
       target: { objectType: target.objectType, primaryKey: target.primaryKey },
@@ -259,7 +318,8 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
 ): Promise<PanelHumanOperationPreparation> {
   const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input)));
   const prepared = validateInvocation(current.handler, input, current.fixedTarget);
-  const confirmation = await humanConfirmation(current.handler, operationHost({ owner, credentials }), prepared);
+  const staged = await withStagedFile(owner, input, current.handler, prepared, credentials.locale);
+  const confirmation = await humanConfirmation(current.handler, operationHost({ owner, credentials }), staged.invocation, staged.upload?.file);
   const intent: PanelHumanOperationIntent = {
     intentId: randomUUID(),
     source: { kind: "human" },
@@ -285,13 +345,17 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
     throw new HttpError(403, "This intent was not prepared for human dispatch", "FORBIDDEN");
   const { intent } = record;
   if (intent.dispatched) return replay(record, owner, credentials);
-  const current = writeOperation(await operationForUse(owner, credentials,
-    { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent)));
+  const ref = { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath };
+  const current = writeOperation(await operationForUse(owner, credentials, ref, invocationTarget(intent)));
   requireFrozenOperation(intent, current);
   const prepared = validateInvocation(current.handler, intent, current.fixedTarget);
+  // An expired or missing file refuses before the intent is claimed, so nothing is spent.
+  const staged = await withStagedFile(owner, ref, current.handler, prepared, credentials.locale);
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
   const host = operationHost({ owner, credentials }, view);
-  const result = await claimAndExecutePanel(owner, host, intent, current.handler, prepared);
+  const result = await claimAndExecutePanel(owner, host, intent, current.handler, staged.invocation);
+  // A refused call keeps its file for the reader's retry, such as confirming an overwrite.
+  if (result?.outcome.kind === "success" && staged.upload) await uploads.remove(owner, staged.upload.id);
   return result
     ? { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome: result.outcome }, owner, credentials, view) }
     : replay(await store.get(owner, id), owner, credentials);
@@ -314,10 +378,12 @@ function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOut
 
   const successes = items.flatMap(({ outcome }) => outcome.kind === "success" && outcome.affected ? [outcome.affected] : []);
   if (!successes.length) return { kind: "batch", items };
-  const objects = new Map(successes.flatMap(({ objects }) => objects.map(target =>
-    [JSON.stringify([target.objectType, target.primaryKey]), target] as const)));
+  const once = (targets: PanelObjectIdentity[]) => [...new Map(targets.map(target =>
+    [JSON.stringify([target.objectType, target.primaryKey]), target] as const)).values()];
+  const objects = once(successes.flatMap(({ objects }) => objects));
+  const removed = once(successes.flatMap(({ removed }) => removed ?? []));
   const objectTypes = new Set(successes.flatMap(affected => affected.objectTypes));
-  return { kind: "batch", items, affected: { objects: [...objects.values()], objectTypes: [...objectTypes] } };
+  return { kind: "batch", items, affected: { objects, objectTypes: [...objectTypes], ...(removed.length && { removed }) } };
 }
 export async function operatePanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, input: CreatePanelOperationIntentRequest, initiatorName: string): Promise<PanelOperateResponse> {
   const run = await runForOwner(owner,runId);
@@ -330,6 +396,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
     return replay(record, owner, credentials);
   }
   const current = await admitted(owner,credentials,run,input,invocationTarget(input));
+  refuseAgentUpload(current.handler, credentials.locale);
   const executor = await credentialsForRun(owner,runId,credentials,run.sessionId);
   const root = rootOf(run);
   if (!root) throw new HttpError(409,"Execution has no authenticated human session","USER_SESSION_UNAVAILABLE");
@@ -354,7 +421,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   if (record.intent.operation.action) requireFrozenOperation(record.intent, current);
   if (intent.confirmation === "automatic") return dispatchPanel(owner,credentials,runId,intent.intentId);
   const handler = "calls" in prepared ? prepared.owner : current.handler;
-  if (handler.kind === "form.save" && "call" in prepared) return {kind:"draft",intentId:intent.intentId,
+  if (handler.kind === "form.save" && "call" in prepared && prepared.target) return {kind:"draft",intentId:intent.intentId,
     draft:pageDraftSchema.parse({
       pageKey: current.use.pageKey, operation: handler.draftOperation(prepared.target),
       target: { objectType: handler.targetType, ...(prepared.target.kind === "object" && { id: prepared.target.primaryKey }) },
@@ -364,7 +431,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   const impact = handler.inspectImpact && await ownerImpact(handler.inspectImpact, host, prepared);
   const target = impact
     ? namedTargets(impact.objects.map(object => object.label), impact.total, credentials.locale)
-    : await confirmationTarget(handler as Extract<PanelWriteServerOperation, { kind: "action" }>, host, prepared);
+    : await confirmationTarget(handler as Extract<PanelWriteServerOperation, { kind: "action" }>, host, prepared, intent.operation.label);
   const confirmation = await panelConfirmation(credentials, {
     operation: intent.operation.label, target, impactSummary: impact?.summary,
     executionUserId: intent.executionUserId, initiatorName,
@@ -375,10 +442,13 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   return {kind:"confirmation-required",intentId:intent.intentId,question};
 }
 async function confirmationTarget(handler: Extract<PanelWriteServerOperation, { kind: "action" }>,
-  host: PanelOperationHost, invocation: CheckedInvocation,
+  host: PanelOperationHost, invocation: CheckedInvocation, operationLabel: string,
 ) {
+  // An action without a target is named by the operation itself.
+  if (!handler.targetLabel) return operationLabel;
   if ("call" in invocation) return handler.targetLabel(host, invocation.target as PanelRecordTarget);
-  const labels = await Promise.all(invocation.calls.map(call => handler.targetLabel(host, call.target)));
+  const { targetLabel } = handler;
+  const labels = await Promise.all(invocation.calls.map(call => targetLabel(host, call.target)));
   return namedTargets(labels, invocation.calls.length, host.locale);
 }
 
@@ -417,7 +487,7 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   const result = await claimAndExecutePanel(owner, host, intent, current.handler, prepared, draft);
   if (!result) return replay(await store.get(owner,id), owner, credentials);
   const { outcome } = result;
-  if ((outcome.kind === "success" || outcome.kind === "batch") && outcome.affected) {
+  if ("affected" in outcome && outcome.affected) {
     const { affected } = outcome;
     const target = "call" in intent && affected.objects.length === 1 ? affected.objects[0]! : null;
     publishObjectChanged({
@@ -434,6 +504,11 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
 async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationHost, intent: PanelOperationIntent,
   handler: PanelWriteServerOperation, prepared: CheckedInvocation, draft?: Awaited<ReturnType<typeof verifyCreationDraft>>,
 ) {
+  // The name the owner's completion sentence gives, read while the target is still there; a target that cannot be read
+  // fails here, before anything is claimed or written.
+  const done = handler.kind === "action" && handler.done && "call" in prepared
+    ? handler.done(host, await handler.targetLabel(host, prepared.target as PanelRecordTarget))
+    : undefined;
   if (!await store.claim(owner, intent)) return;
   const id = intent.intentId;
   let outcome: PanelOperationOutcome;
@@ -441,8 +516,9 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
     if ("calls" in prepared) {
       outcome = batchOutcome(await prepared.owner.executeBatch(host, prepared.calls, id), prepared.calls);
     } else {
-      outcome = await handler.execute(host, prepared.target, prepared.call.input, id);
-      if (prepared.target.kind === "draft" && handler.kind === "form.save" && outcome.kind === "success") {
+      outcome = await executeOwner(handler, host, prepared.target, prepared.call.input, id);
+      if (done !== undefined && outcome.kind === "success" && outcome.message === undefined) outcome = { ...outcome, message: done };
+      if (prepared.target?.kind === "draft" && handler.kind === "form.save" && outcome.kind === "success") {
         const created = handler.create!.createdObject(outcome.data);
         if (draft) await assistantService.recordPageDraftCreated(draft.sessionId, draft.runId, draft.path, created.primaryKey, owner);
       }
@@ -453,6 +529,13 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
   }
   await store.outcome(owner,id,outcome);
   return { outcome };
+}
+/** The checked target was parsed by this handler's own target schema, so it is the one its `execute` takes. */
+function executeOwner(handler: PanelWriteServerOperation, host: PanelOperationHost, target: PanelOperationTarget | null,
+  input: Record<string, unknown>, intentId: string,
+): Promise<SinglePanelOperationOutcome> {
+  const execute = handler.execute as (host: PanelOperationHost, target: PanelOperationTarget | null, input: Record<string, unknown>, intentId: string) => Promise<SinglePanelOperationOutcome>;
+  return execute.call(handler, host, target, input, intentId);
 }
 /** Exact human owner, independent of readable/admin access and of any old run's liveness. */
 export async function ownPanelSettings(owner: AssistantOwner, root: AgentSessionRef) {

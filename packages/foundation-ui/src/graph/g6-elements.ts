@@ -11,8 +11,6 @@ import type { GraphCanvasEdge, GraphCanvasNode, GraphCanvasPoint } from "./types
 export const G6_NODE_SIZE = 32;
 /** The size of a node's name, in graph units. */
 export const G6_LABEL_SIZE = 12;
-/** The least zoom at which a node's name is still drawn 10 pixels high: below it names cannot be read. */
-export const G6_READABLE_ZOOM = 10 / G6_LABEL_SIZE;
 /** The widest a node's name is drawn unless its caller says otherwise: about 24 Latin or 13 Chinese characters. */
 export const G6_LABEL_WIDTH = 160;
 /** How far a node's first loop reaches above it, and how much further each next loop does. */
@@ -33,8 +31,10 @@ export interface G6Colors {
   /** line-strong: edges */
   edge: string;
   primary: string;
-  /** The ring and edge of an `accent` element. */
+  /** The ring and edge of an `accent` element (such as search matches). */
   accent: string;
+  /** The solid ring and thickened edge of a `path` element, distinct from `accent`. */
+  path?: string;
   /** The categorical palette, in slot order. */
   palette: string[];
 }
@@ -49,6 +49,7 @@ export function readG6Colors(element: Element): G6Colors {
     edge: role("--el-border-color-dark"),
     primary: role("--el-color-primary"),
     accent: role("--el-color-primary-light-5"),
+    path: role("--el-color-warning"),
     palette: readGraphPalette(element),
   };
 }
@@ -61,26 +62,33 @@ export function isLargeGraph(nodes: number, edges: number) {
  * A node's look, without its position: the position is applied only when its caller moves it. Its name is drawn under
  * it on one line, no wider than `labelWidth`, ending in an ellipsis where it would run on.
  */
-export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories: readonly string[], choosable: boolean, labelWidth: number) {
+/** How large a graph draws its nodes and their names, and how wide a name may run: a page's own, else the canvas's. */
+export interface G6Look {
+  nodeSize: number;
+  labelSize: number;
+  labelWidth: number;
+}
+
+export function g6NodeStyle(node: GraphCanvasNode, colors: G6Colors, categories: readonly string[], choosable: boolean, look: G6Look) {
   // An anchor is drawn transparent at size 1, not 0: G6 places a node of size 0 at the origin, whatever its x and y.
   if (node.anchor) return { size: 1, opacity: 0, lineWidth: 0, labelText: "", cursor: "default" as const };
   return {
-    size: G6_NODE_SIZE,
+    size: look.nodeSize,
     fill: node.category === undefined
       ? colors.primary
       : colors.palette[graphCategorySlot(node.category, categories, colors.palette.length)],
-    stroke: node.tone === "accent" ? colors.accent : colors.surface,
+    stroke: node.tone === "path" ? (colors.path || colors.primary) : node.tone === "accent" ? colors.accent : colors.surface,
     lineWidth: 4,
     lineDash: node.tone === "accent" ? [4, 3] : [],
     opacity: node.tone === "muted" ? 0.25 : 1,
     labelText: node.label,
     // G6 only cuts a node's name when it wraps; one line of wrapping ends it in an ellipsis.
-    labelMaxWidth: labelWidth,
+    labelMaxWidth: look.labelWidth,
     labelWordWrap: true,
     labelMaxLines: 1,
     labelTextOverflow: "…",
     labelFill: colors.text,
-    labelFontSize: G6_LABEL_SIZE,
+    labelFontSize: look.labelSize,
     labelFontWeight: 600,
     labelPlacement: "bottom" as const,
     labelOffsetY: 6,
@@ -124,8 +132,8 @@ export function g6Edges(edges: readonly GraphCanvasEdge[], nodes: ReadonlyMap<st
       type: geometry.type,
       style: {
         ...geometry.style,
-        stroke: edge.tone === "accent" ? colors.primary : dashed ? colors.muted : colors.edge,
-        lineWidth: Math.min(7, (edge.tone === "accent" ? 2 : 1.5) + (edge.weight === undefined ? 0 : Math.log2(edge.weight + 1))),
+        stroke: edge.tone === "path" ? (colors.path || colors.primary) : edge.tone === "accent" ? colors.primary : dashed ? colors.muted : colors.edge,
+        lineWidth: Math.min(7, (edge.tone === "path" ? 3 : edge.tone === "accent" ? 2 : 1.5) + (edge.weight === undefined ? 0 : Math.log2(edge.weight + 1))),
         lineDash: dashed ? [5, 4] : [],
         opacity: edge.tone === "muted" ? 0.15 : 1,
         endArrow: !large,

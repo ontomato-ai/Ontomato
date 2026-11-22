@@ -10,6 +10,7 @@ export function useDataStateLabels(empty?: () => string): ComputedRef<DataStateL
   const { t } = useI18n();
   return computed(() => ({
     empty: empty?.() ?? t("platform.dataEmpty"),
+    noMatch: t("platform.dataNoMatch"),
     forbidden: t("platform.dataForbidden"),
     awaiting: t("platform.dataAwaiting"),
     retry: t("common.retry"),

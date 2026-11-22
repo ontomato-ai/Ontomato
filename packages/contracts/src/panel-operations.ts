@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelDownloadReceiptSchema } from "./panel-download";
+import { panelUploadDeclarationSchema } from "./panel-upload";
 import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema, panelOperationUnavailableSchema } from "./panel-manifest";
 import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
@@ -8,7 +9,7 @@ import {
 } from "./panel-projection";
 import { actionDefinitionSchema, actionExplanationSchema } from "./action-panel";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
-import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
+import { productComponentDefinitionSchema } from "./apps-sdk";
 import {
   applicationEntryMenuSchema, currentPanelRecordSchema, currentProjectionRecordSchema,
   productPanelListResponseSchema, productPanelUsedBySchema, productProjectionListResponseSchema, productProjectionUsedBySchema,
@@ -46,6 +47,8 @@ export const panelOperationDeclarationSchema = z.object({
   target: panelOperationDeclarationTargetSchema,
   inputSchema: runtimeJsonObjectSchema,
   batch: z.boolean(),
+  /** A single write action whose named input is a file the person stages first (see `panel-upload`). */
+  upload: panelUploadDeclarationSchema.optional(),
 }).strict();
 export type PanelOperationDeclaration = z.infer<typeof panelOperationDeclarationSchema>;
 
@@ -83,7 +86,7 @@ export const panelReadOperationDescriptorSchema = panelOwnerOperationDescriptorS
 });
 
 const sdkComponentDefinitionSchema: z.ZodType<z.infer<typeof runtimeJsonObjectSchema>> =
-  z.lazy(() => appsSdkComponentCatalogEntrySchema);
+  z.lazy(() => productComponentDefinitionSchema);
 
 /** Result schema identifiers used by the registered read declarations. */
 export const panelReadResultSchemas = {
@@ -170,5 +173,10 @@ export type PanelOperationImpact = z.infer<typeof panelOperationImpactSchema>;
 export const panelOperationAffectedSchema = z.object({
   objects: z.array(panelObjectIdentitySchema),
   objectTypes: z.array(runtimeKeySchema),
+  /**
+   * Of the objects, those the write removed (a delete): no longer there to read, so a panel lets go of any state that
+   * holds one — a selection is cleared, a checked list drops it — instead of reading it again.
+   */
+  removed: z.array(panelObjectIdentitySchema).optional(),
 }).strict();
 export type PanelOperationAffected = z.infer<typeof panelOperationAffectedSchema>;

@@ -44,9 +44,10 @@ final class ApplicationCatalogueForm {
         List.of("names", "descriptions", "icon", "groups", "permissions"));
     private static final JSONObject ENTRY_SCHEMA = objectSchema(JSONObject.of(
         "path", STRING, "renderer", JSONObject.of("const", "panels")), List.of("path", "renderer"));
+    private static final JSONObject COUNT = objectSchema(JSONObject.of("member", STRING, "data", STRING), List.of("member", "data"));
     private static final JSONObject USE_SCHEMA = objectSchema(JSONObject.of(
         "id", STRING, "pageKey", STRING, "panelId", STRING, "path", STRING, "access", ACCESS,
-        "names", STRING_MAP, "descriptions", STRING_MAP, "groupKey", STRING, "inputs", INPUTS, "defaultAgent", DEFAULT_AGENT),
+        "names", STRING_MAP, "descriptions", STRING_MAP, "groupKey", STRING, "inputs", INPUTS, "defaultAgent", DEFAULT_AGENT, "count", COUNT),
         List.of("id", "pageKey", "panelId", "path", "access"));
 
     private static final List<Locale> LOCALES = List.of("en", "zh-CN", "zh-TW", "ja", "fr", "de", "it", "ar")

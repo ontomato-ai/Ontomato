@@ -29,6 +29,7 @@ import {pageDraftCreatedSchema,pageDraftReadSchema} from '@ontomato/contracts/pa
 import {chartProjectionSourceSends,clientSends} from '@ontomato/contracts/panel-client-requests';
 import {panelHumanOperationDispatchResponseSchema,panelHumanOperationPreparationSchema,type PanelHumanOperationConfirmation,type PanelUseRef} from '@ontomato/contracts/panel-agent';
 import type {PanelOperationImpact} from '@ontomato/contracts/panel-operations';
+import {panelUploadSize} from '@ontomato/contracts/panel-upload';
 import {projectionBindingKeys} from '@ontomato/contracts/panel-projection';
 import type {AppBridgeConfirmPanelOperation,AppBridgeConfirmPanelOperationResult,AppBridgeExpandPageComposer} from '@ontomato/contracts/app-bridge';
 import type {PanelConversationEntry} from '@ontomato/contracts/panel-conversation-entry';
@@ -342,21 +343,24 @@ export async function confirmPanelIntent(
   const response=panelHumanOperationDispatchResponseSchema.parse(answer);
   // What the owner reports changed reaches the page the way a conversation's change does: every shown object is read again.
   const outcome=response.kind==='dispatched'?response.outcome:null;
-  const affected=outcome?.kind==='success'||outcome?.kind==='batch'?outcome.affected:undefined;
+  const affected=outcome && 'affected' in outcome ? outcome.affected : undefined;
   if(affected)changed({target:null,affected});
   return {decision:'confirm',response};
 }
 
 /** The platform's dialog naming what an operation acts on and what its owner said goes with it; true when confirmed. */
 function askPerson(label:string,confirmation:Exclude<PanelHumanOperationConfirmation,{kind:'none'}>){
-  const {t}=workbenchI18n().global;
+  const {t,locale}=workbenchI18n().global;
   // The owner's names are text: each is rendered as a text node, never as markup.
   const names=({objects,total}:Pick<PanelOperationImpact,'objects'|'total'>)=>[
     h('ul',objects.map(object=>h('li',object.label))),
     h('p',t('platform.confirmOperationTotal',{total})),
   ];
   const impact=(value:PanelOperationImpact)=>[h('p',value.summary),...names(value)];
-  const message=h('div',confirmation.kind==='impact'?impact(confirmation.impact)
+  // A staged file is named first, by its name and size, so the reader sees what the call hands its owner.
+  const file=confirmation.kind==='impact'&&confirmation.upload
+    ?[h('p',t('platform.confirmUploadFile',{name:confirmation.upload.name,size:panelUploadSize(confirmation.upload.size,locale.value)}))]:[];
+  const message=h('div',confirmation.kind==='impact'?[...file,...impact(confirmation.impact)]
     :[...names(confirmation.targets),...(confirmation.impact?impact(confirmation.impact):[])]);
   return ElMessageBox.confirm(message,label,{type:'warning',confirmButtonText:label,cancelButtonText:t('common.cancel')}).then(()=>true,()=>false);
 }

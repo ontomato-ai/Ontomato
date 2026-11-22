@@ -1,3 +1,4 @@
+import type { ComponentDeclaration } from "@ontomato/contracts/component-declaration";
 import { createHash } from "node:crypto";
 import { stringify } from "yaml";
 import { z } from "zod";
@@ -26,7 +27,7 @@ import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOp
 import { panelServerOperationLabel } from "./server-operations";
 import { panelSkillScope } from "./skill-identity";
 
-type ComponentCatalogue = Awaited<ReturnType<typeof readPanelComponentCatalogue>>["components"];
+type ComponentCatalogue = ReadonlyMap<string, ComponentDeclaration>;
 type PanelDefinition = BuiltinProductPanelInput | ProductPanelInput;
 type ProjectionDefinition = BuiltinProductProjectionInput | ProductProjectionInput;
 const verbs = new Intl.ListFormat("en", { type: "conjunction" });
@@ -140,8 +141,8 @@ export async function panelSkillSources(
         : undefined;
       const installedIds = [...new Set(entries.map(([, projection]) => projection.componentId))]
         .filter(componentId => !sdk.components.has(componentId));
-      const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk))] as const));
-      const components = new Map(sdk.components);
+      const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk), scope === "platform" ? null : domainId)] as const));
+      const components = new Map<string, ComponentDeclaration>(sdk.components);
       for (const [id, component] of installed) if (component) components.set(id, component);
       const description = describePanel(panel, new Map(entries), components, locale, names);
       const operationLabels = description.operations.map(({ id, label }) => [id, label]);
@@ -326,6 +327,9 @@ function describeOperation({ id, label, binding, owner, draft }: OperationDescri
   if (!owner) return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}. Read the admitted description for the actual selected object with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it.`;
   const { handler, declaration } = owner;
   const summary = `- ${label} (${id}), kind ${handler.kind}, handlerRef ${handler.handlerRef}, target ${target}.`;
+  if (declaration.upload) {
+    return `${summary} Takes a file the reader uploads on the page (input \`${declaration.upload.input}\`). Agents cannot upload files directly yet: ask the reader to use the page's upload control.`;
+  }
   if (handler.kind !== "form.save") {
     return `${summary} Input ${JSON.stringify(declaration.inputSchema)}.${declaration.batch ? " Batch-capable." : ""}`;
   }
@@ -382,8 +386,8 @@ function describeDraft(forms: readonly OperationDescription[]): string {
     "Use field names and nested JSON in `form`. Field paths such as `/className` locate values but are not keys in the draft.",
     "For an edit, copy the selected object's opaque ID from its owner into `target.id`. For creation, `target` contains only `objectType`.",
     "An owner's revision, when required, is part of the operation input.",
-    "Each run has its own artifact area. Use a distinct path for each draft written in the same run.",
-    `Use the current page context's canonical path as a site-relative address starting with a single \`/\` (for example, \`/ontology/assets/actions\`) and preserve the entry's existing query parameters. Do not prefix it with \`$ONTOMATO_BASE_URL\`, a hostname, or a URL scheme. Set \`${sessionKey}\` to the producing run's \`$ONTOMATO_SESSION_ID\` and \`${runKey}\` to that run's \`$ONTOMATO_RUN_ID\`. For a draft written in a later run, build a new link using that run's ID.`,
+    "Write each draft to a fresh output path. After the write succeeds, in the same shell call run `test -s \"$ONTOMATO_OUTPUT_DIR/drafts/<name>.page-draft.json\" && printenv ONTOMATO_SESSION_ID ONTOMATO_RUN_ID`, substituting the actual filename. Before sharing the link, check that this is the file you just wrote and use the IDs printed by that call.",
+    `Set \`${sessionKey}\` and \`${runKey}\` from those runtime-injected IDs. Never copy a run ID from the conversation, a previous link, or an earlier run. Use the current page context's canonical path as a site-relative address starting with a single \`/\` (for example, \`/ontology/assets/actions\`) and preserve the entry's existing query parameters. Do not prefix it with \`$ONTOMATO_BASE_URL\`, a hostname, or a URL scheme.`,
     `The raw value of \`${pathKey}\` is the draft file's path relative to the producing run's artifact area. It starts with \`outputs/drafts/\` and has no leading \`/\`. URL-encode that value exactly once when adding it to the query.`,
     `Use \`?${sessionKey}=SESSION_ID&${runKey}=RUN_ID&${pathKey}=outputs%2Fdrafts%2Fedit.page-draft.json\` for an \`edit.page-draft.json\` draft. Replace \`SESSION_ID\` and \`RUN_ID\` with the producing run's actual session and run IDs. The panel fills the form for the reader to review and save.`,
     "In your final reply, the draft link must be a Markdown link with a destination that starts with a single slash. Never put a scheme, hostname, port, or `localhost` in the draft link. Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.",

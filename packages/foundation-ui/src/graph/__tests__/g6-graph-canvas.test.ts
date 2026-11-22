@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import type { GraphCanvasEdge, GraphCanvasNode } from "../types";
-import { g6Edges, type G6Colors } from "../g6-elements";
+import { g6Edges, g6NodeStyle, type G6Colors } from "../g6-elements";
 
 /*
  * What callers of the G6 canvas build on: it changes only the elements whose props changed (a graph grows by a longer
@@ -128,6 +128,34 @@ it("draws a large addition in bounded batches, every edge after both its ends, a
   wrapper.unmount();
 });
 
+// Shift and drag on an editable canvas draws a relation, not a move (visual modeling acceptance, 2026-11-22). G6 5.1.0
+// hands both behaviours' `enable` the event with its `shiftKey` (checked in a browser against G6 itself and this canvas:
+// the line is drawn and `connect` emitted); its own drag end still fires for the node the line started from, which moved
+// nowhere and is not the caller's to keep where it is.
+it("draws a relation with Shift on an editable canvas and moves the node without it, saying nothing of a move for a relation", async () => {
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(2), layout: { type: "preset" }, editable: true } });
+  await flushPromises();
+  const behaviors = view.options.behaviors as any[];
+  const dragging = behaviors.find((behavior) => behavior.type === "drag-element");
+  const drawing = behaviors.find((behavior) => behavior.type === "create-edge");
+  expect([dragging.enable({ shiftKey: false }), drawing.enable({ shiftKey: false })]).toEqual([true, false]);
+  expect([dragging.enable({ shiftKey: true }), drawing.enable({ shiftKey: true })]).toEqual([false, true]);
+  drawing.onCreate({ source: "n0", target: "n1" });
+  expect(wrapper.emitted("connect")).toEqual([["n0", "n1"]]);
+  // The drag that drew it ends on the node it started from: no move.
+  handlers["node:dragstart"]({ target: { id: "n0" }, shiftKey: true });
+  handlers["node:dragend"]({ target: { id: "n0" }, shiftKey: true });
+  expect(wrapper.emitted("move")).toBeUndefined();
+  // A plain drag still moves.
+  handlers["node:dragstart"]({ target: { id: "n0" }, shiftKey: false });
+  handlers["node:dragend"]({ target: { id: "n0" }, shiftKey: false });
+  expect(wrapper.emitted("move")).toHaveLength(1);
+  // Not editable, Shift draws nothing and drags as ever.
+  await wrapper.setProps({ editable: false });
+  expect([dragging.enable({ shiftKey: true }), drawing.enable({ shiftKey: true })]).toEqual([true, false]);
+  wrapper.unmount();
+});
+
 it("changes only what changed, and keeps a dragged node where it was let go until its caller moves it", async () => {
   const nodes = placed(3);
   const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes, layout: { type: "preset" } } });
@@ -217,7 +245,10 @@ it("fits a graph no smaller than names stay readable at, and then shows the part
   calls.length = 0;
   // It says whether the whole graph is in view, for its caller to tell the reader when it is not.
   expect(await fit({ minZoom: 0.85, around: "n1" })).toBe(true);
-  expect(steps()).toEqual([["fitView", 0.9], ["fitCenter", null]]);
+  // The zoom it reaches is set again as a zoom, not left as fitView's step from the last one: G6 5.1 holds names at
+  // their size by the last zoom it was told, and reads fitView's step as a zoom (seen on 3000, 2026-11-22: names drawn
+  // at 7 pixels once a fit followed another).
+  expect(steps()).toEqual([["fitView", 0.9], ["zoomTo", 0.9], ["fitCenter", null]]);
 
   // One that would shrink below it is shown at that size, around the node given.
   view.fitted = 0.3;
@@ -238,6 +269,33 @@ it("fits a graph no smaller than names stay readable at, and then shows the part
   wrapper.unmount();
 });
 
+// Names held at their size on screen (panelisation lead, 2026-11-22): a fit stops shrinking the graph where two names
+// would start to cover each other, not at a fixed zoom, so one fit shows the whole graph whenever its names allow.
+it("fits a graph whose names keep their size no smaller than its names stay apart at", async () => {
+  const widths = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+    { font: "", measureText: (text: string) => ({ width: text.length * 10 }) } as unknown as CanvasRenderingContext2D,
+  );
+  const nodes = [{ id: "a", label: "Node a", x: 0, y: 0 }, { id: "b", label: "Node b", x: 220, y: 0 }];
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes, layout: { type: "preset" }, readableLabels: true } });
+  await flushPromises();
+  const fit = (options: object) => (wrapper.vm as unknown as { fit(options: object): Promise<boolean> }).fit(options);
+  const steps = () => calls.filter(([name]) => ["fitView", "zoomTo", "fitCenter"].includes(name));
+  // Two names of 60 pixels on 8 of backing, side by side 220 apart, clear each other with 4 to spare from 72/220.
+  const apart = (68 / 2 + 68 / 2 + 4) / 220;
+
+  view.fitted = 0.5;
+  calls.length = 0;
+  expect(await fit({ keepNames: true })).toBe(true);
+  expect(steps()).toEqual([["fitView", 0.5], ["zoomTo", 0.5], ["fitCenter", null]]);
+
+  view.fitted = 0.2;
+  calls.length = 0;
+  expect(await fit({ keepNames: true, around: "a" })).toBe(false);
+  expect(steps()).toEqual([["fitView", 0.2], ["zoomTo", apart]]);
+  wrapper.unmount();
+  widths.mockRestore();
+});
+
 it("keeps a node's name readable when the reader zooms out, and hides only names that would overlap", async () => {
   const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(2), layout: { type: "preset" }, readableLabels: true } });
   await flushPromises();
@@ -248,6 +306,28 @@ it("keeps a node's name readable when the reader zooms out, and hides only names
   expect(fixed).toMatchObject({ state: "", enable: true, node: [{ shape: "label" }], edge: [{ shape: "label" }] });
   expect(fixed.node[0]).not.toHaveProperty("fields");
   expect(behaviors.some((behavior) => behavior.type === "auto-adapt-label")).toBe(true);
+  wrapper.unmount();
+});
+
+// A name hidden because it would cover another (panelisation lead, 2026-11-22) is still the node's: the reader reads it
+// by pointing at the node, and the node they chose keeps its name in view before any other.
+it("tells a node's name on hover, and keeps the chosen node's name before others when names must give way", async () => {
+  const nodes = [{ id: "a", label: "A <b>", x: 0, y: 0 }, { id: "b", label: "B", x: 20, y: 0 }, { id: "c", label: "C", x: 40, y: 0 }];
+  const edges = [{ id: "ab", source: "a", target: "b" }, { id: "ac", source: "a", target: "c" }];
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes, edges, selected: ["c"], layout: { type: "preset" }, readableLabels: true } });
+  await flushPromises();
+  const tooltip = (view.options.plugins as any[]).find((plugin) => plugin.type === "tooltip");
+  expect(tooltip.enable({ targetType: "node" })).toBe(true);
+  expect(tooltip.enable({ targetType: "edge" })).toBe(false);
+  // The name as text, never as markup.
+  const shown = document.createElement("div");
+  shown.innerHTML = await tooltip.getContent({}, [{ id: "a", style: { labelText: "A <b>" } }]);
+  expect(shown.textContent).toBe("A <b>");
+  expect(shown.children).toHaveLength(0);
+  const adapt = (view.options.behaviors as any[]).find((behavior) => behavior.type === "auto-adapt-label");
+  const order = (ids: string[]) => [...ids].sort((one, other) => adapt.sortNode({ id: one }, { id: other }));
+  // The chosen node first, then the better connected.
+  expect(order(["a", "b", "c"])).toEqual(["c", "a", "b"]);
   wrapper.unmount();
 });
 
@@ -289,4 +369,37 @@ it("keeps a node's loop inside the view it shows from the graph's edge, not cut 
   // The node's half size and the loop's reach above it (60), so a ends up 224 down of centre rather than 284.
   expect(of("translate")[0]).toEqual([-320, -224]);
   wrapper.unmount();
+});
+
+// A page that draws its graph as the ontology graph always did (原页面对照《本体图谱》: 62-pixel nodes, 13-pixel names)
+// sets the sizes; every other graph keeps the canvas's own.
+it("draws its nodes and names at the sizes its page sets", async () => {
+  const wrapper = mount(G6GraphCanvas, { props: { label: "Graph", nodes: placed(1), layout: { type: "preset" }, nodeSize: 62, labelSize: 13 } });
+  await flushPromises();
+  const drawn = of("add").flatMap((batch: any) => batch.nodes ?? []);
+  expect(drawn[0].style).toMatchObject({ size: 62, labelFontSize: 13 });
+  wrapper.unmount();
+});
+
+it("draws path-toned nodes and edges visually distinct from accent search highlights", () => {
+  const withPathColor: G6Colors = { ...colors, path: "#e6a23c" };
+  const look = { nodeSize: 32, labelSize: 12, labelWidth: 160 };
+  const searchNode = g6NodeStyle({ id: "n1", label: "N1", tone: "accent" }, withPathColor, [], true, look);
+  const pathNode = g6NodeStyle({ id: "n2", label: "N2", tone: "path" }, withPathColor, [], true, look);
+  expect(searchNode).toMatchObject({ stroke: "a", lineDash: [4, 3], opacity: 1 });
+  expect(pathNode).toMatchObject({ stroke: "#e6a23c", lineDash: [], opacity: 1 });
+
+  const nodes = new Map([node("A"), node("B"), node("C")]);
+  const drawn = Object.fromEntries(
+    g6Edges(
+      [
+        { id: "e-search", source: "A", target: "B", tone: "accent" },
+        { id: "e-path", source: "B", target: "C", tone: "path" },
+      ],
+      nodes,
+      withPathColor,
+    ).map((edge) => [edge.id, edge]),
+  );
+  expect(drawn["e-search"]!.style).toMatchObject({ stroke: "p", lineWidth: 2, opacity: 1 });
+  expect(drawn["e-path"]!.style).toMatchObject({ stroke: "#e6a23c", lineWidth: 3, opacity: 1 });
 });

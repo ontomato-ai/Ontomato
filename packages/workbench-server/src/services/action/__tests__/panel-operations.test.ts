@@ -129,12 +129,21 @@ describe("action panel server operations", () => {
     expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ id: "a1" });
   });
 
+  it("reads the system-action delete reason from its owner", async () => {
+    const operation = action(DELETE_ACTION);
+    const reason = "系统自带动作不能删除";
+    const { host, sent } = hostWith(() => Response.json({ success: true, data: { reason } }));
+    expect(await operation.unavailable!(host, actionTarget)).toEqual({ reason });
+    expect(sent[0]?.path).toBe("/api/data-query/action/queryById");
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ id: "a1", purpose: "delete-availability" });
+  });
+
   it("deletes by id, keeps an explicit owner code as the refusal and an unclassified delete as a failure", async () => {
     const operation = action(DELETE_ACTION);
     const removed = hostWith(() => Response.json({ success: true }));
     expect(await operation.execute(removed.host, actionTarget)).toEqual({
       kind: "success", data: {},
-      affected: { objects: [{ objectType: ACTION, primaryKey: "a1" }], objectTypes: [ACTION] },
+      affected: { objects: [{ objectType: ACTION, primaryKey: "a1" }], objectTypes: [ACTION], removed: [{ objectType: ACTION, primaryKey: "a1" }] },
     });
     expect(removed.sent[0]?.path).toBe("/api/data-query/action/delete");
     expect(JSON.parse(String(removed.sent[0]?.init.body))).toEqual({ id: "a1" });

@@ -1,107 +1,149 @@
 <style>
-  .relations { display: grid; gap: var(--spacing-lg); grid-template-rows: auto minmax(0, 1fr); min-height: 100%; }
-  .relations-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-md); }
-  .relations-search { flex: 1 1 16rem; min-width: 10rem; padding: var(--spacing-sm) var(--spacing-sm); border: 1px solid var(--ui-border); border-radius: var(--radius-sm); background: var(--el-bg-color); color: var(--el-text-color-primary); font: inherit; }
+  .relations { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; container-type: inline-size; }
+  .relations-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
+  .relations-toolbar .relations-search { width: 260px; max-width: 100%; }
+  .relations-search-icon { color: var(--el-text-color-placeholder); }
   .relations-count { color: var(--el-text-color-secondary); font-size: var(--text-sm); }
-  /* auto-fit, not a viewport media query: the panel is also shown in a narrow column beside a conversation. */
-  .relations-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); gap: var(--spacing-lg); min-height: 0; align-content: start; }
-  .relations-list { min-width: 0; overflow: auto; }
-  .relations-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-  .relations-table th { padding: var(--spacing-xs) var(--spacing-sm); border-bottom: 1px solid var(--ui-border); color: var(--el-text-color-secondary); font-weight: var(--font-medium); text-align: start; white-space: nowrap; }
-  .relations-table td { padding: var(--spacing-sm) var(--spacing-sm); border-bottom: 1px solid var(--ui-divider); color: var(--el-text-color-primary); vertical-align: top; }
-  .relations-row { cursor: pointer; }
-  .relations-row:hover td { background: var(--ui-fill-tertiary); }
-  .relations-row.is-active td { background: var(--ui-fill-secondary); }
-  .relations-row strong { display: block; font-weight: var(--font-semibold); }
-  .relations-row code { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
-  .relations-note { margin: 0; padding: var(--spacing-md) 0; color: var(--el-text-color-secondary); font-size: var(--text-sm); }
+  .relations-table { overflow: auto; border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); }
+  .relations-row { display: grid; grid-template-columns: minmax(11rem, 1.3fr) minmax(6.5rem, 0.9fr) minmax(6.5rem, 0.9fr) minmax(9rem, 1.5fr) 1.25rem;
+    align-items: center; column-gap: var(--spacing-md); width: 100%; box-sizing: border-box;
+    padding: var(--spacing-sm) var(--spacing-md); border: 0; border-bottom: 1px solid var(--ui-divider);
+    background: var(--el-bg-color); color: var(--el-text-color-regular); font: inherit; font-size: var(--text-sm); text-align: left; }
+  .relations-row:last-child { border-bottom: 0; }
+  .relations-row.head { background: var(--ui-fill-tertiary); color: var(--el-text-color-secondary); font-size: var(--text-xs); font-weight: var(--font-semibold); }
+  button.relations-row { cursor: pointer; }
+  button.relations-row:hover { background: var(--ui-fill-tertiary); }
+  .relations-chevron { color: var(--el-text-color-tertiary); justify-self: end; }
+  .relations-name strong, .relations-name small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .relations-name strong { color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
+  .relations-name small { margin-top: var(--spacing-xs); color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .relations-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--el-text-color-secondary); }
+  .relations-note { margin: 0; padding: var(--spacing-lg); color: var(--el-text-color-secondary); font-size: var(--text-sm); text-align: center; }
   .relations-failure { color: var(--el-color-danger-text); }
-  .relations-detail { display: grid; gap: var(--spacing-md); align-content: start; min-width: 0; padding: var(--spacing-md); border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); }
-  .relations-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-sm); }
-  .relations-head h2 { margin: 0; font-size: var(--text-lg); color: var(--el-text-color-primary); }
-  .relations-head code { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  /* Detail view: matches native OntologyRelationDetail two-column layout. */
+  .relations-titlebar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); padding-bottom: var(--spacing-sm); border-bottom: 1px solid var(--ui-border); }
+  .relations-divider { width: 1px; height: 20px; background: var(--ui-border); }
+  .relations-title { font-weight: var(--font-semibold); color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .relations-titlebar code { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
   .relations-spacer { flex: 1; }
-  .relations-plain { padding: var(--spacing-xs) var(--spacing-md); border: 1px solid var(--ui-border); border-radius: var(--radius-sm); background: transparent; color: var(--el-text-color-primary); font: inherit; cursor: pointer; }
-  .relations-ends { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: stretch; gap: var(--spacing-sm); }
-  .relations-end { display: grid; gap: calc(var(--spacing-xs) / 2); padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--ui-border); border-radius: var(--radius-sm); background: transparent; color: var(--el-text-color-primary); font: inherit; text-align: start; cursor: pointer; overflow-wrap: anywhere; }
-  .relations-end:hover { background: var(--ui-fill-tertiary); }
+  .relations-detail-body { display: grid; grid-template-columns: minmax(17.5rem, 0.9fr) minmax(0, 1.1fr); gap: var(--spacing-md); align-items: start; }
+  .relations-card { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-lg);
+    border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); }
+  .relations-card h3 { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
+  .relations-ends { display: grid; grid-template-columns: minmax(0, 1fr) 2rem minmax(0, 1fr); align-items: stretch; gap: var(--spacing-sm); }
+  .relations-end { display: grid; gap: calc(var(--spacing-xs) / 2); padding: var(--spacing-md); border: 1px solid var(--ui-border); border-radius: var(--radius-sm);
+    background: transparent; color: var(--el-text-color-primary); font: inherit; text-align: start; cursor: pointer; overflow-wrap: anywhere; }
+  .relations-end:hover { border-color: var(--el-color-primary-light-5, var(--brand-link)); background: var(--ui-fill-tertiary); }
   .relations-end small { color: var(--el-text-color-secondary); font-size: var(--text-xs); }
-  .relations-end code { color: var(--el-text-color-tertiary); font-size: var(--text-xs); }
-  .relations-arrow { align-self: center; color: var(--brand-link); }
-  @media (max-width: 48rem) {
+  .relations-end strong { font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
+  .relations-end code { color: var(--el-text-color-tertiary); font-size: var(--text-xs); font-family: var(--font-mono); }
+  .relations-arrow { display: grid; place-items: center; color: var(--brand-link); font-size: var(--text-base); }
+  .relations-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: var(--el-overlay-color-lighter); }
+  .relations-modal-card { width: min(32.5rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); display: flex; flex-direction: column; gap: var(--spacing-md);
+    padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--el-bg-color-overlay, var(--el-bg-color)); box-shadow: var(--el-box-shadow); overflow: hidden; }
+  .relations-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
+  .relations-modal-body { overflow-y: auto; min-height: 0; }
+  @container (max-width: 44rem) {
+    .relations-row { grid-template-columns: minmax(11rem, 1fr) minmax(6rem, 1fr) 1.25rem; }
+    .relations-row > :nth-child(2), .relations-row > :nth-child(4) { display: none; }
+    .relations-detail-body { grid-template-columns: minmax(0, 1fr); }
+    .relations-divider { display: none; }
+  }
+  @container (max-width: 35rem) {
+    .relations-toolbar { flex-direction: column; align-items: stretch; }
+    .relations-toolbar .relations-search { width: 100%; }
     .relations-ends { grid-template-columns: minmax(0, 1fr); }
-    .relations-arrow { justify-self: center; transform: rotate(90deg); }
+    .relations-arrow { transform: rotate(90deg); }
   }
 </style>
 <div id="app">
   <section class="relations">
-    <div class="relations-toolbar">
-      <input class="relations-search" type="search" v-model="search" placeholder="搜索名称、描述或两端对象" aria-label="搜索关系类型" />
-      <span class="relations-count">{{ countText }}</span>
-    </div>
-    <div class="relations-body">
-      <section class="relations-list">
-        <p v-if="catalogue.status === 'loading'" class="relations-note">正在读取关系类型…</p>
-        <p v-else-if="catalogue.status === 'forbidden'" class="relations-note relations-failure">当前账号无权读取关系类型。</p>
-        <p v-else-if="catalogue.status === 'error'" class="relations-note relations-failure">{{ catalogue.message }}</p>
-        <p v-else-if="!allRows.length" class="relations-note">还没有关系类型。用「新建关系类型」建第一条。</p>
-        <p v-else-if="!rows.length" class="relations-note">没有匹配「{{ search }}」的关系类型。</p>
-        <table v-else class="relations-table">
-          <thead>
-            <tr>
-              <th scope="col">名称</th>
-              <th scope="col">源对象</th>
-              <th scope="col">目标对象</th>
-              <th scope="col">描述</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in rows" :key="row.primaryKey" class="relations-row"
-                :class="{ 'is-active': row.primaryKey === selectedKey }" @click="open(row)">
-              <td>
-                <strong>{{ row.label }}</strong>
-                <code>{{ row.primaryKey }}</code>
-              </td>
-              <td>{{ typeLabel(row.fields.fromclass) }}</td>
-              <td>{{ typeLabel(row.fields.toclass) }}</td>
-              <td>{{ row.fields.desc || "—" }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section class="relations-detail">
-        <div v-if="creating || selectedKey" class="relations-head">
-          <h2>{{ title }}</h2>
-          <code v-if="selectedKey && detail.status === 'ready'">{{ selectedKey }}</code>
-          <span class="relations-spacer"></span>
-          <button v-if="creating" type="button" class="relations-plain" @click="cancelCreate">取消新建</button>
-          <!-- 删除只给触发：确认由属主的删除操作或平台的影响确认给。 -->
-          <projection v-else-if="selectedKey && detail.status === 'ready'" slot="remove"></projection>
+    <!-- Catalog view: full-width table matching native OntologyModelCatalog (relations). -->
+    <template v-if="!selectedKey">
+      <div class="relations-toolbar">
+        <el-input class="relations-search" v-model="search" placeholder="筛选关系类型" aria-label="筛选关系类型" clearable>
+          <template #prefix>
+            <svg class="relations-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+          </template>
+        </el-input>
+        <span v-if="countText" class="relations-count">{{ countText }}</span>
+      </div>
+      <div class="relations-table">
+        <div class="relations-row head">
+          <span>关系类型</span>
+          <span>源对象</span>
+          <span>目标对象</span>
+          <span>描述</span>
+          <span></span>
         </div>
+        <p v-if="catalogue.status === 'loading'" class="relations-note" role="status">正在读取关系类型…</p>
+        <p v-else-if="catalogue.status === 'forbidden'" class="relations-note relations-failure">当前账号无权读取关系类型。</p>
+        <el-alert v-else-if="catalogue.status === 'error'" type="error" :title="catalogue.message" :closable="false"></el-alert>
+        <template v-else>
+          <button v-for="row in rows" :key="row.primaryKey" type="button" class="relations-row" @click="open(row)">
+            <span class="relations-name">
+              <strong>{{ row.label }}</strong>
+              <small>{{ row.primaryKey }}</small>
+            </span>
+            <span>{{ typeLabel(row.fields.fromclass) }}</span>
+            <span>{{ typeLabel(row.fields.toclass) }}</span>
+            <span class="relations-ellipsis">{{ row.fields.desc || "-" }}</span>
+            <svg class="relations-chevron" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
+          </button>
+          <el-empty v-if="rows.length === 0" description="没有找到关系类型"></el-empty>
+        </template>
+      </div>
+    </template>
 
-        <template v-if="selectedKey">
-          <div v-if="detail.status === 'ready'" class="relations-ends">
+    <!-- Detail view: matches native OntologyRelationDetail with back bar, basic info card, and object connections card. -->
+    <template v-else>
+      <div class="relations-titlebar">
+        <el-button text @click="backToCatalog">← 返回关系类型</el-button>
+        <span class="relations-divider" aria-hidden="true"></span>
+        <span class="relations-title">{{ title }}</span>
+        <code v-if="detail.status === 'ready'">{{ selectedKey }}</code>
+        <span class="relations-spacer"></span>
+        <projection v-if="detail.status === 'ready'" slot="remove"></projection>
+      </div>
+      <p v-if="detail.status === 'loading'" class="relations-note" role="status">正在读取这条关系类型…</p>
+      <p v-else-if="detail.status === 'forbidden'" class="relations-note relations-failure">当前账号无权读取这条关系类型。</p>
+      <el-empty v-else-if="detail.status !== 'ready'" :description="`找不到关系类型「${selectedKey}」`"></el-empty>
+      <div v-else class="relations-detail-body">
+        <section class="relations-card">
+          <h3>基本信息</h3>
+          <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
+        </section>
+        <section class="relations-card">
+          <h3>对象连接</h3>
+          <div class="relations-ends">
             <button type="button" class="relations-end" @click="openType(detail.value.fields.fromclass)">
-              <small>源对象（点击看这个类）</small>
-              <span>{{ typeLabel(detail.value.fields.fromclass) }}</span>
+              <small>来源对象</small>
+              <strong>{{ typeLabel(detail.value.fields.fromclass) }}</strong>
               <code>{{ detail.value.fields.fromclass }}</code>
             </button>
             <span class="relations-arrow" aria-hidden="true">→</span>
             <button type="button" class="relations-end" @click="openType(detail.value.fields.toclass)">
-              <small>目标对象（点击看这个类）</small>
-              <span>{{ typeLabel(detail.value.fields.toclass) }}</span>
+              <small>目标对象</small>
+              <strong>{{ typeLabel(detail.value.fields.toclass) }}</strong>
               <code>{{ detail.value.fields.toclass }}</code>
             </button>
           </div>
-          <p v-else-if="detail.status === 'loading'" class="relations-note">正在读取这条关系类型…</p>
-          <p v-else-if="detail.status === 'forbidden'" class="relations-note relations-failure">当前账号无权读取这条关系类型。</p>
-          <p v-else class="relations-note relations-failure">找不到关系类型「{{ selectedKey }}」{{ detail.message ? `：${detail.message}` : "。" }}</p>
-        </template>
-        <p v-else-if="!creating && idleNote" class="relations-note">{{ idleNote }}</p>
+          <el-alert type="info" title="关系连接来源对象和目标对象，可维护关系说明及关联字段。" :closable="false" show-icon></el-alert>
+        </section>
+      </div>
+    </template>
 
-        <projection slot="form" v-show="editing" @saved="onSaved" @discarded="onDiscarded"></projection>
-      </section>
+    <!-- Create relation modal (mutually exclusive with detail view since creating clears selected). -->
+    <div v-if="creating && !selectedKey" class="relations-modal" role="dialog" aria-modal="true" @click.self="cancelCreate">
+      <div class="relations-modal-card">
+        <div class="relations-modal-head">
+          <span>新建关系类型</span>
+          <el-button text size="small" @click="cancelCreate">关闭</el-button>
+        </div>
+        <div class="relations-modal-body">
+          <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
+        </div>
+      </div>
     </div>
   </section>
 </div>

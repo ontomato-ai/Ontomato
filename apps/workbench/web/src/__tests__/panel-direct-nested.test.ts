@@ -117,7 +117,7 @@ it("runs the panel the state chooses in place, publishing its operations and con
         target: { fromState: "detailPanel", candidates: { rule: "usable" } },
         inputs: { task: { state: "task" } }, outputs: { note: { state: "picked" } },
         // The placement's theme: the host lays it over the placed panel's own, where it mounts that panel.
-        theme: { light: { "--el-color-primary": "#0a7d4f" } },
+        theme: { light: { "--sdk-color-primary": "#0a7d4f" } },
       },
     },
     commands: {},
@@ -151,7 +151,7 @@ it("runs the panel the state chooses in place, publishing its operations and con
   const segment = (id: string) => ({ member: "detail", selection: { stateValue: chosenPanel(id), target: { panelId: id } } });
   await vi.waitFor(() => expect(element.querySelector(".inner-panel")?.textContent).toBe("Panel p-1"));
   expect(placed.map(({ path, initial }) => [path, initial])).toEqual([[[segment("p-1")], { task: task("t-1") }]]);
-  expect(placed[0]!.theme).toEqual({ light: { "--el-color-primary": "#0a7d4f" } });
+  expect(placed[0]!.theme).toEqual({ light: { "--sdk-color-primary": "#0a7d4f" } });
 
   // Its operations are this panel's too, under their full path, found by it; its reads name the same path.
   const approvePath = [segment("p-1"), { member: "approve" }];

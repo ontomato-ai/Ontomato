@@ -1,6 +1,9 @@
+import { DOMAIN_COMPONENTS_PATH } from "@ontomato/contracts/domain-components";
+import { domainComponentsRouter } from "../api/routes/domain-components";
 import { governanceWindowsRouter, assistantInternalRouter } from "../api/routes/governance";
 import { agentChannelRouter } from "../api/routes/agent-channel";
 import { createHealthRouter } from "../api/routes/health";
+import { systemConfigRouter } from "../api/routes/system-config";
 import { appBuilderRouter } from "../api/routes/app-builder";
 import { COMPONENT_PACKAGES_PATH } from "@ontomato/contracts/component-packages";
 import { createComponentPackagesRouter, mountComponentPackageAssets } from "../api/routes/component-packages";
@@ -213,6 +216,7 @@ export function createWorkbenchApp(): Express {
 
   app.use("/api/assistant/sessions", governanceWindowsRouter);
   app.use("/api", appBuilderRouter);
+  app.use("/api", systemConfigRouter);
   app.use(COMPONENT_PACKAGES_PATH, createComponentPackagesRouter(identity.requireDeploymentMaintenance, checkComponentPackageUpgrade));
   app.use("/api/workspaces", workspaceRouter);
   app.use("/api/analysis-tasks", analysisTasksRouter);
@@ -229,6 +233,7 @@ export function createWorkbenchApp(): Express {
   app.use("/api/product-assets", productAssetsRouter);
   app.use("/api/object-details", objectDetailsRouter);
   app.use("/api", panelOperationsRouter);
+  app.use(DOMAIN_COMPONENTS_PATH, domainComponentsRouter);
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", createChartProjectionsRouter(createChartProjectionService(dashboardChartSources)));
   app.use("/api/product-projections", productProjectionsRouter);

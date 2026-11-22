@@ -11,6 +11,11 @@ export const RENEW_SCHEDULED_TASK_CREDENTIAL = "schedules.renewCredential";
 export const AGENT_DEFINITION = "platform:AgentDefinition";
 export const SKILL = "platform:Skill";
 export const MODEL_OPTION = "platform:ModelOption";
+export const PUBLISHED_MCP_SERVICE = "platform:PublishedMcpService";
+export const AUDIT_LOG = "platform:AuditLog";
+export const GENERAL_SETTINGS = "platform:GeneralSettings";
+export const DIAGNOSIS_MODEL = "platform:DiagnosisModel";
+export const BUILDER_AGENT = "platform:BuilderAgent";
 export const MCP_SERVICE_OPTION = "platform:McpServiceOption";
 export const USER = "platform:User";
 export const OBJECT_TYPE = "platform:ObjectType";
@@ -127,6 +132,30 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [`${SCHEDULED_TASK}.save`, RUN_NOW, CREATE_SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED, DELETE_SCHEDULED_TASK],
   },
+  [PUBLISHED_MCP_SERVICE]: { ...describeType("publishedMcpService"), reads: { ...metadataList, record: modelReads.record } },
+  [AUDIT_LOG]: {
+    ...describeType("auditLog"),
+    reads: {
+      query: {
+        source: "type", parameterMode: "fixed",
+        params: { business: "auditLogBusiness", operation: "auditLogOperation", cursor: "cursor", size: "size" },
+        result: "panelRecordQuery",
+      },
+      record: modelReads.record,
+    },
+  },
+  [GENERAL_SETTINGS]: {
+    ...describeType("generalSettings"), reads: { ...metadataList, record: modelReads.record, form: modelReads.form },
+    operations: [`${GENERAL_SETTINGS}.save`],
+  },
+  [DIAGNOSIS_MODEL]: {
+    ...describeType("diagnosisModel"), reads: { ...metadataList, record: modelReads.record, form: modelReads.form },
+    operations: [`${DIAGNOSIS_MODEL}.save`],
+  },
+  [BUILDER_AGENT]: {
+    ...describeType("builderAgent"), reads: { ...metadataList, ...modelReads },
+    operations: [`${BUILDER_AGENT}.save`],
+  },
   [MODEL_OPTION]: { ...describeType("modelOption"), reads: referenceReads },
   [MCP_SERVICE_OPTION]: { ...describeType("mcpServiceOption"), reads: referenceReads },
   [OBJECT_TYPE]: {
@@ -194,7 +223,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         source: "object", parameterMode: "fixed", params: { path: "skillFilePath" }, requiredParams: ["path"], result: "panelRecord",
       },
     },
-    operations: [DELETE_SKILL, EXPORT_SKILL],
+    operations: [IMPORT_SKILL, DELETE_SKILL, EXPORT_SKILL],
   },
   [BUSINESS_KNOWLEDGE]: {
     ...describeType("businessKnowledge", "capability"),
@@ -258,11 +287,12 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       query: {
         source: "type", parameterMode: "fixed",
-        params: { search: "keyword", scope: "applicationScope", cursor: "cursor", size: "size" },
+        params: { search: "keyword", scope: "applicationScope", sort: "applicationSort", cursor: "cursor", size: "size" },
         result: "applicationCatalogue",
       },
       record: { ...catalogueRecord, result: "applicationRecord" },
       entries: { ...catalogueRecord, result: "applicationEntries" },
+      grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       form: {
         ...modelReads.form,
         params: { ...definitionFormParams, section: "applicationFormSection" },
@@ -272,7 +302,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [
       `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
-      "applications.deleteEntry", "applications.grant", RENEW_SCHEDULED_TASK_CREDENTIAL,
+      "applications.deleteEntry", "applications.grant", "applications.share", RENEW_SCHEDULED_TASK_CREDENTIAL,
     ],
   },
   [APPLICATION_PANEL_USE]: {

@@ -14,6 +14,7 @@ import { writeBundledAppSdkFixture } from "../../__tests__/fixtures/bundled-app-
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { ensureProductAssetsSchema } from "../../infrastructure/postgres-migrations/20261112-product-assets/schema";
 import { ensurePanelOperationsSchema } from "../../infrastructure/postgres-migrations/20261118-panel-operations/schema";
+import { ensureDomainComponentsSchema } from "../../infrastructure/postgres-migrations/20261122-domain-components/schema";
 import { ensureProductPanelsSchema } from "../../infrastructure/postgres-migrations/20261118-product-panels/schema";
 import { configureI18n } from "../../i18n";
 import { en, enLocaleMeta } from "../../i18n/locales/en";
@@ -85,6 +86,7 @@ beforeAll(async () => {
   await state.pool.query(`CREATE SCHEMA "${state.schema}"`);
   await ensureProductAssetsSchema(state.pool);
   await ensureProductPanelsSchema(state.pool);
+  await ensureDomainComponentsSchema(state.pool);
   await ensurePanelOperationsSchema(state.pool);
   for (const [id, name, ownerId] of [["one", "Alpha directory", "viewer"], ["two", "Beta directory", "author"], ["hidden", "Hidden directory", "author"]]) {
     await state.pool.query(`INSERT INTO "${state.schema}".product_panels (domain_id,id,owner_id,definition)
@@ -243,7 +245,7 @@ it("uses the registered save operation to write the current panel and refuses a 
   const host = { initiator: actor, executor: actor, request: unusedRequest, requestWorkbench: unusedRequest };
   const { panelServerOperation } = await import("../../services/product-panels/server-operations");
   const save = panelServerOperation(`${PRODUCT_PANEL}.save`);
-  if (save.effect !== "write") throw new Error("Expected a write operation");
+  if (save.effect !== "write" || save.kind !== "form.save") throw new Error("Expected a form save");
   const target = { kind: "object" as const, objectType: PRODUCT_PANEL, primaryKey: "one" };
   const input = {
     values: { ...form.values, name: "Alpha revised directory", description: "An unsubmitted stale description" },
@@ -327,7 +329,7 @@ it("dispatches application reads from current PostgreSQL records and preserves t
   const host = { initiator: actor, executor, request: unusedRequest, requestWorkbench: unusedRequest };
   const { panelServerOperation } = await import("../../services/product-panels/server-operations");
   const add = panelServerOperation("applications.addEntry");
-  if (add.effect !== "write") throw new Error("Expected a write operation");
+  if (add.effect !== "write" || add.kind !== "action" || add.targetInput === undefined) throw new Error("Expected a targeted action");
   const added = { ...publicUse, id: "added", pageKey: "added", path: `${entry.path}/added` };
   await expect(add.execute(host, { kind: "object", objectType: APPLICATION, primaryKey: applicationId }, { entry: added }, "add"))
     .resolves.toMatchObject({ kind: "success" });
@@ -345,7 +347,7 @@ it("updates only the submitted projection configuration field in PostgreSQL", as
   const host = { initiator: actor, executor: actor, request: unusedRequest, requestWorkbench: unusedRequest };
   const { panelServerOperation } = await import("../../services/product-panels/server-operations");
   const save = panelServerOperation(`${PRODUCT_PROJECTION}.save`);
-  if (save.effect !== "write") throw new Error("Expected a write operation");
+  if (save.effect !== "write" || save.kind !== "form.save") throw new Error("Expected a form save");
   const target = { kind: "object" as const, objectType: PRODUCT_PROJECTION, primaryKey: before.id };
 
   await expect(save.execute(host, target, {
@@ -365,7 +367,7 @@ it.each(["identity", "entries"] as const)("submits only the changed application 
   const host = { initiator: actor, executor, request: unusedRequest, requestWorkbench: unusedRequest };
   const { panelServerOperation } = await import("../../services/product-panels/server-operations");
   const save = panelServerOperation(`${APPLICATION}.save`);
-  if (save.effect !== "write") throw new Error("Expected a write operation");
+  if (save.effect !== "write" || save.kind !== "form.save") throw new Error("Expected a form save");
   const target = { kind: "object" as const, objectType: APPLICATION, primaryKey: applicationId };
   const path = `${entry.path}/renamed`;
   const input = section === "identity"

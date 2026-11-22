@@ -94,7 +94,15 @@ const shown = computed(() => {
   const heldKeys = new Set(held.value.map((option) => option.primaryKey));
   return [...held.value, ...offered.value.filter((option) => !heldKeys.has(option.primaryKey))];
 });
-const chosen = computed(() => (multiple.value ? held.value.map((option) => option.primaryKey) : held.value[0]?.primaryKey ?? ""));
+/**
+ * The choice shown: the held ones; for a single reference held empty, the owner's own empty choice when its catalogue
+ * names one (following a default, the reader's own permissions), so the field says what its empty value means.
+ */
+const chosen = computed(() => {
+  if (multiple.value) return held.value.map((option) => option.primaryKey);
+  if (field.value.value === null) return [...known.value.values()].find((option) => option.value === null)?.primaryKey ?? "";
+  return held.value[0]?.primaryKey ?? "";
+});
 
 /**
  * Writes the reader's choice in the owner's shape: the chosen values of a multiple reference (an empty list once it is
@@ -127,6 +135,7 @@ function choose(keys: string | string[] | undefined) {
       filterable
       remote
       :remote-method="search"
+      fit-input-width
       class="sdk-reference-picker-select"
       @update:model-value="choose"
     >
@@ -137,7 +146,12 @@ function choose(keys: string | string[] | undefined) {
         :label="option.value === null ? localized(option.label) : option.label"
         :disabled="option.unavailable !== undefined"
         :title="option.unavailable ? localized(option.unavailable.reason) : option.description"
-      ></el-option>
+        :class="{ 'sdk-reference-option-described': option.description }"
+      >
+        <!-- A choice its owner describes is offered with what it does: a reader judges it by that, not its name. -->
+        <span class="sdk-reference-option-label">{{ option.value === null ? localized(option.label) : option.label }}</span>
+        <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
+      </el-option>
     </el-select>
     <p v-if="field.field.value.readOnly && field.field.value.readOnlyReason" class="sdk-reference-picker-help">
       {{ field.field.value.readOnlyReason }}
@@ -155,6 +169,31 @@ function choose(keys: string | string[] | undefined) {
 }
 .sdk-reference-picker-select {
   width: 100%;
+}
+/*
+ * A described choice takes two lines in the list: its name, then what it does, as wide as the field (the list never
+ * spreads past it over the page); a longer description ends in an ellipsis and is read whole in its title.
+ */
+.sdk-reference-option-described {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: auto;
+  min-height: var(--control-height);
+  padding-block: var(--spacing-xs);
+  line-height: var(--leading-sm);
+}
+.sdk-reference-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sdk-reference-option-description {
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sdk-reference-picker-changed :deep(.el-form-item__label) {
   color: var(--brand-link);
