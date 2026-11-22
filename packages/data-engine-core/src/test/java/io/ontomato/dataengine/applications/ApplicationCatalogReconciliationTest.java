@@ -579,6 +579,51 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
           {"id":"hidden","pageKey":"hidden","panelId":"panel-hidden","path":"/applications/app-catalogue/hidden","access":{"kind":"domain-member"}}]}
         """;
 
+    @Test void catalogueNameOrderUsesReaderLanguageAndPagesAcrossEqualNames() throws Exception {
+        var owner = new QueryAccessService.GrantUser("owner", "domain");
+        when(identity.getCurrentUser()).thenReturn(owner);
+        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        for (var id : List.of("app-a", "app-b", "app-c", "app-d"))
+            catalog.publish(id, builtin(id, "native").declaration(), "release", owner);
+        jdbc.update("""
+            UPDATE sys_application SET names = CASE id
+                WHEN 'app-a' THEN '{"en":"Alpha","fr":"Zulu"}'::jsonb
+                WHEN 'app-d' THEN '{"en":"Alpha","fr":"Bravo"}'::jsonb
+                ELSE '{"en":"Bravo"}'::jsonb
+            END
+            """);
+
+        var first = http.perform(get(CATALOGUE).locale(Locale.FRENCH).param("sort", "name").param("size", "2"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.rows[*].id").value(List.of("app-b", "app-c")))
+            .andReturn();
+        var cursor = JSON.parseObject(first.getResponse().getContentAsString()).getJSONObject("data").getString("nextCursor");
+        http.perform(get(CATALOGUE).locale(Locale.FRENCH).param("sort", "name").param("size", "2").param("cursor", cursor))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.rows[*].id").value(List.of("app-d", "app-a")))
+            .andExpect(jsonPath("$.data.nextCursor").doesNotExist());
+    }
+
+    @Test void catalogueUpdatedOrderPagesByDescendingTimestampThenId() throws Exception {
+        var owner = new QueryAccessService.GrantUser("owner", "domain");
+        when(identity.getCurrentUser()).thenReturn(owner);
+        when(access.canMaintain(any(), eq(owner))).thenReturn(true);
+        for (var id : List.of("app-a", "app-b", "app-c"))
+            catalog.publish(id, builtin(id, "native").declaration(), "release", owner);
+        jdbc.update("UPDATE sys_application SET updated_at = '2026-01-01 00:00:00+00' WHERE id = 'app-a'");
+        jdbc.update("UPDATE sys_application SET updated_at = '2026-01-01 00:00:00.000001+00' WHERE id IN ('app-b','app-c')");
+
+        var first = http.perform(get(CATALOGUE).param("sort", "updated").param("size", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.rows[*].id").value(List.of("app-b")))
+            .andReturn();
+        var cursor = JSON.parseObject(first.getResponse().getContentAsString()).getJSONObject("data").getString("nextCursor");
+        http.perform(get(CATALOGUE).param("sort", "updated").param("cursor", cursor))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.rows[*].id").value(List.of("app-c", "app-a")))
+            .andExpect(jsonPath("$.data.nextCursor").doesNotExist());
+    }
+
     @Test void catalogueReadsDifferFromNavigationAndKeepsAnAuthorizedEditorsCompleteEntryTable() throws Exception {
         var owner = new QueryAccessService.GrantUser("owner", "domain");
         var reader = new QueryAccessService.GrantUser("reader", "domain");
