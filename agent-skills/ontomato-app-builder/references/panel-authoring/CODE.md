@@ -39,11 +39,14 @@ For interface controls, write the Element Plus tags directly in `panel.html`. Us
 `el-tabs` with `el-tab-pane`, `el-table` with `el-table-column`, `el-input`, `el-select` with `el-option`,
 `el-dialog`, `el-drawer`, `el-empty` and `el-alert` as needed. Keep the tags unwrapped and let the platform's
 Element Plus and enterprise theme style the controls, including buttons and tags. Keep panel CSS for layout
-and use declared projections for business data.
+and choose the wiring by what each control does. An `el-table` can render records read through a declared
+projection, and an `el-button` can invoke a registered owner operation.
 
-In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel`. Leave `element-plus` out of script imports.
-For transient feedback, call `usePanelContext().notify({ kind, text })` through the context captured in setup.
-For a message that stays on the page, use `<el-alert>`.
+In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel`. Keep Element Plus in the template. The
+whole-package import `import "element-plus"` is unavailable in panel scripts. For transient feedback, import
+`usePanelContext` from `@ontomato/sdk/panel`, capture `const panel = usePanelContext()` in setup and call
+`panel.notify({ kind: "success", text: "Export complete" })` from the event handler. `kind` accepts
+`"success"`, `"info"`, `"warning"` or `"error"`. For a message that stays on the page, use `<el-alert>`.
 
 This template fragment uses local Vue refs `optionsOpen` (initially `false`) and `density` (initially
 `"comfortable"`) returned by setup.
@@ -59,10 +62,15 @@ This template fragment uses local Vue refs `optionsOpen` (initially `false`) and
 </el-dialog>
 ```
 
-Leave the following controls to the platform.
+If an `el-dialog` or `el-drawer` mounts at the page root, check its theme, stacking and keyboard focus in the
+application that opens it. Include a check when the panel is beside a conversation.
 
-- **Confirm writes.** Have the button invoke the [declared owner operation](#invoke-declared-owner-operations).
-  Button clicks and assistant calls use the same platform confirmation. Use local dialogs for interface choices.
+Leave the following to the platform.
+
+- **Write confirmation and execution.** Have the button invoke the [declared owner operation](#invoke-declared-owner-operations).
+  Button clicks and assistant calls use the same confirmation rules, and the platform executes an accepted write once.
+  Use local dialogs for interface choices.
+- **Form drafts.** The platform delivers drafts to the form. Follow the [form draft flow](#save-a-form-or-hand-off-a-draft).
 - **Page header.** The host renders the title, back control, commands and refresh. Declare commands in
   `manifest.commands` and keep the panel template focused on the page content.
 
@@ -94,6 +102,62 @@ according to the type table's result shape.
 For an assistant's named read, pass the member and datum separately. For the `detail` member's
 `data.record`, send `memberPath: [{member: "detail"}]` and `dataName: "record"`. Use the entry source
 and declared inputs shown in the page skill. The Vue equivalent is `usePanelData("detail", "record")`.
+
+### Configure an official list or summary
+
+These short members go in `manifest.members`. Each example uses the business knowledge owner's standard reads.
+
+**ObjectList.** Start with the compact list and its owner-supplied labels and subtitles.
+
+```json
+{"component":"ObjectList","type":"platform:BusinessKnowledge","data":{"rows":"query"}}
+```
+
+Configure the compact rows to show the knowledge text on up to two lines, the owner status and tags, and 20 rows per page.
+
+```json
+{
+  "component": "ObjectList",
+  "type": "platform:BusinessKnowledge",
+  "data": {"rows": "query"},
+  "config": {"subtitleField": "knowledgeText", "subtitleLines": 2, "statusField": "status", "tagsField": "knowledgeTags", "pageSize": 20}
+}
+```
+
+The toolbar displays a total when the search or paginated read returns one. For table mode, set `config.columns`
+instead of the compact-row settings. A column such as `{"key":"label","kind":"text","subtitleKey":"knowledgeText"}`
+shows the label and a second line. Use `kind: "tag"` for `status` and `kind: "tags"` for `knowledgeTags`.
+Use `labelKey` for a column heading from the panel's messages.
+
+Place the member with `<projection slot="list"></projection>`. In its template, `#toolbar-actions` adds a
+control to the visible toolbar and `#batch-actions="{ checked, clear }"` adds controls for checked rows.
+For example, open the local options dialog from the toolbar while keeping the built-in list behavior.
+
+```html
+<projection slot="list">
+  <template #toolbar-actions>
+    <el-button @click="optionsOpen = true">View options</el-button>
+  </template>
+</projection>
+```
+
+**ObjectSummary.** Bind `target` to an object state field of type `platform:BusinessKnowledge`, here `selected`.
+The default displays the record's fields in the owner's order.
+
+```json
+{"component":"ObjectSummary","target":"selected","data":{"record":"record"}}
+```
+
+List field names in `config.fields` to choose and order the visible facts. This shows status before tags.
+
+```json
+{
+  "component": "ObjectSummary",
+  "target": "selected",
+  "data": {"record": "record"},
+  "config": {"fields": ["status", "knowledgeTags"]}
+}
+```
 
 ## Bind read parameters and listen to component events
 
