@@ -18,7 +18,7 @@ import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations
 import {
   AGENT_UPLOAD_UNSUPPORTED, panelFileInputSchema, panelUploadAccepted, panelUploadFileSchema, type PanelUploadFile, type PanelUploadReceipt,
 } from "@ontomato/contracts/panel-upload";
-import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelMemberPath, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import { assistantService } from "../assistant/service";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
@@ -31,9 +31,11 @@ import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource,
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
 import { readCurrentPanelRecord } from "./current";
-import { declaredDirectOperation, type PlacedOperationTarget } from "./direct-operations";
+import {
+  declaredDirectOperation, type DeclaredDirectOperationOptions, type PlacedOperationTarget,
+} from "./direct-operations";
 import { requireRegisteredPanelRoot } from "./member-path";
-import { requirePanelUse } from "./application-use";
+import { requirePanelUseEntry } from "./application-use";
 import {
   panelOperationUpload, panelResultProjection, type PanelBatchCalls, type PanelOperationInvocation, type SinglePanelOperationOutcome,
   type PanelWriteServerOperation, type PanelOperationHost, type PanelOperationTarget, type PanelRecordTarget, type PanelImpactInspector,
@@ -53,7 +55,7 @@ export async function requirePanelSkillForRun(owner: AssistantOwner, credentials
   ref: PanelUseRef & Pick<PanelOperationRef, "root">) {
   if (ref.root === "frame")
     throw new HttpError(403, "This run does not have the application frame's skill", "PANEL_FRAME_SKILL_REQUIRED");
-  const use = await requirePanelUse(credentials, ref);
+  const { use, framePanelId } = await requirePanelUseEntry(credentials, ref);
   const view = await readAssistantSkillView(owner.domainId, credentials);
   const entrance: PageSkillEntrance = "permissionCode" in use.access
     ? { permissionCode: use.access.permissionCode, pageKey: use.pageKey }
@@ -63,29 +65,49 @@ export async function requirePanelSkillForRun(owner: AssistantOwner, credentials
   }, [], { id: use.panelId });
   if (!skill || !loadedPageSkillVersion(skill, run.resolvedSkills))
     throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");
-  return { use, view };
+  return { use, framePanelId, view };
 }
 
-async function admitted(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
-  ref: PanelOperationRef, target: PanelOperationCall["target"] | undefined) {
-  const { use, view } = await requirePanelSkillForRun(owner, credentials, run, ref);
-  return { ...writeOperation(await declaredOperation(owner, credentials, use, ref, target)), view };
+function hasMemberPathItemKey(memberPath?: PanelMemberPath): boolean {
+  return Boolean(memberPath?.some(segment => segment.itemKey !== undefined));
 }
 
-async function declaredOperation(owner: AssistantOwner, credentials: AssistantCredentials, use: ApplicationPanelUse,
-  ref: PanelOperationRef, target?: PanelOperationCall["target"], frame?: ProductPanel) {
+async function admitted(
+  owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
+  ref: PanelOperationRef, target: PanelOperationCall["target"] | undefined,
+  options?: DeclaredDirectOperationOptions,
+) {
+  const { use, framePanelId, view } = await requirePanelSkillForRun(owner, credentials, run, ref);
+  return {
+    ...writeOperation(await declaredOperation(owner, credentials, use, ref, target, undefined, { framePanelId, ...options })),
+    view,
+  };
+}
+
+async function declaredOperation(
+  owner: AssistantOwner, credentials: AssistantCredentials, use: ApplicationPanelUse,
+  ref: PanelOperationRef, target?: PanelOperationCall["target"], frame?: ProductPanel,
+  options?: DeclaredDirectOperationOptions,
+) {
   const panel = frame ?? await readCurrentPanelRecord(owner, credentials, use.panelId);
-  const operation = await declaredDirectOperation(owner, credentials, use, panel, ref.operationId, target, ref.memberPath);
+  const operation = await declaredDirectOperation(owner, credentials, use, panel, ref.operationId, target, ref.memberPath, {
+    ...options,
+    ...(frame && { framePanel: frame, isFrameRoot: true }),
+  });
   return { ...operation, rootPanelId: frame?.id ?? use.panelId };
 }
 
-async function operationForUse(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef, target?: PanelOperationCall["target"]) {
+async function operationForUse(
+  owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef, target?: PanelOperationCall["target"],
+  options?: DeclaredDirectOperationOptions,
+) {
   if (ref.root === "frame") {
     const { applicationId, useId } = ref;
-    const { panel, entry } = await requireRegisteredPanelRoot(owner, credentials, { kind: ref.root, applicationId, useId });
-    return declaredOperation(owner, credentials, entry, ref, target, panel);
+    const { panel, entry, framePanelId } = await requireRegisteredPanelRoot(owner, credentials, { kind: ref.root, applicationId, useId });
+    return declaredOperation(owner, credentials, entry, ref, target, panel, { framePanelId, ...options });
   }
-  return declaredOperation(owner, credentials, await requirePanelUse(credentials, ref), ref, target);
+  const { use, framePanelId } = await requirePanelUseEntry(credentials, ref);
+  return declaredOperation(owner, credentials, use, ref, target, undefined, { framePanelId, ...options });
 }
 
 function invocationTarget(
@@ -103,34 +125,107 @@ function requireConcreteInvocation(
   return input as PanelOperationInvocation;
 }
 
+function mergeBoundParams(
+  supplied: Record<string, unknown>,
+  boundParams: Readonly<Record<string, unknown>> | undefined,
+  onMismatch: (key: string) => never,
+): Record<string, unknown> {
+  if (!boundParams || !Object.keys(boundParams).length) return supplied;
+  const merged: Record<string, unknown> = { ...supplied };
+  for (const [key, expected] of Object.entries(boundParams)) {
+    if (Object.hasOwn(supplied, key) && supplied[key] !== undefined && !isDeepStrictEqual(supplied[key], expected)) {
+      onMismatch(key);
+    }
+    merged[key] = expected;
+  }
+  return merged;
+}
+
+function assertRowNotBatch(memberPath: PanelMemberPath | undefined, input: object) {
+  if (hasMemberPathItemKey(memberPath) && "calls" in input) {
+    throw new HttpError(422, "Row operations do not support batch calls", "ROW_OPERATION_BATCH_UNSUPPORTED");
+  }
+}
+
+/** Shared server-side materialization for both human and agent write operations. */
+function materializeWriteInvocation(
+  input: CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest | z.infer<typeof inspectPanelOperationImpactRequestSchema>,
+  resolved: Pick<ReturnType<typeof writeOperation>, "resolvedTarget" | "boundParams">,
+): PanelOperationInvocation {
+  assertRowNotBatch(input.memberPath, input);
+  const rejectParamMismatch = (key: string): never => {
+    throw new HttpError(403, `Operation input '${key}' does not match the panel member binding`, "OPERATION_PARAM_MISMATCH");
+  };
+  if ("calls" in input) {
+    const calls = input.calls.map(call => ({
+      ...call,
+      input: mergeBoundParams(call.input, resolved.boundParams, rejectParamMismatch),
+    }));
+    return { calls } as PanelOperationInvocation;
+  }
+  let target: PanelOperationCall["target"];
+  if (resolved.resolvedTarget !== undefined) {
+    if (input.call.target !== undefined && !isDeepStrictEqual(input.call.target, resolved.resolvedTarget)) {
+      throw new HttpError(403, "Operation target does not match the resolved row target", "TARGET_ID_MISMATCH");
+    }
+    target = resolved.resolvedTarget;
+  } else {
+    if (input.call.target === undefined) {
+      throw new HttpError(400, "Row operation target resolution requires a concrete call.target", "ROW_OPERATION_TARGET_REQUIRED");
+    }
+    target = input.call.target;
+  }
+  return {
+    call: {
+      ...input.call,
+      target,
+      input: mergeBoundParams(input.call.input, resolved.boundParams, rejectParamMismatch),
+    },
+  };
+}
+
 function writeOperation(current: Awaited<ReturnType<typeof declaredOperation>>) {
   if (current.effect !== "write") throw new HttpError(422, "This operation must use the read route", "OPERATION_WRITE_REQUIRED");
   return current;
 }
 
 export async function readPanelOperationDescriptor(owner: AssistantOwner, credentials: AssistantCredentials, ref: PanelOperationRef) {
-  const current = await operationForUse(owner, credentials, ref);
+  const current = await operationForUse(owner, credentials, ref, undefined, { mode: "describe" });
   return current.descriptor;
 }
 
 export async function readPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, request: ReadPanelOperationRequest) {
-  const current = await operationForUse(owner, credentials, request, request.call.target);
+  if (hasMemberPathItemKey(request.memberPath)) {
+    throw new HttpError(422, "Read operations do not accept itemKey", "ROW_OPERATION_MEMBER_INVALID");
+  }
+  const current = await operationForUse(owner, credentials, request, request.call.target, { mode: "read" });
   if (current.effect !== "read") throw new HttpError(422, "This operation requires a write intent", "OPERATION_READ_REQUIRED");
-  const { handler, fixedTarget } = current;
+  const { handler, fixedTarget, boundParams } = current;
   const target = handler.targetSchema.parse(request.call.target);
   if (fixedTarget !== undefined && !isDeepStrictEqual(target, fixedTarget))
     throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
-  const call = { target, input: handler.inputSchema.parse(request.call.input) };
+  const mergedInput = mergeBoundParams(request.call.input, boundParams, key => {
+    throw new HttpError(403, `Operation input '${key}' does not match the panel member binding`, "OPERATION_PARAM_MISMATCH");
+  });
+  const call = { target, input: handler.inputSchema.parse(mergedInput) };
   return handler.execute(operationHost({ owner, credentials }), call);
 }
 
 function requireFrozenOperation(
-  intent: Pick<PanelOperationIntent, "panelId" | "projectionId" | "binding" | "operation">,
+  intent: Pick<PanelOperationIntent, "panelId" | "projectionId" | "binding" | "operation"> & PanelOperationInvocation,
   current: ReturnType<typeof writeOperation>,
 ) {
   if (current.rootPanelId !== intent.panelId || current.projection.id !== intent.projectionId ||
     !isDeepStrictEqual(current.projection.binding, intent.binding) || !isDeepStrictEqual(current.operation, intent.operation))
     throw new HttpError(409, "Operation definition changed; create a new intent", "INTENT_CHANGED");
+  const rejectChanged = (): never => {
+    throw new HttpError(409, "Operation definition changed; create a new intent", "INTENT_CHANGED");
+  };
+  if ("calls" in intent) {
+    for (const call of intent.calls) mergeBoundParams(call.input, current.boundParams, rejectChanged);
+  } else {
+    mergeBoundParams(intent.call.input, current.boundParams, rejectChanged);
+  }
 }
 
 function validateCall(handler: PanelWriteServerOperation, call: PanelOperationCall, fixedTarget?: PanelOperationTarget | null) {
@@ -171,14 +266,47 @@ function agentRecord(record: StoredPanelOperationIntent): AgentRecord {
 function sourceMatches(intent: ReadableAgentIntent, session: AgentSessionRef) {
   if (!isDeepStrictEqual(intent.source.session,session)) throw new HttpError(403,"Intent belongs to another questioning session","FORBIDDEN");
 }
-function matchingInvocation(intent: ReadableAgentIntent, request: CreatePanelOperationIntentRequest, session: AgentSessionRef, executionUserId: string | null) {
+function matchingInvocation(
+  intent: ReadableAgentIntent,
+  request: CreatePanelOperationIntentRequest,
+  session: AgentSessionRef,
+  executionUserId: string | null,
+  concrete?: PanelOperationInvocation,
+) {
   sourceMatches(intent, session);
-  const concrete = requireConcreteInvocation(request);
-  if (!isDeepStrictEqual(intent.use,{applicationId:request.applicationId,useId:request.useId}) || intent.operation.id !== request.operationId ||
-    intent.root !== request.root ||
-    !isDeepStrictEqual(intent.operation.memberPath, request.memberPath) ||
-    !isDeepStrictEqual(invocationOf(intent),invocationOf(concrete)) || intent.executionUserId !== executionUserId)
-    throw new HttpError(409,"Changed call or executor requires a new intent","INTENT_CHANGED");
+  const scopeMatches = isDeepStrictEqual(intent.use, { applicationId: request.applicationId, useId: request.useId }) &&
+    intent.operation.id === request.operationId &&
+    intent.root === request.root &&
+    isDeepStrictEqual(intent.operation.memberPath, request.memberPath) &&
+    intent.executionUserId === executionUserId;
+  if (!scopeMatches) {
+    throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
+  }
+  if (concrete !== undefined) {
+    if (!isDeepStrictEqual(invocationOf(intent), invocationOf(concrete))) {
+      throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
+    }
+    return;
+  }
+  // Replaying an already-dispatched row operation must not depend on re-reading a row that may have been removed.
+  if (hasMemberPathItemKey(request.memberPath) && "call" in request && "call" in intent) {
+    if (request.call.target !== undefined && !isDeepStrictEqual(intent.call.target, request.call.target)) {
+      throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
+    }
+    if (!isDeepStrictEqual(intent.call.draft, request.call.draft)) {
+      throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
+    }
+    for (const [key, value] of Object.entries(request.call.input)) {
+      if (!isDeepStrictEqual(intent.call.input[key], value)) {
+        throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
+      }
+    }
+    return;
+  }
+  const fallbackConcrete = requireConcreteInvocation(request);
+  if (!isDeepStrictEqual(invocationOf(intent), invocationOf(fallbackConcrete))) {
+    throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
+  }
 }
 async function presentOutcome(
   intent: Pick<ReadableAgentIntent, "operation" | "outcome">, owner: AssistantOwner, credentials: AssistantCredentials,
@@ -280,9 +408,12 @@ function refuseAgentUpload(handler: PanelWriteServerOperation, locale?: string) 
 export async function inspectPanelOperationImpact(owner: AssistantOwner, credentials: AssistantCredentials,
   input: z.infer<typeof inspectPanelOperationImpactRequestSchema>,
 ) {
-  const { handler, fixedTarget } = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input)));
+  assertRowNotBatch(input.memberPath, input);
+  const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input), { mode: "prepare" }));
+  const concrete = materializeWriteInvocation(input, current);
+  const { handler, fixedTarget } = current;
   const staged = handler.inspectImpact &&
-    await withStagedFile(owner, input, handler, validateInvocation(handler, input, fixedTarget), credentials.locale);
+    await withStagedFile(owner, input, handler, validateInvocation(handler, concrete, fixedTarget), credentials.locale);
   const impact = staged && await ownerImpact(handler.inspectImpact!, operationHost({ owner, credentials }), staged.invocation);
   if (!impact) throw new HttpError(422, "The owner has no impact description for this operation", "OPERATION_IMPACT_UNAVAILABLE");
   return impact;
@@ -326,10 +457,15 @@ async function humanConfirmation(
 }
 
 export async function prepareHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials,
-  input: CreatePanelHumanOperationIntentRequest,
+  input: CreatePanelHumanOperationIntentRequest, callerUserName?: string,
 ): Promise<PanelHumanOperationPreparation> {
-  const concrete = requireConcreteInvocation(input);
-  const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(concrete)));
+  assertRowNotBatch(input.memberPath, input);
+  const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input), {
+    mode: "prepare",
+    rowContext: input.rowContext,
+    hostReadActor: { owner, credentials, callerUserName },
+  }));
+  const concrete = materializeWriteInvocation(input, current);
   const prepared = validateInvocation(current.handler, concrete, current.fixedTarget);
   const staged = await withStagedFile(owner, input, current.handler, prepared, credentials.locale);
   const confirmation = await humanConfirmation(current.handler, operationHost({ owner, credentials }), staged.invocation, staged.upload?.file);
@@ -359,7 +495,7 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   const { intent } = record;
   if (intent.dispatched) return replay(record, owner, credentials);
   const ref = { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath };
-  const current = writeOperation(await operationForUse(owner, credentials, ref, invocationTarget(intent)));
+  const current = writeOperation(await operationForUse(owner, credentials, ref, invocationTarget(intent), { mode: "dispatch" }));
   requireFrozenOperation(intent, current);
   const prepared = validateInvocation(current.handler, intent, current.fixedTarget);
   // An expired or missing file refuses before the intent is claimed, so nothing is spent.
@@ -399,6 +535,7 @@ function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOut
   return { kind: "batch", items, affected: { objects, objectTypes: [...objectTypes], ...(removed.length && { removed }) } };
 }
 export async function operatePanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, input: CreatePanelOperationIntentRequest, initiatorName: string): Promise<PanelOperateResponse> {
+  assertRowNotBatch(input.memberPath, input);
   const run = await runForOwner(owner,runId);
   const source = {session:{providerId:run.channel!.agent.providerId,sessionId:run.sessionId},runId};
   const stored = await store.find(owner,input.intentId);
@@ -408,13 +545,34 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
     matchingInvocation(record.intent, input, source.session, run.executionUserId ?? null);
     return replay(record, owner, credentials);
   }
-  const current = await admitted(owner,credentials,run,input,invocationTarget(input));
+  const { use, framePanelId, view } = await requirePanelSkillForRun(owner, credentials, run, input);
+  const isRowOp = hasMemberPathItemKey(input.memberPath);
+  let executor: Awaited<ReturnType<typeof credentialsForRun>> | undefined;
+  if (isRowOp) {
+    executor = await credentialsForRun(owner, runId, credentials, run.sessionId);
+  }
+  const hostReadActor = executor
+    ? {
+      owner: { domainId: owner.domainId, userId: executor.executionUserId ?? owner.userId },
+      credentials: executor.credentials,
+      callerUserName: executor.executionUserId === null ? initiatorName : undefined,
+    }
+    : undefined;
+  const current = {
+    ...writeOperation(await declaredOperation(owner, credentials, use, input, invocationTarget(input), undefined, {
+      mode: "prepare",
+      rowContext: input.rowContext,
+      framePanelId,
+      hostReadActor,
+    })),
+    view,
+  };
   refuseAgentUpload(current.handler, credentials.locale);
-  const executor = await credentialsForRun(owner,runId,credentials,run.sessionId);
+  executor ??= await credentialsForRun(owner,runId,credentials,run.sessionId);
   const root = rootOf(run);
   if (!root) throw new HttpError(409,"Execution has no authenticated human session","USER_SESSION_UNAVAILABLE");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
-  const concrete = requireConcreteInvocation(input);
+  const concrete = materializeWriteInvocation(input, current);
   const prepared = validateInvocation(current.handler, concrete, current.fixedTarget);
   if (!record) {
     const settings = await store.settings(owner,root);
@@ -430,7 +588,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   if (record.kind === "confirmation-expired") return replay(record, owner, credentials);
   const { intent } = record;
   // A concurrent submission must resolve to the same immutable invocation before any question or write.
-  matchingInvocation(intent, input, source.session, executor.executionUserId);
+  matchingInvocation(intent, input, source.session, executor.executionUserId, concrete);
   if (record.kind === "historical" || intent.dispatched) return replay(record, owner, credentials);
   if (record.intent.operation.action) requireFrozenOperation(record.intent, current);
   if (intent.confirmation === "automatic") return dispatchPanel(owner,credentials,runId,intent.intentId);
@@ -477,7 +635,7 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   if (executor.executionUserId !== intent.executionUserId) throw new HttpError(409,"Executor changed; create a new intent","INTENT_CHANGED");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
   const current = await admitted(owner, credentials, run,
-    { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent));
+    { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent), { mode: "dispatch" });
   requireFrozenOperation(intent, current);
   const client = new RuntimeClient(owner.domainId,undefined,owner.userId);
   if (intent.confirmation === "required") {

@@ -20,12 +20,16 @@ export async function requirePanelEntry(credentials: AssistantCredentials, { app
   return data;
 }
 
-export async function requirePanelUse(credentials: AssistantCredentials, ref: PanelUseRef) {
+export async function requirePanelUseEntry(credentials: AssistantCredentials, ref: PanelUseRef) {
   try {
-    return (await requirePanelEntry(credentials, ref)).use;
+    return await requirePanelEntry(credentials, ref);
   } catch (error) {
     if (error instanceof HttpError && error.status === 404)
       throw new HttpError(403, "Panel use is not available", "FORBIDDEN");
     throw error;
   }
+}
+
+export async function requirePanelUse(credentials: AssistantCredentials, ref: PanelUseRef) {
+  return (await requirePanelUseEntry(credentials, ref)).use;
 }

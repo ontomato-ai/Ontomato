@@ -364,44 +364,82 @@ function readSelection({ source, read }: DirectProjectionData, inputs: ReadInput
   return { kind: className.startsWith("platform:") ? "platform" : "customer", typeId: className, method: read, primaryKey };
 }
 
+export type ProjectionDataReadOutcome =
+  | { status: "ready"; value: Extract<ProductPanelReadResponse, { status: "ready" }>["value"]; declaration: PlatformReadDeclaration }
+  | { status: "empty"; declaration: PlatformReadDeclaration };
+
+export async function executeProjectionDataRead(
+  owner: ProductOwner,
+  viewer: AssistantCredentials,
+  { member, projection, slot }: { member: ReadMember; projection: ProductProjection; slot: string },
+  dataName: string,
+  submittedInputs: ReadInputs,
+  runtimeParams?: ProductPanelReadRequest["runtimeParams"],
+  callerUserName?: string,
+  location?: McpRequestLocation,
+): Promise<ProjectionDataReadOutcome> {
+  if ("listColumn" in member && member.listColumn !== undefined) {
+    throw new HttpError(422, "listColumn members cannot declare independent data reads", "LIST_COLUMN_DATA_FORBIDDEN");
+  }
+  const inputs = effectiveInputs(projection, member, submittedInputs);
+  if (!Object.hasOwn(projection.data, dataName)) {
+    throw new HttpError(
+      400,
+      `Member ${JSON.stringify(slot)} does not declare dataName ${JSON.stringify(dataName)}. Declared data names: ${JSON.stringify(Object.keys(projection.data))}.`,
+      "PANEL_DATA_NAME_UNKNOWN",
+    );
+  }
+  const data = projection.data[dataName];
+  const declaration = directReadDeclaration(projection, data);
+  if (!declaration) {
+    throw new HttpError(422, `Read '${data.read}' is not registered for datum '${dataName}'`, "PANEL_READ_UNAVAILABLE");
+  }
+  const params = await readParameters(projection, member, dataName, data, declaration, inputs, runtimeParams);
+  if (declaration.parameterMode === "fixed") {
+    for (const name of declaration.requiredParams ?? [])
+      if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
+  }
+  const selection = readSelection(data, inputs);
+  const read = selection.kind === "customer"
+    ? customerReads(owner, viewer, callerUserName)[selection.method]
+    : readAdapters(owner, viewer, callerUserName, location)[selection.typeId]?.[selection.method];
+  if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
+  const result = await read(selection, params, projection);
+  if (declaration.result === "panelRecordList") {
+    const value = panelReadResultSchemas.panelRecordList.parse(result);
+    return value.length ? { status: "ready", value, declaration } : { status: "empty", declaration };
+  }
+  if (declaration.result === "metricOutput") {
+    const value = panelReadResultSchemas.metricOutput.parse(result);
+    return value.rows.length || value.truncation ? { status: "ready", value, declaration } : { status: "empty", declaration };
+  }
+  return {
+    status: "ready",
+    value: panelReadResultSchemas[declaration.result].parse(result) as Extract<ProductPanelReadResponse, { status: "ready" }>["value"],
+    declaration,
+  };
+}
+
 export async function readProductPanelData(
   owner: ProductOwner, viewer: AssistantCredentials, request: ProductPanelReadRequest, callerUserName?: string, location?: McpRequestLocation,
 ): Promise<ProductPanelReadResponse> {
   try {
     const { member, projection, panel, viewer: readViewer } = await resolveReadMember(owner, viewer, request);
-    const inputs = effectiveInputs(projection, member, request.inputs);
+    if ("listColumn" in member && member.listColumn !== undefined && Object.keys(projection.data).length > 0) {
+      throw new HttpError(422, "listColumn members cannot declare independent data reads", "LIST_COLUMN_DATA_FORBIDDEN");
+    }
+    const slot = request.memberPath.at(-1)!.member;
     if ("operations" in request) {
+      const inputs = effectiveInputs(projection, member, request.inputs);
       const { readAdmittedProjectionOperations } = await import("./direct-operations");
       const value = await readAdmittedProjectionOperations({ owner, credentials: readViewer },
-        { panel, projection, member, slot: request.memberPath.at(-1)!.member }, inputs);
+        { panel, projection, member, slot }, inputs);
       return { status: "ready", value };
     }
-    if (!Object.hasOwn(projection.data, request.dataName)) return {
-      status: "error",
-      message: `Member ${JSON.stringify(request.memberPath.at(-1)!.member)} does not declare dataName ${JSON.stringify(request.dataName)}. Declared data names: ${JSON.stringify(Object.keys(projection.data))}.`,
-    };
-    const data = projection.data[request.dataName];
-    const declaration = directReadDeclaration(projection, data)!;
-    const params = await readParameters(projection, member, request.dataName, data, declaration, inputs, request.runtimeParams);
-    if (declaration.parameterMode === "fixed") {
-      for (const name of declaration.requiredParams ?? [])
-        if (!Object.hasOwn(params, name)) throw new HttpError(400, `Missing read parameter: ${name}`, "PANEL_INPUT_REQUIRED");
-    }
-    const selection = readSelection(data, inputs);
-    const read = selection.kind === "customer"
-      ? customerReads(owner, readViewer, callerUserName)[selection.method]
-      : readAdapters(owner, readViewer, callerUserName, location)[selection.typeId]?.[selection.method];
-    if (!read) throw new HttpError(422, "The owner read is unavailable", "PANEL_READ_UNAVAILABLE");
-    const result = await read(selection, params, projection);
-    if (declaration.result === "panelRecordList") {
-      const value = panelReadResultSchemas.panelRecordList.parse(result);
-      return value.length ? { status: "ready", value } : { status: "empty" };
-    }
-    if (declaration.result === "metricOutput") {
-      const value = panelReadResultSchemas.metricOutput.parse(result);
-      return value.rows.length || value.truncation ? { status: "ready", value } : { status: "empty" };
-    }
-    return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result) };
+    const outcome = await executeProjectionDataRead(
+      owner, readViewer, { member, projection, slot }, request.dataName, request.inputs, request.runtimeParams, callerUserName, location,
+    );
+    return outcome.status === "empty" ? { status: "empty" } : { status: "ready", value: outcome.value };
   } catch (error) {
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) return { status: "forbidden" };
     if (error instanceof HttpError || error instanceof BackendUnavailableError || error instanceof z.ZodError || error instanceof SyntaxError)

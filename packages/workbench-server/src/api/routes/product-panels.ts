@@ -290,7 +290,7 @@ panelOperationsRouter.post("/panel-operations/inspect-impact", wrap(async (req, 
 panelOperationsRouter.post("/panel-operations/intents", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
   const input = createPanelHumanOperationIntentRequestSchema.parse(req.body);
-  res.json(await prepareHumanPanelOperation(owner, credentials, input));
+  res.json(await prepareHumanPanelOperation(owner, credentials, input, (req as AuthenticatedRequest).userName));
 }));
 panelOperationsRouter.get("/panel-operation-intents/:intentId", wrap(async (req, res) => {
   const { owner, credentials } = context(req);
