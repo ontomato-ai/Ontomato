@@ -41,11 +41,16 @@ const EDITION = join(HERE, "../../apps/workbench/web/src/sdk-edition.ts");
 /** Every directly rendered component's data names, and the read results each may hold. */
 const DECLARED_DATA = {
   ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
+  ObjectCount: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
   ObjectForm: { form: ["panelFormDescription"], createForm: ["panelFormDescription"] },
   OperationButton: {},
   FileUploadControl: {},
-  ReferencePicker: { options: ["panelOptionList"], selected: ["panelOptionList"] },
+  ReferencePicker: {
+    options: ["panelOptionList"],
+    selected: ["panelOptionList"],
+    rows: ["panelRecordList", "panelRecordQuery"],
+  },
   ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
   OntologyGraph: { schema: ["panelGraphSchema"], counts: ["panelGraphCounts"], start: ["panelGraphStart"], neighbors: ["panelGraphNeighbors"] },
   ObjectRelations: { neighbors: ["panelGraphNeighbors", "panelRelationNeighbors"] },
@@ -194,6 +199,13 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
     });
+    assert.equal(declared.get("ObjectCount").outputs, undefined, "ObjectCount is presentation-only");
+    assert.deepEqual(declared.get("ReferencePicker").outputs, {
+      selected: { kind: "object", objectType: "@binding" },
+    });
+    assert.equal(declared.get("ReferencePicker").data.options.required, false);
+    assert.equal(declared.get("ReferencePicker").data.selected.required, false);
+    assert.equal(declared.get("ReferencePicker").data.rows.required, false);
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
     // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
     const ontologyNode = { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] };
@@ -220,6 +232,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(subtitleLines?.required, false);
     assert.match(subtitleLines?.type ?? "", /number/);
     assert.match(subtitleLines?.description ?? "", /visible lines in a compact summary/);
+    const countItems = declared.get("ObjectCount").config.find(prop => prop.name === "items");
+    assert.equal(countItems?.required, false);
+    assert.match(countItems?.type ?? "", /ObjectCountItem/);
+    const pickerPlaceholder = declared.get("ReferencePicker").config.find(prop => prop.name === "placeholder");
+    assert.equal(pickerPlaceholder?.required, false);
+    assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "clearable")?.required, false);
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
     assert.equal(declared.get("MetricChart").config, undefined, "a component with no configuration declares none");
 

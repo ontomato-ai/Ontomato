@@ -1,5 +1,6 @@
 export const baseComponents = {
   ObjectList: () => import("./base/ObjectList.vue").then(module => module.default),
+  ObjectCount: () => import("./base/ObjectCount.vue").then(module => module.default),
   ObjectRelations: () => import("./base/ObjectRelations.vue").then(module => module.default),
   ObjectSummary: () => import("./base/ObjectSummary.vue").then(module => module.default),
   ObjectForm: () => import("./base/ObjectForm.vue").then(module => module.default),

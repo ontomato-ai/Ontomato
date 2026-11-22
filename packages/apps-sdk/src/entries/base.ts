@@ -7,6 +7,8 @@ export type {
   ObjectListColumn,
   ObjectListRef,
 } from "../base/object-list-types";
+export { default as ObjectCount } from "../base/ObjectCount.vue";
+export type { ObjectCountItem } from "../base/object-count-types";
 export { default as ObjectRelations } from "../base/ObjectRelations.vue";
 export { default as ObjectSummary } from "../base/ObjectSummary.vue";
 export { default as ObjectForm } from "../base/ObjectForm.vue";
