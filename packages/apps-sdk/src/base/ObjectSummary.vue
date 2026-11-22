@@ -24,14 +24,24 @@ import { useDataStateLabels } from "./data-state-labels";
  * are shown, and in what order, is the projection's configuration; what each holds is the object's owner's. Safe range
  * highlights, status tags, tag lists and clickable reference links follow the same record contract as `ObjectList`.
  */
-const props = defineProps<{
-  /**
-   * The owner's fields to show, by field name, in this order; absent, every field the owner's record gives, in its order.
-   * A field the owner gives a tone for (`tones`) is drawn as a coloured tag, a tag list (`tags`) as tags and a reference as
-   * a link the page hears as `navigate`; any other is text, its line breaks kept.
-   */
-  fields?: readonly string[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    /**
+     * The owner's fields to show, by field name, in this order; absent, every field the owner's record gives, in its order.
+     * A field the owner gives a tone for (`tones`) is drawn as a coloured tag, a tag list (`tags`) as tags and a reference as
+     * a link the page hears as `navigate`; any other is text, its line breaks kept.
+     */
+    fields?: readonly string[];
+    /**
+     * Whether to render the `record.label` heading above the field list; defaults to `true`. Set to `false` when an
+     * `ObjectHeader` or section heading above this summary already introduces the object.
+     */
+    showTitle?: boolean;
+  }>(),
+  {
+    showTitle: true,
+  },
+);
 
 const emit = defineEmits<{
   /** Emitted when a reader clicks a reference field carrying an owner-supplied object reference. */
@@ -81,7 +91,7 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
   <div class="sdk-object-summary">
     <data-state :result="result" :labels="labels">
       <template #default="{ value: current }">
-        <h3 class="sdk-object-summary-title">
+        <h3 v-if="showTitle" class="sdk-object-summary-title">
           <template v-for="(part, index) in textHighlightSegments(current.label, current.highlights?.label)" :key="index">
             <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
           </template>

@@ -239,6 +239,11 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const pickerPlaceholder = declared.get("ReferencePicker").config.find(prop => prop.name === "placeholder");
     assert.equal(pickerPlaceholder?.required, false);
     assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "clearable")?.required, false);
+    const summaryShowTitle = declared.get("ObjectSummary").config.find(prop => prop.name === "show-title");
+    assert.equal(summaryShowTitle?.required, false);
+    assert.match(summaryShowTitle?.type ?? "", /boolean/);
+    assert.equal(summaryShowTitle?.default, "true");
+    assert.match(summaryShowTitle?.description ?? "", /record\.label/);
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
     assert.equal(declared.get("MetricChart").config, undefined, "a component with no configuration declares none");
 

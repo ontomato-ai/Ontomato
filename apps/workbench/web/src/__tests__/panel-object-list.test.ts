@@ -2733,3 +2733,88 @@ it("computes virtual windows, scroll targets, and grouped card grid bands safely
     { kind: "cards", startItemIndex: 5, endItemIndex: 6, height: 140 },
   ]);
 });
+
+it("shows ObjectSummary title by default and hides the h3 heading when config.showTitle is false while keeping fields and reference navigation", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "summary-default": {
+      ...meta,
+      id: "summary-default",
+      name: "Default summary",
+      componentId: "@ontomato/sdk:ObjectSummary",
+      inputs: { item: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      outputs: { navigate: { kind: "object", objectType: USER } },
+      config: { fields: ["status", "owner"] },
+      data: { record: { source: { object: { input: "item" } }, read: "record", params: {} } },
+    },
+    "summary-headless": {
+      ...meta,
+      id: "summary-headless",
+      name: "Headless summary",
+      componentId: "@ontomato/sdk:ObjectSummary",
+      inputs: { item: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      outputs: { navigate: { kind: "object", objectType: USER } },
+      config: { fields: ["status", "owner"], showTitle: false },
+      data: { record: { source: { object: { input: "item" } }, read: "record", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      navigated: { type: { kind: "object", objectType: USER } },
+    },
+    members: {
+      defaultSummary: {
+        target: { projectionId: "summary-default" },
+        inputs: { item: { state: "selected" } },
+        outputs: { navigate: { state: "navigated" } },
+      },
+      headlessSummary: {
+        target: { projectionId: "summary-headless" },
+        inputs: { item: { state: "selected" } },
+        outputs: { navigate: { state: "navigated" } },
+      },
+    },
+    commands: {},
+  });
+  const record = {
+    primaryKey: "k-rel-1",
+    label: "Order contains LineItem",
+    fields: {
+      status: "Active",
+      owner: { kind: "reference" as const, className: USER, primaryKey: "u-9", label: "Grace" },
+    },
+    fieldLabels: {
+      status: "Status",
+      owner: "Owner",
+    },
+  };
+
+  const { instance, element } = mountDirect(
+    manifest,
+    projections,
+    () => ready(record),
+    { initial: { selected: knowledge("k-rel-1") } },
+  );
+
+  await vi.waitFor(() => {
+    const summaries = element.querySelectorAll<HTMLElement>(".sdk-object-summary");
+    expect(summaries).toHaveLength(2);
+    expect(summaries[0]!.querySelectorAll("dd")).toHaveLength(2);
+    expect(summaries[1]!.querySelectorAll("dd")).toHaveLength(2);
+  });
+
+  const [defaultBox, headlessBox] = [...element.querySelectorAll<HTMLElement>(".sdk-object-summary")];
+
+  // Default (omitting showTitle) renders the h3 title with record.label.
+  expect(defaultBox!.querySelector("h3.sdk-object-summary-title")?.textContent?.trim()).toBe("Order contains LineItem");
+
+  // config.showTitle: false omits the h3 heading while keeping dl fields and clickable reference links.
+  expect(headlessBox!.querySelector(".sdk-object-summary-title")).toBeNull();
+  expect(headlessBox!.querySelector("h3")).toBeNull();
+  const headlessValues = [...headlessBox!.querySelectorAll<HTMLElement>("dd")];
+  expect(headlessValues[0]!.textContent?.trim()).toBe("Active");
+  const ownerLink = headlessValues[1]!.querySelector<HTMLButtonElement>(".sdk-object-ref-link")!;
+  expect(ownerLink.textContent?.trim()).toBe("Grace");
+  ownerLink.click();
+  await vi.waitFor(() => expect(instance.state.values.value.navigated).toEqual({ className: USER, primaryKey: "u-9" }));
+});
