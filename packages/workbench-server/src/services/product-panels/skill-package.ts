@@ -326,6 +326,9 @@ function describeOperation({ id, label, binding, owner, draft }: OperationDescri
   if (!owner) return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}. Read the admitted description for the actual selected object with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it.`;
   const { handler, declaration } = owner;
   const summary = `- ${label} (${id}), kind ${handler.kind}, handlerRef ${handler.handlerRef}, target ${target}.`;
+  if (declaration.upload) {
+    return `${summary} Takes a file the reader uploads on the page (input \`${declaration.upload.input}\`). Agents cannot upload files directly yet: ask the reader to use the page's upload control.`;
+  }
   if (handler.kind !== "form.save") {
     return `${summary} Input ${JSON.stringify(declaration.inputSchema)}.${declaration.batch ? " Batch-capable." : ""}`;
   }

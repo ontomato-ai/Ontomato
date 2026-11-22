@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { panelDownloadReceiptSchema } from "@ontomato/contracts/panel-download";
-import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
+import { AGENT_DEFINITION, DELETE_SKILL, EXPORT_SKILL, IMPORT_SKILL, SKILL } from "@ontomato/contracts/panel-client-requests";
+import { panelFileInputSchema, type PanelUploadDeclaration } from "@ontomato/contracts/panel-upload";
+import { InvalidSkillPackageError } from "../../core/skills/manifest";
 import { tForLocale } from "../../i18n";
 import { assertPermission } from "../../identity/installed";
 import { HttpError } from "../../utils/errors";
@@ -14,11 +16,15 @@ import type {
   PanelServerOperation,
   SinglePanelOperationOutcome,
 } from "../product-panels/server-operations";
+import type { PanelUploadedFile } from "../product-panels/upload-store";
 
 /*
- * The skill owner as a panel server operation: `skills.delete`, guarded by `skill-management`, inspecting readable
- * agent references before confirmation and delegating deletion to `skillManager.deleteSkill`. Read-only provider and
- * built-in packages, as well as permission denials, surface as owner refusals.
+ * The skill owner as panel server operations. `skills.import` takes the skill ZIP the reader staged and installs it
+ * through `skillManager.importSkill`; a package whose name exists is refused with its `skillId`, and the same staged file
+ * may then be sent again with `overwrite`, which the reader confirms against the named skill. Both are guarded by
+ * `skill-management`. `skills.delete` inspects readable agent references before confirmation and delegates deletion to
+ * `skillManager.deleteSkill`. Read-only provider and built-in packages, as well as permission denials, surface as owner
+ * refusals.
  */
 
 const skillManagementPermissions = ["skill-management"] as const;
@@ -68,6 +74,35 @@ const deleteSkillImpact: PanelImpactInspector = {
   },
 };
 
+const skillPackageUpload = {
+  input: "file", accept: [{ mime: "application/zip", extension: ".zip" }], maxBytes: 20 * 1024 * 1024,
+} satisfies PanelUploadDeclaration;
+const importInputSchema = z.object({
+  file: panelFileInputSchema,
+  /** Replace the skill of the same name, after the reader confirmed it. */
+  overwrite: z.boolean().optional(),
+}).strict();
+const importResultSchema = z.object({ id: z.string(), title: z.string() }).strict();
+const importedInput = (input: Record<string, unknown>) => input as { file: PanelUploadedFile; overwrite?: boolean };
+
+const importSkillImpact: PanelImpactInspector = {
+  handlerRef: `${IMPORT_SKILL}.inspect-impact`,
+  async inspect({ initiator: { owner, credentials }, locale }, calls) {
+    const { file, overwrite } = importedInput(calls[0]!.input);
+    if (!overwrite) return null;
+    let existing;
+    try { existing = await (await loadSkillManager()).importedSkill(owner.domainId, file.bytes, credentials); }
+    // An unreadable package needs no confirmation; the import itself refuses it.
+    catch (error) { if (error instanceof InvalidSkillPackageError) return null; throw error; }
+    if (!existing) return null;
+    return {
+      summary: tForLocale(locale, "panels.confirmation.overwriteSkillImpact", { skill: existing.title }),
+      objects: [{ target: { objectType: SKILL, primaryKey: existing.id }, label: existing.title }],
+      total: 1,
+    };
+  },
+};
+
 function skillRefusalMessage(error: HttpError, locale?: string): string {
   if (error.code === "PUBLIC_SKILL_READ_ONLY") return tForLocale(locale, "panels.skill.readOnlyPublic");
   if (error.code === "SKILL_PROVIDER_READ_ONLY")
@@ -76,6 +111,44 @@ function skillRefusalMessage(error: HttpError, locale?: string): string {
 }
 
 export const skillServerOperations = [
+  {
+    handlerRef: IMPORT_SKILL,
+    labelKey: "panels.skill.import",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: IMPORT_SKILL },
+    effect: "write",
+    batch: false,
+    targetType: SKILL,
+    targetSchema: z.null(),
+    upload: skillPackageUpload,
+    inputSchema: importInputSchema,
+    resultSchema: importResultSchema,
+    inspectImpact: importSkillImpact,
+    async execute(host: PanelOperationHost, _target: null, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
+      const { file, overwrite } = importedInput(input);
+      const { owner, credentials } = host.executor;
+      const { locale } = credentials;
+      try {
+        await assertPermission(credentials, skillManagementPermissions);
+        const skill = await (await loadSkillManager()).importSkill(owner.domainId, file.bytes, credentials, overwrite === true);
+        return {
+          kind: "success",
+          message: tForLocale(locale, "panels.skill.imported", { skill: skill.title }),
+          data: { id: skill.id, title: skill.title },
+          affected: { objects: [{ objectType: SKILL, primaryKey: skill.id }], objectTypes: [SKILL] },
+        };
+      } catch (error) {
+        if (error instanceof InvalidSkillPackageError)
+          return { kind: "refusal", code: error.code, message: tForLocale(locale, "panels.skill.invalidPackage", { reason: error.message }) };
+        if (!(error instanceof HttpError) || error.status >= 500) throw error;
+        if (error.code === "SKILL_EXISTS") {
+          const { skillId } = error.details as { skillId: string };
+          return { kind: "refusal", code: error.code, message: tForLocale(locale, "panels.skill.importExists", { skill: skillId }), details: { skillId } };
+        }
+        return { kind: "refusal", code: error.code ?? "SKILL_IMPORT_REFUSED", message: skillRefusalMessage(error, locale) };
+      }
+    },
+  },
   {
     handlerRef: DELETE_SKILL,
     labelKey: "panels.skill.delete",

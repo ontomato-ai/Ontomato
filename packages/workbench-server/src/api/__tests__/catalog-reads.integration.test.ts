@@ -243,7 +243,7 @@ it("uses the registered save operation to write the current panel and refuses a 
   const host = { initiator: actor, executor: actor, request: unusedRequest, requestWorkbench: unusedRequest };
   const { panelServerOperation } = await import("../../services/product-panels/server-operations");
   const save = panelServerOperation(`${PRODUCT_PANEL}.save`);
-  if (save.effect !== "write") throw new Error("Expected a write operation");
+  if (save.effect !== "write" || save.kind !== "form.save") throw new Error("Expected a form save");
   const target = { kind: "object" as const, objectType: PRODUCT_PANEL, primaryKey: "one" };
   const input = {
     values: { ...form.values, name: "Alpha revised directory", description: "An unsubmitted stale description" },
@@ -327,7 +327,7 @@ it("dispatches application reads from current PostgreSQL records and preserves t
   const host = { initiator: actor, executor, request: unusedRequest, requestWorkbench: unusedRequest };
   const { panelServerOperation } = await import("../../services/product-panels/server-operations");
   const add = panelServerOperation("applications.addEntry");
-  if (add.effect !== "write") throw new Error("Expected a write operation");
+  if (add.effect !== "write" || add.kind !== "action" || add.targetInput === undefined) throw new Error("Expected a targeted action");
   const added = { ...publicUse, id: "added", pageKey: "added", path: `${entry.path}/added` };
   await expect(add.execute(host, { kind: "object", objectType: APPLICATION, primaryKey: applicationId }, { entry: added }, "add"))
     .resolves.toMatchObject({ kind: "success" });
@@ -345,7 +345,7 @@ it("updates only the submitted projection configuration field in PostgreSQL", as
   const host = { initiator: actor, executor: actor, request: unusedRequest, requestWorkbench: unusedRequest };
   const { panelServerOperation } = await import("../../services/product-panels/server-operations");
   const save = panelServerOperation(`${PRODUCT_PROJECTION}.save`);
-  if (save.effect !== "write") throw new Error("Expected a write operation");
+  if (save.effect !== "write" || save.kind !== "form.save") throw new Error("Expected a form save");
   const target = { kind: "object" as const, objectType: PRODUCT_PROJECTION, primaryKey: before.id };
 
   await expect(save.execute(host, target, {
@@ -365,7 +365,7 @@ it.each(["identity", "entries"] as const)("submits only the changed application 
   const host = { initiator: actor, executor, request: unusedRequest, requestWorkbench: unusedRequest };
   const { panelServerOperation } = await import("../../services/product-panels/server-operations");
   const save = panelServerOperation(`${APPLICATION}.save`);
-  if (save.effect !== "write") throw new Error("Expected a write operation");
+  if (save.effect !== "write" || save.kind !== "form.save") throw new Error("Expected a form save");
   const target = { kind: "object" as const, objectType: APPLICATION, primaryKey: applicationId };
   const path = `${entry.path}/renamed`;
   const input = section === "identity"
