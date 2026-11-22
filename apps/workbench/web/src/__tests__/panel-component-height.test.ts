@@ -612,7 +612,8 @@ it("declares the height-fill and default-height CSS contract across member wrapp
   const objectFormCss = readRepoFile("packages/apps-sdk/src/base/ObjectForm.vue");
   expect(objectFormCss).toMatch(/\.sdk-owner-form\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
   expect(objectFormCss).toMatch(/\.sdk-owner-form-body\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s);
-  expect(objectFormCss).toMatch(/\.sdk-owner-form-actions\s*\{[^}]*flex:\s*0 0 auto;[^}]*position:\s*sticky;/s);
+  expect(objectFormCss).toMatch(/\.sdk-owner-form-actions\s*\{[^}]*flex:\s*0 0 auto;/s);
+  expect(objectFormCss).not.toMatch(/\.sdk-owner-form-actions\s*\{[^}]*position:\s*sticky;/s);
 
   for (const [file, cls] of [
     ["packages/apps-sdk/src/base/ObjectTree.vue", "sdk-object-tree"],
