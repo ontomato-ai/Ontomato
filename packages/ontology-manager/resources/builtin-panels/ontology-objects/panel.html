@@ -5,49 +5,49 @@
   .ot-header-divider { width: 1px; height: 20px; background: var(--ui-border); }
   .ot-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .ot-toolbar .el-input { width: 260px; max-width: 100%; }
-  .ot-search-icon { color: var(--el-text-color-placeholder); }
+  .ot-search-icon { color: var(--sdk-text-color-placeholder); }
   .ot-spacer { flex: 1; }
-  .ot-count { font-size: var(--text-sm); color: var(--el-text-color-secondary); }
-  .ot-pill-count { padding: 2px 8px; border-radius: var(--radius-full, 999px); background: var(--el-fill-color-light); color: var(--el-text-color-secondary); font-size: var(--text-xs); }
-  .ot-table { max-width: 100%; border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); overflow: auto; }
+  .ot-count { font-size: var(--text-sm); color: var(--sdk-text-color-secondary); }
+  .ot-pill-count { padding: 2px 8px; border-radius: var(--radius-full, 999px); background: var(--sdk-fill-color-light); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
+  .ot-table { max-width: 100%; border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--sdk-bg-color); overflow: auto; }
   .ot-row { display: grid; align-items: center; column-gap: var(--spacing-md); width: 100%; box-sizing: border-box;
     padding: var(--spacing-sm) var(--spacing-md); border: 0; border-bottom: 1px solid var(--ui-divider);
-    background: var(--el-bg-color); color: var(--el-text-color-regular); font: inherit; font-size: var(--text-sm); text-align: left; }
+    background: var(--sdk-bg-color); color: var(--sdk-text-color-regular); font: inherit; font-size: var(--text-sm); text-align: left; }
   .ot-row:last-child { border-bottom: 0; }
   button.ot-row, a.ot-row { cursor: pointer; }
   a.ot-row { text-decoration: none; }
   button.ot-row:hover, a.ot-row:hover { background: var(--ui-fill-tertiary); }
   .ot-row.is-active { background: var(--ui-fill-secondary); }
-  .ot-head { background: var(--ui-fill-tertiary); color: var(--el-text-color-secondary); font-size: var(--text-xs); font-weight: var(--font-semibold); }
+  .ot-head { background: var(--ui-fill-tertiary); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); font-weight: var(--font-semibold); }
   .ot-catalog-grid { grid-template-columns: minmax(10.5rem, 1.3fr) minmax(10rem, 1.8fr) 4.75rem 4.75rem 1.25rem; }
   .ot-attr-grid { grid-template-columns: minmax(8.5rem, 1.2fr) 5rem 4.25rem 4.25rem minmax(6rem, 1.3fr) 1.25rem; min-width: 28rem; }
   .ot-rel-grid { grid-template-columns: minmax(8rem, 1.2fr) minmax(6rem, 1fr) minmax(6rem, 1fr) minmax(8rem, 1.2fr); min-width: 24rem; }
-  .ot-chevron { color: var(--el-text-color-tertiary); justify-self: end; }
+  .ot-chevron { color: var(--sdk-text-color-placeholder); justify-self: end; }
   .ot-name strong, .ot-name small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ot-name strong { color: var(--el-text-color-primary); font-weight: var(--font-semibold); }
-  .ot-name small { margin-top: var(--spacing-xs); color: var(--el-text-color-secondary); font-size: var(--text-xs); }
+  .ot-name strong { color: var(--sdk-text-color-primary); font-weight: var(--font-semibold); }
+  .ot-name small { margin-top: var(--spacing-xs); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
   .ot-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ot-status { padding: var(--spacing-lg); text-align: center; color: var(--el-text-color-secondary); font-size: var(--text-sm); margin: 0; }
+  .ot-status { padding: var(--spacing-lg); text-align: center; color: var(--sdk-text-color-secondary); font-size: var(--text-sm); margin: 0; }
   .ot-detail { display: grid; grid-template-columns: minmax(17.5rem, 0.85fr) minmax(0, 1.55fr); gap: var(--spacing-md); align-items: start; }
   .ot-detail-side, .ot-detail-main { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
-  .ot-card { padding: var(--spacing-lg); border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--el-bg-color); min-width: 0; }
+  .ot-card { padding: var(--spacing-lg); border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--sdk-bg-color); min-width: 0; }
   .ot-card-title { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); margin-bottom: var(--spacing-md); }
-  .ot-card-title h3 { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
+  .ot-card-title h3 { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
   .ot-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--spacing-sm); margin-top: var(--spacing-lg); padding-top: var(--spacing-md); border-top: 1px solid var(--ui-divider); }
-  .ot-summary span { font-size: var(--text-xs); color: var(--el-text-color-secondary); }
-  .ot-summary strong { display: block; margin-bottom: 2px; font-size: var(--text-lg); color: var(--el-text-color-primary); }
+  .ot-summary span { font-size: var(--text-xs); color: var(--sdk-text-color-secondary); }
+  .ot-summary strong { display: block; margin-bottom: 2px; font-size: var(--text-lg); color: var(--sdk-text-color-primary); }
   .ot-pk-alert { margin-top: var(--spacing-md); }
   .ot-attr-group { border-bottom: 1px solid var(--ui-divider); }
   .ot-attr-group:last-child { border-bottom: 0; }
   .ot-attr-group > .ot-row { border-bottom: 0; }
-  .ot-inline-editor { padding: var(--spacing-md); border-top: 1px solid var(--ui-divider); background: var(--el-fill-color-lighter, var(--ui-fill-tertiary)); display: flex; flex-direction: column; gap: var(--spacing-sm); }
+  .ot-inline-editor { padding: var(--spacing-md); border-top: 1px solid var(--ui-divider); background: var(--sdk-fill-color-lighter, var(--ui-fill-tertiary)); display: flex; flex-direction: column; gap: var(--spacing-sm); }
   .ot-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .ot-title { flex: 1; min-width: 8rem; font-weight: var(--font-semibold); color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ot-title { flex: 1; min-width: 8rem; font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ot-detail-main .ot-table { overflow-x: auto; }
   .ot-attr-grid > :nth-child(5) { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
-  .ot-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: var(--el-overlay-color-lighter); }
-  .ot-modal-card { width: min(32.5rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--el-bg-color-overlay, var(--el-bg-color)); box-shadow: var(--el-box-shadow); overflow: hidden; }
-  .ot-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); }
+  .ot-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: var(--sdk-overlay-color-lighter); }
+  .ot-modal-card { width: min(32.5rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg); border-radius: var(--radius-lg); background: var(--sdk-bg-color-overlay, var(--sdk-bg-color)); box-shadow: var(--elevation-overlay); overflow: hidden; }
+  .ot-modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); }
   .ot-modal-body { overflow-y: auto; min-height: 0; }
   /* Keep two columns side by side on both 1440px (~959px container) and 1280px (~799px container) viewports. */
   @container (max-width: 46rem) { .ot-detail { grid-template-columns: minmax(0, 1fr); } }
@@ -69,11 +69,11 @@
     <!-- Catalog: the list of object types; selecting one opens its details in the same panel. -->
     <template v-if="!selected">
       <div class="ot-toolbar">
-        <el-input v-model="search" :placeholder="t('ot.search')" clearable>
+        <sdk-input v-model="search" :placeholder="t('ot.search')" clearable>
           <template #prefix>
             <svg class="ot-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
           </template>
-        </el-input>
+        </sdk-input>
         <span v-if="catalogCount !== null" class="ot-count">{{ t("ot.items", { count: catalogCount }) }}</span>
         <span class="ot-spacer"></span>
       </div>
@@ -95,28 +95,28 @@
         </button>
         <p v-if="catalog.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
         <p v-else-if="catalog.status === 'forbidden'" class="ot-status">{{ t("ot.forbidden") }}</p>
-        <el-alert v-else-if="catalog.status === 'error'" type="error" :title="catalog.message" :closable="false"></el-alert>
-        <el-empty v-else-if="filteredRows.length === 0" :description="t('ot.empty')"></el-empty>
+        <sdk-alert v-else-if="catalog.status === 'error'" type="error" :title="catalog.message" :closable="false"></sdk-alert>
+        <sdk-empty v-else-if="filteredRows.length === 0" :description="t('ot.empty')"></sdk-empty>
       </div>
     </template>
 
     <!-- Class details: basic info + 4 counts + primary key status in the left card, inline-expandable attributes and relations on the right. -->
     <div v-else class="ot">
       <div class="ot-header">
-        <el-button text @click="backToCatalog">← {{ t("ot.back") }}</el-button>
+        <sdk-button text @click="backToCatalog">← {{ t("ot.back") }}</sdk-button>
         <span class="ot-header-divider" aria-hidden="true"></span>
         <span class="ot-title">{{ record ? record.label : selected.primaryKey }}</span>
         <template v-if="record">
-          <el-button @click="configureView">{{ t("ot.configureView") }}</el-button>
-          <el-button type="danger" plain :loading="busy === 'deleteObject'" :disabled="!deleteObjectOp.operation.value"
-            @click="removeObject">{{ deleteObjectOp.operation.value ? deleteObjectOp.operation.value.label : "…" }}</el-button>
-          <el-button @click="browseData">{{ t("ot.browseData") }}</el-button>
+          <sdk-button @click="configureView">{{ t("ot.configureView") }}</sdk-button>
+          <sdk-button type="danger" plain :loading="busy === 'deleteObject'" :disabled="!deleteObjectOp.operation.value"
+            @click="removeObject">{{ deleteObjectOp.operation.value ? deleteObjectOp.operation.value.label : "…" }}</sdk-button>
+          <sdk-button @click="browseData">{{ t("ot.browseData") }}</sdk-button>
         </template>
       </div>
       <p v-if="detail.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
       <p v-else-if="detail.status === 'forbidden'" class="ot-status">{{ t("ot.forbidden") }}</p>
-      <el-alert v-else-if="detail.status === 'error'" type="error" :title="detail.message" :closable="false"></el-alert>
-      <el-empty v-else-if="detail.status === 'empty'" :description="t('ot.missing')"></el-empty>
+      <sdk-alert v-else-if="detail.status === 'error'" type="error" :title="detail.message" :closable="false"></sdk-alert>
+      <sdk-empty v-else-if="detail.status === 'empty'" :description="t('ot.missing')"></sdk-empty>
 
       <div v-if="record" class="ot-detail">
         <div class="ot-detail-side">
@@ -129,8 +129,8 @@
               <span><strong>{{ primaryKeyCount }}</strong>{{ t("ot.primaryKeyCount") }}</span>
               <span><strong>{{ summary.relationshipCount }}</strong>{{ t("ot.relationCount") }}</span>
             </div>
-            <el-alert v-if="primaryKeyStatus" class="ot-pk-alert" :type="primaryKeyStatus.type" :title="primaryKeyStatus.text"
-              :closable="false" show-icon></el-alert>
+            <sdk-alert v-if="primaryKeyStatus" class="ot-pk-alert" :type="primaryKeyStatus.type" :title="primaryKeyStatus.text"
+              :closable="false" show-icon></sdk-alert>
           </section>
         </div>
 
@@ -138,10 +138,10 @@
           <section class="ot-card">
             <div class="ot-card-title">
               <h3>{{ t("ot.attributes") }}</h3>
-              <el-button size="small" @click="startCreateAttribute">+ {{ t("ot.createAttribute") }}</el-button>
+              <sdk-button size="small" @click="startCreateAttribute">+ {{ t("ot.createAttribute") }}</sdk-button>
             </div>
             <div v-if="attributeMode === 'edit' && selectedAttribute && !editingAttribute" class="ot-inline-editor">
-              <el-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></el-alert>
+              <sdk-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></sdk-alert>
               <projection slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
             </div>
             <div class="ot-table">
@@ -169,20 +169,20 @@
                   </svg>
                 </button>
                 <div v-if="attributeMode === 'edit' && selectedAttribute && selectedAttribute.primaryKey === row.primaryKey" class="ot-inline-editor">
-                  <el-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></el-alert>
+                  <sdk-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></sdk-alert>
                   <div class="ot-editor-actions">
-                    <el-button :loading="busy === 'setPrimaryKey'" :disabled="!setPrimaryKeyOp.operation.value || isPrimaryKey"
-                      @click="makePrimaryKey">{{ setPrimaryKeyOp.operation.value ? setPrimaryKeyOp.operation.value.label : "…" }}</el-button>
-                    <el-button type="danger" plain :loading="busy === 'deleteAttribute'" :disabled="!deleteAttributeOp.operation.value"
-                      @click="removeAttribute">{{ deleteAttributeOp.operation.value ? deleteAttributeOp.operation.value.label : "…" }}</el-button>
+                    <sdk-button :loading="busy === 'setPrimaryKey'" :disabled="!setPrimaryKeyOp.operation.value || isPrimaryKey"
+                      @click="makePrimaryKey">{{ setPrimaryKeyOp.operation.value ? setPrimaryKeyOp.operation.value.label : "…" }}</sdk-button>
+                    <sdk-button type="danger" plain :loading="busy === 'deleteAttribute'" :disabled="!deleteAttributeOp.operation.value"
+                      @click="removeAttribute">{{ deleteAttributeOp.operation.value ? deleteAttributeOp.operation.value.label : "…" }}</sdk-button>
                     <span class="ot-spacer"></span>
-                    <el-button size="small" text @click="closeAttribute">{{ t("ot.closeEditor") }}</el-button>
+                    <sdk-button size="small" text @click="closeAttribute">{{ t("ot.closeEditor") }}</sdk-button>
                   </div>
                   <projection slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
                 </div>
               </div>
               <p v-if="attributes.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
-              <el-alert v-else-if="attributes.status === 'error'" type="error" :title="attributes.message" :closable="false"></el-alert>
+              <sdk-alert v-else-if="attributes.status === 'error'" type="error" :title="attributes.message" :closable="false"></sdk-alert>
               <p v-else-if="attributeRows.length === 0" class="ot-status">{{ t("ot.noAttributes") }}</p>
             </div>
           </section>
@@ -207,7 +207,7 @@
               </a>
             </div>
             <p v-else-if="relations.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
-            <el-empty v-else :description="t('ot.noRelations')" :image-size="72"></el-empty>
+            <sdk-empty v-else :description="t('ot.noRelations')" :image-size="72"></sdk-empty>
           </section>
         </div>
       </div>
@@ -218,7 +218,7 @@
       <div class="ot-modal-card">
         <div class="ot-modal-head">
           <span>{{ t("ot.create") }}</span>
-          <el-button text size="small" @click="backToCatalog">{{ t("ot.closeEditor") }}</el-button>
+          <sdk-button text size="small" @click="backToCatalog">{{ t("ot.closeEditor") }}</sdk-button>
         </div>
         <div class="ot-modal-body">
           <projection slot="objectForm" @saved="objectSaved" @discarded="formDiscarded"></projection>
@@ -231,10 +231,10 @@
       <div class="ot-modal-card">
         <div class="ot-modal-head">
           <span>{{ t("ot.attributeCreator") }}</span>
-          <el-button text size="small" @click="closeAttribute">{{ t("ot.closeEditor") }}</el-button>
+          <sdk-button text size="small" @click="closeAttribute">{{ t("ot.closeEditor") }}</sdk-button>
         </div>
         <div class="ot-modal-body">
-          <el-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></el-alert>
+          <sdk-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></sdk-alert>
           <projection slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
         </div>
       </div>

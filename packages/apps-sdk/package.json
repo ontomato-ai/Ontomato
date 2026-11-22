@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/edition.ts",
-    "./direct": "./src/direct.ts"
+    "./direct": "./src/direct.ts",
+    "./ui": "./src/entries/ui.ts"
   },
   "scripts": {
     "test": "node --test '*.node-test.mjs' 'examples/**/*.node-test.mjs'",

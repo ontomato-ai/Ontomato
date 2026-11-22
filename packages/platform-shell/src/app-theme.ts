@@ -55,28 +55,80 @@ function composedFrom(recoloured: string[]): Record<string, string> {
 
 /** The themed areas shown now, by their element: what a pop-up opened inside one of them takes. */
 const areas = new Map<HTMLElement, Record<string, string>>();
+
+interface TrackedLayer {
+  area: HTMLElement;
+  trigger: HTMLElement | null;
+  shown: Record<string, string>;
+  isOverlay: boolean;
+  wasVisible: boolean;
+}
+
+/** Teleported poppers and modal overlays currently themed after an area, kept in step when the area changes or closes. */
+const trackedLayers = new Map<HTMLElement, TrackedLayer>();
+let lastInteraction: { area: HTMLElement; trigger: HTMLElement } | null = null;
 let observer: MutationObserver | null = null;
+let interactionListenersAttached = false;
 
 function assign(element: HTMLElement, properties: Record<string, string>, previous: Record<string, string> = {}) {
-  for (const name of Object.keys(previous)) if (!(name in properties)) element.style.removeProperty(name);
-  for (const [name, value] of Object.entries(properties)) element.style.setProperty(name, value);
+  for (const name of Object.keys(previous)) {
+    if (!(name in properties)) element.style.removeProperty(name);
+  }
+  for (const [name, value] of Object.entries(properties)) {
+    if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value);
+  }
+}
+
+/** Whether an element is a teleported modal overlay (dialog or drawer). */
+function isOverlay(element: HTMLElement): boolean {
+  if (element.classList.contains("el-overlay")) return true;
+  return element.parentElement === document.body && element.getAttribute("role") === "dialog";
+}
+
+function isOverlayVisible(overlay: HTMLElement): boolean {
+  if (!overlay.isConnected || overlay.hidden || overlay.getAttribute("aria-hidden") === "true") return false;
+  return overlay.style.display !== "none";
+}
+
+/**
+ * The deepest themed area an element sits in (including inside an already-tracked teleported layer), and the cascaded
+ * theme properties from outermost ancestor area down to that deepest area so nested areas inherit and override cleanly.
+ */
+function resolveAreaFor(element: Element | null): { area: HTMLElement; properties: Record<string, string> } | undefined {
+  const chain: HTMLElement[] = [];
+  const seen = new Set<HTMLElement>();
+  let current: Element | null = element;
+  while (current) {
+    if (current instanceof HTMLElement) {
+      if (areas.has(current) && !seen.has(current)) {
+        seen.add(current);
+        chain.push(current);
+      }
+      const tracked = trackedLayers.get(current);
+      if (tracked && tracked.area.isConnected && !seen.has(tracked.area)) {
+        current = tracked.area;
+        continue;
+      }
+    }
+    current = current.parentElement;
+  }
+  if (!chain.length) return undefined;
+  const deepest = chain[0]!;
+  chain.reverse();
+  const properties: Record<string, string> = {};
+  for (const area of chain) Object.assign(properties, areas.get(area));
+  return { area: deepest, properties };
 }
 
 /** The themed area a pop-up was opened from, found through the trigger that names the pop-up as what it controls. */
-function areaOpening(popup: HTMLElement): Record<string, string> | undefined {
+function areaOpening(popup: HTMLElement): { area: HTMLElement; trigger: HTMLElement; properties: Record<string, string> } | undefined {
   const id = popup.id;
   if (!id) return undefined;
   const escaped = CSS.escape(id);
   const trigger = document.querySelector<HTMLElement>(`[aria-controls~="${escaped}"], [aria-describedby~="${escaped}"]`);
   if (!trigger) return undefined;
-  for (const [area, properties] of areas) if (area.contains(trigger)) return properties;
-  return undefined;
-}
-
-/** The theme of the area an element sits in, if any. */
-function areaOf(element: Element): Record<string, string> | undefined {
-  for (const [area, properties] of areas) if (area.contains(element)) return properties;
-  return undefined;
+  const resolved = resolveAreaFor(trigger);
+  return resolved ? { ...resolved, trigger } : undefined;
 }
 
 /** The pop-ups a trigger names as what it controls or is described by. */
@@ -89,34 +141,163 @@ function namedBy(trigger: Element): HTMLElement[] {
   });
 }
 
+function trackLayer(layer: HTMLElement, area: HTMLElement, properties: Record<string, string>, trigger: HTMLElement | null, overlay: boolean) {
+  const previous = trackedLayers.get(layer);
+  assign(layer, properties, previous?.shown);
+  trackedLayers.set(layer, {
+    area,
+    trigger: trigger ?? previous?.trigger ?? null,
+    shown: { ...properties },
+    isOverlay: overlay,
+    wasVisible: overlay ? isOverlayVisible(layer) : true,
+  });
+}
+
+/** Resolve the owning area and trigger for a newly opened dialog/drawer overlay. */
+function resolveOverlayOwner(overlay: HTMLElement): { area: HTMLElement; trigger: HTMLElement | null; properties: Record<string, string> } | undefined {
+  const linked = areaOpening(overlay);
+  if (linked) return linked;
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body && active !== document.documentElement && !overlay.contains(active)) {
+    const activeArea = resolveAreaFor(active);
+    // If focus is explicitly on a non-themed element (such as the platform rail), do not steal an earlier app's theme.
+    return activeArea ? { ...activeArea, trigger: active } : undefined;
+  }
+  if (lastInteraction && lastInteraction.area.isConnected) {
+    const resolved = resolveAreaFor(lastInteraction.area);
+    if (resolved) return { ...resolved, trigger: lastInteraction.trigger };
+  }
+  return undefined;
+}
+
+function isFocusableTrigger(element: HTMLElement): boolean {
+  if (!element.isConnected || element.hidden) return false;
+  if ("disabled" in element && (element as HTMLButtonElement).disabled) return false;
+  if (element.getAttribute("aria-disabled") === "true") return false;
+  return element.style.display !== "none";
+}
+
+function restoreOverlayFocus(overlay: HTMLElement, entry: TrackedLayer) {
+  const active = document.activeElement;
+  const focusLost = !active || active === document.body || active === document.documentElement || overlay.contains(active);
+  if (!focusLost) return;
+  if (entry.trigger && isFocusableTrigger(entry.trigger)) {
+    entry.trigger.focus({ preventScroll: true });
+    return;
+  }
+  const container = entry.area.closest<HTMLElement>("[data-panel-instance]")
+    ?? entry.area.querySelector<HTMLElement>("[data-panel-instance]")
+    ?? entry.area;
+  if (!container.isConnected) return;
+  if (container.tabIndex < 0 && !container.hasAttribute("tabindex")) container.setAttribute("tabindex", "-1");
+  container.focus({ preventScroll: true });
+}
+
+function closeOverlay(overlay: HTMLElement, removed: boolean) {
+  const entry = trackedLayers.get(overlay);
+  if (!entry || !entry.isOverlay) return;
+  const wasVisible = entry.wasVisible;
+  if (removed) {
+    trackedLayers.delete(overlay);
+  } else {
+    entry.wasVisible = false;
+    assign(overlay, {}, entry.shown);
+    entry.shown = {};
+  }
+  if (wasVisible) restoreOverlayFocus(overlay, entry);
+}
+
+/** Keep already-open poppers and overlays in step whenever an area's theme changes or goes away. */
+function syncTrackedLayers() {
+  for (const [layer, entry] of trackedLayers) {
+    if (!layer.isConnected) {
+      trackedLayers.delete(layer);
+      continue;
+    }
+    if (entry.isOverlay && !entry.wasVisible) continue;
+    const resolved = entry.area.isConnected ? resolveAreaFor(entry.area) : undefined;
+    if (resolved) {
+      assign(layer, resolved.properties, entry.shown);
+      entry.area = resolved.area;
+      entry.shown = { ...resolved.properties };
+    } else {
+      assign(layer, {}, entry.shown);
+      trackedLayers.delete(layer);
+    }
+  }
+}
+
+function recordInteraction(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (target === document.body || target === document.documentElement) return;
+  const resolved = resolveAreaFor(target);
+  lastInteraction = resolved ? { area: resolved.area, trigger: target } : null;
+}
+
 const LINK_ATTRIBUTES = ["aria-controls", "aria-describedby", "aria-expanded"];
+const OVERLAY_ATTRIBUTES = ["style", "class", "aria-hidden"];
+const OBSERVED_ATTRIBUTES = [...LINK_ATTRIBUTES, ...OVERLAY_ATTRIBUTES];
 
 /**
- * Gives every pop-up layer the theme of the area that opened it. A pop-up added at the end of the document takes it when
- * a trigger already names it; a component library that adds the layer first and names it on its trigger only when it
- * opens (a date picker) is followed through that trigger: when a trigger inside an area names a layer, the layer takes
- * the area's theme.
+ * Gives every pop-up layer and modal overlay the theme of the deepest area that opened it, keeps open layers in step
+ * when the area's theme or colour mode changes, and restores focus to the trigger or owning container when a modal
+ * overlay closes.
  */
 function followPopups() {
+  if (!interactionListenersAttached && typeof document !== "undefined") {
+    interactionListenersAttached = true;
+    document.addEventListener("pointerdown", recordInteraction, true);
+    document.addEventListener("keydown", recordInteraction, true);
+    document.addEventListener("focusin", recordInteraction, true);
+  }
   if (observer || typeof MutationObserver !== "function") return;
   observer = new MutationObserver((records) => {
     for (const record of records) {
       if (record.type === "attributes" && record.target instanceof Element) {
-        const properties = areaOf(record.target);
-        if (properties) for (const popup of namedBy(record.target)) assign(popup, properties);
+        const attr = record.attributeName ?? "";
+        if (LINK_ATTRIBUTES.includes(attr)) {
+          const resolved = resolveAreaFor(record.target);
+          if (resolved) {
+            const trigger = record.target instanceof HTMLElement ? record.target : null;
+            for (const popup of namedBy(record.target)) trackLayer(popup, resolved.area, resolved.properties, trigger, isOverlay(popup));
+          }
+        } else if (OVERLAY_ATTRIBUTES.includes(attr) && record.target instanceof HTMLElement && isOverlay(record.target)) {
+          const visible = isOverlayVisible(record.target);
+          const existing = trackedLayers.get(record.target);
+          if (visible && !existing?.wasVisible) {
+            const owner = resolveOverlayOwner(record.target);
+            if (owner) trackLayer(record.target, owner.area, owner.properties, owner.trigger, true);
+          } else if (!visible && existing?.wasVisible) {
+            closeOverlay(record.target, false);
+          }
+        }
         continue;
+      }
+      for (const node of record.removedNodes) {
+        if (!(node instanceof HTMLElement)) continue;
+        const overlays = isOverlay(node) ? [node] : [...node.querySelectorAll<HTMLElement>(".el-overlay")];
+        for (const overlay of overlays) closeOverlay(overlay, true);
+        if (trackedLayers.has(node) && !trackedLayers.get(node)!.isOverlay) trackedLayers.delete(node);
       }
       for (const node of record.addedNodes) {
         if (!(node instanceof HTMLElement)) continue;
+        const overlays = isOverlay(node) ? [node] : [...node.querySelectorAll<HTMLElement>(".el-overlay")];
+        for (const overlay of overlays) {
+          if (!isOverlayVisible(overlay)) continue;
+          const owner = resolveOverlayOwner(overlay);
+          if (owner) trackLayer(overlay, owner.area, owner.properties, owner.trigger, true);
+        }
         const popups = node.matches("[id]") ? [node, ...node.querySelectorAll<HTMLElement>("[id]")] : [...node.querySelectorAll<HTMLElement>("[id]")];
         for (const popup of popups) {
-          const properties = areaOpening(popup);
-          if (properties) assign(popup, properties);
+          if (isOverlay(popup)) continue;
+          const opening = areaOpening(popup);
+          if (opening) trackLayer(popup, opening.area, opening.properties, opening.trigger, false);
         }
       }
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: LINK_ATTRIBUTES });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: OBSERVED_ATTRIBUTES });
 }
 
 /**
@@ -147,11 +328,13 @@ export function applyTheme(element: HTMLElement, theme: () => PanelThemeOverride
       areas.set(element, properties);
       followPopups();
     } else areas.delete(element);
+    syncTrackedLayers();
   }, { immediate: true, flush: "post" });
   return () => {
     stop();
     assign(element, {}, shown);
     areas.delete(element);
+    syncTrackedLayers();
   };
 }
 
@@ -167,6 +350,7 @@ export function useAppTheme(area: Ref<HTMLElement | null | undefined>, theme: ()
     assign(shown.element, {}, shown.properties);
     areas.delete(shown.element);
     shown = null;
+    syncTrackedLayers();
   };
   watch([area, () => JSON.stringify(theme() ?? null), mode], ([element]) => {
     const properties = areaProperties(theme(), mode());
@@ -179,6 +363,7 @@ export function useAppTheme(area: Ref<HTMLElement | null | undefined>, theme: ()
     shown = { element, properties };
     areas.set(element, properties);
     followPopups();
+    syncTrackedLayers();
   }, { immediate: true, flush: "post" });
   onBeforeUnmount(clear);
 }

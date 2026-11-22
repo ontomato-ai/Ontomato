@@ -18,14 +18,14 @@
     padding: var(--spacing-sm) var(--spacing-md);
     border: 1px solid var(--ui-divider);
     border-radius: var(--radius-md);
-    background: var(--el-bg-color);
+    background: var(--sdk-bg-color);
     font-size: var(--text-sm);
   }
   .mv-report-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
-  .mv-report-head p { margin: 0; color: var(--el-text-color-primary); font-weight: var(--font-medium); }
+  .mv-report-head p { margin: 0; color: var(--sdk-text-color-primary); font-weight: var(--font-medium); }
   .mv-report ul { margin: 0; padding-inline-start: var(--spacing-lg); font-size: var(--text-xs); line-height: var(--leading-sm); }
-  .mv-report li[data-outcome="success"] { color: var(--el-text-color-secondary); }
-  .mv-report li:not([data-outcome="success"]) { color: var(--el-color-danger-text); }
+  .mv-report li[data-outcome="success"] { color: var(--sdk-text-color-secondary); }
+  .mv-report li:not([data-outcome="success"]) { color: var(--sdk-color-danger-text); }
   .mv-detail { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
   .mv-detail-head {
     display: flex;
@@ -42,7 +42,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--el-text-color-primary);
+    color: var(--sdk-text-color-primary);
     font-size: var(--text-base);
     font-weight: var(--font-semibold);
   }
@@ -52,7 +52,7 @@
   .mv-test-source { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .mv-test-select { width: 18rem; max-width: 100%; }
   .mv-test-params { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0 var(--spacing-md); }
-  .mv-hint { margin: 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); }
+  .mv-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); }
   .mv-md-toggle { margin-bottom: var(--spacing-sm); }
   .mv-markdown {
     min-height: 18rem;
@@ -61,7 +61,7 @@
     padding: var(--spacing-md);
     border: 1px solid var(--ui-divider);
     border-radius: var(--radius-sm);
-    background: var(--el-bg-color);
+    background: var(--sdk-bg-color);
   }
   .mv-json-wrap { display: flex; flex-direction: column; gap: var(--spacing-sm); }
 </style>
@@ -71,7 +71,7 @@
       <div v-if="batchReport" class="mv-report" role="status">
         <div class="mv-report-head">
           <p>{{ batchReport.summary }}</p>
-          <el-button text size="small" @click="batchReport = null">{{ t("metricViews.close") }}</el-button>
+          <sdk-button text size="small" @click="batchReport = null">{{ t("metricViews.close") }}</sdk-button>
         </div>
         <ul v-if="batchReport.items.length">
           <li v-for="item in batchReport.items" :key="item.id" :data-outcome="item.kind">
@@ -82,30 +82,30 @@
 
       <projection slot="list">
         <template #batch-actions>
-          <el-select v-model="batchStatus" size="small" class="mv-batch-select" :aria-label="t('metricViews.batchStatus')">
-            <el-option value="PENDING_REVIEW" :label="t('metricViews.status.PENDING_REVIEW')"></el-option>
-            <el-option value="PUBLISHED" :label="t('metricViews.status.PUBLISHED')"></el-option>
-            <el-option value="UNUSED" :label="t('metricViews.status.UNUSED')"></el-option>
-          </el-select>
-          <el-button
+          <sdk-select v-model="batchStatus" size="small" class="mv-batch-select" :aria-label="t('metricViews.batchStatus')">
+            <sdk-option value="PENDING_REVIEW" :label="t('metricViews.status.PENDING_REVIEW')"></sdk-option>
+            <sdk-option value="PUBLISHED" :label="t('metricViews.status.PUBLISHED')"></sdk-option>
+            <sdk-option value="UNUSED" :label="t('metricViews.status.UNUSED')"></sdk-option>
+          </sdk-select>
+          <sdk-button
             size="small"
             type="primary"
             :loading="batching"
             :disabled="!checked.length || !publishOperation"
             @click="applyStatus"
-          >{{ t("metricViews.batchApply") }}</el-button>
+          >{{ t("metricViews.batchApply") }}</sdk-button>
         </template>
       </projection>
     </div>
 
     <div class="mv-detail" v-show="detailVisible">
       <header class="mv-detail-head">
-        <el-button text @click="backToCatalog">← {{ t("metricViews.back") }}</el-button>
+        <sdk-button text @click="backToCatalog">← {{ t("metricViews.back") }}</sdk-button>
         <span class="mv-divider" aria-hidden="true"></span>
         <h2 class="mv-detail-title">{{ detailTitle }}</h2>
         <span class="mv-spacer"></span>
         <div class="mv-detail-actions">
-          <el-button @click="openTest">{{ t("metricViews.test") }}</el-button>
+          <sdk-button @click="openTest">{{ t("metricViews.test") }}</sdk-button>
           <projection v-if="selected" slot="remove"></projection>
         </div>
       </header>
@@ -118,35 +118,35 @@
     <projection slot="trial"></projection>
     <projection slot="trialJson"></projection>
 
-    <el-dialog v-model="testOpen" :title="t('metricViews.testTitle')" width="min(920px, 94vw)">
+    <sdk-dialog v-model="testOpen" :title="t('metricViews.testTitle')" width="min(920px, 94vw)">
       <div class="mv-test-body">
-        <el-alert type="info" :closable="false" :title="t('metricViews.testHint')"></el-alert>
+        <sdk-alert type="info" :closable="false" :title="t('metricViews.testHint')"></sdk-alert>
         <div class="mv-test-source">
-          <el-select v-model="testSource" class="mv-test-select" :aria-label="t('metricViews.testSource')">
-            <el-option value="explicit" :label="t('metricViews.testExplicit')"></el-option>
-            <el-option
+          <sdk-select v-model="testSource" class="mv-test-select" :aria-label="t('metricViews.testSource')">
+            <sdk-option value="explicit" :label="t('metricViews.testExplicit')"></sdk-option>
+            <sdk-option
               v-for="(row, index) in bindingRows"
               :key="row.id || index"
               :value="index"
               :label="bindingLabel(row, index)"
-            ></el-option>
-          </el-select>
+            ></sdk-option>
+          </sdk-select>
           <p class="mv-hint">{{ t("metricViews.testJsonHint") }}</p>
         </div>
 
-        <el-form v-if="testSource === 'explicit' && parameterDefs.length" label-position="top" class="mv-test-params">
-          <el-form-item v-for="parameter in parameterDefs" :key="parameter.name" :label="parameterLabel(parameter)">
-            <el-input v-model="testValues[parameter.name]" :placeholder="parameter.description || ''"></el-input>
-          </el-form-item>
-        </el-form>
+        <sdk-form v-if="testSource === 'explicit' && parameterDefs.length" label-position="top" class="mv-test-params">
+          <sdk-form-item v-for="parameter in parameterDefs" :key="parameter.name" :label="parameterLabel(parameter)">
+            <sdk-input v-model="testValues[parameter.name]" :placeholder="parameter.description || ''"></sdk-input>
+          </sdk-form-item>
+        </sdk-form>
         <p v-else-if="testSource === 'explicit'" class="mv-hint">{{ t("metricViews.testNoParameters") }}</p>
 
-        <el-tabs v-model="testTab">
-          <el-tab-pane :label="t('metricViews.testMarkdownTab')" name="markdown">
-            <el-radio-group v-model="markdownView" size="small" class="mv-md-toggle">
-              <el-radio value="preview">{{ t("metricViews.testPreview") }}</el-radio>
-              <el-radio value="source">{{ t("metricViews.testSourceTab") }}</el-radio>
-            </el-radio-group>
+        <sdk-tabs v-model="testTab">
+          <sdk-tab-pane :label="t('metricViews.testMarkdownTab')" name="markdown">
+            <sdk-radio-group v-model="markdownView" size="small" class="mv-md-toggle">
+              <sdk-radio value="preview">{{ t("metricViews.testPreview") }}</sdk-radio>
+              <sdk-radio value="source">{{ t("metricViews.testSourceTab") }}</sdk-radio>
+            </sdk-radio-group>
             <div v-if="markdownView === 'preview'" class="mv-markdown">
               <markdown-view v-if="testMarkdown" :content="testMarkdown"></markdown-view>
               <p v-else class="mv-hint">{{ t("metricViews.testPlaceholder") }}</p>
@@ -159,16 +159,16 @@
               :min-height="300"
               :placeholder="t('metricViews.testPlaceholder')"
             ></code-editor>
-          </el-tab-pane>
-          <el-tab-pane :label="t('metricViews.testJsonTab')" name="json">
+          </sdk-tab-pane>
+          <sdk-tab-pane :label="t('metricViews.testJsonTab')" name="json">
             <div class="mv-json-wrap">
-              <el-alert
+              <sdk-alert
                 v-if="truncation"
                 type="warning"
                 :closable="false"
                 :title="t('metricViews.testTruncated', { rows: truncation.rowLimit === null ? '—' : truncation.rowLimit })"
                 :description="truncation.hint || ''"
-              ></el-alert>
+              ></sdk-alert>
               <code-editor
                 :model-value="testJson"
                 language="json"
@@ -177,16 +177,16 @@
                 :placeholder="t('metricViews.testJsonPlaceholder')"
               ></code-editor>
             </div>
-          </el-tab-pane>
-        </el-tabs>
+          </sdk-tab-pane>
+        </sdk-tabs>
 
-        <el-alert v-if="testFailure" type="error" :closable="false" :title="testFailure"></el-alert>
+        <sdk-alert v-if="testFailure" type="error" :closable="false" :title="testFailure"></sdk-alert>
       </div>
       <template #footer>
-        <el-button @click="testOpen = false">{{ t("metricViews.close") }}</el-button>
-        <el-button type="primary" :loading="testingMarkdown" @click="runMarkdown">{{ t("metricViews.testMarkdown") }}</el-button>
-        <el-button :loading="testingJson" @click="runJson">{{ t("metricViews.testJson") }}</el-button>
+        <sdk-button @click="testOpen = false">{{ t("metricViews.close") }}</sdk-button>
+        <sdk-button type="primary" :loading="testingMarkdown" @click="runMarkdown">{{ t("metricViews.testMarkdown") }}</sdk-button>
+        <sdk-button :loading="testingJson" @click="runJson">{{ t("metricViews.testJson") }}</sdk-button>
       </template>
-    </el-dialog>
+    </sdk-dialog>
   </section>
 </div>

@@ -221,3 +221,108 @@ it("still assigns the theme when the page's root rules cannot be read, and says 
     warn.mockRestore();
   }
 });
+
+it("matches the deepest nested themed area and cascades ancestor tokens onto teleported popups", async () => {
+  const mode = ref<ThemeMode>("light");
+  const outer = document.createElement("div");
+  const inner = document.createElement("div");
+  inner.innerHTML = `<button aria-controls="nested-area-popup">Pick</button>`;
+  outer.append(inner);
+  document.body.append(outer);
+
+  const dropOuter = applyTheme(outer, () => ({
+    light: { "--sdk-color-primary": "#0f7b6c", "--sdk-bg-color": "#f4f6f5" },
+  }), () => mode.value);
+  const dropInner = applyTheme(inner, () => ({
+    light: { "--sdk-color-primary": "#b45309" },
+  }), () => mode.value);
+  await nextTick();
+  try {
+    const layer = await popup("nested-area-popup");
+    // Inner area overrides primary, while inheriting outer area's background token.
+    expect(layer.style.getPropertyValue("--sdk-color-primary")).toBe("#b45309");
+    expect(layer.style.getPropertyValue("--el-color-primary")).toBe("#b45309");
+    expect(layer.style.getPropertyValue("--sdk-bg-color")).toBe("#f4f6f5");
+  } finally {
+    dropInner();
+    dropOuter();
+  }
+});
+
+it("themes a teleported dialog overlay after its owning area, keeps it synced on mode switch, and leaves rail overlays unthemed", async () => {
+  const mode = ref<ThemeMode>("light");
+  mountArea(mode, ref(theme));
+  await nextTick();
+
+  const trigger = document.querySelector<HTMLButtonElement>(".picker")!;
+  trigger.focus();
+  const overlay = document.createElement("div");
+  overlay.className = "el-overlay";
+  overlay.innerHTML = `<div role="dialog"><button class="dialog-select" aria-controls="dialog-popper">Select</button></div>`;
+  document.body.append(overlay);
+  await new Promise((resolve) => setTimeout(resolve));
+
+  expect(overlay.style.getPropertyValue("--sdk-color-primary")).toBe("#0f7b6c");
+  expect(overlay.style.getPropertyValue("--el-color-primary")).toBe("#0f7b6c");
+
+  // A nested popper opened from inside the teleported dialog inherits the owning area's theme too.
+  const nestedPopper = await popup("dialog-popper");
+  expect(nestedPopper.style.getPropertyValue("--sdk-color-primary")).toBe("#0f7b6c");
+
+  // Switching mode updates the already-open overlay and nested popper live.
+  mode.value = "dark";
+  await nextTick();
+  expect(overlay.style.getPropertyValue("--sdk-color-primary")).toBe("#3cc4ad");
+  expect(nestedPopper.style.getPropertyValue("--sdk-color-primary")).toBe("#3cc4ad");
+
+  // An overlay opened from the unthemed platform rail gets no application theme.
+  const railButton = document.querySelector<HTMLButtonElement>(".account")!;
+  railButton.focus();
+  const railOverlay = document.createElement("div");
+  railOverlay.className = "el-overlay";
+  railOverlay.innerHTML = `<div role="dialog">Account dialog</div>`;
+  document.body.append(railOverlay);
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(railOverlay.style.getPropertyValue("--sdk-color-primary")).toBe("");
+});
+
+it("restores focus to the trigger when a modal overlay closes, or falls back to the panel container when the trigger is gone", async () => {
+  const mode = ref<ThemeMode>("light");
+  const area = document.createElement("div");
+  area.dataset.panelInstance = "panel-focus-test";
+  const trigger = document.createElement("button");
+  trigger.textContent = "Open dialog";
+  area.append(trigger);
+  document.body.append(area);
+
+  const drop = applyTheme(area, () => theme, () => mode.value);
+  await nextTick();
+  try {
+    trigger.focus();
+    const overlay = document.createElement("div");
+    overlay.className = "el-overlay";
+    const closeBtn = document.createElement("button");
+    overlay.append(closeBtn);
+    document.body.append(overlay);
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(overlay.style.getPropertyValue("--sdk-color-primary")).toBe("#0f7b6c");
+
+    // Closing via display: none restores focus to the trigger.
+    closeBtn.focus();
+    overlay.style.display = "none";
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(document.activeElement).toBe(trigger);
+
+    // Re-showing the same overlay re-applies the theme, and removing it after the trigger disappears focuses the panel container.
+    overlay.style.display = "";
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(overlay.style.getPropertyValue("--sdk-color-primary")).toBe("#0f7b6c");
+    closeBtn.focus();
+    trigger.remove();
+    overlay.remove();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(document.activeElement).toBe(area);
+  } finally {
+    drop();
+  }
+});

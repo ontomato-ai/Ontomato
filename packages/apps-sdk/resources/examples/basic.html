@@ -12,61 +12,64 @@
 </head>
 <body>
   <!--
-    The platform context, a form built from Element Plus, a chart in the platform's chart theme, a Markdown text, a CSV
-    text in the code editor previewed as a table, and an HTML document in a sandboxed frame. The chart, the text, the
-    editor and the table follow the platform's light and dark themes.
+    The platform context, a form built from Ontomato SDK UI primitives, a chart in the platform's chart theme, a
+    Markdown text, a CSV text in the code editor previewed as a table, and an HTML document in a sandboxed frame. The
+    chart, the text, the editor and the table follow the platform's light and dark themes.
   -->
   <div id="app" class="page" v-cloak>
-    <el-card>
+    <sdk-card>
       <template #header>Platform context</template>
-      <el-descriptions :column="1" border>
-        <el-descriptions-item label="User">{{ user?.userName ?? "No sign-in (open-source edition)" }}</el-descriptions-item>
-        <el-descriptions-item label="Language">{{ locale }}</el-descriptions-item>
-        <el-descriptions-item label="Theme">{{ theme }}</el-descriptions-item>
-      </el-descriptions>
-      <el-button style="margin-top: 12px" @click="openMetricViews">Open the platform's Metric Views</el-button>
-    </el-card>
+      <sdk-descriptions :column="1" border>
+        <sdk-descriptions-item label="User">{{ user?.userName ?? "No sign-in (open-source edition)" }}</sdk-descriptions-item>
+        <sdk-descriptions-item label="Language">{{ locale }}</sdk-descriptions-item>
+        <sdk-descriptions-item label="Theme">{{ theme }}</sdk-descriptions-item>
+      </sdk-descriptions>
+      <sdk-button style="margin-top: 12px" @click="openMetricViews">Open the platform's Metric Views</sdk-button>
+    </sdk-card>
 
-    <el-card>
-      <template #header>Element Plus</template>
-      <el-form :model="form" label-width="120px" @submit.prevent="submit">
-        <el-form-item label="Name">
-          <el-input v-model="form.name" placeholder="Any text"></el-input>
-        </el-form-item>
-        <el-form-item label="Date">
-          <el-date-picker v-model="form.date" type="date"></el-date-picker>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" native-type="submit">Show a message</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+    <sdk-card>
+      <template #header>SDK UI primitives</template>
+      <sdk-form :model="form" label-width="120px" @submit.prevent="submit">
+        <sdk-form-item label="Name">
+          <sdk-input v-model="form.name" placeholder="Any text"></sdk-input>
+        </sdk-form-item>
+        <sdk-form-item label="Date">
+          <sdk-date-picker v-model="form.date" type="date"></sdk-date-picker>
+        </sdk-form-item>
+        <sdk-form-item>
+          <sdk-button type="primary" native-type="submit">Show a message</sdk-button>
+        </sdk-form-item>
+      </sdk-form>
+      <sdk-alert v-if="notice" type="success" :title="notice" show-icon @close="notice = ''"></sdk-alert>
+    </sdk-card>
 
-    <el-card>
+    <sdk-card>
       <template #header>Chart (sample values)</template>
       <e-chart :option="option" :theme="chartTheme" :height="280"></e-chart>
-    </el-card>
-    <el-card>
+    </sdk-card>
+    <sdk-card>
       <template #header>Markdown</template>
       <markdown-view :content="notes"></markdown-view>
-    </el-card>
+    </sdk-card>
 
-    <el-card>
+    <sdk-card>
       <template #header>Code and table (edit the CSV: the table follows)</template>
       <code-editor v-model="csv" language="text" :min-height="120"></code-editor>
       <table-preview :table="table" :page-size="5" style="margin-top: 12px"></table-preview>
-    </el-card>
+    </sdk-card>
 
-    <el-card>
+    <sdk-card>
       <template #header>HTML document</template>
       <html-preview :html="report" sandbox="" title="Sample document" style="height: 120px"></html-preview>
-    </el-card>
+    </sdk-card>
   </div>
 
   <script type="module">
     import { computed, createApp, reactive, ref } from "vue";
-    import ElementPlus, { ElMessage } from "element-plus";
     import { connectAppContext } from "@ontomato/sdk";
+    import {
+      SdkAlert, SdkButton, SdkCard, SdkDatePicker, SdkDescriptions, SdkDescriptionsItem, SdkForm, SdkFormItem, SdkInput,
+    } from "@ontomato/sdk/ui";
     import { EChart } from "@ontomato/sdk/chart";
     import { MarkdownView } from "@ontomato/sdk/markdown";
     import { CodeEditor } from "@ontomato/sdk/code";
@@ -112,10 +115,14 @@
     ].join("\n");
 
     createApp({
-      components: { EChart, MarkdownView, CodeEditor, TablePreview, HtmlPreview },
+      components: {
+        SdkAlert, SdkButton, SdkCard, SdkDatePicker, SdkDescriptions, SdkDescriptionsItem, SdkForm, SdkFormItem, SdkInput,
+        EChart, MarkdownView, CodeEditor, TablePreview, HtmlPreview,
+      },
       setup() {
         const form = reactive({ name: "", date: null });
         const csv = ref(SAMPLE_CSV);
+        const notice = ref("");
         return {
           user: context.user,
           locale: context.locale,
@@ -127,11 +134,12 @@
           table: computed(() => parseCsv(csv.value)),
           report,
           form,
-          submit: () => ElMessage.success(`Hello, ${form.name || "app"}`),
+          notice,
+          submit: () => { notice.value = `Hello, ${form.name || "app"}`; },
           openMetricViews: () => context.navigate("/ontology/assets/metrics"),
         };
       },
-    }).use(ElementPlus).use(context).mount("#app");
+    }).use(context).mount("#app");
   </script>
 </body>
 </html>

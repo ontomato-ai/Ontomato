@@ -10,7 +10,7 @@
     overflow: hidden;
     border: 1px solid var(--ui-divider);
     border-radius: var(--radius-md);
-    background: var(--el-bg-color);
+    background: var(--sdk-bg-color);
   }
   .bk-list {
     min-width: 0;
@@ -40,7 +40,7 @@
     bottom: 0;
     padding: var(--spacing-sm) 0 var(--spacing-lg);
     border-top: 1px solid var(--ui-divider);
-    background: var(--el-bg-color);
+    background: var(--sdk-bg-color);
   }
   .bk.narrow .bk-body { grid-template-columns: minmax(0, 1fr); }
   .bk.narrow .bk-list { border-right: 0; }
@@ -69,13 +69,13 @@
         <projection slot="detail" v-show="mode === 'view'"></projection>
         <div class="bk-detail-actions" v-show="mode === 'view'" v-if="selected">
           <projection slot="approve"></projection>
-          <el-button @click="openEdit">{{ t("panel.edit") }}</el-button>
+          <sdk-button @click="openEdit">{{ t("panel.edit") }}</sdk-button>
           <projection slot="remove"></projection>
         </div>
         <projection slot="form" ref="formProj" v-show="editing" @saved="onSaved" @discarded="onDiscarded"></projection>
         <div class="bk-form-actions" v-show="editing">
-          <el-button @click="cancelEdit">{{ t("panel.cancel") }}</el-button>
-          <el-button type="primary" :disabled="formBusy" @click="saveForm">{{ t("panel.save") }}</el-button>
+          <sdk-button @click="cancelEdit">{{ t("panel.cancel") }}</sdk-button>
+          <sdk-button type="primary" :disabled="formBusy" @click="saveForm">{{ t("panel.save") }}</sdk-button>
         </div>
       </div>
     </div>
