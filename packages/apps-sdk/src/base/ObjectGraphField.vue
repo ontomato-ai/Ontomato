@@ -26,6 +26,7 @@ const nodes = computed(() => resolved.value.nodes);
 const links = computed(() => resolved.value.links);
 const loading = computed(() => resolved.value.loading);
 const readError = computed(() => resolved.value.error);
+const edgesNotice = computed(() => resolved.value.edgesNotice);
 
 const selected = computed(() => {
   const value = field.value.value;
@@ -73,6 +74,7 @@ function includeAdjacent() {
       <p class="sdk-object-graph-summary">
         {{ selected.length ? t("platform.graphChosenCount", { count: selected.length }) : t("platform.graphChosenNone") }}
       </p>
+      <p v-if="edgesNotice" class="sdk-object-graph-notice" role="status" data-graph-edges-notice>{{ edgesNotice }}</p>
       <GraphCanvas
         :label="field.field.value.label"
         :nodes="drawnNodes"
@@ -125,6 +127,15 @@ function includeAdjacent() {
   margin: 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-sm);
+}
+.sdk-object-graph-notice {
+  margin: 0;
+  padding: calc(var(--spacing-xs) / 2) var(--spacing-sm);
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: var(--radius-md);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+  font-size: var(--text-xs);
 }
 .sdk-object-graph-legend {
   display: flex;

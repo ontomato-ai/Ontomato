@@ -229,4 +229,20 @@ describe("a person's confirmation of a panel the platform draws itself", () => {
       { method: "POST", path: `/api/panel-operations/intents/${intentId}/dispatch`, search: "", body: {} },
     ]);
   });
+
+  it("names the staged file an upload hands its owner, by name and size, above what the owner says it replaces", async () => {
+    installPlatform(answer);
+    const replaced = { summary: "This replaces the existing skill alpha with the uploaded package.", total: 1, objects: [] };
+    storing({ kind: "impact", impact: replaced, upload: { name: "<alpha>.zip", size: 1536 * 1024, mime: "application/zip" } });
+    try {
+      const decided = confirmPanelIntent({ applicationId: "app-agents", useId: "use-agents" }, intentId, vi.fn());
+      const box = await dialog();
+      const lines = [...box.querySelectorAll(".el-message-box__message p")].map((line) => line.textContent);
+      expect(lines.slice(0, 2)).toEqual(["File: <alpha>.zip (1.5 MB)", replaced.summary]);
+      button(box, "Cancel").click();
+      await expect(decided).resolves.toEqual({ decision: "cancel" });
+    } finally {
+      stored = prepared;
+    }
+  });
 });

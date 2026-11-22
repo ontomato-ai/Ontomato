@@ -59,7 +59,7 @@
     display: grid;
     min-width: 0;
     gap: var(--spacing-sm);
-    padding: var(--spacing-md);
+    padding: var(--spacing-sm) 12px;
     border-bottom: 1px solid var(--ui-divider);
   }
   .og-search-box .el-input {
@@ -79,12 +79,13 @@
   .og-segment {
     flex: 1;
     min-width: 0;
-    padding: 4px 6px;
+    padding: 4px 2px;
     border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--el-text-color-secondary);
     font: inherit;
+    font-size: var(--text-xs);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -482,12 +483,17 @@
   .og-failure {
     color: var(--el-color-danger);
   }
-  @container (max-width: 1200px) {
+  @container (max-width: 1120px) {
     .og-grid {
-      grid-template-columns: 210px minmax(300px, 1fr) 280px;
+      grid-template-columns: 210px minmax(260px, 1fr) 270px;
     }
   }
-  @container (max-width: 900px) {
+  @container (max-width: 860px) {
+    .og-grid {
+      grid-template-columns: 196px minmax(240px, 1fr) 248px;
+    }
+  }
+  @container (max-width: 700px) {
     .og {
       overflow: auto;
     }

@@ -8,6 +8,7 @@ import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operati
 import type { PlatformRequests } from "./platform-objects";
 import type { ReadOperationInput } from "./read-operation-input";
 import type { PanelDownloadMime } from "@ontomato/contracts/panel-download";
+import { PANEL_UPLOADS_PATH, panelUploadReceiptSchema, type PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import { attachmentName, savePanelFile } from "./save-file";
 
 /*
@@ -33,6 +34,11 @@ export interface PanelHumanOperations {
   describe(operationId: string, memberPath?: PanelMemberPath): Promise<PanelOperationDescriptor>;
   /** Runs a read-only operation and returns what it read; nothing is written and nothing reported changed. */
   read(operationId: string, call: PanelReadCall, memberPath?: PanelMemberPath): Promise<PanelReadOperationResult>;
+  /**
+   * Stages a file the reader picked for an operation that declares an upload. The receipt's `uploadId`, as
+   * `{ kind: "upload", uploadId }`, is the value of the declared file input in the write it is then prepared for.
+   */
+  upload(operationId: string, file: File, memberPath?: PanelMemberPath): Promise<PanelUploadReceipt>;
   /** Freezes one write, of one call or a batch, for the host to confirm and dispatch. */
   prepare(operationId: string, invocation: PanelWriteInvocation, memberPath?: PanelMemberPath): Promise<PanelHumanOperationPreparation>;
 }
@@ -97,6 +103,13 @@ export function panelHumanOperations(use: PanelOperationUse | null, requests: Pl
         return savePanelFile({ bytes: await response.blob(), mime: mime as PanelDownloadMime, suggestedName: attachmentName(disposition) });
       }
       return readPanelOperationResponseSchema.parse(await response.json());
+    },
+    async upload(operationId, file, memberPath) {
+      // The browser sets the multipart boundary; the operation travels beside the file as JSON text.
+      const form = new FormData();
+      form.set("operation", JSON.stringify(of(operationId, memberPath)));
+      form.set("file", file, file.name);
+      return panelUploadReceiptSchema.parse(await answer(requests.request(PANEL_UPLOADS_PATH, { method: "POST", body: form }, "")));
     },
     async prepare(operationId, invocation, memberPath) {
       return panelHumanOperationPreparationSchema.parse(await post("/panel-operations/intents", { ...of(operationId, memberPath), ...invocation }));
