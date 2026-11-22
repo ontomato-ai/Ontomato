@@ -19,7 +19,7 @@ export interface ScheduledTaskPanelText {
   frequency: { every: Record<"minute" | "hour" | "day", string>; daily: string; weekly: string; monthly: string; cron: string };
   panelErrors: { revisionConflict: string; invalidDraftField: string; invalidDraftParameter: string };
   panelSettings: { title: string; frequency: string; timeZone: string; notifyEmail: string };
-  panelManagement: { save: string; create: string; setEnabled: string; delete: string; deleteImpact: string; renewCredential: string };
+  panelManagement: { save: string; create: string; setEnabled: string; delete: string; deleteImpact: string; deleted: string; renewCredential: string };
   panelRunStarted: string;
   runStatus: { running: string; completed: string; failed: string; skipped: string };
 }
@@ -68,6 +68,7 @@ export const scheduledTaskPanelTextEn = {
     save: "Save task", create: "Create task", setEnabled: "Change task status", delete: "Delete task",
     renewCredential: "Renew background credential",
     deleteImpact: "This deletes the task and its execution history.",
+    deleted: "Task “{name}” deleted",
   },
   panelRunStarted: "The run has started.",
   runStatus: {
@@ -103,6 +104,7 @@ export const scheduledTaskPanelTextZhCn = {
     save: "保存任务", create: "新建任务", setEnabled: "更改任务状态", delete: "删除任务",
     renewCredential: "续期后台凭证",
     deleteImpact: "将删除任务和它的执行记录。",
+    deleted: "任务「{name}」已删除",
   },
   panelRunStarted: "已开始运行。",
   runStatus: {

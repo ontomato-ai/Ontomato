@@ -6,6 +6,8 @@
   .chip:hover { background: var(--el-fill-color-light); }
   .chip.is-active { background: var(--el-bg-color); color: var(--el-text-color-primary); font-weight: var(--font-semibold); box-shadow: 0 0 0 1px var(--el-border-color-lighter); }
   .chip .count { color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
+  .filter-more { max-width: 100%; }
+  .chevron { border: solid currentColor; border-width: 0 1px 1px 0; width: 5px; height: 5px; rotate: 45deg; }
   .search { width: 280px; max-width: 100%; }
   .body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-lg); align-items: start; }
   .body.with-pane { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
@@ -20,6 +22,12 @@
   .card-title { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--el-text-color-primary); overflow-wrap: anywhere; }
   .card-summary { margin: 0; font-size: var(--text-sm); color: var(--el-text-color-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   .card-pause { margin: 0; padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2); font-size: var(--text-xs); overflow-wrap: anywhere; }
+  .pause-controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--spacing-xs) var(--spacing-sm); }
+  .pause-details { flex: 1; min-width: 0; }
+  .pause-details summary { display: inline-flex; align-items: center; gap: var(--spacing-xs); list-style: none; cursor: pointer; }
+  .pause-details summary::-webkit-details-marker { display: none; }
+  .pause-details[open] .chevron { rotate: 225deg; }
+  .pause-details p { margin: var(--spacing-xs) 0 0; color: var(--el-text-color-secondary); font-size: var(--text-xs); overflow-wrap: anywhere; }
   .card-meta { display: flex; flex-direction: column; gap: 6px; margin-top: auto; padding-top: var(--spacing-md); border-top: 1px solid var(--el-border-color-lighter); font-size: var(--text-xs); color: var(--el-text-color-regular); }
   .line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; }
   .muted { color: var(--el-text-color-secondary); }
@@ -55,11 +63,26 @@
   <section class="schedules">
     <div class="toolbar">
       <div class="chips" role="group" :aria-label="t('filter.label')">
-        <button v-for="chip in chips" :key="chip.id ?? ''" type="button" class="chip"
+        <button v-for="chip in rowChips" :key="chip.id ?? ''" type="button" class="chip"
           :class="{ 'is-active': chip.id === app }" :aria-pressed="chip.id === app" :data-app="chip.id ?? ''"
           @click="pickApp(chip.id)">
           <span>{{ chip.label }}</span><span class="count">{{ chip.count }}</span>
         </button>
+        <el-dropdown v-if="moreChips.length" class="filter-more" trigger="click" @command="pickApp">
+          <button type="button" class="chip" :class="{ 'is-active': chosenMore }" :aria-pressed="!!chosenMore">
+            <span>{{ chosenMore?.label ?? t("filter.more") }}</span>
+            <span v-if="chosenMore" class="count">{{ chosenMore.count }}</span>
+            <span class="chevron" aria-hidden="true"></span>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="chip in moreChips" :key="chip.id" :command="chip.id"
+                :aria-current="chip.id === app ? 'true' : undefined" style="justify-content:space-between;gap:var(--spacing-lg)">
+                <span>{{ chip.label }}</span><span>{{ chip.count }}</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
       <el-input v-model="search" class="search" clearable :placeholder="t('filter.search')" :aria-label="t('filter.search')"></el-input>
     </div>
@@ -86,7 +109,14 @@
               </div>
               <h3 class="card-title">{{ row.label }}</h3>
               <p v-if="row.fields.settings" class="card-summary" :title="row.fields.settings">{{ row.fields.settings }}</p>
-              <p v-if="taskState(row).reason" class="card-pause">{{ t("detail.paused", { reason: taskState(row).reason }) }}</p>
+              <div v-if="taskState(row).reason" class="pause-controls" @click.stop>
+                <details class="pause-details">
+                  <summary class="card-pause">{{ t("state.paused") }} <span class="chevron" aria-hidden="true"></span></summary>
+                  <p>{{ taskState(row).reason }}</p>
+                </details>
+                <el-button v-if="row.fields.pauseCode === 'definition_changed'" class="pause-review" link type="primary" size="small"
+                  @click="edit(row)">{{ t("card.review") }}</el-button>
+              </div>
               <div class="card-meta">
                 <p class="line">{{ row.fields.frequency }}</p>
                 <p class="line"><span>{{ nextText(row) }}</span></p>

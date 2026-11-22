@@ -38,6 +38,14 @@ const operationsRow = {
   ...row, primaryKey: "10000000-0000-4000-8000-000000000002", label: "Operations test",
   fields: { ...row.fields, application: "operations", lastRunSummary: "" },
 };
+const pausedRow = {
+  ...operationsRow,
+  fields: { ...operationsRow.fields, state: "paused: The application form changed.", pauseCode: "definition_changed" },
+};
+const otherApplications = Array.from({ length: 4 }, (_, index) => ({
+  ...row, primaryKey: `10000000-0000-4000-8000-00000000000${index + 3}`, label: `Application ${index + 1} task`,
+  fields: { ...row.fields, application: `app-schedule-fixture-${index + 1}`, lastRunSummary: "" },
+}));
 const target = { kind: "object", objectType: "platform:Application", primaryKey: "schedules" };
 const objectTypes = Object.fromEntries(Object.entries(platformObjectTypes).map(([type, entry]) => [
   type,
@@ -97,7 +105,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         },
       } : {} });
       switch (body.dataName) {
-        case "rows": return Response.json({ status: "ready", value: [row, operationsRow] });
+        case "rows": return Response.json({ status: "ready", value: [row, pausedRow, ...otherApplications] });
         case "record": return Response.json({ status: "ready", value: row });
         case "runs": return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });
         case "run": return Response.json({ status: "ready", value: run });
@@ -148,6 +156,21 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
       await vi.waitFor(() => expect(element.querySelector('.schedules [data-app="operations"]')?.getAttribute("aria-pressed")).toBe("true"));
       expect(Array.from(element.querySelectorAll(".schedules [data-task]"), item => item.getAttribute("data-task"))).toEqual([operationsRow.primaryKey]);
       expect(element.querySelector(".schedules")).toBe(list);
+      const pause = element.querySelector<HTMLDetailsElement>(".schedules [data-task] details");
+      expect(pause?.open).toBe(false);
+      expect(pause?.querySelector("p")?.textContent).toBe("The application form changed.");
+      element.querySelector<HTMLButtonElement>(".schedules [data-task] .pause-review")!.click();
+      await vi.waitFor(() => expect(element.querySelector<HTMLElement>('[data-form="edit"]')?.style.display).toBe(""));
+      await vi.waitFor(() => expect(JSON.parse(String(router.currentRoute.value.query.state))).toMatchObject({
+        selectedTask: { className: "platform:ScheduledTask", primaryKey: operationsRow.primaryKey },
+        compose: "edit",
+      }));
+      const other = otherApplications.at(-1)!;
+      await router.push(`/schedules?app=${other.fields.application}`);
+      await vi.waitFor(() => expect(element.querySelector(".filter-more")?.textContent).toContain(other.fields.application));
+      expect(element.querySelectorAll(".schedules .chips > button")).toHaveLength(6);
+      expect(element.querySelector(".filter-more [aria-pressed]")?.getAttribute("aria-pressed")).toBe("true");
+      expect(element.querySelector(".schedules [data-task]")?.getAttribute("data-task")).toBe(other.primaryKey);
     }
   } finally {
     app.unmount();

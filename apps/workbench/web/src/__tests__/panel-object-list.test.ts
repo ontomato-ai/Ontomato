@@ -1097,3 +1097,38 @@ it("shows a time column so neighbouring times keep their order, the whole time i
     vi.useRealTimers();
   }
 });
+
+// A list with nothing in it says so quietly; a search that finds nothing says nothing matches, so the reader widens it
+// instead of thinking there is nothing at all (原页面对照《函数》: the empty and no-hit states differ).
+it("tells an empty list from a search that matched nothing", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "functions-table": {
+      ...meta, id: "functions-table", name: "Functions", componentId: "@ontomato/sdk:ObjectList", inputs: {},
+      outputs: { selected: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
+      config: { columns: [{ key: "label", labelKey: "cols.title" }] },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } }, read: "query", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: { selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+    members: { list: { target: { projectionId: "functions-table" }, outputs: { selected: { state: "selected" } } } },
+    commands: {},
+  });
+  let items: { primaryKey: string; label: string; fields: Record<string, string> }[] = [];
+  const { element } = mountDirect(manifest, projections, (request) => {
+    const search = typeof request.runtimeParams?.search === "string" ? request.runtimeParams.search : "";
+    const rows = items.filter((item) => item.label.toLowerCase().includes(search.toLowerCase()));
+    return ready({ rows, total: rows.length });
+  }, { messages: { en: { "cols.title": "Title" } } });
+  const state = () => element.querySelector<HTMLElement>('[data-state="empty"]');
+
+  await vi.waitFor(() => expect(state()?.dataset.empty).toBe("none"));
+  expect(state()!.textContent?.trim()).toBe(publicEn.platform.dataEmpty);
+
+  items = [{ primaryKey: "k-1", label: "Revenue", fields: {} }];
+  const search = element.querySelector<HTMLInputElement>(".sdk-object-list-search")!;
+  search.value = "nothing like it";
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => expect(state()?.dataset.empty).toBe("no-match"));
+  expect(state()!.textContent?.trim()).toBe(publicEn.platform.dataNoMatch);
+});

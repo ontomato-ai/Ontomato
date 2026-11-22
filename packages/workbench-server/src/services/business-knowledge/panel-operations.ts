@@ -137,7 +137,7 @@ async function approveOne(
 async function deleteOne(host: Host, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
   const envelope = await ownerPost(host, "/admin/delBussinessKnowledge", { knowledgeID: target.primaryKey });
   return envelope.success
-    ? { kind: "success", data: {}, affected: affected(target.primaryKey) }
+    ? { kind: "success", data: {}, affected: { ...affected(target.primaryKey), removed: affected(target.primaryKey).objects } }
     : { kind: "refusal", code: "KNOWLEDGE_DELETE_REFUSED", message: envelope.message ?? "The owner refused the delete" };
 }
 
@@ -232,6 +232,7 @@ export const m7ServerOperations = [
     resultSchema: actionResultSchema,
     targetInput: "knowledge",
     targetLabel: knowledgeTitle,
+    done: (host, name) => tForLocale(host.locale, "panels.knowledge.approved", { name }),
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Approve acts on a selected entry");
       return approveOne(host, await readEntries(host), target);
@@ -255,6 +256,7 @@ export const m7ServerOperations = [
     resultSchema: actionResultSchema,
     targetInput: "knowledge",
     targetLabel: knowledgeTitle,
+    done: (host, name) => tForLocale(host.locale, "panels.knowledge.deleted", { name }),
     inspectImpact: deleteKnowledgeImpact,
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Delete acts on a selected entry");

@@ -37,16 +37,16 @@ function panelFieldPath(field: string): string {
 }
 
 /** The owner interprets its own structured refusal; uncertain transport errors remain the coordinator's outcome. */
-async function outcome(call: () => Promise<{ data: unknown; taskId?: string; message?: string }>): Promise<Exclude<PanelOperationOutcome, { kind: "batch" }>> {
+async function outcome(
+  call: () => Promise<{ data: unknown; taskId?: string; message?: string; removed?: true }>,
+): Promise<Exclude<PanelOperationOutcome, { kind: "batch" }>> {
   try {
-    const { data, taskId, message } = await call();
+    const { data, taskId, message, removed } = await call();
+    const objects = taskId ? [{ objectType: SCHEDULED_TASK, primaryKey: taskId }] : [];
     return {
       kind: "success", data: JSON.parse(JSON.stringify(data)),
       ...(message && { message }),
-      affected: {
-        objects: taskId ? [{ objectType: SCHEDULED_TASK, primaryKey: taskId }] : [],
-        objectTypes: [SCHEDULED_TASK],
-      },
+      affected: { objects, objectTypes: [SCHEDULED_TASK], ...(removed && { removed: objects }) },
     };
   } catch (error) {
     if (!(error instanceof ScheduleRequestError) || !error.refusal) throw error;
@@ -156,7 +156,9 @@ const scheduledTaskSetEnabled = {
 } as const;
 
 const deleteInput = z.object({ revision }).strict();
-export function createScheduledTaskServerOperations(translate: (locale: string | undefined, key: string) => string) {
+export function createScheduledTaskServerOperations(
+  translate: (locale: string | undefined, key: string, params?: Record<string, string>) => string,
+) {
   const runNow = {
     ...scheduledTaskRunNowOperation,
     execute(host: Host, target: Target, _input: Record<string, unknown>, intentId: string) {
@@ -214,6 +216,7 @@ export function createScheduledTaskServerOperations(translate: (locale: string |
       resultSchema: z.object({ id: targetSchema.shape.primaryKey }).strict(),
       targetInput: "task",
       targetLabel,
+      done: (host: Host, name: string) => translate(host.locale, "platformSchedules.panelManagement.deleted", { name }),
       inspectImpact: {
         handlerRef: `${DELETE_SCHEDULED_TASK}.inspect-impact`,
         async inspect(host: Host, calls: readonly PanelOperationCall[]) {
@@ -232,7 +235,7 @@ export function createScheduledTaskServerOperations(translate: (locale: string |
         const { revision } = deleteInput.parse(input);
         return outcome(async () => {
           await scheduledTaskPanelOperations(host).remove(target.primaryKey, revision);
-          return { data: { id: target.primaryKey }, taskId: target.primaryKey };
+          return { data: { id: target.primaryKey }, taskId: target.primaryKey, removed: true };
         });
       },
     },

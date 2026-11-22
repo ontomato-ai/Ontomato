@@ -8,7 +8,10 @@ import {
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { createPanelCommands } from "./commands";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
-import { childObjectNameKey, createPanelState, objectNameKey, panelSelection, type PanelInitialState, type PanelStateStore } from "./state";
+import {
+  childObjectNameKey, createPanelState, objectNameKey, panelSelection, stateObject, stateObjects, type PanelInitialState, type PanelObjectRef,
+  type PanelStateStore,
+} from "./state";
 import type { PanelText } from "./text";
 import { panelOperations } from "./operations";
 import type { PanelProjectionRegistration } from "./ports";
@@ -125,6 +128,11 @@ export interface PanelInstance {
    */
   writeOperation(operationId: string, invocation: PanelWriteInvocation): Promise<PanelWriteResult>;
   objectChanged(object: PanelObjectIdentity): void;
+  /**
+   * Lets go of objects a write removed: a state holding one is cleared, a list state drops it, so nothing keeps choosing
+   * or reading what is no longer there.
+   */
+  letGo(removed: readonly PanelObjectIdentity[]): void;
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
   /** Reads a projection record by ID, as the reader. */
@@ -314,6 +322,20 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     readOperation: (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
     writeOperation,
     objectChanged,
+    letGo(removed) {
+      const gone = (object: PanelObjectRef) =>
+        removed.some(({ objectType, primaryKey }) => objectType === object.className && primaryKey === object.primaryKey);
+      for (const [name, { type }] of Object.entries(manifest.state)) {
+        const value = state.values.value[name];
+        if (type.kind === "object") {
+          const held = stateObject(value);
+          if (held && gone(held)) state.set(name, null);
+        } else if (type.kind === "list" && type.items.kind === "object") {
+          const held = stateObjects(value);
+          if (held.some(gone)) state.set(name, held.filter((object) => !gone(object)));
+        }
+      }
+    },
     refreshObjects: () => objectChanged(null),
     onObjectChanged(listener) {
       objectListeners.add(listener);

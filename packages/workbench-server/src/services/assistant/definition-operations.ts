@@ -127,11 +127,12 @@ export const agentDefinitionOperations = [
     resultSchema: emptyResultSchema,
     targetInput: "agent",
     targetLabel: definitionLabel,
+    done: (host, name) => tForLocale(host.locale, "panels.agentDefinition.deleted", { name }),
     inspectImpact: deleteImpact,
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "DELETE" });
       return response.ok
-        ? { kind: "success", data: {}, affected: affectedDefinition(target.primaryKey) }
+        ? { kind: "success", data: {}, affected: { ...affectedDefinition(target.primaryKey), removed: affectedDefinition(target.primaryKey).objects } }
         : unsuccessfulWrite(response);
     },
   },
