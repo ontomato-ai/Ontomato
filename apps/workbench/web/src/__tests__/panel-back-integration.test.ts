@@ -139,7 +139,7 @@ function answer(request: Sent) {
   }
   if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
   if (request.path === `/api/product-panels/${panel.id}/snapshot`) {
-    return panelSnapshot(panel, { detailForm: formProjection }, request);
+    return panelSnapshot(panel, { [formProjection.id]: formProjection }, request);
   }
   if (request.path === `/api/product-projections/${formProjection.id}`) {
     return Response.json({ projection: formProjection });
@@ -183,18 +183,13 @@ describe("PanelApplicationRoute + usePanelBack + ObjectForm integration", () => 
     await router.push(path);
     let allowLeave = false;
     const askUnsaved = vi.fn(async () => allowLeave);
-    const { app, element } = mountPlatformPage(
-      () =>
-        h(
-          defineComponent({
-            setup() {
-              provideUnsavedChanges(askUnsaved);
-              return () => h(RouterView);
-            },
-          }),
-        ),
-      router,
-    );
+    const Shell = defineComponent({
+      setup() {
+        provideUnsavedChanges(askUnsaved);
+        return () => h(RouterView);
+      },
+    });
+    const { app, element } = mountPlatformPage(() => h(Shell), router);
     try {
       await vi.waitFor(() => expect(element.querySelector(".open-item")).not.toBeNull());
 
