@@ -156,7 +156,7 @@ it("returns to list cleanly when confirming leave on a dirty form with createFor
         navigate: noOperations.navigate,
         notify: () => {},
         confirmLeaveUnsaved: () => (mount.instance.dirty() ? confirmLeaveUnsaved() : Promise.resolve(true)),
-      });
+      } as unknown as import("../../../../../packages/apps-sdk/src/panel/context").PanelContext);
       return () => h(Inner);
     },
   });
