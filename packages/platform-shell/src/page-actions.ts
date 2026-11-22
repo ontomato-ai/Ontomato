@@ -52,6 +52,11 @@ export function providePageActions(): Readonly<Ref<PlatformPageActions | null>> 
   return actions;
 }
 
+/** Whether an ancestor frame provides a page header that carries actions and a form draft. */
+export function hasPageActions(): boolean {
+  return inject(pageActionsKey, null) !== null;
+}
+
 /**
  * Shows a page's actions in its frame's header for as long as the calling component is mounted and offers them, and
  * clears them when it stops offering them or unmounts, so the next page starts without them. `actions` is a getter, read

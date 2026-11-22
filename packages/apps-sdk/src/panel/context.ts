@@ -19,6 +19,7 @@ import { fieldAt, valueAt } from "./form-values";
 import { projectionElement } from "./projection-element";
 import type { PanelReadPort } from "./direct";
 import type { PanelText } from "./text";
+import type { PlatformPageDraft } from "@ontomato/platform-shell";
 
 /*
  * The panel context the SDK provides to a panel's own module (overall design 3.3, 3.4): the panel's declaration, the
@@ -104,6 +105,12 @@ export interface PanelContext {
    * owner's answer out. In a frame it goes over the frame's request path; the host fills in which panel it is.
    */
   readPanelData: PanelReadPort;
+  /**
+   * Registers a form's Save/Discard draft in the enclosing page header while the form is mounted and ready. Present
+   * only when the panel runs directly under a host with a page header; absent in nested panels, headerless previews,
+   * and sandboxed frames.
+   */
+  registerHeaderDraft?: (slot: string, draft: () => PlatformPageDraft | null) => () => void;
 }
 
 /**

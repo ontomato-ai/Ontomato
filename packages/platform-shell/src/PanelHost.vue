@@ -5,7 +5,7 @@ import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { RefreshCw, X as CloseIcon } from "lucide-vue-next";
 import { ElAlert, ElButton } from "element-plus";
-import { usePageActions, type PlatformPageAction } from "./page-actions";
+import { hasPageActions, usePageActions, type PlatformPageAction } from "./page-actions";
 
 /**
  * One panel instance, shown full screen, beside a conversation or inside another application, or as an author's candidate
@@ -74,6 +74,7 @@ const emit = defineEmits<{
   withdrawn: [];
 }>();
 
+const headerDraftHost = hasPageActions();
 const view = usePanelInstance(props.port, {
   labels: props.labels,
   label: (source) => {
@@ -88,6 +89,7 @@ const view = usePanelInstance(props.port, {
   withdrawn: () => emit("withdrawn"),
   currentEntry: props.currentEntry,
   frameState: () => props.frameState as Readonly<Record<string, import("@ontomato/contracts/agent-runtime-values").RuntimeJsonValue>> | undefined,
+  headerDraftHost,
 });
 const frame = ref<HTMLIFrameElement | null>(null);
 /** Where the panel goes in the page: the element its own component is mounted in, placed once. */
@@ -159,7 +161,7 @@ const commands = computed<PlatformPageAction[]>(() => {
     }));
   return [...refresh, ...shortcuts];
 });
-usePageActions(() => (props.shown && view.source.value ? { actions: commands.value } : null));
+usePageActions(() => (props.shown && view.source.value ? { actions: commands.value, draft: view.headerDraft.value } : null));
 
 defineExpose({ ...view, operations, commands });
 </script>

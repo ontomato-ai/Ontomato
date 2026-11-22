@@ -79,6 +79,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       nested: options.nested,
       ...(run.currentEntry ? { currentEntry: run.currentEntry } : {}),
       ...(run.frameState ? { frameState: run.frameState } : {}),
+      ...(run.headerDraft ? { reportHeaderDraft: run.headerDraft } : {}),
       ...(options.memberPath ? { memberPath: options.memberPath } : {}),
       translate: options.translate,
       // A draft a form could not take is the draft's problem: the reader is told, the panel goes on.

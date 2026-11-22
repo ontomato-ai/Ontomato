@@ -3,7 +3,7 @@ import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
-import type { DirectPanelRun } from "@ontomato/platform-shell";
+import type { DirectPanelRun, PlatformPageDraft } from "@ontomato/platform-shell";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
@@ -63,6 +63,11 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
   currentEntry?: DirectPanelRun["currentEntry"];
   /** Current application frame state when this panel runs inside a framed application entry. */
   frameState?: DirectPanelRun["frameState"];
+  /**
+   * Reports the active Save/Discard draft handed to the enclosing page header by a form with `actions: "header"`.
+   * Supplied only when the enclosing host draws a page header.
+   */
+  reportHeaderDraft?: (draft: PlatformPageDraft | null) => void;
   /** Reads an installed component package's current release, for a member whose component is the package's. */
   readComponentPackage: ComponentPackageReader;
   loadDomainComponent?(projection: DirectProjection): Promise<Component>;
@@ -200,6 +205,11 @@ export interface DirectPanelInstance extends PanelInstance {
   markDrawn(member: string): () => void;
   /** Whether a member is currently mounted in the DOM. */
   isDrawn(member: string): boolean;
+  /**
+   * Registers a form's Save/Discard draft for the enclosing page header. Present only when the host provides a page
+   * header (`options.reportHeaderDraft`); absent in nested panels and headerless previews.
+   */
+  readonly registerHeaderDraft?: (slot: string, draft: () => PlatformPageDraft | null) => () => void;
 }
 
 /**
@@ -522,6 +532,29 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   }
 
   const drawnCounts = new Map<string, number>();
+  const reportHeaderDraft = options.reportHeaderDraft;
+  let registerHeaderDraft: DirectPanelInstance["registerHeaderDraft"];
+  if (reportHeaderDraft) {
+    const headerDrafts = shallowRef<readonly { slot: string; read: () => PlatformPageDraft | null }[]>([]);
+    const activeHeaderDraft = computed<PlatformPageDraft | null>(() => {
+      for (const entry of headerDrafts.value) {
+        const next = entry.read();
+        if (next !== null) return next;
+      }
+      return null;
+    });
+    membersScope.run(() => {
+      watch(activeHeaderDraft, (next) => reportHeaderDraft(next), { immediate: true });
+      onScopeDispose(() => reportHeaderDraft(null));
+    });
+    registerHeaderDraft = (slot, read) => {
+      const entry = { slot, read };
+      headerDrafts.value = [...headerDrafts.value.filter((item) => item.slot !== slot), entry];
+      return () => {
+        headerDrafts.value = headerDrafts.value.filter((item) => item !== entry);
+      };
+    };
+  }
 
   const directInstance: DirectPanelInstance = Object.assign(instance, {
     currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
@@ -736,6 +769,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       };
     },
     isDrawn: (member: string) => (drawnCounts.get(member) ?? 0) > 0,
+    ...(registerHeaderDraft ? { registerHeaderDraft } : {}),
   });
   // A member placed from the panel's state is placed anew when that state chooses something else: what it held ends
   // (a placed panel is let go, its operations and context leave this instance) and whoever draws it draws the new one.
@@ -777,5 +811,6 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     notify: ({ kind, text }) => { ElMessage({ type: kind, message: text, grouping: true }); },
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),
+    ...(instance.registerHeaderDraft ? { registerHeaderDraft: instance.registerHeaderDraft } : {}),
   };
 }

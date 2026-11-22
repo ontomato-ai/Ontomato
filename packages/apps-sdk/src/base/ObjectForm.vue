@@ -63,7 +63,19 @@ const props = withDefaults(defineProps<{
    * every save; while the state holds nothing, the field is not fixed.
    */
   fixedFields?: Record<string, { state: string; path?: string } | { literal: RuntimeJsonValue }>;
-}>(), { fixedFields: () => ({}) });
+  /**
+   * How top-level fields are arranged: `stacked` (default) draws each field's label above its control; `rows` draws
+   * each top-level field as a settings row with its name and help on the left, its control and messages in the middle,
+   * and Reset to default on the right when the owner declares a `defaultValue`.
+   */
+  layout?: "stacked" | "rows";
+  /**
+   * Where Save, Discard and the unsaved marker live: `footer` (default) keeps them sticky at the foot of the form;
+   * `header` hands the form's draft to the enclosing page header and hides the form's own action bar, falling back to
+   * the footer when no page header host is present (such as a nested panel or headerless preview).
+   */
+  actions?: "footer" | "header";
+}>(), { fixedFields: () => ({}), layout: "stacked", actions: "footer" });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created. */
   saved: [object: { className: string; primaryKey: string }];
@@ -329,7 +341,7 @@ function refreshWhenClean() {
 function reread() {
   const current = target.value;
   const currentKey = targetKey(current);
-  if (current === null || held?.target === currentKey) return load(current);
+  if (current === null || held?.target === currentKey || !description.value) return load(current);
   const reading = ++latestRead;
   failure.value = null;
   void forms.describe({ target: current, changedField: null }).then(
@@ -466,12 +478,19 @@ const sharedReadOnlyReasons = computed<ReadonlySet<string>>(() => {
   return new Set([...counts].filter(([, count]) => count > 1).map(([reason]) => reason));
 });
 
+const topLevelPaths = computed(() => new Set(fields.value.map((field) => field.path)));
+const hasDefaults = computed(() => fields.value.some((field) => field.control.kind !== "hidden" && field.defaultValue !== undefined));
+
 provide(formControlsKey, {
   values,
   errors: computed(() => ({ ...errors.value, ...invalid.value })),
   changed,
   busy: saving,
+  layout: computed(() => props.layout),
+  hasDefaults,
   sharedReadOnlyReasons,
+  isTopLevel: (path) => topLevelPaths.value.has(path),
+  hasInvalid: (path) => Object.hasOwn(invalid.value, path),
   set,
   remove,
   reorder,
@@ -667,12 +686,33 @@ const shown = computed<DataStateResult<PanelFormDescription>>(() => {
 });
 const labels = useDataStateLabels();
 
+/**
+ * When `actions: "header"` is configured and the enclosing host draws a page header, hand the form's Save/Discard draft
+ * to the page header and hide the form's own footer bar; otherwise keep the footer bar so the form stays usable in
+ * nested panels, headerless previews, and sandboxed frames.
+ */
+const usesHeaderActions = computed(() => props.actions === "header" && panel.registerHeaderDraft !== undefined);
+watch(usesHeaderActions, (inHeader, _previous, onCleanup) => {
+  if (!inHeader || !panel.registerHeaderDraft) return;
+  const stop = panel.registerHeaderDraft(slot.slot, () => (
+    shown.value.status === "ready"
+      ? {
+          dirty: canSettle.value,
+          saving: saving.value,
+          save: () => { if (!asking.value) void saveFromForm(); },
+          discard: () => { void confirmDiscard(); },
+        }
+      : null
+  ));
+  onCleanup(stop);
+}, { immediate: true });
+
 /** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
 </script>
 
 <template>
-  <div ref="formElement" class="sdk-owner-form">
+  <div ref="formElement" class="sdk-owner-form" :class="{ 'sdk-owner-form-rows': props.layout === 'rows' }">
     <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
@@ -718,7 +758,7 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
         </button>
         <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
       </div>
-      <div class="sdk-owner-form-actions">
+      <div v-if="!usesHeaderActions" class="sdk-owner-form-actions">
         <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">{{ t("platform.unsavedChanges") }}</span>
         <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
         <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
