@@ -5,7 +5,7 @@ import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import { AGENT_DEFINITION, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import {
+import { confirmDiscard,
   formSaveCalls, humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -168,6 +168,7 @@ it("forgets what was submitted once the reader discards", async () => {
   form.set("/skills", []);
   await nextTick();
   [...document.querySelectorAll<HTMLButtonElement>("#app .sdk-owner-form-actions button")][0]!.click();
+  await confirmDiscard();
   await nextTick();
   form.set("/name", "Analyst v3");
   await context.instance.invoke("definition.save");

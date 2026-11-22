@@ -57,13 +57,24 @@ export function createAgentOptionReadAdapters(viewer: AssistantCredentials) {
   const modelResponse = z.object({ success: z.literal(true), data: modelOptionsSchema });
   const userId = agentExecutionOptionsSchema.shape.users.element.shape.id;
   const defaultOption = (label: string): PanelOption => ({ primaryKey: "@default", value: null, label });
+  /**
+   * The domain's chat models, the first choice an agent's empty one: following the domain's default model, named by the
+   * model it is now, so a reader can go back to it and sees what an empty choice means.
+   */
   const modelOptions = async () => {
     const response = await backendGet("agent-model-options", `${config.dataQuery.baseUrl}/model-options`, {
       headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
     });
-    const { data: { models } } = modelResponse.parse(JSON.parse(response.text));
-    return models.filter(model => model.type === "chat").map(({ ref, name }) => ({ primaryKey: ref, value: ref, label: name }));
+    const { data: { models, defaultModelId } } = modelResponse.parse(JSON.parse(response.text));
+    const chat = models.filter(model => model.type === "chat");
+    const current = chat.find(model => model.ref === defaultModelId);
+    const following = defaultOption(current
+      ? tForLocale(viewer.locale, "panels.agentOptions.domainDefaultModel", { model: current.name })
+      : text("domainDefault"));
+    return [following, ...chat.map(({ ref, name }): PanelOption => ({ primaryKey: ref, value: ref, label: name }))];
   };
+  /** Running with the reader's own permissions: the empty choice of whose permissions an agent runs with. */
+  const readersOwn = () => defaultOption(text("executionOwn"));
 
   return {
     models: {
@@ -71,7 +82,7 @@ export function createAgentOptionReadAdapters(viewer: AssistantCredentials) {
       async resolve(values: readonly unknown[]) {
         const options = new Map((await modelOptions()).map(option => [option.value, option]));
         return { options: values.map((value): PanelOption => {
-          if (value === null) return defaultOption(text("domainDefault"));
+          if (value === null) return options.get(null)!;
           const ref = modelReferenceSchema.parse(value);
           return options.get(ref) ?? { primaryKey: ref, value: ref, label: ref, unavailable: { reason: text("unavailable") } };
         }) };
@@ -86,11 +97,13 @@ export function createAgentOptionReadAdapters(viewer: AssistantCredentials) {
           query.set("pageSize", String(page.size));
         }
         const { users } = await queryExecutionOptions(viewer, query);
-        return { options: users.map(({ id, name }) => ({ primaryKey: id, value: id, label: name })) };
+        const members = users.map(({ id, name }): PanelOption => ({ primaryKey: id, value: id, label: name }));
+        // The empty choice heads the first page only, as every page after it continues the same list.
+        return { options: (page?.number ?? 1) === 1 ? [readersOwn(), ...members] : members };
       },
       async resolve(values: readonly unknown[]) {
         return { options: await Promise.all(values.map(async (value): Promise<PanelOption> => {
-          if (value === null) return defaultOption(text("executionOwn"));
+          if (value === null) return readersOwn();
           const id = userId.parse(value);
           const { selected } = await queryExecutionOptions(viewer, new URLSearchParams({ selected: id, pageSize: "1" }));
           if (!selected) throw new Error("The execution user owner did not return the requested selection");
