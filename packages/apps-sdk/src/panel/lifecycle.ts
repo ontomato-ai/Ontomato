@@ -59,7 +59,7 @@ export interface PanelRun {
   start(): Promise<void>;
   activity(active: boolean): void;
   address(next: string): void;
-  projectionsChanged(revisions: readonly DefinitionRevision[]): void;
+  projectionsChanged(revisions: readonly (Pick<DefinitionRevision, "id"> & { revision?: number })[]): void;
   objectChanged(target: PanelObjectIdentity | null): void;
 }
 
@@ -108,7 +108,7 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     reports.operations(operations.map(({ invoke: _invoke, ...operation }) => panelOperationSchema.parse(operation)));
   }, { immediate: true });
 
-  const waiting = new Map<string, DefinitionRevision>();
+  const waiting = new Map<string, { id: string; revision?: number }>();
   const refreshProjections = () => {
     for (const { id, revision } of waiting.values()) options.projectionChanged(id, revision);
     waiting.clear();
@@ -142,8 +142,13 @@ export function runPanel(options: PanelRunOptions): PanelRun {
       else heldAddress = next;
     },
     projectionsChanged(revisions) {
-      for (const revision of revisions)
-        if ((waiting.get(revision.id)?.revision ?? 0) < revision.revision) waiting.set(revision.id, revision);
+      for (const revision of revisions) {
+        const current = waiting.get(revision.id);
+        if (revision.revision === undefined || (current !== undefined && current.revision === undefined))
+          waiting.set(revision.id, { id: revision.id });
+        else if ((current?.revision ?? 0) < revision.revision)
+          waiting.set(revision.id, revision);
+      }
       if (active && !isDirty()) refreshProjections();
     },
     objectChanged(target) {
