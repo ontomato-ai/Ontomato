@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonValueSchema, runtimeRelativePathSchema } from "./agent-runtime-values";
-import { appsSdkBuildSchema, appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
-import { componentDeclarationSchema } from "./component-declaration";
+import { appsSdkBuildSchema, appsSdkComponentCatalogEntrySchema, componentDeclarationSchema } from "./apps-sdk";
 import { DOMAIN_COMPONENT_PREFIX, productCurrentIdParamsSchema } from "./product-record-id";
 
 export const COMPONENT_PACKAGES_PATH = "/api/component-packages";

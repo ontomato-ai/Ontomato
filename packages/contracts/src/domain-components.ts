@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { componentDeclarationSchema } from "./component-declaration";
+import { componentDeclarationSchema } from "./apps-sdk";
 import { domainComponentIdSchema, domainComponentSourceSchema } from "./domain-component-runtime";
 import { productCurrentIdParamsSchema } from "./product-record-id";
 

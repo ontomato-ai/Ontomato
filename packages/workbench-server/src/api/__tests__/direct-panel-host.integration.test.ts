@@ -135,6 +135,10 @@ beforeAll(async () => {
     res.json({ allowed });
   });
   app.post("/product-governance/resources", (req, res) => {
+    if (req.header("tk") === "domain-component-reader") {
+      res.json({ ids: req.body.verb === "use" ? ["domain-component-projection"] : [] });
+      return;
+    }
     if (req.header("tk") === undefined) expect(req.body).toEqual({ verb: "use" });
     else expect(req.header("tk")).toBe("host-reader");
     res.json({ ids: [...grants] });

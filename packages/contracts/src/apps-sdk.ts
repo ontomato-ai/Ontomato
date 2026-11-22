@@ -1,6 +1,9 @@
 import { z } from "zod";
-import { componentDeclarationBaseSchema } from "./component-declaration";
-export { appsSdkComponentDataSchema, appsSdkComponentDatum, type AppsSdkComponentData } from "./component-declaration";
+import { directPanelPortTypeSchema } from "./panel-manifest";
+import { panelReadResultIdSchema } from "./panel-operations";
+import { directProjectionInputTypeSchema, panelLocalOperationNameSchema } from "./panel-projection";
+import { componentDataSchema, componentDeclarationBase } from "./component-declaration";
+import { componentIdSchema } from "./product-record-id";
 import { workspacePathSchema } from "./workspaces";
 
 /** Written by the image build beside its exact SDK version directory. */
@@ -42,11 +45,35 @@ export const appsSdkCurrentSchema = appsSdkBuildSchema.extend({
 }).strict();
 export type AppsSdkCurrent = z.infer<typeof appsSdkCurrentSchema>;
 
+export const appsSdkComponentDataSchema = componentDataSchema(z.lazy(() => panelReadResultIdSchema));
+export type AppsSdkComponentData = z.infer<typeof appsSdkComponentDataSchema>;
+
+export function appsSdkComponentDatum(data: AppsSdkComponentData | undefined, datum: string) {
+  return data && Object.hasOwn(data, datum) ? data[datum] : data?.["*"];
+}
+
+const componentDeclarationBaseSchema = componentDeclarationBase(
+  appsSdkComponentDataSchema, z.lazy(() => directProjectionInputTypeSchema), z.lazy(() => directPanelPortTypeSchema),
+);
+const operations = z.array(z.object({
+  name: z.lazy(() => panelLocalOperationNameSchema),
+  handlerRef: z.string().trim().min(1),
+}).strict()).optional();
+
+export const componentDeclarationSchema = componentDeclarationBaseSchema.extend({
+  componentId: componentIdSchema, operations,
+});
+export type ComponentDeclaration = z.infer<typeof componentDeclarationSchema>;
+
 export const appsSdkComponentCatalogEntrySchema = componentDeclarationBaseSchema.extend({
   module: z.string().min(1),
   exportName: z.string().min(1),
 });
 export type AppsSdkComponentCatalogEntry = z.infer<typeof appsSdkComponentCatalogEntrySchema>;
+
+/** The product catalogue includes declarations with either deployment or domain source. */
+export const productComponentDefinitionSchema = appsSdkComponentCatalogEntrySchema
+  .partial({ module: true, exportName: true }).extend({ operations });
 
 /** The generated components.json for one release. */
 export const appsSdkComponentCatalogSchema = z.object({
