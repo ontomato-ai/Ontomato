@@ -70,6 +70,7 @@ export { confirmDanger } from "./confirm-danger";
 export {
   createPanelBackController,
   hasOpenOverlay,
+  installPanelBackPopStateListener,
   type PanelBackController,
   type PanelBackControllerOptions,
   type PanelBackHandlerRegistration,

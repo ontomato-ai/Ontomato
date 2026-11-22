@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick } from "vue";
 import { ElMessageBox } from "element-plus";
 import { confirmDanger } from "../confirm-danger";
-import { createPanelBackController, hasOpenOverlay } from "../panel-back";
+import { createPanelBackController, hasOpenOverlay, installPanelBackPopStateListener } from "../panel-back";
 import { provideUnsavedChanges, useLeaveConfirmation, useUnsavedChanges } from "../unsaved-changes";
 
 afterEach(() => {
@@ -124,6 +124,51 @@ describe("createPanelBackController", () => {
       await vi.waitFor(() => expect(outerBack).toHaveBeenCalledOnce());
     } finally {
       controller.dispose();
+    }
+  });
+
+  it("intercepts dirty same-route popstate ahead of a later-registered router listener and lets cross-route popstate pass", async () => {
+    installPanelBackPopStateListener();
+    const routerPopListener = vi.fn();
+    window.addEventListener("popstate", routerPopListener);
+    window.history.replaceState({ current: "/ontology/relations" }, "", "/#/ontology/relations");
+
+    let allow = false;
+    const confirmLeaveUnsaved = vi.fn(async () => allow);
+    const onBack = vi.fn();
+    // Controller is created AFTER routerPopListener was added to window (matching PanelHost mounting after router boot).
+    const controller = createPanelBackController({
+      active: () => true,
+      allowHistory: () => true,
+      isDirty: () => true,
+      confirmLeaveUnsaved,
+    });
+    try {
+      controller.register({ pushHistory: true, onBack });
+      window.history.replaceState(
+        { current: "/ontology/relations?state=rel-1" },
+        "",
+        "/#/ontology/relations?state=rel-1",
+      );
+      controller.syncHistorySnapshot();
+
+      // Same-route dirty browser Back: intercepted before routerPopListener so router cannot overwrite the list entry.
+      window.history.replaceState({ current: "/ontology/relations" }, "", "/#/ontology/relations");
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      expect(routerPopListener).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(window.location.hash).toBe("#/ontology/relations?state=rel-1"));
+      expect(onBack).not.toHaveBeenCalled();
+
+      // Cross-route popstate (e.g. history.go(-2) straight to #/home): passes through to routerPopListener.
+      window.history.replaceState({ current: "/home" }, "", "/#/home");
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      expect(routerPopListener).toHaveBeenCalledOnce();
+      expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
+      expect(onBack).not.toHaveBeenCalled();
+    } finally {
+      controller.dispose();
+      window.removeEventListener("popstate", routerPopListener);
     }
   });
 });
