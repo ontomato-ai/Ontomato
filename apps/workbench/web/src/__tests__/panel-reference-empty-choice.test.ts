@@ -50,7 +50,7 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-it("shows a held empty reference as the owner's named empty choice", async () => {
+function open(options: unknown[], held: unknown[]) {
   const mount = mountDirectPanel({
     manifest,
     run: directRun({ pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: { agent: { className: AGENT_DEFINITION, primaryKey: "a-1" } } }),
@@ -61,8 +61,8 @@ it("shows a held empty reference as the owner's named empty choice", async () =>
     confirmOperation: noOperations.confirmOperation,
     read: async (request): Promise<ProductPanelReadResponse> => {
       if ("operations" in request) return { status: "ready", value: { save } as never };
-      if (request.dataName === "options") return { status: "ready", value: { options: [following, gpt] } as never };
-      if (request.dataName === "selected") return { status: "ready", value: { options: [following] } as never };
+      if (request.dataName === "options") return { status: "ready", value: { options } as never };
+      if (request.dataName === "selected") return { status: "ready", value: { options: held } as never };
       return { status: "ready", value: { fields, values: { model: null }, errors: [], revision: 1, save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.update" } } as never };
     },
   });
@@ -70,7 +70,30 @@ it("shows a held empty reference as the owner's named empty choice", async () =>
   document.body.append(element);
   const app = createApp({ render: () => [mount.member("form"), mount.member("model")] });
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
+  return { mount, app, element };
+}
+
+it("shows a held empty reference as the owner's named empty choice", async () => {
+  const { mount, app, element } = open([following, gpt], [following]);
   await vi.waitFor(() => expect(element.querySelector('[data-field="/model"] .el-select__selected-item:not(.is-hidden)')?.textContent?.trim()).toBe(following.label));
+  app.unmount();
+  mount.dispose();
+});
+
+// Choices an owner describes are offered with what each does (a skill, 原页面对照《智能体设置》 #22): a reader judges
+// a choice by its description, not by its name alone.
+it("offers each choice with the description its owner gives", async () => {
+  const sql = { primaryKey: "sql", value: "sql", label: "SQL", description: "Queries the ontology's tables" };
+  const { mount, app, element } = open([following, sql], [following]);
+  await vi.waitFor(() => expect(element.querySelector('[data-field="/model"] .el-select__wrapper')).not.toBeNull());
+  element.querySelector<HTMLElement>('[data-field="/model"] .el-select__wrapper')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  const item = await vi.waitFor(() => {
+    const found = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find((option) => option.textContent?.includes("SQL"));
+    if (!found) throw new Error("SQL is not offered");
+    return found;
+  });
+  expect(item.querySelector(".sdk-reference-option-label")?.textContent?.trim()).toBe("SQL");
+  expect(item.querySelector(".sdk-reference-option-description")?.textContent?.trim()).toBe("Queries the ontology's tables");
   app.unmount();
   mount.dispose();
 });

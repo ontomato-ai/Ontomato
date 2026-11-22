@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp, nextTick, ref } from "vue";
+import { createApp, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";

@@ -50,3 +50,21 @@ it("asks only for the agent's name before it is saved", async () => {
   const form = await describeAgentDefinitionForm({ target: { kind: "draft" } } as never, owner as never, viewer as never);
   expect(form.fields.filter((field) => field.required).map((field) => field.path)).toEqual(["/name"]);
 });
+
+it("groups the form into the agent page's sections, each field under its own, with the page's hints", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => answer(String(url))));
+  const form = await describeAgentDefinitionForm({ target: { kind: "draft" } } as never, owner as never, viewer as never);
+  expect(form.sections?.map(({ key }) => key)).toEqual(["basics", "model", "prompt", "capabilities", "execution", "data"]);
+  expect(form.sections?.find(({ key }) => key === "model")?.hint).toBe("The model this agent uses. Following the domain default, it changes when the default does.");
+  const sectionOf = Object.fromEntries(form.fields.map((field) => [field.path, field.section]));
+  expect(sectionOf).toEqual({
+    "/name": "basics", "/description": "basics", "/icon": "basics", "/enabled": "basics",
+    "/modelSelection/modelId": "model", "/systemPrompt": "prompt",
+    "/skills": "capabilities", "/enabledMcpServiceIds": "capabilities",
+    "/executionUserId": "execution", "/classNames": "data",
+  });
+  expect(form.fields.find(({ path }) => path === "/enabled")?.help).toBe("Once enabled, the agent can be chosen and used in conversations.");
+  // The name and the description suggest what goes in them, as the page did.
+  const placeholder = (path: string) => { const control = form.fields.find((field) => field.path === path)!.control; return control.kind === "text" ? control.placeholder : undefined; };
+  expect([placeholder("/name"), placeholder("/description")]).toEqual(["For example: Sales analysis expert", "Briefly say what this agent is for"]);
+});

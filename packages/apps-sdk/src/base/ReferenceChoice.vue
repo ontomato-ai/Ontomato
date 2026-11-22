@@ -145,7 +145,12 @@ function choose(keys: string | string[] | undefined) {
         :label="option.value === null ? localized(option.label) : option.label"
         :disabled="option.unavailable !== undefined"
         :title="option.unavailable ? localized(option.unavailable.reason) : option.description"
-      ></el-option>
+        :class="{ 'sdk-reference-option-described': option.description }"
+      >
+        <!-- A choice its owner describes is offered with what it does: a reader judges it by that, not its name. -->
+        <span class="sdk-reference-option-label">{{ option.value === null ? localized(option.label) : option.label }}</span>
+        <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
+      </el-option>
     </el-select>
     <p v-if="field.field.value.readOnly && field.field.value.readOnlyReason" class="sdk-reference-picker-help">
       {{ field.field.value.readOnlyReason }}
@@ -163,6 +168,28 @@ function choose(keys: string | string[] | undefined) {
 }
 .sdk-reference-picker-select {
   width: 100%;
+}
+/* A described choice takes two lines in the list: its name, then what it does. */
+.sdk-reference-option-described {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: auto;
+  min-height: var(--control-height);
+  padding-block: var(--spacing-xs);
+  line-height: var(--leading-sm);
+}
+.sdk-reference-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sdk-reference-option-description {
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sdk-reference-picker-changed :deep(.el-form-item__label) {
   color: var(--brand-link);
