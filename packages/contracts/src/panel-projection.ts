@@ -110,6 +110,8 @@ export const panelReadParameterSchemas = {
   cursor: z.string(),
   scheduledRunId: runtimeIdSchema,
   size: positiveInteger,
+  auditLogBusiness: z.enum(["BKNOWLEDGE", "BTERM", "BEXAMPLE", "SCHEMA", "ANALYSIS"]),
+  auditLogOperation: z.enum(["ADD", "UPD", "DEL"]),
   knowledgeCountField: z.literal("status"),
   knowledgeStatus: z.enum(["all", "pending", "approved"]),
   feedbackCountField: z.enum(["sourceType", "rating"]),

@@ -106,7 +106,7 @@ productPanelsRouter.post("/read", wrap(async (req, res) => {
   const preview = req.header(BUILD_TEST_HEADER);
   const viewer = request.source.kind === "candidate" || preview === undefined
     ? credentials : { ...credentials, headers: { ...credentials.headers, [BUILD_TEST_HEADER]: preview } };
-  res.json(await readProductPanelData(owner, viewer, request, (req as AuthenticatedRequest).userName));
+  res.json(await readProductPanelData(owner, viewer, request, (req as AuthenticatedRequest).userName, req));
 }));
 productPanelsRouter.get("/:id/snapshot", wrap(async (req, res) => {
   res.set("Cache-Control", "no-store");

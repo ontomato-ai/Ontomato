@@ -15,6 +15,11 @@ public class AuditLogServiceImpl implements AuditLogService {
 	private AuditLogDao auditLogDao;
 
 	@Override
+	public AuditLog queryById(String id, String domainId) {
+		return auditLogDao.queryById(id, domainId);
+	}
+
+	@Override
 	public Page<AuditLog> queryPage(int pageNum, int pageSize, String bussiness, String operation, String domainId) {
 		if (pageNum < 1) {
 			pageNum = 1;

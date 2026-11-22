@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.applications;
 
+import io.ontomato.dataengine.controller.BuildTestAccess;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.ontomato.dataengine.core.bean.R;
@@ -126,6 +127,7 @@ public class ApplicationController {
         if (domainId.isBlank()) throw ApplicationCatalog.bad("A domain is required");
         return R.of(catalog.panelSkillSources(domainId));
     }
+    @BuildTestAccess(BuildTestAccess.Access.NO_BUSINESS_DATA)
     @GetMapping("/platform/applications")
     public R<?> list(@RequestParam(defaultValue="navigation") String purpose) {
         var user = current();

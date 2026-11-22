@@ -2,6 +2,7 @@ package io.ontomato.dataengine.dao;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.jdbc.core.RowMapper;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,6 +24,21 @@ public class AuditLogDao {
 	private static final String TABLE_NAME = "audit_log";
 
 	private static final String COLUMNS = "id, domain_id, bussiness, by_ai, user_id, user_name, operation, description, paramter, operate_time";
+
+	private static final RowMapper<AuditLog> AUDIT_ROW = (rs, rowNum) -> {
+		AuditLog log = new AuditLog();
+		log.setId(rs.getString("id"));
+		log.setDomainId(rs.getString("domain_id"));
+		log.setBussiness(rs.getString("bussiness"));
+		log.setByAi(rs.getBoolean("by_ai"));
+		log.setUserId(rs.getString("user_id"));
+		log.setUserName(rs.getString("user_name"));
+		log.setOperation(rs.getString("operation"));
+		log.setDescription(rs.getString("description"));
+		log.setParamter(rs.getString("paramter"));
+		log.setOperateTime((Long) rs.getObject("operate_time"));
+		return log;
+	};
 
 	@PostConstruct
 	public void initIndex() {
@@ -58,6 +74,12 @@ public class AuditLogDao {
 		jdbcTemplate.update("DELETE FROM " + TABLE_NAME + " WHERE id = ?", id);
 	}
 
+	public AuditLog queryById(String id, String domainId) {
+		return org.springframework.dao.support.DataAccessUtils.singleResult(jdbcTemplate.query(
+				"SELECT " + COLUMNS + " FROM " + TABLE_NAME + " WHERE domain_id = ? AND id = ?",
+				AUDIT_ROW, domainId, id));
+	}
+
 	public Page<AuditLog> queryPage(int pageNum, int pageSize, String bussiness, String operation, String domainId) {
 		Page<AuditLog> page = new Page<AuditLog>();
 		page.setPageNum(pageNum);
@@ -82,7 +104,7 @@ public class AuditLogDao {
 
 			String countSql = "SELECT COUNT(*) FROM " + TABLE_NAME + " WHERE " + whereSql;
 			String dataSql = "SELECT " + COLUMNS + " FROM " + TABLE_NAME + " WHERE " + whereSql
-					+ " ORDER BY operate_time DESC LIMIT ? OFFSET ?";
+					+ " ORDER BY operate_time DESC, id DESC LIMIT ? OFFSET ?";
 
 			Long totalRows = jdbcTemplate.queryForObject(countSql, Long.class, params.toArray());
 			if (totalRows == null) {
@@ -91,22 +113,9 @@ public class AuditLogDao {
 
 			List<Object> dataParams = new ArrayList<>(params);
 			dataParams.add(pageSize);
-			dataParams.add((pageNum - 1) * pageSize);
+			dataParams.add((pageNum - 1L) * pageSize);
 
-			List<AuditLog> auditLogs = jdbcTemplate.query(dataSql, (rs, rowNum) -> {
-				AuditLog log = new AuditLog();
-				log.setId(rs.getString("id"));
-				log.setDomainId(rs.getString("domain_id"));
-				log.setBussiness(rs.getString("bussiness"));
-				log.setByAi(rs.getBoolean("by_ai"));
-				log.setUserId(rs.getString("user_id"));
-				log.setUserName(rs.getString("user_name"));
-				log.setOperation(rs.getString("operation"));
-				log.setDescription(rs.getString("description"));
-				log.setParamter(rs.getString("paramter"));
-				log.setOperateTime((Long) rs.getObject("operate_time"));
-				return log;
-			}, dataParams.toArray());
+			List<AuditLog> auditLogs = jdbcTemplate.query(dataSql, AUDIT_ROW, dataParams.toArray());
 
 			page.setTotalRows(totalRows);
 			page.setTotalPages(totalRows % pageSize == 0 ? (totalRows / pageSize) : (totalRows / pageSize + 1));

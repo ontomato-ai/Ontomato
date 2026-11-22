@@ -1,6 +1,7 @@
 import { governanceWindowsRouter, assistantInternalRouter } from "../api/routes/governance";
 import { agentChannelRouter } from "../api/routes/agent-channel";
 import { createHealthRouter } from "../api/routes/health";
+import { systemConfigRouter } from "../api/routes/system-config";
 import { appBuilderRouter } from "../api/routes/app-builder";
 import { COMPONENT_PACKAGES_PATH } from "@ontomato/contracts/component-packages";
 import { createComponentPackagesRouter, mountComponentPackageAssets } from "../api/routes/component-packages";
@@ -213,6 +214,7 @@ export function createWorkbenchApp(): Express {
 
   app.use("/api/assistant/sessions", governanceWindowsRouter);
   app.use("/api", appBuilderRouter);
+  app.use("/api", systemConfigRouter);
   app.use(COMPONENT_PACKAGES_PATH, createComponentPackagesRouter(identity.requireDeploymentMaintenance, checkComponentPackageUpgrade));
   app.use("/api/workspaces", workspaceRouter);
   app.use("/api/analysis-tasks", analysisTasksRouter);
