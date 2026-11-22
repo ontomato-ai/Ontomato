@@ -3,8 +3,10 @@ package io.ontomato.dataengine.applications;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -48,14 +50,15 @@ public class PanelResources {
                               JsonNode theme, String icon) {}
 
     public void requireCurrent(String domain, String framePanelId, List<ApplicationPanelUse> uses,
-                               ApplicationCatalog.Delivery delivery, JsonNode theme, String icon) {
+                               ApplicationCatalog.Delivery delivery, JsonNode theme, String icon, Locale locale) {
         var references = new References(domain, framePanelId,
             uses.stream().map(use -> new UseReference(use.id(), use.panelId(), use.inputs(), use.defaultAgent())).toList(),
             delivery == null ? new DeliveryReferences(List.of(), List.of())
                 : new DeliveryReferences(delivery.panels(), delivery.projections()), theme, icon);
         try {
-            http.post().uri("/internal/product-panels/validate-references").contentType(MediaType.APPLICATION_JSON)
-                .body(references).retrieve().toBodilessEntity();
+            var request = http.post().uri("/internal/product-panels/validate-references").contentType(MediaType.APPLICATION_JSON);
+            if (locale != null) request.header(HttpHeaders.ACCEPT_LANGUAGE, locale.toLanguageTag());
+            request.body(references).retrieve().toBodilessEntity();
         } catch (RestClientResponseException failure) {
             var headers = failure.getResponseHeaders();
             var contentType = headers == null ? null : headers.getContentType();

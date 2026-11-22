@@ -1,7 +1,6 @@
 import { productPanelCatalogQuerySchema } from "@ontomato/contracts/product-catalog-query";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
 import { directProjectionPortsSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
 import {
@@ -13,12 +12,17 @@ import type { ComponentDeclaration } from "@ontomato/contracts/component-declara
 import { domainProductIdSchema } from "@ontomato/contracts/product-record-id";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
+import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import type { ProductOwner } from "../product-governance/grants";
 import { currentProductGrants, currentProductUsedBy, listCurrentProducts } from "./catalog";
 import { readAuthorComponentCatalogue } from "./component-catalogue";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 
-const jsonSchema = (schema: z.ZodTypeAny) => runtimeJsonObjectSchema.parse(zodToJsonSchema(schema, { effectStrategy: "input" }));
+const jsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });
+const configBooleanSchema = z.boolean();
+const configNumberSchema = z.number();
+const configStringSchema = z.string();
+const configStringArraySchema = z.array(z.string());
 type FormParams = { values?: Record<string, unknown>; changedField?: string | null };
 type CatalogueKind = "projection" | "panel";
 const option = (value: string, label: string) => ({ value, label, description: null, disabled: false, disabledReason: null });
@@ -57,10 +61,10 @@ function formFields(locale: string | undefined, editable: boolean, creating: boo
 
 function configurationControl(type: string): [z.ZodTypeAny, PanelFormField["control"]] {
   switch (type) {
-    case "boolean": return [z.boolean(), { kind: "switch" }];
-    case "number": return [z.number(), { kind: "number" }];
-    case "string": return [z.string(), { kind: "text" }];
-    case "string[]": return [z.array(z.string()), { kind: "string-array" }];
+    case "boolean": return [configBooleanSchema, { kind: "switch" }];
+    case "number": return [configNumberSchema, { kind: "number" }];
+    case "string": return [configStringSchema, { kind: "text" }];
+    case "string[]": return [configStringArraySchema, { kind: "string-array" }];
   }
   const literals = type.split("|").map(value => /^"([^"]+)"$/.exec(value.trim())?.[1]);
   if (literals.length > 1 && literals.every(value => value !== undefined)) {

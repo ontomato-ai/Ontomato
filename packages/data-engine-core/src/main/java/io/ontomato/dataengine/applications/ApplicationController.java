@@ -92,8 +92,8 @@ public class ApplicationController {
 
     @PutMapping("/platform/applications/{id}/panel-uses")
     public R<JSONObject> putPanelUses(@PathVariable String id, @RequestBody PanelRegistration body,
-            @RequestParam(defaultValue = "false") boolean create) {
-        return R.of(catalog.putPanelUses(id, body, current(), create));
+            @RequestParam(defaultValue = "false") boolean create, Locale locale) {
+        return R.of(catalog.putPanelUses(id, body, current(), create, locale));
     }
     @DeleteMapping("/platform/applications/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

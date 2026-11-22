@@ -35,8 +35,6 @@ it("resolves enabled defaults by preset or ID and distinguishes missing and disa
   expect(resolveDefaultAgent(definitions, { kind: "preset", agentKind: "analysis" })).toEqual({ agent: preset });
   expect(resolveDefaultAgent(definitions, { kind: "id", id: custom.id })).toEqual({ agent: custom });
   expect(resolveDefaultAgent(definitions, { kind: "preset", agentKind: "regular" })).toEqual({ agent: regular });
-  expect(resolveDefaultAgent(definitions, { kind: "id", id: disabled.id })).toEqual({ reason: "is disabled." });
-  expect(resolveDefaultAgent(definitions, { kind: "id", id: "another-domain-id" })).toEqual({
-    reason: "does not exist in this domain.",
-  });
+  expect(resolveDefaultAgent(definitions, { kind: "id", id: disabled.id })).toEqual({ reason: "disabled" });
+  expect(resolveDefaultAgent(definitions, { kind: "id", id: "another-domain-id" })).toEqual({ reason: "missing" });
 });

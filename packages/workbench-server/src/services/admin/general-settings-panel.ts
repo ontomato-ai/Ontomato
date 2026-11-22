@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { generalConfigSaveEndpoints, type GeneralConfigKey } from "@ontomato/contracts/general-settings";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { GENERAL_SETTINGS } from "@ontomato/contracts/platform-object-types";
@@ -9,6 +7,7 @@ import { assertPermission } from "../../identity/installed";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import { affected, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, type DataQueryOperationHost } from "../product-panels/data-query-operations";
 import { operationHost } from "../product-panels/operation-host";
 import type { PanelOperationActor, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
@@ -87,14 +86,14 @@ export function createGeneralSettingsReads(actor: PanelOperationActor) {
           message: tForLocale(locale, "panels.simplePages.invalidGeneral"),
         })),
         fields: fields.map((name): PanelFormField => ({
-          path: `/${name}`, ...captions[name], valueSchema: runtimeJsonObjectSchema.parse(zodToJsonSchema(schema.shape[name])),
+          path: `/${name}`, ...captions[name], valueSchema: cachedZodToRuntimeJsonSchema(schema.shape[name]),
           required: true, readOnly: false,
           control: name === "lang" ? {
             kind: "select",
             options: options.map(value => ({ value, label: languageNames[value]!, description: null, disabled: false, disabledReason: null })),
           } : { kind: "number" },
         })),
-        save: { method: "POST", path: "/api" + generalSettingsSavePath, bodySchema: runtimeJsonObjectSchema.parse(zodToJsonSchema(generalSettingsPatch)), draftOperation: operation },
+        save: { method: "POST", path: "/api" + generalSettingsSavePath, bodySchema: cachedZodToRuntimeJsonSchema(generalSettingsPatch), draftOperation: operation },
       };
     },
   };

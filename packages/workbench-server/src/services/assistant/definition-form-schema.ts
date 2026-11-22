@@ -1,14 +1,14 @@
 import type { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { assistantAgentPanelValuesSchema as inputSchema, assistantAgentPanelUpdateValuesSchema as updateSchema } from "@ontomato/contracts/assistant-chat";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldPointer, type FormFieldError } from "@ontomato/contracts/form-fields";
 import type { PanelFormDescription } from "@ontomato/contracts/panel-projection";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import { HttpError } from "../../utils/errors";
+import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 
-export const agentFormJsonSchema = (schema: z.ZodTypeAny) => runtimeJsonObjectSchema.parse(
-  zodToJsonSchema(schema, { $refStrategy: "none", effectStrategy: "input" }),
+export const agentFormJsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(
+  schema,
+  { $refStrategy: "none", effectStrategy: "input" },
 );
 const createBody = agentFormJsonSchema(inputSchema);
 const updateBody = agentFormJsonSchema(updateSchema);

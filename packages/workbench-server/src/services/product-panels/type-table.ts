@@ -1,4 +1,3 @@
-import { zodToJsonSchema } from "zod-to-json-schema";
 import type { PanelMember } from "@ontomato/contracts/panel-manifest";
 import { projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
 import { customerOntologyReads, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
@@ -9,6 +8,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { createActionReadAdapter } from "../action/panel-reads";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { HttpError } from "../../utils/errors";
+import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import type { ProductOwner } from "../product-governance/grants";
 import { registeredPanelOperation } from "./server-operations";
 import { allowsOperationDraft, boundProjectionOperations } from "./operation-bindings";
@@ -51,7 +51,7 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
     else objectTypes.set(className, { operations: [declaration] });
   }
   const resultIds = new Set([...objectTypes.values()].flatMap(entry => Object.values(entry.reads ?? {}).map(read => read.result)));
-  const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, zodToJsonSchema(panelReadResultSchemas[id])]));
+  const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, cachedZodToJsonSchema(panelReadResultSchemas[id])]));
   return platformTypeTableResponseSchema.parse({
     objectTypes: Object.fromEntries(objectTypes), resultSchemas,
     ...(unavailableActions.length > 0 && { unavailableActions }),

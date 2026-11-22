@@ -1,13 +1,12 @@
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { actionFormSchema } from "@ontomato/contracts/action-forms";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import {
   describePanelOperationFromDeclaration, type PanelOperationDeclaration,
 } from "@ontomato/contracts/panel-operations";
 import { HttpError } from "../../utils/errors";
+import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
 import {
   affected, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, type DataQueryOperationHost as Host,
@@ -72,8 +71,9 @@ export const objectActionResultSchema = z.object({
   result: z.string().nullable(),
   affects: z.array(z.string()),
 }).strict();
-const objectActionResultJsonSchema = runtimeJsonObjectSchema.parse(
-  zodToJsonSchema(objectActionResultSchema, { effectStrategy: "input" }),
+const objectActionResultJsonSchema = cachedZodToRuntimeJsonSchema(
+  objectActionResultSchema,
+  { effectStrategy: "input" },
 );
 const objectActionInputSchema = z.object({ values: z.record(z.string(), z.string()) }).strict();
 

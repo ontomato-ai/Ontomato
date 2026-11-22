@@ -3,9 +3,9 @@ import { assistantName } from "./labels";
 import { assistantStore, type AgentRow } from "./store";
 
 function defaultAgentAvailability(agent: AgentRow | undefined):
-  { agent: AgentRow } | { reason: "does not exist in this domain." | "is disabled." } {
-  if (!agent) return { reason: "does not exist in this domain." };
-  return agent.enabled ? { agent } : { reason: "is disabled." };
+  { agent: AgentRow } | { reason: "missing" | "disabled" } {
+  if (!agent) return { reason: "missing" };
+  return agent.enabled ? { agent } : { reason: "disabled" };
 }
 
 export function resolveDefaultAgent(definitions: readonly AgentRow[], target: DefaultAgent) {
