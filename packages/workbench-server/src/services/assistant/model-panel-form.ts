@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { modelLabel } from "@ontomato/contracts/model-selection";
 import { modelOptionsSchema, modelReferenceSchema } from "@ontomato/contracts/model-settings";
 import { MODEL_OPTION } from "@ontomato/contracts/platform-object-types";
@@ -11,6 +9,7 @@ import { validateModelSelection } from "../../platform/agent-runtime/model-selec
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { backendGet, buildBackendHeaders } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
+import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 
 export const modelPanelValues = z.object({ modelId: modelReferenceSchema.nullable() }).strict();
 export const modelSelectionWrite = z.object({ modelSelection: modelPanelValues }).strict();
@@ -46,7 +45,7 @@ export async function readDomainModelLabelMap(viewer: AssistantCredentials): Pro
   }
 }
 
-export const formJsonSchema = (schema: z.ZodTypeAny) => runtimeJsonObjectSchema.parse(zodToJsonSchema(schema, { effectStrategy: "input" }));
+export const formJsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });
 export const modelPanelField = (locale?: string): PanelFormField => ({
   path: "/modelSelection/modelId", label: tForLocale(locale, "panels.agentForm.modelSelection"),
   valueSchema: formJsonSchema(modelPanelValues.shape.modelId),

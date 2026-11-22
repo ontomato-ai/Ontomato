@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   dashboardChartInputs, metricReferenceChartSchema, metricReferenceMetricSchema,
   type DashboardGroup, type DashboardMetricReference, type DashboardMetricOutput,
@@ -10,6 +9,7 @@ import { runAuxiliary } from "../../platform/agent-runtime/runtime";
 import { renderPrompt } from "../../core/prompts/loader";
 import { buildModelDataView } from "../../utils/model-data-view";
 import { HttpError } from "../../utils/errors";
+import { cachedZodToJsonSchema } from "../../utils/zod-json-schema";
 import { createLogger } from "../../logging/logger";
 import { DashboardMetricClient } from "./metric-client";
 import { chartFieldSchema, dashboardInputs, outputMappingIssues } from "./metric-data";
@@ -60,7 +60,7 @@ const refusalSchema = z.object({ error: z.string().min(1) }).strict();
 const logger = createLogger("dashboard-planning");
 
 async function model<T>(key: string, input: unknown, schema: z.ZodType<T>, locale?: string): Promise<T> {
-  const outputSchema = zodToJsonSchema(z.union([schema, refusalSchema]), { $refStrategy: "none" });
+  const outputSchema = cachedZodToJsonSchema(z.union([schema, refusalSchema]), { $refStrategy: "none" });
   const systemPrompt = [
     renderPrompt(key, {}, locale),
     "Return one JSON object matching the output schema. Every required property must be present. "
