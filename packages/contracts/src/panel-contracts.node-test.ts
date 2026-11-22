@@ -2473,3 +2473,271 @@ test("a refused component package upgrade reports the changed shape and its affe
     ...response, details: { ...response.details, changes: [{ ...change, after: new Date() }] },
   }).success, false);
 });
+
+test("listColumn and listRowDetail members enforce attachment mutual exclusion, uniqueness, fixed projection targets, no outputs and row inputs", async () => {
+  const {
+    isHostMountedPanelMember, panelListColumnRefSchema, panelListRowDetailRefSchema, panelTemplatePlacedMemberKeys,
+  } = await import("./panel-manifest");
+  assert.deepEqual(panelListColumnRefSchema.parse({ slot: "list", column: "actions" }), { slot: "list", column: "actions" });
+  assert.deepEqual(panelListRowDetailRefSchema.parse({ slot: "list" }), { slot: "list" });
+
+  const baseState = {
+    filter: { type: { kind: "scalar" as const, type: "string" as const } },
+    selected: { type: { kind: "object" as const, objectType: SCHEDULED_TASK } },
+  };
+  const validManifest = {
+    state: baseState,
+    members: {
+      list: { target: { projectionId: "tasks-list" } },
+      form: { target: { projectionId: "task-form" } },
+      cronField: { target: { projectionId: "cron-input" }, formField: { slot: "form", path: "/cron" }, inputs: { row: { item: true } } },
+      toolsCell: {
+        target: { projectionId: "tools-cell" },
+        listColumn: { slot: "list", column: "tools" },
+        inputs: {
+          row: { item: true },
+          id: { item: "primaryKey" },
+          title: { item: "label" },
+          tools: { itemField: "tools" },
+          filter: { state: "filter" },
+          compact: { literal: true },
+        },
+      },
+      detailRow: {
+        target: { projectionId: "row-detail" },
+        listRowDetail: { slot: "list" },
+        inputs: { target: { item: true }, payload: { itemField: "schema" } },
+      },
+    },
+    commands: {},
+  };
+  const parsed = panelManifestSchema.parse(validManifest);
+  assert.equal(isHostMountedPanelMember(parsed.members.list!), false);
+  assert.equal(isHostMountedPanelMember(parsed.members.cronField!), true);
+  assert.equal(isHostMountedPanelMember(parsed.members.toolsCell!), true);
+  assert.equal(isHostMountedPanelMember(parsed.members.detailRow!), true);
+  assert.deepEqual(panelTemplatePlacedMemberKeys(parsed), ["list", "form"]);
+
+  // Mutual exclusion between formField, listColumn and listRowDetail.
+  for (const invalidMember of [
+    { target: { projectionId: "p" }, formField: { slot: "form", path: "/a" }, listColumn: { slot: "list", column: "a" } },
+    { target: { projectionId: "p" }, formField: { slot: "form", path: "/a" }, listRowDetail: { slot: "list" } },
+    { target: { projectionId: "p" }, listColumn: { slot: "list", column: "a" }, listRowDetail: { slot: "list" } },
+    // Self-reference, undeclared host, non-projection host, non-projection target, outputs forbidden.
+    { target: { projectionId: "p" }, listColumn: { slot: "bad", column: "a" } },
+    { target: { projectionId: "p" }, listColumn: { slot: "missing", column: "a" } },
+    { target: { projectionId: "p" }, listColumn: { slot: "nestedPanel", column: "a" } },
+    { target: { panelId: "some-panel" }, listColumn: { slot: "list", column: "a" } },
+    { target: { projectionId: "p" }, listColumn: { slot: "list", column: "a" }, outputs: { selected: { state: "selected" } } },
+    { target: { projectionId: "p" }, listRowDetail: { slot: "bad" } },
+    { target: { projectionId: "p" }, listRowDetail: { slot: "missing" } },
+    { target: { projectionId: "p" }, listRowDetail: { slot: "nestedPanel" } },
+    { target: { panelId: "some-panel" }, listRowDetail: { slot: "list" } },
+    { target: { projectionId: "p" }, listRowDetail: { slot: "list" }, outputs: { selected: { state: "selected" } } },
+    // Row scalar/field inputs forbidden on ordinary or formField members.
+    { target: { projectionId: "p" }, inputs: { id: { item: "primaryKey" } } },
+    { target: { projectionId: "p" }, inputs: { title: { item: "label" } } },
+    { target: { projectionId: "p" }, inputs: { tools: { itemField: "tools" } } },
+    { target: { projectionId: "p" }, formField: { slot: "form", path: "/a" }, inputs: { tools: { itemField: "tools" } } },
+  ]) {
+    assert.equal(panelManifestSchema.safeParse({
+      state: baseState,
+      members: {
+        list: { target: { projectionId: "tasks-list" } },
+        form: { target: { projectionId: "task-form" } },
+        nestedPanel: { target: { panelId: "sub-panel" } },
+        bad: invalidMember,
+      },
+      commands: {},
+    }).success, false);
+  }
+
+  // Uniqueness: duplicate (slot, column) and duplicate listRowDetail slot are rejected.
+  assert.equal(panelManifestSchema.safeParse({
+    state: baseState,
+    members: {
+      list: { target: { projectionId: "tasks-list" } },
+      col1: { target: { projectionId: "c1" }, listColumn: { slot: "list", column: "status" } },
+      col2: { target: { projectionId: "c2" }, listColumn: { slot: "list", column: "status" } },
+    },
+    commands: {},
+  }).success, false);
+  assert.equal(panelManifestSchema.safeParse({
+    state: baseState,
+    members: {
+      list: { target: { projectionId: "tasks-list" } },
+      d1: { target: { projectionId: "p1" }, listRowDetail: { slot: "list" } },
+      d2: { target: { projectionId: "p2" }, listRowDetail: { slot: "list" } },
+    },
+    commands: {},
+  }).success, false);
+
+  // Header commands reject row scalar and itemField inputs.
+  assert.equal(panelManifestSchema.safeParse({
+    state: baseState,
+    members: { list: { target: { projectionId: "tasks-list" } } },
+    commands: { run: { labelKey: "run", do: { invoke: { member: "list", operation: "go", inputs: { a: { itemField: "x" } } } } } },
+  }).success, false);
+});
+
+test("operations support author-bound params and object-union targets for heterogeneous lists", async () => {
+  const { panelOperationTargetPort, projectionOperationTargetMatches } = await import("./panel-projection");
+  const unionPort = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", objectTypes: [BUSINESS_KNOWLEDGE, SCHEDULED_TASK] });
+  const layerUnion = ontologyObjectUnionTypeSchema.parse({ kind: "object-union", layers: ["capability"] });
+  assert.deepEqual(panelOperationTargetPort(unionPort, BUSINESS_KNOWLEDGE, false), unionPort);
+  assert.equal(panelOperationTargetPort(unionPort, "platform:Skill", false), undefined);
+  assert.deepEqual(panelOperationTargetPort(layerUnion, DEFINITION, false), layerUnion);
+
+  const projection = {
+    name: "Row disable", description: "", visibility: "domain" as const,
+    componentId: "@ontomato/sdk:OperationButton",
+    inputs: {
+      target: unionPort,
+      reason: { kind: "scalar" as const, type: "string" as const },
+    },
+    outputs: {}, data: {}, config: { operation: "approve" },
+    operations: {
+      approve: {
+        operation: { kind: "PlatformOperation" as const, id: APPROVE_KNOWLEDGE },
+        target: { input: "target" },
+        params: { reason: { input: "reason" }, silent: { literal: true } },
+      },
+    },
+  };
+  assert.equal(productProjectionInputSchema.safeParse(projection).success, true);
+  assert.equal(
+    projectionOperationTargetMatches(
+      projection,
+      projection.operations.approve,
+      { target: { source: "input", input: "target" }, batch: false },
+      BUSINESS_KNOWLEDGE,
+    ),
+    true,
+  );
+  assert.equal(
+    projectionOperationTargetMatches(
+      projection,
+      projection.operations.approve,
+      { target: { source: "input", input: "target" }, batch: false },
+      "platform:Skill",
+    ),
+    false,
+  );
+
+  // Undeclared input inside operation params is rejected.
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...projection,
+    operations: {
+      approve: {
+        ...projection.operations.approve,
+        params: { reason: { input: "missingInput" } },
+      },
+    },
+  }).success, false);
+});
+
+test("row operation wire contract accepts rowContext and omitted target with itemKey while reads stay strict", async () => {
+  const { panelMemberItemKeySchema, panelOperationRowContextSchema } = await import("./panel-manifest");
+  const { productPanelReadRequestSchema } = await import("./panel-host");
+
+  assert.equal(panelMemberItemKeySchema.parse("row-1"), "row-1");
+  assert.deepEqual(
+    panelMemberItemKeySchema.parse({ className: SCHEDULED_TASK, primaryKey: "task-1" }),
+    { className: SCHEDULED_TASK, primaryKey: "task-1" },
+  );
+  assert.equal(panelMemberItemKeySchema.safeParse("").success, false);
+  assert.equal(panelMemberItemKeySchema.safeParse(0).success, false);
+  assert.equal(panelMemberItemKeySchema.safeParse(42).success, false);
+
+  const rowContext = {
+    state: { status: "active" },
+    frameState: { region: "east" },
+    runtimeParams: { search: "daily", page: { number: 1, size: 20 } },
+  };
+  assert.deepEqual(panelOperationRowContextSchema.parse(rowContext), rowContext);
+  assert.equal(panelOperationRowContextSchema.safeParse({ ...rowContext, extra: 1 }).success, false);
+
+  const rowPath = [{ member: "list", itemKey: "task-1" }, { member: "deleteRow" }];
+  const heterogeneousPath = [{ member: "list", itemKey: { className: SCHEDULED_TASK, primaryKey: "task-1" } }, { member: "deleteRow" }];
+  const humanRowReq = {
+    applicationId: "app-1", useId: "use-1", operationId: "list.deleteRow.delete",
+    memberPath: rowPath, rowContext, call: { input: {} },
+  };
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse(humanRowReq).success, true);
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...humanRowReq, memberPath: heterogeneousPath }).success, true);
+
+  const agentRowReq = {
+    intentId: "550e8400-e29b-41d4-a716-446655440000",
+    ...humanRowReq,
+  };
+  assert.equal(createPanelOperationIntentRequestSchema.safeParse(agentRowReq).success, true);
+
+  // Non-row operations cannot omit call.target.
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({
+    applicationId: "app-1", useId: "use-1", operationId: "delete.delete", call: { input: {} },
+  }).success, false);
+  assert.equal(createPanelOperationIntentRequestSchema.safeParse({
+    intentId: "550e8400-e29b-41d4-a716-446655440000",
+    applicationId: "app-1", useId: "use-1", operationId: "delete.delete",
+    memberPath: [{ member: "delete" }], call: { input: {} },
+  }).success, false);
+
+  // Hard boundary: productPanelReadRequestSchema rejects both rowContext and itemKey.
+  const baseRead = {
+    source: { kind: "registered" as const, applicationId: "app-1", useId: "use-1" },
+    memberPath: [{ member: "rowDetail" }],
+    inputs: { target: { className: SCHEDULED_TASK, primaryKey: "task-1" } },
+    dataName: "record",
+  };
+  assert.equal(productPanelReadRequestSchema.safeParse(baseRead).success, true);
+  assert.equal(productPanelReadRequestSchema.safeParse({ ...baseRead, rowContext }).success, false);
+  assert.equal(productPanelReadRequestSchema.safeParse({ ...baseRead, memberPath: [{ member: "list", itemKey: "task-1" }] }).success, false);
+});
+
+test("objectListDatumName, panelRecordItemKey and matchPanelRecordItemKey provide one shared contract", async () => {
+  const { matchPanelRecordItemKey, objectListDatumName, panelRecordItemKey } = await import("./panel-projection");
+  const stub = { source: { type: { kind: "PlatformObjectType" as const, id: SCHEDULED_TASK } }, read: "list", params: {} };
+  assert.equal(objectListDatumName({ data: { objects: stub, rows: stub } }), "objects");
+  assert.equal(objectListDatumName({ data: { objects: stub } }), "objects");
+  assert.equal(objectListDatumName({ data: { rows: stub } }), "rows");
+  assert.equal(objectListDatumName({ data: { record: stub } }), null);
+  assert.equal(objectListDatumName({ data: {} }), null);
+
+  const homogeneousRow = { primaryKey: "task-1" };
+  const typedRow = { primaryKey: "act-1", className: "platform:Action" };
+  assert.equal(panelRecordItemKey(homogeneousRow), "task-1");
+  assert.deepEqual(panelRecordItemKey(typedRow), { className: "platform:Action", primaryKey: "act-1" });
+  assert.equal(panelRecordItemKey(typedRow, { heterogeneous: false }), "act-1");
+  assert.deepEqual(
+    panelRecordItemKey(homogeneousRow, { heterogeneous: true, fallbackClassName: SCHEDULED_TASK }),
+    { className: SCHEDULED_TASK, primaryKey: "task-1" },
+  );
+
+  assert.equal(matchPanelRecordItemKey(homogeneousRow, "task-1"), true);
+  assert.equal(matchPanelRecordItemKey(homogeneousRow, "task-2"), false);
+  assert.equal(matchPanelRecordItemKey(typedRow, "act-1"), true);
+  assert.equal(matchPanelRecordItemKey(typedRow, { className: "platform:Action", primaryKey: "act-1" }), true);
+  assert.equal(matchPanelRecordItemKey(typedRow, { className: "platform:Skill", primaryKey: "act-1" }), false);
+  assert.equal(
+    matchPanelRecordItemKey(homogeneousRow, { className: SCHEDULED_TASK, primaryKey: "task-1" }, SCHEDULED_TASK),
+    true,
+  );
+  assert.equal(
+    matchPanelRecordItemKey(homogeneousRow, { className: SCHEDULED_TASK, primaryKey: "task-1" }),
+    false,
+  );
+});
+
+test("panel form fields accept an optional non-empty warning message", async () => {
+  const { panelFormFieldSchema } = await import("./panel-projection");
+  const baseField = {
+    path: "/defaultModel",
+    label: "Default model",
+    valueSchema: { type: "string" },
+    required: false,
+    readOnly: false,
+    control: { kind: "text" as const },
+  };
+  assert.equal(panelFormFieldSchema.parse({ ...baseField, warning: "Changes affect all new sessions." }).warning, "Changes affect all new sessions.");
+  assert.equal(panelFormFieldSchema.safeParse({ ...baseField, warning: "" }).success, false);
+});

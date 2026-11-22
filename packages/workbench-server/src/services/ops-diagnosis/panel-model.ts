@@ -39,7 +39,10 @@ export function createDiagnosisModelReads(domainId: string, viewer: AssistantCre
     list: async () => [await record(DIAGNOSIS_AGENT_ID)],
     record,
     async form(primaryKey: string, inputs: Pick<PanelFormRequest, "values">) {
-      return describeModelPanelForm(domainId, await read(primaryKey), inputs, save, viewer.locale);
+      return describeModelPanelForm(domainId, await read(primaryKey), inputs, save, viewer.locale, {
+        label: text("diagnosisAgent"),
+        help: text("diagnosisDescription"),
+      });
     },
   };
 }

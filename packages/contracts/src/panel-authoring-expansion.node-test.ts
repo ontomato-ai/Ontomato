@@ -326,3 +326,146 @@ test("a chart short member binds only the formal projection returned for its sou
   assert.throws(() => bindPanelAuthoringChart("chart", { ...member, state: { region: "selected" } }, { state, projection }),
     /Member 'chart', field 'state.region'.*incompatible type/);
 });
+
+test("short listColumn, listRowDetail and formField members support omitted data, row inputs, operationParams and object-union targets", () => {
+  const toolsBadge = buildComponent("ToolsBadge", {
+    componentId: "@ontomato/sdk:ToolsBadge",
+    role: "presentation",
+    meaning: "Renders an MCP tool list",
+    inputs: { tools: { kind: "json" } },
+  });
+  const customControl = buildComponent("CronField", {
+    componentId: "@ontomato/sdk:CronField",
+    role: "control",
+    meaning: "Custom cron input",
+  });
+  const summary = buildComponent("ObjectSummary", {
+    data: { record: { results: ["panelRecord"], required: true } },
+    inputs: {},
+    outputs: {},
+  });
+  const extraComponents = [...components, toolsBadge, customControl, summary];
+
+  // 1. listColumn without data (expands to data: {}) with itemField input.
+  const cellMember = panelAuthoringMemberSchema.parse({
+    component: "@ontomato/sdk:ToolsBadge",
+    listColumn: { slot: "list", column: "tools" },
+    inputs: { tools: { itemField: "tools" } },
+  });
+  assert("component" in cellMember);
+  const cellExpanded = expandPanelAuthoringMember("toolsCell", cellMember, {
+    state, components: extraComponents, typeTable,
+  });
+  assert.deepEqual(cellExpanded.projection.data, {});
+  assert.deepEqual(cellExpanded.projection.inputs, { tools: { kind: "json" } });
+  assert.deepEqual(cellExpanded.placement, {
+    inputs: { tools: { itemField: "tools" } },
+    listColumn: { slot: "list", column: "tools" },
+  });
+
+  // 2. listColumn with row action button + operationParams (literal, state, itemField, input).
+  const actionMember = panelAuthoringMemberSchema.parse({
+    component: "OperationButton",
+    listColumn: { slot: "list", column: "actions" },
+    type,
+    operation: approve.id,
+    inputs: { target: { item: true }, rowId: { item: "primaryKey" } },
+    operationParams: {
+      force: { literal: true },
+      note: { state: "search" },
+      sourceRow: { input: "rowId" },
+      extra: { itemField: "reason" },
+    },
+  });
+  assert("component" in actionMember);
+  const actionExpanded = expandPanelAuthoringMember("approveRow", actionMember, {
+    state, components: extraComponents, typeTable,
+  });
+  assert.deepEqual(actionExpanded.projection.data, {});
+  assert.deepEqual(actionExpanded.projection.operations?.approve, {
+    operation: { kind: "PlatformOperation", id: approve.id },
+    target: { input: "target" },
+    params: {
+      force: { literal: true },
+      note: { input: "note" },
+      sourceRow: { input: "rowId" },
+      extra: { input: "extra" },
+    },
+  });
+  assert.deepEqual(actionExpanded.placement, {
+    inputs: {
+      target: { item: true },
+      rowId: { item: "primaryKey" },
+      note: { state: "search" },
+      extra: { itemField: "reason" },
+    },
+    listColumn: { slot: "list", column: "actions" },
+  });
+  assert.doesNotThrow(() => productProjectionInputSchema.parse({
+    ...actionExpanded.projection, name: "Approve row", description: "", visibility: "domain",
+  }));
+
+  // 3. listRowDetail with its own data read bound via { item: true }.
+  const detailMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectSummary",
+    listRowDetail: { slot: "list" },
+    type,
+    inputs: { target: { item: true } },
+    data: { record: "record" },
+  });
+  assert("component" in detailMember);
+  const detailExpanded = expandPanelAuthoringMember("rowDetail", detailMember, {
+    state, components: extraComponents, typeTable,
+  });
+  assert.deepEqual(detailExpanded.projection.data.record, {
+    source: { object: { input: "target" } },
+    read: "record",
+    params: {},
+  });
+  assert.deepEqual(detailExpanded.placement, {
+    inputs: { target: { item: true } },
+    listRowDetail: { slot: "list" },
+  });
+
+  // 4. formField without data expands cleanly to data: {}.
+  const fieldMember = panelAuthoringMemberSchema.parse({
+    component: "@ontomato/sdk:CronField",
+    formField: { slot: "form", path: "/cron" },
+  });
+  assert("component" in fieldMember);
+  const fieldExpanded = expandPanelAuthoringMember("cron", fieldMember, {
+    state, components: extraComponents, typeTable,
+  });
+  assert.deepEqual(fieldExpanded.projection.data, {});
+  assert.deepEqual(fieldExpanded.placement, { formField: { slot: "form", path: "/cron" } });
+
+  // 5. Shorthand rejects listColumn with data, and accepts object-union target state for operations.
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    component: "ObjectSummary",
+    listColumn: { slot: "list", column: "a" },
+    type,
+    data: { record: "record" },
+  }).success, false);
+
+  const unionState = panelManifestSchema.parse({
+    state: {
+      chosen: { type: { kind: "object-union", objectTypes: [type, "platform:ScheduledTask"] } },
+    },
+    members: {},
+    commands: {},
+  }).state;
+  const unionOpMember = panelAuthoringMemberSchema.parse({
+    component: "OperationButton",
+    type,
+    target: "chosen",
+    operation: approve.id,
+  });
+  assert("component" in unionOpMember);
+  const unionOpExpanded = expandPanelAuthoringMember("approveChosen", unionOpMember, {
+    state: unionState, components: extraComponents, typeTable,
+  });
+  assert.equal(unionOpExpanded.projection.inputs.knowledge?.kind, "object-union");
+  assert.doesNotThrow(() => productProjectionInputSchema.parse({
+    ...unionOpExpanded.projection, name: "Approve chosen", description: "", visibility: "domain",
+  }));
+});

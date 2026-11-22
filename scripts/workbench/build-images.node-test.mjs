@@ -12,8 +12,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { delimiter, dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
 import { checkBuiltinPanelSource } from "../../agent-skills/ontomato-app-builder/panel-check.mjs";
 import { buildStamp, sampleSources } from "../build-support.mjs";
@@ -581,4 +581,54 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
   await assert.rejects(stageBuiltinPanels(options), {
     message: `${panelFile}: manifest.commands.openCatalogue.do.open.entry: entry 'unshipped-entry' is missing from the release`,
   });
+});
+
+test("every shipped builtin panel and application entry passes stageBuiltinPanels with real checks", (t) => {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+  const outDir = mkdtempSync(join(tmpdir(), "shipped-builtin-panels-"));
+  t.after(() => rmSync(outDir, { recursive: true, force: true }));
+  const tsxLoader = join(repoRoot, "packages/contracts/node_modules/tsx/dist/loader.mjs");
+  const script = `
+    import { existsSync, readdirSync, readFileSync } from "node:fs";
+    import { join } from "node:path";
+    import * as panelCheck from ${JSON.stringify(pathToFileURL(join(repoRoot, "packages/contracts/src/panel-check.ts")).href)};
+    import { installContentLayout } from ${JSON.stringify(pathToFileURL(join(repoRoot, "packages/workbench-server/src/content/layout.ts")).href)};
+    import { ossContentLayout } from ${JSON.stringify(pathToFileURL(join(repoRoot, "apps/workbench/src/content.ts")).href)};
+    import { workbenchApplications } from ${JSON.stringify(pathToFileURL(join(repoRoot, "packages/workbench-server/src/services/applications/builtins.ts")).href)};
+    import { checkBuiltinPanelSource } from ${JSON.stringify(pathToFileURL(join(repoRoot, "agent-skills/ontomato-app-builder/panel-check.mjs")).href)};
+    import { javaBuiltinApplications, stageBuiltinPanels } from ${JSON.stringify(pathToFileURL(join(repoRoot, "scripts/workbench/builtin-panels.mjs")).href)};
+
+    const root = ${JSON.stringify(repoRoot)};
+    installContentLayout(ossContentLayout(root));
+    const { platformTypeEntries } = await import(${JSON.stringify(pathToFileURL(join(repoRoot, "packages/workbench-server/src/services/product-panels/type-table.ts")).href)});
+    const draftReadOperationIds = [...platformTypeEntries().values()].flatMap(({ operations = [] }) =>
+      operations.filter(({ effect, target }) => effect === "read" && target.source === "draft").map(({ id }) => id));
+    const packagesDir = join(root, "packages");
+    const members = readdirSync(packagesDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && existsSync(join(packagesDir, entry.name, "package.json")))
+      .map((entry) => {
+        const absolute = join(packagesDir, entry.name);
+        const { name } = JSON.parse(readFileSync(join(absolute, "package.json"), "utf8"));
+        return { name, absolute };
+      });
+    const applications = [...javaBuiltinApplications([{ root }]), ...workbenchApplications];
+    await stageBuiltinPanels({
+      directory: ${JSON.stringify(outDir)},
+      members,
+      applications,
+      checks: { ...panelCheck, draftReadOperationIds },
+      checkSource: checkBuiltinPanelSource,
+    });
+    const index = JSON.parse(readFileSync(join(${JSON.stringify(outDir)}, "index.json"), "utf8"));
+    console.log(JSON.stringify({ panels: index.length, applications: applications.length, draftOps: draftReadOperationIds.length }));
+  `;
+  const stdout = execFileSync(process.execPath, ["--import", tsxLoader, "--input-type=module", "-e", script], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const summary = JSON.parse(stdout);
+  assert.ok(summary.panels >= 18, `Expected at least 18 staged builtin panels, got ${summary.panels}`);
+  assert.ok(summary.applications >= 1, `Expected built-in applications, got ${summary.applications}`);
+  assert.ok(summary.draftOps >= 1, `Expected real draftReadOperationIds, got ${summary.draftOps}`);
 });

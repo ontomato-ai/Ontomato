@@ -138,7 +138,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       query: {
         source: "type", parameterMode: "fixed",
-        params: { business: "auditLogBusiness", operation: "auditLogOperation", cursor: "cursor", size: "size" },
+        params: { business: "auditLogBusiness", operation: "auditLogOperation", page: "page" },
         result: "panelRecordQuery",
       },
       record: modelReads.record,

@@ -54,6 +54,11 @@
           <sdk-radio-button value="visible">全部可见</sdk-radio-button>
           <sdk-radio-button value="maintainable">我能维护的</sdk-radio-button>
         </sdk-radio-group>
+        <sdk-select :model-value="sort" :aria-label="t('sort.label')" style="width: 132px" @change="setSort">
+          <sdk-option value="id" :label="t('sort.id')"></sdk-option>
+          <sdk-option value="name" :label="t('sort.name')"></sdk-option>
+          <sdk-option value="updated" :label="t('sort.updated')"></sdk-option>
+        </sdk-select>
         <sdk-select :model-value="pageSize" aria-label="每页条数" style="width: 110px" @change="setSize">
           <sdk-option :value="10" label="10 条/页"></sdk-option>
           <sdk-option :value="20" label="20 条/页"></sdk-option>

@@ -6,7 +6,7 @@ import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
-import { directPanelPortTypeSchema, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelObjectRef, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
+import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation, type PanelStateRef } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
@@ -70,6 +70,8 @@ export const panelLocalOperationNameSchema = readKey.refine(name => !name.includ
 export const projectionOperationBindingSchema = z.object({
   operation: operationRef,
   target: projectionOperationTargetSchema.optional(),
+  /** Author-bound operation input parameters resolved from projection inputs or fixed literals. */
+  params: z.record(readKey, directProjectionParamSchema).optional(),
 }).strict();
 export type ProjectionOperationBinding = z.infer<typeof projectionOperationBindingSchema>;
 
@@ -275,12 +277,34 @@ export function validateDirectProjection(projection: DirectProjectionPorts, ctx:
       }
     }
   }
-  for (const [name, { target }] of Object.entries(projection.operations ?? {})) {
-    if (!target || !("input" in target)) continue;
-    const port = projection.inputs[target.input];
-    if (port?.kind !== "object" && port?.kind !== "list")
-      issue(["operations", name, "target", "input"], "The operation needs a declared object or list input");
+  for (const [name, { target, params }] of Object.entries(projection.operations ?? {})) {
+    if (target && "input" in target) {
+      const port = projection.inputs[target.input];
+      if (port?.kind !== "object" && port?.kind !== "object-union" && port?.kind !== "list")
+        issue(["operations", name, "target", "input"], "The operation needs a declared object, object-union or list input");
+    }
+    for (const [param, source] of Object.entries(params ?? {})) {
+      if ("input" in source && !Object.hasOwn(projection.inputs, source.input)) {
+        issue(
+          ["operations", name, "params", param, "input"],
+          `Operation parameter '${param}' references undeclared input '${source.input}'`,
+        );
+      }
+    }
   }
+}
+
+/**
+ * Pick the data read name used by an `ObjectList` projection: `"objects"` when present (including when both
+ * `"objects"` and `"rows"` exist), else `"rows"` when present, else `null`.
+ * Shared by `ObjectList.vue`, server-side row resolution, and the panel skill generator.
+ */
+export function objectListDatumName(
+  projection: Pick<DirectProjectionPorts, "data">,
+): "objects" | "rows" | null {
+  if (Object.hasOwn(projection.data, "objects")) return "objects";
+  if (Object.hasOwn(projection.data, "rows")) return "rows";
+  return null;
 }
 
 /** A half-open UTF-16 range in the displayed text supplied by the owner. */
@@ -380,6 +404,46 @@ export function panelRecordObjectRef(
     throw new Error(`Record '${record.primaryKey}' has no className and no fallbackClassName was provided`);
   }
   return panelObjectRefSchema.parse({ className, primaryKey: record.primaryKey });
+}
+
+export interface PanelRecordItemKeyOptions {
+  /** Set true for heterogeneous lists so the itemKey carries `{ className, primaryKey }`; false forces scalar `primaryKey`. */
+  readonly heterogeneous?: boolean;
+  /** Fallback object type used when constructing `{ className, primaryKey }` for a record without `className`. */
+  readonly fallbackClassName?: string;
+}
+
+/**
+ * Construct the canonical `itemKey` for a list row:
+ * - Homogeneous list (`heterogeneous: false`, or omitted when `record.className` is absent): `record.primaryKey`.
+ * - Heterogeneous list (`heterogeneous: true`, or omitted when `record.className` is present): `{ className, primaryKey }`.
+ */
+export function panelRecordItemKey(
+  record: Pick<PanelRecord, "primaryKey" | "className">,
+  options: PanelRecordItemKeyOptions = {},
+): PanelMemberItemKey {
+  const useObjectRef = options.heterogeneous ?? (record.className !== undefined);
+  if (useObjectRef) {
+    return panelRecordObjectRef(record, options.fallbackClassName);
+  }
+  return panelObjectRefSchema.shape.primaryKey.parse(record.primaryKey);
+}
+
+/**
+ * Match a list record against a canonical row `itemKey` (`string` primaryKey or `{ className, primaryKey }`).
+ * Returns `false` (never throws) when an object-ref `itemKey` cannot resolve a `className` on the record.
+ */
+export function matchPanelRecordItemKey(
+  record: Pick<PanelRecord, "primaryKey" | "className">,
+  itemKey: PanelMemberItemKey,
+  fallbackClassName?: string,
+): boolean {
+  if (typeof itemKey === "string") {
+    return record.primaryKey === itemKey;
+  }
+  const className = record.className ?? fallbackClassName;
+  if (!className) return false;
+  return className === itemKey.className && record.primaryKey === itemKey.primaryKey;
 }
 
 function localeFallbackChain(locale: string | undefined): string[] {
@@ -557,6 +621,8 @@ const fieldShape = z.object({
   valueSchema: runtimeJsonObjectSchema,
   required: z.boolean(),
   help: z.string().nullish(),
+  /** Non-blocking owner warning shown on this field (for example deprecation or side-effect guidance). */
+  warning: z.string().min(1).optional(),
   defaultValue: runtimeJsonValueSchema.optional(),
   readOnly: z.boolean(),
   readOnlyReason: z.string().min(1).optional(),
@@ -646,9 +712,9 @@ export const panelFormSaveInputSchema = panelFormDescriptionSchema.pick({ values
 });
 export type PanelFormSaveInput = z.infer<typeof panelFormSaveInputSchema>;
 
-/** An owner's only valid object or object-list port. Used by both author preflight and the server. */
+/** An owner's only valid object, object-union or object-list port. Used by both author preflight and the server. */
 export function panelOperationTargetPort(port: ReadInput | undefined, objectType: string, batch: boolean) {
-  if (port?.kind === "object" && port.objectType === objectType) return port;
+  if ((port?.kind === "object" || port?.kind === "object-union") && matchesObjectType(port, objectType)) return port;
   if (port?.kind === "list" && batch && port.items.kind === "object" && port.items.objectType === objectType) return port;
 }
 
