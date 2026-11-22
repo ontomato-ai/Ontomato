@@ -298,6 +298,10 @@ class FunctionFormTest {
     function.getReturnDef().setColumnLabels(JSONObject.of("amount", "Total"));
     assertEquals(JSONObject.of("amount", "Total"),
         form(objectTarget("f1")).getJSONObject("values").getJSONObject("returnDef").getJSONObject("columnLabels"));
+
+    // A new read function starts from no labels, not from nothing at all.
+    assertEquals(new JSONObject(), form(JSONObject.of("target", JSONObject.of("kind", "draft")))
+        .getJSONObject("values").getJSONObject("returnDef").getJSONObject("columnLabels"));
   }
 
   @Test

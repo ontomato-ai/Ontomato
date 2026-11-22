@@ -2,6 +2,7 @@ import { managerPaths } from "@ontomato/ontology-manager";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
+import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { AppPartition } from "./partition";
 export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "homePermission" | "entryHome" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
@@ -130,22 +131,28 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
 
 export const nativeLayouts: Record<string, NativeLayout> = Object.fromEntries(layouts.map(({ renderer, ...layout }) => [renderer, layout]));
 
+/** The count a declaring entry's row shows: the shell's reading of the read the entry declares (`entry-counts`). */
+export type EntryCount = (applicationId: string, use: ApplicationPanelUse) => number | null;
+
 export function catalogPartition(applications: import("@ontomato/contracts/platform-identity").CatalogApplication[], locale: string,
-  renderers: Record<string, NativeLayout> = {}): AppPartition[] {
+  renderers: Record<string, NativeLayout> = {}, entryCount: EntryCount = () => null): AppPartition[] {
   return applications.filter(app => app.kind === "hosted" || app.kind === "connected"||app.kind==='product'
     || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])).map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
     const panels = isPanelApplication(app);
     const applicationRoute = embedded || panels;
     // Catalog entries may precede their renderer or an edition's asynchronous layout registration.
+    // An entry's count is the one its declaration names, read as its page reads it, by the shell that draws the menu.
     const panelPages = panels ? app.panelUses?.flatMap(use => use.names ? [{
       id: panelUsePath(use.path),
       label: use.names[locale] ?? use.names.en!,
+      ...use.count ? { count: entryCount(app.id, use) } : {},
     }] : []) ?? [] : [];
     // A native application's panel entries stand where its menu table lists their addresses.
     const entries = !panels && !embedded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
       id: panelUsePath(use.path),
       label: use.names[locale] ?? use.names.en!,
+      ...use.count ? { count: entryCount(app.id, use) } : {},
     }] as const] : []) ?? []) : undefined;
     const layout: NativeLayout = panelPages.length > 1
       ? { frame: "menu", sections: [{ key: app.id, pages: panelPages }] }

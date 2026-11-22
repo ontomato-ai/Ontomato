@@ -83,8 +83,9 @@ export function appDeclarations(
             if (!entry) return listed ? panelPage(listed) : undefined;
             // The entry stands where a native page stood: its row keeps that page's icon and count, from the page the
             // navigation still lists there or the row it declares for an entry whose page is gone.
+            // Its count is the one the entry declares, read as its page reads it; an entry declaring none keeps the row's.
             const row = listed ?? entryRows.get(path);
-            return { ...entry, icon: row?.icon ?? "pages", count: row?.count?.() ?? null };
+            return { ...entry, icon: row?.icon ?? "pages", count: "count" in entry ? entry.count ?? null : row?.count?.() ?? null };
           })
           .filter((page): page is PlatformPanelPage => page !== undefined),
       }))

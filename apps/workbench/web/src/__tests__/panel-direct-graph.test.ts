@@ -422,6 +422,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
   const { panelContextKey, projectionKey } = await import("../../../../../packages/apps-sdk/src/panel/context");
   const { panelMemberKey } = await import("../../../../../packages/apps-sdk/src/panel/member");
   const { default: ObjectGraph } = await import("../../../../../packages/apps-sdk/src/base/ObjectGraph.vue");
+  const { fieldControlKey, fieldControlsOf } = await import("../../../../../packages/apps-sdk/src/base/form-controls");
 
   const scopeProjection: ProductProjection = {
     ...meta,
@@ -453,6 +454,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
     recordDraftCreated: async () => {},
     readProjection: async () => scopeProjection,
   });
+  const chooseScope = vi.fn();
   instance.forms.register("definition", {
     handle: {
       fields: ref([
@@ -469,7 +471,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
       errors: ref({}),
       changed: ref(new Set<string>()),
       busy: ref(false),
-      set: vi.fn(),
+      set: chooseScope,
     },
     receive: async () => null,
     submit: async () => ({}),
@@ -514,7 +516,11 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
           read: async (name) => (name === "nodes" ? nodesState.value : edgesState.value),
         },
       }));
-      return () => h(ObjectGraph, { edgeEnds: { source: "/fromclass", target: "/toclass" } });
+      // The projection registers its choice of the field; the form draws it where the field is (here, after it).
+      return () => {
+        const field = fieldControlsOf(instance).get(fieldControlKey("definition", "/classNames"));
+        return [h(ObjectGraph, { edgeEnds: { source: "/fromclass", target: "/toclass" } }), field ? h(field, { path: "/classNames" }) : null];
+      };
     },
   }))
     .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }))
@@ -538,6 +544,19 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
   await nextTick();
   expect(element.querySelector(".el-empty")).toBeNull();
   expect(element.textContent).toContain("Order");
+
+  // The choice summed up over the graph, its looks named under it, and the same choice offered as a list for a reader
+  // who would rather pick from names (原页面对照《智能体设置》, 2026-11-22).
+  expect(element.querySelector(".sdk-object-graph-summary")?.textContent?.trim()).toBe("None chosen");
+  expect([...element.querySelectorAll(".sdk-object-graph-legend > span")].map((item) => item.textContent?.trim())).toEqual(["Chosen", "Adjacent", "Not chosen"]);
+  element.querySelector<HTMLElement>(".sdk-object-graph-list .el-select__wrapper")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  const order = await vi.waitFor(() => {
+    const item = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find((option) => option.textContent?.trim() === "Order");
+    if (!item) throw new Error("Order is not offered");
+    return item;
+  });
+  order.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await vi.waitFor(() => expect(chooseScope).toHaveBeenCalledWith("/classNames", ["Order"]));
 });
 
 it("drives direct OntologyGraph in type and instance modes through member reads with no resource adapters", async () => {

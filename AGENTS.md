@@ -67,7 +67,10 @@ Before handing the main directory over for integration, each repository saves it
 and pauses editing, confirms there is nothing left to save and the relevant services are
 stopped, and releases any branch held by a feature worktree; then the main directory
 checks out the required combination. Do not let two places write the same branch, and do
-not automatically discard, stash or reset other people's work. Once the complete
+not automatically discard, stash or reset other people's work. The stash list is shared by every worktree of this
+repository, so never run `git stash` here to compare against an earlier state: `stash pop`
+can hand you another worktree's stash. Compare with `git show <sha>:<path>` or a throwaway
+worktree instead. Once the complete
 combination passes, merge each repository back into its own mainline and verify the
 mainline combination.
 

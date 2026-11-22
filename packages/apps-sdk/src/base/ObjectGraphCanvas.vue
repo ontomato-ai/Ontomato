@@ -20,13 +20,24 @@ import { useGraphRecords, type EdgeEndsConfig } from "./object-graph-data";
  * Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new edge —
  * the canvas draws no edge of its own and writes nothing to the owner.
  */
-const props = withDefaults(defineProps<{ edgeEnds?: EdgeEndsConfig; editable?: boolean; categories?: readonly string[]; nodeCategory?: string }>(), { editable: undefined });
+const props = withDefaults(defineProps<{
+  edgeEnds?: EdgeEndsConfig; editable?: boolean; categories?: readonly string[]; nodeCategory?: string;
+  nodeSize?: number; labelSize?: number;
+}>(), { editable: undefined });
 
 const { t } = useI18n();
 const member = useMember();
 const nodeCategory = props.nodeCategory ?? member.projection.config.nodeCategory;
 if (nodeCategory !== undefined && typeof nodeCategory !== "string") throw new Error(`The projection in member '${member.key}' names nodeCategory with no JSON Pointer`);
 const resolved = useGraphRecords(props.edgeEnds, nodeCategory);
+/** How large the nodes and their names are drawn, in screen pixels; the canvas's own sizes when the projection sets none. */
+function sizeOf(name: "nodeSize" | "labelSize"): number | undefined {
+  const size = props[name] ?? member.projection.config[name];
+  if (size !== undefined && (typeof size !== "number" || !(size > 0)))
+    throw new Error(`The projection in member '${member.key}' names a ${name} that is not a positive number`);
+  return size;
+}
+const look = { nodeSize: sizeOf("nodeSize"), labelSize: sizeOf("labelSize") };
 /** The categories in a fixed order: the n-th takes the platform palette's n-th colour. */
 const categories = computed(() => {
   const listed = props.categories ?? member.projection.config.categories ?? [];
@@ -74,7 +85,7 @@ onMounted(() => {
   const { width, height } = element.value!.getBoundingClientRect();
   measure(width, height);
 });
-const layout = computed(() => layoutByRelations(resolved.value.nodes, resolved.value.links, room.value!));
+const layout = computed(() => layoutByRelations(resolved.value.nodes, resolved.value.links, room.value!, look));
 
 /** The chosen object's key, when the state holds one of this type. */
 const keyOf = (value: RuntimeJsonValue | null, type: string) =>
@@ -185,6 +196,8 @@ async function download() {
         selection="single"
         :layout="{ type: 'preset' }"
         :categories="categories"
+        :node-size="look.nodeSize"
+        :label-size="look.labelSize"
         readable-labels
         :editable="editable"
         @update:selected="choose(selectedNode, nodeType, $event)"

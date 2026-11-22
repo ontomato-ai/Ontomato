@@ -142,16 +142,19 @@ function setFrequency(next: FrequencyDraft) {
     :class="{ 'sdk-owner-form-field-changed': controls.changed.value.has(path), 'is-readonly': field.readOnly }"
     :data-field="path"
   >
-    <el-input
-      v-if="control.kind === 'text' || control.kind === 'markdown'"
-      :model-value="text"
-      :type="control.kind === 'markdown' || control.multiline ? 'textarea' : 'text'"
-      :autosize="control.kind === 'markdown' ? { minRows: 6 } : undefined"
-      :placeholder="control.kind === 'text' ? control.placeholder ?? undefined : undefined"
-      :maxlength="control.kind === 'text' ? control.maxLength : undefined"
-      :disabled="off"
-      @update:model-value="set($event)"
-    ></el-input>
+    <template v-if="control.kind === 'text' || control.kind === 'markdown'">
+      <el-input
+        :model-value="text"
+        :type="control.kind === 'markdown' || control.multiline ? 'textarea' : 'text'"
+        :autosize="control.kind === 'markdown' ? { minRows: 6 } : undefined"
+        :placeholder="control.kind === 'text' ? control.placeholder ?? undefined : undefined"
+        :maxlength="control.kind === 'text' ? control.maxLength : undefined"
+        :disabled="off"
+        @update:model-value="set($event)"
+      ></el-input>
+      <!-- Markdown says how long it is as the reader writes it, as the agent settings page did for its prompt. -->
+      <p v-if="control.kind === 'markdown'" class="sdk-form-field-count">{{ t("platform.formCharacters", { count: text.length }) }} · Markdown</p>
+    </template>
     <!-- Options whose values are objects: chosen by place, shown as the declared option the value is, written whole. -->
     <el-select
       v-else-if="control.kind === 'select' && objectOptions"
@@ -390,6 +393,12 @@ function setFrequency(next: FrequencyDraft) {
   font-size: var(--text-xs);
   line-height: 1.5;
   margin: var(--spacing-xs) 0 0;
+}
+.sdk-form-field-count {
+  width: 100%;
+  margin: var(--spacing-xs) 0 0;
+  color: var(--el-text-color-placeholder);
+  font-size: var(--text-xs);
 }
 .sdk-form-field-time {
   width: 160px;

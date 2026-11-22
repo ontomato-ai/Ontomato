@@ -35,6 +35,8 @@ const canvas = {
   zooms: [] as unknown[],
   categories: [] as readonly string[],
   readableLabels: false,
+  /** The node and name sizes the member asks for; undefined is the canvas's own. */
+  look: {} as Record<string, unknown>,
   /** Whether the canvas's next fit holds the whole graph. */
   fitsWhole: true,
 };
@@ -48,6 +50,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
       selection: { type: String, default: "single" }, layout: { type: Object, default: () => ({ type: "grid" }) },
       editable: { type: Boolean, default: false }, maxHeight: { type: Number, default: undefined },
       categories: { type: Array, default: () => [] }, readableLabels: { type: Boolean, default: false },
+      nodeSize: { type: Number, default: undefined }, labelSize: { type: Number, default: undefined },
     },
     emits: ["update:selected", "update:selectedEdges", "blank", "connect", "move", "activate", "viewport", "resized"],
     setup(props, { emit, expose }) {
@@ -65,6 +68,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
         canvas.editable = props.editable;
         canvas.categories = props.categories as never;
         canvas.readableLabels = props.readableLabels;
+        canvas.look = { nodeSize: props.nodeSize, labelSize: props.labelSize };
         return h("div", { class: "mock-g6-canvas" });
       };
     },
@@ -73,7 +77,7 @@ vi.mock("@ontomato/foundation-ui/graph/g6", async () => {
 });
 
 const record = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedAt: "", editable: false, visibility: "domain" as const, description: "" };
-const graph = (editable: boolean): DirectProjection => ({
+const graph = (editable: boolean, look: Record<string, unknown> = {}): DirectProjection => ({
   ...record, id: editable ? "model-graph-editable" : "model-graph", name: "Model graph", componentId: "@ontomato/sdk:ObjectGraph",
   inputs: {
     highlightedNodes: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } },
@@ -87,7 +91,7 @@ const graph = (editable: boolean): DirectProjection => ({
   config: {
     edgeEnds: { source: "/fromclass", target: "/toclass" }, ...(editable ? { editable: true } : {}),
     // The layer each class is drawn in the colour of, in a fixed order.
-    categories: ["fact", "capability"], nodeCategory: "/layer",
+    categories: ["fact", "capability"], nodeCategory: "/layer", ...look,
   },
   data: {
     nodes: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} },
@@ -130,11 +134,11 @@ const mounted: { unmount(): void }[] = [];
 afterEach(() => {
   for (const app of mounted.splice(0)) app.unmount();
   document.body.innerHTML = "";
-  Object.assign(canvas, { nodes: [], edges: [], selected: [], selectedEdges: [], editable: false, emit: null, fits: [], zooms: [], categories: [], fitsWhole: true });
+  Object.assign(canvas, { nodes: [], edges: [], selected: [], selectedEdges: [], editable: false, emit: null, fits: [], zooms: [], categories: [], look: {}, fitsWhole: true });
 });
 
-function mount(editable: boolean, initial: Record<string, unknown> = {}) {
-  const projection = graph(editable);
+function mount(editable: boolean, initial: Record<string, unknown> = {}, look: Record<string, unknown> = {}) {
+  const projection = graph(editable, look);
   const instance = createDirectPanelInstance(manifest(projection.id), {
     pageKey: "modeling", url: () => "/modeling", label: () => "Modeling", initial: initial as never,
     text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
@@ -277,6 +281,14 @@ it("colours each class by the category its record names, in the order the projec
   await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
   expect(canvas.categories).toEqual(["fact", "capability"]);
   expect(canvas.nodes.map(({ id, category }) => [id, category])).toEqual([["org", "fact"], ["person", "capability"]]);
+});
+
+// A page that draws its graph as the ontology graph always did sets its nodes' and names' sizes (原页面对照《本体图谱》:
+// 62 and 13); the rows of the layout make room for them.
+it("draws its nodes and names at the sizes the projection sets, with rows to fit them", async () => {
+  mount(false, {}, { nodeSize: 62, labelSize: 13 });
+  await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
+  expect(canvas.look).toEqual({ nodeSize: 62, labelSize: 13 });
 });
 
 // A graph larger than the canvas at a readable size is shown in part (panelisation lead, 2026-11-22: never shrunk until its

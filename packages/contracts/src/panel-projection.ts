@@ -424,6 +424,9 @@ const fieldShape = z.object({
   advanced: z.literal(true).optional().describe(
     "Group this field with the advanced fields at the end of its form, object, or array row. The group starts collapsed and opens when it contains a field error.",
   ),
+  section: z.string().min(1).optional().describe(
+    "The key of the form section, among the form's sections, this top-level field is drawn in.",
+  ),
 }).strict();
 
 export type PanelFormField = z.infer<typeof fieldShape> & {
@@ -467,8 +470,18 @@ const formSaveRequestSchema = z.object({
 }).strict();
 
 /** Values and description returned together by the owner for the current target and caller. */
+/** A part of an owner's form, drawn under its title and hint with the fields that name it, in the order given. */
+export const panelFormSectionSchema = z.object({
+  key: z.string().min(1),
+  title: z.string().min(1),
+  hint: z.string().min(1).optional(),
+}).strict();
+export type PanelFormSection = z.infer<typeof panelFormSectionSchema>;
+
 export const panelFormDescriptionSchema = z.object({
   fields: z.array(panelFormFieldSchema),
+  /** The form's sections in order; a form without them is one list of fields. */
+  sections: z.array(panelFormSectionSchema).optional(),
   values: panelFormValuesSchema,
   /** Owner validation is part of a successful form read, alongside the current values. */
   errors: z.array(formFieldErrorSchema),

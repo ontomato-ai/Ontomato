@@ -397,9 +397,22 @@ public class MetricViewServiceImpl implements MetricViewService {
   public void delete(String id, String domainId, String lang) {
     MetricView metric = queryById(id, domainId);
     if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
-    if (MetricView.ORIGIN_SYSTEM.equals(metric.getOrigin()))
-      throw new OwnerRefusal("METRIC_VIEW_SYSTEM", "Cannot delete a system MetricView");
+    OwnerRefusal refusal = systemDeletionRefusal(metric, lang);
+    if (refusal != null) throw refusal;
     metricViewDao.delete(id, domainId);
+  }
+
+  @Override
+  public String systemDeletionRefusal(String id, String domainId, String lang) {
+    MetricView metric = queryById(id, domainId);
+    if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+    OwnerRefusal refusal = systemDeletionRefusal(metric, lang);
+    return refusal == null ? null : refusal.getMessage();
+  }
+
+  private OwnerRefusal systemDeletionRefusal(MetricView metric, String lang) {
+    return OwnerRefusal.systemAssetDeletion(metric.getOrigin(), "METRIC_VIEW_SYSTEM",
+        () -> langService.get(lang, "MetricView.cannotDeleteSystem"));
   }
 
   private MetricView hydrate(Object[] tuple, String domainId) {
