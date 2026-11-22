@@ -8,7 +8,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
-import { confirmDiscard, humanIntents, ignoreChanges,
+import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
   inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
@@ -166,6 +166,26 @@ it("edits parameter rows at their absolute paths, and a message follows its row 
   expect(item("/parameters/1/name")?.querySelector("input")?.value).toBe("");
   const form = context.instance.forms.handle("definition")!;
   expect(form.values.value.parameters).toEqual([storedParameters[0], { name: "", type: "string", required: false }]);
+});
+
+it("keeps acknowledged fields out of the next submission and discards only unsaved changes", async () => {
+  const { context, sent } = await open({
+    kind: "failure", code: "SAVE_FAILED", message: "Parameter write failed",
+    savedFields: { "/name": "Saved name" },
+    errors: [{ field: "/parameters/1/name", code: "target_unavailable", message: "Parameter write failed" }],
+  });
+  type("/name", "Saved name");
+  type("/parameters/1/name", "Unsaved parameter");
+  await nextTick();
+  await expect(context.instance.invoke("definition.save")).rejects.toThrow("Parameter write failed");
+  await vi.waitFor(() => expect(error("/parameters/1/name")).toBe("Parameter write failed"));
+  await expect(context.instance.invoke("definition.save")).rejects.toThrow("Parameter write failed");
+  expect(formSaveCalls(sent)[1]!.input).toMatchObject({ submittedFields: ["/parameters"] });
+
+  item("/name")!.closest("form")!.querySelector<HTMLButtonElement>(".sdk-owner-form-actions button")!.click();
+  await confirmDiscard();
+  expect(item("/name")?.querySelector("input")?.value).toBe("Saved name");
+  expect(item("/parameters/1/name")?.querySelector("input")?.value).toBe("count");
 });
 
 it("asks the owner again with a row field's absolute path when it refreshes the form", async () => {

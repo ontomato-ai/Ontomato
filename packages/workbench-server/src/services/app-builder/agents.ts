@@ -15,9 +15,14 @@ export async function listBuilderAgents(owner:AssistantOwner){
   await assistantStore.appBuilder(owner.domainId);
   return builderModelRecord.array().parse((await getPostgresPool().query(`SELECT id,name,model_selection AS "modelSelection" FROM ${t('assistant_agents')} WHERE domain_id=$1 AND (kind='app-builder' OR kind LIKE 'app-builder:%') ORDER BY sort_order,name,id`,[owner.domainId])).rows);
 }
-export async function readBuilderAgent(owner: AssistantOwner, id: string) {
+async function requireBuilderAgent(owner: AssistantOwner, id: string) {
   const agent = await assistantStore.agent(id, owner);
   if (!isAppBuilderKind(agent.kind)) throw new HttpError(404, "App builder unavailable", "NOT_FOUND");
+  return agent;
+}
+
+export async function readBuilderAgent(owner: AssistantOwner, id: string) {
+  const agent = await requireBuilderAgent(owner, id);
   return builderModelRecord.parse({ id: agent.id, name: agent.name, modelSelection: agent.model_selection });
 }
 
@@ -34,7 +39,7 @@ export async function createBuilderAgent(owner:AssistantOwner,input:{name:string
   return {id};
 }
 export async function saveBuilderModel(owner:AssistantOwner,id:string,selection:ModelSelection){
-  await readBuilderAgent(owner,id);
+  await requireBuilderAgent(owner,id);
   await validateModelSelection(owner.domainId,selection);
   await getPostgresPool().query(`UPDATE ${t('assistant_agents')} SET model_selection=$3,model_reference_migrated=true WHERE domain_id=$1 AND id=$2`,[owner.domainId,id,JSON.stringify(selection)]);
   return {modelSelection:selection};

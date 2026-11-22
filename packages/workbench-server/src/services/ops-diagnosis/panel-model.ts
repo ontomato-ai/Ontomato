@@ -6,7 +6,7 @@ import { assertPermission } from "../../identity/installed";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
-import { agentDefinitionPermissions } from "../assistant/definitions";
+import { agentDefinitionPermissions } from "../assistant/definition-permissions";
 import { describeModelPanelForm, modelSelectionWrite } from "../assistant/model-panel-form";
 import { affected } from "../product-panels/data-query-operations";
 import type { PanelServerOperation } from "../product-panels/server-operations";

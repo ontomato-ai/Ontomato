@@ -2,13 +2,11 @@ import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { assertPermission } from "../../identity/installed";
 import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { HttpError } from "../../utils/errors";
 import { workbenchProduct } from "../../product/installed";
 import { publishedMcpCatalogue, type McpRequestLocation } from "./catalog";
 
 export async function readPublishedMcpServices(viewer: AssistantCredentials, location?: McpRequestLocation): Promise<PanelRecord[]> {
   await assertPermission(viewer, ["mcp-service"]);
-  if (!location) throw new HttpError(400, "The published MCP catalogue requires a request location", "MCP_LOCATION_REQUIRED");
   const text = (key: string) => tForLocale(viewer.locale, `panels.simplePages.${key}`);
   const { services } = await publishedMcpCatalogue(location, viewer.locale);
   const product = workbenchProduct();

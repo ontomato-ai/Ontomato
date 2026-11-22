@@ -417,7 +417,7 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   const result = await claimAndExecutePanel(owner, host, intent, current.handler, prepared, draft);
   if (!result) return replay(await store.get(owner,id), owner, credentials);
   const { outcome } = result;
-  if ((outcome.kind === "success" || outcome.kind === "batch") && outcome.affected) {
+  if ("affected" in outcome && outcome.affected) {
     const { affected } = outcome;
     const target = "call" in intent && affected.objects.length === 1 ? affected.objects[0]! : null;
     publishObjectChanged({

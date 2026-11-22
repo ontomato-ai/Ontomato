@@ -11,7 +11,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { affected, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, type DataQueryOperationHost } from "../product-panels/data-query-operations";
 import { operationHost } from "../product-panels/operation-host";
-import type { PanelOperationActor, PanelServerOperation } from "../product-panels/server-operations";
+import type { PanelOperationActor, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
 
 const key = "general";
 const operation = `${GENERAL_SETTINGS}.save`;
@@ -110,11 +110,22 @@ function submittedValues(input: unknown) {
 
 export async function saveGeneralSettings(
   host: DataQueryOperationHost, actor: PanelOperationActor, changes: z.infer<typeof generalSettingsPatch>,
-) {
-  const { values: current, options } = await readSettings(host, actor.credentials);
+): Promise<SinglePanelOperationOutcome> {
+  const { values: current, options, captions } = await readSettings(host, actor.credentials);
   if (changes.lang !== undefined && !options.includes(changes.lang)) {
     const message = tForLocale(actor.credentials.locale, "panels.simplePages.invalidGeneral");
-    return { kind: "refusal" as const, code: "INVALID_GENERAL_SETTING", message, errors: [{ field: "/lang", code: "invalid_option" as const, message }] };
+    return { kind: "refusal", code: "INVALID_GENERAL_SETTING", message, errors: [{ field: "/lang", code: "invalid_option", message }] };
+  }
+  const savedFields: Record<string, string | number> = {};
+  const settingsAffected = affected(GENERAL_SETTINGS, key, [GENERAL_SETTINGS]);
+  type Rejected = Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }>;
+  function failed(field: typeof fields[number], outcome: Rejected): Rejected {
+    const message = `${captions[field].label} — ${outcome.message}`;
+    return {
+      ...outcome, message,
+      errors: [{ field: `/${field}`, code: "target_unavailable", message }],
+      ...(Object.keys(savedFields).length > 0 && { savedFields, affected: settingsAffected }),
+    };
   }
   for (const field of fields) {
     const value = changes[field];
@@ -123,13 +134,16 @@ export async function saveGeneralSettings(
     const body = { [javaField]: field === "dslCookerTimeoutSeconds" ? changes.dslCookerTimeoutSeconds! * 1000 : value };
     try {
       const result = await ownerPost(host, generalConfigSaveEndpoints[javaField], body, ownerEnvelopeSchema);
-      if (!result.success) return ownerWriteFailure(result, "GENERAL_SETTINGS_SAVE_FAILED", "Unable to save general settings");
+      if (!result.success) return failed(field, ownerWriteFailure(result, "GENERAL_SETTINGS_SAVE_FAILED", "Unable to save general settings"));
     } catch (error) {
-      if (!(error instanceof HttpError) || ![401, 403].includes(error.status)) throw error;
-      return { kind: "refusal" as const, code: "FORBIDDEN", message: error.message, errors: [{ field: `/${field}`, code: "target_unavailable" as const, message: error.message }] };
+      if (error instanceof HttpError && (error.status === 401 || error.status === 403))
+        return failed(field, { kind: "refusal", code: "FORBIDDEN", message: error.message });
+      if (Object.keys(savedFields).length === 0) throw error;
+      return failed(field, { kind: "failure", code: "GENERAL_SETTINGS_SAVE_UNCERTAIN", message: error instanceof Error ? error.message : String(error) });
     }
+    savedFields[`/${field}`] = value;
   }
-  return { kind: "success" as const, data: { ...current, ...changes }, affected: affected(GENERAL_SETTINGS, key, [GENERAL_SETTINGS]) };
+  return { kind: "success", data: { ...current, ...changes }, affected: settingsAffected };
 }
 
 export const generalSettingsOperations = [{

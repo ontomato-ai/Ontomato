@@ -150,7 +150,7 @@ assistantExecutionRouter.post("/:runId/panels/read", wrap(async (req, res) => {
   const runId = callbackRun(req, res.locals.runtimeCallback);
   const input = productPanelReadRequestSchema.parse(req.body);
   const { reader, credentials, userName } = await panelReader(req, runId, input.source, input.memberPath);
-  res.json(await readProductPanelData(reader, credentials, input, userName, req));
+  res.json(await readProductPanelData(reader, credentials, input, userName));
 }));
 
 const assistantNestedPanelReadRequestSchema = productPanelNestedReadRequestSchema.extend({

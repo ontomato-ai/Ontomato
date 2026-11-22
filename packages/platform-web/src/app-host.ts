@@ -342,7 +342,7 @@ export async function confirmPanelIntent(
   const response=panelHumanOperationDispatchResponseSchema.parse(answer);
   // What the owner reports changed reaches the page the way a conversation's change does: every shown object is read again.
   const outcome=response.kind==='dispatched'?response.outcome:null;
-  const affected=outcome?.kind==='success'||outcome?.kind==='batch'?outcome.affected:undefined;
+  const affected=outcome && 'affected' in outcome ? outcome.affected : undefined;
   if(affected)changed({target:null,affected});
   return {decision:'confirm',response};
 }

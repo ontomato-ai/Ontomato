@@ -1,6 +1,7 @@
 import { workbenchProduct } from "../../product/installed";
 import type { SystemMcpTool, SystemMcpService, SystemMcpToolsResponse } from "@ontomato/contracts/mcp";
 import type { McpToolDesc } from "@ontomato/contracts/mcp";
+import { environment } from "../../config/environment";
 import { config } from "../../config/application";
 import { getAnalysisAgentMcpUrlOverride } from "../../config/mcp";
 import { tForLocale } from "../../i18n";
@@ -19,9 +20,10 @@ function toolToClient(t: McpToolDesc): SystemMcpTool {
   };
 }
 
-function getAnalysisAgentMcpUrl(req: McpRequestLocation): string {
+function getAnalysisAgentMcpUrl(req?: McpRequestLocation): string {
   const configured = getAnalysisAgentMcpUrlOverride();
   if (configured) return configured.replace(/\/$/, "");
+  if (!req) return environment.publicBasePath() + ANALYSIS_AGENT_MCP_SUFFIX;
   const proto = String(req.headers["x-forwarded-proto"] || req.protocol || "http")
     .split(",")[0]
     .trim();
@@ -43,12 +45,12 @@ function getAnalysisAgentMcpUrl(req: McpRequestLocation): string {
   return host ? `${proto}://${host}${path}` : path;
 }
 
-function getOpsAgentMcpUrl(req: McpRequestLocation): string {
+function getOpsAgentMcpUrl(req?: McpRequestLocation): string {
   return `${analysisAgentPublicServiceRoot(req)}${OPS_AGENT_MCP_SUFFIX}`;
 }
 
 /** Strips the trailing `/mcp/analysis-agents` from the external MCP address to get the service root with the same mount prefix as `/api`. */
-export function analysisAgentPublicServiceRoot(req: McpRequestLocation): string {
+export function analysisAgentPublicServiceRoot(req?: McpRequestLocation): string {
   const mcpUrl = getAnalysisAgentMcpUrl(req);
   if (!mcpUrl.endsWith(ANALYSIS_AGENT_MCP_SUFFIX)) {
     throw new Error(`Analysis agent MCP URL must end with ${ANALYSIS_AGENT_MCP_SUFFIX}`);
@@ -60,7 +62,7 @@ export function analysisReportPdfDownloadUrl(serviceRoot: string, taskId: string
   return `${serviceRoot}/api/analysis-tasks/${encodeURIComponent(taskId)}/report/pdf`;
 }
 
-export async function publishedMcpCatalogue(req: McpRequestLocation, locale?: string) {
+export async function publishedMcpCatalogue(req?: McpRequestLocation, locale?: string) {
   const [{ getAnalysisAgentMcpToolCatalog }, { getOpsAgentMcpToolCatalog }] = await Promise.all([
     import("../../api/routes/analysis-agent-mcp"), import("../../api/routes/ops-agent-mcp"),
   ]);
@@ -69,7 +71,7 @@ export async function publishedMcpCatalogue(req: McpRequestLocation, locale?: st
 }
 
 export async function buildMcpSystemToolsResponse(
-  req: McpRequestLocation,
+  req: McpRequestLocation | undefined,
   analysisAgentMcpTools: McpToolDesc[],
   opsAgentMcpTools: McpToolDesc[],
   locale?: string,
