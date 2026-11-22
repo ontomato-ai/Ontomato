@@ -39,13 +39,25 @@ export async function readDomainModelOptions(viewer: AssistantCredentials): Prom
   return [following, ...chat.map((model): PanelOption => ({ primaryKey: model.ref, value: model.ref, label: modelLabel(model) }))];
 }
 
-export async function readDomainModelLabelMap(viewer: AssistantCredentials): Promise<Map<string | null, string>> {
+export async function tryReadDomainModelOptions(viewer: AssistantCredentials): Promise<PanelOption[] | null> {
   try {
-    const options = await readDomainModelOptions(viewer);
-    return new Map(options.map(option => [option.value as string | null, option.label]));
+    return await readDomainModelOptions(viewer);
   } catch {
-    return new Map();
+    return null;
   }
+}
+
+export async function readDomainModelLabelMap(viewer: AssistantCredentials): Promise<Map<string | null, string>> {
+  const options = await tryReadDomainModelOptions(viewer);
+  return options ? new Map(options.map(option => [option.value as string | null, option.label])) : new Map();
+}
+
+export function missingModelWarning(
+  domainOptions: readonly PanelOption[] | null, modelId: string | null | undefined, locale?: string,
+): string | undefined {
+  if (!domainOptions || !modelId) return undefined;
+  if (domainOptions.some(option => option.value === modelId)) return undefined;
+  return tForLocale(locale, "panels.simplePages.modelMissing", { id: modelId });
 }
 
 /**
@@ -77,10 +89,11 @@ export function buildModelSelectOptions(
 }
 
 export const formJsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });
-export const modelPanelField = (locale?: string, meta?: { label?: string; help?: string }): PanelFormField => ({
+export const modelPanelField = (locale?: string, meta?: { label?: string; help?: string; warning?: string }): PanelFormField => ({
   path: "/modelSelection/modelId",
   label: meta?.label ?? tForLocale(locale, "panels.agentForm.modelSelection"),
   ...(meta?.help ? { help: meta.help } : {}),
+  ...(meta?.warning ? { warning: meta.warning } : {}),
   valueSchema: formJsonSchema(modelPanelValues.shape.modelId),
   required: false, readOnly: false, defaultValue: null,
   control: { kind: "reference", objectType: MODEL_OPTION, multiple: false },
@@ -89,7 +102,7 @@ export const modelPanelField = (locale?: string, meta?: { label?: string; help?:
 export async function describeModelPanelForm(
   domainId: string, current: string | null, inputs: Pick<PanelFormRequest, "values">,
   save: Omit<PanelFormDescription["save"], "bodySchema">, locale?: string,
-  meta?: { label?: string; help?: string },
+  meta?: { label?: string; help?: string; viewer?: AssistantCredentials },
 ): Promise<PanelFormDescription> {
   const values = { modelSelection: { modelId: current }, ...inputs.values };
   const errors: PanelFormDescription["errors"] = [];
@@ -106,8 +119,11 @@ export async function describeModelPanelForm(
       }
     }
   }
+  const activeModelId = typeof values.modelSelection?.modelId === "string" ? values.modelSelection.modelId : null;
+  const domainOptions = meta?.viewer ? await tryReadDomainModelOptions(meta.viewer) : null;
+  const warning = missingModelWarning(domainOptions, activeModelId, locale);
   return {
-    fields: [modelPanelField(locale, meta)], values, errors,
+    fields: [modelPanelField(locale, { label: meta?.label, help: meta?.help, warning })], values, errors,
     save: { ...save, bodySchema: formJsonSchema(modelSelectionWrite) },
   };
 }

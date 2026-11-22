@@ -23,8 +23,7 @@ import type { PanelOperationBinding } from "./types";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
-import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelWriteInvocation } from "./human-operations";
-import type { ReadOperationInput } from "./read-operation-input";
+import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelReadCall, PanelWriteInvocation } from "./human-operations";
 
 /*
  * One panel instance's runtime (overall design 3.4): its state, the projections it registered, the operations it offers,
@@ -122,7 +121,7 @@ export interface PanelInstance {
   /** Stages a file the reader picked for one of this panel's operations that declares an upload (see `PanelHumanOperations.upload`). */
   uploadFile(operationId: string, file: File): Promise<PanelUploadReceipt>;
   /** Runs a read-only operation as the reader: what it read, with nothing written and nothing reported changed. */
-  readOperation(operationId: string, call: { target: PanelOperationCall["target"]; input: ReadOperationInput }): Promise<PanelReadOperationResult>;
+  readOperation(operationId: string, call: PanelReadCall): Promise<PanelReadOperationResult>;
   /**
    * Runs a write as the reader, the way an agent's runs: one intent freezes the calls, the host confirms it where the
    * owner or a batch asks and dispatches it once. What the owner reports changed comes back through the host's refresh

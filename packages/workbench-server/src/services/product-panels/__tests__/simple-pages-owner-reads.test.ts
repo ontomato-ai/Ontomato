@@ -15,20 +15,22 @@ vi.mock("../../mcp/catalog", () => ({
 }));
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: vi.fn(async () => undefined) }));
 const saveBuilderModelMock = vi.fn();
+const listBuilderAgentsMock = vi.fn(async (): Promise<{ id: string; name: string; modelSelection: { modelId: string | null } }[]> => [
+  { id: "11111111-1111-4111-8111-111111111111", name: "App builder", modelSelection: { modelId: null } },
+  { id: "22222222-2222-4222-8222-222222222222", name: "Custom builder", modelSelection: { modelId: "api.deepseek.com/deepseek-flash" } },
+]);
 vi.mock("../../app-builder/agents", () => ({
   builderAgentName: { parse: (v: unknown) => v, safeParse: (v: unknown) => ({ success: true, data: v }) },
-  listBuilderAgents: vi.fn(async () => [
-    { id: "11111111-1111-4111-8111-111111111111", name: "App builder", modelSelection: { modelId: null } },
-    { id: "22222222-2222-4222-8222-222222222222", name: "Custom builder", modelSelection: { modelId: "api.deepseek.com/deepseek-flash" } },
-  ]),
+  listBuilderAgents: listBuilderAgentsMock,
   readBuilderAgent: vi.fn(async (_owner: unknown, id: string) => ({
     id, name: "App builder", modelSelection: { modelId: "api.deepseek.com/deepseek-flash" },
   })),
   createBuilderAgent: vi.fn(),
   saveBuilderModel: saveBuilderModelMock,
 }));
+const readDiagnosisModelMock = vi.fn(async (): Promise<{ modelSelection: { modelId: string | null } }> => ({ modelSelection: { modelId: null } }));
 vi.mock("../../ops-diagnosis/model-settings", () => ({
-  readDiagnosisModel: vi.fn(async () => ({ modelSelection: { modelId: null } })),
+  readDiagnosisModel: readDiagnosisModelMock,
   saveDiagnosisModel: vi.fn(),
 }));
 
@@ -62,6 +64,7 @@ configureI18n({
         "panels.simplePages.diagnosisDescription": "依据日志与运行记录诊断问数和分析中的问题，并给出处理建议。",
         "panels.simplePages.defaultBuilderAgentName": "应用构建",
         "panels.simplePages.builderDescription": "应用设计、代码生成与发布对话",
+        "panels.simplePages.modelMissing": "模型“{id}”已不存在，请重新选择；在此之前该智能体无法运行。",
         "panels.agentOptions.domainDefaultModel": "域默认（{model}）",
       },
       ...enLocaleMeta,
@@ -127,7 +130,16 @@ describe("simple pages owner reads", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("provides agent name, description and defaultValue on DiagnosisModel form field", async () => {
+  it("provides agent name, description, defaultValue and missing-model warning on DiagnosisModel form field", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      success: true,
+      data: {
+        models: [{ ref: "api.deepseek.com/deepseek-flash", name: "dev-model", type: "chat" }],
+        defaultModelId: "api.deepseek.com/deepseek-flash",
+        embeddingModelId: null,
+      },
+    })));
+    readDiagnosisModelMock.mockResolvedValueOnce({ modelSelection: { modelId: null } });
     const reads = createDiagnosisModelReads("d", { token: "t", locale: "zh-CN" } as never);
     const form = await reads.form(DIAGNOSIS_AGENT_ID, {});
     expect(form.fields).toEqual([
@@ -138,6 +150,11 @@ describe("simple pages owner reads", () => {
         defaultValue: null,
       }),
     ]);
+    expect(form.fields[0]!.warning).toBeUndefined();
+
+    readDiagnosisModelMock.mockResolvedValueOnce({ modelSelection: { modelId: "retired/model" } });
+    const missingForm = await reads.form(DIAGNOSIS_AGENT_ID, {});
+    expect(missingForm.fields[0]!.warning).toBe("模型“retired/model”已不存在，请重新选择；在此之前该智能体无法运行。");
   });
 
   it("localizes BuilderAgent list, exposes per-agent row form under 'all', and saves changed agents individually", async () => {
@@ -181,6 +198,13 @@ describe("simple pages owner reads", () => {
     expect(invalidDraft.errors).toEqual([
       expect.objectContaining({ field: "/11111111-1111-4111-8111-111111111111", code: "invalid_option" }),
     ]);
+
+    listBuilderAgentsMock.mockResolvedValueOnce([
+      { id: "11111111-1111-4111-8111-111111111111", name: "App builder", modelSelection: { modelId: "retired/builder-model" } },
+    ]);
+    const warningForm = await reads.form(BUILDER_MODELS_FORM_KEY, {});
+    expect(warningForm.fields[0]!.warning).toBe("模型“retired/builder-model”已不存在，请重新选择；在此之前该智能体无法运行。");
+    expect(warningForm.errors).toEqual([]);
 
     // Partial save: agent 1 succeeds, agent 2 fails with 400; savedFields records agent 1 while errors reports agent 2.
     saveBuilderModelMock.mockImplementation(async (_owner: unknown, agentId: string) => {

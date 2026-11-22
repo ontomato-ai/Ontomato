@@ -8,7 +8,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import {
   buildModelSelectOptions, describeModelPanelForm, DOMAIN_DEFAULT_MODEL_OPTION, formJsonSchema,
-  modelPanelValues, modelSelectionWrite, readDomainModelLabelMap, readDomainModelOptions,
+  missingModelWarning, modelPanelValues, modelSelectionWrite, readDomainModelLabelMap, readDomainModelOptions,
 } from "../assistant/model-panel-form";
 import type { AssistantOwner } from "../assistant/store";
 import { affected } from "../product-panels/data-query-operations";
@@ -88,19 +88,25 @@ export function createBuilderModelReads(owner: AssistantOwner, viewer: Assistant
         }
       }
     }
-    const fields: PanelFormField[] = agents.map(agent => ({
-      path: `/${agent.id}`,
-      label: displayName(agent.name),
-      help: text("builderDescription"),
-      valueSchema: formJsonSchema(modelChoiceSchema),
-      required: true,
-      readOnly: false,
-      defaultValue: DOMAIN_DEFAULT_MODEL_OPTION,
-      control: {
-        kind: "select",
-        options: buildModelSelectOptions(domainOptions, agent.modelSelection.modelId, viewer.locale),
-      },
-    }));
+    const fields: PanelFormField[] = agents.map(agent => {
+      const activeChoice = values[agent.id];
+      const activeModelId = typeof activeChoice === "string" ? toStoredModelId(activeChoice) : null;
+      const warning = missingModelWarning(domainOptions, activeModelId, viewer.locale);
+      return {
+        path: `/${agent.id}`,
+        label: displayName(agent.name),
+        help: text("builderDescription"),
+        ...(warning ? { warning } : {}),
+        valueSchema: formJsonSchema(modelChoiceSchema),
+        required: true,
+        readOnly: false,
+        defaultValue: DOMAIN_DEFAULT_MODEL_OPTION,
+        control: {
+          kind: "select",
+          options: buildModelSelectOptions(domainOptions, agent.modelSelection.modelId, viewer.locale),
+        },
+      };
+    });
     return {
       fields,
       values: values as PanelFormDescription["values"],
@@ -142,6 +148,7 @@ export function createBuilderModelReads(owner: AssistantOwner, viewer: Assistant
       }, viewer.locale, {
         label: displayName(agent.name),
         help: text("builderDescription"),
+        viewer,
       });
     },
     async createForm(inputs: Pick<PanelFormRequest, "values">): Promise<PanelFormDescription> {

@@ -42,6 +42,7 @@ export function createDiagnosisModelReads(domainId: string, viewer: AssistantCre
       return describeModelPanelForm(domainId, await read(primaryKey), inputs, save, viewer.locale, {
         label: text("diagnosisAgent"),
         help: text("diagnosisDescription"),
+        viewer,
       });
     },
   };
