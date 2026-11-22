@@ -2,11 +2,14 @@ import { computed, effectScope, nextTick, onScopeDispose, shallowReactive, shall
 import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
-import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { DASHBOARD_CARD, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import type { DirectPanelRun, PlatformPageDraft } from "@ontomato/platform-shell";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { authoredReadParameterSource, directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
+import {
+  authoredReadParameterSource, directReadDeclaration,
+  type DirectProjectionData, type PanelRecord, type PanelRecordQuery,
+} from "@ontomato/contracts/panel-projection";
 import type { ApplicationEntryMenu, CurrentApplicationEntry, DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
@@ -337,6 +340,118 @@ function sourceObject(data: DirectProjectionData, inputs: MemberInputs): PanelFi
   return "literal" in object ? object.literal : (inputs[object.input] as PanelFieldValue | undefined);
 }
 
+type CanonicalReadTarget =
+  | { kind: "type"; typeKind: string; typeId: string }
+  | { kind: "object"; className: string; primaryKey: string };
+
+interface CanonicalReadDescriptor {
+  readonly key: string;
+  readonly target: CanonicalReadTarget;
+  readonly resultKind: string;
+  readonly hasParams: boolean;
+}
+
+interface InFlightReadEntry {
+  readonly key: string;
+  readonly target: CanonicalReadTarget;
+  readonly promise: Promise<MemberDataState>;
+  subscribers: number;
+  invalidated: boolean;
+}
+
+interface ShownDatumEntry {
+  readonly data: DirectProjectionData;
+  readonly inputs: () => MemberInputs;
+  readonly reread: (options?: { force?: boolean; evictInFlight?: boolean }) => void;
+  key: string | null;
+  target: CanonicalReadTarget | null;
+  resultKind: string | null;
+  fresh: boolean;
+  value: Extract<MemberDataState, { status: "ready" | "empty" }> | null;
+  epoch: number;
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const next = (value as Record<string, unknown>)[key];
+    if (next !== undefined) sorted[key] = canonicalizeJson(next);
+  }
+  return sorted;
+}
+
+/**
+ * Canonical identity of one member datum read within a single panel instance, matching the server's read selection and
+ * null-filtered parameter semantics so identical concurrent or in-screen reads coalesce without crossing projection-
+ * scoped reads (such as dashboard cards / metric outputs).
+ */
+function resolveCanonicalRead(
+  projection: DirectProjection,
+  data: DirectProjectionData | undefined,
+  placement: MemberPlacement,
+  values: MemberInputs,
+  own: MemberInputs,
+): CanonicalReadDescriptor | null {
+  if (!data || awaitsInputs(projection, data, placement, values, own)) return null;
+  const declaration = directReadDeclaration(projection, data);
+  if (!declaration) return null;
+  let target: CanonicalReadTarget;
+  let sourceKey: readonly string[];
+  if ("type" in data.source) {
+    target = { kind: "type", typeKind: data.source.type.kind, typeId: data.source.type.id };
+    sourceKey = ["type", data.source.type.kind, data.source.type.id];
+  } else {
+    const object = stateObject(sourceObject(data, values));
+    if (!object) return null;
+    target = { kind: "object", className: object.className, primaryKey: object.primaryKey };
+    sourceKey = ["object", object.className, object.primaryKey];
+  }
+  const rawParams = readParams(projection, data, placement, values, own).values;
+  const normalizedParams: Record<string, unknown> = {};
+  let hasParams = false;
+  for (const key of Object.keys(rawParams).sort()) {
+    const value = rawParams[key];
+    if (value === null || value === undefined) continue;
+    normalizedParams[key] = canonicalizeJson(value);
+    hasParams = true;
+  }
+  const isDashboardCard =
+    (target.kind === "object" && target.className === DASHBOARD_CARD) ||
+    (target.kind === "type" && target.typeId === DASHBOARD_CARD);
+  const projectionScoped =
+    isDashboardCard ||
+    declaration.result === "chartTemplate" ||
+    declaration.result === "metricOutput" ||
+    ("metricId" in projection && (projection as { metricId?: unknown }).metricId !== undefined);
+  const key = JSON.stringify(
+    projectionScoped
+      ? [sourceKey, data.read, declaration.result, normalizedParams, projection.id, projection.revision]
+      : [sourceKey, data.read, declaration.result, normalizedParams],
+  );
+  return { key, target, resultKind: declaration.result, hasParams };
+}
+
+function targetMatchesAffected(target: CanonicalReadTarget, affected: PanelOperationAffected): boolean {
+  if (target.kind === "object") {
+    return (
+      affected.objectTypes.includes(target.className) ||
+      affected.objects.some((changed) => changed.objectType === target.className && changed.primaryKey === target.primaryKey)
+    );
+  }
+  return (
+    affected.objectTypes.includes(target.typeId) ||
+    affected.objects.some((changed) => changed.objectType === target.typeId)
+  );
+}
+
+function stripRecordHighlights(record: PanelRecord): RuntimeJsonValue {
+  if (record.highlights === undefined) return record as unknown as RuntimeJsonValue;
+  const { highlights: _omitted, ...rest } = record;
+  return rest as unknown as RuntimeJsonValue;
+}
+
 export function createDirectPanelInstance(direct: PanelManifest, options: DirectPanelInstanceOptions): DirectPanelInstance {
   const projections = new Map<string, Promise<DirectProjection>>();
   /** Cached projection + component resolution per member so repeated list rows load each definition once. */
@@ -379,7 +494,55 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
   });
   /** Every datum shown now, with how to read it again when an operation reports its source changed. */
-  const shown = new Set<{ data: DirectProjectionData; inputs: () => MemberInputs; reread(): void }>();
+  const shown = new Set<ShownDatumEntry>();
+  /** In-flight datum reads keyed by canonical read identity, strictly scoped to this panel instance. */
+  const inFlightReads = new Map<string, InFlightReadEntry>();
+  /** Marks all in-flight reads and shown datum snapshots stale so subsequent reads fetch fresh answers. */
+  function invalidateAllReads() {
+    for (const entry of inFlightReads.values()) entry.invalidated = true;
+    inFlightReads.clear();
+    for (const entry of shown) {
+      entry.fresh = false;
+      entry.value = null;
+      entry.epoch += 1;
+    }
+  }
+  /** Finds a currently shown, non-stale `ready`/`empty` datum in this instance with the same canonical key. */
+  function findFreshShown(key: string, exclude?: ShownDatumEntry): Extract<MemberDataState, { status: "ready" | "empty" }> | null {
+    for (const entry of shown) {
+      if (entry === exclude) continue;
+      if (entry.fresh && entry.key === key && entry.value !== null) return entry.value;
+    }
+    return null;
+  }
+  /**
+   * Finds a matching row from a currently shown, non-stale type list/query in this instance to pre-populate a
+   * parameterless `panelRecord` while the authoritative `record` request runs in the background.
+   */
+  function findPrefillRecord(className: string, primaryKey: string, exclude: ShownDatumEntry): RuntimeJsonValue | null {
+    for (const entry of shown) {
+      if (entry === exclude || !entry.fresh || entry.value?.status !== "ready") continue;
+      if (entry.target?.kind !== "type") continue;
+      let rows: readonly PanelRecord[] | null = null;
+      if (entry.resultKind === "panelRecordList" && Array.isArray(entry.value.value)) {
+        rows = entry.value.value as unknown as readonly PanelRecord[];
+      } else if (
+        entry.resultKind === "panelRecordQuery" &&
+        entry.value.value &&
+        typeof entry.value.value === "object" &&
+        Array.isArray((entry.value.value as unknown as PanelRecordQuery).rows)
+      ) {
+        rows = (entry.value.value as unknown as PanelRecordQuery).rows;
+      }
+      if (!rows) continue;
+      for (const row of rows) {
+        if (row.primaryKey !== primaryKey) continue;
+        const rowClassName = row.className ?? entry.target.typeId;
+        if (rowClassName === className) return stripRecordHighlights(row);
+      }
+    }
+    return null;
+  }
   /** Every member's operations read now, read again with everything shown. */
   const operationReads = new Set<() => void>();
   /** Where the members the instance holds live, each in its own scope, so a member held anew ends the old one. */
@@ -392,7 +555,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   // here; the components that read their own data hear it as well.
   instance.onObjectChanged((object) => {
     if (object !== null) return;
-    for (const { reread } of shown) reread();
+    invalidateAllReads();
+    for (const { reread } of shown) reread({ force: true });
     for (const reread of operationReads) reread();
     for (const mount of nestedMounts) mount.refresh(null);
   });
@@ -663,36 +827,177 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs, ownParams?: () => MemberInputs): MemberData {
       const own = ownParams ?? (() => instance.ownParams(member));
       const placement = direct.members[member]!;
-      const answer = (name: string, values: MemberInputs, ownRun: MemberInputs = own()) =>
-        readMemberDatum(options.read, projection, instance.memberPathOf(member), placement, name, values, ownRun);
+      const releaseInFlight = (inFlight: InFlightReadEntry | null) => {
+        if (!inFlight) return;
+        inFlight.subscribers -= 1;
+        if (inFlight.subscribers <= 0) {
+          inFlight.invalidated = true;
+          if (inFlightReads.get(inFlight.key) === inFlight) inFlightReads.delete(inFlight.key);
+        }
+      };
+      const readCoalesced = (
+        name: string,
+        values: MemberInputs,
+        ownRun: MemberInputs = own(),
+        evictInFlight = false,
+      ): { promise: Promise<MemberDataState>; inFlight: InFlightReadEntry | null; canonical: CanonicalReadDescriptor | null } => {
+        const canonical = resolveCanonicalRead(projection, projection.data[name], placement, values, ownRun);
+        if (!canonical) {
+          return {
+            promise: readMemberDatum(options.read, projection, instance.memberPathOf(member), placement, name, values, ownRun),
+            inFlight: null,
+            canonical: null,
+          };
+        }
+        if (evictInFlight) {
+          const stale = inFlightReads.get(canonical.key);
+          if (stale) {
+            stale.invalidated = true;
+            inFlightReads.delete(canonical.key);
+          }
+        }
+        const existing = inFlightReads.get(canonical.key);
+        if (existing) {
+          existing.subscribers += 1;
+          return { promise: existing.promise, inFlight: existing, canonical };
+        }
+        const promise = readMemberDatum(options.read, projection, instance.memberPathOf(member), placement, name, values, ownRun);
+        const created: InFlightReadEntry = {
+          key: canonical.key, target: canonical.target, promise, subscribers: 1, invalidated: false,
+        };
+        inFlightReads.set(canonical.key, created);
+        const cleanup = () => {
+          if (inFlightReads.get(canonical.key) === created) inFlightReads.delete(canonical.key);
+        };
+        void promise.then(cleanup, cleanup);
+        return { promise, inFlight: created, canonical };
+      };
 
       return {
         use(name) {
           const state = shallowRef<MemberDataState>({ status: "loading" });
           let sequence = 0;
-          const reread = () => {
+          let disposed = false;
+          let activeInFlight: InFlightReadEntry | null = null;
+          const releaseActiveInFlight = () => {
+            if (!activeInFlight) return;
+            const previous = activeInFlight;
+            activeInFlight = null;
+            releaseInFlight(previous);
+          };
+          const entry: ShownDatumEntry = {
+            data: projection.data[name]!,
+            inputs,
+            reread: (readOptions) => reread(readOptions),
+            key: null,
+            target: null,
+            resultKind: null,
+            fresh: false,
+            value: null,
+            epoch: 0,
+          };
+          const reread = (readOptions?: { force?: boolean; evictInFlight?: boolean }) => {
+            const force = readOptions?.force ?? false;
+            const evictInFlight = readOptions?.evictInFlight ?? false;
+            const currentInputs = inputs();
+            const currentOwn = own();
+            const canonical = resolveCanonicalRead(projection, entry.data, placement, currentInputs, currentOwn);
             // Unseen, the instance reads nothing; the refresh when it is seen again reads every shown datum.
-            if (!active) return;
+            if (!active) {
+              releaseActiveInFlight();
+              entry.key = canonical?.key ?? null;
+              entry.target = canonical?.target ?? null;
+              entry.resultKind = canonical?.resultKind ?? null;
+              entry.fresh = false;
+              entry.value = null;
+              return;
+            }
+            if (!force && canonical && entry.fresh && entry.key === canonical.key && entry.value !== null) {
+              return;
+            }
             const reading = ++sequence;
+            releaseActiveInFlight();
+            entry.key = canonical?.key ?? null;
+            entry.target = canonical?.target ?? null;
+            entry.resultKind = canonical?.resultKind ?? null;
+            entry.fresh = false;
+            entry.value = null;
+            const readEpoch = entry.epoch;
+
+            // Reuse a currently shown, non-stale answer in the same panel instance (e.g. a component mounting after
+            // an async chunk load for a list already on screen).
+            if (!force && canonical) {
+              const reusable = findFreshShown(canonical.key, entry);
+              if (reusable) {
+                state.value = reusable;
+                entry.fresh = true;
+                entry.value = reusable;
+                return;
+              }
+            }
+
+            // For a parameterless object record read, immediately pre-populate from a matching row in a fresh shown
+            // list/query while still issuing one coalesced authoritative record request in the background.
+            let prefilled = false;
+            if (!force && canonical && canonical.resultKind === "panelRecord" && canonical.target.kind === "object" && !canonical.hasParams) {
+              const row = findPrefillRecord(canonical.target.className, canonical.target.primaryKey, entry);
+              if (row !== null) {
+                state.value = { status: "ready", value: row };
+                prefilled = true;
+              }
+            }
+
             // A datum already shown stays on screen until its new answer arrives: rereading replaces what it shows, never
             // the component drawing it. Only a first read (or one after an empty, refused or failed answer) shows loading.
-            if (state.value.status !== "ready") state.value = { status: "loading" };
+            if (!prefilled && state.value.status !== "ready") state.value = { status: "loading" };
+
+            const { promise, inFlight } = readCoalesced(name, currentInputs, currentOwn, evictInFlight);
+            activeInFlight = inFlight;
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
-            void answer(name, inputs()).then((result) => {
-              if (reading !== sequence) return;
+            void promise.then((result) => {
+              if (activeInFlight === inFlight) activeInFlight = null;
+              if (disposed || reading !== sequence) return;
               // A failure is read again on request, as a refresh reads it.
-              state.value = result.status === "error" ? { ...result, retry: () => { state.value = { status: "loading" }; reread(); } } : result;
+              state.value = result.status === "error"
+                ? { ...result, retry: () => { state.value = { status: "loading" }; reread({ force: true, evictInFlight: true }); } }
+                : result;
+              if (
+                (result.status === "ready" || result.status === "empty") &&
+                canonical !== null &&
+                entry.key === canonical.key &&
+                entry.epoch === readEpoch &&
+                active &&
+                (!inFlight || !inFlight.invalidated)
+              ) {
+                entry.fresh = true;
+                entry.value = result;
+              } else {
+                entry.fresh = false;
+                entry.value = null;
+              }
+            }, () => {
+              if (activeInFlight === inFlight) activeInFlight = null;
             });
           };
-          const entry = { data: projection.data[name]!, inputs, reread };
           shown.add(entry);
-          watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), reread, { immediate: true });
-          onScopeDispose(() => shown.delete(entry));
+          watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), () => reread(), { immediate: true });
+          onScopeDispose(() => {
+            disposed = true;
+            releaseActiveInFlight();
+            entry.fresh = false;
+            entry.value = null;
+            shown.delete(entry);
+          });
           return computed(() => state.value);
         },
         read: (name, params, overrides = {}) => {
           const { inputs: run, own: ownRun } = runValues(projection, name, params);
-          return answer(name, { ...inputs(), ...overrides, ...run }, { ...own(), ...ownRun });
+          const { promise, inFlight } = readCoalesced(name, { ...inputs(), ...overrides, ...run }, { ...own(), ...ownRun });
+          if (inFlight) {
+            const done = () => { inFlight.subscribers -= 1; };
+            void promise.then(done, done);
+          }
+          return promise;
         },
       };
     },
@@ -747,18 +1052,41 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     refresh(affected: PanelOperationAffected) {
       // What the write removed is let go of first, so nothing below reads it again.
       if (affected.removed) instance.letGo(affected.removed);
-      for (const { data, inputs, reread } of shown) {
-        const object = stateObject(sourceObject(data, inputs()));
-        if (object && affected.objects.some((changed) => changed.objectType === object.className && changed.primaryKey === object.primaryKey))
-          reread();
-        else if ("type" in data.source && affected.objectTypes.includes(data.source.type.id)) reread();
+      // Evict matching pre-write in-flight reads and mark matching shown snapshots stale BEFORE rereading, so every
+      // affected member shares one fresh post-write request instead of piggybacking on a pre-write read.
+      for (const [key, entry] of [...inFlightReads.entries()]) {
+        if (!targetMatchesAffected(entry.target, affected)) continue;
+        entry.invalidated = true;
+        inFlightReads.delete(key);
       }
+      const toReread: ShownDatumEntry[] = [];
+      for (const entry of shown) {
+        const object = stateObject(sourceObject(entry.data, entry.inputs()));
+        const currentTarget: CanonicalReadTarget | null = object
+          ? { kind: "object", className: object.className, primaryKey: object.primaryKey }
+          : "type" in entry.data.source
+            ? { kind: "type", typeKind: entry.data.source.type.kind, typeId: entry.data.source.type.id }
+            : null;
+        if (
+          (entry.target && targetMatchesAffected(entry.target, affected)) ||
+          (currentTarget && targetMatchesAffected(currentTarget, affected))
+        ) {
+          entry.fresh = false;
+          entry.value = null;
+          entry.epoch += 1;
+        }
+        if (object && affected.objects.some((changed) => changed.objectType === object.className && changed.primaryKey === object.primaryKey))
+          toReread.push(entry);
+        else if ("type" in entry.data.source && affected.objectTypes.includes(entry.data.source.type.id)) toReread.push(entry);
+      }
+      for (const entry of toReread) entry.reread({ force: true });
       for (const object of affected.objects) instance.objectChanged(object);
       // What changed may be shown by a panel placed here, too.
       for (const mount of nestedMounts) mount.refresh(null, affected);
     },
     setActive(next: boolean) {
       active = next;
+      if (!next) invalidateAllReads();
       for (const mount of nestedMounts) mount.activate(next);
     },
     projectionChanged(id: string, revision?: number) {

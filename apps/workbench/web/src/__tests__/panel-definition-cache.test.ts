@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { h } from "vue";
 import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import { OBJECT_TYPE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import type { BundledPanelProjection, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
@@ -64,7 +64,7 @@ function makePanel(revision = 1, banner = "Panel v1"): ProductPanel {
   };
 }
 
-function makeProjection(id: string, revision: number, title: string): ProductProjection {
+function makeProjection(id: string, revision: number, title: string, objectType: string = SCHEDULED_TASK): ProductProjection {
   return {
     id,
     revision,
@@ -83,7 +83,7 @@ function makeProjection(id: string, revision: number, title: string): ProductPro
       emptyText: title,
     },
     data: {
-      rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+      rows: { source: { type: { kind: "PlatformObjectType", id: objectType } }, read: "list", params: {} },
     },
   };
 }
@@ -137,10 +137,10 @@ afterEach(() => {
 describe("panel definition cache & bundled projections", () => {
   it("cold open bundles fixed projections in 1 panel request (0 individual projection GETs), isolates 403, and re-entry reuses cached definitions while always fetching fresh business data", async () => {
     const panel = makePanel(1, "Panel v1");
-    const projA = makeProjection(PROJ_A_ID, 1, "Tasks A v1");
+    const projA = makeProjection(PROJ_A_ID, 1, "Tasks A v1", SCHEDULED_TASK);
     let dataGeneration = 1;
     let projBAllowed = false;
-    const projB = makeProjection(PROJ_B_ID, 1, "Tasks B v1");
+    const projB = makeProjection(PROJ_B_ID, 1, "Tasks B v1", OBJECT_TYPE);
 
     const answer = (request: Sent): Response => {
       if (request.path === `/api/data-query/platform/applications/${APP_ID}/panel-uses`) {
