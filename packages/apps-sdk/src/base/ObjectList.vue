@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { Comment, Fragment, Text, computed, nextTick, ref, useSlots, watch, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelChildObjectIdentity } from "@ontomato/contracts/panel-manifest";
@@ -96,6 +96,10 @@ const props = withDefaults(
     toggleable?: boolean;
     /** The panel's message key for what an empty list says, in place of the platform's own words. */
     emptyText?: string;
+    /** Optional panel message key for a secondary hint shown beneath the empty message (e.g. pointing to header create). */
+    emptyHint?: string;
+    /** Controls visibility of the top `#create-row` inline form block; omitted, shown whenever `#create-row` has content. */
+    creatingRow?: boolean;
   }>(),
   {
     layout: "auto",
@@ -106,6 +110,8 @@ const props = withDefaults(
     fallbackToFirst: false,
     toggleable: false,
     emptyText: undefined,
+    emptyHint: undefined,
+    creatingRow: undefined,
   },
 );
 
@@ -121,7 +127,11 @@ const emit = defineEmits<{
   "update:listed": [value: readonly ObjectListRef[]];
   /** Emitted when a reader clicks a reference cell carrying an owner-supplied object reference. */
   navigate: [reference: PlatformFieldReference, columnKey: string];
+  /** Emitted when the reader clicks Clear filters from the narrowed empty state. */
+  "clear-filters": [];
 }>();
+
+const slots = useSlots();
 
 const { t, locale } = useI18n();
 const slot = useProjectionSlot();
@@ -138,12 +148,20 @@ if (!datum) {
 const placement = panel.manifest.members[member.key]!;
 const declaration = directReadDeclaration(member.projection, datum);
 const signatureParams = declaration?.parameterMode === "fixed" ? declaration.params : {};
+const requiredParamNames = new Set(declaration?.parameterMode === "fixed" ? (declaration.requiredParams ?? []) : []);
 
 function isFixedLiteral(name: string): boolean {
   const mapped = datum!.params[name];
   if (mapped && "literal" in mapped) return true;
   const input = placement.inputs?.[name];
   return Boolean(input && "literal" in input);
+}
+
+function isWritableParam(name: string): boolean {
+  if (isFixedLiteral(name)) return false;
+  const key = paramNameOf(name);
+  const input = placement.inputs?.[key];
+  return !input || "state" in input;
 }
 
 function isAuthoredParam(name: string): boolean {
@@ -172,7 +190,15 @@ const selectedParam = useMemberParam("selected");
 const checkedParam = useMemberParam("checked");
 
 const currentPage = ref(1);
-const cursorHistory = ref<(string | undefined)[]>([undefined]);
+interface CursorBatch {
+  readonly cursor: string | null;
+  readonly rows: readonly PlatformObjectRecord[];
+}
+const cursorBatches = ref<readonly CursorBatch[]>([]);
+const loadingMore = ref(false);
+let pendingAppendCursor: string | null = null;
+const lastKnownTotal = ref(0);
+const lastKnownHasTotal = ref(false);
 
 // Seed runtime pagination parameters before useMemberData starts its immediate watch, avoiding a double initial read.
 if (pageMode === "cursor" && sizeParam && !isAuthoredParam("size")) {
@@ -184,7 +210,9 @@ if (pageMode === "page" && pageParam && !isAuthoredParam("page")) {
 
 function resetPaging() {
   if (currentPage.value !== 1) currentPage.value = 1;
-  cursorHistory.value = [undefined];
+  cursorBatches.value = [];
+  loadingMore.value = false;
+  pendingAppendCursor = null;
   if (pageMode === "cursor" && cursorParam && !isAuthoredParam("cursor") && cursorParam.value.value !== null) {
     cursorParam.set(null);
   }
@@ -199,6 +227,9 @@ function resetPaging() {
 const pagingParams = new Set(["cursor", "size", "page"]);
 const nonPagingParamNames = [...new Set([...Object.keys(datum.params), ...Object.keys(signatureParams)])]
   .filter((name) => !pagingParams.has(name));
+const clearableFilterParams = nonPagingParamNames
+  .filter((name) => name !== "search" && !requiredParamNames.has(name) && isWritableParam(name))
+  .map((name) => useMemberParam(paramNameOf(name)));
 
 const currentParams = computed(() =>
   paramValues(member.projection, datum, placement, member.inputs.value, panel.instance.ownParams(member.key)),
@@ -289,11 +320,12 @@ const parsedData = computed<ParsedListData>(() => {
   }
   if (Array.isArray(value)) {
     const items = value as unknown as readonly PlatformObjectRecord[];
-    return { rows: items, total: items.length, hasTotal: true, diagnostics: [], status: "ok" };
+    return { rows: items, total: items.length, hasTotal: canSearch || pageMode !== "none", diagnostics: [], status: "ok" };
   }
   const queryResult = value as unknown as PanelRecordQuery;
   const items = queryResult.rows as unknown as readonly PlatformObjectRecord[];
-  const hasTotal = queryResult.total !== undefined || (currentPage.value === 1 && queryResult.nextCursor === undefined);
+  const hasTotal = queryResult.total !== undefined
+    || ((canSearch || pageMode !== "none") && currentPage.value === 1 && queryResult.nextCursor === undefined);
   return {
     rows: items,
     total: queryResult.total ?? items.length,
@@ -304,7 +336,57 @@ const parsedData = computed<ParsedListData>(() => {
   };
 });
 
-const rows = computed<readonly PlatformObjectRecord[]>(() => parsedData.value.rows);
+// Keep accumulated cursor batches synced synchronously with datumState so `rows`, `listResult` and `listed` stay consistent.
+watch(
+  datumState,
+  (state) => {
+    if (state.status === "loading") return;
+    if (state.status !== "ready" || parsedData.value.status !== "ok") {
+      cursorBatches.value = [];
+      loadingMore.value = false;
+      pendingAppendCursor = null;
+      return;
+    }
+    lastKnownTotal.value = parsedData.value.total;
+    lastKnownHasTotal.value = parsedData.value.hasTotal;
+    if (pageMode !== "cursor") return;
+    const activeCursor = typeof currentParams.value.cursor === "string" ? currentParams.value.cursor : null;
+    const incoming = parsedData.value.rows;
+    if (activeCursor === null) {
+      cursorBatches.value = [{ cursor: null, rows: incoming }];
+    } else if (pendingAppendCursor === activeCursor) {
+      const existingIndex = cursorBatches.value.findIndex((batch) => batch.cursor === activeCursor);
+      cursorBatches.value = existingIndex >= 0
+        ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming } : batch))
+        : [...cursorBatches.value, { cursor: activeCursor, rows: incoming }];
+    } else {
+      const existingIndex = cursorBatches.value.findIndex((batch) => batch.cursor === activeCursor);
+      cursorBatches.value = existingIndex >= 0
+        ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming } : batch))
+        : [{ cursor: activeCursor, rows: incoming }];
+    }
+    loadingMore.value = false;
+    pendingAppendCursor = null;
+  },
+  { immediate: true, flush: "sync" },
+);
+
+const rows = computed<readonly PlatformObjectRecord[]>(() => {
+  if (pageMode === "cursor" && cursorBatches.value.length > 0) {
+    const seen = new Set<string>();
+    const merged: PlatformObjectRecord[] = [];
+    for (const batch of cursorBatches.value) {
+      for (const row of batch.rows) {
+        const key = rowIdentityKey(row);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(row);
+      }
+    }
+    return merged;
+  }
+  return parsedData.value.rows;
+});
 const total = computed(() => parsedData.value.total);
 const nextCursor = computed(() => parsedData.value.nextCursor);
 const queryStatus = computed(() => parsedData.value.status);
@@ -433,25 +515,57 @@ const paginationItems = computed<readonly PaginationItem[]>(() => {
   return items;
 });
 
-const showCount = computed(
+const footerReady = computed(
   () =>
-    (canSearch || pageMode !== "none")
-    && datumState.value.status === "ready"
-    && queryStatus.value === "ok"
-    && parsedData.value.hasTotal,
+    (datumState.value.status === "ready" && queryStatus.value === "ok" && rows.value.length > 0)
+    || (loadingMore.value && rows.value.length > 0),
+);
+const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.value : parsedData.value.hasTotal));
+const footerTotal = computed(() => (loadingMore.value ? lastKnownTotal.value : total.value));
+const showFooterTotal = computed(() => footerReady.value && footerHasTotal.value);
+
+const showPageControls = computed(
+  () =>
+    pageMode === "page"
+    && footerReady.value
+    && ((footerHasTotal.value && footerTotal.value > effectivePageSize.value) || currentPage.value > 1),
 );
 
-const showToolbar = computed(() => canSearch || showCount.value);
-
-const showPagination = computed(
+const showLoadMore = computed(
   () =>
-    pageMode !== "none"
-    && datumState.value.status === "ready"
-    && queryStatus.value === "ok"
-    && ((parsedData.value.hasTotal && total.value > effectivePageSize.value)
-      || currentPage.value > 1
-      || nextCursor.value !== undefined),
+    pageMode === "cursor"
+    && footerReady.value
+    && (loadingMore.value || nextCursor.value !== undefined || currentPage.value > 1),
 );
+
+const showFooter = computed(() => showFooterTotal.value || showPageControls.value || showLoadMore.value);
+
+const showToolbar = computed(
+  () =>
+    canSearch
+    || Boolean(slots.filters)
+    || Boolean(slots["toolbar-actions"])
+    || (canCheck && (!isTable.value || checkedRefs.value.length > 0)),
+);
+
+function hasRenderableVNodes(vnodes: readonly VNode[]): boolean {
+  return vnodes.some((node) => {
+    if (node.type === Comment) return false;
+    if (node.type === Text) return String(node.children ?? "").trim() !== "";
+    if (node.type === Fragment) {
+      return Array.isArray(node.children) && hasRenderableVNodes(node.children as VNode[]);
+    }
+    return true;
+  });
+}
+
+const showCreateRow = computed(() => {
+  if (props.creatingRow === false) return false;
+  const createSlot = slots["create-row"];
+  if (!createSlot) return false;
+  if (props.creatingRow === true) return true;
+  return hasRenderableVNodes(createSlot());
+});
 
 const queryStatusLabel = computed(() => {
   if (queryStatus.value === "refused") return t("platform.graphStatusRefused");
@@ -461,24 +575,55 @@ const queryStatusLabel = computed(() => {
 });
 
 /**
- * Whether the reader narrowed the read: their search, or a value the panel's state gives one of its other parameters (a
- * status filter, a chosen type). An empty answer to a narrowed read says nothing matches, not that there is nothing.
+ * Whether the reader narrowed the read: their search, or a value the panel's state gives one of its other optional
+ * filter parameters (a status filter, a category). An empty answer to a narrowed read says nothing matches and offers
+ * Clear filters, rather than saying there is nothing at all.
  */
 const narrowed = computed(() => searchText.value !== "" || nonPagingParamNames.some((name) => {
-  if (name === "search" || isFixedLiteral(name)) return false;
+  if (name === "search" || isFixedLiteral(name) || requiredParamNames.has(name)) return false;
   const value = currentParams.value[name];
   return value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && value.length === 0);
 }));
 
+function clearFilters() {
+  if (searchParam && isWritableParam("search") && searchParam.value.value !== null) {
+    searchParam.set(null);
+  }
+  for (const param of clearableFilterParams) {
+    const value = param.value.value;
+    if (value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0)) {
+      param.set(null);
+    }
+  }
+  resetPaging();
+  emit("clear-filters");
+}
+
+const resolvedEmptyHint = computed(() => (props.emptyHint ? panel.t(props.emptyHint) : ""));
+
 const listResult = computed<DataStateResult<readonly PlatformObjectRecord[]>>(() => {
+  if (loadingMore.value && rows.value.length > 0) {
+    return { status: "ready", value: rows.value };
+  }
   const state = datumState.value;
   const empty = state.status === "empty" || (state.status === "ready" && rows.value.length === 0);
-  if (empty) return narrowed.value ? { status: "empty", narrowed: true } : { status: "empty" };
+  if (empty) {
+    return narrowed.value
+      ? { status: "empty", narrowed: true, clearFilters }
+      : { status: "empty", ...(resolvedEmptyHint.value ? { emptyHint: resolvedEmptyHint.value } : {}) };
+  }
+  if (state.status === "forbidden") {
+    const reason = (state as { reason?: string }).reason;
+    return reason ? { status: "forbidden", reason } : { status: "forbidden" };
+  }
   if (state.status !== "ready") return state as DataStateResult<readonly PlatformObjectRecord[]>;
   return { status: "ready", value: rows.value };
 });
 
-const dataStateLabels = useDataStateLabels(() => (props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty")));
+const dataStateLabels = useDataStateLabels(
+  () => (props.emptyText ? panel.t(props.emptyText) : t("platform.dataEmpty")),
+  () => resolvedEmptyHint.value || undefined,
+);
 
 const ownerFieldLabels = computed<Readonly<Record<string, string>>>(() => rows.value[0]?.fieldLabels ?? {});
 
@@ -582,24 +727,48 @@ function onSearchInput(event: Event) {
 
 function goPage(nextPage: number) {
   if (nextPage < 1 || nextPage === currentPage.value) return;
-  if (pageMode === "cursor" && cursorParam) {
-    if (nextPage > currentPage.value) {
-      if (nextCursor.value === undefined) return;
-      cursorHistory.value[nextPage - 1] = nextCursor.value;
-      currentPage.value = nextPage;
-      cursorParam.set(nextCursor.value);
-    } else {
-      currentPage.value = nextPage;
-      cursorParam.set(cursorHistory.value[nextPage - 1] ?? null);
-    }
-    return;
-  }
   if (pageMode === "page" && pageParam) {
     if (parsedData.value.hasTotal && nextPage > totalPages.value) return;
     currentPage.value = nextPage;
     pageParam.set({ number: nextPage, size: effectivePageSize.value });
   }
 }
+
+function loadMore() {
+  if (pageMode !== "cursor" || !cursorParam || nextCursor.value === undefined || loadingMore.value) return;
+  const targetCursor = nextCursor.value;
+  pendingAppendCursor = targetCursor;
+  loadingMore.value = true;
+  currentPage.value += 1;
+  cursorParam.set(targetCursor);
+}
+
+const rowElements = new Map<string, HTMLElement>();
+function setRowElement(key: string, element: unknown) {
+  if (element instanceof HTMLElement) rowElements.set(key, element);
+  else rowElements.delete(key);
+}
+
+let lastScrolledIdentity: string | null = null;
+watch(
+  [chosenIdentity, rows],
+  ([identity, listed]) => {
+    if (!identity) {
+      lastScrolledIdentity = null;
+      return;
+    }
+    if (identity === lastScrolledIdentity) return;
+    if (!listed.some((row) => rowIdentityKey(row) === identity)) return;
+    lastScrolledIdentity = identity;
+    void nextTick(() => {
+      const target = rowElements.get(identity);
+      if (target && typeof target.scrollIntoView === "function") {
+        target.scrollIntoView({ block: "nearest" });
+      }
+    });
+  },
+  { immediate: true },
+);
 
 watch(rows, (listed) => {
   if (expandedKeys.value.size === 0) return;
@@ -703,6 +872,16 @@ function navigateTo(reference: PlatformFieldReference, columnKey: string) {
 /** The field each compact item's summary line shows: the one configured, else the owner's own subtitle. */
 const summaryKey = computed(() => props.subtitleField ?? "subtitle");
 
+function rowHasSecondLine(row: PlatformObjectRecord): boolean {
+  return fieldValue(row, summaryKey.value) !== ""
+    || Boolean(props.tagsField && recordFieldArrayItems(row, props.tagsField).length > 0);
+}
+
+const listHasTwoLines = computed(() =>
+  Boolean(props.subtitleField || props.tagsField)
+  || rows.value.some(rowHasSecondLine),
+);
+
 function fieldValue(row: PlatformObjectRecord, key: string): string {
   return displayFieldText(rawRecordField(row, key), locale.value, t);
 }
@@ -739,14 +918,10 @@ watch(someVisibleChecked, () => {
         :aria-label="t('platform.listSearchPlaceholder')"
         @input="onSearchInput"
       />
-      <span v-if="showCount" class="sdk-object-list-count" role="status">
-        {{ t("platform.listTotal", { count: total }) }}
-      </span>
-      <slot name="toolbar-actions"></slot>
-    </div>
-
-    <div v-if="canCheck && (!isTable || checkedRefs.length > 0)" class="sdk-object-list-selection-bar">
-      <label v-if="!isTable" class="sdk-object-list-select-all">
+      <div v-if="$slots.filters" class="sdk-object-list-filters">
+        <slot name="filters"></slot>
+      </div>
+      <label v-if="canCheck && !isTable" class="sdk-object-list-select-all">
         <input
           :ref="selectAllCheckboxRef"
           type="checkbox"
@@ -757,15 +932,23 @@ watch(someVisibleChecked, () => {
         />
         <span>{{ t("platform.listSelectAll") }}</span>
       </label>
-      <span v-if="checkedRefs.length" class="sdk-object-list-selected-count" role="status">
-        {{ t("platform.listSelectedCount", { count: checkedRefs.length }) }}
-      </span>
-      <div v-if="checkedRefs.length" class="sdk-object-list-batch-actions" role="group">
+      <div v-if="canCheck && checkedRefs.length > 0" class="sdk-object-list-batch-actions sdk-object-list-bulk-actions" role="group">
+        <span class="sdk-object-list-selected-count" role="status">
+          {{ t("platform.listSelectedCount", { count: checkedRefs.length }) }}
+        </span>
+        <slot name="bulk-actions" :checked="checkedRefs" :clear="clearChecked"></slot>
         <slot name="batch-actions" :checked="checkedRefs" :clear="clearChecked"></slot>
         <button type="button" class="sdk-object-list-link-btn" @click="clearChecked">
           {{ t("platform.listClearSelection") }}
         </button>
       </div>
+      <div v-if="$slots['toolbar-actions']" class="sdk-object-list-toolbar-actions">
+        <slot name="toolbar-actions"></slot>
+      </div>
+    </div>
+
+    <div v-if="showCreateRow" class="sdk-object-list-create-row" data-create-row="true">
+      <slot name="create-row"></slot>
     </div>
 
     <ul v-if="diagnostics.length" class="sdk-object-list-diagnostics" role="status">
@@ -803,6 +986,7 @@ watch(someVisibleChecked, () => {
           <tbody>
             <template v-for="row in rows" :key="rowIdentityKey(row)">
               <tr
+                :ref="(el) => setRowElement(rowIdentityKey(row), el)"
                 tabindex="0"
                 data-row-item="true"
                 :aria-selected="rowIdentityKey(row) === chosenIdentity"
@@ -911,6 +1095,7 @@ watch(someVisibleChecked, () => {
         <article
           v-for="row in rows"
           :key="rowIdentityKey(row)"
+          :ref="(el) => setRowElement(rowIdentityKey(row), el)"
           role="option"
           tabindex="0"
           class="sdk-object-list-card"
@@ -1039,10 +1224,11 @@ watch(someVisibleChecked, () => {
         </article>
       </div>
 
-      <ul v-else role="listbox" class="sdk-object-list-items">
+      <ul v-else role="listbox" class="sdk-object-list-items" :data-row-density="listHasTwoLines ? 'two-line' : 'single'">
         <li
           v-for="row in rows"
           :key="rowIdentityKey(row)"
+          :ref="(el) => setRowElement(rowIdentityKey(row), el)"
           class="sdk-object-list-row"
           :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
         >
@@ -1069,8 +1255,9 @@ watch(someVisibleChecked, () => {
               type="button"
               role="option"
               class="sdk-object-list-item-btn"
+              :data-row-density="listHasTwoLines ? 'two-line' : 'single'"
               :aria-selected="rowIdentityKey(row) === chosenIdentity"
-              :class="{ chosen: rowIdentityKey(row) === chosenIdentity }"
+              :class="{ chosen: rowIdentityKey(row) === chosenIdentity, 'sdk-object-list-item-two-line': listHasTwoLines }"
               @click="choose(row)"
             >
               <span class="sdk-object-list-item-head">
@@ -1125,43 +1312,55 @@ watch(someVisibleChecked, () => {
       </ul>
     </data-state>
 
-    <nav v-if="showPagination" class="sdk-object-list-pagination">
-      <span v-if="showNumericPages" class="sdk-object-list-page-total">
-        {{ t("platform.listTotal", { count: total }) }}
+    <nav v-if="showFooter" class="sdk-object-list-pagination sdk-object-list-footer">
+      <span v-if="showFooterTotal" class="sdk-object-list-count sdk-object-list-page-total" role="status">
+        {{ t("platform.listTotal", { count: footerTotal }) }}
       </span>
-      <button
-        type="button"
-        class="sdk-object-list-btn sdk-object-list-prev"
-        :disabled="currentPage <= 1"
-        @click="goPage(currentPage - 1)"
-      >
-        {{ t("platform.listPrevPage") }}
-      </button>
-      <template v-if="showNumericPages">
-        <template v-for="(item, index) in paginationItems" :key="item === 'ellipsis' ? `ellipsis-${index}` : item">
-          <span v-if="item === 'ellipsis'" class="sdk-object-list-page-ellipsis" aria-hidden="true">…</span>
-          <button
-            v-else
-            type="button"
-            class="sdk-object-list-btn sdk-object-list-page-num"
-            :class="{ active: item === currentPage }"
-            :aria-current="item === currentPage ? 'page' : undefined"
-            @click="goPage(item)"
-          >
-            {{ item }}
-          </button>
+      <template v-if="showPageControls">
+        <button
+          type="button"
+          class="sdk-object-list-btn sdk-object-list-prev"
+          :disabled="currentPage <= 1"
+          @click="goPage(currentPage - 1)"
+        >
+          {{ t("platform.listPrevPage") }}
+        </button>
+        <template v-if="showNumericPages">
+          <template v-for="(item, index) in paginationItems" :key="item === 'ellipsis' ? `ellipsis-${index}` : item">
+            <span v-if="item === 'ellipsis'" class="sdk-object-list-page-ellipsis" aria-hidden="true">…</span>
+            <button
+              v-else
+              type="button"
+              class="sdk-object-list-btn sdk-object-list-page-num"
+              :class="{ active: item === currentPage }"
+              :aria-current="item === currentPage ? 'page' : undefined"
+              @click="goPage(item)"
+            >
+              {{ item }}
+            </button>
+          </template>
         </template>
+        <span v-else class="sdk-object-list-page-info">
+          {{ footerHasTotal ? t("platform.listPagination", { page: currentPage, pages: totalPages }) : currentPage }}
+        </span>
+        <button
+          type="button"
+          class="sdk-object-list-btn sdk-object-list-next"
+          :disabled="!footerHasTotal || currentPage >= totalPages"
+          @click="goPage(currentPage + 1)"
+        >
+          {{ t("platform.listNextPage") }}
+        </button>
       </template>
-      <span v-else class="sdk-object-list-page-info">
-        {{ parsedData.hasTotal ? t("platform.listPagination", { page: currentPage, pages: totalPages }) : currentPage }}
-      </span>
       <button
+        v-else-if="showLoadMore"
         type="button"
-        class="sdk-object-list-btn sdk-object-list-next"
-        :disabled="nextCursor === undefined && (!parsedData.hasTotal || currentPage >= totalPages)"
-        @click="goPage(currentPage + 1)"
+        class="sdk-object-list-btn sdk-object-list-load-more"
+        :disabled="loadingMore || nextCursor === undefined"
+        :aria-busy="loadingMore ? 'true' : undefined"
+        @click="loadMore"
       >
-        {{ t("platform.listNextPage") }}
+        {{ loadingMore ? t("platform.readerLoading") : t("platform.listLoadMore") }}
       </button>
     </nav>
   </div>
@@ -1185,6 +1384,40 @@ watch(someVisibleChecked, () => {
   flex: 0 0 auto;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
+}
+.sdk-object-list-filters {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+.sdk-object-list-toolbar-actions {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--spacing-xs);
+  margin-left: auto;
+}
+.sdk-object-list-create-row {
+  background: var(--ui-fill-quaternary);
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
+  flex: 0 0 auto;
+  padding: var(--spacing-md);
+}
+.sdk-object-list-create-row :deep(.sdk-owner-form),
+.sdk-object-list-create-row :deep(.sdk-owner-form-inner) {
+  flex: 0 0 auto;
+  height: auto;
+}
+.sdk-object-list-create-row :deep(.sdk-owner-form-body) {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.sdk-object-list-create-row :deep(.sdk-owner-form-actions) {
+  background: transparent;
+  position: static;
 }
 .sdk-object-list-search {
   background: var(--el-bg-color);
@@ -1239,28 +1472,11 @@ watch(someVisibleChecked, () => {
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
-.sdk-object-list-selection-bar {
-  align-items: center;
-  border-bottom: 1px solid var(--ui-divider);
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-xs) 0 var(--spacing-sm);
-}
-.sdk-object-list-select-all {
-  align-items: center;
-  cursor: pointer;
-  display: inline-flex;
-  font-size: var(--text-xs);
-  gap: var(--spacing-xs);
-}
 .sdk-object-list-batch-actions {
   align-items: center;
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs);
-  margin-left: auto;
 }
 .sdk-object-list-link-btn,
 .sdk-object-ref-link {
@@ -1290,11 +1506,17 @@ watch(someVisibleChecked, () => {
 .sdk-object-list-table th,
 .sdk-object-list-table td {
   border-bottom: 1px solid var(--ui-divider);
-  padding: var(--spacing-sm) var(--spacing-md);
+  box-sizing: border-box;
+  padding: 0 var(--spacing-md);
   text-align: left;
   vertical-align: middle;
   /* A value stays on its line: a short column is as wide as its text, never two characters over two lines. */
   white-space: nowrap;
+}
+.sdk-object-list-table th:not(.sdk-object-list-col-wrap),
+.sdk-object-list-table td:not(.sdk-object-list-col-wrap) :is(.sdk-object-list-cell-main, .sdk-object-list-cell-sub, .sdk-object-ref-link) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* A long text column takes the room the others leave, down to a readable minimum, and ends in an ellipsis. */
 .sdk-object-list-table .sdk-object-list-col-shrink {
@@ -1308,6 +1530,7 @@ watch(someVisibleChecked, () => {
   text-overflow: ellipsis;
 }
 .sdk-object-list-table .sdk-object-list-col-wrap {
+  padding-block: var(--spacing-sm);
   white-space: normal;
   min-width: 12em;
 }
@@ -1316,13 +1539,13 @@ watch(someVisibleChecked, () => {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  height: var(--table-head-height);
+  height: var(--table-head-height, 36px);
   position: sticky;
   top: 0;
   z-index: 1;
 }
 .sdk-object-list-table td {
-  height: var(--table-row-height);
+  height: var(--table-row-height, 40px);
 }
 .sdk-object-list-table tbody tr {
   cursor: pointer;
@@ -1383,7 +1606,7 @@ watch(someVisibleChecked, () => {
 }
 .sdk-object-list-table td.sdk-object-list-detail-cell {
   height: auto;
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-md);
   white-space: normal;
 }
 .sdk-object-list-card-detail,
@@ -1400,16 +1623,32 @@ watch(someVisibleChecked, () => {
   flex-direction: column;
   gap: calc(var(--spacing-xs) / 2);
 }
+.sdk-object-list-select-all {
+  align-items: center;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--text-xs);
+  gap: var(--spacing-xs);
+}
 .sdk-object-list-cell-sub,
 .sdk-object-list-item-sub {
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
+}
+.sdk-object-list-item-sub {
+  line-height: var(--leading-xs);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
 }
 .sdk-object-list-item-sub-clamped {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: var(--leading-xs);
+  white-space: normal;
 }
 .sdk-object-list-items {
   display: flex;
@@ -1429,33 +1668,39 @@ watch(someVisibleChecked, () => {
   gap: var(--spacing-xs);
 }
 .sdk-object-list-row-main {
-  align-items: flex-start;
+  align-items: center;
   display: flex;
   flex: 0 0 auto;
   gap: var(--spacing-xs);
+  min-width: 0;
   width: 100%;
 }
-.sdk-object-list-row-expand {
-  margin-top: calc(var(--spacing-xs) / 2);
-}
+.sdk-object-list-row-expand,
 .sdk-object-list-row-check {
-  margin-top: var(--spacing-sm);
+  flex: 0 0 auto;
 }
 .sdk-object-list-item-btn {
   background: none;
   border: 0;
   border-radius: var(--radius-md);
+  box-sizing: border-box;
   color: var(--el-text-color-primary);
   cursor: pointer;
   display: flex;
   flex: 1;
   flex-direction: column;
   font-size: var(--text-sm);
-  gap: var(--spacing-xs);
+  gap: calc(var(--spacing-xs) / 2);
+  justify-content: center;
+  min-height: var(--list-row-height, 44px);
+  min-width: 0;
   padding: var(--spacing-xs) var(--spacing-sm);
   text-align: left;
   transition: background-color var(--transition-fast);
   width: 100%;
+}
+.sdk-object-list-item-btn.sdk-object-list-item-two-line {
+  min-height: var(--list-row-two-line-height, 60px);
 }
 .sdk-object-list-item-btn:hover {
   background: var(--ui-fill-tertiary);
@@ -1469,7 +1714,18 @@ watch(someVisibleChecked, () => {
   display: flex;
   gap: var(--spacing-sm);
   justify-content: space-between;
+  min-width: 0;
   width: 100%;
+}
+.sdk-object-list-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sdk-object-list-item-head .sdk-object-list-tag {
+  flex: 0 0 auto;
 }
 .sdk-object-list-item-tags {
   display: inline-flex;

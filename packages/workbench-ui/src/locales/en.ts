@@ -232,6 +232,8 @@ export default {
     "listPagination": "Page {page} of {pages}",
     "listPrevPage": "Previous",
     "listNextPage": "Next",
+    "listLoadMore": "Load more",
+    "clearFilters": "Clear filters",
     "booleanTrue": "Yes",
     "booleanFalse": "No",
     "readerMore": "More",

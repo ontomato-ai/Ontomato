@@ -302,7 +302,23 @@ function onHostKeydown(event: KeyboardEvent) {
   min-width: 0;
 }
 .sdk-object-list-detail-host {
+  display: block;
   width: 100%;
+  height: auto;
+  min-width: 0;
+}
+.sdk-object-list-detail-host :deep(.sdk-owner-form),
+.sdk-object-list-detail-host :deep(.sdk-owner-form-inner) {
+  flex: 0 0 auto;
+  height: auto;
+}
+.sdk-object-list-detail-host :deep(.sdk-owner-form-body) {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.sdk-object-list-detail-host :deep(.sdk-owner-form-actions) {
+  background: transparent;
+  position: static;
 }
 .sdk-object-list-cell-loading {
   display: inline-block;

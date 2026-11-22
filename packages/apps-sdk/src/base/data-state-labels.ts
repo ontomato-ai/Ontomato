@@ -6,13 +6,21 @@ import type { DataStateLabels } from "@ontomato/foundation-ui/data-state";
  * The words a component shows a datum's state with, in the reader's language: the platform's, except an empty answer a
  * component words itself (a list's own empty text, a chart's).
  */
-export function useDataStateLabels(empty?: () => string): ComputedRef<DataStateLabels> {
+export function useDataStateLabels(
+  empty?: () => string,
+  emptyHint?: () => string | undefined,
+): ComputedRef<DataStateLabels> {
   const { t } = useI18n();
-  return computed(() => ({
-    empty: empty?.() ?? t("platform.dataEmpty"),
-    noMatch: t("platform.dataNoMatch"),
-    forbidden: t("platform.dataForbidden"),
-    awaiting: t("platform.dataAwaiting"),
-    retry: t("common.retry"),
-  }));
+  return computed(() => {
+    const hint = emptyHint?.();
+    return {
+      empty: empty?.() ?? t("platform.dataEmpty"),
+      ...(hint ? { emptyHint: hint } : {}),
+      noMatch: t("platform.dataNoMatch"),
+      clearFilters: t("platform.clearFilters"),
+      forbidden: t("platform.dataForbidden"),
+      awaiting: t("platform.dataAwaiting"),
+      retry: t("common.retry"),
+    };
+  });
 }

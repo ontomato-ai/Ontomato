@@ -1,4 +1,6 @@
 /* eslint-disable vue/one-component-per-file */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, ref, type Component } from "vue";
 import { createI18n } from "vue-i18n";
@@ -20,6 +22,7 @@ import {
   ONTOLOGY_TYPE,
   PRODUCT_PANEL,
   ROLE,
+  SCHEDULED_TASK,
   USER,
   WORKFLOW,
 } from "@ontomato/contracts/platform-object-types";
@@ -1110,5 +1113,102 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
       },
     });
     expect(instance.state.values.value.selected).toEqual({ className: APPLICATION, primaryKey: "app-1" });
+  });
+
+  it("embeds ObjectForm inside listRowDetail expansion cleanly without height collapse or double-scroll rules", async () => {
+    const projections: Record<string, DirectProjection> = {
+      "entries-list": {
+        ...meta,
+        id: "entries-list",
+        name: "Entries",
+        componentId: "@ontomato/sdk:ObjectList",
+        inputs: {},
+        outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
+        config: {},
+        data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
+      },
+      "entry-form": {
+        ...meta,
+        id: "entry-form",
+        name: "Entry form",
+        componentId: "@ontomato/sdk:ObjectForm",
+        inputs: { row: { kind: "object", objectType: SCHEDULED_TASK } },
+        outputs: {},
+        config: {},
+        data: {
+          form: {
+            source: { object: { input: "row" } },
+            read: "form",
+            params: {},
+          },
+        },
+        operations: {
+          save: {
+            operation: { kind: "PlatformOperation", id: `${SCHEDULED_TASK}.save` },
+            target: { input: "row" },
+          },
+        },
+      },
+    };
+    const manifest = definePanel({
+      state: { selected: { type: { kind: "object", objectType: SCHEDULED_TASK } } },
+      members: {
+        list: { target: { projectionId: "entries-list" }, outputs: { selected: { state: "selected" } } },
+        rowForm: {
+          target: { projectionId: "entry-form" },
+          listRowDetail: { slot: "list" },
+          inputs: { row: { item: true } },
+        },
+      },
+      commands: {},
+    });
+
+    const { element } = mountDirectTest({
+      manifest,
+      projections,
+      members: ["list"],
+      answer(request) {
+        if (request.dataName === "rows") {
+          return ready([{ primaryKey: "app-1", label: "Daily Sync", fields: {} }]);
+        }
+        return ready({
+          fields: [
+            {
+              path: "/name",
+              label: "Name",
+              required: true,
+              readOnly: false,
+              valueSchema: { type: "string" },
+              control: { kind: "text", multiline: false },
+            },
+          ],
+          values: { name: "Daily Sync" },
+          errors: [],
+          revision: 1,
+          save: {
+            method: "PUT",
+            path: "/apps/:id",
+            bodySchema: {},
+            draftOperation: "app.update",
+          },
+        });
+      },
+    });
+
+    await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-expand-btn")).not.toBeNull());
+    element.querySelector<HTMLButtonElement>(".sdk-object-list-expand-btn")!.click();
+    await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-row-detail .sdk-owner-form")).not.toBeNull());
+    await vi.waitFor(() => {
+      expect(element.querySelector<HTMLInputElement>(".sdk-object-list-row-detail input")?.value).toBe("Daily Sync");
+    });
+
+    const repoRoot = resolve(import.meta.dirname, "../../../../..");
+    const listRowMemberSource = readFileSync(
+      resolve(repoRoot, "packages/apps-sdk/src/base/ListRowMember.vue"),
+      "utf8",
+    );
+    expect(listRowMemberSource).toContain(".sdk-object-list-detail-host :deep(.sdk-owner-form-body)");
+    expect(listRowMemberSource).toContain("overflow: visible;");
+    expect(listRowMemberSource).toContain("position: static;");
   });
 });
