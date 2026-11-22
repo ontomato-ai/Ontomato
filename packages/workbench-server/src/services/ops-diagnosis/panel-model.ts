@@ -7,7 +7,7 @@ import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { agentDefinitionPermissions } from "../assistant/definition-permissions";
-import { describeModelPanelForm, modelSelectionWrite } from "../assistant/model-panel-form";
+import { describeModelPanelForm, modelSelectionWrite, readDomainModelLabelMap } from "../assistant/model-panel-form";
 import { affected } from "../product-panels/data-query-operations";
 import type { PanelServerOperation } from "../product-panels/server-operations";
 import { readDiagnosisModel, saveDiagnosisModel } from "./model-settings";
@@ -23,11 +23,15 @@ export function createDiagnosisModelReads(domainId: string, viewer: AssistantCre
     if (primaryKey !== DIAGNOSIS_AGENT_ID) throw new HttpError(404, "Diagnosis model not found", "NOT_FOUND");
     return (await readDiagnosisModel(domainId)).modelSelection.modelId;
   }
+  async function formatModel(modelId: string | null): Promise<string> {
+    const labels = await readDomainModelLabelMap(viewer);
+    return labels.get(modelId) ?? modelId ?? tForLocale(viewer.locale, "panels.agentOptions.domainDefault");
+  }
   async function record(primaryKey: string): Promise<PanelRecord> {
     const modelId = await read(primaryKey);
     return {
       primaryKey, label: text("diagnosisAgent"), subtitle: text("diagnosisDescription"),
-      fields: { modelId: modelId ?? tForLocale(viewer.locale, "panels.agentOptions.domainDefault") },
+      fields: { modelId: await formatModel(modelId) },
       fieldLabels: { modelId: tForLocale(viewer.locale, "panels.agentForm.modelSelection") },
     };
   }

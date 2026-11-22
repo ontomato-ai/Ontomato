@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, provide, ref, shallowRef, watch, type Component } from "vue";
+import { computed, onErrorCaptured, onMounted, provide, ref, shallowRef, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { DataState } from "@ontomato/foundation-ui/data-state";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
@@ -37,6 +37,12 @@ const awaiting = ref(false);
 /** The platform's current entry, asked for outside an application's frame: the place says it shows nothing here. */
 const outsideFrame = ref(false);
 const container = ref<HTMLElement | null>(null);
+
+// Keep a member component's render or lifecycle error in its own place instead of failing the whole panel.
+onErrorCaptured((reason: unknown) => {
+  failure.value ??= reason instanceof Error ? reason : new Error(String(reason));
+  return false;
+});
 
 // The member as the instance holds it — read, registered and kept current there, drawn here.
 void props.instance.placing(props.member).then(async (placing) => {
