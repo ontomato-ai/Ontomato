@@ -213,6 +213,21 @@ export const components: readonly ComponentMetadata[] = [
     },
   }),
   defineComponentMeta({
+    componentId: "ObjectCount",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectCount",
+    role: "presentation",
+    meaning:
+      "Draws a compact, inline tabular-numeral metric strip summarizing records from its `rows` (`panelRecordList` or `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum, suitable for canvas headers and workbench toolbars. In single-metric mode, configure `label`, `labelKey`, or `labels` (localized label map) and an optional `sumField` (summing finite numbers, numeric strings, array lengths, or `{ kind: 'json', value: ... }` array/number wrappers across rows; when omitted, `panelRecordQuery`/`panelOntologyObjects` use `total` and `panelRecordList` uses `rows.length`). To render several metrics from the same read without duplicating requests (for example `18 Object types · 193 Properties`), pass `items` as an array of `{ label?, labelKey?, labels?, sumField? }`. Shows `…` while loading, `0` when empty, and a muted `—` with an explanatory tooltip when forbidden, awaiting inputs, or unreachable.",
+    effects: "Reads the bound type's list, query, or ontology objects datum as the reader; writes nothing.",
+    bindsElement: ["PlatformObjectType:*"],
+    // Either `rows` (list/query) or `objects` (ontology objects) supplies the counted collection; at least one is declared.
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+      objects: { results: ["panelOntologyObjects"], required: false },
+    },
+  }),
+  defineComponentMeta({
     componentId: "ObjectSummary",
     module: "@ontomato/sdk/base",
     exportName: "ObjectSummary",
@@ -280,14 +295,19 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ReferencePicker",
     role: "control",
     meaning:
-      "Chooses the value of one reference field of a form in the same panel from the catalogue of the type the projection binds, writing the owner's own value (a skill's whole reference, a model's key) into that form, so the choice is saved, discarded and drafted with it. Declare the picker with `target.projectionId` and `formField: { slot, path }`, where `slot` is the form member and `path` is the owner's JSON Pointer; the form draws it in that field's place (or, with an optional `itemPath`, in each row of the array at `path`), wherever the panel mounts it. A choice the owner describes is offered with its description, and an empty value the owner names (a default followed) shows as that choice. The field controls single or multiple selection. `options` finds choices and `selected` resolves the values already in the form. A value the catalogue no longer offers stays listed, unavailable, with the owner's reason.",
-    effects: "Reads the bound type's choices as the reader; it writes only the form field its slot's field port names.",
+      "Chooses a reference from the bound type's records or option catalogue in either of two modes. In form-field mode (when the member declares `formField: { slot, path }` with optional `itemPath`), it registers into the target `ObjectForm` at that field's JSON Pointer (or each row of an array field) and writes the owner's own value (a skill's whole reference, a model's key) into the form so the choice is saved, discarded and drafted with it; `options` finds choices, `selected` resolves the values already in the form, descriptions and empty defaults are shown, and unavailable values remain listed with the owner's reason. In standalone inline mode (when `formField` is omitted), it renders a compact, filterable single-select dropdown directly at the `<Projection>` site (suited for workbench toolbars such as path start/target pickers), reading either `data.rows` (`panelRecordList` or `panelRecordQuery`, filtered locally in memory with zero extra requests) or `data.options` (`panelOptionList`, with optional `data.selected` to resolve held/unavailable values), and syncing the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected` output/member parameter; when data is forbidden or unreachable, the dropdown is disabled with a readable tooltip.",
+    effects: "Reads the bound type's options or records as the reader; writes only the target form field in form-field mode, or the panel's `selected` state in standalone inline mode.",
     bindsElement: ["PlatformObjectType:*"],
-    // The catalogue it offers, and the held values it lists beside it: both are the member's own reads.
+    // Form-field mode uses `options` + `selected`; standalone inline mode uses either `rows` (local filter) or `options` (with optional `selected`).
     data: {
-      // The reader's search and page of choices, and the values the form holds now.
-      options: { results: ["panelOptionList"], required: true, runtimeParams: ["keyword", "page"] },
-      selected: { results: ["panelOptionList"], required: true, runtimeParams: ["values"] },
+      // The reader's search and page of choices, and the values already held.
+      options: { results: ["panelOptionList"], required: false, runtimeParams: ["keyword", "page"] },
+      selected: { results: ["panelOptionList"], required: false, runtimeParams: ["values"] },
+      // Record list/query for standalone inline pickers that filter locally with zero extra requests.
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+    },
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
     },
   }),
   defineComponentMeta({
