@@ -528,8 +528,8 @@ test("checkPanelWorkspace leaves viewport units allowed by default and rejects t
   assert.equal(JSON.parse(runWithViewportToggle(okDir, true)).status, "valid");
 });
 
-test("panel check --strict-paradigm enforces the three decidable rules while default stays backward-compatible", (t) => {
-  const sdkDir = mkdtempSync(join(tmpdir(), "panel-paradigm-sdk-"));
+test("panel check allows normal HTML/CSS layout, semantic buttons, and data-free SDK UI primitives", (t) => {
+  const sdkDir = mkdtempSync(join(tmpdir(), "panel-clean-sdk-"));
   t.after(() => rmSync(sdkDir, { recursive: true, force: true }));
   writeFileSync(
     join(sdkDir, "sdk.json"),
@@ -547,98 +547,23 @@ test("panel check --strict-paradigm enforces the three decidable rules while def
     { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
   );
 
-  // Legacy panel with viewport units, <sdk-table>, and native controls (<input>/<select>/<button>/<textarea>):
-  // passes by default, fails with actionable diagnostics under --strict-paradigm.
-  // Colors, font sizes, pane widths, and <sdk-dialog>/<sdk-drawer> are NOT rejected.
-  const legacyDir = mkdtempSync(join(tmpdir(), "panel-paradigm-legacy-"));
-  t.after(() => rmSync(legacyDir, { recursive: true, force: true }));
-  writeWorkspace(legacyDir, {
-    html: [
-      "<style>",
-      "  .root { height: 100vh; color: #333; font-size: 14px; }",
-      "  .split { display: grid; grid-template-columns: 264px minmax(320px, 1fr) 320px; }",
-      "</style>",
-      '<div id="app" class="root split">',
-      '  <sdk-dialog v-model="open"></sdk-dialog>',
-      '  <sdk-table :data="rows"></sdk-table>',
-      '  <input v-model="query" />',
-      '  <select v-model="scope"><option value="all">All</option></select>',
-      '  <button type="button" @click="save">Save</button>',
-      '  <textarea v-model="notes"></textarea>',
-      "</div>",
-    ].join("\n"),
-    extraCss: ".aside { width: 280px; min-height: 80dvh; background: rgba(0, 0, 0, 0.4); }\n",
-  });
-
-  assert.equal(JSON.parse(runCli("panel", "check", legacyDir, "--sdk-dir", sdkDir)).status, "valid");
-
-  assert.throws(
-    () => runCli("panel", "check", legacyDir, "--sdk-dir", sdkDir, "--strict-paradigm"),
-    (error) => {
-      const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
-      const lines = output.trim().split("\n");
-      assert.equal(lines.length, 7);
-      assert.match(output, /panel\.html:2:19:.*100vh/u);
-      assert.match(output, /panel\.html:7:4:.*sdk-table.*ObjectList.*<projection>/u);
-      assert.match(output, /panel\.html:8:4:.*<input>.*<sdk-input>/u);
-      assert.match(output, /panel\.html:9:4:.*<select>.*<sdk-select>/u);
-      assert.match(output, /panel\.html:10:4:.*<button>.*<sdk-button>/u);
-      assert.match(output, /panel\.html:11:4:.*<textarea>.*<sdk-input type="textarea">/u);
-      assert.match(output, /extra\.css:1:36:.*80dvh/u);
-      // Colors, font sizes, pane widths, and dialogs (line 6) are intentionally not rejected.
-      assert.doesNotMatch(output, /#333|14px|264px|280px|rgba|panel\.html:6:/u);
-      return true;
-    },
-  );
-
-  // Builtin panel source check also honors --strict-paradigm via CLI.
-  const builtinDir = mkdtempSync(join(tmpdir(), "panel-paradigm-builtin-"));
-  t.after(() => rmSync(builtinDir, { recursive: true, force: true }));
-  writeFileSync(join(builtinDir, "registration.json"), JSON.stringify({ panels: [{ id: "builtin-product-paradigm-test" }] }));
-  writeFileSync(join(builtinDir, "panel.json"), JSON.stringify({ manifest: { state: {}, members: {}, commands: {} } }));
-  writeFileSync(
-    join(builtinDir, "panel.html"),
-    '<style>.a { height: 50vw; }</style>\n<div id="app"><sdk-pagination></sdk-pagination><button type="button">Go</button></div>\n',
-  );
-  writeFileSync(
-    join(builtinDir, "panel.mjs"),
-    'import { mountPanel } from "@ontomato/sdk/panel";\nconst sample = "<button><input></button>";\nmountPanel({ setup: () => ({ sample }) });\n',
-  );
-
-  assert.equal(
-    JSON.parse(runCli("panel", "check", builtinDir, "--builtin", "--sdk-dir", sdkDir)).panelId,
-    "builtin-product-paradigm-test",
-  );
-  assert.throws(
-    () => runCli("panel", "check", builtinDir, "--builtin", "--sdk-dir", sdkDir, "--strict-paradigm"),
-    (error) => {
-      const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
-      assert.match(output, /panel\.html:1:21:.*50vw/u);
-      assert.match(output, /panel\.html:2:16:.*sdk-pagination.*ObjectList/u);
-      assert.match(output, /panel\.html:2:49:.*<button>.*<sdk-button>/u);
-      assert.doesNotMatch(output, /panel\.mjs/u);
-      return true;
-    },
-  );
-
-  // Clean panel (including custom colors, font sizes, dialogs, SVG icons, and script strings) passes --strict-paradigm.
-  const cleanDir = mkdtempSync(join(tmpdir(), "panel-paradigm-clean-"));
+  const cleanDir = mkdtempSync(join(tmpdir(), "panel-clean-dir-"));
   t.after(() => rmSync(cleanDir, { recursive: true, force: true }));
   writeWorkspace(cleanDir, {
     html: [
       "<style>",
+      "  .layout { display: grid; grid-template-columns: var(--pane-list-width, 300px) minmax(0, 1fr); height: 100%; }",
       "  .hint { color: #334155; font-size: 13px; }",
-      "  .fields { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: var(--spacing-sm); }",
       "</style>",
-      '<div id="app">',
-      "  <two-pane-layout>",
-      '    <p class="hint">Clean unified paradigm panel</p>',
-      '    <sdk-button type="primary"><svg viewBox="0 0 16 16"><path d="M0 0"/></svg>Save</sdk-button>',
-      '    <sdk-dialog v-model="open"><sdk-input v-model="name" /></sdk-dialog>',
-      "  </two-pane-layout>",
+      '<div id="app" class="layout">',
+      '  <p class="hint">Normal HTML/CSS layout with SDK controls</p>',
+      '  <button type="button" class="tab-chip">Overview</button>',
+      '  <sdk-table :data="staticRows"></sdk-table>',
+      '  <sdk-button type="primary">Save</sdk-button>',
+      '  <sdk-dialog v-model="open"><sdk-input v-model="name" /></sdk-dialog>',
       "</div>",
     ].join("\n"),
-    mjs: 'import { mountPanel } from "@ontomato/sdk/panel";\nconst doc = "<button><input><select><textarea>";\nmountPanel({ setup: () => ({ doc }) });\n',
+    mjs: 'import { mountPanel } from "@ontomato/sdk/panel";\nmountPanel({});\n',
   });
-  assert.equal(JSON.parse(runCli("panel", "check", cleanDir, "--sdk-dir", sdkDir, "--strict-paradigm")).status, "valid");
+  assert.equal(JSON.parse(runCli("panel", "check", cleanDir, "--sdk-dir", sdkDir)).status, "valid");
 });

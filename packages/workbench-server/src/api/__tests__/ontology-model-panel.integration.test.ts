@@ -408,7 +408,11 @@ it("creates, refuses and deletes model objects through the panel coordinator aga
 
   const removed = await operate("removeType.delete", { target: target(warehouse), input: {} });
   expect(removed.confirmation).toMatchObject({ kind: "impact", impact: {
-    objects: [{ target: { objectType: RELATIONSHIP, primaryKey: "contains" }, label: "Contains" }], total: 1,
+    objects: [
+      { target: { objectType: OBJECT_TYPE, primaryKey: "warehouse" }, label: "Warehouse" },
+      { target: { objectType: RELATIONSHIP, primaryKey: "contains" }, label: "Contains" },
+    ],
+    total: 2,
   } });
   // The owner says what it deleted by its name, and that the type and the relationships joining it are gone.
   expect(removed.receipt).toMatchObject({ kind: "dispatched", outcome: {

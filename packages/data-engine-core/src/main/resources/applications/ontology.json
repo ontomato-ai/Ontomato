@@ -40,7 +40,7 @@
     }, {
       "id": "ontology-objects", "pageKey": "ontology-objects", "panelId": "builtin-product-ontology-objects",
       "path": "/ontology/objects", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"en": "Object types: the catalogue, a new type, and one type's details with its attributes and relations.", "zh-CN": "对象类型的目录、新建，以及一个类的详情：基本信息、属性与关系。"},
+      "descriptions": {"en": "Define business object types, attributes, and identifier fields", "zh-CN": "定义业务对象类型、属性与标识字段"},
       "names": {"en": "Object types", "zh-CN": "对象类型"},
       "count": {"member": "catalog", "data": "rows"}
     }, {

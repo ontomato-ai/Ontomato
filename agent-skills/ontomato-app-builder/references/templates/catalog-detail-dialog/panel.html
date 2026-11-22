@@ -1,0 +1,49 @@
+<style>
+  .catalog-page { display: flex; flex-direction: column; min-width: 0; min-height: 100%; container: catalog-page / inline-size; }
+  .catalog-view { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px); }
+  .detail-view { display: flex; flex-direction: column; min-width: 0; min-height: 100%; }
+  .detail-titlebar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); min-height: var(--page-header-height, 56px); padding: var(--spacing-sm) var(--page-gutter); border-bottom: 1px solid var(--sdk-border-color, var(--ui-border)); box-sizing: border-box; }
+  .detail-divider { width: 1px; height: 22px; background: var(--sdk-border-color, var(--ui-border)); }
+  .detail-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sdk-text-color-primary); font-size: var(--text-sm); font-weight: var(--font-semibold); }
+  .detail-spacer { flex: 1; }
+  .detail-actions { display: inline-flex; align-items: center; gap: var(--spacing-sm); flex-shrink: 0; }
+  .detail-body { display: grid; grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr); gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px); align-items: stretch; }
+  .detail-card { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--page-section-padding, var(--spacing-lg)); border: 1px solid var(--sdk-border-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--sdk-bg-color); }
+  .detail-card h2 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); }
+  .create-dialog-body .sdk-owner-form, .create-dialog-body .sdk-owner-form-inner { height: auto; }
+  .create-dialog-body .sdk-owner-form-body { overflow: visible; }
+  @container catalog-page (max-width: 850px) { .detail-body { grid-template-columns: minmax(0, 1fr); } .detail-divider { display: none; } }
+</style>
+<div id="app">
+  <section class="catalog-page">
+    <div v-if="!selectedKey" class="catalog-view">
+      <projection slot="list" @update:selected="stopCreating"></projection>
+    </div>
+    <div v-else class="detail-view">
+      <header v-if="!hasHeaderHost" class="detail-titlebar">
+        <sdk-button text @click="back">{{ t("detail.back") }}</sdk-button>
+        <span class="detail-divider" aria-hidden="true"></span>
+        <span class="detail-title">{{ selectedTitle }}</span>
+        <span class="detail-spacer"></span>
+        <div class="detail-actions">
+          <sdk-button type="primary" :loading="saving" :disabled="!canSave" @click="saveDetail">{{ t("detail.save") }}</sdk-button>
+        </div>
+      </header>
+      <div class="detail-body">
+        <section class="detail-card">
+          <h2>{{ t("detail.basicInfo") }}</h2>
+          <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
+        </section>
+        <section class="detail-card">
+          <h2>{{ t("detail.overview") }}</h2>
+          <projection slot="detail"></projection>
+        </section>
+      </div>
+    </div>
+    <sdk-dialog v-model="createDialog" :title="t('dialog.createTitle')" width="540px" append-to-body destroy-on-close>
+      <div class="create-dialog-body">
+        <projection slot="form" v-if="createDialog" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"></projection>
+      </div>
+    </sdk-dialog>
+  </section>
+</div>

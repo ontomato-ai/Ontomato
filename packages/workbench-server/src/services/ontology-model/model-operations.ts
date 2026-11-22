@@ -154,15 +154,20 @@ const deleteObjectTypeImpact: PanelImpactInspector = {
       throw new HttpError(response.status, error.message, error.code);
     }
     const impact = deletionImpactSchema.parse(await response.json());
+    const targetName = await objectTypeTargetLabel(host, target);
+    const objects = [
+      { target: { objectType: OBJECT_TYPE, primaryKey: target.primaryKey }, label: targetName },
+      ...impact.relationships.map(view => ({
+        target: { objectType: RELATIONSHIP, primaryKey: view.relationship },
+        label: view.desc || view.relationship,
+      })),
+    ];
     return {
       summary: tForLocale(host.locale, "panels.confirmation.deleteObjectTypeImpact", {
         relationships: impact.relationships.length,
       }),
-      objects: impact.relationships.map(view => ({
-        target: { objectType: RELATIONSHIP, primaryKey: view.relationship },
-        label: view.desc || view.relationship,
-      })),
-      total: impact.relationships.length,
+      objects,
+      total: objects.length,
     };
   },
 };

@@ -361,7 +361,7 @@ async function componentCommand(api, [command, ...args]) {
   print({ componentId: component.declaration.componentId, revision: component.revision });
 }
 
-async function checkCurrentPanel(api, directory, materialPath, { strictParadigm = false } = {}) {
+async function checkCurrentPanel(api, directory, materialPath) {
   const sdk = currentSdkClient({ workbenchUrl: api.envUrl, headers: headers(api) });
   const release = await sdk.current();
   const [checks, catalogue] = await Promise.all([sdk.check(release), sdk.components(release)]);
@@ -381,7 +381,6 @@ async function checkCurrentPanel(api, directory, materialPath, { strictParadigm 
     checks, catalogue, version: release.version, digest: release.digest, typeTable, lookup, findChartSource, materialPath,
     loadPackage: name => sdk.componentPackage(name, checks),
     loadDomainComponent: id => loadDomainComponentDeclaration(api, id),
-    strictParadigm,
   }));
 }
 
@@ -583,8 +582,8 @@ function usage() {
   panel uses <applicationId>
   panel preview <working|commit> [--workspace <id>]
   panel scaffold <type> <new directory> [--id <application id>] [--operation <id>] [--batch <id>]
-  panel check <directory> [--strict-paradigm] [--material <registration file>] [--sdk-dir <installed SDK release directory> [--component-package <release directory>]... [--type-table <file>]]
-  panel check <platform panel directory> --builtin --sdk-dir <installed SDK release directory> [--strict-paradigm]
+  panel check <directory> [--material <registration file>] [--sdk-dir <installed SDK release directory> [--component-package <release directory>]... [--type-table <file>]]
+  panel check <platform panel directory> --builtin --sdk-dir <installed SDK release directory>
   panel register <directory> [--material <registration file>]
   panel register <json|@file>
   function list [<filter json|@file>]
@@ -637,7 +636,6 @@ async function main() {
   if (!cmd || cmd === "--help") return usage();
   const checkingPanel = cmd === "panel" && argv[1] === "check";
   const builtin = checkingPanel && takeFlag(argv, "--builtin");
-  const strictParadigm = checkingPanel && takeFlag(argv, "--strict-paradigm");
   const sdkDirectory = checkingPanel ? takeOption(argv, "--sdk-dir") : null;
   const materialPath = checkingPanel ? takeOption(argv, "--material") ?? undefined : undefined;
   const typeTablePath = checkingPanel ? takeOption(argv, "--type-table") : null;
@@ -652,17 +650,17 @@ async function main() {
   }
   const offlineMaterial = typeTablePath !== null || packageDirectories.length > 0;
   if (builtin && (sdkDirectory === null || materialPath !== undefined || offlineMaterial)) {
-    die("panel check <platform panel directory> --builtin --sdk-dir <installed SDK release directory> [--strict-paradigm]");
+    die("panel check <platform panel directory> --builtin --sdk-dir <installed SDK release directory>");
   }
   if (offlineMaterial && sdkDirectory === null) die("--component-package and --type-table require --sdk-dir");
   if (sdkDirectory !== null) {
     const sdk = await installedPanelSdk(sdkDirectory);
-    if (builtin) return print(await checkBuiltinPanelSource(argv[2], sdk.checks, { assignIds: true, strictParadigm }));
+    if (builtin) return print(await checkBuiltinPanelSource(argv[2], sdk.checks, { assignIds: true }));
     const packages = await readLocalComponentPackages(packageDirectories, sdk.checks);
     const typeTable = typeTablePath === null ? undefined
       : sdk.checks.platformTypeTableResponseSchema.parse(JSON.parse(fs.readFileSync(typeTablePath, "utf8")));
     return print(await checkPanelWorkspace(argv[2], {
-      ...sdk, materialPath, typeTable, loadPackage: name => packages.get(name), strictParadigm,
+      ...sdk, materialPath, typeTable, loadPackage: name => packages.get(name),
     }));
   }
   if (cmd === "agent" && process.env.ONTOMATO_SKILL_SCENARIO === "platform") {
@@ -687,7 +685,7 @@ async function main() {
     await bindTestTarget(api,workspaceId);
   }
   if (cmd === "sdk") return sdkCommand(api, argv.slice(1));
-  if (checkingPanel) return checkCurrentPanel(api, argv[2], materialPath, { strictParadigm });
+  if (checkingPanel) return checkCurrentPanel(api, argv[2], materialPath);
   if (cmd === "component") return componentCommand(api, argv.slice(1));
   if (cmd === "panel") return panelCommand(api, workspaceId, argv.slice(1));
   if (cmd === "workspace") return workspaceCommand(api, argv.slice(1));

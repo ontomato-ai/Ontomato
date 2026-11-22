@@ -381,7 +381,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				? attributeValues(key[0], key[1], text(attrDef.get("type")), text(attrDef.get("showName")),
 						text(attrDef.get("attrDesc")), enabled(attrDef.get("enable")), businessKey(attrDef),
 						primaryKey(attrDef))
-				: attributeValues("", "", "", "", "", true, false, false);
+				: attributeValues("", "", "varchar", "", "", true, false, false);
 		Map<String, Object> values = formValues(body, current);
 		if (draftToCheck(body)) {
 			values = edit ? draftAttributeUpdate(rule, key, values, user, lang) : draftAttributeCreate(rule, values, user, lang);
@@ -864,15 +864,26 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 	}
 
 	private static ObjectNode textControl(boolean multiline) {
-		return textControl(multiline, null);
+		return textControl(multiline, null, null);
 	}
 
 	private static ObjectNode textControl(boolean multiline, Integer maxLength) {
+		return textControl(multiline, maxLength, null);
+	}
+
+	private static ObjectNode textControl(boolean multiline, Integer maxLength, String placeholder) {
 		ObjectNode control = multiline ? object("kind", "text", "multiline", true) : object("kind", "text");
 		if (maxLength != null) {
 			control.put("maxLength", maxLength);
 		}
+		if (placeholder != null && !placeholder.isBlank()) {
+			control.put("placeholder", placeholder);
+		}
 		return control;
+	}
+
+	private static ObjectNode hiddenControl() {
+		return object("kind", "hidden");
 	}
 
 	private static ObjectNode switchControl() {
@@ -956,7 +967,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 			"className", "Admin.form.className",
 			"primaryKeyName", "Admin.form.primaryKeyName",
 			"showName", "Admin.form.showName",
-			"classDesc", "Admin.form.desc");
+			"classDesc", "Admin.form.businessDesc");
 	private static final Map<String, String> ATTRIBUTE_LABEL_KEYS = Map.of(
 			"className", "Admin.form.ownerType",
 			"name", "Admin.form.name",
@@ -987,23 +998,27 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		String showNameLabel = label.get("showName");
 		String descLabel = label.get("classDesc");
 		List<ObjectNode> fields = new ArrayList<>();
-		ObjectNode classNameField = panelField("/className", classNameLabel, true, textControl(false),
-				stringSchema(classNameLabel), edit, null, false);
-		ObjectNode showNameField = panelField("/showName", showNameLabel, true, textControl(false, 80),
-				stringSchema(showNameLabel, 80), false, null, false);
-		ObjectNode descField = panelField("/classDesc", descLabel, false, textControl(true, 400),
-				stringSchema(descLabel, 400), false, null, false);
 		if (edit) {
 			// Match the detail view's edit order: editable display name first, read-only API name second, description last.
-			fields.add(showNameField);
-			fields.add(classNameField);
-			fields.add(descField);
+			fields.add(panelField("/showName", showNameLabel, false, textControl(false, 80),
+					stringSchema(showNameLabel, 80), false, null, false));
+			fields.add(panelField("/className", classNameLabel, false, textControl(false),
+					stringSchema(classNameLabel), true, null, false));
+			fields.add(panelField("/classDesc", descLabel, false, textControl(true, 400),
+					stringSchema(descLabel, 400), false, null, false));
 		} else {
-			fields.add(classNameField);
-			fields.add(panelField("/primaryKeyName", primaryKeyNameLabel, true, textControl(false),
-					stringSchema(primaryKeyNameLabel), false, null, false));
-			fields.add(showNameField);
-			fields.add(descField);
+			fields.add(panelField("/className", classNameLabel, true,
+					textControl(false, 80, langService.get(lang, "Admin.form.exampleClassName")),
+					stringSchema(classNameLabel, 80), false, null, false));
+			fields.add(panelField("/primaryKeyName", primaryKeyNameLabel, true,
+					textControl(false, 80, langService.get(lang, "Admin.form.examplePrimaryKey")),
+					stringSchema(primaryKeyNameLabel, 80), false, null, false));
+			fields.add(panelField("/showName", showNameLabel, true,
+					textControl(false, 80, langService.get(lang, "Admin.form.exampleShowName")),
+					stringSchema(showNameLabel, 80), false, null, false));
+			fields.add(panelField("/classDesc", descLabel, false,
+					textControl(true, null, langService.get(lang, "Admin.form.objectDescPlaceholder")),
+					stringSchema(descLabel), false, null, false));
 		}
 		return fields;
 	}
@@ -1021,21 +1036,41 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		String primaryKeyLabel = label.get("primaryKey");
 		boolean locked = attrDef != null && primaryKey(attrDef);
 		List<ObjectNode> fields = new ArrayList<>();
-		fields.add(panelField("/className", ownerLabel, true, object("kind", "select", "options", objectTypeOptions(rule)),
-				stringSchema(ownerLabel), edit, null, false));
-		fields.add(panelField("/name", nameLabel, true, textControl(false), stringSchema(nameLabel), edit, null, false));
+		if (edit) {
+			// Inline edit keeps owner/name/type hidden (already displayed on the row above) and shows editable fields.
+			fields.add(panelField("/className", ownerLabel, true, hiddenControl(), stringSchema(ownerLabel), true, null, false));
+			fields.add(panelField("/name", nameLabel, true, hiddenControl(), stringSchema(nameLabel), true, null, false));
+			fields.add(panelField("/type", typeLabel, true, hiddenControl(), enumSchema(typeLabel, ATTRIBUTE_TYPES), true, null, false));
+			fields.add(panelField("/showName", showNameLabel, false, textControl(false, 80), stringSchema(showNameLabel, 80),
+					false, null, false));
+			fields.add(panelField("/attrDesc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
+					false, null, false));
+			fields.add(panelField("/enable", enableLabel, false, switchControl(), booleanSchema(enableLabel), locked,
+					locked ? langService.get(lang, "Admin.form.primaryKeyEnableLocked") : null, false));
+			fields.add(panelField("/businessKey", businessKeyLabel, false, switchControl(), booleanSchema(businessKeyLabel),
+					false, null, false));
+			fields.add(panelField("/primaryKey", primaryKeyLabel, false, switchControl(), booleanSchema(primaryKeyLabel),
+					true, langService.get(lang, "Admin.form.primaryKeySwitchHint"), false));
+			return fields;
+		}
+		fields.add(panelField("/className", ownerLabel, true,
+				selectControl(objectTypeOptions(rule), langService.get(lang, "Admin.form.selectOwnerType")),
+				stringSchema(ownerLabel), false, null, false));
+		fields.add(panelField("/name", nameLabel, true,
+				textControl(false, 80, langService.get(lang, "Admin.form.exampleAttrName")),
+				stringSchema(nameLabel, 80), false, null, false));
 		fields.add(panelField("/type", typeLabel, true, object("kind", "select", "options", attributeTypeOptions()),
-				enumSchema(typeLabel, ATTRIBUTE_TYPES), edit, null, false));
-		fields.add(panelField("/showName", showNameLabel, true, textControl(false), stringSchema(showNameLabel),
+				enumSchema(typeLabel, ATTRIBUTE_TYPES), false, null, false));
+		fields.add(panelField("/showName", showNameLabel, true,
+				textControl(false, 80, langService.get(lang, "Admin.form.exampleAttrShowName")),
+				stringSchema(showNameLabel, 80), false, null, false));
+		fields.add(panelField("/attrDesc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
 				false, null, false));
-		fields.add(panelField("/attrDesc", descLabel, false, textControl(true), stringSchema(descLabel),
-				false, null, false));
-		fields.add(panelField("/enable", enableLabel, true, switchControl(), booleanSchema(enableLabel), locked,
-				locked ? langService.get(lang, "Admin.form.primaryKeyEnableLocked") : null, false));
-		fields.add(panelField("/businessKey", businessKeyLabel, true, switchControl(), booleanSchema(businessKeyLabel),
+		fields.add(panelField("/enable", enableLabel, false, switchControl(), booleanSchema(enableLabel), false, null, false));
+		fields.add(panelField("/businessKey", businessKeyLabel, false, switchControl(), booleanSchema(businessKeyLabel),
 				false, null, false));
 		fields.add(panelField("/primaryKey", primaryKeyLabel, false, switchControl(), booleanSchema(primaryKeyLabel),
-				edit, edit ? langService.get(lang, "Admin.form.primaryKeySwitchHint") : null, false));
+				false, null, false));
 		return fields;
 	}
 
