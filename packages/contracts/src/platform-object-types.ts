@@ -73,6 +73,8 @@ export const RUN_NOW = "schedules.runNow";
 export const DELETE_AGENT = "agents.delete";
 export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
+export const SET_TRIGGER_STATUS = "triggers.setStatus";
+export const DELETE_TRIGGER = "triggers.delete";
 export const DELETE_METRIC_VIEW = "metricViews.delete";
 export const SET_METRIC_VIEW_STATUS = "metricViews.setStatus";
 export const TEST_METRIC_VIEW = "metricViews.test";
@@ -208,8 +210,15 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [`${ACTION}.save`, SET_ACTION_STATUS, DELETE_ACTION],
   },
-  [WORKFLOW]: describeType("workflow", "capability"),
-  [TRIGGER]: describeType("trigger", "capability"),
+  [WORKFLOW]: {
+    ...describeType("workflow", "capability"),
+    reads: { ...metadataList },
+  },
+  [TRIGGER]: {
+    ...describeType("trigger", "capability"),
+    reads: { ...metadataList, ...definitionQuery, ...modelReads },
+    operations: [`${TRIGGER}.save`, SET_TRIGGER_STATUS, DELETE_TRIGGER],
+  },
   [SKILL]: {
     ...describeType("skill", "capability"),
     childCollections: ["files"],

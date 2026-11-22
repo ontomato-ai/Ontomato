@@ -87,6 +87,26 @@ public final class PanelFormErrors {
     add(field, "invalid_option", message);
   }
 
+  public void invalidNumber(String field, String message) {
+    add(field, "invalid_number", message);
+  }
+
+  public void invalidTime(String field, String message) {
+    add(field, "invalid_time", message);
+  }
+
+  public void invalidFormat(String field, String message) {
+    add(field, "invalid_format", message);
+  }
+
+  public void valueTooLong(String field, String message) {
+    add(field, "value_too_long", message);
+  }
+
+  public void targetUnavailable(String field, String message) {
+    add(field, "target_unavailable", message);
+  }
+
   public void invalidArray(String field, String message) {
     add(field, "invalid_array", message);
   }

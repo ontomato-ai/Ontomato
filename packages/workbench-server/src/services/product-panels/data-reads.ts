@@ -12,7 +12,8 @@ import { authoredReadParameterSource, directReadDeclaration, panelReadParameterI
 import {
   AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
-  ONTOLOGY_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, type PlatformReadDeclaration,
+  ONTOLOGY_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, TRIGGER, WORKFLOW,
+  type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
@@ -73,6 +74,14 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const actions = async () => {
     const { createActionReadAdapter } = await import("../action/panel-reads");
     return createActionReadAdapter(owner, viewer, callerUserName);
+  };
+  const triggers = async () => {
+    const { createTriggerReadAdapter } = await import("../trigger/panel-reads");
+    return createTriggerReadAdapter(owner, viewer, callerUserName);
+  };
+  const workflows = async () => {
+    const { createWorkflowReadAdapter } = await import("../workflow/panel-reads");
+    return createWorkflowReadAdapter(owner, viewer, callerUserName);
   };
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
@@ -161,6 +170,16 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       createForm: async (_selection, params) => (await actions()).createForm(formParams(params)),
       definition: async selection => (await actions()).definition(selection.primaryKey!),
       explanation: async selection => (await actions()).explanation(selection.primaryKey!),
+    },
+    [TRIGGER]: {
+      list: async () => (await triggers()).list(),
+      query: async (_selection, params) => (await triggers()).query(params),
+      record: async selection => (await triggers()).record(selection.primaryKey!),
+      form: async (selection, params) => (await triggers()).form(selection.primaryKey!, formParams(params)),
+      createForm: async (_selection, params) => (await triggers()).createForm(formParams(params)),
+    },
+    [WORKFLOW]: {
+      list: async () => (await workflows()).list(),
     },
     [METRIC_VIEW]: {
       query: (_selection, params) => metrics.query(params),

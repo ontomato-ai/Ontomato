@@ -13,9 +13,18 @@ public final class PanelFormFields {
   private PanelFormFields() {}
 
   public static JSONObject text(boolean multiline) {
+    return text(multiline, null);
+  }
+
+  public static JSONObject text(boolean multiline, String placeholder) {
     JSONObject control = JSONObject.of("kind", "text");
     if (multiline) control.put("multiline", true);
+    if (placeholder != null && !placeholder.isBlank()) control.put("placeholder", placeholder);
     return control;
+  }
+
+  public static JSONObject frequency() {
+    return JSONObject.of("kind", "frequency");
   }
 
   public static JSONObject select(JSONArray options) {
@@ -69,10 +78,15 @@ public final class PanelFormFields {
   }
 
   public static JSONObject option(Object value, String label) {
+    return option(value, label, null, false, null);
+  }
+
+  public static JSONObject option(
+      Object value, String label, String description, boolean disabled, String disabledReason) {
     JSONObject option = JSONObject.of("value", value, "label", label);
-    option.put("description", null);
-    option.put("disabled", false);
-    option.put("disabledReason", null);
+    option.put("description", description);
+    option.put("disabled", disabled);
+    option.put("disabledReason", disabled ? disabledReason : null);
     return option;
   }
 
