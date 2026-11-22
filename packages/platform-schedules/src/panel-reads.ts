@@ -45,6 +45,7 @@ function taskRecord(task: PlatformTask, locale: string, translate: Translate): P
       application: task.appId,
       settings: task.summary.map(item => `${item.label}: ${item.value}`).join("; "),
       state: task.enabled ? (task.pause === null ? "on" : `paused: ${task.pause.message}`) : "off",
+      pauseCode: task.pause?.code ?? "",
       nextRun: task.nextRunAt ?? "",
       lastRun: task.lastRun?.status ?? "",
       frequency: scheduledTaskFrequencyText(task.frequency, locale, translate),
