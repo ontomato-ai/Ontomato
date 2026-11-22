@@ -460,7 +460,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "PanelData",
     role: "presentation",
     meaning:
-      "Draws nothing: it hands the data its projection declares to the panel's own code, which reads each datum with usePanelData(member, name) and draws it in the page's own way. A projection names it for the part of a page the panel draws itself; the panel's own buttons run the projection's operations with instance.invoke.",
+      "Draws nothing: a non-rendering member for reading declared data through usePanelData(member, name) to coordinate panel state, visibility or navigation (prefer a component's own output when available), or for declaring operations invoked through usePanelOperation(member, name). Do not use PanelData to render business fields in a panel template; use an official component, configure it, or write a component for that slot.",
     // Any datum the projection names, under the author's own name, with any read result and the run-time values the
     // other components give; the read's own signature still bounds them. The catalogue test keeps these lists whole.
     data: {

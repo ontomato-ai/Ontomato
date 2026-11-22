@@ -95,6 +95,9 @@ interface PanelStateStore {
 One datum of one member, kept current while the calling component is mounted. Call it in a component's setup,
 before any `await`.
 
+- Use this hook for panel coordination (such as deciding visibility, navigation or follow-up state when no component
+  output already carries the value). Do not use it to render business fields in the panel template; render business
+  data through an official component, its configuration, or a dedicated component.
 - `member` is a member the panel declares; `name` is a datum its projection names under `data.<name>`. The read, its
   mappings and the object it needs are the projection's: nothing about the read is written in the page.
 - The member's inputs come from the panel state its placement binds; the datum is read again whenever that state
