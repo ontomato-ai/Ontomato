@@ -247,7 +247,8 @@ async function create(width: number, height: number) {
     padding: 48,
     animation: false,
     data: { nodes: [], edges: [] },
-    // A name that gave way is still told when the reader points at its node.
+    // A name that gave way is still told when the reader points at its node, as text, never as markup. A name in view
+    // is told again too: G6 5.1 gives no steady sign of whether a label gave way (only its shapes' own visibility).
     plugins: props.readableLabels ? [{
       type: "tooltip", key: "names", position: "top",
       enable: (event: { targetType?: string }) => event.targetType === "node",
