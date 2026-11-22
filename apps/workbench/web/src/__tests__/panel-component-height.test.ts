@@ -624,7 +624,10 @@ it("declares the height-fill and default-height CSS contract across member wrapp
   const twoPaneCss = readRepoFile("packages/apps-sdk/src/base/TwoPaneLayout.vue");
   expect(twoPaneCss).toMatch(/\.sdk-two-pane\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
   expect(twoPaneCss).toMatch(/\.sdk-two-pane-block\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);/s);
-  expect(twoPaneCss).toMatch(/@container\s*\(max-width:\s*640px\)\s*\{[^}]*grid-template-rows:\s*auto;/s);
+  expect(twoPaneCss).toMatch(/\.sdk-two-pane-block\[data-legacy-stacked="true"\]\s*\{[^}]*grid-template-rows:\s*auto;/s);
+
+  const workbenchCss = readRepoFile("packages/apps-sdk/src/base/WorkbenchLayout.vue");
+  expect(workbenchCss).toMatch(/\.sdk-workbench\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s);
 
   for (const file of [
     "packages/apps-sdk/src/base/SegmentedControl.vue",
