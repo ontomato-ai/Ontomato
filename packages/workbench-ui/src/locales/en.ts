@@ -312,7 +312,14 @@ export default {
     "dataAwaiting": "Select an item first",
     "dataUnreachable": "The data could not be read. Try again.",
     "currentEntryOutsideFrame": "The entry you open is shown here when this panel is an application's frame.",
-    "memberUnavailable": "This is not available here"
+    "memberUnavailable": "This is not available here",
+    "backToList": "Back to list",
+    "selectItemToView": "Select an item to view details",
+    "workbenchAside": "Browse",
+    "workbenchDetail": "Details",
+    "workbenchCollapseAside": "Collapse sidebar",
+    "workbenchExpandAside": "Expand sidebar",
+    "workbenchCloseDetail": "Close details"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

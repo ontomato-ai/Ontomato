@@ -224,6 +224,17 @@ export const components: readonly ComponentMetadata[] = [
     data: { record: { results: ["panelRecord"], required: true } },
   }),
   defineComponentMeta({
+    componentId: "ObjectHeader",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectHeader",
+    role: "presentation",
+    meaning:
+      "Draws a detail header with object name (`record.label` or `title`), one-line subtitle (`subtitleField` or `subtitle`), status badge (`statusField` paired with `record.tones`, or `status` + `statusTone`), and right-side actions. When mounted as a projection member with declared `operations`, exposes at most two regular operations inline, moves additional regular operations into the More menu, and always places delete/danger operations last in the More menu using the platform's shared dispatch and confirmation path. Also works standalone with `title`/`subtitle` and `#actions` (such as create-mode headers).",
+    effects: "Reads the bound object's `record` datum when declared and runs projection operations through the platform coordinator.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: { record: { results: ["panelRecord"], required: false } },
+  }),
+  defineComponentMeta({
     componentId: "ObjectForm",
     module: "@ontomato/sdk/base",
     exportName: "ObjectForm",
@@ -405,7 +416,15 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "TwoPaneLayout",
     role: "presentation",
     meaning:
-      "Lays out two panes of one page side by side in one bordered block, the first at the platform's list width and the second taking the rest, stacking them where the panel is too narrow for both. When given a definite height it fills that box with each pane scrolling independently; when stacked or left without a definite height, the panes flow naturally. It binds nothing.",
+      "List-detail layout in one bordered block: side-by-side (`mode: 'split'`, left pane at `--pane-list-width`) or full-width alternating (`mode: 'switch'`), automatically switching to full-width alternating when its own container width is at or below `--pane-narrow-breakpoint` (680px). Fills definite container height with independent pane scrolling, keeps `#aside` DOM alive across switches to preserve scroll position and filters, scrolls `#default` back to top when `selectionKey` changes, provides fixed `#header`, `#tabs`, and `#footer` regions plus `#empty` placeholder, and omits `selected` to preserve legacy always-visible two-pane usage. It binds nothing.",
+  }),
+  defineComponentMeta({
+    componentId: "WorkbenchLayout",
+    module: "@ontomato/sdk/base",
+    exportName: "WorkbenchLayout",
+    role: "presentation",
+    meaning:
+      "Three-pane workbench layout for graph and canvas pages: collapsible left `#aside` (`--workbench-aside-width`), full-height center canvas (`#default`), and selection-driven right detail pane (`--workbench-detail-width`) with fixed `#detail-header`, `#detail-tabs`, scrollable `#detail` (resets scroll to top on `selectionKey` change), and `#detail-footer`. Below `--workbench-narrow-breakpoint` (880px), the canvas stays full width while both side panes become mutually exclusive floating overlays (at most one open at a time). It binds nothing.",
   }),
   defineComponentMeta({
     componentId: "SectionGroup",

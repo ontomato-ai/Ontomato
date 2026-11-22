@@ -42,6 +42,7 @@ const EDITION = join(HERE, "../../apps/workbench/web/src/sdk-edition.ts");
 const DECLARED_DATA = {
   ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
+  ObjectHeader: { record: ["panelRecord"] },
   ObjectForm: { form: ["panelFormDescription"], createForm: ["panelFormDescription"] },
   OperationButton: {},
   FileUploadControl: {},
