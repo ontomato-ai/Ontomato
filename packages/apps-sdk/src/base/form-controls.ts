@@ -13,8 +13,16 @@ export interface FormControls {
   readonly errors: Readonly<Ref<Readonly<Record<string, string>>>>;
   readonly changed: Readonly<Ref<ReadonlySet<string>>>;
   readonly busy: Readonly<Ref<boolean>>;
+  /** How top-level fields of the form are arranged (`stacked` or `rows`). */
+  readonly layout: Readonly<Ref<"stacked" | "rows">>;
+  /** Whether any visible top-level field declares `defaultValue`, reserving the reset column in `rows` layout. */
+  readonly hasDefaults: Readonly<Ref<boolean>>;
   /** Read-only reasons the form says once for itself, because its owner gives them to several fields; a field skips them. */
   readonly sharedReadOnlyReasons: Readonly<Ref<ReadonlySet<string>>>;
+  /** Whether `path` addresses a top-level field of this form (as opposed to an object child or array row field). */
+  isTopLevel(path: string): boolean;
+  /** Whether `path` currently holds unparseable local text (such as invalid JSON in a code editor). */
+  hasInvalid(path: string): boolean;
   set(path: string, value: RuntimeJsonValue): void;
   /** Leaves the field at `path` out of the values: a choice cleared, which the owner then does not receive. */
   remove(path: string): void;

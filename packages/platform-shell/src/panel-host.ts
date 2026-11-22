@@ -22,6 +22,7 @@ import type { PanelOperationAffected } from "@ontomato/contracts/panel-operation
 import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
+import type { PlatformPageDraft } from "./page-actions";
 
 /** An instance's deep-linkable state as the host carries it: what the host message hands the frame. */
 export type PanelHostState = PanelHostMessage["state"];
@@ -122,6 +123,11 @@ export interface DirectPanelRun {
   context(context: PageContext): void;
   operations(operations: readonly PanelOperation[]): void;
   dirty(dirty: boolean): void;
+  /**
+   * The page header's draft slot, supplied only when the host draws a page header for this panel (absent for nested
+   * panels and headerless previews). A form with `actions: "header"` publishes its Save/Discard draft here.
+   */
+  headerDraft?: (draft: PlatformPageDraft | null) => void;
   /** The reader saved or discarded the draft the address links. */
   draftSettled(draft: PageDraftLink): void;
   /**
@@ -219,6 +225,8 @@ export interface PanelInstanceView {
   readonly error: Ref<string>;
   readonly displayLoad: Readonly<ShallowRef<DisplayLoad>>;
   readonly dirty: Readonly<ShallowRef<boolean>>;
+  /** The Save/Discard draft a form in this panel handed to the page header, or null when none did. */
+  readonly headerDraft: Readonly<ShallowRef<PlatformPageDraft | null>>;
   /** Resolves once the source is read. */
   readonly ready: Promise<void>;
   /** Whether the page may be shown: Java's answer names its use relation (always, when it opened from that answer). */
@@ -311,6 +319,8 @@ export interface PanelInstanceOptions {
   withdrawn?: () => void;
   /** For an application's frame panel: the entry shown in it, the menu and where the entry's page goes. */
   currentEntry?: DirectPanelRun["currentEntry"];
+  /** Whether the host mounting this panel has a page header that can carry a form's Save/Discard draft. */
+  headerDraftHost?: boolean;
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -354,6 +364,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const error = shallowRef("");
   const displayLoad = shallowRef(loading);
   const dirty = shallowRef(false);
+  const headerDraft = shallowRef<PlatformPageDraft | null>(null);
   const state = shallowRef<PanelHostState>({});
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
@@ -528,6 +539,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       context: context => (pageContext.value = context),
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
+      ...(options.headerDraftHost ? { headerDraft: (draft) => { headerDraft.value = draft; } } : {}),
       draftSettled: settleDraft,
       draftRefused: (text) => {
         draftOpening.value = false;
@@ -547,6 +559,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     notice.value = "";
     draftRefusal.value = "";
     draftOpening.value = false;
+    headerDraft.value = null;
   }
 
   /** What decides how a source is drawn: its content and declaration, not its revision or identity. */
@@ -851,6 +864,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     error,
     displayLoad,
     dirty,
+    headerDraft,
     ready,
     refresh,
     direct,

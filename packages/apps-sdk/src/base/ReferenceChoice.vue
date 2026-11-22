@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldAt, usePanelContext } from "../panel/context";
@@ -9,6 +8,7 @@ import type { PlatformObjectOption, PlatformObjectOptions } from "../panel/platf
 import type { PanelOptionList } from "@ontomato/contracts/panel-projection";
 import { MemberDataUnavailable } from "../panel/member-forms";
 import { useMemberRead } from "../panel/member";
+import FormFieldFrame from "./FormFieldFrame.vue";
 
 /**
  * One reference field of a form in this panel at an absolute pointer, chosen from the catalogue of the type the
@@ -117,14 +117,16 @@ function choose(keys: string | string[] | undefined) {
 </script>
 
 <template>
-  <el-form-item
+  <form-field-frame
     v-if="field.field.value"
-    class="sdk-reference-picker"
-    :class="{ 'sdk-reference-picker-changed': field.changed.value }"
-    :label="field.field.value.label"
-    :required="field.field.value.required"
+    :field="field.field.value"
+    :path="path"
     :error="field.error.value ?? failure?.message"
-    :data-field="path"
+    :changed="field.changed.value"
+    :disabled="field.disabled.value"
+    :value="field.value.value"
+    :on-set="field.set"
+    :field-class="field.changed.value ? 'sdk-reference-picker sdk-reference-picker-changed' : 'sdk-reference-picker'"
   >
     <el-select
       :model-value="chosen"
@@ -153,25 +155,17 @@ function choose(keys: string | string[] | undefined) {
         <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
       </el-option>
     </el-select>
-    <p v-if="field.field.value.readOnly && field.field.value.readOnlyReason" class="sdk-reference-picker-help">
-      {{ field.field.value.readOnlyReason }}
-    </p>
-    <p v-else-if="field.field.value.help" class="sdk-reference-picker-help">{{ field.field.value.help }}</p>
-    <ul v-if="notes.length" class="sdk-reference-picker-notes" role="status">
-      <li v-for="note in notes" :key="note">{{ note }}</li>
-    </ul>
-  </el-form-item>
+    <template #after>
+      <ul v-if="notes.length" class="sdk-reference-picker-notes" role="status">
+        <li v-for="note in notes" :key="note">{{ note }}</li>
+      </ul>
+    </template>
+  </form-field-frame>
 </template>
 
 <style scoped>
-.sdk-reference-picker {
-  display: block;
-}
 .sdk-reference-picker-select {
   width: 100%;
-}
-.sdk-reference-picker-changed :deep(.el-form-item__label) {
-  color: var(--brand-link);
 }
 .sdk-reference-picker-notes {
   color: var(--el-color-warning-text);
@@ -180,12 +174,6 @@ function choose(keys: string | string[] | undefined) {
   list-style: none;
   margin: var(--spacing-xs) 0 0;
   padding: 0;
-}
-.sdk-reference-picker-help {
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  margin: var(--spacing-xs) 0 0;
 }
 </style>
 

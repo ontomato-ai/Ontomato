@@ -2,7 +2,6 @@
 import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElInput } from "element-plus/es/components/input/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
@@ -16,6 +15,7 @@ import { useFormControls } from "./form-controls";
 import FormCodeField from "./FormCodeField.vue";
 import FormLocalizedText from "./FormLocalizedText.vue";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
+import FormFieldFrame from "./FormFieldFrame.vue";
 import FormRowField from "./FormRowField.vue";
 import { ApplicationIconPicker } from "@ontomato/platform-shell";
 import { ScheduleFrequency, frequencyDraft, frequencyOf, type FrequencyDraft } from "@ontomato/platform-schedules/frequency-control";
@@ -135,13 +135,13 @@ function setFrequency(next: FrequencyDraft) {
 </script>
 
 <template>
-  <el-form-item
-    class="sdk-form-field"
-    :label="field.label"
-    :required="field.required"
+  <form-field-frame
+    :field="field"
+    :path="path"
     :error="controls.errors.value[path]"
-    :class="{ 'sdk-owner-form-field-changed': controls.changed.value.has(path), 'is-readonly': field.readOnly }"
-    :data-field="path"
+    :changed="controls.changed.value.has(path)"
+    :disabled="disabled"
+    :field-class="controls.changed.value.has(path) ? 'sdk-form-field sdk-owner-form-field-changed' : 'sdk-form-field'"
   >
     <template v-if="control.kind === 'text' || control.kind === 'markdown'">
       <el-input
@@ -341,18 +341,10 @@ function setFrequency(next: FrequencyDraft) {
       </div>
     </div>
     <p v-else role="alert" class="sdk-form-field-unavailable">{{ t("platform.formControlUnavailable") }}</p>
-    <p v-if="field.readOnly && field.readOnlyReason && !controls.sharedReadOnlyReasons.value.has(field.readOnlyReason)" class="sdk-form-field-help">{{ field.readOnlyReason }}</p>
-    <p v-else-if="field.help" class="sdk-form-field-help">{{ field.help }}</p>
-  </el-form-item>
+  </form-field-frame>
 </template>
 
 <style scoped>
-/* A value the owner keeps read-only is still the reader's to read: Element Plus's disabled grey is for a control that is
-   off, not for a value that is shown. */
-.sdk-form-field.is-readonly :deep(:is(.el-input__inner, .el-textarea__inner, .el-select__selected-item)) {
-  color: var(--el-text-color-regular);
-  -webkit-text-fill-color: var(--el-text-color-regular);
-}
 .sdk-form-avatar {
   display: flex;
   flex-direction: column;
@@ -390,15 +382,6 @@ function setFrequency(next: FrequencyDraft) {
 }
 .sdk-form-field-wide {
   width: 100%;
-}
-.sdk-owner-form-field-changed > :deep(.el-form-item__label) {
-  color: var(--brand-link);
-}
-.sdk-form-field-help {
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  margin: var(--spacing-xs) 0 0;
 }
 .sdk-form-field-count {
   width: 100%;
