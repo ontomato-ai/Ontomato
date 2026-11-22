@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, effectScope, inject, onBeforeUnmount, onErrorCaptured, provide, ref, shallowRef, useAttrs, watch, type Component, type EffectScope } from "vue";
+import { computed, effectScope, inject, onBeforeUnmount, onErrorCaptured, provide, ref, shallowRef, useAttrs, watch, type Component, type EffectScope, type StyleValue } from "vue";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
@@ -38,6 +38,8 @@ const attrs = useAttrs();
 const hostMounted = computed(() => isListAttachedPanelMember(panel.manifest.members[props.slot]));
 /** What the panel's template listens to on the component; an attribute written here configures nothing. */
 const listeners = computed(() => Object.fromEntries(Object.entries(attrs).filter(([name]) => /^on[A-Z]/.test(name))));
+const placementClass = computed(() => attrs.class);
+const placementStyle = computed(() => attrs.style as StyleValue);
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ projection: ProductProjection; component: Component; member: PanelMemberContext } | null>(null);
@@ -146,11 +148,15 @@ provide(panelMemberKey, () => loaded.value!.member);
 
 <template>
   <template v-if="hostMounted"></template>
-  <p v-else-if="failure" role="alert">{{ failure.message }}</p>
-  <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
-  <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...listeners, ...inputs }">
-    <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
-      <slot :name="name" v-bind="slotProps ?? {}"></slot>
-    </template>
-  </component>
+  <div v-else class="sdk-panel-member" :data-member="slot" :class="placementClass" :style="placementStyle">
+    <p v-if="failure" role="alert">{{ failure.message }}</p>
+    <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
+    <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...listeners, ...inputs }">
+      <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
+        <slot :name="name" v-bind="slotProps ?? {}"></slot>
+      </template>
+    </component>
+  </div>
 </template>
+
+<style src="./panel-member.css"></style>

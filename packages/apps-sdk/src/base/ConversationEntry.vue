@@ -96,6 +96,7 @@ async function openComposer() {
 <style scoped>
 /* A primary action is solid; any other is a neutral outline with a quiet fill on hover and press (DESIGN.md). */
 .sdk-conversation-entry {
+  align-self: flex-start;
   display: inline-flex;
   flex-direction: column;
   gap: var(--spacing-xs);

@@ -112,3 +112,5 @@ const labels = useDataStateLabels();
     <template v-for="(_, name) in $slots" #[name]="scope"><slot :name="name" v-bind="scope ?? {}"></slot></template>
   </component>
 </template>
+
+<style src="./panel-member.css"></style>

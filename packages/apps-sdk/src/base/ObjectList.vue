@@ -1172,12 +1172,17 @@ watch(someVisibleChecked, () => {
    shared spacing, type, radius and control scales. No value is written here. */
 .sdk-object-list {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: var(--spacing-sm);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
 }
 .sdk-object-list-toolbar {
   align-items: center;
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
 }
@@ -1238,6 +1243,7 @@ watch(someVisibleChecked, () => {
   align-items: center;
   border-bottom: 1px solid var(--ui-divider);
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
   padding: var(--spacing-xs) 0 var(--spacing-sm);
@@ -1271,7 +1277,9 @@ watch(someVisibleChecked, () => {
   text-decoration: underline;
 }
 .sdk-object-list-table-wrap {
-  overflow-x: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 .sdk-object-list-table {
   border-collapse: collapse;
@@ -1304,10 +1312,14 @@ watch(someVisibleChecked, () => {
   min-width: 12em;
 }
 .sdk-object-list-table th {
+  background: var(--el-bg-color);
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
   height: var(--table-head-height);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 .sdk-object-list-table td {
   height: var(--table-row-height);
@@ -1401,20 +1413,25 @@ watch(someVisibleChecked, () => {
 }
 .sdk-object-list-items {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: calc(var(--spacing-xs) / 2);
   list-style: none;
   margin: 0;
+  min-height: 0;
+  overflow-y: auto;
   padding: 0;
 }
 .sdk-object-list-row {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: var(--spacing-xs);
 }
 .sdk-object-list-row-main {
   align-items: flex-start;
   display: flex;
+  flex: 0 0 auto;
   gap: var(--spacing-xs);
   width: 100%;
 }
@@ -1487,9 +1504,13 @@ watch(someVisibleChecked, () => {
   color: var(--el-color-danger-text);
 }
 .sdk-object-list-cards {
+  align-content: start;
   display: grid;
+  flex: 1 1 auto;
   gap: var(--spacing-md);
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  min-height: 0;
+  overflow-y: auto;
 }
 .sdk-object-list-card {
   background: var(--sdk-bg-color);
@@ -1560,6 +1581,7 @@ watch(someVisibleChecked, () => {
 .sdk-object-list-pagination {
   align-items: center;
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: var(--spacing-xs);
   justify-content: flex-end;
@@ -1592,6 +1614,7 @@ watch(someVisibleChecked, () => {
 }
 .sdk-object-list-diagnostics {
   color: var(--el-color-warning-text);
+  flex: 0 0 auto;
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   list-style: none;

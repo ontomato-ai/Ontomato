@@ -716,47 +716,49 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
     <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
-    <el-form label-position="top">
-      <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
-      <div v-if="sectionGroups" class="sdk-owner-form-sectioned">
-        <div class="sdk-owner-form-sections">
-          <section
-            v-for="group in sectionGroups"
-            :key="group.key"
-            class="sdk-owner-form-section"
-            :class="{ changed: group.changed }"
-            :data-form-section="group.key || undefined"
-          >
-            <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
-            <p v-if="group.hint" class="sdk-owner-form-section-hint">{{ group.hint }}</p>
-            <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
-            <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
-              <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
-            </form-advanced-section>
-          </section>
+    <el-form label-position="top" class="sdk-owner-form-inner">
+      <div class="sdk-owner-form-body">
+        <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
+        <div v-if="sectionGroups" class="sdk-owner-form-sectioned">
+          <div class="sdk-owner-form-sections">
+            <section
+              v-for="group in sectionGroups"
+              :key="group.key"
+              class="sdk-owner-form-section"
+              :class="{ changed: group.changed }"
+              :data-form-section="group.key || undefined"
+            >
+              <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
+              <p v-if="group.hint" class="sdk-owner-form-section-hint">{{ group.hint }}</p>
+              <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
+              <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
+                <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
+              </form-advanced-section>
+            </section>
+          </div>
+          <!-- The form's contents: each entry brings its section into view; every section stays on the page. -->
+          <nav class="sdk-owner-form-contents" :aria-label="t('platform.formSections')">
+            <button v-for="group in sectionGroups.filter((item) => item.title)" :key="group.key" type="button" @click="goToSection(group.key)">
+              {{ group.title }}
+            </button>
+          </nav>
         </div>
-        <!-- The form's contents: each entry brings its section into view; every section stays on the page. -->
-        <nav class="sdk-owner-form-contents" :aria-label="t('platform.formSections')">
-          <button v-for="group in sectionGroups.filter((item) => item.title)" :key="group.key" type="button" @click="goToSection(group.key)">
-            {{ group.title }}
+        <template v-else>
+          <form-field-place v-for="field in plain" :key="field.path" :field="field"></form-field-place>
+          <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
+            <form-field-place v-for="field in advanced" :key="field.path" :field="field"></form-field-place>
+          </form-advanced-section>
+        </template>
+        <slot name="after-fields"></slot>
+        <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
+          {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
+        </p>
+        <div v-if="refusalFoot" class="sdk-owner-form-refusal" role="alert">
+          <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
+            {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
           </button>
-        </nav>
-      </div>
-      <template v-else>
-        <form-field-place v-for="field in plain" :key="field.path" :field="field"></form-field-place>
-        <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
-          <form-field-place v-for="field in advanced" :key="field.path" :field="field"></form-field-place>
-        </form-advanced-section>
-      </template>
-      <slot name="after-fields"></slot>
-      <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
-        {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
-      </p>
-      <div v-if="refusalFoot" class="sdk-owner-form-refusal" role="alert">
-        <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
-          {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
-        </button>
-        <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
+          <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
+        </div>
       </div>
       <div v-if="!usesHeaderActions" class="sdk-owner-form-actions">
         <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">{{ t("platform.unsavedChanges") }}</span>
@@ -769,8 +771,10 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 </template>
 
 <style scoped>
-/* Save and Discard stay in reach at the foot of the view however long the form, never only at its end. */
+/* Save and Discard stay in reach at the foot of the view however long the form, both when filling a definite box
+   (the body scrolls above them) and when flowing down the page (they stick to the enclosing content box). */
 .sdk-owner-form-actions {
+  flex: 0 0 auto;
   position: sticky;
   bottom: 0;
   z-index: 1;
@@ -786,6 +790,25 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 /* Sections one after another at a reading width, a hairline between them; their list beside them while they scroll. */
 .sdk-owner-form {
   container: sdk-owner-form / inline-size;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.sdk-owner-form-inner {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.sdk-owner-form-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 .sdk-owner-form-sectioned {
   display: grid;
