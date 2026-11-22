@@ -83,10 +83,10 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
         : { selectedNode: { className: OBJECT_TYPE, primaryKey: id } };
     },
   },
-  // The object types page: a class's detail address opens the catalog with that class selected.
+  // The object types detail entry: a class's legacy detail address opens the dedicated detail entry with that class selected.
   {
     path: platformRoutes.object.path,
-    use: platformRoutes.objects.path,
+    use: "/ontology/object-detail",
     state: ({ className }) => ({ selected: { className: OBJECT_TYPE, primaryKey: className! } }),
   },
   // The actions page: an action's detail selects it; the old page's `new` (its creation dialog) opens the catalog, since

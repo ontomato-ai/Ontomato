@@ -50,8 +50,8 @@ const ObjectViewEditorRoute = defineComponent({
       className: String(route.params.className),
       initialPrimaryKey: String(route.query.key ?? ""),
       onOpen: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),
-      // Back goes to the object types panel with this class selected: the page that class's detail address opens.
-      onBack: () => void router.push(panelAddress(managerPaths.objects, {
+      // Back goes to the object type detail entry with this class selected.
+      onBack: () => void router.push(panelAddress("/ontology/object-detail", {
         selected: { className: OBJECT_TYPE, primaryKey: String(route.params.className) },
       })),
     });

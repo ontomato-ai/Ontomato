@@ -8,19 +8,6 @@
         },
         "deepLink": true
       },
-      "className": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        }
-      },
-      "selectedAttribute": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Attribute"
-        },
-        "deepLink": true
-      },
       "search": {
         "type": {
           "kind": "scalar",
@@ -45,20 +32,10 @@
         },
         "id": "builtin-product-5e582009-1791-467f-894c-31768838477b"
       },
-      "detail": {
-        "component": "PanelData",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "id": "builtin-product-5f0ef5f9-6912-449b-9971-a2af2cf14364"
-      },
-      "objectForm": {
+      "createForm": {
         "component": "ObjectForm",
         "type": "platform:ObjectType",
-        "target": "selected",
         "data": {
-          "form": "form",
           "createForm": "createForm"
         },
         "operation": "platform:ObjectType.save",
@@ -66,80 +43,6 @@
           "actions": "create-only"
         },
         "id": "builtin-product-7da65587-a6cd-4b74-a438-597258f350a2"
-      },
-      "attributeForm": {
-        "component": "ObjectForm",
-        "type": "platform:Attribute",
-        "target": "selectedAttribute",
-        "data": {
-          "form": "form",
-          "createForm": "createForm"
-        },
-        "operation": "platform:Attribute.save",
-        "config": {
-          "actions": "create-only",
-          "fixedFields": {
-            "/className": {
-              "state": "selected",
-              "path": "/primaryKey"
-            }
-          }
-        },
-        "id": "builtin-product-a57820c9-42df-4b85-8799-ec5b22efc6a6"
-      },
-      "deleteObject": {
-        "component": "OperationButton",
-        "operation": "objectTypes.delete",
-        "target": "selected",
-        "config": {
-          "type": "danger"
-        },
-        "id": "builtin-product-a9fe30c6-15d7-427c-8e40-caa60f40a1b0"
-      },
-      "attributes": {
-        "component": "PanelData",
-        "type": "platform:Attribute",
-        "data": {
-          "rows": {
-            "read": "list",
-            "params": {
-              "className": {
-                "state": "className"
-              }
-            }
-          }
-        },
-        "id": "builtin-product-10dcbc3b-8d8f-4281-9637-59e97f7378cb"
-      },
-      "setPrimaryKey": {
-        "component": "OperationButton",
-        "operation": "attributes.setPrimaryKey",
-        "target": "selectedAttribute",
-        "id": "builtin-product-1dc01063-12ce-479d-a442-27b886cc48cb"
-      },
-      "deleteAttribute": {
-        "component": "OperationButton",
-        "operation": "attributes.delete",
-        "target": "selectedAttribute",
-        "config": {
-          "type": "danger"
-        },
-        "id": "builtin-product-e348de4d-b0d6-4042-89b7-1f55b12cfd78"
-      },
-      "relations": {
-        "component": "PanelData",
-        "type": "platform:Relationship",
-        "data": {
-          "rows": {
-            "read": "list",
-            "params": {
-              "className": {
-                "state": "className"
-              }
-            }
-          }
-        },
-        "id": "builtin-product-f3b27777-738b-4413-a40f-d80fb86c9ba1"
       }
     },
     "commands": {
@@ -152,12 +55,6 @@
             "fields": {
               "creating": {
                 "literal": true
-              },
-              "selected": {
-                "literal": null
-              },
-              "selectedAttribute": {
-                "literal": null
               }
             }
           }
@@ -178,42 +75,6 @@
         "ot.empty": "未找到对象类型",
         "ot.loading": "正在读取…",
         "ot.forbidden": "当前账号无权查看对象类型。",
-        "ot.back": "返回对象类型",
-        "ot.configureView": "配置对象视图",
-        "ot.delete": "删除",
-        "ot.browseData": "浏览数据",
-        "ot.saveChanges": "保存更改",
-        "ot.save": "保存",
-        "ot.basicInfo": "基本信息",
-        "ot.attributeCount": "个属性",
-        "ot.businessKeyCount": "个业务键",
-        "ot.primaryKeyCount": "个主键",
-        "ot.relationCount": "个关联关系",
-        "ot.pkMissing": "当前对象类型未设置主键属性",
-        "ot.pkMultiple": "当前对象类型存在多个主键属性",
-        "ot.pkDisabled": "当前主键属性已停用",
-        "ot.pkOk": "主键属性：{name}",
-        "ot.pkUnknown": "主键状态：{status}",
-        "ot.attributes": "属性",
-        "ot.createAttribute": "新建属性",
-        "ot.colAttribute": "属性",
-        "ot.colDataType": "数据类型",
-        "ot.colBusinessKey": "业务键",
-        "ot.colPrimaryKey": "主键",
-        "ot.colAttrDescription": "说明",
-        "ot.yes": "是",
-        "ot.noAttributes": "当前对象类型暂无属性",
-        "ot.attributeEditor": "编辑属性：{name}",
-        "ot.attributeCreator": "新建属性",
-        "ot.relations": "关联关系",
-        "ot.colRelation": "关系类型",
-        "ot.colSource": "来源对象",
-        "ot.colTarget": "目标对象",
-        "ot.noRelations": "暂无关联关系",
-        "ot.missing": "对象类型不存在或已删除",
-        "ot.deleted": "已删除",
-        "ot.done": "已完成",
-        "ot.deleteFailed": "操作没有完成",
         "ot.command.create": "新建对象类型",
         "ot.create": "新建对象类型"
       },
@@ -228,42 +89,6 @@
         "ot.empty": "No object types found",
         "ot.loading": "Loading…",
         "ot.forbidden": "You cannot view this content",
-        "ot.back": "Back to object types",
-        "ot.configureView": "Configure object view",
-        "ot.delete": "Delete",
-        "ot.browseData": "Browse data",
-        "ot.saveChanges": "Save changes",
-        "ot.save": "Save",
-        "ot.basicInfo": "Basic information",
-        "ot.attributeCount": "Attributes",
-        "ot.businessKeyCount": "Business keys",
-        "ot.primaryKeyCount": "Primary keys",
-        "ot.relationCount": "Relationships",
-        "ot.pkMissing": "This object type does not have a primary key property yet",
-        "ot.pkMultiple": "This object type has multiple primary key properties",
-        "ot.pkDisabled": "The current primary key property is disabled",
-        "ot.pkOk": "Primary key property: {name}",
-        "ot.pkUnknown": "Primary key status: {status}",
-        "ot.attributes": "Attributes",
-        "ot.createAttribute": "New attribute",
-        "ot.colAttribute": "Attribute",
-        "ot.colDataType": "Data type",
-        "ot.colBusinessKey": "Business key",
-        "ot.colPrimaryKey": "Primary key",
-        "ot.colAttrDescription": "Description",
-        "ot.yes": "Yes",
-        "ot.noAttributes": "This object type has no attributes yet",
-        "ot.attributeEditor": "Edit attribute: {name}",
-        "ot.attributeCreator": "New attribute",
-        "ot.relations": "Relationships",
-        "ot.colRelation": "Relationship type",
-        "ot.colSource": "Source object",
-        "ot.colTarget": "Target object",
-        "ot.noRelations": "No related relationships",
-        "ot.missing": "Object type does not exist or has been deleted",
-        "ot.deleted": "Deleted",
-        "ot.done": "Done",
-        "ot.deleteFailed": "The operation did not complete",
         "ot.command.create": "New object type",
         "ot.create": "New object type"
       }

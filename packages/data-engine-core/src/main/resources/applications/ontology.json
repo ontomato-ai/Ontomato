@@ -44,6 +44,9 @@
       "names": {"en": "Object types", "zh-CN": "对象类型"},
       "count": {"member": "catalog", "data": "rows"}
     }, {
+      "id": "ontology-object-detail", "pageKey": "ontology-object-detail", "panelId": "builtin-product-ontology-object-detail",
+      "path": "/ontology/object-detail", "access": {"permissionCode": "ontology-modeling"}
+    }, {
       "id": "ontology-attributes", "pageKey": "ontology-attributes", "panelId": "builtin-product-ontology-attributes",
       "path": "/ontology/attributes", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Every object type's attributes: filter by type, then create, edit, set the primary key or delete one.", "zh-CN": "各对象类型的属性：按类筛选，新建、修改、设为主键和删除。"},

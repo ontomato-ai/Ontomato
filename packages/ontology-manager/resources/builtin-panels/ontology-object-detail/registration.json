@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-object-detail",
+      "input": {
+        "name": "对象类型",
+        "description": "查看并编辑单个对象类型的基本信息、属性与关联关系"
+      }
+    }
+  ]
+}

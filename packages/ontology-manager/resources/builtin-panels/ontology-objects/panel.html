@@ -32,22 +32,11 @@
     font-size: var(--text-sm);
     color: var(--sdk-text-color-secondary);
   }
-  .ot-spacer {
-    flex: 1;
-  }
   .ot-table {
     max-width: 100%;
     margin-top: var(--spacing-lg);
     border: 1px solid var(--sdk-border-color, var(--ui-border));
     border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-    overflow: auto;
-  }
-  .ot-detail-table {
-    max-width: 100%;
-    margin-top: var(--spacing-md);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-sm);
     background: var(--sdk-bg-color);
     overflow: auto;
   }
@@ -88,18 +77,8 @@
   button.ot-row:hover {
     background: var(--sdk-fill-color-light, var(--ui-fill-tertiary));
   }
-  .ot-row.is-active {
-    background: var(--sdk-fill-color-light, var(--ui-fill-tertiary));
-  }
   .ot-catalog-grid {
     grid-template-columns: minmax(220px, 1.4fr) minmax(240px, 2fr) 88px 88px 20px;
-  }
-  .ot-attr-grid {
-    column-gap: var(--spacing-sm);
-    grid-template-columns: minmax(130px, 1.2fr) 78px 64px 56px minmax(100px, 1.3fr) 20px;
-  }
-  .ot-rel-grid {
-    grid-template-columns: minmax(120px, 1.2fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(140px, 1.2fr);
   }
   .ot-chevron {
     color: var(--sdk-text-color-placeholder);
@@ -144,146 +123,6 @@
   .ot-failure {
     color: var(--sdk-color-danger-text);
   }
-
-  /* Detail view: single platform header (fallback titlebar for headerless previews) + 2-column body matching original. */
-  .ot-detail-view {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 100%;
-  }
-  .ot-titlebar {
-    display: flex;
-    min-height: var(--page-header-height, 56px);
-    flex: 0 0 auto;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--page-gutter);
-    border-bottom: 1px solid var(--sdk-border-color, var(--ui-border));
-    box-sizing: border-box;
-  }
-  .ot-btn-icon {
-    margin-inline-end: 6px;
-    flex-shrink: 0;
-  }
-  .ot-header-divider {
-    width: 1px;
-    height: 22px;
-    margin: 0 var(--spacing-xs);
-    background: var(--sdk-border-color, var(--ui-border));
-  }
-  .ot-title {
-    min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--sdk-text-color-primary);
-    font-size: var(--text-sm);
-    font-weight: var(--font-semibold);
-  }
-  .ot-titlebar-actions {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-sm);
-    flex-shrink: 0;
-  }
-  .ot-missing {
-    display: flex;
-    flex: 1 1 auto;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-2xl) var(--page-gutter) calc(var(--page-content-gap) + 56px);
-  }
-  .ot-detail-body {
-    display: grid;
-    grid-template-columns: minmax(280px, 0.85fr) minmax(440px, 1.5fr);
-    gap: var(--page-content-gap);
-    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
-    align-items: stretch;
-  }
-  .ot-card {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    padding: var(--page-section-padding, var(--spacing-lg));
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
-  .ot-card-basic {
-    grid-row: span 2;
-  }
-  .ot-card-title {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-md);
-  }
-  .ot-card-title h2 {
-    margin: 0;
-    color: var(--sdk-text-color-primary);
-    font-size: var(--text-lg);
-    font-weight: var(--font-semibold);
-  }
-  .ot-pill-count {
-    padding: 2px 8px;
-    border-radius: var(--radius-full, 999px);
-    background: var(--sdk-fill-color-light, var(--ui-fill-tertiary));
-    color: var(--sdk-text-color-secondary);
-    font-size: var(--text-xs);
-  }
-  .ot-basic-form {
-    margin-top: var(--spacing-md);
-  }
-  .ot-summary {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--spacing-sm);
-    margin-top: var(--spacing-lg);
-    padding-top: var(--spacing-md);
-    border-top: 1px solid var(--sdk-border-color-light, var(--ui-divider));
-  }
-  .ot-summary span {
-    color: var(--sdk-text-color-secondary);
-    font-size: var(--text-xs);
-  }
-  .ot-summary strong {
-    display: block;
-    margin-bottom: 3px;
-    color: var(--sdk-text-color-primary);
-    font-size: var(--text-lg);
-    font-weight: var(--font-semibold);
-  }
-  .ot-pk-alert {
-    margin-top: var(--spacing-lg);
-  }
-  .ot-attr-group {
-    border-bottom: 1px solid var(--sdk-border-color-light, var(--ui-divider));
-  }
-  .ot-attr-group:last-child {
-    border-bottom: 0;
-  }
-  .ot-attr-group > .ot-row {
-    border-bottom: 0;
-  }
-  .ot-inline-editor {
-    padding: var(--spacing-lg);
-    border-top: 1px solid var(--sdk-border-color-light, var(--ui-divider));
-    background: var(--sdk-fill-color-lighter, var(--ui-fill-tertiary));
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
-  }
-  .ot-editor-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--spacing-sm);
-  }
   .ot-create-body {
     padding-top: var(--spacing-xs);
   }
@@ -296,31 +135,6 @@
     .ot-catalog-grid > :nth-child(4) {
       display: none;
     }
-    .ot-detail-body {
-      grid-template-columns: minmax(0, 1fr);
-      padding-block: var(--spacing-md) calc(var(--page-content-gap) + 56px);
-    }
-    .ot-card-basic {
-      grid-row: auto;
-    }
-    .ot-header-divider {
-      display: none;
-    }
-    .ot-attr-grid {
-      grid-template-columns: minmax(140px, 1fr) 76px 20px;
-    }
-    .ot-attr-grid > :nth-child(3),
-    .ot-attr-grid > :nth-child(4),
-    .ot-attr-grid > :nth-child(5) {
-      display: none;
-    }
-    .ot-rel-grid {
-      grid-template-columns: minmax(120px, 1fr) minmax(90px, 1fr);
-    }
-    .ot-rel-grid > :nth-child(3),
-    .ot-rel-grid > :nth-child(4) {
-      display: none;
-    }
   }
   @container objects-page (max-width: 560px) {
     .ot-toolbar {
@@ -330,15 +144,12 @@
     .ot-toolbar .ot-search {
       width: 100%;
     }
-    .ot-summary {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
   }
 </style>
 <div id="app">
   <section class="ot-root">
-    <!-- Catalog: full-width table of object types; clicking any row enters full-width detail view. -->
-    <div v-if="!selectedKey" class="ot-catalog">
+    <!-- Catalog: full-width table of object types; clicking any row opens the dedicated detail entry. -->
+    <div class="ot-catalog">
       <div class="ot-toolbar">
         <sdk-input v-model="search" class="ot-search" :placeholder="t('ot.search')" clearable>
           <template #prefix>
@@ -372,158 +183,10 @@
       </div>
     </div>
 
-    <!-- Detail view: platform header draws the single bar (back + title + configure view + delete + browse + save); local bar is fallback for headerless previews. -->
-    <div v-else class="ot-detail-view">
-      <header v-if="!hasHeaderHost" class="ot-titlebar">
-        <sdk-button text @click="backToCatalog">
-          <svg class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-          <span>{{ t("ot.back") }}</span>
-        </sdk-button>
-        <span class="ot-header-divider" aria-hidden="true"></span>
-        <span class="ot-title">{{ detailTitle }}</span>
-        <span class="ot-spacer"></span>
-        <div v-if="record" class="ot-titlebar-actions">
-          <sdk-button @click="configureView">
-            <svg class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
-            <span>{{ t("ot.configureView") }}</span>
-          </sdk-button>
-          <sdk-button type="danger" plain :loading="busy === 'deleteObject'" :disabled="!deleteObjectOp.operation.value" @click="removeObject">
-            <svg v-if="busy !== 'deleteObject'" class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
-            <span>{{ t("ot.delete") }}</span>
-          </sdk-button>
-          <sdk-button @click="browseData">
-            <svg class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
-            <span>{{ t("ot.browseData") }}</span>
-          </sdk-button>
-          <sdk-button type="primary" :loading="savingObject" :disabled="!canSaveObject" @click="saveObject">
-            <svg v-if="!savingObject" class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
-            <span>{{ t("ot.saveChanges") }}</span>
-          </sdk-button>
-        </div>
-      </header>
-
-      <p v-if="detail.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
-      <p v-else-if="detail.status === 'forbidden'" class="ot-status ot-failure">{{ t("ot.forbidden") }}</p>
-      <div v-else-if="!record" class="ot-missing">
-        <sdk-empty :description="t('ot.missing')"></sdk-empty>
-      </div>
-
-      <div v-else class="ot-detail-body">
-        <section class="ot-card ot-card-basic">
-          <div class="ot-card-title">
-            <h2>{{ t("ot.basicInfo") }}</h2>
-          </div>
-          <div class="ot-basic-form">
-            <projection slot="objectForm" @saved="objectSaved" @discarded="formDiscarded"></projection>
-          </div>
-          <div v-if="summary" class="ot-summary">
-            <span><strong>{{ summary.attributeCount }}</strong>{{ t("ot.attributeCount") }}</span>
-            <span><strong>{{ summary.businessKeyCount }}</strong>{{ t("ot.businessKeyCount") }}</span>
-            <span><strong>{{ primaryKeyCount }}</strong>{{ t("ot.primaryKeyCount") }}</span>
-            <span><strong>{{ summary.relationshipCount }}</strong>{{ t("ot.relationCount") }}</span>
-          </div>
-          <sdk-alert v-if="primaryKeyStatus" class="ot-pk-alert" :type="primaryKeyStatus.type" :title="primaryKeyStatus.text"
-            :closable="false" show-icon></sdk-alert>
-        </section>
-
-        <section class="ot-card">
-          <div class="ot-card-title">
-            <h2>{{ t("ot.attributes") }}</h2>
-            <sdk-button @click="startCreateAttribute">
-              <svg class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-              <span>{{ t("ot.createAttribute") }}</span>
-            </sdk-button>
-          </div>
-          <div v-if="attributeMode === 'edit' && selectedAttribute && !editingAttribute" class="ot-inline-editor">
-            <sdk-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></sdk-alert>
-            <projection slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
-          </div>
-          <div class="ot-detail-table">
-            <div class="ot-row ot-head ot-attr-grid">
-              <span>{{ t("ot.colAttribute") }}</span>
-              <span>{{ t("ot.colDataType") }}</span>
-              <span>{{ t("ot.colBusinessKey") }}</span>
-              <span>{{ t("ot.colPrimaryKey") }}</span>
-              <span>{{ t("ot.colAttrDescription") }}</span>
-              <span></span>
-            </div>
-            <div v-for="row in attributeRows" :key="row.primaryKey" class="ot-attr-group">
-              <button type="button" class="ot-row ot-attr-grid"
-                :class="{ 'is-active': attributeMode === 'edit' && selectedAttribute && selectedAttribute.primaryKey === row.primaryKey }"
-                :aria-expanded="attributeMode === 'edit' && selectedAttribute && selectedAttribute.primaryKey === row.primaryKey"
-                @click="openAttribute(row)">
-                <span class="ot-name"><strong>{{ row.label }}</strong><small>{{ row.fields.name }}</small></span>
-                <span class="ot-ellipsis">{{ row.fields.type }}</span>
-                <span>{{ row.fields.businessKey === "true" ? t("ot.yes") : "-" }}</span>
-                <span>{{ row.fields.primaryKey === "true" ? t("ot.yes") : "-" }}</span>
-                <span class="ot-ellipsis" :title="row.fields.attrDesc || ''">{{ row.fields.attrDesc || "-" }}</span>
-                <svg class="ot-chevron" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <path v-if="attributeMode === 'edit' && selectedAttribute && selectedAttribute.primaryKey === row.primaryKey" d="M3.5 10 8 5.5 12.5 10"/>
-                  <path v-else d="M3.5 6 8 10.5 12.5 6"/>
-                </svg>
-              </button>
-              <div v-if="attributeMode === 'edit' && selectedAttribute && selectedAttribute.primaryKey === row.primaryKey" class="ot-inline-editor">
-                <sdk-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></sdk-alert>
-                <projection slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute"></projection>
-                <div class="ot-editor-actions">
-                  <sdk-button v-if="!isPrimaryKey" :loading="busy === 'setPrimaryKey'" :disabled="!setPrimaryKeyOp.operation.value"
-                    @click="makePrimaryKey">{{ setPrimaryKeyOp.operation.value ? setPrimaryKeyOp.operation.value.label : "…" }}</sdk-button>
-                  <sdk-button type="danger" plain :loading="busy === 'deleteAttribute'" :disabled="!deleteAttributeOp.operation.value"
-                    @click="removeAttribute">
-                    <svg v-if="busy !== 'deleteAttribute'" class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
-                    <span>{{ t("ot.delete") }}</span>
-                  </sdk-button>
-                  <sdk-button type="primary" :loading="savingAttribute" :disabled="!canSaveAttribute" @click="saveAttribute">
-                    <svg v-if="!savingAttribute" class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
-                    <span>{{ t("ot.save") }}</span>
-                  </sdk-button>
-                </div>
-              </div>
-            </div>
-            <p v-if="attributes.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
-            <sdk-alert v-else-if="attributes.status === 'error'" type="error" :title="attributes.message" :closable="false"></sdk-alert>
-            <p v-else-if="attributeRows.length === 0" class="ot-status">{{ t("ot.noAttributes") }}</p>
-          </div>
-        </section>
-
-        <section class="ot-card">
-          <div class="ot-card-title">
-            <h2>{{ t("ot.relations") }}</h2>
-            <span v-if="relationCount !== null" class="ot-pill-count">{{ t("ot.items", { count: relationCount }) }}</span>
-          </div>
-          <div v-if="relationRows.length" class="ot-detail-table">
-            <div class="ot-row ot-head ot-rel-grid">
-              <span>{{ t("ot.colRelation") }}</span>
-              <span>{{ t("ot.colSource") }}</span>
-              <span>{{ t("ot.colTarget") }}</span>
-              <span>{{ t("ot.colAttrDescription") }}</span>
-            </div>
-            <button v-for="row in relationRows" :key="row.primaryKey" type="button" class="ot-row ot-rel-grid"
-              @click="openRelation(row)">
-              <span class="ot-name"><strong>{{ row.label }}</strong></span>
-              <span class="ot-ellipsis">{{ labels[row.fields.fromclass] || row.fields.fromclass }}</span>
-              <span class="ot-ellipsis">{{ labels[row.fields.toclass] || row.fields.toclass }}</span>
-              <span class="ot-ellipsis">{{ row.fields.desc || "-" }}</span>
-            </button>
-          </div>
-          <p v-else-if="relations.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
-          <sdk-empty v-else :description="t('ot.noRelations')" :image-size="72"></sdk-empty>
-        </section>
-      </div>
-    </div>
-
-    <!-- Create object type dialog (mutually exclusive with detail view since creating clears selected). -->
+    <!-- Create object type dialog -->
     <sdk-dialog v-model="createObjectDialog" :title="t('ot.create')" width="520px" append-to-body destroy-on-close>
       <div class="ot-create-body">
-        <projection v-if="createObjectDialog" slot="objectForm" @saved="objectSaved" @discarded="formDiscarded" @cancel="cancelCreate"></projection>
-      </div>
-    </sdk-dialog>
-
-    <!-- Create attribute dialog inside detail view (mutually exclusive with inline attribute edit). -->
-    <sdk-dialog v-model="createAttributeDialog" :title="t('ot.attributeCreator')" width="520px" append-to-body destroy-on-close>
-      <div class="ot-create-body">
-        <sdk-alert v-if="attributeError" type="error" :title="attributeError" :closable="false" show-icon></sdk-alert>
-        <projection v-if="createAttributeDialog" slot="attributeForm" @saved="attributeSaved" @discarded="closeAttribute" @cancel="closeAttribute"></projection>
+        <projection v-if="createObjectDialog" slot="createForm" @saved="objectSaved" @discarded="cancelCreate" @cancel="cancelCreate"></projection>
       </div>
     </sdk-dialog>
   </section>
