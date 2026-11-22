@@ -175,8 +175,6 @@ export interface DirectPanelInstance extends PanelInstance {
   memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs): ComputedRef<MemberOperationsState>;
   /** An operation's reported changes: the shown data they concern are read again. */
   refresh(affected: PanelOperationAffected): void;
-  /** Every shown datum is read again, and every component that reads its own data is told to. */
-  refreshAll(): void;
   /** While the reader does not see the instance it reads nothing; a refresh when seen again brings it up to date. */
   setActive(active: boolean): void;
   /**
@@ -347,6 +345,15 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   const members = new Map<string, { scope: EffectScope; placing: Promise<MemberPlacing> }>();
   /** The panels placed in this instance's members, which follow it as it is refreshed, seen and changed. */
   const nestedMounts = new Set<NestedPanelMount>();
+  // That anything may have changed — the page header's refresh, or the page's own code keeping what it shows current
+  // (`refreshObjects()`) — reads everything shown again: every datum, every member's operations and every panel placed
+  // here; the components that read their own data hear it as well.
+  instance.onObjectChanged((object) => {
+    if (object !== null) return;
+    for (const { reread } of shown) reread();
+    for (const reread of operationReads) reread();
+    for (const mount of nestedMounts) mount.refresh(null);
+  });
   /** The projection a member places now: its fixed one, or the one the panel's state chose; none for a panel. */
   const placedProjectionId = (member: string): string | null => {
     const declaration = direct.members[member];
@@ -601,12 +608,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       for (const object of affected.objects) instance.objectChanged(object);
       // What changed may be shown by a panel placed here, too.
       for (const mount of nestedMounts) mount.refresh(null, affected);
-    },
-    refreshAll() {
-      for (const { reread } of shown) reread();
-      for (const reread of operationReads) reread();
-      instance.refreshObjects();
-      for (const mount of nestedMounts) mount.refresh(null);
     },
     setActive(next: boolean) {
       active = next;

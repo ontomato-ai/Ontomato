@@ -137,6 +137,11 @@ export interface PanelInstance {
    * or reading what is no longer there.
    */
   letGo(removed: readonly PanelObjectIdentity[]): void;
+  /**
+   * Anything this panel shows may have changed: every datum it shows is read again, as the page header's refresh reads
+   * it, and every component that reads its own data is told so. The page's own code calls it to keep what it shows
+   * current (polling while a run goes on); an operation's reported changes need no call.
+   */
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
   /** Reads a projection record by ID, as the reader. */

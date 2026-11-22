@@ -75,6 +75,8 @@ Leave the following to the platform.
 - **Page header and refresh.** The host renders the title, back control, commands and **Refresh** button. Clicking
   the host Refresh button automatically re-reads every mounted projection and `usePanelData` datum in the panel
   (including nested panels) — do not wire a manual refresh handler or call `refreshObjects()` for page-header refresh.
+  To keep what the page shows current while something runs elsewhere (a task run), call `instance.refreshObjects()` on
+  a timer and stop it when nothing runs: it reads everything shown again, exactly as the header's Refresh does.
   Declare page-header commands in `manifest.commands` (or `commands: {}` when none are needed) and keep the panel
   template focused on page content.
 

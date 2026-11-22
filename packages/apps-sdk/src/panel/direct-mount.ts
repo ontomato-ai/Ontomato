@@ -115,7 +115,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       isDirty: () => instance.dirty(),
       readPageDraft: (sessionId, runId, path) => readPageDraft(requests, sessionId, runId, path),
       projectionChanged: (id, revision) => instance.projectionChanged(id, revision),
-      refreshObject: (target) => (target ? instance.refresh({ objects: [target], objectTypes: [] }) : instance.refreshAll()),
+      refreshObject: (target) => (target ? instance.refresh({ objects: [target], objectTypes: [] }) : instance.refreshObjects()),
       reports: { ...run, draftRefused: (refusal) => run.draftRefused(draftRefusalText(refusal, translate)) },
     });
     // A draft that none of this panel's forms performs is not this panel's: once every member has registered and none
