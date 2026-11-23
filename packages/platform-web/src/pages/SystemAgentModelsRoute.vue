@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed,defineComponent,h} from 'vue';
+import {computed} from 'vue';
 import {useRoute,useRouter} from 'vue-router';
 import {useI18n} from 'vue-i18n';
 import {AgentModelsPage,PlatformTabs,ontologyAgentModelPages,ontologyAgentModelSource,usePageAccess,useLeaveConfirmation} from '@ontomato/platform-shell';
@@ -16,7 +16,27 @@ const options=computed(()=>[
 const active=computed(()=>options.value.find(option=>option.id===route.query.category)?.id??options.value[0]?.id??'');
 const sources=new Map(ontologyAgentModelPages.map(page=>[page.app,ontologyAgentModelSource({async get(path){const response=await nodeApiRequest('/api/data-query'+path);const body=await response.json();return body.data??body;},async put(path,value){const response=await nodeApiRequest('/api/data-query'+path,{method:'PUT',body:JSON.stringify(value)});const body=await response.json();return body.data??body;}},page)]));
 const source=computed(()=>sources.get(active.value as 'ontology'|'agents'));
-const CategoryTabs=defineComponent({setup:()=>()=>h('div',{class:'model-category-tabs'},h(PlatformTabs,{tabs:options.value,activeId:active.value,label:'智能体模型分类',onSelect:select}))});
 </script>
-<template><section class="system-agent-models"><BuilderModelsRoute v-if="active==='builder'" :title="t('platform.systemAgentModels')" :description="t('platform.systemAgentModelsDescription')"><template #navigation><CategoryTabs/></template></BuilderModelsRoute><AgentModelsPage v-else-if="source" :key="active" :source="source" path="/settings/model-config/agents" :title="t('platform.systemAgentModels')" :description="t('platform.systemAgentModelsDescription')"><template #navigation><CategoryTabs/></template></AgentModelsPage></section></template>
-<style scoped>.system-agent-models{display:flex;flex-direction:column;height:100%;min-height:0}.model-category-tabs{padding:12px var(--page-gutter);flex-shrink:0}.system-agent-models>:last-child{flex:1;min-height:0}</style>
+<template>
+  <section class="system-agent-models">
+    <component
+      :is="active === 'builder' ? BuilderModelsRoute : AgentModelsPage"
+      v-if="active === 'builder' || source"
+      :key="active"
+      v-bind="active === 'builder' ? {} : { source: source!, path: '/settings/model-config/agents' }"
+      :title="t('platform.systemAgentModels')"
+      :description="t('platform.systemAgentModelsDescription')"
+    >
+      <template #navigation>
+        <div class="model-category-tabs">
+          <PlatformTabs variant="segmented" :tabs="options" :active-id="active" :label="t('platform.systemAgentModels')" @select="select" />
+        </div>
+      </template>
+    </component>
+  </section>
+</template>
+<style scoped>
+.system-agent-models { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
+.model-category-tabs { padding: var(--spacing-md) var(--page-gutter); flex-shrink: 0; min-width: 0; }
+.system-agent-models > :last-child { flex: 1; min-height: 0; min-width: 0; }
+</style>

@@ -250,6 +250,36 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     });
   }
 
+  for (const reply of responses.values()) place(reply, null);
+
+  // A failed child's notification can wake the assistant while its replacement is still running.
+  // Keep those acknowledgements in the process, with only the final reply owning answer actions.
+  let turn: ResponseItem[] = [];
+  function settlePresentation() {
+    const hasRetrieval = turn.some(reply => reply.process.some(block => block.kind === "task" && block.task.retrieval));
+    if (!hasRetrieval) return;
+    const active = turn.some(reply => reply.process.some(block => block.kind === "task" && block.task.retrieval &&
+      (block.task.status === "starting" || block.task.status === "running")));
+    for (let index = 0; index < turn.length; index++) {
+      const reply = turn[index]!;
+      if (!reply.answerMessageId || !reply.answerText.trim()) continue;
+      const hasDataset = /\.dataset\.json(?:[)#?]|$)/i.test(reply.answerText);
+      const laterReply = index < turn.length - 1 && !hasDataset;
+      const waiting = active && !hasDataset;
+      if (!laterReply && !waiting) continue;
+      reply.process.push({ kind: "note", key: `handoff:${reply.answerMessageId}`, text: reply.answerText,
+        final: true, runId: reply.runId });
+      reply.answerMessageId = null;
+      reply.answerText = "";
+      reply.handoff = true;
+    }
+  }
+  for (const item of items) {
+    if (item.kind === "user") { settlePresentation(); turn = []; }
+    else if (item.kind === "response") turn.push(item);
+  }
+  settlePresentation();
+
   // Result notifications link separate assistant runs. Use their wall-clock span, not a sum of potentially overlapping work.
   function startOf(runId: string, seen: Set<string>): number | null {
     if (seen.has(runId)) return null;

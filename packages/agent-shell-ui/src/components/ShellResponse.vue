@@ -29,7 +29,7 @@ const feedbackBusy = ref(false);
 
 /** The runtime names the answer when the run stops, so feedback has a target only then. */
 const target = computed(() =>
-    props.sessionId && !props.item.running && props.item.answerMessageId && props.item.answerText.trim()
+    props.sessionId && !props.item.handoff && !props.item.running && props.item.answerMessageId && props.item.answerText.trim()
     ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId }
     : null,
 );
@@ -37,13 +37,10 @@ const hasProcess = computed(() => props.item.process.length > 0);
 /** The work this reply delegated and the checks of the data it cited; its entry opens the task list here. */
 const taskCount = computed(() =>
   props.item.process.filter((block) => block.kind === "task").length + props.item.reviews.length);
-/**
- * The process stays open while the run works, or while a retrieval it delegated still works after the run stopped to
- * wait for it, and folds to one line once both ended; a finished reply mounts folded.
- */
+/** Routine progress stays on one line; diagnostic detail opens only at the reader's request. */
 const delegating = computed(() => props.item.process.some((block) =>
   block.kind === "task" && (block.task.status === "running" || block.task.status === "starting")));
-const { open, toggle, reveal } = useAutoFold(() => props.item.running || delegating.value);
+const { open, toggle, reveal } = useAutoFold(() => false);
 const processVisited = ref(open.value);
 watch(open, value => { if (value) processVisited.value = true; });
 const retrievalStatus = computed(() => {
@@ -191,7 +188,7 @@ async function submit(value: ShellFeedbackValue) {
       <span>{{ item.end.errorMessage || labels.failed }}</span>
     </div>
 
-    <div v-if="!item.running && item.answerMessageId && item.answerText.trim()" class="actions">
+    <div v-if="!item.handoff && !item.running && item.answerMessageId && item.answerText.trim()" class="actions">
       <button type="button" class="shell-message-action" :title="labels.copy" :aria-label="labels.copy" @click="copy">
         <Check v-if="copied" :size="15" />
         <Copy v-else :size="15" />

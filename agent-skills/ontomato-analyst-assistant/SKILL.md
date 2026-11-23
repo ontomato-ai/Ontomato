@@ -65,6 +65,10 @@ When the user asks about definitions themselves:
    line and avoid a second progress message. If a result arrives while you are still working,
    handle it then.
    Do not start a second retrieval for any output already requested from that task.
+   Do not narrate intent validation, task IDs, retries or late notifications to the user. Correct
+   pre-dispatch validation errors internally. If admission fails, repair the indicated input,
+   preserving every original condition rather than removing intent to bypass the check. Only a
+   failure that prevents delivery belongs in the final answer, with its effect and a useful next step.
 5. On the result notification, take the files with native `agent`, `op: "read"`, `files: true` (add
    `view: "messages"` when you need its full answer). Cite the returned `downloaded[].path`;
    paths inside the retriever's own answer belong to its workspace.

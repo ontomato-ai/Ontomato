@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { ElImage, ElImageViewer } from "@ontomato/foundation-ui/preview";
 import { FileText, ExternalLink, File } from "lucide-vue-next";
-import { cellAttachments } from "./cell-attachments";
+import { cellAttachments, type CellAttachment } from "./cell-attachments";
 import TableTextCell from "./TableTextCell.vue";
 
-const props = defineProps<{ text: string }>();
+const props = defineProps<{ text: string; gallery?: CellAttachment[] }>();
 const attachments = computed(() => cellAttachments(props.text));
-const images = computed(() => attachments.value.filter(item => item.kind === "image").map(item => item.url));
+const gallery = computed(() => (props.gallery ?? attachments.value).filter(item => item.kind === "image"));
+const images = computed(() => gallery.value.map(item => item.url));
 const viewing = ref<number | null>(null);
+const viewedCaption = computed(() => viewing.value === null ? "" : gallery.value[viewing.value]?.caption);
+watch(() => props.text, () => { viewing.value = null; });
 </script>
 
 <template>
@@ -31,7 +34,9 @@ const viewing = ref<number | null>(null);
     </template>
   </div>
   <TableTextCell v-else :text="text" />
-  <el-image-viewer v-if="viewing !== null" :url-list="images" :initial-index="viewing" teleported hide-on-click-modal @close="viewing = null" />
+  <el-image-viewer v-if="viewing !== null" :url-list="images" :initial-index="viewing" teleported hide-on-click-modal @switch="viewing = $event" @close="viewing = null">
+    <template #default><div v-if="viewedCaption" class="viewer-caption">{{ viewedCaption }}</div></template>
+  </el-image-viewer>
 </template>
 
 <style scoped>
@@ -48,4 +53,5 @@ const viewing = ref<number | null>(null);
 .cell-file:hover { background: var(--el-fill-color-light); }
 .cell-file:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .file-kind { font-size: 10px; color: var(--el-text-color-secondary); }
+.viewer-caption { position: absolute; inset-inline: 20px; bottom: 100px; color: white; text-align: center; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; text-shadow: 0 1px 4px black; }
 </style>
