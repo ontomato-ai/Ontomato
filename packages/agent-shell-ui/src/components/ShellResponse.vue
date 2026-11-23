@@ -37,10 +37,12 @@ const hasProcess = computed(() => props.item.process.length > 0);
 /** The work this reply delegated and the checks of the data it cited; its entry opens the task list here. */
 const taskCount = computed(() =>
   props.item.process.filter((block) => block.kind === "task").length + props.item.reviews.length);
-/** Routine progress stays on one line; diagnostic detail opens only at the reader's request. */
+/** Show the outer process while work continues; preserve the reader's explicit fold choice. */
 const delegating = computed(() => props.item.process.some((block) =>
   block.kind === "task" && (block.task.status === "running" || block.task.status === "starting")));
-const { open, toggle, reveal } = useAutoFold(() => false);
+const { open, toggle, reveal } = useAutoFold(() =>
+  props.item.running || (!props.item.answerMessageId && (delegating.value ||
+    props.item.retrievalProgress === "retrieving" || props.item.retrievalProgress === "datasetReady")));
 const processVisited = ref(open.value);
 watch(open, value => { if (value) processVisited.value = true; });
 const retrievalStatus = computed(() => {
