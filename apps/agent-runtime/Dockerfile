@@ -28,6 +28,15 @@ COPY workspace/ /build/workspace/
 COPY inputs.json /inputs.json
 COPY tools/ /tmp/tools/
 RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
+# Keep the frozen PI CLI and the image-resize worker's external package under
+# /usr, which is visible inside the sandbox. PI's CLI and SDK are bundled.
+RUN pi=packages/agent-runtime/node_modules/@earendil-works/pi-coding-agent \
+ && photon="$(cd packages/agent-runtime && node --input-type=module -e 'import { createRequire } from "node:module"; import { dirname } from "node:path"; console.log(dirname(createRequire(import.meta.resolve("@earendil-works/pi-coding-agent")).resolve("@silvia-odwyer/photon-node")))' )" \
+ && mkdir -p /pi/node_modules/@earendil-works /pi/node_modules/@silvia-odwyer \
+ && cp -LR "$pi" /pi/node_modules/@earendil-works/ \
+ && cp -LR "$photon" /pi/node_modules/@silvia-odwyer/ \
+ && cp packages/agent-runtime/src/adapters/pi/import.mjs packages/agent-runtime/src/adapters/pi/extension.mjs /pi/ \
+ && node /pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --version | grep -Fx 1.4.0
 COPY LICENSE NOTICE /stage/licenses/
 FROM ${PYTHON_RUNTIME_IMAGE} AS python-runtime
 ARG PIP_INDEX_URL=https://pypi.org/simple
@@ -51,6 +60,7 @@ RUN --mount=type=bind,from=dependencies,source=/opt/runtime,target=/opt/runtime 
 Node.js: /usr/local/share/node/LICENSE
 Python interpreter and standard library: /usr/local/lib/python3.10/LICENSE.txt
 Debian packages: /usr/share/doc/<package>/copyright
+PI CLI 1.4.0 (https://github.com/earendil-works/pi/releases/tag/v1.4.0): /app/licenses/pi-MIT.txt
 The pi-agent-core fork retains its MIT license in /app/packages/agent-runtime/src/core/pi/LICENSE
 EOF
 RUN rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.10/site-packages/setuptools* /usr/local/lib/python3.10/site-packages/pkg_resources /usr/local/bin/pip* \
@@ -68,6 +78,8 @@ RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
 ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data
 COPY --from=dependencies /opt/runtime/node_modules /opt/runtime/node_modules
 COPY --from=payload /stage/ /app/
+COPY --from=payload /pi/ /usr/local/lib/ontomato-pi/
+COPY --from=payload /stage/packages/agent-runtime/src/adapters/pi/UPSTREAM-LICENSE /app/licenses/pi-MIT.txt
 COPY --from=python-runtime /runtime-notices.txt /app/licenses/THIRD_PARTY_NOTICES.txt
 COPY requirements-py310.txt /app/licenses/python-requirements.txt
 COPY --from=sandbox-builder /output/nsjail /usr/local/sbin/nsjail
