@@ -94,13 +94,6 @@ const ActionsCatalog = {
       if (outcome?.kind === "success") back();
     }
 
-    function onStatusDone(outcome) {
-      const changed =
-        outcome?.kind === "success" ||
-        (outcome?.kind === "batch" && outcome.items.some((item) => item.outcome.kind === "success"));
-      if (changed) instance.refreshObjects();
-    }
-
     function onFormSaved(saved) {
       const patch = {};
       if (creating.value) patch.creating = false;
@@ -113,7 +106,6 @@ const ActionsCatalog = {
       if (Object.keys(patch).length > 0) {
         instance.state.setState(patch);
       }
-      instance.refreshObjects();
     }
 
     function onFormDiscarded() {
@@ -148,7 +140,6 @@ const ActionsCatalog = {
       back,
       onChooseAction,
       onRemoveDone,
-      onStatusDone,
       onFormSaved,
       onFormDiscarded,
       onSelectRef,
