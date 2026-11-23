@@ -74,7 +74,7 @@ const content = {
   html: '<div id="app"><p>Test panel</p></div>',
   module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
 };
-const manifest = { state: {}, members: {}, commands: {} };
+const manifest = { state: {}, members: {} };
 
 beforeAll(async () => {
   configureI18n({
@@ -303,12 +303,12 @@ it("reports an unreadable panel beside healthy results without losing its stored
     const response = await fetch(`${base}/api/product-panels?q=directory&sort=name&limit=1`);
     expect(response.status).toBe(200);
     const first = await response.json();
-    expect(first).toMatchObject({ items: [], unavailableItems: [{ id, reason: expect.stringContaining("manifest.commands") }] });
+    expect(first).toMatchObject({ items: [], unavailableItems: [{ id, reason: expect.stringContaining("events") }] });
     expect(first.nextCursor).toBeTruthy();
     const next = await fetch(`${base}/api/product-panels?q=directory&sort=name&limit=1&cursor=${first.nextCursor}`);
     expect(await next.json()).toMatchObject({ items: [{ id: "one" }] });
     expect(await readCatalogue("listing")).toMatchObject({
-      items: [], unavailableItems: [{ id, reason: expect.stringContaining("manifest.commands") }],
+      items: [], unavailableItems: [{ id, reason: expect.stringContaining("events") }],
     });
     const { findPanelUsers } = await import("../../services/product-panels/references");
     expect(await findPanelUsers(owner.domainId, "panel", "one")).toEqual([{ id, name: "A legacy directory" }]);

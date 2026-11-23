@@ -395,6 +395,7 @@ await mountPanel({
       openModeling,
       navigationError,
       classNameLabel,
+      refresh: () => instance.refreshObjects(),
     };
   },
 });

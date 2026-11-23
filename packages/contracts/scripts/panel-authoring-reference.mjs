@@ -6,19 +6,18 @@ import { panelDefinitionContentSchema } from "../src/product-panels.ts";
 
 const guide = new URL("../../../agent-skills/ontomato-app-builder/references/panel-authoring/FIELDS.md", import.meta.url);
 const descriptorKeys = new Set(Object.keys(panelDefinitionContentSchema.shape));
-const manifestKeys = new Set(Object.keys(panelAuthoringManifestSchema.innerType().shape));
+const manifestKeys = new Set(Object.keys(panelAuthoringManifestSchema.shape));
 for (const key of ["manifest", "content", "theme", "template"]) {
   assert.ok(descriptorKeys.has(key), `Panel descriptor contract is missing '${key}'`);
 }
-for (const key of ["state", "members", "commands"]) {
+for (const key of ["state", "members"]) {
   assert.ok(manifestKeys.has(key), `Panel manifest contract is missing '${key}'`);
 }
 
 const descriptorRows = [
-  ["`manifest`", "Yes", "Panel declaration object (`{ state, members, commands }`). All three keys inside `manifest` are required."],
+  ["`manifest`", "Yes", "Panel declaration object (`{ state, members }`). Both keys inside `manifest` are required."],
   ["`manifest.state`", "Yes", "Declared typed public state fields. Write `{}` when the panel has no public state (for example, a read-only stateless page)."],
   ["`manifest.members`", "Yes", "Map of member keys to short inline member declarations (table below) or formal placements (`{ target: { projectionId } }`). Write `{}` when the panel has no members."],
-  ["`manifest.commands`", "Yes", "Named page-header commands (`labelKey` and `do`). Write `{}` when the panel has no header commands."],
   ["`content`", "No", "Optional panel content metadata in `panel.json`. Only `content.messages` is accepted here; `panel.html`, `panel.mjs`, and optional `recipes.md` are loaded from workspace files."],
   ["`content.messages`", "No", "Locale-keyed flat message tables (`{ \"en\": { \"panel.name\": \"…\" }, \"zh-CN\": { \"panel.name\": \"…\" } }`) used by `t(key, params)` and `prefillKey`."],
   ["`theme`", "No", "Optional `{ light?, dark? }` map of overridable `--sdk-*` theme token values (never `--el-*`)."],
@@ -35,7 +34,6 @@ const minimalReadOnlyPanel = {
         data: { rows: "list" },
       },
     },
-    commands: {},
   },
   content: {
     messages: {

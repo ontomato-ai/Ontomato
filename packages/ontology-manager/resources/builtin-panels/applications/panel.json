@@ -260,7 +260,7 @@
           "type": "danger",
           "plain": true,
           "icon": "trash",
-          "placement": "header"
+          "label": "删除"
         },
         "id": "builtin-product-6391d99c-9f5a-4f5e-8958-efc070e8c5f2"
       },
@@ -339,25 +339,6 @@
           }
         },
         "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a07"
-      }
-    },
-    "commands": {
-      "create": {
-        "labelKey": "action.create",
-        "primary": true,
-        "icon": "plus",
-        "do": {
-          "set": {
-            "fields": {
-              "creating": {
-                "literal": true
-              },
-              "selected": {
-                "literal": null
-              }
-            }
-          }
-        }
       }
     }
   },

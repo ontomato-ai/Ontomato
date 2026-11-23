@@ -27,6 +27,7 @@ interface HeaderOperationItem {
   readonly descriptor: PanelOwnerOperationDescriptor;
   readonly danger: boolean;
   readonly primary: boolean;
+  readonly customLabel?: string;
   readonly label: string;
   readonly disabled: boolean;
 }
@@ -37,6 +38,7 @@ export type ObjectHeaderOperationSpec =
       readonly name: string;
       readonly danger?: boolean;
       readonly primary?: boolean;
+      readonly label?: string;
     };
 
 /**
@@ -45,10 +47,9 @@ export type ObjectHeaderOperationSpec =
  * or `status` + `statusTone`), and right-side action bar.
  *
  * When mounted as a projection member with declared `operations`, exposes up to `maxVisibleOperations` (default 2,
- * configurable without upper cap) regular operations inline via `OperationButton`, moves remaining regular operations
- * into the SDK dropdown "More" menu, and places dangerous operations (declared via the owner's `inspectImpact` or
- * explicitly marked via `dangerOperations` / `{ danger: true }`) last in the "More" menu using the shared operation
- * execution path.
+ * configurable without upper cap) operations inline via `OperationButton` in declared order (danger operations render
+ * as plain danger buttons inline when within the visible limit) and moves remaining operations into the SDK dropdown
+ * "More" menu using the shared operation execution path.
  */
 const props = withDefaults(
   defineProps<{
@@ -68,11 +69,11 @@ const props = withDefaults(
     statusTone?: "info" | "success" | "warning" | "danger";
     /** Optional ordered list of projection operation local names (or `{ name, danger, primary }` specs); defaults to all declared projection operations. */
     operations?: readonly ObjectHeaderOperationSpec[];
-    /** Projection operation local names explicitly treated as destructive (always placed last in the "More" menu). */
+    /** Projection operation local names explicitly styled as destructive. */
     dangerOperations?: readonly string[];
     /** Projection operation local name emphasized as the primary inline button when exposed inline. */
     primaryOperation?: string;
-    /** Maximum number of regular operations exposed inline before overflowing to "More" (default 2; no upper limit). */
+    /** Maximum number of operations exposed inline before overflowing to "More" (default 2; no upper limit). */
     maxVisibleOperations?: number;
   }>(),
   {
@@ -205,7 +206,7 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
   if (!currentMember || !slot) return [];
   const state = currentMember.operations.value;
   if (state.status !== "ready") return [];
-  const specs: readonly { name: string; danger?: boolean; primary?: boolean }[] = props.operations
+  const specs: readonly { name: string; danger?: boolean; primary?: boolean; label?: string }[] = props.operations
     ? props.operations.map((entry) => (typeof entry === "string" ? { name: entry } : entry))
     : Object.keys(slot.projection.operations ?? {}).map((name) => ({ name }));
   const items: HeaderOperationItem[] = [];
@@ -213,13 +214,14 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
     const descriptor = state.value[spec.name];
     if (!descriptor) continue;
     const targetInfo = resolveOperationTarget(panel, slot, currentMember, descriptor, stateValues.value);
-    const label = formatOperationLabel(descriptor, targetInfo, t);
+    const label = spec.label?.trim() || formatOperationLabel(descriptor, targetInfo, t);
     const ready = isOperationReady(descriptor, targetInfo, Boolean(currentMember.rowOperation), false);
     items.push({
       name: spec.name,
       descriptor,
       danger: isDangerOperation(spec.name, descriptor, spec.danger),
       primary: Boolean(spec.primary) || spec.name === props.primaryOperation,
+      customLabel: spec.label,
       label,
       disabled: !ready,
     });
@@ -230,13 +232,14 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
 const inlineLimit = computed(() => Math.max(0, Math.floor(props.maxVisibleOperations)));
 
 const inlineOperations = computed(() =>
-  admittedOperations.value.filter((item) => !item.danger).slice(0, inlineLimit.value),
+  admittedOperations.value.slice(0, inlineLimit.value),
 );
 
 const moreOperations = computed(() => {
-  const normalOverflow = admittedOperations.value.filter((item) => !item.danger).slice(inlineLimit.value);
-  const dangerItems = admittedOperations.value.filter((item) => item.danger);
-  return [...normalOverflow, ...dangerItems];
+  const overflow = admittedOperations.value.slice(inlineLimit.value);
+  const regularOverflow = overflow.filter((item) => !item.danger);
+  const dangerOverflow = overflow.filter((item) => item.danger);
+  return [...regularOverflow, ...dangerOverflow];
 });
 
 watch(
@@ -278,7 +281,9 @@ function handleMoreCommand(command: string | number | Record<string, unknown>) {
             v-for="item in inlineOperations"
             :key="item.name"
             :operation="item.name"
-            :type="item.primary ? 'primary' : 'default'"
+            :label="item.customLabel"
+            :type="item.danger ? 'danger' : item.primary ? 'primary' : 'default'"
+            :plain="item.danger"
             @done="(outcome) => emit('done', item.name, outcome)"
           />
           <el-dropdown

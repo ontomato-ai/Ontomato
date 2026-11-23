@@ -7,10 +7,9 @@ Top-level fields accepted in `panel.json`. Workspace files supply `panel.html`, 
 
 | Field | Required | Value |
 | --- | --- | --- |
-| `manifest` | Yes | Panel declaration object (`{ state, members, commands }`). All three keys inside `manifest` are required. |
+| `manifest` | Yes | Panel declaration object (`{ state, members }`). Both keys inside `manifest` are required. |
 | `manifest.state` | Yes | Declared typed public state fields. Write `{}` when the panel has no public state (for example, a read-only stateless page). |
 | `manifest.members` | Yes | Map of member keys to short inline member declarations (table below) or formal placements (`{ target: { projectionId } }`). Write `{}` when the panel has no members. |
-| `manifest.commands` | Yes | Named page-header commands (`labelKey` and `do`). Write `{}` when the panel has no header commands. |
 | `content` | No | Optional panel content metadata in `panel.json`. Only `content.messages` is accepted here; `panel.html`, `panel.mjs`, and optional `recipes.md` are loaded from workspace files. |
 | `content.messages` | No | Locale-keyed flat message tables (`{ "en": { "panel.name": "…" }, "zh-CN": { "panel.name": "…" } }`) used by `t(key, params)` and `prefillKey`. |
 | `theme` | No | Optional `{ light?, dark? }` map of overridable `--sdk-*` theme token values (never `--el-*`). |
@@ -30,8 +29,7 @@ Minimal complete `panel.json` for a read-only stateless page (empty `state` and 
           "rows": "list"
         }
       }
-    },
-    "commands": {}
+    }
   },
   "content": {
     "messages": {

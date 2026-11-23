@@ -28,7 +28,7 @@ async function workspace(t, messages) {
   const directory = await mkdtemp(join(tmpdir(), "ontomato-entry-key-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(join(directory, "panel.json"), JSON.stringify({
-    manifest: { state: {}, members: { create: { target: { projectionId: entryProjection.id } } }, commands: {} },
+    manifest: { state: {}, members: { create: { target: { projectionId: entryProjection.id } } } },
     content: { messages },
   }));
   await writeFile(join(directory, "panel.html"), '<div id="app"><projection slot="create"></projection></div>');
@@ -82,7 +82,7 @@ async function builtin(messages) {
     panels: [{ id: "builtin-product-entry-key-panel", mode: "create", input: { name: "Actions", description: "", visibility: "domain" } }],
   }));
   await writeFile(join(directory, "panel.json"), JSON.stringify({
-    manifest: { state: {}, commands: {}, members: {
+    manifest: { state: {}, members: {
       create: { id: "builtin-product-entry-key-entry", component: "ConversationEntry", agent: "page-default", prefillKey: "actions.newPrefill" },
     } },
     content: { messages },

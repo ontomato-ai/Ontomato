@@ -416,6 +416,8 @@ await mountPanel({
       deleteDialog, openDelete, submitDelete, grantForm, submitGrant, submitShare,
       openClass, openPanel, notice,
       componentLabel, scopeLabel, formatTimestamp, jsonText, isChart,
+      startCreate: () => instance.state.setState({ selected: null, creating: true }),
+      refresh: () => instance.refreshObjects(),
     };
   },
 });

@@ -23,7 +23,6 @@ import type { PanelOperationAffected } from "@ontomato/contracts/panel-operation
 import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
-import type { PlatformPageDraft } from "./page-actions";
 import type { PanelBackHandlerRegistration } from "./panel-back";
 
 /** An instance's deep-linkable state as the host carries it: what the host message hands the frame. */
@@ -113,30 +112,6 @@ function projectionIdsOf(shown: HostedPanelSource): string[] {
   return Object.values(shown.panel.manifest.members).flatMap(member => ("projectionId" in member.target ? [member.target.projectionId] : []));
 }
 
-/** One action a panel or its member hands to the enclosing page header in full-width detail mode. */
-export interface PanelDetailHeaderAction {
-  id: string;
-  label: string;
-  icon?: "plus" | "save" | "trash" | "sliders" | "table" | "book-open";
-  primary?: boolean;
-  danger?: boolean;
-  inline?: boolean;
-  disabled?: boolean;
-  loading?: boolean;
-  onClick(): void;
-}
-
-/**
- * What a panel displaying a single object's full-width detail view hands to the enclosing platform header so the page
- * shows one unified bar (back to catalog, object title, and actions) rather than stacking two headers.
- */
-export interface PanelDetailHeader {
-  backLabel: string;
-  title: string;
-  onBack(): void;
-  actions?: readonly PanelDetailHeaderAction[];
-}
-
 /** What the host hands a panel's instance: where it is, what its address asks for, and where it reports. */
 export interface DirectPanelRun {
   /** The page's registration key, which a draft names. */
@@ -154,15 +129,6 @@ export interface DirectPanelRun {
   context(context: PageContext): void;
   operations(operations: readonly PanelOperation[]): void;
   dirty(dirty: boolean): void;
-  /**
-   * The page header's draft slot, supplied only when the host draws a page header for this panel (absent for nested
-   * panels and headerless previews). A form with `actions: "header"` publishes its Save/Discard draft here.
-   */
-  headerDraft?: (draft: PlatformPageDraft | null) => void;
-  /** Publishes or clears a full-width detail view's replacement heading and actions for the enclosing page header. */
-  detailHeader?: (header: PanelDetailHeader | null) => void;
-  /** Publishes member-owned actions (such as OperationButton with placement="header") into the enclosing page header. */
-  headerActions?: (actions: readonly PanelDetailHeaderAction[]) => void;
   /** The reader saved or discarded the draft the address links. */
   draftSettled(draft: PageDraftLink): void;
   /**
@@ -269,12 +235,6 @@ export interface PanelInstanceView {
   readonly error: Ref<string>;
   readonly displayLoad: Readonly<ShallowRef<DisplayLoad>>;
   readonly dirty: Readonly<ShallowRef<boolean>>;
-  /** The Save/Discard draft a form in this panel handed to the page header, or null when none did. */
-  readonly headerDraft: Readonly<ShallowRef<PlatformPageDraft | null>>;
-  /** The full-width detail header a panel handed to the platform header, or null when in catalog/default mode. */
-  readonly detailHeader: Readonly<ShallowRef<PanelDetailHeader | null>>;
-  /** Member-owned actions registered for the enclosing page header (for example a detail view's Delete OperationButton). */
-  readonly headerActions: Readonly<ShallowRef<readonly PanelDetailHeaderAction[]>>;
   /** Resolves once the source is read. */
   readonly ready: Promise<void>;
   /** Whether the page may be shown: Java's answer names its use relation (always, when it opened from that answer). */
@@ -372,8 +332,6 @@ export interface PanelInstanceOptions {
   currentEntry?: DirectPanelRun["currentEntry"];
   /** Current application frame state for content panels inside a framed application entry. */
   frameState?: DirectPanelRun["frameState"];
-  /** Whether the host mounting this panel has a page header that can carry a form's Save/Discard draft. */
-  headerDraftHost?: boolean;
   /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
   registerBackHandler?: DirectPanelRun["registerBackHandler"];
   /** Unified host confirmation for leaving unsaved edits. */
@@ -421,9 +379,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const error = shallowRef("");
   const displayLoad = shallowRef(loading);
   const dirty = shallowRef(false);
-  const headerDraft = shallowRef<PlatformPageDraft | null>(null);
-  const detailHeader = shallowRef<PanelDetailHeader | null>(null);
-  const headerActions = shallowRef<readonly PanelDetailHeaderAction[]>([]);
   const state = shallowRef<PanelHostState>({});
   const address = shallowRef("");
   const operations = shallowRef<readonly PanelOperation[]>([]);
@@ -431,6 +386,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** Whether the instance runs: its frame reported its first state, or its direct instance started. */
   let frameReady = false;
   let frameAddress = "";
+  let pendingDirectAddress: string | null = null;
   let registration: PanelFrameRegistration | undefined;
   /** Whether the frame may ask the platform for anything: not while its page is kept out of view, nor until it is checked. */
   let bridgeOpen = true;
@@ -554,6 +510,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     mount.activate(bridgeOpen);
     direct.value = { element, mount };
+    if (pendingDirectAddress !== null) {
+      const nextAddress = pendingDirectAddress;
+      pendingDirectAddress = null;
+      mount.address(nextAddress);
+    }
   }
 
   /**
@@ -571,6 +532,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     state.value = requested;
     address.value = requestedAddress;
     frameAddress = requestedAddress;
+    pendingDirectAddress = null;
     frameReady = false;
     displayLoad.value = loading;
     return true;
@@ -600,11 +562,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       context: context => (pageContext.value = context),
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
-      ...(options.headerDraftHost ? {
-        headerDraft: (draft) => { headerDraft.value = draft; },
-        detailHeader: (header) => { detailHeader.value = header; },
-        headerActions: (actions) => { headerActions.value = actions; },
-      } : {}),
       draftSettled: settleDraft,
       draftRefused: (text) => {
         draftOpening.value = false;
@@ -627,9 +584,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     notice.value = "";
     draftRefusal.value = "";
     draftOpening.value = false;
-    headerDraft.value = null;
-    detailHeader.value = null;
-    headerActions.value = [];
   }
 
   /** What decides how a source is drawn: its content and declaration, not its revision or identity. */
@@ -910,7 +864,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frameAddress = next;
     address.value = next;
     if (direct.value) direct.value.mount.address(next);
-    else post({ kind: "address", address: next });
+    else if (document.value) post({ kind: "address", address: next });
+    else pendingDirectAddress = next;
   }
 
   function reportFrameFailure(failure: NonNullable<DisplayLoad["error"]>) {
@@ -961,9 +916,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     error,
     displayLoad,
     dirty,
-    headerDraft,
-    detailHeader,
-    headerActions,
     ready,
     refresh,
     direct,

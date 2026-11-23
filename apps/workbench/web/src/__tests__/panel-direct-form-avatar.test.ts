@@ -31,7 +31,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { agent: { type: { kind: "object", objectType: AGENT_DEFINITION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { agent: { state: "agent" } } } },
-  commands: {},
 };
 const field = (path: string, label: string, control: Record<string, unknown>) => ({ path, label, control, valueSchema: {}, required: false, readOnly: false });
 const description = {

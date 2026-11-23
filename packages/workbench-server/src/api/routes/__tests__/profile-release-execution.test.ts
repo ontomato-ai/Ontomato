@@ -63,7 +63,7 @@ beforeEach(()=>{
     if (sql.includes("FROM product_panels")) return { rows: [{
       ...current, id: panelId, revision: 3, definition: {
         name: "Panel", description: "", visibility: "domain", content: vuePanelContent("summary"),
-        manifest: { state: {}, members: { summary: { target: { projectionId: "projection-live" } } }, commands: {} },
+        manifest: { state: {}, members: { summary: { target: { projectionId: "projection-live" } } } },
       },
     }] };
     if (sql.includes("FROM product_projections")) return { rows: [{

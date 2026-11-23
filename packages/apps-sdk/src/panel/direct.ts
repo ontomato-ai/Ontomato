@@ -3,7 +3,7 @@ import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
-import type { DirectPanelRun, PanelDetailHeader, PanelDetailHeaderAction, PlatformPageDraft } from "@ontomato/platform-shell";
+import type { DirectPanelRun } from "@ontomato/platform-shell";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
@@ -63,15 +63,6 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
   currentEntry?: DirectPanelRun["currentEntry"];
   /** Current application frame state when this panel runs inside a framed application entry. */
   frameState?: DirectPanelRun["frameState"];
-  /**
-   * Reports the active Save/Discard draft handed to the enclosing page header by a form with `actions: "header"`.
-   * Supplied only when the enclosing host draws a page header.
-   */
-  reportHeaderDraft?: (draft: PlatformPageDraft | null) => void;
-  /** Reports a full-width detail view's replacement heading and actions for the enclosing page header. */
-  reportDetailHeader?: (header: PanelDetailHeader | null) => void;
-  /** Reports member-owned actions registered for the enclosing page header. */
-  reportHeaderActions?: (actions: readonly PanelDetailHeaderAction[]) => void;
   /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
   registerBackHandler?: DirectPanelRun["registerBackHandler"];
   /** Unified host confirmation for leaving unsaved edits. */
@@ -213,15 +204,6 @@ export interface DirectPanelInstance extends PanelInstance {
   markDrawn(member: string): () => void;
   /** Whether a member is currently mounted in the DOM. */
   isDrawn(member: string): boolean;
-  /**
-   * Registers a form's Save/Discard draft for the enclosing page header. Present only when the host provides a page
-   * header (`options.reportHeaderDraft`); absent in nested panels and headerless previews.
-   */
-  readonly registerHeaderDraft?: (slot: string, draft: () => PlatformPageDraft | null) => () => void;
-  /** Registers a full-width detail header for the enclosing page header. */
-  readonly registerDetailHeader?: (header: () => PanelDetailHeader | null) => () => void;
-  /** Registers a member-owned action for the enclosing page header. */
-  readonly registerHeaderAction?: (slot: string, action: () => PanelDetailHeaderAction | null) => () => void;
   /** Registers a panel-local back/close step (LIFO) with the enclosing host. */
   readonly registerBackHandler?: DirectPanelRun["registerBackHandler"];
   /** Unified host confirmation for leaving unsaved edits. */
@@ -553,77 +535,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   }
 
   const drawnCounts = new Map<string, number>();
-  const reportHeaderDraft = options.reportHeaderDraft;
-  let registerHeaderDraft: DirectPanelInstance["registerHeaderDraft"];
-  if (reportHeaderDraft) {
-    const headerDrafts = shallowRef<readonly { slot: string; read: () => PlatformPageDraft | null }[]>([]);
-    const activeHeaderDraft = computed<PlatformPageDraft | null>(() => {
-      for (const entry of headerDrafts.value) {
-        const next = entry.read();
-        if (next !== null) return next;
-      }
-      return null;
-    });
-    membersScope.run(() => {
-      watch(activeHeaderDraft, (next) => reportHeaderDraft(next), { immediate: true });
-      onScopeDispose(() => reportHeaderDraft(null));
-    });
-    registerHeaderDraft = (slot, read) => {
-      const entry = { slot, read };
-      headerDrafts.value = [...headerDrafts.value.filter((item) => item.slot !== slot), entry];
-      return () => {
-        headerDrafts.value = headerDrafts.value.filter((item) => item !== entry);
-      };
-    };
-  }
-
-  const reportDetailHeader = options.reportDetailHeader;
-  let registerDetailHeader: DirectPanelInstance["registerDetailHeader"];
-  if (reportDetailHeader) {
-    const detailHeaders = shallowRef<readonly (() => PanelDetailHeader | null)[]>([]);
-    const activeDetailHeader = computed<PanelDetailHeader | null>(() => {
-      for (let i = detailHeaders.value.length - 1; i >= 0; i -= 1) {
-        const next = detailHeaders.value[i]!();
-        if (next !== null) return next;
-      }
-      return null;
-    });
-    membersScope.run(() => {
-      watch(activeDetailHeader, (next) => reportDetailHeader(next), { immediate: true });
-      onScopeDispose(() => reportDetailHeader(null));
-    });
-    registerDetailHeader = (read) => {
-      detailHeaders.value = [...detailHeaders.value, read];
-      return () => {
-        detailHeaders.value = detailHeaders.value.filter((item) => item !== read);
-      };
-    };
-  }
-
-  const reportHeaderActions = options.reportHeaderActions;
-  let registerHeaderAction: DirectPanelInstance["registerHeaderAction"];
-  if (reportHeaderActions) {
-    const headerActionSlots = shallowRef<readonly { slot: string; read: () => PanelDetailHeaderAction | null }[]>([]);
-    const activeHeaderActions = computed<readonly PanelDetailHeaderAction[]>(() => {
-      const list: PanelDetailHeaderAction[] = [];
-      for (const entry of headerActionSlots.value) {
-        const next = entry.read();
-        if (next !== null) list.push(next);
-      }
-      return list;
-    });
-    membersScope.run(() => {
-      watch(activeHeaderActions, (next) => reportHeaderActions(next), { immediate: true });
-      onScopeDispose(() => reportHeaderActions([]));
-    });
-    registerHeaderAction = (slot, read) => {
-      const entry = { slot, read };
-      headerActionSlots.value = [...headerActionSlots.value.filter((item) => item.slot !== slot), entry];
-      return () => {
-        headerActionSlots.value = headerActionSlots.value.filter((item) => item !== entry);
-      };
-    };
-  }
 
   const directInstance: DirectPanelInstance = Object.assign(instance, {
     currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
@@ -855,9 +766,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       };
     },
     isDrawn: (member: string) => (drawnCounts.get(member) ?? 0) > 0,
-    ...(registerHeaderDraft ? { registerHeaderDraft } : {}),
-    ...(registerDetailHeader ? { registerDetailHeader } : {}),
-    ...(registerHeaderAction ? { registerHeaderAction } : {}),
     ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
     ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
   });
@@ -901,9 +809,6 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     notify: ({ kind, text }) => { ElMessage({ type: kind, message: text, grouping: true }); },
     // A member here reads through the instance's own port; nothing asks the context for it.
     readPanelData: frameOnly("Reading a member's data over the frame's request path"),
-    ...(instance.registerHeaderDraft ? { registerHeaderDraft: instance.registerHeaderDraft } : {}),
-    ...(instance.registerDetailHeader ? { registerDetailHeader: instance.registerDetailHeader } : {}),
-    ...(instance.registerHeaderAction ? { registerHeaderAction: instance.registerHeaderAction } : {}),
     ...(instance.registerBackHandler ? { registerBackHandler: instance.registerBackHandler } : {}),
     ...(instance.confirmLeaveUnsaved ? { confirmLeaveUnsaved: instance.confirmLeaveUnsaved } : {}),
   };

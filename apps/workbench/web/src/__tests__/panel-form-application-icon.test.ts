@@ -31,7 +31,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { app: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { app: { state: "app" } } } },
-  commands: {},
 };
 const description = {
   fields: [{ path: "/icon", label: "Icon", help: "Tells the application apart in the navigation.", control: { kind: "application-icon" }, valueSchema: {}, required: true, readOnly: false }],

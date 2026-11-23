@@ -85,7 +85,6 @@ it("expands the page composer with exact projection-declared targets (preset, id
       specific: { target: { projectionId: "entry-id" }, inputs: {} },
       fallback: { target: { projectionId: "entry-default" }, inputs: {} },
     },
-    commands: {},
   });
   const panel = panelRecord("panel-conv-entry", "Conversation entries", manifest);
   panel.content.messages = { en: { "entry.preset": "Start review" } };
@@ -151,7 +150,6 @@ it("surfaces visible errors when conversationEntry is missing or the host has no
       valid: { target: { projectionId: "entry-valid" }, inputs: {} },
       missing: { target: { projectionId: "entry-missing" }, inputs: {} },
     },
-    commands: {},
   });
   const panel = panelRecord("panel-conv-err", "Conversation errors", manifest);
   panel.content.html = `

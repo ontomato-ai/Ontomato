@@ -57,7 +57,7 @@ function panelDefinition(projectionId?: string) {
   return {
     name: "Overview", description: "", visibility: "private",
     content: { html: "<main></main>", module: "export {}" },
-    manifest: { state: {}, members: projectionId ? { kpi: { target: { projectionId }, inputs: {} } } : {}, commands: {} },
+    manifest: { state: {}, members: projectionId ? { kpi: { target: { projectionId }, inputs: {} } } : {} },
   };
 }
 let records: Record<Table, Map<string, CurrentProductRow>>;

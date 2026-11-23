@@ -60,8 +60,7 @@
               }
             }
           }
-        },
-        "commands": {}
+        }
       },
       "name": "Scheduled tasks (trial)",
       "description": "Pick one of the reader's scheduled tasks, change it through its application's form, save it, and run it now.",

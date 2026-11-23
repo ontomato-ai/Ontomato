@@ -89,7 +89,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { item: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { item: { state: "item" } } } },
-  commands: {},
 };
 
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });

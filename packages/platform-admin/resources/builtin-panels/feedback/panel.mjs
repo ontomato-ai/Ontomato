@@ -25,6 +25,6 @@ await mountPanel({
         exporting.value = false;
       }
     };
-    return { selected, exporting, exportError, runExport };
+    return { selected, exporting, exportError, runExport, refresh: () => instance.refreshObjects() };
   },
 });

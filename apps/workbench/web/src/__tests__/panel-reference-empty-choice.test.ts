@@ -39,7 +39,6 @@ const manifest: DirectPanelManifest = {
     form: { target: { projectionId: form.id }, inputs: { agent: { state: "agent" } } },
     model: { target: { projectionId: picker.id }, inputs: {}, formField: { slot: "form", path: "/model" } },
   },
-  commands: {},
 };
 const following = { primaryKey: "@default", value: null, label: "Domain default (GPT)" };
 const gpt = { primaryKey: "openai/gpt", value: "openai/gpt", label: "GPT" };

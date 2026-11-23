@@ -20,7 +20,6 @@ import { noOperations, directRun } from "./panel-frame";
 const frame = (template: string): DirectPanelManifest => ({
   state: {},
   members: { content: { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } } },
-  commands: {},
 });
 const entry: CurrentApplicationEntry = { applicationId: "app-school", useId: "orders", pageKey: "orders", panelId: "panel-orders", path: "/applications/app-school/orders" };
 const menu = { groups: [], entries: [] } as unknown as ApplicationEntryMenu;

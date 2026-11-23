@@ -32,7 +32,7 @@ it("opens the draft before showing the page, then moves the panel where the draf
   const scenario = draftScenario();
   const manifest = definePanel({
     state: { ...scenario.panel.manifest.state, mode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "view" } },
-    members: scenario.panel.manifest.members, commands: {},
+    members: scenario.panel.manifest.members,
   });
   scenario.panel.manifest = manifest;
   scenario.panel.content = { ...scenario.panel.content, module: SWITCH_ON_DRAFT };
@@ -65,7 +65,7 @@ it("moves the panel where the draft is edited when the page was open at another 
   const scenario = draftScenario();
   scenario.panel.manifest = definePanel({
     state: { ...scenario.panel.manifest.state, mode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "view" } },
-    members: scenario.panel.manifest.members, commands: {},
+    members: scenario.panel.manifest.members,
   });
   scenario.panel.content = { ...scenario.panel.content, module: SWITCH_ON_DRAFT };
   installPlatform((request) => request.path.endsWith("/page-draft")

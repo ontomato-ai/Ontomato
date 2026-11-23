@@ -502,6 +502,7 @@ const CapabilityMap = {
       currentNode,
       onQueryInput,
       clearQuery,
+      refresh: () => instance.refreshObjects(),
     };
   },
 };

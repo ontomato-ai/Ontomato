@@ -27,7 +27,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { app: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { app: { state: "app" } } } },
-  commands: {},
 };
 const text = (path: string, label: string, advanced?: true) => ({
   path, label, required: false, readOnly: false, valueSchema: {}, control: { kind: "text" }, ...(advanced ? { advanced } : {}),

@@ -263,7 +263,6 @@ describe("ObjectForm + usePanelFormDraft + PageHeader integration", () => {
     const manifest: DirectPanelManifest = {
       state: { selected: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
       members: { form: { target: { projectionId: formProjection.id }, inputs: { app: { state: "selected" } } } },
-      commands: {},
     };
 
     const mountResult = mountDirectPanel({
@@ -439,7 +438,6 @@ describe("form-scoped usePanelBack across sibling forms in one panel", () => {
         formA: { target: { projectionId: formAProjection.id }, inputs: { app: { state: "objectA" } } },
         formB: { target: { projectionId: formBProjection.id }, inputs: { app: { state: "objectB" } } },
       },
-      commands: {},
     };
 
     let allowLeave = false;

@@ -164,21 +164,6 @@
         "operation": "schedules.renewCredential",
         "id": "builtin-product-c533fb06-5286-495f-95f1-304b5752a802"
       }
-    },
-    "commands": {
-      "create": {
-        "labelKey": "newTask",
-        "primary": true,
-        "do": {
-          "set": {
-            "fields": {
-              "compose": {
-                "literal": "new"
-              }
-            }
-          }
-        }
-      }
     }
   },
   "content": {

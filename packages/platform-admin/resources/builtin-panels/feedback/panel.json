@@ -141,8 +141,7 @@
         "description": "Export every feedback record matching the current filters as a CSV file",
         "id": "builtin-product-3af8a57a-c5f5-4dee-b787-ebe81f95bbc3"
       }
-    },
-    "commands": {}
+    }
   },
   "content": {
     "messages": {

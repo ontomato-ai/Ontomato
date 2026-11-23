@@ -38,7 +38,6 @@ const admitted: ProductPanelReadResponse = { status: "ready", value: { save: {
 const manifest: DirectPanelManifest = {
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } } },
-  commands: {},
 };
 const description = {
   fields: [{ path: "/name", label: "Name", control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false }],

@@ -46,7 +46,6 @@ const projections: Record<string, ProductProjection> = {
 const manifest = definePanel({
   state: { selected: { type: agent, deepLink: true } },
   members: { form: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selected" } } } },
-  commands: {},
 });
 const panel = panelRecord("panel-create-mode", "Agents", manifest);
 const use = panelUse("use-create-mode", "create-mode", panel.id, "/ontology/agents");

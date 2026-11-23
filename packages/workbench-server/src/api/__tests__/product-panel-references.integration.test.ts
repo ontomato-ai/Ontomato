@@ -203,7 +203,6 @@ beforeAll(async () => {
       state: { caption: { type: portType }, selected: { type: portType } },
       members: { summary: { target: { projectionId }, inputs: { caption: { state: "caption" } },
         outputs: { selected: { state: "selected" } } } },
-      commands: {},
     },
   });
   const createdPanel = await request("PUT", `product-panels/${panelId}`, "author", panel);
@@ -251,7 +250,7 @@ it("reads a selected nested panel or projection and freezes its actual publisher
       content: vuePanelContent("components", "approve"), manifest: { state: { agent: { type: agentPort } }, members: {
         components: { target: { projectionId: list } },
         approve: { target: { projectionId: remove }, inputs: { agent: { state: "agent" } } },
-      }, commands: {} },
+      } },
     });
   }
   const root = {
@@ -265,7 +264,7 @@ it("reads a selected nested panel or projection and freezes its actual publisher
       fixed: { target: { panelId: child } },
       objectDetail: { target: { fromState: "selectedAgent", candidates: { rule: "objectDetail" } } },
       choice: { target: { fromState: "selectedProjection", candidates: { projectionIds: [list] } } },
-    }, commands: {} },
+    } },
   };
   await save(`product-panels/${nestedRootId}`, root);
   for (const id of [nestedRootId, child, list, remove]) shared.add(id);
@@ -421,7 +420,7 @@ it("includes the recorded template flag in panel catalog summaries", async () =>
   const id = "catalog-template";
   const saved = await request("PUT", `product-panels/${id}`, "author", {
     name: id, template: true, description: "", visibility: "private", revision: 0,
-    content: vuePanelContent(), manifest: { state: {}, members: {}, commands: {} },
+    content: vuePanelContent(), manifest: { state: {}, members: {} },
   });
   expect(saved.status, await saved.text()).toBe(200);
   const listed = await request("GET", `product-panels?q=${id}`, "author");
@@ -443,7 +442,7 @@ function projectionMembers(...ids: string[]) {
 it("lets the panel's registered owner clean it up after retiring a same-ID trial application", async () => {
   const id = "app-orphaned-panel", projections = ["orphan-summary-one", "orphan-summary-two"];
   for (const projection of projections) await saveProjection(projection);
-  const manifest = { state: {}, commands: {}, members: projectionMembers(...projections) };
+  const manifest = { state: {}, members: projectionMembers(...projections) };
   expect((await savePanel(id, manifest)).status).toBe(200);
   trialApplications.add(id);
   const resource = `product-panels/${id}`;
@@ -471,7 +470,7 @@ it("lets the panel's registered owner clean it up after retiring a same-ID trial
 
 it("lets an owner delete an unreadable panel by ID once its real references are retired", async () => {
   const id = "legacy-events-panel", resource = `product-panels/${id}`;
-  expect((await savePanel(id, { state: {}, members: {}, commands: {} })).status).toBe(200);
+  expect((await savePanel(id, { state: {}, members: {} })).status).toBe(200);
   await state.pool!.query(
     `UPDATE "${state.schema}".product_panels SET definition =
       jsonb_set(definition #- '{manifest,commands}', '{manifest,events}', '{}'::jsonb)
@@ -501,7 +500,7 @@ it("lets an owner delete an unreadable panel by ID once its real references are 
 
 it("exposes a panel to an editor without a use Grant for management", async () => {
   const id = "editor-without-use";
-  expect((await savePanel(id, { state: {}, commands: {}, members: {} })).status).toBe(200);
+  expect((await savePanel(id, { state: {}, members: {} })).status).toBe(200);
   grants.set(id, "editor");
   editOnlyPanels.add(id);
   const resource = `product-panels/${id}`;
@@ -518,7 +517,7 @@ it("only accepts a recovered projection update while the original panel is its s
   const id = "recovered-projection", originalPanel = "recovery-original", laterPanel = "recovery-later";
   const resource = `product-projections/${id}`;
   await saveProjection(id);
-  const manifest = { state: {}, commands: {}, members: projectionMembers(id) };
+  const manifest = { state: {}, members: projectionMembers(id) };
   expect((await savePanel(originalPanel, manifest)).status).toBe(200);
   const usage = await request("GET", `${resource}/used-by`, "author");
   expect(productProjectionUsedBySchema.parse(await usage.json())).toEqual({
@@ -549,7 +548,7 @@ it("shares editable member projections, reports skipped members once and does no
   const editable = "share-editable", restricted = "share-restricted", id = "share-panel";
   await saveProjection(editable);
   await saveProjection(restricted, "projection-owner");
-  const saved = await savePanel(id, { state: {}, members: projectionMembers(editable, restricted, restricted), commands: {} });
+  const saved = await savePanel(id, { state: {}, members: projectionMembers(editable, restricted, restricted) });
   expect(saved.status, await saved.text()).toBe(200);
   const path = `product-panels/${id}/domain-grant`;
   const enabled = await request("POST", path, "author", { shared: true });
@@ -574,7 +573,7 @@ it("shares editable default placements and reports the defaults the caller canno
   const type = { kind: "placement", candidates: { rule: "usable" } };
   const field = (projectionId: string) => ({ type, default: { id: "placed", target: { projectionId } } });
   const saved = await savePanel(id, {
-    state: { editable: field(editable), restricted: field(restricted) }, members: {}, commands: {},
+    state: { editable: field(editable), restricted: field(restricted) }, members: {},
   });
   expect(saved.status, await saved.text()).toBe(200);
   const enabled = await request("POST", `product-panels/${id}/domain-grant`, "author", { shared: true });
@@ -591,10 +590,10 @@ it("deletes only editable orphan projections and honors hidden panel references"
   await saveProjection(inUse);
   const hidden = await request("PUT", "product-panels/cascade-hidden-panel", "hidden-panel-owner", {
     name: "Hidden", description: "", visibility: "private", revision: 0, content: vuePanelContent(),
-    manifest: { state: {}, members: projectionMembers(inUse), commands: {} },
+    manifest: { state: {}, members: projectionMembers(inUse) },
   });
   expect(hidden.status, await hidden.text()).toBe(200);
-  const saved = await savePanel(id, { state: {}, members: projectionMembers(orphan, restricted, inUse), commands: {} });
+  const saved = await savePanel(id, { state: {}, members: projectionMembers(orphan, restricted, inUse) });
   expect(saved.status, await saved.text()).toBe(200);
   const deletion = await request("DELETE", `product-panels/${id}?revision=1`, "author");
   expect(deletion.status).toBe(200);
@@ -620,12 +619,12 @@ it("cleans up a panel's default placement and preserves projections used by othe
   const placement = (projectionId: string) => ({ id: "placed", target: { projectionId } });
   const saved = await savePanel(id, {
     state: { defaultSlot: { type, default: placement(defaultId) }, personalSlot: { type, personal: true } },
-    members: projectionMembers(usedByDefault, usedPersonally), commands: {},
+    members: projectionMembers(usedByDefault, usedPersonally),
   });
   expect(saved.status, await saved.text()).toBe(200);
   const other = await savePanel(otherId, {
     state: { defaultSlot: { type, default: placement(usedByDefault) }, personalSlot: { type, personal: true } },
-    members: {}, commands: {},
+    members: {},
   });
   expect(other.status, await other.text()).toBe(200);
   await state.pool!.query(
@@ -648,7 +647,7 @@ it("cleans up a panel's default placement and preserves projections used by othe
 
 it("rejects a reverse cycle and protects a nested panel referenced by its parent", async () => {
   const leafId = "panel-cycle-leaf", parentId = "panel-cycle-parent";
-  const manifest = { state: {}, members: {}, commands: {} };
+  const manifest = { state: {}, members: {} };
   const leafResponse = await savePanel(leafId, manifest);
   expect(leafResponse.status).toBe(200);
   const leaf = productPanelResponseSchema.parse(await leafResponse.json()).panel;
@@ -671,14 +670,14 @@ it("writes declared personal state under the authenticated viewer and isolates i
       chosen: { type: portType, personal: true }, transient: { type: portType },
       positions: { type: { kind: "node-positions" }, personal: true },
     },
-    members: {}, commands: {},
+    members: {},
   });
   expect(child.status, await child.text()).toBe(200);
   const target = { panelId: personalChildId };
   const defaultPlacement = { id: "preferred", target };
   const root = await savePanel(personalPanelId, {
     state: { destination: { type: { kind: "placement", candidates: { panelIds: [personalChildId] } }, default: defaultPlacement } },
-    members: { left: { target }, right: { target } }, commands: {},
+    members: { left: { target }, right: { target } },
   });
   expect(root.status, await root.text()).toBe(200);
   const source = { kind: "registered", applicationId: "app-personal", useId: "main" };
@@ -733,7 +732,6 @@ it.each([
     state: { caption: { type: portType }, selected: { type: portType } },
     members: { summary: { target: { projectionId: id }, inputs: { caption: { state: "caption" } },
       outputs: { selected: { state: "selected" } } } },
-    commands: {},
   });
   expect(attached.status).toBe(200);
   const update = await request("PUT", resource, "projection-owner",
@@ -752,7 +750,7 @@ it("returns a forbidden member in the snapshot alongside the authorized sibling"
   const visible = await request("PUT", `product-projections/${id}`, "author",
     registerProductProjectionRequestSchema.parse({ ...projectionInput, revision: 0 }));
   expect(visible.status).toBe(200);
-  const saved = await savePanel(snapshotPanelId, { state: {}, commands: {}, members: {
+  const saved = await savePanel(snapshotPanelId, { state: {}, members: {
     shown: { target: { projectionId: id } }, hidden: { target: { projectionId } },
   } });
   expect(saved.status).toBe(200);

@@ -290,6 +290,8 @@ await mountPanel({
       openTest,
       runMarkdown,
       runJson,
+      startCreate: () => instance.state.setState({ selected: null, creating: true }),
+      refresh: () => instance.refreshObjects(),
     };
   },
 });

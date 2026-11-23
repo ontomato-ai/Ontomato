@@ -42,6 +42,10 @@ await mountPanel({
       void navigate(address);
     }
 
-    return { mode, rows, viewType };
+    function startCreate() {
+      state.setState({ selected: null, mode: "create" });
+    }
+
+    return { mode, rows, viewType, startCreate };
   },
 });

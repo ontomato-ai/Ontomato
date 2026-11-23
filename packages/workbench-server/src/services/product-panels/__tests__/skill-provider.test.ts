@@ -69,7 +69,6 @@ function codeTasksPanel(projections: Record<string, { projectionId: string; inpu
       state: { selectedTask },
       members: Object.fromEntries(Object.entries(projections).map(([key, { projectionId, inputs }]) =>
         [key, { target: { projectionId }, inputs }])),
-      commands: {},
     },
   };
   panels.set(id, panel);
@@ -168,22 +167,13 @@ it("provides a single protected source for all uses of the same panel and lists 
     { headers: { "X-Ontomato-Query-Service-Token": "fixture-platform-service" }, retries: 1 });
 });
 
-it("describes panel commands as addresses or declared operations in the generated skill", async () => {
+it("describes member reads and declared operations in the generated skill", async () => {
   const use = uses[0]!;
   const panel = codeTasksPanel({ run: { projectionId: "projection-schedules-run", inputs: taskInputBinding } });
   panels.set(use.panelId, { ...panel, manifest: {
     ...panel.manifest,
     state: { ...panel.manifest.state, mode: { type: { kind: "scalar", type: "string" }, deepLink: true } },
     members: { ...panel.manifest.members, details: { target: { panelId: "panel-task-details" } } },
-    commands: {
-      reset: { labelKey: "task.reset", primary: true, do: { set: { fields: { mode: { literal: "instance" }, selectedTask: { literal: null } } } } },
-      summaryMode: { labelKey: "task.summary", do: { set: { fields: { mode: { literal: "summary" } } } } },
-      runSelected: { labelKey: "task.run", do: { invoke: { member: "run", operation: "runNow",
-        inputs: { task: { state: "selectedTask" } } } } },
-      openOverview: { labelKey: "task.overview", do: { open: { mode: "entry",
-        entry: { literal: { className: APPLICATION_PANEL_USE, primaryKey: "overview" } } } } },
-      openDetails: { labelKey: "task.details", do: { open: { mode: "drawer", member: "details" } } },
-    },
   } });
   javaSources(uses);
   const offering = await panelSkillProvider.findByUse(domainId, use, skillReader);
@@ -197,21 +187,7 @@ it("describes panel commands as addresses or declared operations in the generate
   expect(operations).toContain("operations:true");
   expect(operations).toContain('memberPath: [previewSegment,{member:"approve"}]');
   expect(operations).toContain('operationId: "preview.approve.approve"');
-  const commands = content.split("### Panel commands\n")[1]!.split("\n\n### Declared operations")[0];
-  expect(commands).toContain("The `/operate` endpoint accepts only IDs from Declared operations.");
-  expect(commands).toContain('(reset). Open the current panel\'s canonical address. Set `mode` = `"instance"`, `selectedTask` = `null`');
-  expect(commands).toContain("(runSelected). Invoke `run.runNow` as specified under Declared operations.");
-  expect(commands).toContain("`task` = the current value of state field `selectedTask`");
-  expect(commands).toContain('"primaryKey":"overview"');
-  expect(commands).toContain("Open the returned `data.use.path`.");
-  expect(commands).toContain("Find the admitted entry for panel `panel-task-details`");
-  expect(commands).not.toContain(uses[1]!.path);
-  const scoped = await offering.provide(taskRef, { entryInputKeys: ["selectedTask"] });
-  expect(scoped.skill).toEqual(shared.skill);
-  expect(scoped.files[0]!.content).not.toContain("(reset).");
-  expect(scoped.files[0]!.content).toContain("(summaryMode).");
-  expect(scoped.files[0]!.content).toContain("(runSelected).");
-  expect(scoped.files[0]!.content).toContain("(openOverview).");
+  expect(content).not.toContain("### Panel commands");
   expect(await offering.provide(taskRef)).toEqual(shared);
   expect(await offering.provide(taskRef, { entryInputKeys: ["unrelated"] })).toEqual(shared);
 });
@@ -303,33 +279,6 @@ it("propagates a broken SDK release as an overall failure rather than an unavail
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   await expect(offering!.readManifest(taskRef)).rejects.toThrow("Unable to read the current SDK component catalogue");
   expect(reportSourceFailure).not.toHaveBeenCalled();
-});
-
-it("uses the panel's default-locale text for panel command labels", async () => {
-  const source = uses[2]!;
-  const id = source.panelId;
-  const panel = panels.get(id)!;
-  javaSources([source]);
-  vi.mocked(findCurrentProduct).mockResolvedValueOnce({
-    id, domainId, ownerId: "fixture-owner", revision: 1,
-    createdAt: new Date("2026-11-20T00:00:00Z"), updatedAt: new Date("2026-11-20T00:00:00Z"),
-    definition: {
-      ...panel,
-      manifest: {
-        ...panelManifestSchema.parse(panel.manifest),
-        commands: {
-          review: { labelKey: "actions.review", do: { set: { fields: { selectedTask: { literal: null } } } } },
-          reset: { labelKey: "actions.reset", do: { set: { fields: { selectedTask: { literal: null } } } } },
-        },
-      },
-      content: { ...panel.content, messages: { en: { "actions.review": "Review scheduled tasks" } } },
-    },
-  });
-
-  const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
-  const { files } = await offering!.provide(taskRef);
-  expect(files[0]!.content).toContain("Review scheduled tasks (review)");
-  expect(files[0]!.content).toContain("actions.reset (reset)");
 });
 
 it("uses owner operation names and fingerprints the names and language visible to the reader", async () => {
@@ -633,7 +582,6 @@ it("describes listColumn and listRowDetail members, bound operation params, and 
           inputs: { task: { item: true } },
         },
       },
-      commands: {},
     },
   });
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
@@ -670,7 +618,6 @@ it("refuses generating a panel skill when a listColumn member declares independe
           inputs: { task: { item: true } },
         },
       },
-      commands: {},
     },
   });
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });

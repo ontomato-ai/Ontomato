@@ -15,7 +15,6 @@ it("clears child selection atomically when switching parent and carries child-ob
       },
     },
     members: {},
-    commands: {},
   });
   const skill = (primaryKey: string) => ({ className: SKILL, primaryKey });
   const file = {

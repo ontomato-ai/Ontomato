@@ -281,7 +281,7 @@ it("refuses a platform panel whose entry names an opening sentence one of its la
   }));
   const member = { id: "builtin-product-entry-key-entry", component: "ConversationEntry", agent: "page-default", prefillKey: "actions.newPrefill" };
   const descriptor = (messages: Record<string, Record<string, string>>) => JSON.stringify({
-    manifest: { state: {}, members: { create: member }, commands: {} }, content: { messages },
+    manifest: { state: {}, members: { create: member } }, content: { messages },
   });
   const { html, module } = vuePanelContent("create");
   await writeFile(path.join(directory, "panel.html"), html);
@@ -301,7 +301,7 @@ it("reconciles the released built-in authoring sources and exposes the same read
     panels: [{ id: builtinPanelId, mode: "create", input: { name, description: "", visibility: "domain" } }],
   }));
   const member = { id: builtinProjectionId, component: "PanelData", type: "platform:SDKComponent", data: { rows: "catalogue" } };
-  const manifest = { state: {}, members: { components: member }, commands: {} };
+  const manifest = { state: {}, members: { components: member } };
   const descriptor = path.join(directory, "panel.json");
   await writeFile(index, JSON.stringify(["catalogue"]));
   await writeIdentity("Components");
@@ -417,9 +417,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   const settingsResponse = await request("GET", "product-panels/builtin-product-agent-settings");
   expect(settingsResponse.status).toBe(200);
   const { panel: settings } = productPanelResponseSchema.parse(await settingsResponse.json());
-  expect(settings.manifest.commands.newAgent).toMatchObject({
-    primary: true, do: { set: { fields: { selected: { literal: null }, mode: { literal: "create" } } } },
-  });
+  expect(settings.manifest.state.mode).toMatchObject({ type: { kind: "scalar", type: "string" }, deepLink: true });
   const formTarget = settings.manifest.members.form!.target;
   expect(formTarget).toHaveProperty("projectionId");
   if (!("projectionId" in formTarget)) throw new Error("Agent settings must publish its form projection");
@@ -464,11 +462,6 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     const { panel } = productPanelResponseSchema.parse(await response.json());
     expect(panel).toMatchObject({ visibility: "platform", ownerId: null, editable: false });
     expect(panel.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: true });
-    expect(panel.manifest.commands.create).toMatchObject({
-      labelKey: "action.create", primary: true, do: { set: { fields: {
-        selected: { literal: null }, creating: { literal: true },
-      } } },
-    });
     definitions.set(catalogue, panel.manifest.members);
   }
   for (const catalogue of ["projections", "panels"]) {
@@ -562,7 +555,7 @@ it("identifies malformed registrations and missing author references without byp
   const panel = {
     name: "Author panel", description: "", visibility: "private", revision: 0,
     content: vuePanelContent("summary"),
-    manifest: { state: {}, members: { summary: { target: { projectionId: "author-missing" } } }, commands: {} },
+    manifest: { state: {}, members: { summary: { target: { projectionId: "author-missing" } } } },
   };
   const extraField = await request("PUT", "product-panels/author-panel", { ...panel, typo: true });
   expect(extraField.status).toBe(400);
@@ -772,7 +765,7 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   const { state: panelState, members } = panelManifestSchema.parse(directTrial.manifest);
   const replacement = {
     name: trialPanel.name, description: trialPanel.description, visibility: "domain", content,
-    manifest: { state: panelState, commands: {}, members: {
+    manifest: { state: panelState, members: {
       summary: { ...members.summary, target: { projectionId: summaryId } },
       run: { ...members.run, target: { projectionId: runId } },
     } },
@@ -839,7 +832,7 @@ it("preserves a code panel's ID and revision rules and describes its member oper
   const framePanelId = "panel-app-frame";
   const frameSaved = await request("PUT", "product-panels/" + framePanelId, {
     name: "Application frame", description: "", visibility: "domain", revision: 0, content: vuePanelContent(),
-    manifest: { state: { choice: panelState.selectedTask }, members: {}, commands: {} },
+    manifest: { state: { choice: panelState.selectedTask }, members: {} },
   });
   expect(frameSaved.status, await frameSaved.text()).toBe(200);
   const framed = { ...application, framePanelId, uses: [{
@@ -871,13 +864,13 @@ it("uses the authorized frame root for its record, snapshot, member reads, neste
   }
   const panel = { name: "Application frame", description: "", visibility: "domain", revision: 0, content: vuePanelContent() };
   const content = await request("PUT", `product-panels/${frameHostContentId}`, {
-    ...panel, manifest: { state: {}, members: {}, commands: {} },
+    ...panel, manifest: { state: {}, members: {} },
   });
   expect(content.status, await content.text()).toBe(200);
   const theme = { light: { "--sdk-color-primary": "#123456" } };
   const frame = await request("PUT", `product-panels/${frameHostPanelId}`, {
     ...panel, theme, manifest: {
-      state: { term: { type: { kind: "scalar", type: "string" }, personal: true } }, commands: {},
+      state: { term: { type: { kind: "scalar", type: "string" }, personal: true } },
       members: {
         content: { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } },
         components: { target: { projectionId } },
@@ -952,7 +945,7 @@ it("freezes the frame of a human operation and rechecks it before dispatch", asy
     const saved = await request("PUT", `product-panels/${id}`, {
       name: "Operation host", description: "", visibility: "domain", revision: 0, content: vuePanelContent(),
       manifest: {
-        state: frame ? { task: { type: { kind: "object", objectType: "platform:ScheduledTask" } } } : {}, commands: {},
+        state: frame ? { task: { type: { kind: "object", objectType: "platform:ScheduledTask" } } } : {},
         members: frame ? { run: { target: { projectionId }, inputs: { task: { state: "task" } } } } : {},
       },
     });
@@ -1026,7 +1019,7 @@ it("reports cross-domain references to admitted package maintainers and keeps th
   expect(projection.status, await projection.text()).toBe(200);
   const panel = await request("PUT", `product-panels/${panelId}`, {
     name: "Packaged panel", description: "", visibility: "domain", revision: 0, content: vuePanelContent(),
-    manifest: { state: {}, commands: {}, members: {
+    manifest: { state: {}, members: {
       example: { target: { projectionId }, inputs: { value: { literal: "Hello" } } },
     } },
   });
@@ -1071,7 +1064,7 @@ it("rejects an unavailable default agent before accepting a proposed application
   const panelId = "default-agent-panel";
   const saved = await request("PUT", "product-panels/" + panelId, {
     name: "Panel with a default", description: "", visibility: "domain", revision: 0,
-    content: vuePanelContent(), manifest: { state: {}, members: {}, commands: {} },
+    content: vuePanelContent(), manifest: { state: {}, members: {} },
   });
   expect(saved.status, await saved.text()).toBe(200);
 

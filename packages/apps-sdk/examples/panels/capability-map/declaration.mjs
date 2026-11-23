@@ -61,18 +61,4 @@ export default {
       },
     },
   },
-  commands: {
-    showTypeMode: {
-      labelKey: "capMap.modeType",
-      do: { set: { fields: { mode: { literal: "type" } } } },
-    },
-    showInstanceMode: {
-      labelKey: "capMap.modeInstance",
-      do: { set: { fields: { mode: { literal: "instance" } } } },
-    },
-    resetToCurrentUser: {
-      labelKey: "capMap.resetToCurrentUser",
-      do: { set: { fields: { mode: { literal: "instance" }, start: { literal: null }, selected: { literal: null } } } },
-    },
-  },
 };

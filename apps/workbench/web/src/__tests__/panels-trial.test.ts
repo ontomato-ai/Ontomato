@@ -38,14 +38,12 @@ const panel = definePanel({
     form: { target: { projectionId: "projection-schedules-form" }, inputs: { task: { state: "selectedTask" } } },
     run: { target: { projectionId: "projection-schedules-run" }, inputs: { task: { state: "selectedTask" } } },
   },
-  commands: {},
 });
 
 /** Panel Q, as its declaration file has it: the same summary projection and nothing of P. */
 const summaryPanel = definePanel({
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
   members: { summary: { target: { projectionId: "projection-schedules-summary" }, inputs: { task: { state: "selectedTask" } } } },
-  commands: {},
 });
 
 const records = new Map<string, ProductProjection>(Object.entries(projections));

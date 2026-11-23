@@ -96,6 +96,8 @@ await mountPanel({
     return {
       selected, selectedKey, selectedVisible, isPrimaryKey, className, search, typesData, rowsData, detail, creating, createDialog, types, rows, visibleRows,
       ownerLabel, countText, setClassName, setSearch, isSelected, selectRow, closeEditor, onSaved, onDiscarded, yes, openOwner,
+      startCreate: () => instance.state.setState({ creating: true, selected: null, createIn: className.value || null }),
+      refresh: () => instance.refreshObjects(),
     };
   },
 });

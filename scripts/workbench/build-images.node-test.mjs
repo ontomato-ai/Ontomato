@@ -519,14 +519,9 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
   writeFileSync(join(panelFolder, "registration.json"), JSON.stringify(registration));
   const panelFile = join(panelFolder, "panel.json");
   const entryType = "platform:ApplicationPanelUse";
-  const openEntry = entry => ({ labelKey: "open", do: { open: { mode: "entry", entry } } });
   const manifest = {
     state: { selectedEntry: { type: { kind: "object", objectType: entryType } } },
     members: {},
-    commands: {
-      openCatalogue: openEntry({ literal: { className: entryType, primaryKey: "catalogue" } }),
-      openSelected: openEntry({ state: "selectedEntry" }),
-    },
   };
   writeFileSync(panelFile, JSON.stringify({ manifest }));
   writeFileSync(join(panelFolder, "panel.html"), '<div id="app"></div>');
@@ -575,12 +570,6 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
       panelUses: [{ id: "teams", path: "/agents/teams", panelId: "builtin-product-teams" }],
     } }],
   }), /Built-in application agents, entry teams \(\/agents\/teams\), panel builtin-product-teams: panel is missing from the release/u);
-
-  manifest.commands.openCatalogue = openEntry({ literal: { className: entryType, primaryKey: "unshipped-entry" } });
-  writeFileSync(panelFile, JSON.stringify({ manifest }));
-  await assert.rejects(stageBuiltinPanels(options), {
-    message: `${panelFile}: manifest.commands.openCatalogue.do.open.entry: entry 'unshipped-entry' is missing from the release`,
-  });
 });
 
 test("every shipped builtin panel and application entry passes stageBuiltinPanels with real checks", (t) => {

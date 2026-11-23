@@ -380,7 +380,6 @@ describe("platform-ontology composite query", () => {
                   members: {
                     list: { target: { projectionId: "proj-kb" } },
                   },
-                  commands: {},
                 },
               },
             },
@@ -733,7 +732,6 @@ describe("platform-ontology composite query", () => {
               tabPanel: { target: { fromState: "activeTab", candidates: { panelIds: ["panel-tab-candidate"] } } },
               detail: { target: { fromState: "selectedOrder", candidates: { rule: "objectDetail" } } },
             },
-            commands: {},
           },
         },
       },
@@ -749,7 +747,6 @@ describe("platform-ontology composite query", () => {
             members: {
               form: { target: { projectionId: "proj-kb-form" } },
             },
-            commands: {},
           },
         },
       },
@@ -760,7 +757,7 @@ describe("platform-ontology composite query", () => {
           description: "",
           visibility: "domain",
           content: { html: "<div></div>", module: "export default {};" },
-          manifest: { state: {}, members: {}, commands: {} },
+          manifest: { state: {}, members: {} },
         },
       },
       {
@@ -770,7 +767,7 @@ describe("platform-ontology composite query", () => {
           description: "",
           visibility: "domain",
           content: { html: "<div></div>", module: "export default {};" },
-          manifest: { state: {}, members: {}, commands: {} },
+          manifest: { state: {}, members: {} },
         },
       },
       {
@@ -780,7 +777,7 @@ describe("platform-ontology composite query", () => {
           description: "",
           visibility: "domain",
           content: { html: "<div></div>", module: "export default {};" },
-          manifest: { state: {}, members: {}, commands: {} },
+          manifest: { state: {}, members: {} },
         },
       },
     ];
@@ -1095,7 +1092,7 @@ describe("platform-ontology composite query", () => {
         description: "",
         visibility: "platform",
         content: { html: "<div></div>", module: "export default {};" },
-        manifest: { state: {}, members: {}, commands: {} },
+        manifest: { state: {}, members: {} },
       },
     };
     const builtinParentPanelRow = {
@@ -1111,7 +1108,6 @@ describe("platform-ontology composite query", () => {
             graph: { target: { projectionId: "builtin-product-map-graph" } },
             child: { target: { panelId: "builtin-product-child-panel" } },
           },
-          commands: {},
         },
       },
     };
@@ -1130,7 +1126,6 @@ describe("platform-ontology composite query", () => {
             ungrantedDomainProj: { target: { projectionId: "proj-not-granted" } },
             ungrantedDomainPanel: { target: { panelId: "panel-not-granted" } },
           },
-          commands: {},
         },
       },
     };

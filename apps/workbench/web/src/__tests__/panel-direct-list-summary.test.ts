@@ -48,7 +48,6 @@ const baseManifest: DirectPanelManifest = {
     tasks: { target: { projectionId: "schedules-tasks" }, outputs: { selected: { state: "selectedTask" } } },
     summary: { target: { projectionId: "schedules-summary" }, inputs: { task: { state: "selectedTask" } } },
   },
-  commands: {},
 };
 
 type Read = PanelMemberReadRequest;
@@ -257,7 +256,6 @@ it("renders a direct ObjectSummary bound to a literal object source without any 
   const literalManifest: DirectPanelManifest = {
     state: {},
     members: { pinned: { target: { projectionId: "literal-summary" } } },
-    commands: {},
   };
   const { element } = mountDirect(() => ready(taskRows[0]!), {
     manifest: literalManifest,
@@ -298,7 +296,6 @@ it("supports table columns, inferred checkboxes from outputs.checked and fallbac
         outputs: { selected: { state: "selectedTask" }, checked: { state: "checkedTasks" } },
       },
     },
-    commands: {},
   };
   const { instance, element } = mountDirect(() => ready(taskRows), {
     manifest: tableManifest,
@@ -423,7 +420,6 @@ it("hides the select-all check bar when empty and emits choose only on explicit 
         outputs: { selected: { state: "selectedTask" }, checked: { state: "checkedTasks" } },
       },
     },
-    commands: {},
   };
   const checkedProjections: Record<string, DirectProjection> = {
     ...baseProjections,

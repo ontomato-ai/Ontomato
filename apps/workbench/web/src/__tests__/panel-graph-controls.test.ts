@@ -88,7 +88,6 @@ it("renders ObjectRelations grouped by relation kind with distinct statuses and 
         outputs: { selected: { state: "selected" } },
       },
     },
-    commands: {},
   });
   const panel = panelRecord("panel-node-relations", "Node Relations", manifest);
   panel.content.html = `<div id="app"><Projection slot="relations"></Projection></div>`;
@@ -228,7 +227,6 @@ it("supports dynamic type queries, status separation, search/paging reset and fu
         outputs: { selected: { state: "start" } },
       },
     },
-    commands: {},
   });
   const panel = panelRecord("panel-type-picker", "Type Object Picker", manifest);
   panel.content.html = `<div id="app"><Projection slot="picker"></Projection></div>`;
@@ -402,7 +400,6 @@ it("switches declared scalar panel state with SegmentedControl (unbound in catal
       mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
     },
     members: {},
-    commands: {},
   });
   const panel = panelRecord("panel-segmented", "Mode Switcher", manifest);
   panel.content.html = `

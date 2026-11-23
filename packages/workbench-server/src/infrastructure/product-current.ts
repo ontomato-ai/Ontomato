@@ -35,6 +35,14 @@ export async function findCurrentProduct(domain: string, kind: CurrentProductKin
 }
 
 export function currentProductRecord(row: CurrentProductRow, editable: boolean) {
-  return { ...row.definition, id: row.id, domainId: row.domainId, ownerId: row.ownerId, revision: row.revision,
+  const def = row.definition;
+  const normalized = def && typeof def === "object" && !Array.isArray(def) && "manifest" in def
+    && def.manifest && typeof def.manifest === "object" && !Array.isArray(def.manifest) && "commands" in def.manifest
+    ? (() => {
+        const { commands: _legacy, ...restManifest } = def.manifest as Record<string, unknown>;
+        return { ...def, manifest: restManifest };
+      })()
+    : def;
+  return { ...normalized, id: row.id, domainId: row.domainId, ownerId: row.ownerId, revision: row.revision,
     createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), editable: row.domainId !== null && editable };
 }

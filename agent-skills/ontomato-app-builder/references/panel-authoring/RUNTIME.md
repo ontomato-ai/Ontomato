@@ -218,49 +218,6 @@ interface PanelFormHandle {
 }
 ```
 
-### usePanelDetailHeader
-
-Publishes a full-width detail view's heading and actions to the enclosing platform page header so the page renders
-one unified bar (back to catalog, object title, and actions) rather than stacking a second titlebar inside the panel.
-Returns `true` when the enclosing host owns the page header, or `false` in nested/headerless previews so the panel
-can render a local fallback bar when needed.
-
-```ts
-function usePanelDetailHeader(header: () => PanelDetailHeader | null): boolean
-```
-
-### PanelDetailHeader
-
-What a panel displaying a single object's full-width detail view hands to the enclosing platform header so the page
-shows one unified bar (back to catalog, object title, and actions) rather than stacking two headers.
-
-```ts
-interface PanelDetailHeader {
-  backLabel: string;
-  title: string;
-  onBack(): void;
-  actions?: readonly PanelDetailHeaderAction[];
-}
-```
-
-### PanelDetailHeaderAction
-
-One action a panel or its member hands to the enclosing page header in full-width detail mode.
-
-```ts
-interface PanelDetailHeaderAction {
-  id: string;
-  label: string;
-  icon?: "plus" | "save" | "trash" | "sliders" | "table" | "book-open";
-  primary?: boolean;
-  danger?: boolean;
-  inline?: boolean;
-  disabled?: boolean;
-  loading?: boolean;
-  onClick(): void;
-}
-```
-
 ### usePanelNarrow
 
 Observes a panel container element's own inline width via `ResizeObserver` and reports whether it is narrow
@@ -365,42 +322,31 @@ updating the editor or announcing a successful write.
   show success. On `refusal` or `failure`, keep the edits and show the owner's message and any named field errors.
 - A null or `unknown` outcome leaves the result unconfirmed. A batch receipt reports one outcome per item.
 
-## Header commands and navigation
+## Page header and navigation
 
-Declare each page-header command under `manifest.commands` with a localized `labelKey`, optional `icon` (`"plus"`),
-and a `do` action; at most one is `primary: true`, the header's main button. `manifest.commands` is required; use
-`commands: {}` when the panel has no header commands. A command's values are literals or state fields. A `do.set` field
-must be a `deepLink: true` state field, so the changed address reproduces the page; when every `do.set` field sets a
-literal and the panel state already holds those exact values (such as `creating: true`), the host automatically
-disables the command button until state changes. Handle component-driven interactions (a selection, an output) in Vue.
-`do.open` with `mode: "entry"` describes a `platform:ApplicationPanelUse` reference and optional destination state inputs.
-In the current direct runtime, an open command reports that the SDK opens no entry or member from a command.
+Place the official presentational `<page-header>` component at the top of a panel's content when the page needs a
+header, and omit it for headerless pages. Pass `title` (or a `#title` slot with a projection-bound component such as
+`<projection>` / `ObjectSummary`), optional `description`, optional `back-label` + `@back` wired to `usePanelBack`
+or `navigate`, right-side controls in `#actions` (such as ordinary `<sdk-button>`, `<OperationButton>`, inline counts,
+or search inputs), and optional `:draft` from `usePanelFormDraft` for Save/Discard/unsaved feedback. Buttons in
+`<page-header>` change declared panel state or call declared owner operations, so skills continue to produce valid
+deep-link addresses and `/operate` calls.
+
 For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
 from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
 
-For a full-width detail view, call `usePanelDetailHeader` to replace the catalog header with one unified platform bar
-(back to catalog, object title, and inline actions such as Save via `instance.forms.submit("form")`); it returns
-`false` in headerless or nested previews so the panel can draw a local fallback bar. Mount `OperationButton` with
-`config.placement: "header"` (and optional `type: "danger"`, `plain: true`, `icon: "trash"`) to place a member's
-trigger button into the same platform header while keeping its confirmation dialog and error feedback mounted in the
-panel. On `ObjectForm`, set `config.actions` to `"footer"` (default, non-overlapping document-flow bar), `"header"`
-(Save/Discard/unsaved indicator in the host header), `"create-only"` (Cancel/Create bar only in create mode when edit
-Save lives in the detail header), or `"none"` (omit the bar in both modes). `ObjectForm` automatically shows word
-counters for schema `maxLength` fields and disables cascading select fields whose owner declares `disabledWhenEmpty`.
+On `ObjectForm`, set `config.actions` to `"footer"` (default, non-overlapping document-flow bar), `"create-only"`
+(Cancel/Create bar only in create mode when edit Save/Discard lives in `<page-header>` via `usePanelFormDraft`), or
+`"none"` (omit the bar in both modes). `ObjectForm` automatically shows word counters for schema `maxLength` fields and
+disables cascading select fields whose owner declares `disabledWhenEmpty`.
 
-The host renders the page header solely from declared metadata (title, description, back control, `manifest.commands`,
-and Refresh) and never places business data there; render counts and summaries inside panel content via the owning
-component. Below the header to the bottom edge of the page, every entry (full page, beside a conversation, or inside a
-custom frame's current-entry slot) receives a definite-height content box with no host padding or outer card frame; the
-bottom composer floats over the page without occupying content-box height (reserve bottom scroll room such as
-`calc(var(--page-content-gap) + 56px)` on scrollable views). Style panels against that box with normal HTML, CSS, and
-Vue (natural stacking, or filling the box with inner scrolling and a `rem`/`px` `min-height`) rather than layout
-components or CSS viewport units (`vh`, `vw`, `dvh`, etc.), and use `<sdk-dialog>` / `<sdk-drawer>` for overlays.
-Wire `usePanelBack` so browser Back, Escape, and in-page back buttons share the host's unified unsaved-changes guard.
-
-The generated page skill's Panel commands section gives the assistant the address or operation for each command.
-`do.set` opens the current entry with the changed deep-linkable fields in `state`. `do.invoke` calls the listed
-owner operation. `do.open` follows the indicated destination address. Use a declared operation ID for `/operate`.
+Every entry (full page, beside a conversation, or inside a custom frame's current-entry slot) receives a definite-height
+content box with no host page header, host padding, or outer card frame; the bottom composer floats over the page
+without occupying content-box height (reserve bottom scroll room such as `calc(var(--page-content-gap) + 56px)` on
+scrollable views). Style panels against that box with normal HTML, CSS, and Vue (natural stacking, or filling the box
+with inner scrolling and a `rem`/`px` `min-height`) rather than layout components or CSS viewport units (`vh`, `vw`,
+`dvh`, etc.), and use `<sdk-dialog>` / `<sdk-drawer>` for overlays. Wire `usePanelBack` so browser Back, Escape, and
+in-page back buttons share the host's unified unsaved-changes guard.
 
 ## Draft links and instance state
 

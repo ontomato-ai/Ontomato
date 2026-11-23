@@ -50,25 +50,6 @@
           "actions": "create-only"
         }
       }
-    },
-    "commands": {
-      "create": {
-        "labelKey": "command.new",
-        "primary": true,
-        "icon": "plus",
-        "do": {
-          "set": {
-            "fields": {
-              "creating": {
-                "literal": true
-              },
-              "selected": {
-                "literal": null
-              }
-            }
-          }
-        }
-      }
     }
   },
   "content": {

@@ -77,7 +77,6 @@ it("publishes the panel skill for the authorized entry's wired state fields", as
     SET definition = jsonb_set(definition, '{manifest}', (definition->'manifest') || $1::jsonb)
     WHERE id=$2 AND domain_id=$3`, [{
     state: { mode: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true } },
-    commands: { changeMode: { labelKey: "mode.change", do: { set: { fields: { mode: { literal: "review" } } } } } },
   }, fixture.panelId, fixture.domainId]);
   let digest: string | undefined;
   const view = await readAssistantSkillView(fixture.domainId, credentials);
@@ -95,7 +94,7 @@ it("publishes the panel skill for the authorized entry's wired state fields", as
   expect(published).toHaveBeenCalledTimes(2);
   expect(published.mock.calls[0]).toEqual(published.mock.calls[1]);
   const shared = runtimeRegisterSkillRequestSchema.parse(published.mock.calls[0]![0]);
-  expect(shared.files[0]!.content).toContain("(changeMode).");
+  expect(shared.files[0]!.content).toContain('"mode":');
   const [bound, unbound] = fixture.uses;
   const prepareAt = async ({ applicationId, useId, entrance }: PanelSkillSource) => {
     const context = await pageSkillMemberContext(view, entrance, { kind: "application-use", applicationId, useId }, { id: fixture.panelId });
@@ -109,7 +108,7 @@ it("publishes the panel skill for the authorized entry's wired state fields", as
     expect(prepared.skills[0]!.skill).toEqual(skill);
     expect(prepared.skills[0]!.digest).not.toBe(digest);
     const scoped = runtimeRegisterSkillRequestSchema.parse(published.mock.calls.at(-1)![0]);
-    expect(scoped.files[0]!.content).not.toContain("(changeMode).");
+    expect(scoped.files[0]!.content).not.toContain('"mode":');
     expect(scoped.files[0]!.content).not.toContain("entry-specific-value");
     expect((await prepareAt(unbound!)).prepared.skills).toEqual([{ skill, digest }]);
     expect(published.mock.calls.at(-1)![0]).toEqual(shared);

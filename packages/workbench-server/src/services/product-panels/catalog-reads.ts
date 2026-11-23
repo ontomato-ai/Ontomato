@@ -137,7 +137,6 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
       field("/content/messages", content.shape.messages, { kind: "code", language: "json" }, { required: false }),
       field("/manifest/state", manifestShape.state, { kind: "code", language: "json" }),
       field("/manifest/members", manifestShape.members, { kind: "code", language: "json" }),
-      field("/manifest/commands", manifestShape.commands, { kind: "code", language: "json" }),
       field("/theme", theme, { kind: "code", language: "json" }, { required: false }),
     ], values, revision);
   }
@@ -172,7 +171,7 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
           html: '<div id="app"><section></section></div>',
           module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
         },
-        manifest: { state: {}, members: {}, commands: {} },
+        manifest: { state: {}, members: {} },
         ...params.values, id,
       }, true);
     },

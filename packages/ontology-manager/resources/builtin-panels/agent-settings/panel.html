@@ -23,15 +23,30 @@
     flex-wrap: wrap;
   }
   .agent-settings-summary { flex: 1 1 auto; min-width: 0; }
+  .agent-settings-aside-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+  }
+  .agent-settings-aside-head h3 {
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
   .agent-settings-actions { display: flex; align-items: center; gap: var(--spacing-sm); flex: 0 0 auto; }
 </style>
 <div id="app" v-cloak>
   <p v-if="rows.status === 'forbidden'" class="agent-settings-empty" role="alert">{{ t('agents.accessDenied') }}</p>
   <two-pane-layout v-else-if="rows.status !== 'loading'">
     <template #aside>
-      <section-group :title="t('agents.title')">
-        <projection slot="list"></projection>
-      </section-group>
+      <div class="agent-settings-aside-head">
+        <h3>{{ t('agents.title') }}</h3>
+        <sdk-button type="primary" size="small" :disabled="mode === 'create'" @click="startCreate">{{ t('agents.new') }}</sdk-button>
+      </div>
+      <projection slot="list"></projection>
     </template>
     <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.choose') }}</p>
     <div v-show="mode !== 'list'" class="agent-settings-detail">

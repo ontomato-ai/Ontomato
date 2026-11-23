@@ -46,7 +46,7 @@ const state = panelManifestSchema.parse({
     selected: { type: selected }, search: { type: search },
     other: { type: { kind: "object", objectType: "org" } },
   },
-  members: {}, commands: {},
+  members: {},
 }).state;
 
 const expand = (key: string, source: unknown, table: Parameters<typeof expandPanelAuthoringMember>[2]["typeTable"] = typeTable) => {
@@ -183,7 +183,7 @@ test("ontology object lists expose the four layers as the selected output", () =
   const checked = { kind: "list", items: { kind: "object", objectType: ontologyType } };
   const state = panelManifestSchema.parse({
     state: { selected: { type: node }, checked: { type: checked } },
-    members: {}, commands: {},
+    members: {},
   }).state;
   const member = panelAuthoringMemberSchema.parse({
     component: "ObjectList", type: ontologyType, state: { selected: "selected" },
@@ -259,7 +259,7 @@ test("short graph ports resolve their individual datum owners and bind personal 
       checked: { type: { kind: "list", items: object(nodeType) } },
       positions: { type: positions, personal: true },
     },
-    members: {}, commands: {},
+    members: {},
   }).state;
   const context = { state: graphState, components: [graph], typeTable: table };
   const { projection, placement } = expandPanelAuthoringMember("scope", member, context);
@@ -452,7 +452,6 @@ test("short listColumn, listRowDetail and formField members support omitted data
       chosen: { type: { kind: "object-union", objectTypes: [type, "platform:ScheduledTask"] } },
     },
     members: {},
-    commands: {},
   }).state;
   const unionOpMember = panelAuthoringMemberSchema.parse({
     component: "OperationButton",

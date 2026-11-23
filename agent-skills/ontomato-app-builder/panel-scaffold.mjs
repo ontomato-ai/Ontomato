@@ -40,7 +40,6 @@ export function managementPanel(type, checks, typeTable, {
   const object = { kind: "object", objectType: type };
   const state = { selected: { type: object, deepLink: true } };
   const members = {};
-  const commands = {};
 
   const search = Object.hasOwn(list.params, "search");
   const counts = reads.counts;
@@ -83,12 +82,6 @@ export function managementPanel(type, checks, typeTable, {
   if (requestedSaves.length && !edit) throw new Error(`${save.id} has no declared form read`);
   if (create) {
     state.creating = { type: { kind: "scalar", type: "boolean" }, default: false, deepLink: true };
-    commands.create = {
-      labelKey: "command.new",
-      primary: true,
-      icon: "plus",
-      do: { set: { fields: { creating: { literal: true }, selected: { literal: null } } } },
-    };
   }
   if (edit) {
     members.form = {
@@ -106,7 +99,6 @@ export function managementPanel(type, checks, typeTable, {
       component: "OperationButton",
       operation: operation.id,
       target: batch ? "checked" : "selected",
-      ...(!batch && { config: { placement: "header" } }),
     };
     if (batch) batchButtons.push(key);
     else singleButtons.push(key);
@@ -124,15 +116,6 @@ export function managementPanel(type, checks, typeTable, {
     ...(toolbarControls.length ? ["  .catalog-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }"] : []),
     ...(hasDetail ? [
       "  .detail-view { display: flex; flex-direction: column; min-width: 0; min-height: 100%; }",
-      "  .detail-titlebar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); min-height: var(--page-header-height, 56px); padding: var(--spacing-sm) var(--page-gutter); border-bottom: 1px solid var(--sdk-border-color, var(--ui-border)); box-sizing: border-box; }",
-      "  .detail-divider { width: 1px; height: 22px; background: var(--sdk-border-color, var(--ui-border)); }",
-      "  .detail-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sdk-text-color-primary); font-size: var(--text-sm); font-weight: var(--font-semibold); }",
-      "  .detail-spacer { flex: 1; }",
-      "  .detail-actions { display: inline-flex; align-items: center; gap: var(--spacing-sm); flex-shrink: 0; }",
-      ...(singleButtons.length ? [
-        "  .detail-header-op-host { padding-inline: var(--page-gutter); }",
-        "  .detail-header-op-host:empty, .detail-header-op-host:has(> .sdk-operation-button:empty) { display: none; }",
-      ] : []),
       `  .detail-body { display: grid; grid-template-columns: ${twoCards ? "minmax(320px, 0.85fr) minmax(420px, 1.15fr)" : "minmax(0, 1fr)"}; gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px); align-items: stretch; }`,
       "  .detail-card { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--page-section-padding, var(--spacing-lg)); border: 1px solid var(--sdk-border-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--sdk-bg-color); }",
       "  .detail-card h2 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); }",
@@ -140,34 +123,36 @@ export function managementPanel(type, checks, typeTable, {
         "  .create-dialog-body .sdk-owner-form, .create-dialog-body .sdk-owner-form-inner { height: auto; }",
         "  .create-dialog-body .sdk-owner-form-body { overflow: visible; }",
       ] : []),
-      "  @container catalog-page (max-width: 850px) { .detail-body { grid-template-columns: minmax(0, 1fr); } .detail-divider { display: none; } }",
+      "  @container catalog-page (max-width: 850px) { .detail-body { grid-template-columns: minmax(0, 1fr); } }",
     ] : []),
     "</style>",
     '<div id="app">',
     '  <section class="catalog-page">',
-    `    <div${hasDetail ? ' v-if="!selectedKey"' : ""} class="catalog-view">`,
-    ...(toolbarControls.length ? ['      <div class="catalog-toolbar">', ...toolbarControls.map(control => `        ${control}`), "      </div>"] : []),
-    `      ${member("list", create ? ' @update:selected="stopCreating"' : "")}`,
-    "    </div>",
+    ...(hasDetail ? ['    <template v-if="!selectedKey">'] : []),
+    ...(create ? [
+      '      <page-header :title="t(\'panel.name\')">',
+      '        <template #actions>',
+      '          <sdk-button type="primary" :disabled="creating" @click="startCreate">{{ t("command.new") }}</sdk-button>',
+      '        </template>',
+      '      </page-header>',
+    ] : [
+      '      <page-header :title="t(\'panel.name\')"></page-header>',
+    ]),
+    '      <div class="catalog-view">',
+    ...(toolbarControls.length ? ['        <div class="catalog-toolbar">', ...toolbarControls.map(control => `          ${control}`), "        </div>"] : []),
+    `        ${member("list", create ? ' @update:selected="stopCreating"' : "")}`,
+    "      </div>",
     ...(hasDetail ? [
+      "    </template>",
       '    <div v-else class="detail-view">',
-      '      <header v-if="!hasHeaderHost" class="detail-titlebar">',
-      '        <sdk-button text @click="back">{{ t("detail.back") }}</sdk-button>',
-      '        <span class="detail-divider" aria-hidden="true"></span>',
-      '        <span class="detail-title">{{ selectedTitle }}</span>',
-      '        <span class="detail-spacer"></span>',
+      '      <page-header :title="selectedTitle" :back-label="t(\'detail.back\')" @back="back">',
       ...(singleButtons.length || edit ? [
-        '        <div class="detail-actions">',
+        '        <template #actions>',
         ...singleButtons.map(key => `          ${member(key)}`),
         ...(edit ? ['          <sdk-button type="primary" :loading="saving" :disabled="!canSave" @click="saveDetail">{{ t("detail.save") }}</sdk-button>'] : []),
-        "        </div>",
+        "        </template>",
       ] : []),
-      "      </header>",
-      ...(singleButtons.length ? [
-        '      <div v-if="hasHeaderHost" class="detail-header-op-host">',
-        ...singleButtons.map(key => `        ${member(key)}`),
-        "      </div>",
-      ] : []),
+      "      </page-header>",
       '      <div class="detail-body">',
       ...(edit ? [
         '        <section class="detail-card">',
@@ -198,13 +183,13 @@ export function managementPanel(type, checks, typeTable, {
 
   const module = hasDetail ? [
     `import { computed${edit ? ", watch" : ""} } from "vue";`,
-    'import { mountPanel, usePanelBack, usePanelContext, usePanelDetailHeader } from "@ontomato/sdk/panel";',
+    'import { mountPanel, usePanelBack, usePanelContext } from "@ontomato/sdk/panel";',
     "",
     `const TYPE = ${JSON.stringify(type)};`,
     "",
     "await mountPanel({",
     "  setup() {",
-    "    const { instance, t } = usePanelContext();",
+    "    const { instance } = usePanelContext();",
     "    const selected = computed(() => instance.state.values.value.selected);",
     '    const selectedKey = computed(() => (selected.value ? selected.value.primaryKey : ""));',
     "    const selectedTitle = computed(() => {",
@@ -221,6 +206,9 @@ export function managementPanel(type, checks, typeTable, {
       "        if (!value && creating.value) cancelCreate();",
       "      },",
       "    });",
+      "    function startCreate() {",
+      "      instance.state.setState({ creating: true, selected: null });",
+      "    }",
       "    function stopCreating() {",
       '      if (creating.value) instance.state.set("creating", false);',
       "    }",
@@ -263,29 +251,9 @@ export function managementPanel(type, checks, typeTable, {
     ...(create ? ["      instance.state.setState({ selected: null, creating: false });"] : ['      instance.state.set("selected", null);']),
     "    }",
     "    const { back } = usePanelBack(() => Boolean(selectedKey.value), backToCatalog, { pushHistory: true });",
-    "    const hasHeaderHost = usePanelDetailHeader(() => (",
-    "      selectedKey.value",
-    "        ? {",
-    '            backLabel: t("detail.back"),',
-    "            title: selectedTitle.value,",
-    "            onBack: () => void back(),",
-    ...(edit ? [
-      "            actions: [{",
-      '              id: "save",',
-      '              label: t("detail.save"),',
-      '              icon: "save",',
-      "              primary: true,",
-      "              disabled: !canSave.value,",
-      "              loading: saving.value,",
-      "              onClick: () => void saveDetail(),",
-      "            }],",
-    ] : ["            actions: [],"]),
-    "          }",
-    "        : null",
-    "    ));",
     `    return { ${[
-      "selectedKey", "selectedTitle", "hasHeaderHost", "back",
-      ...(create ? ["createDialog", "stopCreating", "cancelCreate"] : []),
+      "selectedKey", "selectedTitle", "back",
+      ...(create ? ["creating", "createDialog", "startCreate", "stopCreating", "cancelCreate"] : []),
       ...(edit ? ["saving", "canSave", "saveDetail", "onSaved", "onDiscarded"] : []),
     ].join(", ")} };`,
     "  },",
@@ -293,7 +261,7 @@ export function managementPanel(type, checks, typeTable, {
     "",
   ].join("\n") : 'import { mountPanel } from "@ontomato/sdk/panel";\n\nawait mountPanel({});\n';
 
-  const manifest = { state, members, commands };
+  const manifest = { state, members };
   checks.panelAuthoringManifestSchema.parse(manifest);
   const messages = {
     "panel.name": title,

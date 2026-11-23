@@ -27,7 +27,7 @@ const relations: DirectProjection = {
 };
 const relationData: DirectProjection = { ...relations, id: "relation-data", componentId: "@ontomato/sdk:PanelData" };
 const manifest: DirectPanelManifest = {
-  state: {}, commands: {},
+  state: {},
   members: { list: { target: { projectionId: relations.id } }, data: { target: { projectionId: relationData.id } } },
 };
 const rows = [{ primaryKey: "holds", label: "Holds role", fields: {} }];
