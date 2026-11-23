@@ -5,10 +5,12 @@ import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import { definePanel, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PageActionOutcome, PageActionRequestInput } from "@ontomato/contracts/agent-presentation";
 import { panelAddress, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { ATTRIBUTE, OBJECT_TYPE, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
+import type { DisplayPageController } from "../../../../../packages/agent-shell-ui/src/conversation-display";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
@@ -257,10 +259,23 @@ function mountAttributesRoute(options: {
   onRecordRead?: (key: string, defaultResponse: () => Response) => Response | Promise<Response>;
   onOperation?: (operationId: string, targetKey: string, call: PanelOperationCall) => unknown;
 }) {
+  let controller: DisplayPageController | null = null;
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: use.path, component: PanelApplicationRoute, props: { applicationId: appId } },
+      {
+        path: use.path,
+        component: PanelApplicationRoute,
+        props: {
+          applicationId: appId,
+          registerPageController(next: DisplayPageController) {
+            controller = next;
+            return () => {
+              if (controller === next) controller = null;
+            };
+          },
+        },
+      },
       { path: "/ontology/objects", component: { render: () => h("div", { class: "objects-stub" }, "Objects page") } },
     ],
   });
@@ -386,6 +401,10 @@ function mountAttributesRoute(options: {
   return {
     router,
     sent,
+    async executeAction(request: PageActionRequestInput): Promise<PageActionOutcome> {
+      if (!controller?.executeAction) throw new Error("Panel page controller is not registered");
+      return controller.executeAction(request);
+    },
     async open() {
       useApplicationCatalog().applications.value = [
         {
@@ -739,6 +758,151 @@ describe("ontology-attributes builtin panel", () => {
       });
     } finally {
       app.unmount();
+    }
+  });
+
+  it("renders a single real setPrimaryKey OperationButton that blocks executeAction when already primary key and dispatches when non-primary", async () => {
+    const agentRun = {
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      runId: "22222222-2222-4222-8222-222222222222",
+      toolCallId: "call-set-pk-1",
+    };
+
+    // 1. Primary-key attribute (isPrimaryKey: true): single real disabled button, no hidden duplicate, executeAction rejected.
+    const pkWriteCallback = vi.fn(() => ({ kind: "success", data: {} }));
+    const pkRoute = mountAttributesRoute({
+      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.orderNo" } },
+      attributes: [
+        {
+          primaryKey: "Order.orderNo",
+          className: "Order",
+          classNameLabel: "Order",
+          name: "orderNo",
+          label: "Order number",
+          type: "string",
+          primaryKeyFlag: true,
+          businessKey: true,
+          enable: true,
+        },
+      ],
+      onOperation: pkWriteCallback,
+    });
+
+    const pkMounted = await pkRoute.open();
+    try {
+      const pkButtons = await vi.waitFor(() => {
+        const actions = pkMounted.element.querySelector<HTMLElement>(".attrs-detail .sdk-page-header-actions");
+        expect(actions).not.toBeNull();
+        const buttons = [...actions!.querySelectorAll<HTMLButtonElement>("button")]
+          .filter((btn) => btn.textContent?.includes("Set as primary key"));
+        expect(buttons).toHaveLength(1);
+        expect(buttons[0]!.disabled).toBe(true);
+        return buttons;
+      });
+
+      const memberHost = pkMounted.element.querySelector<HTMLElement>('.attrs-detail .sdk-page-header-actions [data-member="setPrimaryKey"]');
+      expect(memberHost).not.toBeNull();
+      expect(memberHost!.style.display).not.toBe("none");
+      expect(memberHost!.contains(pkButtons[0]!)).toBe(true);
+
+      const rejected = await pkRoute.executeAction({
+        operation: "setPrimaryKey.setPrimaryKey",
+        agentRun,
+      });
+      expect(rejected).toMatchObject({ ok: false, reason: "action_unavailable" });
+      expect(pkWriteCallback).toHaveBeenCalledTimes(0);
+    } finally {
+      pkMounted.app.unmount();
+    }
+
+    // 2. Non-primary-key attribute (isPrimaryKey: false): same single button is enabled and executeAction dispatches write.
+    const nonPkFixture: FixtureAttribute[] = [
+      {
+        primaryKey: "Order.orderNo",
+        className: "Order",
+        classNameLabel: "Order",
+        name: "orderNo",
+        label: "Order number",
+        type: "string",
+        primaryKeyFlag: true,
+        businessKey: true,
+        enable: true,
+      },
+      {
+        primaryKey: "Order.amount",
+        className: "Order",
+        classNameLabel: "Order",
+        name: "amount",
+        label: "Amount",
+        type: "number",
+        primaryKeyFlag: false,
+        businessKey: false,
+        enable: true,
+      },
+    ];
+    const nonPkWriteCallback = vi.fn((operationId: string, targetKey: string) => {
+      if (operationId === "setPrimaryKey.setPrimaryKey") {
+        for (const item of nonPkFixture) {
+          if (item.className === "Order") item.primaryKeyFlag = item.primaryKey === targetKey;
+        }
+      }
+      return {
+        kind: "success",
+        data: {},
+        affected: { objects: [], objectTypes: [] },
+      };
+    });
+
+    const nonPkRoute = mountAttributesRoute({
+      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.amount" } },
+      attributes: nonPkFixture,
+      onOperation: nonPkWriteCallback,
+    });
+
+    const nonPkMounted = await nonPkRoute.open();
+    try {
+      const enabledBtn = await vi.waitFor(() => {
+        const actions = nonPkMounted.element.querySelector<HTMLElement>(".attrs-detail .sdk-page-header-actions");
+        expect(actions).not.toBeNull();
+        const buttons = [...actions!.querySelectorAll<HTMLButtonElement>("button")]
+          .filter((btn) => btn.textContent?.includes("Set as primary key"));
+        expect(buttons).toHaveLength(1);
+        expect(buttons[0]!.disabled).toBe(false);
+        return buttons[0]!;
+      });
+
+      const memberHost = nonPkMounted.element.querySelector<HTMLElement>('.attrs-detail .sdk-page-header-actions [data-member="setPrimaryKey"]');
+      expect(memberHost).not.toBeNull();
+      expect(memberHost!.contains(enabledBtn)).toBe(true);
+
+      const executed = await nonPkRoute.executeAction({
+        operation: "setPrimaryKey.setPrimaryKey",
+        agentRun: { ...agentRun, toolCallId: "call-set-pk-2" },
+      });
+      expect(executed).toMatchObject({ ok: true, kind: "executed", operation: "setPrimaryKey.setPrimaryKey" });
+      expect(nonPkWriteCallback).toHaveBeenCalledTimes(1);
+      expect(nonPkWriteCallback).toHaveBeenCalledWith(
+        "setPrimaryKey.setPrimaryKey",
+        "Order.amount",
+        expect.anything(),
+      );
+
+      // After refresh updates isPrimaryKey to true, the same single button becomes disabled and blocks re-execution.
+      await vi.waitFor(() => {
+        const buttons = [...nonPkMounted.element.querySelectorAll<HTMLButtonElement>(".attrs-detail .sdk-page-header-actions button")]
+          .filter((btn) => btn.textContent?.includes("Set as primary key"));
+        expect(buttons).toHaveLength(1);
+        expect(buttons[0]!.disabled).toBe(true);
+      });
+
+      const blockedAfter = await nonPkRoute.executeAction({
+        operation: "setPrimaryKey.setPrimaryKey",
+        agentRun: { ...agentRun, toolCallId: "call-set-pk-3" },
+      });
+      expect(blockedAfter).toMatchObject({ ok: false, reason: "action_unavailable" });
+      expect(nonPkWriteCallback).toHaveBeenCalledTimes(1);
+    } finally {
+      nonPkMounted.app.unmount();
     }
   });
 });

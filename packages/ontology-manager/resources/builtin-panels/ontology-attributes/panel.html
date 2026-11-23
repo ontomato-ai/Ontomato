@@ -184,9 +184,10 @@
         </template>
         <template #actions>
           <template v-if="detailStatus === 'ready'">
-            <projection slot="setPrimaryKey" v-show="!isPrimaryKey" @done="onSetPrimaryKeyDone"></projection>
-            <sdk-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
-              <span><sdk-button disabled>{{ t("attr.setPrimaryKey") }}</sdk-button></span>
+            <sdk-tooltip :disabled="!isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
+              <span>
+                <projection slot="setPrimaryKey" :inputs="{ disabled: setPrimaryKeyDisabled }" @done="onSetPrimaryKeyDone"></projection>
+              </span>
             </sdk-tooltip>
             <projection slot="remove" @done="onRemoveDone"></projection>
           </template>
