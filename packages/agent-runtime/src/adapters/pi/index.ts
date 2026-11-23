@@ -123,7 +123,7 @@ class PiSession implements HarnessSession {
     if (!active) return;
     active.interrupt ??= (async () => {
       active.accepting = false;
-        if (!(await active.started).success) return;
+      if (!(await active.started).success) return;
       const queue = await this.transport.rpc("clear_queue");
       if (!queue.success) throw new Error(queue.error);
       const response = await this.transport.rpc("abort");
@@ -257,10 +257,10 @@ async function open(request: HarnessOpenRequest): Promise<HarnessSession> {
     },
   );
   try {
-    const { engineRef, previousContext, directories, model, prompt, tools } = request;
+    const { engineRef, previousContext, directories, model, prompt, tools, engineTools } = request;
     transport.send({
       type: "init",
-      data: { engineRef, previousContext: previousContext?.map(importContext) ?? null, directories, model, prompt, tools },
+      data: { engineRef, previousContext: previousContext?.map(importContext) ?? null, directories, model, prompt, tools, engineTools },
     });
     const reply = await transport.rpc("get_state");
     if (!reply.success) throw new Error(reply.error);

@@ -74,7 +74,7 @@ function prepareSession(init) {
   }
 
   const session = SessionManager.inMemory(init.directories.workspace);
-  const definition = { tools: init.tools, system: init.prompt.system };
+  const definition = { tools: init.tools, engineTools: init.engineTools, system: init.prompt.system };
   session.appendCustomEntry("ontomato.session", definition);
   for (const message of init.previousContext ?? []) session.appendMessage(message);
   // New PI sessions write nothing until the first user or assistant message.

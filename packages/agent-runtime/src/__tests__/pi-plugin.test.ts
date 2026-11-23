@@ -117,7 +117,7 @@ describe("PI 1.4.0 RPC plugin", () => {
         token: "test-lease", model: "public-model", contextWindow: 262144, maxOutputTokens: 4096,
       },
       prompt: { system: "Only use platform resources." },
-      tools: [declaration], limits: codeLimitsSchema.parse({}), language: "en",
+      tools: [declaration], engineTools: true, limits: codeLimitsSchema.parse({}), language: "en",
       signal: new AbortController().signal,
       sandbox: {
         spawn(command, args, env) {
@@ -183,6 +183,20 @@ describe("PI 1.4.0 RPC plugin", () => {
 
     await rm(join(directories.state, "pi.jsonl"));
     await expect(open({ engineRef: session.engineRef })).rejects.toThrow(/ENOENT/);
+  }, 15000);
+
+  it("keeps product sessions on platform tools after reopening", async () => {
+    const requests = await configure(() => ({ status: "answer", text: "Done" }));
+    const session = await open({ engineTools: false });
+    expect((await turn(session, host(), input("first", "List the available tools"))).stopReason).toBe("stop");
+    await session.close();
+
+    const resumed = await open({ engineRef: session.engineRef, engineTools: true });
+    expect((await turn(resumed, host(), input("resume", "List the tools again"))).stopReason).toBe("stop");
+    await resumed.close();
+
+    expect(requests.map(request => request.tools.map(tool => tool.function.name)))
+      .toEqual([[declaration.name], [declaration.name]]);
   }, 15000);
 
   it("awaits platform tool start and result, streams messages and usage, and consumes steer only at the next step", async () => {
@@ -418,19 +432,15 @@ describe("PI 1.4.0 RPC plugin", () => {
   }, 15000);
 });
 
-it("maps native compaction, retry, and extension diagnostics with stable keys", async () => {
+it("maps native compaction and extension diagnostics with stable keys", async () => {
   const emitted: HarnessEvent[] = [];
   const events = new PiEvents({ emit: async event => { emitted.push(event); } } as HarnessTurnHost);
   await events.detail({ type: "compaction_start", reason: "overflow" });
   await events.detail({ type: "compaction_end", aborted: true, errorMessage: "Summary request was cancelled" });
-  await events.detail({ type: "auto_retry_start", attempt: 1, maxAttempts: 2, errorMessage: "server busy" });
-  await events.detail({ type: "auto_retry_end", success: true });
   await events.detail({ type: "extension_error", event: "tool_call", error: "No callback" });
   expect(emitted).toEqual([
     expect.objectContaining({ detail: expect.objectContaining({ category: "compaction", key: "compaction:1", status: "started" }) }),
     expect.objectContaining({ detail: expect.objectContaining({ category: "compaction", key: "compaction:1", status: "completed", text: "Context compaction interrupted. Summary request was cancelled" }) }),
-    expect.objectContaining({ detail: expect.objectContaining({ category: "diagnostic", key: "retry:2", level: "warning" }) }),
-    expect.objectContaining({ detail: expect.objectContaining({ category: "diagnostic", key: "retry:2", level: "info" }) }),
     expect.objectContaining({ detail: expect.objectContaining({ category: "diagnostic", text: expect.stringContaining("No callback") }) }),
   ]);
 });

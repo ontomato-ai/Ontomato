@@ -76,7 +76,7 @@ export default function (pi) {
     });
   }
 
-  if (definition.toolSurface !== "product") {
+  if (definition.engineTools) {
     const cwd = directories.workspace;
     for (const tool of [
       createReadToolDefinition(cwd),

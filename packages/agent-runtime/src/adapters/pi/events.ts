@@ -5,7 +5,7 @@ import {
   runtimeSettledMessageSchema, runtimeToolCallSchema, runtimeToolResultMessageSchema,
   type RuntimeAssistantMessage,
 } from "@ontomato/contracts/agent-runtime-messages";
-import type { HarnessAssistantMessageEvent, HarnessEvent, HarnessTurnHost } from "../contract";
+import type { HarnessAssistantMessageEvent, HarnessTurnHost } from "../contract";
 import type { PiRpcFrame } from "./transport";
 
 const assistant = runtimeAssistantMessageSchema.omit({ origin: true }).strip();
@@ -43,8 +43,6 @@ export class PiEvents {
   private last?: RuntimeAssistantMessage;
   private detailSequence = 0;
   private compactionKey = "";
-  private retryKey = "";
-  private summarizationKey = "";
   constructor(private readonly host: HarnessTurnHost) {}
 
   async message(frame: PiRpcFrame) {
@@ -85,10 +83,6 @@ export class PiEvents {
     return { stopReason: this.last.stopReason, errorMessage: this.last.errorMessage ?? null };
   }
 
-  private diagnostic(key: string, text: string, level: "info" | "warning" | "error"): HarnessEvent {
-    return { type: "run_detail", detail: { key, text, level, category: "diagnostic", scope: "run", ref: null, action: null } };
-  }
-
   private key(category: string) {
     return `${category}:${++this.detailSequence}`;
   }
@@ -121,31 +115,15 @@ export class PiEvents {
         });
         break;
       }
-      case "auto_retry_start":
-      case "summarization_retry_scheduled": {
-        const { attempt, maxAttempts, errorMessage } = z.object({
-          attempt: z.number(), maxAttempts: z.number(), errorMessage: z.string(),
-        }).parse(frame);
-        const summary = frame.type === "summarization_retry_scheduled";
-        const key = summary ? this.summarizationKey ||= this.key("summary-retry") : this.retryKey ||= this.key("retry");
-        await this.host.emit(this.diagnostic(key, `Retry ${attempt}/${maxAttempts}: ${errorMessage}`, "warning"));
-        break;
-      }
-      case "auto_retry_end": {
-        const { success, finalError } = z.object({ success: z.boolean(), finalError: z.string().optional() }).parse(frame);
-        await this.host.emit(this.diagnostic(this.retryKey, success ? "Retry completed" : finalError ?? "Retry ended", success ? "info" : "warning"));
-        this.retryKey = "";
-        break;
-      }
-      case "summarization_retry_finished":
-        if (this.summarizationKey) {
-          await this.host.emit(this.diagnostic(this.summarizationKey, "Summarization retry ended", "info"));
-          this.summarizationKey = "";
-        }
-        break;
       case "extension_error": {
         const { event, error } = z.object({ event: z.string(), error: z.string() }).parse(frame);
-        await this.host.emit(this.diagnostic(this.key("extension"), `PI extension (${event}): ${error}`, "error"));
+        await this.host.emit({
+          type: "run_detail",
+          detail: {
+            key: this.key("extension"), category: "diagnostic", scope: "run", ref: null,
+            level: "error", action: null, text: `PI extension (${event}) reported an error. ${error}`,
+          },
+        });
         break;
       }
     }
