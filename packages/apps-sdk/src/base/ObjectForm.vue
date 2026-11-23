@@ -274,7 +274,8 @@ const admittedSave = computed(() => {
   const currentTarget = target.value;
   return currentTarget ? formSave(member.operations.value, currentTarget, member.projection.operations) : null;
 });
-const customerSaveUnavailable = computed(() => isCustomerForm && admittedSave.value === null);
+const saveUnavailable = computed(() => admittedSave.value === null);
+const customerSaveUnavailable = computed(() => isCustomerForm && saveUnavailable.value);
 
 /** Only the form's save Action supplies field wiring. */
 const actionSaveWiring = computed<ActionSaveWiring | null>(() => {
@@ -393,7 +394,7 @@ const dirtyFields = computed<ReadonlySet<string>>(() => {
 const changedCount = computed(() => (dirtyFields.value.size > 0 ? dirtyFields.value.size : (canSettle.value ? 1 : 0)));
 /** Whether the form is ready and currently able to submit unsaved edits. */
 const canSubmit = computed(() =>
-  !failure.value && !loading.value && description.value !== null && canSettle.value && !saving.value && !asking.value && !customerSaveUnavailable.value,
+  !failure.value && !loading.value && description.value !== null && canSettle.value && !saving.value && !asking.value && !saveUnavailable.value,
 );
 
 /** Whether this form component has mounted and performed its initial load. */
@@ -1174,11 +1175,16 @@ async function cancelCreate() {
 }
 
 async function saveFromForm() {
+  const startTargetKey = targetKey(target.value);
+  const startOpened = ownerOpened.value;
   try {
     await panel.instance.forms.submit(slot.slot);
   } catch (reason) {
-    // The operation also rejects for programmatic callers. The reader sees the same refusal in the form.
-    showRefusal(reason);
+    if (reason instanceof PanelConfirmationDeferred) return;
+    // The operation also rejects for programmatic callers. Only show the refusal in the form if it is still on the originating target.
+    if (!unmounted && targetKey(target.value) === startTargetKey && ownerOpened.value === startOpened) {
+      showRefusal(reason);
+    }
   }
 }
 
@@ -1224,6 +1230,28 @@ async function showFirstRefused() {
 function showRefusal(reason: unknown) {
   refusal.value = reason instanceof Error ? reason : new Error(String(reason));
   errors.value = reason instanceof PlatformObjectRefusal ? reason.fields : {};
+}
+
+function formatSaveRefusalReason(reason: unknown): string {
+  const message = reason instanceof Error ? reason.message.trim() : String(reason).trim();
+  if (!(reason instanceof PlatformObjectRefusal)) return message;
+  const fieldDetails = Object.values(reason.fields)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0 && entry !== message);
+  if (!fieldDetails.length) return message;
+  return message ? `${message}: ${fieldDetails.join("; ")}` : fieldDetails.join("; ");
+}
+
+function notifyStaleSaveRefusal(action: string, targetLabel: string | null, reason: unknown) {
+  const message = formatSaveRefusalReason(reason);
+  const text = targetLabel
+    ? (te("platform.formSaveFailedFor")
+        ? t("platform.formSaveFailedFor", { action, target: targetLabel, message })
+        : `${action} (${targetLabel}) failed: ${message}`)
+    : (te("platform.formSaveFailed")
+        ? t("platform.formSaveFailed", { action, message })
+        : `${action} failed: ${message}`);
+  panel.notify({ kind: "error", text });
 }
 
 function takeSavedFields(receipt: PlatformObjectRefusal) {
@@ -1305,7 +1333,20 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
   const capturedEdits = edits;
   const capturedOpened = ownerOpened.value;
   const capturedDirty = dirty.value;
+  const capturedLabel = formObjectLabel.value;
   const descriptorKind = override?.descriptor.kind ?? admittedSave.value?.descriptor.kind ?? "form.save";
+  const saveActionLabel = override?.descriptor.label ?? admittedSave.value?.descriptor.label
+    ?? (into.kind === "draft" ? t("platform.create") : t("platform.save"));
+  const isStillSameForm = () =>
+    !unmounted && targetKey(target.value) === capturedTargetKey && ownerOpened.value === capturedOpened;
+  const handleSaveRefusal = (refusalReason: unknown) => {
+    if (isStillSameForm()) {
+      if (refusalReason instanceof PlatformObjectRefusal) takeSavedFields(refusalReason);
+      showRefusal(refusalReason);
+      return;
+    }
+    notifyStaleSaveRefusal(saveActionLabel, capturedLabel, refusalReason);
+  };
   saving.value = true;
   refusal.value = null;
   errors.value = {};
@@ -1365,10 +1406,7 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
               summary: summarizeDispatchResponse(confirmed.response),
             };
           } catch (dispatchReason) {
-            if (dispatchReason instanceof PlatformObjectRefusal && targetKey(target.value) === targetKey(into)) {
-              takeSavedFields(dispatchReason);
-            }
-            showRefusal(dispatchReason);
+            handleSaveRefusal(dispatchReason);
             return {
               ok: false,
               intentId: preparation.intentId,
@@ -1384,8 +1422,7 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
       throw new PanelConfirmationDeferred(confirmation);
     }
     if (reason instanceof PanelConfirmationDeferred) throw reason;
-    if (reason instanceof PlatformObjectRefusal && targetKey(target.value) === targetKey(into)) takeSavedFields(reason);
-    showRefusal(reason);
+    handleSaveRefusal(reason);
     throw reason;
   } finally {
     saving.value = false;
@@ -1726,11 +1763,11 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
           </span>
           <template v-if="isCreate">
             <el-button text :disabled="saving" @click="cancelCreate">{{ t("platform.cancel") }}</el-button>
-            <el-button type="primary" :disabled="asking || customerSaveUnavailable" :loading="saving" @click="saveFromForm">{{ t("platform.create") }}</el-button>
+            <el-button type="primary" :disabled="asking || saveUnavailable" :loading="saving" @click="saveFromForm">{{ t("platform.create") }}</el-button>
           </template>
           <template v-else>
             <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
-            <el-button type="primary" :disabled="!canSettle || asking || customerSaveUnavailable" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
+            <el-button type="primary" :disabled="!canSettle || asking || saveUnavailable" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
           </template>
         </slot>
       </div>

@@ -1,410 +1,385 @@
-import { computed, reactive, ref, watch } from "vue";
-import { mountPanel, panelAddress, usePanelData, usePanelContext, usePanelOperation } from "@ontomato/sdk/panel";
+import { computed, watch } from "vue";
+import {
+  mountPanel,
+  panelAddress,
+  usePanelBack,
+  usePanelContext,
+  usePanelOutput,
+} from "@ontomato/sdk/panel";
 
-/** The projection catalogue displays the owner's reads and dispatches the owner's operations. */
+const PROJECTION_TYPE = "platform:ProductProjection";
+const PANEL_TYPE = "platform:ProductPanel";
+const SDK_COMPONENT_TYPE = "platform:SDKComponent";
+const ONTOLOGY_TYPE = "platform:OntologyType";
+const OBJECT_TYPE = "platform:ObjectType";
+const RELATIONSHIP_TYPE = "platform:Relationship";
+const ACTION_TYPE = "platform:Action";
+const METRIC_VIEW_TYPE = "platform:MetricView";
 
-const TYPE = "platform:ProductProjection";
-const CHART_COMPONENT = "@ontomato/sdk:MetricChart";
 const CAPABILITY_MAP = "/ontology/assets/capability-map";
 const PANELS_PAGE = "/ontology/panels";
+const COMPONENTS_PAGE = "/ontology/components";
+const OBJECTS_PAGE = "/ontology/objects";
+const RELATIONS_PAGE = "/ontology/relations";
+const ACTIONS_PAGE = "/ontology/assets/actions";
+const METRICS_PAGE = "/ontology/assets/metrics";
 
-const COMPONENT_LABELS = {
-  ObjectSummary: "对象摘要",
-  ObjectList: "对象列表",
-  ObjectForm: "对象表单",
-  ObjectGraph: "对象图谱",
-  MetricChart: "指标图",
-  MetricViewData: "指标数据",
-  PanelData: "自定义数据",
-  EChart: "图表",
-  MarkdownView: "Markdown 文本",
-  TablePreview: "表格预览",
-  HtmlPreview: "HTML 预览",
-  CodeEditor: "代码查看",
-  SegmentedControl: "选项切换",
-  TwoPaneLayout: "双栏版式",
-  SectionGroup: "分组版式",
-  ReferencePicker: "引用选择",
-  FileUploadControl: "文件上传",
-  ConversationEntry: "对话入口",
-  AgentChatPanel: "对话面板",
-  AgentShell: "对话外壳",
-  GraphCanvas: "图谱画布",
-  InteractiveGraphCanvas: "交互图谱",
-  OntologyGraph: "本体图谱",
-  ObjectRelations: "关系列表",
-  PathTree: "路径树",
-  ObjectTree: "对象树",
-  ObjectTextReader: "文本读取",
-  SegmentedTextReader: "文本分段读取",
-  ToolStep: "工具步骤",
-  ProductAsset: "产品资产",
-};
+const VALID_TABS = new Set(["overview", "definition", "usage", "grants"]);
 
-const reasonText = (reason) => (reason && typeof reason === "object" && "message" in reason ? reason.message : String(reason));
+const newProjectionId = () => `projection-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-const componentName = (componentId) => String(componentId ?? "").split(":").pop() ?? "";
-
-const componentLabel = (componentId) => {
-  const name = componentName(componentId);
-  return COMPONENT_LABELS[name] ? `${COMPONENT_LABELS[name]} · ${name}` : name || "—";
-};
-
-const scopeLabel = (visibility) => ({ platform: "平台自带", domain: "域内共享", private: "私有" })[visibility];
-
-const portText = (port) => {
-  if (!port) return "—";
-  switch (port.kind) {
-    case "object":
-      return `对象 · ${port.objectType}`;
-    case "object-union":
-      return "对象 · 多种类";
-    case "child-object":
-      return `子对象 · ${port.parentType}/${port.collection}`;
-    case "list":
-      return `列表 · ${portText(port.items)}`;
-    case "scalar":
-      return `值 · ${port.type}`;
-    case "placement":
-      return "放置 · 面板";
-    case "json":
-      return "JSON";
-    default:
-      return port.kind;
-  }
-};
-
-const sourceText = (source) => {
-  if (!source) return "—";
-  if (source.type) return `${source.type.kind === "PlatformObjectType" ? "平台类" : "本体类"} · ${source.type.id}`;
-  const object = source.object ?? {};
-  if (object.literal) return `对象 · ${object.literal.className} / ${object.literal.primaryKey}`;
-  if (object.input) return `输入「${object.input}」的对象`;
-  return "—";
-};
-
-const paramsText = (params) => {
-  const entries = Object.entries(params ?? {});
-  if (!entries.length) return "无";
-  return entries
-    .map(([name, value]) => {
-      if (value && "literal" in value) return `${name} ← 固定 ${JSON.stringify(value.literal)}`;
-      if (value && "input" in value) return `${name} ← 输入「${value.input}」`;
-      return name;
-    })
-    .join("；");
-};
-
-const operationTargetText = (target) => {
-  if (!target) return "无目标";
-  if (target.input) return `输入「${target.input}」`;
-  if (target.literal) return `对象 ${target.literal.className} / ${target.literal.primaryKey}`;
-  return "—";
-};
-
-const formatTimestamp = (value) => new Date(value).toLocaleString(document.documentElement.lang, {
-  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-}).replace(/^(\d{4})\/(\d{2})\/(\d{2}) /, "$1-$2-$3 ");
-
-const jsonText = (value) => JSON.stringify(value ?? {}, null, 2);
-
-const outcomeOf = (result) => {
-  const response = result?.response ?? result;
-  if (!response) return { ok: true };
-  if (response.kind === "not-dispatched") return { ok: false, message: response.message };
-  const outcome = response.outcome;
-  if (!outcome) return { ok: true };
-  if (outcome.kind === "success") return { ok: true, message: outcome.message };
-  const users = Array.isArray(outcome.details?.panels) ? outcome.details.panels.map((panel) => panel.name).filter(Boolean) : [];
-  const suffix = users.length ? `：${users.join("、")}` : "";
-  return { ok: false, message: `${outcome.message ?? outcome.code ?? "属主拒绝了这次操作"}${suffix}` };
-};
-
-const newId = () => `projection-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-
-await mountPanel({
+const ProjectionsCataloguePanel = {
   setup() {
-    const { instance, navigate, t } = usePanelContext();
+    const { instance, navigate, notify, t } = usePanelContext();
     const values = instance.state.values;
 
     const selected = computed(() => values.value.selected ?? null);
-    const selectedKey = computed(() => selected.value?.primaryKey ?? null);
-    const search = computed(() => values.value.search ?? "");
-    const scope = computed(() => values.value.scope ?? "all");
-    const sort = computed(() => values.value.sort ?? "updated");
-
-    const notice = ref(null);
-    let noticeTimer;
-    function say(tone, text) {
-      notice.value = { tone, text };
-      globalThis.clearTimeout(noticeTimer);
-      noticeTimer = globalThis.setTimeout(() => { notice.value = null; }, 8000);
-    }
-    function report(reason) {
-      say("error", reasonText(reason));
-    }
-
-    const searchDraft = ref(search.value);
-    let searchTimer;
-    watch(searchDraft, (next) => {
-      globalThis.clearTimeout(searchTimer);
-      searchTimer = globalThis.setTimeout(() => {
-        if (search.value !== next) instance.state.set("search", next === "" ? null : next);
-      }, 250);
-    });
-    watch(search, (next) => {
-      if (searchDraft.value !== next) searchDraft.value = next;
-    });
-
-    const cursor = ref(null);
-    const pageSize = ref(20);
-    const pageNumber = ref(1);
-    const cursorHistory = ref([null]);
-    const listParams = ref({ cursor: null, size: 20 });
-    watch([cursor, pageSize], () => {
-      const next = { cursor: cursor.value ?? null, size: pageSize.value };
-      if (listParams.value.cursor !== next.cursor || listParams.value.size !== next.size) listParams.value = next;
-    });
-    const list = usePanelData("list", "rows", () => listParams.value);
-    const rows = computed(() => (list.value.status === "ready" ? list.value.value.items ?? [] : []));
-    const nextCursor = computed(() => (list.value.status === "ready" ? list.value.value.nextCursor ?? null : null));
-
-    watch([search, scope, sort, pageSize], () => {
-      cursorHistory.value = [null];
-      pageNumber.value = 1;
-      cursor.value = null;
-    });
-
-    const listStatusText = computed(() => {
-      const status = list.value.status;
-      if (status === "loading") return "读取中…";
-      if (status === "forbidden") return "没有读取投影的授权";
-      if (status === "error") return reasonText(list.value.message);
-      if (status === "awaiting") return "…";
-      const more = nextCursor.value ? " · 还有下一页" : "";
-      return `本页 ${rows.value.length} 条${more}`;
-    });
-
-    function nextPage() {
-      if (!nextCursor.value) return;
-      cursorHistory.value[pageNumber.value] = nextCursor.value;
-      cursor.value = nextCursor.value;
-      pageNumber.value += 1;
-    }
-
-    function previousPage() {
-      if (pageNumber.value <= 1) return;
-      pageNumber.value -= 1;
-      cursor.value = cursorHistory.value[pageNumber.value - 1] ?? null;
-    }
-
-    const setScope = (value) => instance.state.set("scope", value ?? "all");
-    const setSort = (value) => instance.state.set("sort", value ?? "updated");
-    const setPageSize = (value) => { pageSize.value = Number(value) || 20; };
-
-    const record = usePanelData("record", "record");
-    const grants = usePanelData("record", "grants");
-    const usedBy = usePanelData("usedBy", "usedBy");
-    const usedPanels = computed(() => (usedBy.value.status === "ready" ? usedBy.value.value.panels ?? [] : []));
-    const hiddenCount = computed(() => (usedBy.value.status === "ready" ? usedBy.value.value.hiddenCount ?? 0 : 0));
-    const usedByCountText = computed(() => {
-      const status = usedBy.value.status;
-      if (status === "loading") return "读取中…";
-      if (status === "forbidden") return "没有读到使用方";
-      if (status === "error") return reasonText(usedBy.value.message);
-      if (status === "ready" || status === "empty") {
-        const hidden = hiddenCount.value > 0 ? `，另有 ${hiddenCount.value} 个不可见` : "";
-        return `${usedPanels.value.length} 个面板${hidden}`;
-      }
-      return "";
-    });
-
-    const copy = usePanelOperation("copyOp", "copy");
-    const remove = usePanelOperation("deleteOp", "delete");
-    const grant = usePanelOperation("grantOp", "grant");
-    const revoke = usePanelOperation("revokeOp", "revoke");
-    const share = usePanelOperation("shareOp", "share");
-
+    const selectedKey = computed(() => selected.value?.primaryKey ?? "");
     const creating = computed(() => values.value.creating === true);
-    const editing = ref(false);
-    const mode = computed(() => creating.value || (editing.value && selected.value !== null) ? "edit" : "view");
-    const showDetail = computed(() => selected.value !== null || mode.value === "edit");
-    function closeForm() {
-      editing.value = false;
-      if (creating.value) instance.state.set("creating", null);
-    }
-    watch(creating, active => { if (active) editing.value = false; });
+    const detailMode = computed(() => (values.value.detailMode === "edit" ? "edit" : "view"));
+    const isFormMode = computed(() => creating.value || (detailMode.value === "edit" && Boolean(selectedKey.value)));
+    const showDetail = computed(() => Boolean(selectedKey.value) || isFormMode.value);
 
-    const current = computed(() => (record.value.status === "ready" ? record.value.value : null));
-    const ownerIds = computed(() => [...new Set([
-      ...rows.value.map(row => row.ownerId), current.value?.ownerId,
-    ].filter(Boolean))]);
-    const ownersState = usePanelData("owners", "options", () => ({ values: ownerIds.value }));
-    const ownerLabels = computed(() => Object.fromEntries(
-      (ownersState.value.status === "ready" ? ownersState.value.value.options : [])
-        .map(option => [option.primaryKey, option.label]),
-    ));
-    const ownerName = id => ownerLabels.value[id] ?? "—";
+    const scopeModel = computed({
+      get: () => values.value.scope || "all",
+      set: (next) => instance.state.set("scope", next || "all"),
+    });
+    const sortModel = computed({
+      get: () => values.value.sort || "updated",
+      set: (next) => instance.state.set("sort", next || "updated"),
+    });
+    const tabModel = computed({
+      get: () => (VALID_TABS.has(values.value.tab) ? values.value.tab : "overview"),
+      set: (next) => instance.state.set("tab", VALID_TABS.has(next) ? next : "overview"),
+    });
 
-    function ownerAddress(binding) {
-      switch (binding?.kind) {
-        case "MetricView": return panelAddress("/ontology/assets/metrics", { selected: binding.id });
-        case "Action": return actionAddress(binding.id);
-        case "PlatformObjectType":
-          return panelAddress(CAPABILITY_MAP, { mode: "type", view: "list", selectedType: binding.id });
+    const scopeOptions = computed(() => [
+      { value: "all", label: t("scope.all") },
+      { value: "mine", label: t("scope.mine") },
+      { value: "shared", label: t("scope.shared") },
+    ]);
+
+    // Read-only projection outputs published by ObjectHeader.
+    const headerStatus = usePanelOutput("headerTitle", "status");
+    const headerError = usePanelOutput("headerTitle", "errorMessage");
+    const headerLabel = usePanelOutput("headerTitle", "label");
+    const canEditOutput = usePanelOutput("headerTitle", "canEdit");
+    const canGrantOutput = usePanelOutput("headerTitle", "canGrant");
+    const canDeleteOutput = usePanelOutput("headerTitle", "canDelete");
+    const canCopyOutput = usePanelOutput("headerTitle", "canCopy");
+    const isChartOutput = usePanelOutput("headerTitle", "isChart");
+    const domainSharedOutput = usePanelOutput("headerTitle", "domainShared");
+    const revisionOutput = usePanelOutput("headerTitle", "revision");
+    const usedByCountOutput = usePanelOutput("headerTitle", "usedByCount");
+    const hiddenUsedByCountOutput = usePanelOutput("headerTitle", "hiddenUsedByCount");
+
+    const recordStatus = computed(() => (typeof headerStatus.value === "string" ? headerStatus.value : ""));
+    const recordReady = computed(() => recordStatus.value === "ready");
+    const selectedLabel = computed(() => (typeof headerLabel.value === "string" ? headerLabel.value : ""));
+    const recordErrorText = computed(() => {
+      const message = typeof headerError.value === "string" ? headerError.value : "";
+      return message || t("detail.missing");
+    });
+
+    const canEdit = computed(() => canEditOutput.value === true);
+    const canGrant = computed(() => canGrantOutput.value === true);
+    const canDelete = computed(() => canDeleteOutput.value === true);
+    const canCopy = computed(() => canCopyOutput.value === true);
+    const isChart = computed(() => isChartOutput.value === true);
+    const domainShared = computed(() => domainSharedOutput.value === true);
+    const revision = computed(() => (typeof revisionOutput.value === "number" ? revisionOutput.value : null));
+    const usedByCount = computed(() => (typeof usedByCountOutput.value === "number" ? usedByCountOutput.value : 0));
+    const hiddenUsedByCount = computed(() => (typeof hiddenUsedByCountOutput.value === "number" ? hiddenUsedByCountOutput.value : 0));
+
+    // Fall back to overview tab if the selected projection does not grant permission editing.
+    watch([selectedKey, recordReady, canGrant, tabModel], ([key, ready, grantable, activeTab]) => {
+      if (key && ready && !grantable && activeTab === "grants") {
+        instance.state.set("tab", "overview");
       }
+    });
+
+    // Keep deleteRevision aligned with the selected projection's current revision for OperationButton binding.
+    watch([selectedKey, revision], ([key, rev]) => {
+      const next = key && rev !== null ? rev : null;
+      if ((values.value.deleteRevision ?? null) !== next) {
+        instance.state.set("deleteRevision", next);
+      }
+    }, { immediate: true });
+
+    // Dialog states backed by manifest.state so agents can inspect and operate them.
+    const copyDialogOpen = computed({
+      get: () => values.value.copyDialog === true,
+      set: (open) => {
+        if (!open) instance.state.setState({ copyDialog: null, copyId: null, copyName: null });
+        else instance.state.set("copyDialog", true);
+      },
+    });
+    const copyIdModel = computed({
+      get: () => values.value.copyId ?? "",
+      set: (next) => instance.state.set("copyId", next || null),
+    });
+    const copyNameModel = computed({
+      get: () => values.value.copyName ?? "",
+      set: (next) => instance.state.set("copyName", next || null),
+    });
+    const copyReady = computed(() => Boolean(copyIdModel.value.trim() && copyNameModel.value.trim()));
+
+    const deleteDialogOpen = computed({
+      get: () => values.value.deleteDialog === true,
+      set: (open) => instance.state.set("deleteDialog", open ? true : null),
+    });
+    const deleteRevision = computed(() => (typeof values.value.deleteRevision === "number" ? values.value.deleteRevision : null));
+
+    const grantDialogOpen = computed({
+      get: () => values.value.grantDialog === true,
+      set: (open) => instance.state.set("grantDialog", open ? true : null),
+    });
+    const grantPrincipalKindModel = computed({
+      get: () => (values.value.grantPrincipalKind === "role" ? "role" : "principal"),
+      set: (next) => {
+        instance.state.setState({
+          grantPrincipalKind: next === "role" ? "role" : "principal",
+          grantUser: null,
+          grantRole: null,
+          grantPrincipalId: null,
+        });
+      },
+    });
+    const grantVerbModel = computed({
+      get: () => (values.value.grantVerb === "edit" ? "edit" : "use"),
+      set: (next) => instance.state.set("grantVerb", next === "edit" ? "edit" : "use"),
+    });
+    const grantPrincipalId = computed(() => values.value.grantPrincipalId ?? "");
+    const grantKindOptions = computed(() => [
+      { value: "principal", label: t("grants.principal") },
+      { value: "role", label: t("grants.role") },
+    ]);
+
+    // Sync grantPrincipalId from the selected User or Role ReferencePicker state.
+    watch(
+      () => ({
+        kind: grantPrincipalKindModel.value,
+        userId: values.value.grantUser?.primaryKey ?? "",
+        roleId: values.value.grantRole?.primaryKey ?? "",
+      }),
+      ({ kind, userId, roleId }) => {
+        const picked = kind === "role" ? roleId : userId;
+        const next = picked || null;
+        if ((values.value.grantPrincipalId ?? null) !== next) {
+          instance.state.set("grantPrincipalId", next);
+        }
+      },
+      { immediate: true },
+    );
+
+    function closeForm() {
+      const patch = {};
+      if (creating.value) patch.creating = null;
+      if (detailMode.value === "edit") patch.detailMode = "view";
+      if (Object.keys(patch).length) instance.state.setState(patch);
     }
 
-    function actionAddress(primaryKey) {
-      return panelAddress("/ontology/assets/actions", { selected: primaryKey });
+    const formBack = usePanelBack(isFormMode, closeForm, {
+      pushHistory: false,
+      forms: "form",
+    });
+
+    function closeFormGuarded() {
+      void formBack.back();
     }
 
-    function dataAddress(source) {
-      const object = source?.object?.literal;
-      if (object?.className === "platform:Action") return actionAddress(object.primaryKey);
-      if (object?.className === "platform:MetricView")
-        return ownerAddress({ kind: "MetricView", id: object.primaryKey });
-      return ownerAddress(source?.type);
-    }
-
-    const openOwner = address => navigate(address).catch(report);
-
-    const dataRows = computed(() =>
-      Object.entries(current.value?.data ?? {}).map(([name, datum]) => ({
-        name,
-        source: sourceText(datum.source), address: dataAddress(datum.source),
-        read: datum.read ?? "—",
-        params: paramsText(datum.params),
-      })));
-
-    const operationRows = computed(() =>
-      Object.entries(current.value?.operations ?? {}).map(([name, binding]) => ({
-        name,
-        operation: `${binding.operation?.kind ?? ""} · ${binding.operation?.id ?? ""}`, address: ownerAddress(binding.operation),
-        target: operationTargetText(binding.target),
-      })));
-
-    const inputRows = computed(() =>
-      Object.entries(current.value?.inputs ?? {}).map(([name, port]) => ({ name, text: portText(port) })));
-
-    const outputRows = computed(() =>
-      Object.entries(current.value?.outputs ?? {}).map(([name, port]) => ({ name, text: portText(port) })));
-
-    const isChart = (value) => Boolean(value) && value.componentId === CHART_COMPONENT;
-    const canGrant = computed(() => Boolean(current.value?.editable));
-
-    function choose(row) {
-      if (!row) return;
-      closeForm();
-      instance.state.set("selected", { className: TYPE, primaryKey: row.id });
+    function startCreate() {
+      instance.state.setState({ selected: null, creating: true, detailMode: "view" });
     }
 
     function startEdit() {
-      if (!current.value?.editable) return;
-      editing.value = true;
+      if (!selectedKey.value || !canEdit.value) return;
+      instance.state.setState({ creating: null, detailMode: "edit" });
+    }
+
+    function onChooseProjection() {
+      if (isFormMode.value) closeForm();
     }
 
     function onSaved(saved) {
-      closeForm();
-      if (saved && saved.primaryKey)
-        instance.state.set("selected", { className: saved.className ?? TYPE, primaryKey: saved.primaryKey });
-      say("success", "已保存");
+      const patch = { creating: null, detailMode: "view" };
+      if (saved?.primaryKey) {
+        patch.selected = { className: saved.className ?? PROJECTION_TYPE, primaryKey: saved.primaryKey };
+      }
+      instance.state.setState(patch);
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("notify.saved") });
     }
-
-    const copyDialog = ref(false);
-    const copyForm = reactive({ id: "", name: "" });
 
     function openCopy() {
-      if (!current.value) return;
-      copyForm.name = `${current.value.name} 副本`;
-      copyForm.id = newId();
-      copyDialog.value = true;
+      if (!selectedKey.value || !canCopy.value) return;
+      const baseName = selectedLabel.value || selectedKey.value;
+      instance.state.setState({
+        copyName: t("copy.defaultName", { name: baseName }),
+        copyId: newProjectionId(),
+        copyDialog: true,
+      });
     }
 
-    async function submitCopy() {
-      try {
-        const answer = outcomeOf(await copy.run({ id: copyForm.id, name: copyForm.name }));
-        if (!answer.ok) { say("error", answer.message); return; }
-        copyDialog.value = false;
-        instance.state.set("selected", { className: TYPE, primaryKey: copyForm.id });
-        say("success", "已复制成一条新的私有投影");
-      } catch (reason) {
-        report(reason);
-      }
+    function onCopyDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      const copiedId = typeof outcome.data?.id === "string" && outcome.data.id
+        ? outcome.data.id
+        : copyIdModel.value.trim();
+      instance.state.setState({
+        copyDialog: null,
+        copyId: null,
+        copyName: null,
+        detailMode: "view",
+        ...(copiedId ? { selected: { className: PROJECTION_TYPE, primaryKey: copiedId } } : {}),
+      });
+      instance.refreshObjects();
     }
-
-    const deleteDialog = ref(false);
 
     function openDelete() {
-      if (!current.value) return;
-      deleteDialog.value = true;
+      if (!selectedKey.value || !canDelete.value) return;
+      instance.state.setState({
+        deleteRevision: revision.value,
+        deleteDialog: true,
+      });
     }
 
-    async function submitDelete() {
-      const projection = current.value;
-      if (!projection) return;
+    function onDeleteDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      instance.state.setState({
+        deleteDialog: null,
+        deleteRevision: null,
+        detailMode: "view",
+        selected: null,
+      });
+      instance.refreshObjects();
+    }
+
+    function openGrantDialog() {
+      if (!selectedKey.value || !canGrant.value) return;
+      instance.state.setState({
+        grantPrincipalKind: "principal",
+        grantUser: null,
+        grantRole: null,
+        grantPrincipalId: null,
+        grantVerb: "use",
+        grantDialog: true,
+      });
+    }
+
+    function onGrantAdded(outcome) {
+      if (outcome?.kind !== "success") return;
+      instance.state.setState({
+        grantDialog: null,
+        grantUser: null,
+        grantRole: null,
+        grantPrincipalId: null,
+      });
+      instance.refreshObjects();
+    }
+
+    function onShareDone(outcome) {
+      if (outcome?.kind === "success") instance.refreshObjects();
+    }
+
+    async function goTo(address) {
       try {
-        const answer = outcomeOf(await remove.run({ revision: projection.revision }));
-        if (!answer.ok) {
-          const users = usedPanels.value.map((panel) => panel.name).join("、");
-          say("error", `${answer.message}${users ? `：${users}` : ""}`);
+        await navigate(address);
+      } catch (reason) {
+        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
+      }
+    }
+
+    function openClass() {
+      void goTo(panelAddress(CAPABILITY_MAP, { mode: "type", view: "list", selectedType: PROJECTION_TYPE }));
+    }
+
+    function onChoosePanel(item) {
+      if (!item?.primaryKey) return;
+      void goTo(panelAddress(PANELS_PAGE, { selected: item.primaryKey }));
+    }
+
+    function onNavigateReference(reference) {
+      if (!reference?.primaryKey) return;
+      switch (reference.className) {
+        case PANEL_TYPE:
+          void goTo(panelAddress(PANELS_PAGE, { selected: reference.primaryKey }));
           return;
-        }
-        deleteDialog.value = false;
-        closeForm();
-        instance.state.set("selected", null);
-        say("success", "已删除");
-      } catch (reason) {
-        const users = usedPanels.value.map((panel) => panel.name).join("、");
-        report(`${reasonText(reason)}${users ? `：${users}` : ""}`);
+        case SDK_COMPONENT_TYPE:
+          void goTo(panelAddress(COMPONENTS_PAGE, { selected: reference.primaryKey }));
+          return;
+        case ONTOLOGY_TYPE:
+          void goTo(panelAddress(CAPABILITY_MAP, { mode: "type", view: "list", selectedType: reference.primaryKey }));
+          return;
+        case OBJECT_TYPE:
+          void goTo(panelAddress(OBJECTS_PAGE, { selected: reference.primaryKey }));
+          return;
+        case RELATIONSHIP_TYPE:
+          void goTo(panelAddress(RELATIONS_PAGE, { selected: reference.primaryKey }));
+          return;
+        case ACTION_TYPE:
+          void goTo(panelAddress(ACTIONS_PAGE, { selected: reference.primaryKey }));
+          return;
+        case METRIC_VIEW_TYPE:
+          void goTo(panelAddress(METRICS_PAGE, { selected: reference.primaryKey }));
+          return;
+        default:
+          return;
       }
     }
-
-    const grantForm = reactive({ principalKind: "principal", principalId: "", verb: "use" });
-
-    async function submitGrant(removeGrant, row = grantForm) {
-      const { principalKind, principalId, verb } = row;
-      if (!principalId.trim()) return;
-      const input = { principalKind, principalId: principalId.trim(), verb };
-      try {
-        const answer = outcomeOf(await (removeGrant ? revoke : grant).run(input));
-        if (!answer.ok) { say("error", answer.message); return; }
-        instance.refreshObjects();
-        say("success", removeGrant ? "已撤销授权" : "已授予授权");
-      } catch (reason) {
-        report(reason);
-      }
-    }
-
-    async function submitShare(shared) {
-      try {
-        const answer = outcomeOf(await share.run({ shared }));
-        if (!answer.ok) { say("error", answer.message); return; }
-        instance.refreshObjects();
-        say("success", shared ? "已开启域内共享" : "已关闭域内共享");
-      } catch (reason) {
-        report(reason);
-      }
-    }
-
-    const openClass = () => openOwner(ownerAddress({ kind: "PlatformObjectType", id: TYPE }));
-
-    const openPanel = (panelId) => {
-      navigate(panelAddress(PANELS_PAGE, { selected: panelId })).catch(report);
-    };
 
     return {
-      selected, selectedKey, searchDraft, scope, sort, pageNumber, pageSize, nextCursor,
-      list, rows, listStatusText, record, usedBy, usedPanels, hiddenCount, usedByCountText, current, ownerName, showDetail,
-      t, dataRows, operationRows, inputRows, outputRows, grants, openOwner,
-      copy, remove, grant, revoke, share, canGrant,
-      mode, choose, startEdit, onSaved, onDiscarded: closeForm, nextPage, previousPage,
-      setScope, setSort, setPageSize, copyDialog, copyForm, openCopy, submitCopy,
-      deleteDialog, openDelete, submitDelete, grantForm, submitGrant, submitShare,
-      openClass, openPanel, notice,
-      componentLabel, scopeLabel, formatTimestamp, jsonText, isChart,
-      startCreate: () => instance.state.setState({ selected: null, creating: true }),
+      t,
+      selectedKey,
+      selectedLabel,
+      creating,
+      isFormMode,
+      showDetail,
+      scopeModel,
+      scopeOptions,
+      sortModel,
+      tabModel,
+      recordStatus,
+      recordReady,
+      recordErrorText,
+      canEdit,
+      canGrant,
+      canDelete,
+      canCopy,
+      isChart,
+      domainShared,
+      usedByCount,
+      hiddenUsedByCount,
+      copyDialogOpen,
+      copyIdModel,
+      copyNameModel,
+      copyReady,
+      deleteDialogOpen,
+      deleteRevision,
+      grantDialogOpen,
+      grantPrincipalKindModel,
+      grantVerbModel,
+      grantPrincipalId,
+      grantKindOptions,
+      startCreate,
+      startEdit,
+      closeForm,
+      closeFormGuarded,
+      onChooseProjection,
+      onSaved,
+      openCopy,
+      onCopyDone,
+      openDelete,
+      onDeleteDone,
+      openGrantDialog,
+      onGrantAdded,
+      onShareDone,
+      openClass,
+      onChoosePanel,
+      onNavigateReference,
       refresh: () => instance.refreshObjects(),
     };
   },
-});
+};
+
+await mountPanel(ProjectionsCataloguePanel);

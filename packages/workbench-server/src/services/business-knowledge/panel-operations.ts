@@ -118,6 +118,13 @@ const affected = (primaryKey: string) => ({
   objectTypes: [BUSINESS_KNOWLEDGE],
 });
 
+/** Owner availability check for approving one entry: only pending entries can be approved. */
+function approveUnavailableReason(host: PanelOperationHost, found: KnowledgeEntry | undefined) {
+  if (!found) return { reason: tForLocale(host.locale, "panels.knowledge.notFound") };
+  if (found.status === 1) return { reason: tForLocale(host.locale, "panels.knowledge.alreadyApproved") };
+  return undefined;
+}
+
 /** One approval under its single rule: the entry read from the domain's list, rewritten whole with status 1. */
 async function approveOne(
   host: Host, entries: Record<string, KnowledgeEntry>, target: PanelRecordTarget,
@@ -232,6 +239,18 @@ export const m7ServerOperations = [
     targetInput: "knowledge",
     targetLabel: knowledgeTitle,
     done: (host, name) => tForLocale(host.locale, "panels.knowledge.approved", { name }),
+    async unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
+      return approveUnavailableReason(host, await readEntry(host, target.primaryKey));
+    },
+    async unavailableBatch(host: PanelOperationHost, targets: readonly { target: PanelRecordTarget; rowKey: string }[]) {
+      const entries = await readEntries(host);
+      const reasons = new Map<string, { reason: string }>();
+      for (const { target, rowKey } of targets) {
+        const reason = approveUnavailableReason(host, entries[target.primaryKey]);
+        if (reason) reasons.set(rowKey, reason);
+      }
+      return reasons;
+    },
     async execute(host: Host, target: PanelOperationTarget): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Approve acts on a selected entry");
       return approveOne(host, await readEntries(host), target);

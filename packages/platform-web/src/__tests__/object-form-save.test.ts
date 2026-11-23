@@ -408,4 +408,141 @@ describe("ObjectForm save", () => {
     expect(wrapper.emitted("saved")).toEqual([[selected]]);
     wrapper.unmount();
   });
+
+  it("notifies instead of leaking refusal errors onto another row when switched away during create", async () => {
+    const { wrapper, form, state, write, selectedRead, notify } = openForm();
+    await flushPromises();
+    form.set("/name", "Customer A");
+    const pending = deferred<PanelWriteResult>();
+    write.mockReturnValueOnce(pending.promise);
+    const saving = form.submit();
+
+    // Switch to row B (which has its own field error) before A's save is refused.
+    state.set("selected", objectRef(customerType, "customer-b"));
+    selectedRead.resolve({
+      ...description("Customer B"),
+      errors: [{ field: "/note", code: "invalid_format", message: "B note warning" }],
+    });
+    await flushPromises();
+    expect(form.values.value.name).toBe("Customer B");
+    expect(form.errors.value).toEqual({ "/note": "B note warning" });
+
+    pending.resolve({
+      decision: "confirm",
+      named: [],
+      response: {
+        kind: "dispatched",
+        intentId: "save-intent",
+        outcome: {
+          kind: "refusal",
+          code: "VALIDATION_FAILED",
+          message: "Validation failed",
+          errors: [{ field: "/name", code: "already_exists", message: "Customer A already exists" }],
+        },
+      },
+    });
+    await expect(saving).rejects.toMatchObject({
+      message: "Validation failed",
+      fields: { "/name": "Customer A already exists" },
+    });
+    await flushPromises();
+
+    // Row B's error bar stays completely untouched; user is notified which save failed and why.
+    expect(form.errors.value).toEqual({ "/note": "B note warning" });
+    expect(wrapper.find(".sdk-owner-form-refusal").exists()).toBe(false);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith({
+      kind: "error",
+      text: expect.stringMatching(/Customer action.*Customer A.*Validation failed.*Customer A already exists/),
+    });
+    wrapper.unmount();
+  });
+
+  it("keeps refusal errors off the new row when save was triggered via button click before switching", async () => {
+    const { wrapper, form, state, write, selectedRead, notify } = openForm();
+    await flushPromises();
+    form.set("/name", "Draft Alpha");
+    const pending = deferred<PanelWriteResult>();
+    write.mockReturnValueOnce(pending.promise);
+
+    // Trigger via the form's Save/Create button (`saveFromForm`) rather than programmatic submit().
+    const createBtn = wrapper.findAll(".sdk-owner-form-actions button").at(-1)!;
+    await createBtn.trigger("click");
+
+    state.set("selected", objectRef(customerType, "customer-b"));
+    selectedRead.resolve(description("Customer B"));
+    await flushPromises();
+
+    pending.resolve({
+      decision: "confirm",
+      named: [],
+      response: {
+        kind: "dispatched",
+        intentId: "save-intent",
+        outcome: {
+          kind: "refusal",
+          code: "DUPLICATE_NAME",
+          message: "Duplicate name",
+          errors: [{ field: "/name", code: "already_exists", message: "Duplicate name" }],
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(form.errors.value).toEqual({});
+    expect(wrapper.find(".sdk-owner-form-refusal").exists()).toBe(false);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith({
+      kind: "error",
+      text: expect.stringMatching(/Draft Alpha.*Duplicate name/),
+    });
+    wrapper.unmount();
+  });
+
+  it("shows refusal errors inline without toast when staying on the originating form, and notifies if unmounted", async () => {
+    const first = openForm();
+    await flushPromises();
+    first.form.set("/name", "Inline Alpha");
+    first.write.mockResolvedValueOnce({
+      decision: "confirm",
+      named: [],
+      response: {
+        kind: "dispatched",
+        intentId: "save-intent",
+        outcome: {
+          kind: "refusal",
+          code: "INVALID_NAME",
+          message: "Invalid name",
+          errors: [{ field: "/name", code: "invalid_format", message: "Inline refusal" }],
+        },
+      },
+    });
+    await expect(first.form.submit()).rejects.toMatchObject({ fields: { "/name": "Inline refusal" } });
+    expect(first.form.errors.value).toEqual({ "/name": "Inline refusal" });
+    expect(first.notify).not.toHaveBeenCalled();
+    first.wrapper.unmount();
+
+    const second = openForm();
+    await flushPromises();
+    second.form.set("/name", "Unmounted Alpha");
+    const pending = deferred<PanelWriteResult>();
+    second.write.mockReturnValueOnce(pending.promise);
+    const saving = second.form.submit();
+    second.wrapper.unmount();
+
+    pending.resolve({
+      decision: "confirm",
+      named: [],
+      response: {
+        kind: "dispatched",
+        intentId: "save-intent",
+        outcome: { kind: "refusal", code: "REFUSED", message: "Server refused", errors: [] },
+      },
+    });
+    await expect(saving).rejects.toMatchObject({ message: "Server refused" });
+    expect(second.notify).toHaveBeenCalledWith({
+      kind: "error",
+      text: expect.stringMatching(/Unmounted Alpha.*Server refused/),
+    });
+  });
 });

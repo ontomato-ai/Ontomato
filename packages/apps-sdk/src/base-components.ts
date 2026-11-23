@@ -35,6 +35,7 @@ export const baseComponents = {
   SegmentedTextReader: () => import("@ontomato/foundation-ui/reader").then(module => module.SegmentedTextReader),
   ObjectTree: () => import("./base/ObjectTree.vue").then(module => module.default),
   ObjectTextReader: () => import("./base/ObjectTextReader.vue").then(module => module.default),
+  AnnotatedCode: () => import("./base/AnnotatedCode.vue").then(module => module.default),
   ConversationEntry: () => import("./base/ConversationEntry.vue").then(module => module.default),
   PanelData: () => import("./base/PanelData.vue").then(module => module.default),
   CurrentEntry: () => import("./base/CurrentEntry.vue").then(module => module.default),

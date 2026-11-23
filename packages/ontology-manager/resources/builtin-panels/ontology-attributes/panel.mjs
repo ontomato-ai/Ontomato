@@ -1,93 +1,150 @@
-import { computed, watch } from "vue";
-import { mountPanel, panelAddress, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { computed, ref } from "vue";
+import {
+  mountPanel,
+  panelAddress,
+  usePanelBack,
+  usePanelContext,
+  usePanelNarrow,
+  usePanelOutput,
+} from "@ontomato/sdk/panel";
+
+const ATTRIBUTE_TYPE = "platform:Attribute";
+const OBJECT_TYPE = "platform:ObjectType";
 
 await mountPanel({
   setup() {
-    const context = usePanelContext();
-    const { instance } = context;
+    const { instance, navigate, t } = usePanelContext();
     const values = instance.state.values;
+    const rootRef = ref(null);
+    const narrow = usePanelNarrow(rootRef);
+
     const selected = computed(() => values.value.selected);
+    const selectedKey = computed(() => (selected.value ? selected.value.primaryKey : ""));
     const className = computed(() => values.value.className || "");
-    const search = computed(() => values.value.search || "");
-
-    const typesData = usePanelData("types", "types");
-    const rowsData = usePanelData("attributes", "rows");
-    const detail = usePanelData("detail", "record");
-
-    // A new attribute is being made: set by the header's "新建属性" command, so an address can open the empty form.
+    const ownerFilterKey = computed(() => values.value.ownerFilter?.primaryKey || "");
     const creating = computed(() => values.value.creating === true);
-    const setCreating = value => instance.state.set("creating", value);
-    const selectedKey = computed(() => selected.value?.primaryKey || "");
-    // The owner admits "set as primary key" on the attribute that already is one, so the page offers it only on others.
-    const isPrimaryKey = computed(() => detail.value.status === "ready" && detail.value.value.fields.primaryKey === "true");
 
-    const types = computed(() => (typesData.value.status === "ready" ? typesData.value.value : []));
-    const typeLabel = computed(() => Object.fromEntries(types.value.map(type => [type.primaryKey, type.label])));
-    const rows = computed(() => (rowsData.value.status === "ready" ? rowsData.value.value : []));
-    const ownerOf = row => row.fields.className || "";
-    const ownerLabel = row => typeLabel.value[ownerOf(row)] || ownerOf(row);
-    const visibleRows = computed(() => {
-      const query = search.value.trim().toLowerCase();
-      if (!query) return rows.value;
-      return rows.value.filter(row =>
-        [row.label, row.fields.name, row.fields.type, ownerLabel(row)].join(" ").toLowerCase().includes(query));
+    const search = computed({
+      get: () => values.value.search ?? "",
+      set: (value) => instance.state.set("search", value || null),
     });
 
-    // A count waits for the owner's answer: while the list is still being read there is no number to show.
-    const countText = computed(() => (rowsData.value.status === "ready" ? visibleRows.value.length : null));
-
-    const setClassName = value => instance.state.setState({ className: value || null });
-    const setSearch = value => instance.state.set("search", value || null);
-    const isSelected = row => selected.value?.primaryKey === row.primaryKey;
-    const selectedVisible = computed(() => Boolean(selected.value && visibleRows.value.some(row => row.primaryKey === selected.value.primaryKey)));
-    const selectRow = row => {
-      setCreating(false);
-      instance.state.set("selected", isSelected(row) ? null : { className: "platform:Attribute", primaryKey: row.primaryKey });
-    };
-    // An attribute being edited keeps its own owner type: only a new one is fixed to the class being created in.
-    watch(selected, value => {
-      if (value && values.value.createIn) instance.state.set("createIn", null);
+    // Keep the deep-linkable scalar `className` and ReferencePicker's object `ownerFilter` synchronized.
+    watch(
+      className,
+      (next) => {
+        if (next === ownerFilterKey.value) return;
+        instance.state.set("ownerFilter", next ? { className: OBJECT_TYPE, primaryKey: next } : null);
+      },
+      { immediate: true },
+    );
+    watch(ownerFilterKey, (next) => {
+      if (next === className.value) return;
+      instance.state.set("className", next || null);
     });
-    const closeEditor = () => {
+
+    // An edited attribute keeps its own owner type; only creation fixes `/className` to the filtered class.
+    watch(selectedKey, (next) => {
+      if (next && values.value.createIn) instance.state.set("createIn", null);
+    });
+
+    // Read-only outputs published by the list and detail projections.
+    const filteredCount = usePanelOutput("attributes", "filteredCount");
+    const countText = computed(() => (filteredCount.value === null ? "" : t("attr.count", { count: filteredCount.value })));
+
+    const headerStatus = usePanelOutput("detail", "status");
+    const detailStatus = computed(() => {
+      if (!selectedKey.value) return "empty";
+      return headerStatus.value ?? "loading";
+    });
+    const isPrimaryKeyOutput = usePanelOutput("detail", "isPrimaryKey");
+    const isPrimaryKey = computed(() => isPrimaryKeyOutput.value === true);
+
+    function closeDetail() {
       instance.state.setState({ selected: null, createIn: null, creating: false });
-    };
+    }
+
+    const { back } = usePanelBack(() => Boolean(selectedKey.value), closeDetail, {
+      pushHistory: true,
+      forms: "form",
+    });
+
+    function onChoose(ref) {
+      if (!ref?.primaryKey) return;
+      if (creating.value || values.value.createIn) {
+        instance.state.setState({ creating: false, createIn: null });
+      }
+    }
+
+    function openOwner(reference) {
+      const owner = reference?.primaryKey;
+      if (!owner) return;
+      void navigate(panelAddress("/ontology/objects", { selected: owner })).catch(() => undefined);
+    }
+
+    function clearFilters() {
+      instance.state.setState({ className: null, ownerFilter: null, search: null });
+    }
+
+    function startCreate() {
+      instance.state.setState({ creating: true, selected: null, createIn: className.value || null });
+    }
+
+    function cancelCreate() {
+      instance.state.setState({ creating: false, createIn: null });
+    }
+
     const createDialog = computed({
-      get: () => creating.value && !selected.value,
-      set: value => {
-        if (!value && creating.value) closeEditor();
+      get: () => creating.value && !selectedKey.value,
+      set: (value) => {
+        if (!value && creating.value) cancelCreate();
       },
     });
-    // One owner form edits the selected attribute and, with nothing selected, creates one; the host selects what it created.
-    const onSaved = () => { setCreating(false); };
-    const onDiscarded = () => {
-      if (selected.value) return;
-      instance.state.setState({ creating: false, createIn: null });
-    };
-    const yes = value => value === "true";
-    // Open the object types panel directly with its deep-linkable `selected` state rather than the retired detail path.
-    const openOwner = row => {
-      const owner = ownerOf(row);
-      if (!owner) return;
-      void context.navigate(panelAddress("/ontology/objects", { selected: owner })).catch(() => undefined);
-    };
 
-    // When the selected attribute leaves the owner's list (it was deleted), the page lets go of it.
-    let lastList = null;
-    watch(rowsData, state => {
-      if (state.status !== "ready") return;
-      const now = { filter: className.value, rows: state.value };
-      const before = lastList;
-      lastList = now;
-      const key = selected.value?.primaryKey;
-      if (!key || !before || before.filter !== now.filter) return;
-      const listed = list => list.some(row => row.primaryKey === key);
-      if (listed(before.rows) && !listed(now.rows)) instance.state.set("selected", null);
-    });
+    function onSaved(saved) {
+      const key = saved?.primaryKey;
+      const patch = { creating: false, createIn: null };
+      if (key && key !== selectedKey.value) {
+        patch.selected = { className: saved.className || ATTRIBUTE_TYPE, primaryKey: key };
+      }
+      instance.state.setState(patch);
+    }
+
+    function onDiscarded() {
+      if (selectedKey.value) return;
+      cancelCreate();
+    }
+
+    function onSetPrimaryKeyDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      instance.refreshObjects();
+    }
+
+    function onRemoveDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      closeDetail();
+    }
 
     return {
-      selected, selectedKey, selectedVisible, isPrimaryKey, className, search, typesData, rowsData, detail, creating, createDialog, types, rows, visibleRows,
-      ownerLabel, countText, setClassName, setSearch, isSelected, selectRow, closeEditor, onSaved, onDiscarded, yes, openOwner,
-      startCreate: () => instance.state.setState({ creating: true, selected: null, createIn: className.value || null }),
+      rootRef,
+      narrow,
+      selectedKey,
+      detailStatus,
+      isPrimaryKey,
+      search,
+      countText,
+      creating,
+      createDialog,
+      back,
+      onChoose,
+      openOwner,
+      clearFilters,
+      startCreate,
+      cancelCreate,
+      onSaved,
+      onDiscarded,
+      onSetPrimaryKeyDone,
+      onRemoveDone,
       refresh: () => instance.refreshObjects(),
     };
   },

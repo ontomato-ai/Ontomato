@@ -22,6 +22,12 @@
         },
         "deepLink": true
       },
+      "ownerFilter": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
       "createIn": {
         "type": {
           "kind": "scalar",
@@ -36,16 +42,24 @@
       }
     },
     "members": {
-      "types": {
-        "component": "PanelData",
+      "ownerPicker": {
+        "component": "ReferencePicker",
         "type": "platform:ObjectType",
         "data": {
-          "types": "list"
+          "rows": "list"
+        },
+        "state": {
+          "selected": "ownerFilter"
+        },
+        "config": {
+          "placeholderKey": "attr.allTypes",
+          "size": "default",
+          "clearable": true
         },
         "id": "builtin-product-323cfb62-1b9d-49d8-866e-7fa6aaade80d"
       },
       "attributes": {
-        "component": "PanelData",
+        "component": "ObjectList",
         "type": "platform:Attribute",
         "data": {
           "rows": {
@@ -57,16 +71,113 @@
             }
           }
         },
+        "state": {
+          "selected": "selected",
+          "search": "search"
+        },
+        "config": {
+          "layout": "table",
+          "showChevron": true,
+          "showFooter": false,
+          "searchable": false,
+          "searchFields": [
+            "label",
+            "name",
+            "type",
+            "className",
+            "classNameLabel",
+            "attrDesc"
+          ],
+          "emptyText": "attr.empty",
+          "noMatchText": "attr.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "attr.colAttribute",
+              "subtitleKey": "name",
+              "minWidth": 180
+            },
+            {
+              "key": "ownerObject",
+              "labelKey": "attr.colOwner",
+              "kind": "reference",
+              "minWidth": 130
+            },
+            {
+              "key": "type",
+              "labelKey": "attr.colType",
+              "minWidth": 100
+            },
+            {
+              "key": "businessKey",
+              "labelKey": "attr.colBizKey",
+              "width": 92,
+              "valueMap": {
+                "true": {
+                  "labelKey": "attr.yes",
+                  "tone": "info"
+                },
+                "false": {
+                  "labelKey": "attr.dash"
+                }
+              }
+            },
+            {
+              "key": "primaryKey",
+              "labelKey": "attr.colPrimaryKey",
+              "width": 92,
+              "valueMap": {
+                "true": {
+                  "labelKey": "attr.yes",
+                  "tone": "success"
+                },
+                "false": {
+                  "labelKey": "attr.dash"
+                }
+              }
+            },
+            {
+              "key": "enable",
+              "labelKey": "attr.colStatus",
+              "kind": "tag",
+              "width": 92,
+              "valueMap": {
+                "true": {
+                  "labelKey": "attr.enabled"
+                },
+                "false": {
+                  "labelKey": "attr.disabled"
+                }
+              }
+            }
+          ]
+        },
         "id": "builtin-product-ca4fdbad-3485-46df-b70d-d33e2a48de36"
       },
       "detail": {
-        "component": "PanelData",
+        "component": "ObjectHeader",
         "target": "selected",
         "type": "platform:Attribute",
         "data": {
           "record": "record"
         },
+        "config": {
+          "subtitle": ""
+        },
         "id": "builtin-product-83e60864-e754-4960-aaf4-c1be3208e597"
+      },
+      "ownerCard": {
+        "component": "ObjectRefCard",
+        "target": "selected",
+        "type": "platform:Attribute",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "ownerObject",
+          "captionKey": "attr.colOwner"
+        },
+        "id": "builtin-product-6c4d8a19-2e7b-4f31-9a50-8b3d1e4f9c2a"
       },
       "form": {
         "component": "ObjectForm",
@@ -78,6 +189,7 @@
         },
         "operation": "platform:Attribute.save",
         "config": {
+          "actions": "create-only",
           "fixedFields": {
             "/className": {
               "state": "createIn"
@@ -102,7 +214,10 @@
         "operation": "attributes.delete",
         "target": "selected",
         "config": {
-          "type": "danger"
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "labelKey": "attr.delete"
         },
         "id": "builtin-product-42563142-b833-4d56-8b84-1715fccd9019"
       }
@@ -113,6 +228,7 @@
       "zh-CN": {
         "panel.name": "属性",
         "attr.description": "统一维护各对象类型的属性、数据类型与键配置",
+        "attr.refresh": "刷新",
         "attr.search": "筛选属性",
         "attr.allTypes": "全部对象类型",
         "attr.count": "{count} 项",
@@ -121,21 +237,29 @@
         "attr.colType": "数据类型",
         "attr.colBizKey": "业务键",
         "attr.colPrimaryKey": "主键",
+        "attr.colStatus": "状态",
         "attr.yes": "是",
+        "attr.dash": "-",
+        "attr.enabled": "启用",
+        "attr.disabled": "停用",
         "attr.empty": "没有找到属性",
         "attr.loading": "正在读取属性…",
         "attr.forbidden": "你没有读取属性的权限",
-        "attr.pick": "选择一条属性查看和编辑，或新建属性。",
+        "attr.notFound": "属性不存在或已删除",
+        "attr.back": "返回属性列表",
         "attr.creating": "新建属性",
-        "attr.editing": "编辑属性",
-        "attr.close": "关闭",
+        "attr.editing": "基本信息",
+        "attr.ownerSection": "所属对象类型",
+        "attr.ownerHint": "点击上方卡片可查看或维护所属对象类型；主键需通过页头“设为主键”操作变更。",
         "attr.setPrimaryKey": "设为主键",
         "attr.alreadyPrimaryKey": "已是主键",
+        "attr.delete": "删除",
         "attr.command.create": "新建属性"
       },
       "en": {
         "panel.name": "Attributes",
         "attr.description": "Maintain the attributes, data types and keys of every object type",
+        "attr.refresh": "Refresh",
         "attr.search": "Filter attributes",
         "attr.allTypes": "All object types",
         "attr.count": "{count} items",
@@ -144,16 +268,23 @@
         "attr.colType": "Data type",
         "attr.colBizKey": "Business key",
         "attr.colPrimaryKey": "Primary key",
+        "attr.colStatus": "Status",
         "attr.yes": "Yes",
+        "attr.dash": "-",
+        "attr.enabled": "Enabled",
+        "attr.disabled": "Disabled",
         "attr.empty": "No attributes found",
-        "attr.loading": "Loading attributes…",
-        "attr.forbidden": "You cannot read attributes",
-        "attr.pick": "Select an attribute to view and edit it, or create one.",
+        "attr.loading": "Loading attribute…",
+        "attr.forbidden": "You cannot read this attribute",
+        "attr.notFound": "Attribute not found or deleted",
+        "attr.back": "Back to attributes",
         "attr.creating": "New attribute",
-        "attr.editing": "Edit attribute",
-        "attr.close": "Close",
+        "attr.editing": "Basic information",
+        "attr.ownerSection": "Owning object type",
+        "attr.ownerHint": "Click the card above to inspect or maintain the owning object type. Use the header action to change the primary key.",
         "attr.setPrimaryKey": "Set as primary key",
         "attr.alreadyPrimaryKey": "Already the primary key",
+        "attr.delete": "Delete",
         "attr.command.create": "New attribute"
       }
     }

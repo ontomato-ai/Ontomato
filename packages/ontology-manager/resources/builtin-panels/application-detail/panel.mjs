@@ -60,7 +60,7 @@ const ApplicationDetailPanel = {
     });
     const grantPrincipalId = computed(() => values.value.grantPrincipalId ?? "");
 
-    // Read-only projection outputs only (zero usePanelData calls, zero outputFields/fields bag).
+    // Read-only projection outputs only (no raw record reads or fields bag).
     const recordStatus = usePanelOutput("headerTitle", "status");
     const recordError = usePanelOutput("headerTitle", "errorMessage");
     const canMaintainOutput = usePanelOutput("headerTitle", "canMaintain");

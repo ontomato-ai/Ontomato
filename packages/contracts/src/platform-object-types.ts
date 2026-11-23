@@ -416,16 +416,44 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       catalogue: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
       definition: { source: "object", parameterMode: "fixed", params: {}, result: "sdkComponentDefinition" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      dataRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      configRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      inputRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      outputRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      operationRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
     },
   },
   [PRODUCT_PROJECTION]: {
     ...describeType("productProjection", "product"),
     reads: {
       ...productCatalogueFormReads,
-      query: { ...catalogueQuery, result: "productProjectionList" },
-      record: { ...catalogueRecord, result: "productProjectionRecord" },
+      query: { ...catalogueQuery, result: "panelRecordQuery" },
+      record: {
+        ...catalogueRecord,
+        result: "panelRecord",
+        outputs: {
+          canEdit: { kind: "scalar", type: "boolean" },
+          canGrant: { kind: "scalar", type: "boolean" },
+          canDelete: { kind: "scalar", type: "boolean" },
+          canCopy: { kind: "scalar", type: "boolean" },
+          isBuiltin: { kind: "scalar", type: "boolean" },
+          isChart: { kind: "scalar", type: "boolean" },
+          domainShared: { kind: "scalar", type: "boolean" },
+          revision: { kind: "scalar", type: "number" },
+          usedByCount: { kind: "scalar", type: "number" },
+          hiddenUsedByCount: { kind: "scalar", type: "number" },
+        },
+      },
       usedBy: { ...catalogueRecord, result: "productProjectionUsedBy" },
+      usedByRows: { ...catalogueRecord, result: "panelRecordList", rowType: PRODUCT_PANEL },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
+      grantRows: { ...catalogueRecord, result: "panelRecordList" },
+      dataRows: { ...catalogueRecord, result: "panelRecordList" },
+      configRows: { ...catalogueRecord, result: "panelRecordList" },
+      inputRows: { ...catalogueRecord, result: "panelRecordList" },
+      outputRows: { ...catalogueRecord, result: "panelRecordList" },
+      operationRows: { ...catalogueRecord, result: "panelRecordList" },
     },
     operations: productCatalogueOperations(PRODUCT_PROJECTION, "productProjections"),
   },
@@ -540,6 +568,18 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [EXPORT_FEEDBACK],
   },
 };
+
+/** Platform operation IDs whose server handler is a `form.save` rather than an action. */
+export const platformFormSaveOperations: ReadonlySet<string> = new Set(
+  Object.entries(platformObjectTypes).flatMap(([typeId, declaration]) =>
+    (declaration.operations ?? []).filter(id => id === `${typeId}.save` || id === CREATE_SCHEDULED_TASK),
+  ),
+);
+
+/** Whether a `PlatformOperation` ID is a registered platform `form.save` operation. */
+export function isPlatformFormSaveOperation(operationId: string): boolean {
+  return platformFormSaveOperations.has(operationId);
+}
 
 /** These families apply to the class or relationship identified by the current domain catalogue. */
 export const customerOntologyReads: Readonly<Record<string, PlatformReadDeclaration>> = {

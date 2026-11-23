@@ -639,6 +639,31 @@ export const components: readonly ComponentMetadata[] = [
     },
   }),
   defineComponentMeta({
+    componentId: "AnnotatedCode",
+    module: "@ontomato/sdk/base",
+    exportName: "AnnotatedCode",
+    role: "presentation",
+    meaning:
+      "Displays line-numbered source code alongside hierarchical line-range annotation segments from its `content` (`annotatedCode`) datum, with bidirectional line/segment highlighting and scrolling, a deduplicated kind legend, expandable structured detail rows with clickable reference buttons (`refKey`), an optional outdated-code notice when the `currentCode` input differs from `content.code`, and optional summary blocks. Emits `select-ref` and `select-segment`, accepts optional `currentCode` and `activeSegmentId` inputs (with `activeSegmentId` also writable to bound panel state), and exposes `status`, `activeSegmentId`, and `selectedRef` as read-only outputs.",
+    effects: "Reads the bound object's annotatedCode datum as the reader; writes only the panel's own segment selection state and read-only outputs.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: {
+      content: { results: ["annotatedCode"], required: true },
+    },
+    inputs: {
+      currentCode: { kind: "scalar", type: "string" },
+      activeSegmentId: { kind: "scalar", type: "string" },
+    },
+    outputs: {
+      activeSegmentId: { kind: "scalar", type: "string" },
+    },
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      activeSegmentId: { kind: "scalar", type: "string" },
+      selectedRef: { kind: "scalar", type: "string" },
+    },
+  }),
+  defineComponentMeta({
     componentId: "ConversationEntry",
     module: "@ontomato/sdk/base",
     exportName: "ConversationEntry",
@@ -676,7 +701,7 @@ export const components: readonly ComponentMetadata[] = [
           "productPanelUsedBy", "productPanelMembers", "productCatalogueGrants", "applicationEntries",
           "panelFormDescription", "panelOperationDescriptor", "panelOptionList", "panelGraphSchema", "panelGraphCounts",
           "panelGraphStart", "panelGraphNeighbors", "panelOntologyObjects", "panelRelationNeighbors", "chartTemplate", "metricOutput",
-          "sdkComponentDefinition", "actionDefinition", "actionExplanation",
+          "sdkComponentDefinition", "actionDefinition", "actionExplanation", "annotatedCode",
           "scheduledTaskRunPage", "scheduledTaskRun",
         ],
         required: false,
