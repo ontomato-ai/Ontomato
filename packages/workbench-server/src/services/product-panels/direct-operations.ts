@@ -100,6 +100,7 @@ function resolvePinnedInputs(
 function resolvePinnedBoundParams(
   binding: ProjectionOperationBinding,
   pinnedInputs: ReadonlyMap<string, unknown>,
+  target?: PanelOperationTarget | null,
 ): Record<string, unknown> {
   const boundParams: Record<string, unknown> = {};
   for (const [paramKey, paramBinding] of Object.entries(binding.params ?? {})) {
@@ -109,6 +110,16 @@ function resolvePinnedBoundParams(
     }
     if ("input" in paramBinding && pinnedInputs.has(paramBinding.input)) {
       boundParams[paramKey] = pinnedInputs.get(paramBinding.input);
+      continue;
+    }
+    if (
+      "row" in paramBinding
+      && paramBinding.row === "primaryKey"
+      && binding.target
+      && "row" in binding.target
+      && target?.kind === "object"
+    ) {
+      boundParams[paramKey] = target.primaryKey;
     }
   }
   return boundParams;
@@ -424,7 +435,7 @@ export async function declaredDirectOperation(
   if (!bound) return unavailable(id);
 
   const pinnedInputs = resolvePinnedInputs(use, trail, placement.member, options.isFrameRoot === true);
-  const boundParams = resolvePinnedBoundParams(bound.binding, pinnedInputs);
+  const boundParams = resolvePinnedBoundParams(bound.binding, pinnedInputs, target);
   const current = await admitBoundOperation({ owner, credentials }, placement, bound, () => target, pinnedInputs);
   if (!current) throw new HttpError(400, `Select an eligible target for operation '${id}'`, "PANEL_SELECTION_REQUIRED");
   if (current.effect === "read") return { ...current, boundParams };
