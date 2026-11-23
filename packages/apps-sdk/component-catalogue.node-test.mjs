@@ -229,6 +229,22 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       selectedType: { kind: "scalar", type: "string" },
       query: { kind: "scalar", type: "string" },
     });
+    const relationKindList = { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } };
+    assert.deepEqual(declared.get("ObjectRelations").inputs, {
+      selected: ontologyNode,
+      visibleRelationKinds: relationKindList,
+    });
+    assert.deepEqual(declared.get("ObjectRelations").outputs, {
+      selected: ontologyNode,
+      start: ontologyNode,
+      visibleRelationKinds: relationKindList,
+    });
+    for (const propName of ["show-relation-filter", "allow-set-start", "show-summary", "collapse-empty-groups"]) {
+      const prop = declared.get("ObjectRelations").config.find((entry) => entry.name === propName);
+      assert.equal(prop?.required, false, `ObjectRelations.${propName} is optional`);
+      assert.match(prop?.type ?? "", /boolean/, `ObjectRelations.${propName} is boolean`);
+      assert.equal(prop?.default, "false", `ObjectRelations.${propName} defaults to false`);
+    }
     // The upload control runs its operation through the platform's upload contract, in a frame and in the platform's page.
     assert.equal(declared.get("FileUploadControl").config.find(prop => prop.name === "overwrite-on")?.required, false);
     // Configuration is the props a projection sets, kept apart from the running inputs a placement supplies.
@@ -285,6 +301,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     ]);
     assert.deepEqual(Object.keys(declared.get("ObjectGraph").readOnlyOutputs ?? {}).sort(), [
       "edgeCount", "error", "nodeCount", "pathHops", "pathMessage", "pathStatus", "status",
+    ]);
+    assert.deepEqual(Object.keys(declared.get("ObjectRelations").readOnlyOutputs ?? {}).sort(), [
+      "edgeCount", "label", "status",
     ]);
 
     // SDK UI primitives, directives, and theme tokens are published under Ontomato SDK names with zero third-party leaks.
