@@ -12,15 +12,15 @@ const json = (body: unknown): PlatformRequests => ({ request: async () => Respon
 
 it("resolves nullable model choices in input order, including missing and repeated values", async () => {
   const [adapter] = modelOptionAdapters(json({ data: {
-    models: [{ ref: "provider/chat", type: "chat", name: "Chat" }],
-    defaultModelId: "provider/chat", embeddingModelId: null,
+    models: [{ name: "chat", type: "chat" }],
+    defaultModel: "chat", embeddingModel: null,
   } }));
-  const values = [null, "provider/retired", "provider/chat", null, "provider/chat"];
+  const values = [null, "retired", "chat", null, "chat"];
   const resolved = await adapter!.options!.resolve(values);
   expect(resolved.map(option => option.value)).toEqual(values);
   expect(resolved[0]).toMatchObject({ label: "agents.useDomainDefault" });
   expect(resolved[1]).toMatchObject({ unavailable: { reason: "assistant.unavailable" } });
-  expect(resolved[2]).toMatchObject({ label: "Chat" });
+  expect(resolved[2]).toMatchObject({ label: "chat" });
 });
 
 it("resolves each user choice and keeps the owner's reason for an unavailable member", async () => {

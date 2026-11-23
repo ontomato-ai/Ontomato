@@ -86,11 +86,11 @@ describe("operations agent model", () => {
     expect(row().find("[role='alert']").text()).toBe("Model legacy/removed-model is no longer configured");
     expect(save(wrapper).attributes("disabled")).toBeDefined();
 
-    await choose(row(), "deepseek/deepseek-chat");
+    await choose(row(), "deepseek-chat");
     expect(stored).not.toHaveBeenCalled();
     await save(wrapper).trigger("click");
     await flushPromises();
-    expect(stored).toHaveBeenCalledWith({ modelId: "deepseek/deepseek-chat" });
+    expect(stored).toHaveBeenCalledWith({ modelId: "deepseek-chat" });
     expect(row().find("[role='alert']").exists()).toBe(false);
     expect(save(wrapper).attributes("disabled")).toBeDefined();
   });
@@ -101,14 +101,14 @@ describe("operations agent model", () => {
     const error = vi.spyOn(ElMessage, "error");
     const wrapper = await mountPage();
     const row = () => wrapper.find(".agent-model-row");
-    expect(selected(row())).toBe("Domain default (Qwen (gateway/qwen-main))");
+    expect(selected(row())).toBe("Domain default (qwen-main)");
 
-    await choose(row(), "deepseek/deepseek-chat");
+    await choose(row(), "deepseek-chat");
     await save(wrapper).trigger("click");
     await flushPromises();
     expect(error).toHaveBeenCalledWith("Not saved");
     expect(row().find(".agent-model-note.danger").text()).toBe("Model not configured");
-    expect(selected(row())).toBe("deepseek/deepseek-chat");
+    expect(selected(row())).toBe("deepseek-chat");
     expect(save(wrapper).attributes("disabled")).toBeUndefined();
   });
 });
