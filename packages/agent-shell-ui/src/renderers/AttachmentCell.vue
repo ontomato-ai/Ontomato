@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ElImage } from "element-plus/es/components/image/index";
-import { ElImageViewer } from "element-plus/es/components/image-viewer/index";
+import { ImagePreview, ImageViewer } from "@ontomato/foundation-ui/preview";
 import { FileText, ExternalLink, File } from "lucide-vue-next";
 import { cellAttachments } from "./cell-attachments";
 import TableTextCell from "./TableTextCell.vue";
@@ -17,9 +16,9 @@ const viewing = ref<number | null>(null);
     <template v-for="(item, index) in attachments" :key="`${index}:${item.url}`">
       <figure v-if="item.kind === 'image'" class="cell-image">
         <button type="button" class="image-open" :aria-label="item.caption" @click.stop="viewing = images.indexOf(item.url)">
-        <el-image :src="item.url" :alt="item.caption" :title="item.caption" fit="cover" loading="lazy">
+        <ImagePreview :src="item.url" :alt="item.caption" :title="item.caption" fit="cover" loading="lazy">
           <template #error><span class="image-error">{{ item.caption }}</span></template>
-        </el-image>
+        </ImagePreview>
         </button>
         <figcaption :title="item.caption">{{ item.caption }}</figcaption>
       </figure>
@@ -32,7 +31,7 @@ const viewing = ref<number | null>(null);
     </template>
   </div>
   <TableTextCell v-else :text="text" />
-  <el-image-viewer v-if="viewing !== null" :url-list="images" :initial-index="viewing" teleported hide-on-click-modal @close="viewing = null" />
+  <ImageViewer v-if="viewing !== null" :url-list="images" :initial-index="viewing" teleported hide-on-click-modal @close="viewing = null" />
 </template>
 
 <style scoped>

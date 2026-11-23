@@ -8,7 +8,7 @@ export interface CellAttachment {
 export function cellAttachments(text: string): CellAttachment[] {
   let value: unknown = text.trim();
   if (!value) return [];
-  if (typeof value === "string" && /^[\[{]/.test(value)) {
+  if (typeof value === "string" && /^[[{]/.test(value)) {
     try { value = JSON.parse(value); } catch { return []; }
   }
   const items = Array.isArray(value) ? value : [value];
@@ -18,7 +18,7 @@ export function cellAttachments(text: string): CellAttachment[] {
     const object = item && typeof item === "object" && !Array.isArray(item) ? item as Record<string, unknown> : null;
     const url = typeof item === "string" ? item.trim() : typeof object?.path === "string" ? object.path.trim() : "";
     // Relative web paths and HTTP(S) only; never execute a scheme supplied by a data row.
-    if (!url || /[\u0000-\u0020\\]/.test(url) || !/^(?:https?:\/\/|\/(?!\/)|\.\.?\/)/i.test(url)) return [];
+    if (!url || Array.from(url).some((ch) => ch.charCodeAt(0) <= 0x20 || ch === "\\") || !/^(?:https?:\/\/|\/(?!\/)|\.\.?\/)/i.test(url)) return [];
     const pathname = url.split(/[?#]/)[0]!;
     const kind = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(pathname) ? "image"
       : /\.pdf$/i.test(pathname) ? "pdf" : "file";
