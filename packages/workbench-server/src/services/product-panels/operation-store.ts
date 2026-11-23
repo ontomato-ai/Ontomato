@@ -23,7 +23,7 @@ export const panelOperationStore = {
     return this.get(owner,intent.intentId);
   },
   async claim(owner: AssistantOwner, intent: PanelOperationIntent) {
-    return (await db().query(`UPDATE ${t("panel_operation_intents")} SET intent=$4::jsonb WHERE domain_id=$1 AND owner_id=$2 AND id=$3 AND intent->>'dispatched'='false' RETURNING id`, [owner.domainId,owner.userId,intent.intentId,{...intent,dispatched:true}])).rowCount !== 0;
+    return (await db().query(`UPDATE ${t("panel_operation_intents")} SET intent=$4::jsonb WHERE domain_id=$1 AND owner_id=$2 AND id=$3 AND intent->>'dispatched'='false' AND intent->'invalidated' IS NULL RETURNING id`, [owner.domainId,owner.userId,intent.intentId,{...intent,dispatched:true}])).rowCount !== 0;
   },
   async outcome(owner: AssistantOwner, id: string, outcome: PanelOperationOutcome) {
     await db().query(`UPDATE ${t("panel_operation_intents")} SET intent=jsonb_set(intent,'{outcome}',$4::jsonb) WHERE domain_id=$1 AND owner_id=$2 AND id=$3`, [owner.domainId,owner.userId,id,JSON.stringify(outcome)]);

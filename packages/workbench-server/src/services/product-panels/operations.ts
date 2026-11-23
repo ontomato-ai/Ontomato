@@ -141,10 +141,41 @@ function mergeBoundParams(
   return merged;
 }
 
+function mergeWriteInput(
+  supplied: Record<string, unknown>,
+  resolved: Pick<ReturnType<typeof writeOperation>, "boundParams" | "bindingParams" | "handler" | "descriptor">,
+  onMismatch: (key: string) => never,
+): Record<string, unknown> {
+  const merged = mergeBoundParams(supplied, resolved, onMismatch);
+  if (resolved.handler.handlerRef !== EXECUTE_OBJECT_ACTION || !resolved.bindingParams) return merged;
+
+  const values = merged.values as Record<string, unknown> | undefined;
+  for (const [paramKey, spec] of Object.entries(resolved.bindingParams)) {
+    if (!("formFields" in spec)) continue;
+    const raw = values?.[paramKey];
+    if (typeof raw !== "string") continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new HttpError(400, `Operation input '${paramKey}' must be valid JSON`, "ACTION_INPUT_INVALID");
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new HttpError(400, `Operation input '${paramKey}' must be a JSON object`, "ACTION_INPUT_INVALID");
+    }
+    for (const fieldKey of Object.keys(parsed)) {
+      if (!Object.hasOwn(spec.formFields, fieldKey)) {
+        throw new HttpError(400, `Operation input '${paramKey}' contains undeclared field '${fieldKey}'`, "ACTION_INPUT_INVALID");
+      }
+    }
+  }
+  return merged;
+}
+
 /** Shared server-side materialization for both human and agent write operations. */
 function materializeWriteInvocation(
   input: CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest | z.infer<typeof inspectPanelOperationImpactRequestSchema>,
-  resolved: BoundParamTarget,
+  resolved: Pick<ReturnType<typeof writeOperation>, "boundParams" | "bindingParams" | "handler" | "descriptor">,
 ): PanelOperationInvocation {
   const rejectParamMismatch = (key: string): never => {
     throw new HttpError(403, `Operation input '${key}' does not match the panel member binding`, "OPERATION_PARAM_MISMATCH");
@@ -152,14 +183,14 @@ function materializeWriteInvocation(
   if ("calls" in input) {
     const calls = input.calls.map(call => ({
       ...call,
-      input: mergeBoundParams(call.input, resolved, rejectParamMismatch),
+      input: mergeWriteInput(call.input, resolved, rejectParamMismatch),
     }));
     return { calls } as PanelOperationInvocation;
   }
   return {
     call: {
       ...input.call,
-      input: mergeBoundParams(input.call.input, resolved, rejectParamMismatch),
+      input: mergeWriteInput(input.call.input, resolved, rejectParamMismatch),
     },
   };
 }
@@ -199,9 +230,9 @@ function requireFrozenOperation(
     throw new HttpError(409, "Operation definition changed; create a new intent", "INTENT_CHANGED");
   };
   if ("calls" in intent) {
-    for (const call of intent.calls) mergeBoundParams(call.input, current, rejectChanged);
+    for (const call of intent.calls) mergeWriteInput(call.input, current, rejectChanged);
   } else {
-    mergeBoundParams(intent.call.input, current, rejectChanged);
+    mergeWriteInput(intent.call.input, current, rejectChanged);
   }
 }
 
@@ -285,6 +316,14 @@ async function replay(record: StoredPanelOperationIntent, owner: AssistantOwner,
     kind: "not-dispatched", intentId: record.intentId, code: PANEL_CONFIRMATION_EXPIRED,
     message: "This confirmation expired. Start a new operation.",
   };
+  if (record.kind === "current" && !isPanelHumanOperationIntent(record.intent) && record.intent.invalidated) {
+    return {
+      kind: "not-dispatched",
+      intentId: record.intent.intentId,
+      code: record.intent.invalidated.code,
+      message: record.intent.invalidated.message,
+    };
+  }
   return { kind: "dispatched", intentId: record.intent.intentId, outcome: await presentOutcome(record.intent, owner, credentials) };
 }
 function invocationOf(input: PanelOperationInvocation): PanelOperationInvocation {
@@ -630,12 +669,23 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   if ("affected" in outcome && outcome.affected) {
     const { affected } = outcome;
     const target = "call" in intent && affected.objects.length === 1 ? affected.objects[0]! : null;
+    const operation = outcome.kind === "success" && "call" in prepared && current.handler.handlerRef === EXECUTE_OBJECT_ACTION
+      ? {
+          operationId: intent.operation.id,
+          panelId: intent.panelId,
+          target: prepared.target?.kind === "object"
+            ? { objectType: prepared.target.objectType, primaryKey: prepared.target.primaryKey }
+            : null,
+          ...(outcome.message ? { message: outcome.message } : {}),
+        }
+      : undefined;
     publishObjectChanged({
       domainId: intent.initiator.domainId,
       initiator: intent.initiator.userId,
       rootSession: intent.rootSession,
       target,
       affected,
+      ...(operation ? { operation } : {}),
     });
   }
   return { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome }, owner, credentials, current.view) };

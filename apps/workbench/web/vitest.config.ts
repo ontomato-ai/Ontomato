@@ -25,7 +25,7 @@ const serverFileUrls = {
 };
 
 export default defineConfig(async () => ({
-  plugins: [vue(), elementComponents(), await panelAppearance(editionSource), ...(integration ? [serverFileUrls] : [])],
+  plugins: [vue(), elementComponents(), await panelAppearance(editionSource), serverFileUrls],
   resolve: {
     // The apps SDK's sources name their product's edition by this module; the tests bind this product's, as build:sdk does.
     alias: [

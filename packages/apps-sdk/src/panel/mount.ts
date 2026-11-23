@@ -189,7 +189,10 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     if (parsed.kind === "activity") return run.activity(parsed.active);
     if (parsed.kind === "address") return run.address(parsed.address);
     if (parsed.kind === "projections-changed") return run.projectionsChanged(parsed.projections);
-    if (parsed.kind === "object-changed") return run.objectChanged(parsed.target);
+    if (parsed.kind === "object-changed") {
+      if (parsed.operation) instance.operationCompleted({ operation: parsed.operation, affected: parsed.affected });
+      return run.objectChanged(parsed.target);
+    }
     // A person's click in the platform's header: the same operation an agent's call reaches.
     const { requestId, id, input } = parsed;
     instance.invoke(id, input).then(

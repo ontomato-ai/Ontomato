@@ -12,7 +12,7 @@ import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import { panelStateValueSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
+import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { fileName } from "./artifacts";
 import type { OpenArtifact, ShellFeatureDeclaration } from "./types";
 
@@ -103,7 +103,11 @@ const READY: DisplayLoad = { status: "ready" };
  * names no single object (a batch). `affected` is the owner's own account of the objects and types the write touched,
  * passed through as the owner gave it; the host reads it to refresh what depends on them, such as a menu's counts.
  */
-export type DisplayObjectChange = { target: PanelObjectIdentity | null; affected?: PanelOperationAffected };
+export type DisplayObjectChange = {
+  target: PanelObjectIdentity | null;
+  affected?: PanelOperationAffected;
+  operation?: PanelCompletedOperation;
+};
 
 /**
  * The signal a shown page reads its objects again by: each change counts up `seq`. The same signal reaches the page

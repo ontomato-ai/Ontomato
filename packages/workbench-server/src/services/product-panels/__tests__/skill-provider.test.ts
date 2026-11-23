@@ -657,4 +657,101 @@ it("describes targetless customer Actions without requiring object selection and
   expect(markdown).toContain("No object selection is required.");
   expect(markdown).toContain("call: { target: null, input: { values: { ... } } }");
   expect(markdown).not.toContain("for the actual selected object");
+  expect(markdown).not.toContain("### Draft a change");
+});
+
+it("includes customer Action create and edit ObjectForms in Draft a change and directs agents to fill the live form before /operate", async () => {
+  javaSources([uses[0]!]);
+  vi.mocked(backendPost).mockImplementation(async (_name, url) => {
+    if (String(url).endsWith("/action/queryList")) {
+      return {
+        text: JSON.stringify({
+          success: true,
+          data: [
+            {
+              id: "create-order",
+              name: "Create order",
+              codeHash: "a".repeat(64),
+              target: null,
+              definition: { affects: ["Order"] },
+              function: { parameters: [{ name: "customer", type: "TYPE_STRING" }] },
+            },
+            {
+              id: "update-order",
+              name: "Update order",
+              codeHash: "b".repeat(64),
+              target: { className: "Order", keyParameter: "order_id" },
+              definition: { affects: ["Order"] },
+              function: {
+                parameters: [
+                  { name: "order_id", type: "TYPE_STRING" },
+                  { name: "note", type: "TYPE_STRING" },
+                ],
+              },
+            },
+          ],
+        }),
+      } as never;
+    }
+    throw new Error(`Unexpected backendPost ${url}`);
+  });
+  extraProjections.set("order-create-form", {
+    name: "Order create form",
+    description: "Creates a customer order.",
+    visibility: "domain",
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: {},
+    outputs: {},
+    data: {
+      createForm: { source: { type: { kind: "ObjectType", id: "Order" } }, read: "createForm", params: {} },
+    },
+    config: {},
+    operations: {
+      save: { operation: { kind: "Action", id: "create-order" } },
+    },
+  });
+  extraProjections.set("order-edit-form", {
+    name: "Order edit form",
+    description: "Edits a customer order.",
+    visibility: "domain",
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { target: { kind: "object", objectType: "Order" } },
+    outputs: {},
+    data: {
+      form: { source: { object: { input: "target" } }, read: "form", params: {} },
+    },
+    config: {},
+    operations: {
+      save: { operation: { kind: "Action", id: "update-order" }, target: { input: "target" } },
+    },
+  });
+  const id = uses[0]!.panelId;
+  const row = trialPanels.get(id)!;
+  panels.set(id, {
+    ...row,
+    content: { ...row.content, ...vuePanelContent("createForm", "editForm") },
+    manifest: {
+      state: {
+        selectedOrder: { type: { kind: "object", objectType: "Order" }, personal: false, deepLink: true, external: false },
+      },
+      members: {
+        createForm: { target: { projectionId: "order-create-form" } },
+        editForm: { target: { projectionId: "order-edit-form" }, inputs: { target: { state: "selectedOrder" } } },
+      },
+    },
+  });
+  const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
+  const manifest = await offering!.readManifest(taskRef);
+  expect(manifest.description).toContain("draft changes");
+  const markdown = (await offering!.provide(taskRef)).files[0]!.content;
+  const draftSection = markdown.split("### Draft a change")[1]!.split(/\n### /)[0]!;
+  expect(draftSection).toContain('- Form `createForm.save`. For creation, use `{"operation":"Order.create","target":{"objectType":"Order"}}`.');
+  expect(draftSection).toContain('- Form `editForm.save`. For editing, use `{"operation":"Order.update","target":{"objectType":"Order","id":"<owner object id>"}}`.');
+  expect(draftSection).toContain("present({ target:");
+  const opsSection = markdown.split("### Declared operations")[1]!;
+  expect(opsSection).toContain('Create order (createForm.save), form save via Action create-order, target null.');
+  expect(opsSection).toContain('fill this page\'s live form using "Draft a change" and `present`');
+  expect(opsSection).toContain('Update order (editForm.save), form save via Action update-order, target {"input":"target"}.');
+  expect(opsSection).toContain("pass its `operationId` and `call` unchanged to `/operate`");
+  expect(opsSection).toContain("FORM_CONFIRMATION_STALE");
 });

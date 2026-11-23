@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 import type { AgentHostObjectChangedFrame, AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
+import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
   ObserveDisplayRequest, PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
@@ -58,6 +58,7 @@ export function publishObjectChanged(input: {
   domainId: string;
   initiator: string;
   rootSession: AgentHostObjectChangedFrame["session"];
+  operation?: PanelCompletedOperation;
 } & (
   | { target: PanelObjectIdentity; affected?: PanelOperationAffected }
   | { target: null; affected: PanelOperationAffected }

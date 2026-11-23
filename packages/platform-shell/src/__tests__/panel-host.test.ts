@@ -453,7 +453,7 @@ describe("the panel host", () => {
     // Leave to another page, then return with a valid selection: the kept instance clears the error and mounts anew.
     shown.value = false;
     await nextTick();
-    port.codedFailure = null;
+    port.codedFailure = undefined;
     initial.value = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } };
     shown.value = true;
     await vi.waitFor(() => {

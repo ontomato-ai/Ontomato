@@ -250,6 +250,9 @@ describe("executing an action on a customer object", () => {
     expect(operation.targetSchema.safeParse(target).success).toBe(true);
     expect(operation.targetSchema.safeParse({ ...target, primaryKey: "00124" }).success).toBe(false);
     expect(operation.targetSchema.safeParse({ ...target, objectType: "Invoice" }).success).toBe(false);
+    expect(operation.inputSchema.safeParse({ values: { note: "ok", amount: "10" } }).success).toBe(true);
+    expect(operation.inputSchema.safeParse({ values: { unknownParam: "x" } }).success).toBe(false);
+    expect(operation.inputSchema.safeParse({ values: { order_id: "00124" } }).success).toBe(false);
   });
 
   it("names the object as the confirming person reads it from the customer ontology owner", async () => {

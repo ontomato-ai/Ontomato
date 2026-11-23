@@ -121,8 +121,8 @@ const platformApplications = inject(platformApplicationsKey, null);
  * object types the write changed.
  */
 function changed(change: PanelObjectChange) {
-  host.value?.refresh(change.target, change.affected);
-  frameHost.value?.refresh(change.target, change.affected);
+  host.value?.refresh(change.target, change.affected, change.operation);
+  frameHost.value?.refresh(change.target, change.affected, change.operation);
   if (change.affected) {
     countedTypesChanged?.(change.affected.objectTypes);
   }

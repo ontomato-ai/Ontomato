@@ -35,6 +35,7 @@ import {
   resolveActionSaveWiring,
   type ActionSaveWiring,
   type FormSource,
+  type FormSaveResult,
   type HeldMemberDraft,
 } from "../panel/member-forms";
 import { formControlsKey } from "./form-controls";
@@ -560,6 +561,20 @@ function reread() {
     },
   );
 }
+onBeforeUnmount(panel.instance.onOperationCompleted(async ({ operation, affected }) => {
+  const into = target.value;
+  if (!into || !canSettle.value || saving.value) return;
+  const save = admittedSave.value;
+  if (!save || panel.instance.operationIdOf(slot.slot, save.name) !== operation.operationId) return;
+  if (into.kind === "object" && (!operation.target || targetKey(into) !== targetKey({ kind: "object", ...operation.target }))) return;
+  if (into.kind === "draft" && operation.target) return;
+  const created = affected?.objects.filter((object) => object.objectType === objectType) ?? [];
+  await settleSave(into, {
+    primaryKey: into.kind === "object" ? into.primaryKey : created.length === 1 ? created[0]!.primaryKey : null,
+    message: operation.message,
+  }, prunedValues.value);
+}));
+
 useProjectionObjectRefresh((id) => id === key.value, () => {
   if (hasActiveDraft.value && !userEdited.value && !saving.value && target.value) {
     const current = target.value;
@@ -606,6 +621,16 @@ function set(path: string, value: RuntimeJsonValue) {
 function remove(path: string) {
   edit(path, withoutValueAt(values.value, path));
 }
+function notifyFormChanged() {
+  const currentTarget = target.value;
+  if (!currentTarget) return;
+  panel.instance.notifyFormEdited(
+    currentTarget.kind === "object"
+      ? { kind: "object", objectType: currentTarget.objectType, primaryKey: currentTarget.primaryKey, slot: slot.slot }
+      : { kind: "draft", objectType, slot: slot.slot },
+  );
+}
+
 /** The reader's edit of one field, as the values it leaves: submitted, and the owner asked again where it says so. */
 function edit(path: string, next: PanelFormValues) {
   if (isFixed(path)) throw new Error(`The page fixes the field ${path}; it is not edited in the form`);
@@ -616,14 +641,7 @@ function edit(path: string, next: PanelFormValues) {
   values.value = next;
   userEdited.value = true;
   editedAt.set(path, ++edits);
-  const currentTarget = target.value;
-  if (currentTarget) {
-    panel.instance.notifyFormEdited(
-      currentTarget.kind === "object"
-        ? { kind: "object", objectType: currentTarget.objectType, primaryKey: currentTarget.primaryKey, slot: slot.slot }
-        : { kind: "draft", objectType, slot: slot.slot },
-    );
-  }
+  notifyFormChanged();
   const field = activeFieldAt(fields.value, next, path);
   if (field?.refreshOnChange) askOwner(path);
 }
@@ -1043,7 +1061,11 @@ useProjectionForm({
     if (!opened.value) return null;
     const currentTarget = target.value;
     const modified = [...dirtyFields.value];
+    const save = currentTarget && canSubmit.value && Object.keys(activeInvalid.value).length === 0
+      ? forms.prepareActionSave(currentTarget, saveInput(prunedValues.value), saveContext())
+      : null;
     return {
+      ...(save ? { save } : {}),
       ...(currentTarget
         ? {
             target: currentTarget.kind === "object"
@@ -1067,6 +1089,7 @@ function resetDraft(reopenWhenUnfieldedRefusal: boolean) {
   if (ownerOpened.value) adopt(ownerOpened.value);
   if (reopen) load(target.value);
   if (hasActiveDraft.value) void panel.instance.settleDraft(slot.slot).catch(showRefusal);
+  notifyFormChanged();
 }
 
 function discard() {
@@ -1174,6 +1197,44 @@ function takeSavedFields(receipt: PlatformObjectRefusal) {
   if (held) held = { ...held, baseline, submitted: submitted.value, changed: changed.value };
 }
 
+function saveInput(payloadValues: PanelFormValues) {
+  const { revision } = opened.value!;
+  return {
+    values: payloadValues,
+    submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
+    ...(revision === undefined ? {} : { revision }),
+  };
+}
+
+function saveContext() {
+  return {
+    changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
+    baselineValues: opened.value!.values,
+    formatUnwiredFieldRefusal: (paths: readonly string[]) => ({
+      message: te("platform.formActionUnwiredFields")
+        ? t("platform.formActionUnwiredFields", { fields: paths.join(", ") })
+        : `Cannot save: the current save action does not accept changes to ${paths.join(", ")}`,
+      fieldMessage: () => actionFieldReadOnlyReason.value,
+    }),
+  };
+}
+
+/** Finish a successful save whether the page button or the agent requested it. */
+async function settleSave(into: PanelFormTarget, saved: FormSaveResult, payloadValues: PanelFormValues) {
+  held = heldRefusal = null;
+  if (into.kind === "draft" && saved.primaryKey === null) {
+    adopt(ownerOpened.value!);
+    panel.notify({ kind: "success", text: saved.message ?? t("platform.operationDone") });
+  } else {
+    adopt({ ...ownerShown.value!, values: payloadValues, errors: [] });
+    if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey! });
+  }
+  emit("saved", { className: objectType, primaryKey: saved.primaryKey });
+  if (hasActiveDraft.value) {
+    await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey ?? undefined : undefined);
+  }
+}
+
 /**
  * Writes the form through its owner — the selected object's update, or the create — with the revision it was read at
  * where the owner has one. An owner that refuses has its reason shown beside the form and its field messages on the
@@ -1191,55 +1252,8 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
   errors.value = {};
   const payloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
   try {
-    const revision = opened.value!.revision;
-    const saved = await forms.save(into, {
-      values: payloadValues, submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
-      ...(revision === undefined ? {} : { revision }),
-    }, override, {
-      changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
-      baselineValues: opened.value?.values,
-      formatUnwiredFieldRefusal: (paths) => ({
-        message: te("platform.formActionUnwiredFields")
-          ? t("platform.formActionUnwiredFields", { fields: paths.join(", ") })
-          : `Cannot save: the current save action does not accept changes to ${paths.join(", ")}`,
-        fieldMessage: () => actionFieldReadOnlyReason.value,
-      }),
-    });
-    submitted.value = new Set();
-    editedPaths.value = new Set();
-    held = null;
-    if (into.kind === "draft" && saved.primaryKey === null) {
-      // A create Action that does not report a single new primary key settles cleanly back to the initial create form,
-      // notifies success, emits `saved`, and lets `affected.objectTypes` drive list refreshes on the page.
-      if (ownerOpened.value) {
-        adopt(ownerOpened.value);
-      } else {
-        ownerOpened.value = { ...ownerShown.value!, values: {} };
-        opened.value = { ...description.value!, values: {} };
-        values.value = {};
-        invalid.value = {};
-        changed.value = new Set();
-      }
-      panel.notify({ kind: "success", text: saved.message ?? t("platform.operationDone") });
-      emit("saved", { className: objectType, primaryKey: null });
-      if (hasActiveDraft.value) {
-        await panel.instance.settleDraft(slot.slot, undefined);
-      }
-      return saved;
-    }
-    ownerOpened.value = { ...ownerShown.value!, values: payloadValues };
-    opened.value = { ...description.value!, values: payloadValues };
-    values.value = payloadValues;
-    invalid.value = {};
-    changed.value = new Set();
-    if (into.kind === "draft" && saved.primaryKey !== null) moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
-    emit("saved", { className: objectType, primaryKey: saved.primaryKey });
-    // The save went through the coordinator, whose receipt reaches the host's one refresh port and is read again there.
-
-    // A received draft ends with its save; a create draft first records the object it created when one was reported.
-    if (hasActiveDraft.value) {
-      await panel.instance.settleDraft(slot.slot, into.kind === "draft" && saved.primaryKey !== null ? saved.primaryKey : undefined);
-    }
+    const saved = await forms.save(into, saveInput(payloadValues), override, saveContext());
+    await settleSave(into, saved, payloadValues);
     return saved;
   } catch (reason) {
     if (reason instanceof PlatformObjectRefusal && targetKey(target.value) === targetKey(into)) takeSavedFields(reason);

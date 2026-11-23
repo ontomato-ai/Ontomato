@@ -25,7 +25,7 @@ import {
   type PanelOperation,
   type PanelThemeOverrides,
 } from "@ontomato/contracts/panel-manifest";
-import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
+import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
 import type { PanelFormEditedTarget, PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
@@ -191,7 +191,7 @@ export interface DirectPanelMount {
   /** Updates any declared public state fields in place (including non-deepLink fields), without reload or writes. */
   setState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Objects it may show changed: it reads again what it shows of them. */
-  refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
+  refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected, operation?: PanelCompletedOperation): void;
   /** Projections it places have newer definitions or changed access: it reads them again. */
   projectionsChanged(projections: readonly { id: string; revision?: number }[]): void;
   /** Whether its reads may run: not while its page is out of the reader's view. */
@@ -258,7 +258,7 @@ export interface PanelInstanceView {
    * Objects the instance may show changed (U10): what it shows of the target is read again — everything it shows when
    * there is none — and a direct instance also matches the owner's affected objects and types against what it read.
    */
-  refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
+  refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected, operation?: PanelCompletedOperation): void;
   /** A person clicked one of those operations: the instance runs it, and the promise settles with its answer. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
   /** Applies a live patch to any declared public state fields in place (no reload, no business writes). */
@@ -898,10 +898,16 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frame?.postMessage({ channel: PANEL_HOST_CHANNEL, ...message }, "*");
   }
 
-  function refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected) {
+  function refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected, operation?: PanelCompletedOperation) {
+    const scopedOperation = source.value?.kind === "registered" && operation?.panelId === source.value.panel.id
+      ? operation : undefined;
     if (!frameReady) pendingObjectRefresh = true;
-    else if (direct.value) direct.value.mount.refresh(target, affected);
-    else post({ kind: "object-changed", target: target && { ...target } });
+    else if (direct.value) direct.value.mount.refresh(target, affected, scopedOperation);
+    else post({
+      kind: "object-changed",
+      target,
+      ...(scopedOperation ? { operation: scopedOperation, affected } : {}),
+    });
   }
 
   function requestedState(panel: HostedPanelSource["panel"]) {

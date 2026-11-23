@@ -9,7 +9,8 @@ import {
 } from "@ontomato/contracts/panel-manifest";
 import { draftTarget, PAGE_DRAFT_QUERY_KEYS, type PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
-import { directReadDeclaration, projectionOperationIsRowScoped } from "@ontomato/contracts/panel-projection";
+import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
+import { declaredCustomerFormSaveName, directReadDeclaration, projectionOperationIsRowScoped, projectionReadReference } from "@ontomato/contracts/panel-projection";
 import {
   builtinProductPanelInputSchema, builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
   type BuiltinProductPanelInput, type BuiltinProductProjectionInput, type PanelSkillSource,
@@ -114,7 +115,7 @@ export async function panelSkillSources(
     return read;
   }
   let release: ReturnType<typeof readPanelComponentCatalogue> | undefined;
-  let actionNames: Promise<ReadonlyMap<string, string>> | undefined;
+  let actionCatalog: Promise<ReadonlyMap<string, { name: string; declaration: PanelOperationDeclaration }>> | undefined;
   return Promise.all([...panels].map(async ([id, byEntrance]): Promise<ProtectedSkillOffering | SkillSourceFailure> => {
     const scope = panelSkillScope(id);
     const row = await findCurrentProduct(domainId, "panel", id);
@@ -144,16 +145,16 @@ export async function panelSkillSources(
       const locale = reader.locale ? resolveLocale(reader.locale) : getLocale();
       const hasActions = entries.some(([, projection]) =>
         Object.values(projection.operations ?? {}).some(({ operation }) => operation.kind === "Action"));
-      const names = hasActions
-        ? await (actionNames ??= readObjectActions(reader).then(({ actions }) =>
-          new Map(actions.map(({ declaration, name }) => [declaration.id, name]))))
+      const actions = hasActions
+        ? await (actionCatalog ??= readObjectActions(reader).then(({ actions: list }) =>
+          new Map(list.map(({ declaration, name }) => [declaration.id, { name, declaration }]))))
         : undefined;
       const installedIds = [...new Set(entries.map(([, projection]) => projection.componentId))]
         .filter(componentId => !sdk.components.has(componentId));
       const installed = await Promise.all(installedIds.map(async id => [id, await readProjectionComponent(id, () => Promise.resolve(sdk), scope === "platform" ? null : domainId)] as const));
       const components = new Map<string, ComponentDeclaration>(sdk.components);
       for (const [id, component] of installed) if (component) components.set(id, component);
-      const description = describePanel(panel, new Map(entries), components, locale, names);
+      const description = describePanel(panel, new Map(entries), components, locale, actions);
       const operationLabels = description.operations.map(({ id, label }) => [id, label]);
       return {
         description, markdown: describeSkill(description),
@@ -190,6 +191,8 @@ export async function panelSkillSources(
   }));
 }
 
+type ActionCatalogEntry = { name: string; declaration: PanelOperationDeclaration };
+type CustomerFormBinding = { objectType: string; mode: "create" | "edit" };
 type PanelDescription = ReturnType<typeof describePanel>;
 type OperationDescription = BoundProjectionOperation & {
   id: string;
@@ -197,11 +200,34 @@ type OperationDescription = BoundProjectionOperation & {
   draft: boolean;
   member: string;
   rowScoped: boolean;
+  customerForm?: CustomerFormBinding;
 };
+
+function customerFormSaveModes(
+  projection: ProjectionDefinition,
+  actions: ReadonlyMap<string, ActionCatalogEntry> | undefined,
+): Map<string, CustomerFormBinding> {
+  const forms = new Map<string, CustomerFormBinding>();
+  if (!actions || projection.componentId !== "@ontomato/sdk:ObjectForm") return forms;
+  for (const [datum, mode] of [["form", "edit"], ["createForm", "create"]] as const) {
+    const read = projection.data[datum];
+    if (read?.read !== datum) continue;
+    const type = projectionReadReference(projection, read.source);
+    if (type?.kind !== "ObjectType") continue;
+    const creating = mode === "create";
+    const name = declaredCustomerFormSaveName(projection.operations, creating);
+    if (!name) continue;
+    const action = actions.get(projection.operations![name]!.operation.id)?.declaration;
+    if (action?.effect === "write" && (action.target.source === "none") === creating) {
+      forms.set(name, { objectType: type.id, mode });
+    }
+  }
+  return forms;
+}
 
 function describePanel(
   panel: PanelDefinition, records: ReadonlyMap<string, ProjectionDefinition>, components: ComponentCatalogue,
-  locale: string, actionNames: ReadonlyMap<string, string> | undefined,
+  locale: string, actions: ReadonlyMap<string, ActionCatalogEntry> | undefined,
 ) {
   const { manifest } = panel;
   const projections = Object.entries(manifest.members).flatMap(([member, declaration]) => {
@@ -219,25 +245,31 @@ function describePanel(
       }
       return [key, { ...read, result: readDeclaration.result }];
     }));
+    const boundOps = boundProjectionOperations(projection);
+    const customerForms = customerFormSaveModes(projection, actions);
     return [{
       text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
       reads: Object.entries(data).map(([dataName, { read, result }]) => ({ member, dataName, read, result })),
-      operations: boundProjectionOperations(projection).flatMap(bound => {
+      operations: boundOps.flatMap(bound => {
         if (!bound.owner && bound.binding.operation.kind === "PlatformOperation") {
           const field = safeField(["operations", bound.name]);
           throw new SkillSourceRecordError({ resourceId: projectionId, title: panel.name, field, reason: "operation_unregistered" });
         }
         const label = bound.owner
           ? panelServerOperationLabel(bound.owner.handler, locale)
-          : actionNames?.get(bound.binding.operation.id);
+          : actions?.get(bound.binding.operation.id)?.name;
         if (label === undefined) return [];
+        const customerForm = customerForms.get(bound.name);
         return [{
           ...bound,
           id: panelOperationId(member, bound.name),
           label,
-          draft: bound.owner !== undefined && allowsOperationDraft(projection, bound.owner.handler),
+          draft: bound.owner !== undefined
+            ? allowsOperationDraft(projection, bound.owner.handler)
+            : customerForm?.mode === "create",
           member,
           rowScoped: projectionOperationIsRowScoped(bound.binding),
+          ...(customerForm ? { customerForm } : {}),
         }];
       }),
     }];
@@ -252,7 +284,7 @@ function describePanel(
     content: panel.content,
     projections,
     operations,
-    forms: operations.filter(operation => operation.owner?.handler.kind === "form.save"),
+    forms: operations.filter(operation => operation.owner?.handler.kind === "form.save" || operation.customerForm !== undefined),
     hasPlacedMembers,
     reads: describeReads(projections.flatMap(projection => projection.reads), hasPlacedMembers),
   };
@@ -296,6 +328,9 @@ function describeSkill({ name, description, content, state, projections, operati
         "Send that `memberPath` in `/operate`. Build `operationId` by joining each segment's `member` and then the local operation name with dots. With `memberPath: [previewSegment,{member:\"approve\"}]`, where previewSegment has member preview and its actual selection, the local operation approve gives `operationId: \"preview.approve.approve\"`.",
       ] : []),
       "Form save (`form.save`) is a declared operation just like an action. In default confirmation mode, calling `/operate` for `form.save` returns `confirmation-required` with `intentId` while the form remains unsaved in the side panel (and the user can also click Save directly on the page). If the user edits or saves that form before confirming, the pending confirmation is invalidated (`FORM_CONFIRMATION_STALE`) and `/dispatch` refuses rather than overwriting the user's newer edits — let the user save on the page or re-read the form and request a new confirmation with a new `intentId`. Session automatic mode allows the same declared save to execute directly. Only the authenticated session owner changes that setting.",
+      ...(forms.some(form => form.customerForm !== undefined) ? [
+        "For a customer Action that saves a form, first fill the live form using \"Draft a change\" and `present`. Then read that form's `save` from `observe_display` and pass its `operationId` and `call` unchanged to `/operate` with the entry identifiers, member path when present, and a new intent ID. The page builds this call from its field wiring and only reports it when the form can save. If `save` is absent, resolve the form's issue before requesting a save. A later edit, discard, or page save invalidates the pending confirmation (`FORM_CONFIRMATION_STALE`).",
+      ] : []),
       "An action can return confirmation-required with intentId. End this tool call immediately; do not wait or poll. Continue independent work or finish the round. A genuine user agent-answer is delivered back to this conversation and can wake a later run. Then POST `{}` to `$ONTOMATO_PANEL_OPERATIONS_URL/intents/<intentId>/dispatch` using THAT RUN's callback and run ID. Node verifies the real selected option and the current executor. Free text, defaults, parent answers, questionId or a different toolCallId never authorize execution. Changed parameters/target/executor require a new intent and confirmation.",
       "A dispatched result is final for that intent, including failure/unknown; never retry the owner call under another toolCallId. Read the intent at `/api/panel-operation-intents/<intentId>` through ONTOMATO_WORKBENCH_URL when needed; this read does not execute it.",
     ].join("\n"),
@@ -303,7 +338,7 @@ function describeSkill({ name, description, content, state, projections, operati
   ].filter(Boolean).join("\n\n");
 }
 
-function describeOperation({ id, label, binding, owner, draft, rowScoped }: OperationDescription): string {
+function describeOperation({ id, label, binding, owner, draft, rowScoped, customerForm }: OperationDescription): string {
   const target = JSON.stringify(binding.target ?? null);
   const rowScope = rowScoped ? " Row-scoped operation on list rows." : "";
   const boundParams = binding.params && Object.keys(binding.params).length > 0
@@ -311,6 +346,10 @@ function describeOperation({ id, label, binding, owner, draft, rowScoped }: Oper
     : "";
   const suffix = `${rowScope}${boundParams}`;
   if (!owner) {
+    if (customerForm) {
+      const read = customerForm.mode === "create" ? "createForm" : "form";
+      return `- ${label} (${id}), form save via Action ${binding.operation.id}, target ${target}. Read \`${read}\` for \`${customerForm.objectType}\`, then fill this page's live form using "Draft a change" and \`present\`. Request save with the live form's \`save\` from \`observe_display\`.`;
+    }
     if (!binding.target) {
       return `- ${label} (${id}), Action ${binding.operation.id}, target null.${suffix} No object selection is required. Read the admitted description with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it with \`call: { target: null, input: { values: { ... } } }\`.`;
     }
@@ -351,29 +390,45 @@ function describeDraft(forms: readonly OperationDescription[]): string {
   const [sessionKey, runKey, pathKey] = PAGE_DRAFT_QUERY_KEYS;
   const examples = forms.map(form => {
     const owner = form.owner?.handler;
-    if (owner?.kind !== "form.save") throw new Error(`Expected a form owner for ${form.id}`);
-    const { targetType: objectType } = owner;
-    const example = (target: PageDraftObjectRef) => {
-      const effective = draftTarget({ target });
-      const operation = owner.draftOperation(effective.kind === "create"
-        ? { kind: "draft" }
-        : { kind: "object", objectType: effective.objectType, primaryKey: effective.id });
-      return { operation, target };
-    };
-    return {
-      id: form.id,
-      edit: example({ objectType, id: "<owner object id>" }),
-      create: form.draft ? example({ objectType }) : undefined,
-    };
+    if (owner?.kind === "form.save") {
+      const { targetType: objectType } = owner;
+      const example = (target: PageDraftObjectRef) => {
+        const effective = draftTarget({ target });
+        const operation = owner.draftOperation(effective.kind === "create"
+          ? { kind: "draft" }
+          : { kind: "object", objectType: effective.objectType, primaryKey: effective.id });
+        return { operation, target };
+      };
+      return {
+        id: form.id,
+        edit: example({ objectType, id: "<owner object id>" }),
+        create: form.draft ? example({ objectType }) : undefined,
+      };
+    }
+    if (form.customerForm) {
+      const { objectType, mode } = form.customerForm;
+      return {
+        id: form.id,
+        edit: mode === "edit" ? { operation: `${objectType}.update`, target: { objectType, id: "<owner object id>" } } : undefined,
+        create: mode === "create" ? { operation: `${objectType}.create`, target: { objectType } } : undefined,
+      };
+    }
+    throw new Error(`Expected a form owner for ${form.id}`);
   });
+  const firstExample = examples[0]!.edit ?? examples[0]!.create!;
   return [
     "### Draft a change",
     "Read the owner's form for the intended target. Follow that form-save operation's drafting instructions under Declared operations to choose and validate the values in `form`. Write `outputs/drafts/<name>.page-draft.json` with this envelope, using the operation and target given for your form below.",
     "```json",
-    JSON.stringify({ pageKey: "<current page context pageKey>", ...examples[0]!.edit, form: {} }, null, 2),
+    JSON.stringify({ pageKey: "<current page context pageKey>", ...firstExample, form: {} }, null, 2),
     "```",
-    ...examples.map(({ id, edit, create }) =>
-      `- Form \`${id}\`. For editing, use \`${JSON.stringify(edit)}\`.${create ? ` For creation, use \`${JSON.stringify(create)}\`.` : ""}`),
+    ...examples.map(({ id, edit, create }) => {
+      const modes = [
+        ...(edit ? [`For editing, use \`${JSON.stringify(edit)}\`.`] : []),
+        ...(create ? [`For creation, use \`${JSON.stringify(create)}\`.`] : []),
+      ];
+      return `- Form \`${id}\`. ${modes.join(" ")}`;
+    }),
     "Use field names and nested JSON in `form`. Field paths such as `/className` locate values but are not keys in the draft.",
     "For an edit, copy the selected object's opaque ID from its owner into `target.id`. For creation, `target` contains only `objectType`.",
     "An owner's revision, when required, is part of the operation input.",

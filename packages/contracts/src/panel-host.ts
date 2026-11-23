@@ -12,7 +12,7 @@ import {
   type PanelManifest, type PanelObjectIdentity, type PanelStateField,
 } from "./panel-manifest";
 import { domainComponentIdSchema, domainComponentRuntimeSchema } from "./domain-component-runtime";
-import { panelOwnerOperationDescriptorSchema } from "./panel-operations";
+import { panelCompletedOperationSchema, panelOperationAffectedSchema, panelOwnerOperationDescriptorSchema } from "./panel-operations";
 import { panelLocalOperationNameSchema } from "./panel-projection";
 import { applicationFrameSourceSchema, applicationPanelUsePathSchema, applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
 import { productCurrentIdParamsSchema } from "./product-record-id";
@@ -238,7 +238,12 @@ export const panelHostFrameMessageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("address"), address: z.string().min(1).max(4000) }).strict(),
   /** Active only while the tab is visible, this instance is current, and its placement and parent are expanded. */
   z.object({ kind: z.literal("activity"), active: z.boolean() }).strict(),
-  z.object({ kind: z.literal("object-changed"), target: panelObjectIdentitySchema.nullable() }).strict(),
+  z.object({
+    kind: z.literal("object-changed"),
+    target: panelObjectIdentitySchema.nullable(),
+    operation: panelCompletedOperationSchema.optional(),
+    affected: panelOperationAffectedSchema.optional(),
+  }).strict(),
   z.object({ kind: z.literal("projections-changed"), projections: z.array(definitionRevisionSchema) }).strict(),
   /**
    * A person clicked one of the instance's operations in the platform's header. The frame runs it with that person's
