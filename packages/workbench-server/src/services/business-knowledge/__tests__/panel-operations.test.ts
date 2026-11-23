@@ -191,6 +191,38 @@ describe("business knowledge panel server operations", () => {
     });
   });
 
+  it("reports approve availability from owner status for single and batch checks", async () => {
+    const operation = m7ServerOperations.find(item => item.handlerRef === APPROVE_KNOWLEDGE)!;
+    if (operation.kind !== "action" || !operation.unavailable || !operation.unavailableBatch) {
+      throw new Error("Expected approve action with availability hooks");
+    }
+    const approved = { ...entry, knowledgeID: "k-2", status: 1 };
+    const { host, sent } = hostWith(answers("/admin/getBussinessKnowledge", {
+      success: true,
+      data: { "k-1": entry, "k-2": approved },
+    }));
+    const localizedHost = { ...host, locale: "en" };
+
+    expect(await operation.unavailable(localizedHost, target)).toBeUndefined();
+    expect(await operation.unavailable(localizedHost, { ...target, primaryKey: "k-2" })).toEqual({
+      reason: en["panels.knowledge.alreadyApproved"],
+    });
+    expect(await operation.unavailable(localizedHost, { ...target, primaryKey: "k-missing" })).toEqual({
+      reason: en["panels.knowledge.notFound"],
+    });
+
+    const beforeBatch = sent.length;
+    const batchReasons = await operation.unavailableBatch(localizedHost, [
+      { rowKey: "k-1", target },
+      { rowKey: "k-2", target: { ...target, primaryKey: "k-2" } },
+      { rowKey: "k-missing", target: { ...target, primaryKey: "k-missing" } },
+    ]);
+    expect(sent.length - beforeBatch).toBe(1);
+    expect(batchReasons.get("k-1")).toBeUndefined();
+    expect(batchReasons.get("k-2")).toEqual({ reason: en["panels.knowledge.alreadyApproved"] });
+    expect(batchReasons.get("k-missing")).toEqual({ reason: en["panels.knowledge.notFound"] });
+  });
+
   it("deletes by key and refuses with the owner's reason", async () => {
     const operation = m7ServerOperations.find(item => item.handlerRef === DELETE_KNOWLEDGE)!;
     if (operation.kind !== "action") throw new Error("not an action");

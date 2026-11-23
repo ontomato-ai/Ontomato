@@ -172,6 +172,8 @@ export const en = {
   "panels.productCatalog.application.memberTarget": "Target",
   "panels.knowledge.approve": "Approve",
   "panels.knowledge.approved": "Business knowledge “{name}” approved",
+  "panels.knowledge.alreadyApproved": "This business knowledge entry is already approved.",
+  "panels.knowledge.notFound": "Business knowledge does not exist or has been deleted.",
   "panels.knowledge.save": "Save",
   "panels.knowledge.delete": "Delete",
   "panels.knowledge.deleted": "Business knowledge “{name}” deleted",

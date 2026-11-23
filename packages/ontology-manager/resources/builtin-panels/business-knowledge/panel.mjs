@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { mountPanel, usePanelBack, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelBack, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:BusinessKnowledge";
 const NARROW_WIDTH = 760;
@@ -11,10 +11,6 @@ await mountPanel({
     const t = ctx.t ?? ((key) => key);
 
     const selected = computed(() => instance.state.values.value.selected ?? null);
-    const checked = computed(() => {
-      const value = instance.state.values.value.checked;
-      return Array.isArray(value) ? value : [];
-    });
     const formTarget = computed(() => instance.state.values.value.formTarget ?? null);
     const search = computed({
       get: () => instance.state.values.value.search ?? "",
@@ -30,34 +26,9 @@ await mountPanel({
     const root = ref(null);
     const returnTarget = ref(selected.value);
 
-    const probe = usePanelData("probe", "rows", () => ({ size: 200 }));
-    const detailData = usePanelData("detail", "record");
-
-    const probeRows = computed(() => {
-      const result = probe.value?.status === "ready" ? probe.value.value : null;
-      return Array.isArray(result) ? result : (result?.rows ?? []);
-    });
-    const visibleKeys = computed(() => new Set(probeRows.value.map((row) => row.primaryKey).filter(Boolean)));
-    const probePendingByKey = computed(() => {
-      const map = new Map();
-      for (const row of probeRows.value) {
-        if (row?.primaryKey) map.set(row.primaryKey, row.tones?.status === "warning");
-      }
-      return map;
-    });
-    const checkedHasPending = computed(() => {
-      if (!checked.value.length) return false;
-      return checked.value.some((item) => {
-        const key = item?.primaryKey;
-        if (!key || !probePendingByKey.value.has(key)) return true;
-        return probePendingByKey.value.get(key) === true;
-      });
-    });
-
-    const detailReady = computed(() => detailData.value?.status === "ready");
-    const selectedIsPending = computed(
-      () => detailReady.value && detailData.value.value?.tones?.status === "warning",
-    );
+    // ObjectSummary publishes `label` only when the selected record datum is ready.
+    const detailLabel = usePanelOutput("detail", "label");
+    const detailReady = computed(() => detailLabel.value !== null);
 
     const formDirty = computed(() => {
       try {
@@ -158,22 +129,13 @@ await mountPanel({
       { immediate: true },
     );
 
-    let revertingSelection = false;
     async function onUserSelect(nextSelection) {
-      if (revertingSelection) {
-        revertingSelection = false;
-        return;
-      }
       if (!nextSelection) return;
       detailOpen.value = true;
       if (!editing.value) return;
 
       const target = formTarget.value;
-      const previousMissing = prevSelected != null && !visibleKeys.value.has(prevSelected.primaryKey);
-      if (previousMissing && mode.value === "edit") return;
-
       if (!(await confirmLeave())) {
-        revertingSelection = true;
         instance.state.set("selected", mode.value === "create" ? null : (target ?? prevSelected));
         return;
       }
@@ -229,7 +191,26 @@ await mountPanel({
       if (ref) returnTarget.value = ref;
       instance.state.setState({ ...(ref ? { selected: ref, formTarget: ref } : {}), mode: "view" });
       detailOpen.value = true;
+      // Re-read admitted operations so approve visibility tracks any saved status change immediately.
+      instance.refreshObjects();
     }
+
+    function onApproveDone(outcome) {
+      const changed =
+        outcome?.kind === "success" ||
+        (outcome?.kind === "batch" && outcome.items.some((item) => item.outcome.kind === "success"));
+      if (changed) instance.refreshObjects();
+    }
+
+    const stopOperationSync = instance.onOperationCompleted(({ affected }) => {
+      if (
+        affected?.objectTypes?.includes(TYPE) ||
+        affected?.objects?.some((item) => item.objectType === TYPE)
+      ) {
+        instance.refreshObjects();
+      }
+    });
+    onBeforeUnmount(() => stopOperationSync());
 
     watch(
       activeDraft,
@@ -266,8 +247,6 @@ await mountPanel({
       editing,
       detailOpen,
       detailReady,
-      selectedIsPending,
-      checkedHasPending,
       narrow,
       root,
       formDirty,
@@ -282,6 +261,7 @@ await mountPanel({
       saveForm,
       onSaved,
       onDiscarded,
+      onApproveDone,
     };
   },
 });
