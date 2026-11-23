@@ -13,7 +13,7 @@ import { describeAgentDefinitionForm } from "./definition-form";
 import { agentDefinitionPermissions, listAgentDefinitions, readAgentDefinition } from "./definitions";
 import { queryExecutionOptions } from "./execution-setting";
 import { readDomainModelOptions } from "./model-panel-form";
-import type { AssistantOwner } from "./store";
+import { assistantStore, type AssistantOwner } from "./store";
 
 type FormInputs = Pick<PanelFormRequest, "values" | "changedField">;
 
@@ -33,6 +33,10 @@ export function createAgentDefinitionReadAdapter(owner: AssistantOwner, viewer: 
     tones: { enabled: enabled ? "success" : "default" },
   });
   return {
+    async count() {
+      await admit();
+      return { rows: [], total: await assistantStore.countAgentDefinitions(owner.domainId) };
+    },
     async list() {
       await admit();
       return (await listAgentDefinitions(owner, viewer)).agents.map(record);

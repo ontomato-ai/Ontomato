@@ -9,6 +9,7 @@ import {
   type PanelOption,
   type PanelOptionList,
   type PanelRecord,
+  type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
 import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
 import {
@@ -70,6 +71,7 @@ type PanelOwnerOperationDescriptor = z.infer<typeof panelOwnerOperationDescripto
 
 export interface OntologyModelReadAdapter {
   list(typeId: string, params?: OntologyModelListParams): Promise<PanelRecord[]>;
+  count(typeId: string): Promise<PanelRecordQuery>;
   record(typeId: string, primaryKey: string): Promise<PanelRecord>;
   form(typeId: string, primaryKey: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
   createForm(typeId: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
@@ -186,6 +188,7 @@ interface ModelTypeReader<V> {
 
 interface ModelReads {
   list(params?: OntologyModelListParams): Promise<PanelRecord[]>;
+  count(): Promise<PanelRecordQuery>;
   record(primaryKey: string): Promise<PanelRecord>;
   form(primaryKey: string, params?: OntologyModelFormParams): Promise<PanelFormDescription>;
   createForm(params?: OntologyModelFormParams): Promise<PanelFormDescription>;
@@ -277,6 +280,9 @@ export function createOntologyModelReadAdapter(
   function typedReads<V>(typeId: string, reader: ModelTypeReader<V>): ModelReads {
     return {
       ...modelForms(typeId, reader.formPath),
+      async count() {
+        return { rows: [], total: (await reader.views()).length };
+      },
       async list(params) {
         const [views, labels] = await Promise.all([reader.views(params?.className), labelsOf(reader.labels)]);
         return views.map(view => labelled(reader.record(view), labels));
@@ -324,6 +330,9 @@ export function createOntologyModelReadAdapter(
 
   const attributeReader: ModelReads = {
     ...modelForms(ATTRIBUTE, "/ontology/model/attribute/form"),
+    async count() {
+      return { rows: [], total: (await attributeViews()).length };
+    },
     async list(params) {
       const [views, labels, classLabels] = await Promise.all([
         attributeViews(params?.className), labelsOf("attribute"), objectTypeLabels(),
@@ -406,6 +415,7 @@ export function createOntologyModelReadAdapter(
     objectTypeOptions,
     resolveObjectTypes,
     list: async (typeId, params) => readerFor(typeId).list(params),
+    count: typeId => readerFor(typeId).count(),
     record: async (typeId, primaryKey) => readerFor(typeId).record(primaryKey),
     form: async (typeId, primaryKey, params) => readerFor(typeId).form(primaryKey, params),
     createForm: async (typeId, params) => readerFor(typeId).createForm(params),

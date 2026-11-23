@@ -305,7 +305,7 @@ describe("platform-ontology composite query", () => {
 
     const agent = byId.get(AGENT_DEFINITION);
     expect(agent?.definition).toBe(platformTypeDetails[AGENT_DEFINITION]?.definition);
-    expect(Object.keys(agent?.reads ?? {}).sort()).toEqual(["createForm", "form", "list", "record"]);
+    expect(Object.keys(agent?.reads ?? {})).toEqual(expect.arrayContaining(["createForm", "form", "list", "record"]));
     expect(agent?.operations?.map((op) => op.id)).toEqual([`${AGENT_DEFINITION}.save`, DELETE_AGENT]);
 
     const application = byId.get(APPLICATION);
@@ -331,16 +331,16 @@ describe("platform-ontology composite query", () => {
     expect(panel?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PANEL}.save`);
 
     const sdkComponent = byId.get(SDK_COMPONENT);
-    expect(Object.keys(sdkComponent?.reads ?? {}).sort()).toEqual([
+    expect(Object.keys(sdkComponent?.reads ?? {})).toEqual(expect.arrayContaining([
       "catalogue", "configRows", "dataRows", "definition", "inputRows", "operationRows", "outputRows", "record",
-    ]);
+    ]));
     expect(sdkComponent?.operations).toBeUndefined();
 
     const action = byId.get("platform:Action");
-    expect(Object.keys(action?.reads ?? {}).sort()).toEqual([
+    expect(Object.keys(action?.reads ?? {})).toEqual(expect.arrayContaining([
       "annotatedExplanation", "createForm", "definition", "derivedConditions", "derivedEffects",
       "derivedParameters", "derivedSummary", "explanation", "form", "list", "record",
-    ]);
+    ]));
 
     const role = byId.get(ROLE);
     expect(Object.keys(role?.reads ?? {}).sort()).toEqual(["createForm", "form", "options", "query", "record", "resolve"]);

@@ -69,6 +69,7 @@ export interface AgentRow {
   sort_order: number;
 }
 const db = () => getPostgresPool();
+const agentDefinitionScope = "domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%'";
 
 /**
  * Adds the business knowledge panel's skill to the governance preset once per domain and preset version, when a read
@@ -109,11 +110,18 @@ async function upgradeGovernancePreset(domainId: string, skillView: AgentsReadOp
 }
 
 export const assistantStore = {
+  async countAgentDefinitions(domainId: string): Promise<number> {
+    const { rows } = await db().query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total FROM ${table("assistant_agents")} WHERE ${agentDefinitionScope}`,
+      [domainId],
+    );
+    return rows[0].total;
+  },
   async agents(domainId: string, options?: AgentsReadOptions): Promise<AgentRow[]> {
     if (
       !(
         await db().query(
-           `SELECT 1 FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%' LIMIT 1`,
+          `SELECT 1 FROM ${table("assistant_agents")} WHERE ${agentDefinitionScope} LIMIT 1`,
           [domainId],
         )
       ).rowCount
@@ -142,7 +150,7 @@ export const assistantStore = {
     await upgradeGovernancePreset(domainId, options?.skillView);
     return (
       await db().query(
-        `SELECT * FROM ${table("assistant_agents")} WHERE domain_id=$1 AND kind<>'app-builder' AND kind NOT LIKE 'app-builder:%' ORDER BY sort_order,name,id`,
+        `SELECT * FROM ${table("assistant_agents")} WHERE ${agentDefinitionScope} ORDER BY sort_order,name,id`,
         [domainId],
       )
     ).rows;
