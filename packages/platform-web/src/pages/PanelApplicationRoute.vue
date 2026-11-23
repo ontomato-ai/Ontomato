@@ -3,7 +3,13 @@ import { computed, inject, markRaw, onBeforeUnmount, ref, shallowRef, toRaw, wat
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type AppMenuGroup, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
-import { applicationPanelAddress, panelAddress, panelAddressState, panelUsePath, parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
+import {
+  applicationPanelAddress,
+  PANEL_FRAME_QUERY_PREFIX,
+  panelAddressState,
+  panelUsePath,
+  parseApplicationPanelAddress,
+} from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
@@ -236,21 +242,30 @@ watch(missing, (message) => {
  * along), whether or not the address the reader went to names it.
  */
 type FrameState = ReturnType<typeof parseApplicationPanelAddress>["frame"];
-const lastFrame = shallowRef<{ framePanelId: string; state: FrameState } | null>(null);
-/** The address's `frame` segment, or — for an address without one while the same frame stands — the frame's own state. */
+const lastFrame = shallowRef<{ framePanelId: string; addressState: FrameState; liveState: FrameState } | null>(null);
+function hasFrameParams(address: string): boolean {
+  const search = address.split("?")[1];
+  if (!search) return false;
+  for (const key of new URLSearchParams(search).keys()) {
+    if (key.startsWith(PANEL_FRAME_QUERY_PREFIX) && key.length > PANEL_FRAME_QUERY_PREFIX.length) return true;
+  }
+  return false;
+}
+/** The address's `frame.*` params merged over the live frame's state (which includes defaults omitted from the URL). */
 const frameState = computed((): FrameState => {
   let named: FrameState;
   let hasSegment: boolean;
   try {
-    hasSegment = new URLSearchParams(opened.value.split("?")[1] ?? "").has("frame");
+    hasSegment = hasFrameParams(opened.value);
     named = parseApplicationPanelAddress(opened.value).frame;
   } catch {
     return {};
   }
-  // An address that names the frame's state is read as it is: the frame's own reports reach it through the address.
-  if (hasSegment) return named;
+  const live = lastFrame.value?.liveState;
+  // An address that names frame params overrides any kept value; defaults from the live frame fill the rest.
+  if (hasSegment) return live ? { ...live, ...named } : named;
   // While the next entry's answer is coming, the frame that stands is still the one that reported.
-  return lastFrame.value?.state ?? named;
+  return live ?? named;
 });
 const catalogApp = computed(() => catalog.applications.value.find((app) => app.id === props.applicationId) ?? null);
 const framed = computed(() => !props.navigate && Boolean(resolution.value?.framePanelId));
@@ -303,27 +318,37 @@ const currentEntry: NonNullable<DirectPanelRun["currentEntry"]> = {
     };
   },
 };
-/** The frame's own address: the entry's path, with the frame's state in it as the instance reports state. */
-const frameAddress = computed(() => panelAddress(openedPath.value, {}));
-/** The frame reported its state: the address carries it as \`frame\`, and the content's state stays as it is. */
-function reportFrameAddress(input: DisplayPageAddressInput) {
-  const reported = panelAddressState(input.address);
+/** The frame's own address: the entry's bare path; the frame host writes only the frame's own state onto it. */
+const frameAddress = computed(() => openedPath.value);
+/** The frame reported its live deep-linkable state (including defaults omitted from the URL). */
+function reportFrameState(state: FrameState) {
   const framePanelId = resolution.value?.framePanelId;
-  if (framePanelId) lastFrame.value = { framePanelId, state: reported as FrameState };
+  if (!framePanelId) return;
+  const prev = lastFrame.value?.framePanelId === framePanelId ? lastFrame.value : null;
+  lastFrame.value = { framePanelId, addressState: prev?.addressState ?? {}, liveState: state };
+}
+/** The frame reported its address: the URL carries its non-default params as `frame.<name>`, leaving entry state intact. */
+function reportFrameAddress(input: DisplayPageAddressInput) {
+  const reported = panelAddressState(input.address) as FrameState;
+  const framePanelId = resolution.value?.framePanelId;
+  if (framePanelId) {
+    const prev = lastFrame.value?.framePanelId === framePanelId ? lastFrame.value : null;
+    lastFrame.value = { framePanelId, addressState: reported, liveState: prev?.liveState ?? reported };
+  }
   const { path, state, query } = parseApplicationPanelAddress(opened.value);
-  const next = applicationPanelAddress(path, { frame: reported as never, state, query });
+  const next = applicationPanelAddress(path, { frame: reported, state, query });
   if (next !== opened.value) void router.replace(next);
 }
-/** An entry opened without the frame's segment while the frame stands: its address takes the frame's state back. */
+/** An entry opened without `frame.*` params while the frame stands: its address takes the frame's non-default state back. */
 watch([opened, () => resolution.value?.framePanelId], () => {
   const kept = lastFrame.value;
   const framePanelId = resolution.value?.framePanelId;
   // Another frame, or none, answers for this application now: the state kept was another frame's.
   if (kept && resolution.value && kept.framePanelId !== framePanelId) lastFrame.value = null;
-  if (!framed.value || !kept || kept.framePanelId !== framePanelId || !Object.keys(kept.state).length) return;
-  if (new URLSearchParams(opened.value.split("?")[1] ?? "").has("frame")) return;
+  if (!framed.value || !kept || kept.framePanelId !== framePanelId || !Object.keys(kept.addressState).length) return;
+  if (hasFrameParams(opened.value)) return;
   const { path, state, query } = parseApplicationPanelAddress(opened.value);
-  void router.replace(applicationPanelAddress(path, { frame: kept.state, state, query }));
+  void router.replace(applicationPanelAddress(path, { frame: kept.addressState, state, query }));
 });
 
 /** What the panel host says to the reader, in the platform's language. */
@@ -361,7 +386,10 @@ function draftToAgent(text: string) {
 function leaveDraft() {
   const page = shownPage.value;
   if (!page) return;
-  reportAddress({ kind: "state", address: applicationPanelAddress(panelUsePath(page.use.path), { frame: frameState.value }) });
+  const frameForUrl = lastFrame.value && lastFrame.value.framePanelId === resolution.value?.framePanelId
+    ? lastFrame.value.addressState
+    : parseApplicationPanelAddress(opened.value).frame;
+  reportAddress({ kind: "state", address: applicationPanelAddress(panelUsePath(page.use.path), { frame: frameForUrl }) });
 }
 
 /**
@@ -394,7 +422,7 @@ const composerLabels = computed(() => ({
 const pageAddress = computed(() => {
   const search = opened.value.split("?")[1];
   const path = use.value ? panelUsePath(use.value.path) : "";
-  return panelAddress(search ? `${path}?${search}` : path, {});
+  return search ? `${path}?${search}` : path;
 });
 
 /** The display owns a paired page's address. A standalone route reflects the same state in place. */
@@ -501,7 +529,7 @@ function openPage(use: ApplicationPanelUse): KeptPage {
   const page: KeptPage = {
     use,
     port: undefined!,
-    reported: panelAddress(pageAddress.value, requestedState.value),
+    reported: pageAddress.value,
     context: null,
     dirty: false,
     pageSkill: null,
@@ -538,7 +566,7 @@ function withdraw(page: KeptPage) {
  * bare address, which shows it as it was left; a kept page keeps its own, so nothing about another page reaches it.
  */
 function addressOf(page: KeptPage) {
-  return page === shownPage.value && opened.value.includes("?") ? pageAddress.value : panelAddress(page.reported, {});
+  return page === shownPage.value && opened.value.includes("?") ? pageAddress.value : page.reported;
 }
 /** The opening state last handed to each page: the same object while its content is the same, so the host sees no change. */
 const handed = new WeakMap<KeptPage, { key: string; state: Record<string, unknown> }>();
@@ -587,6 +615,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
         :current-entry="currentEntry"
         :history-back="false"
         @display-address="reportFrameAddress"
+        @display-state="reportFrameState"
       />
       <div v-if="framePort" ref="holder" class="panel-entry-holder">
         <EntryUnit ref="unit">

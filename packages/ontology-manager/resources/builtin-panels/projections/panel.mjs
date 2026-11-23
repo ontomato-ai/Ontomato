@@ -1,5 +1,5 @@
 import { computed, reactive, ref, watch } from "vue";
-import { mountPanel, usePanelData, usePanelContext, usePanelOperation } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelData, usePanelContext, usePanelOperation } from "@ontomato/sdk/panel";
 
 /** The projection catalogue displays the owner's reads and dispatches the owner's operations. */
 
@@ -257,18 +257,15 @@ await mountPanel({
 
     function ownerAddress(binding) {
       switch (binding?.kind) {
-        case "MetricView": return `/ontology/assets/metrics/${encodeURIComponent(binding.id)}`;
+        case "MetricView": return panelAddress("/ontology/assets/metrics", { selected: binding.id });
         case "Action": return actionAddress(binding.id);
-        case "PlatformObjectType": {
-          const state = JSON.stringify({ mode: "type", view: "list", selectedType: binding.id });
-          return `${CAPABILITY_MAP}?${new globalThis.URLSearchParams({ state })}`;
-        }
+        case "PlatformObjectType":
+          return panelAddress(CAPABILITY_MAP, { mode: "type", view: "list", selectedType: binding.id });
       }
     }
 
     function actionAddress(primaryKey) {
-      const state = JSON.stringify({ selected: { className: "platform:Action", primaryKey } });
-      return `/ontology/assets/actions?${new globalThis.URLSearchParams({ state })}`;
+      return panelAddress("/ontology/assets/actions", { selected: primaryKey });
     }
 
     function dataAddress(source) {
@@ -402,8 +399,7 @@ await mountPanel({
     const openClass = () => openOwner(ownerAddress({ kind: "PlatformObjectType", id: TYPE }));
 
     const openPanel = (panelId) => {
-      const state = JSON.stringify({ selected: { className: "platform:ProductPanel", primaryKey: panelId } });
-      navigate(`${PANELS_PAGE}?${new globalThis.URLSearchParams({ state })}`).catch(report);
+      navigate(panelAddress(PANELS_PAGE, { selected: panelId })).catch(report);
     };
 
     return {

@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
 
 /*
  * 基础组件（platform:SDKComponent，只读目录）。
@@ -140,9 +140,8 @@ await mountPanel({
 
     async function openComponentClass() {
       navigateError.value = "";
-      const state = encodeURIComponent(JSON.stringify({ mode: "type", selectedType: COMPONENT_CLASS }));
       try {
-        await navigate(`${CAPABILITY_MAP}?state=${state}`);
+        await navigate(panelAddress(CAPABILITY_MAP, { mode: "type", selectedType: COMPONENT_CLASS }));
       } catch (error) {
         navigateError.value = error instanceof Error ? error.message : String(error);
       }

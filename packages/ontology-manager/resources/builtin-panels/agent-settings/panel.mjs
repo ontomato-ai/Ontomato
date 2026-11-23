@@ -1,5 +1,5 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
 
 const AGENT = "platform:AgentDefinition";
 const CAPABILITY_MAP = "/ontology/assets/capability-map";
@@ -38,7 +38,7 @@ await mountPanel({
     });
 
     function viewType() {
-      const address = `${CAPABILITY_MAP}?state=${encodeURIComponent(JSON.stringify({ mode: "type", selectedType: AGENT }))}`;
+      const address = panelAddress(CAPABILITY_MAP, { mode: "type", selectedType: AGENT });
       void navigate(address);
     }
 

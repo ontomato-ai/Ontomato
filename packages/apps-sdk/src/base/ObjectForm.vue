@@ -133,6 +133,8 @@ const emit = defineEmits<{
   discarded: [];
   /** The reader cancelled creating a new object. */
   cancel: [];
+  /** The owner refused an incoming agent draft; the form is showing the refusal banner. */
+  "draft-refused": [];
   /** Emitted when the active tab or step changes in `"tabs"` or `"steps"` presentation. */
   "update:activeGroup": [groupKey: string];
 }>();
@@ -954,6 +956,7 @@ function consumePendingDraft() {
   latestRead += 1;
   if (ownerOpened.value === null) adopt(pending.baseline);
   showRefusal(pending.reason);
+  emit("draft-refused");
 }
 if (member.formDraft) watch(() => member.formDraft!.pending.value, consumePendingDraft, { immediate: true });
 
@@ -981,6 +984,7 @@ useProjectionForm({
     if (!evaluated) return null;
     if (evaluated.refusal !== null) {
       showRefusal(evaluated.refusal);
+      emit("draft-refused");
       return new Set();
     }
     heldRefusal = null;

@@ -6,7 +6,7 @@
 
 - `search` 是左栏顶部的搜索词：命中的对象类型（含名称、API 名、描述与属性名）和关系类型在图上标出来，其余的淡出；搜索不动选中。
 - `filter` 是左栏的类型筛选分段：`all`（全部）、`objects`（仅对象类型）、`relations`（仅关系类型）。
-- `objectType` 是选中的对象类型（主键是类的 API 名），`relation` 是选中的关系类型（主键是关系名）。地址里带 `state={"objectType":{"className":"platform:ObjectType","primaryKey":"<类>"}}` 就是直接打开并选中那个类。
+- `objectType` 是选中的对象类型（主键是类的 API 名），`relation` 是选中的关系类型（主键是关系名）。地址里带 `?objectType=<类>` 或 `?relation=<关系名>` 就是直接打开并选中它。
 - `highlightedNodes`、`highlightedEdges` 是搜索或类型筛选命中的对象和关系；只是画面，不是选中。
 - `pathFrom`、`pathTo` 是路径查找的起点和终点对象类型；两者都填好后画布原生按有向最短路径标出经过的点和边，并汇报路径状态与跳数。
 - 回答“这页现在是什么样”时，先说选中了什么（没有就说没有），再说搜索词、筛选范围（`filter`）和是否在展示一条路径；要某个类的属性和关联关系，看右栏的 `objectAttributes` 与 `objectRelations` 投影即可。
@@ -17,7 +17,7 @@
 
 ## 跳转
 
-- 选中一个类或一条关系后可「去建模」：打开可视化建模并定位到它（`/ontology/visual-modeling?focus=object|relation&id=<主键>&back=playground`）。
+- 选中一个类或一条关系后可「去建模」：打开可视化建模并定位到它（`/ontology/visual-modeling?selectedNode=<类名>` 或 `/ontology/visual-modeling?selectedEdge=<关系名>`）。
 - 选中关系类型后，点右栏「来源对象」或「目标对象」卡片可直接切到对应对象类型。
 
 写操作：这一页只读，没有要读者确认的操作。

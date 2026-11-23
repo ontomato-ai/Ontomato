@@ -284,11 +284,11 @@ describe("the platform layout", () => {
     expect(wrapper.emitted("selectApp")?.at(-1)).toEqual(["app-open"]);
 
     // Visiting a disabled app with ?standalone=1 keeps the rail visible, strips the flag, and leaves sessionStorage clean.
-    await router.push("/applications/app-locked/tasks?standalone=1&state=%7B%22a%22%3A1%7D");
+    await router.push("/applications/app-locked/tasks?standalone=1&selected=task-1");
     await flushPromises();
     expect(wrapper.find(".platform-rail").exists()).toBe(true);
     expect(router.currentRoute.value.query.standalone).toBeUndefined();
-    expect(router.currentRoute.value.query.state).toBe('{"a":1}');
+    expect(router.currentRoute.value.query.selected).toBe("task-1");
     expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBeNull();
 
     // Even if this tab was previously standalone on an allowed app, navigating to a disabled app restores the platform rail.

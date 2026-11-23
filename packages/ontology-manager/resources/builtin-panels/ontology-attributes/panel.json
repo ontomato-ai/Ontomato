@@ -26,15 +26,13 @@
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": true
+        }
       },
       "creating": {
         "type": {
           "kind": "scalar",
           "type": "boolean"
-        },
-        "deepLink": true
+        }
       }
     },
     "members": {

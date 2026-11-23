@@ -5,7 +5,7 @@ import type { DisplayPageAddressInput } from "@ontomato/contracts/agent-presenta
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
-import { confirmDiscard, SCHEDULED_TASK, draftScenario, installPlatform, leaveFrame, mountPlatformPage, task, caseSetLabel } from "./panel-frame";
+import { confirmDiscard, draftScenario, installPlatform, leaveFrame, mountPlatformPage, task, caseSetLabel } from "./panel-frame";
 
 /*
  * The same draft opened beside a conversation: the conversation carries the page's address (`?page=`) and the platform's
@@ -41,7 +41,7 @@ describe("a draft at a panel application's page beside the conversation", () => 
     await vi.waitFor(() => {
       expect(updates.at(-1)?.kind).toBe("state");
       expect(panelAddressState(updates.at(-1)!.address)).toEqual({
-        selectedTask: { className: SCHEDULED_TASK, primaryKey: task.id },
+        selectedTask: task.id,
       });
     });
     expect(new URL(updates.at(-1)!.address, "http://page.invalid").searchParams.get("draftRunId")).toBe("run-1");

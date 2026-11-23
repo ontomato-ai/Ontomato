@@ -1,5 +1,5 @@
 import { computed, nextTick, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelFormDraft, usePanelOutput } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelContext, usePanelFormDraft, usePanelOutput } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:Relationship";
 const CATALOG_PATH = "/ontology/relations";
@@ -36,10 +36,7 @@ await mountPanel({
     // Open the object types page with the endpoint class emitted by ObjectRefCard.
     function openObjectType(reference) {
       if (!reference?.primaryKey) return;
-      const state = JSON.stringify({
-        selected: { className: reference.className || "platform:ObjectType", primaryKey: reference.primaryKey },
-      });
-      void navigate(`/ontology/objects?${new globalThis.URLSearchParams({ state })}`).catch(() => undefined);
+      void navigate(panelAddress("/ontology/objects", { selected: reference.primaryKey })).catch(() => undefined);
     }
 
     // A draft targeting a specific relationship selects it so the form opens that target.

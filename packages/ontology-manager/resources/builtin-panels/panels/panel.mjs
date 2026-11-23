@@ -1,5 +1,5 @@
 import { computed, ref, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData, usePanelOperation } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelContext, usePanelData, usePanelOperation } from "@ontomato/sdk/panel";
 
 /*
  * The panel directory. Every read and write is the panel owner's (`platform:ProductPanel`, `platform:User`,
@@ -10,7 +10,6 @@ import { mountPanel, usePanelContext, usePanelData, usePanelOperation } from "@o
 
 const PAGE_SIZE = 20;
 const PANEL_TYPE = "platform:ProductPanel";
-const PROJECTION_TYPE = "platform:ProductProjection";
 
 const formatTimestamp = (value) => new Date(value).toLocaleString(document.documentElement.lang, {
   year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
@@ -209,10 +208,8 @@ const PanelsDirectory = {
     }
 
     function openMember(row) {
-      const className = row.projectionId ? PROJECTION_TYPE : PANEL_TYPE;
-      const selected = { className, primaryKey: row.projectionId ?? row.panelId };
-      const query = new globalThis.URLSearchParams({ state: JSON.stringify({ selected }) });
-      openAddress(`/ontology/${row.projectionId ? "projections" : "panels"}?${query}`);
+      const primaryKey = row.projectionId ?? row.panelId;
+      openAddress(panelAddress(`/ontology/${row.projectionId ? "projections" : "panels"}`, { selected: primaryKey }));
     }
 
     const memberKind = ref("projection");

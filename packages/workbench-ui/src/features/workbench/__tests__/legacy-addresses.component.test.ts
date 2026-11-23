@@ -1,6 +1,5 @@
 import type { ConversationDisplay } from "@ontomato/agent-shell-ui";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { mount } from "@vue/test-utils";
@@ -105,13 +104,11 @@ async function openAddress(
 }
 
 describe("the agent platform's settings addresses", () => {
-  const selected = { className: AGENT_DEFINITION, primaryKey: "agent-42" };
-
   it.each([
     ["/agent-builder/new", { mode: "create" }],
-    ["/agent-builder/agent-42", { mode: "edit", selected }],
+    ["/agent-builder/agent-42", { mode: "edit", selected: "agent-42" }],
     ["/agents/settings/new", { mode: "create" }],
-    ["/agents/settings/agent-42", { mode: "edit", selected }],
+    ["/agents/settings/agent-42", { mode: "edit", selected: "agent-42" }],
   ])("opens %s on the settings panel with its state and draft", async (path, state) => {
     const { router } = await openAddress(`${path}?draftSessionId=session`);
     expect(router.currentRoute.value.path).toBe("/agents/settings");

@@ -455,8 +455,17 @@ ObjectList's `data.rows` accepts `panelRecordList`, `panelRecordQuery` and suppl
 
 ## State in an address
 
-The `deepLink` flag is boolean and defaults to false. The capability-map type view uses
-`{"mode":"type","selectedType":"platform:SDKComponent"}` as state. The address contract encodes it as `?state=%7B%22mode%22%3A%22type%22%2C%22selectedType%22%3A%22platform%3ASDKComponent%22%7D`.
+The `deepLink` flag is boolean and defaults to false. Only state needed for another
+reader to land on the same view (selected object, tab, view mode, list search/filter/sort) may set `deepLink: true`;
+dialog toggles (such as `creating`, `grantDialog`) and active-edit trackers (such as `editingEntryId`) must remain
+public state without `deepLink: true`.
+
+Each `deepLink: true` field is written as its own flat named query parameter (default/empty values are omitted; JSON is
+never serialized into `?state=` or `?frame=`). Single-type `object` fields use bare `primaryKey` (`?selected=my-app`),
+`object-union` fields use `className~primaryKey`, `list` fields repeat the parameter (`?tag=a&tag=b`), and application
+frame deep-link fields use the `frame.` prefix (`?frame.term=2026-fall`). Use `panelAddress(path, state)` from
+`@ontomato/sdk/panel` to build in-app links cleanly.
+The capability-map type view uses `{"mode":"type","selectedType":"platform:SDKComponent"}` as state; the address contract encodes it as `?mode=type&selectedType=platform:SDKComponent`.
 
 ### Graph selection
 
@@ -494,7 +503,8 @@ The value has `className` and `primaryKey`. Linking the graph and relation list 
 
 | Where | Shape |
 | --- | --- |
-| Panel state, `?state=`, `@saved` event | `{ className, primaryKey }` |
+| Panel state, `@saved` event | `{ className, primaryKey }` |
+| URL query parameter (`deepLink: true`) | `primaryKey` (fixed `object`) or `className~primaryKey` (`object-union`) |
 | Assistant `/operate` `call.target` | `{ kind: "object", objectType, primaryKey }` |
 | `page-draft.json` / `instance.draft` / `draftTarget` | `{ objectType, id }` (omit `id` for create) |
 | `instance.pageContext.value.selection` item | `{ id, label, ... }` |

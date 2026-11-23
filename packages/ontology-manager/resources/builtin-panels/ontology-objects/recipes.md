@@ -5,19 +5,19 @@
 - 面板状态 `selected` 为空时是**目录**：列出全部对象类型（`catalog` 的 `rows`），可按 `search` 里的关键词在显示名、API 名、描述里筛选。
 - `selected` 指向一个 `platform:ObjectType`（主键就是类的 API 名）时是这个类的**详情**：基本信息和摘要（`detail` 的 `record`：属性数、业务键数、关系数、主键状态 `primaryKey`，`ok` 表示正常）、属性列表（`attributes` 的 `rows`）、两端任一是本类的关系（`relations` 的 `rows`）。
 - 新建对象类型是页头的「新建对象类型」命令：它把页面切到空白的创建表单；填完保存后进入新类的详情。
-- 目录、类详情、属性编辑区都在同一张面板；直接打开某个类用本页地址 `<页地址>?state={"selected":{...}}`。
+- 目录、类详情、属性编辑区都在同一张面板；直接打开某个类用本页地址 `<页地址>?selected=<类 API 名>`。
 - `selectedAttribute` 指向一个 `platform:Attribute`（主键是 JSON 文本 `["<类 API 名>","<属性名>"]`）时，详情里打开的是这个属性的编辑区。
 
-回答“这是哪一页、选中了什么”时，先看 `selected` 和 `selectedAttribute`，再用上面的读取取当前字段，不要凭记忆。要让读者看到某个类，给出本页地址并在 `state` 里带上 `selected`（需要时连同 `selectedAttribute`）。
+回答“这是哪一页、选中了什么”时，先看 `selected` 和 `selectedAttribute`，再用上面的读取取当前字段，不要凭记忆。要让读者看到某个类，给出本页地址并带上 `?selected=<类 API 名>`（需要时连同 `&selectedAttribute=<属性主键>`）。
 
 ## 起草表单（读者保存后才写入）
 
 起草前先读对应属主的表单（`objectForm` 的 `form`/`createForm`、`attributeForm` 的 `form`/`createForm`），`operation` 用它返回的 `save.draftOperation`，`form` 里只放要改的字段，字段路径以属主表单为准。草稿怎么写（草稿信封、链接参数）见本页生成的技能。把草稿链接交给读者，由读者在表单里检查并保存；不要替读者保存。
 
 - 新建对象类型：用 `objectForm` 的 `createForm`，字段是 API 名、主键名、显示名、业务描述；链接里不带 `selected`。格式和重名由属主校验，原因显示在字段旁。
-- 修改对象类型：用 `objectForm` 的 `form`，只有显示名和业务描述可改，API 名只读；链接 `state` 带 `selected`（属性编辑区开着也不用管，草稿按类型给到对应的表单）。
-- 新建属性：用 `attributeForm` 的 `createForm`；链接 `state` 里必须带 `selected`（所属类），所属对象类型由页面固定为当前类，读者不能改。
-- 修改属性：用 `attributeForm` 的 `form`，可改显示名、描述、启用、业务键，主键不在表单里改；链接 `state` 带上 `selected` 和 `selectedAttribute`。
+- 修改对象类型：用 `objectForm` 的 `form`，只有显示名和业务描述可改，API 名只读；链接带 `?selected=<类 API 名>`（属性编辑区开着也不用管，草稿按类型给到对应的表单）。
+- 新建属性：用 `attributeForm` 的 `createForm`；链接里必须带 `?selected=<类 API 名>`（所属类），所属对象类型由页面固定为当前类，读者不能改。
+- 修改属性：用 `attributeForm` 的 `form`，可改显示名、描述、启用、业务键，主键不在表单里改；链接带上 `?selected=<类 API 名>&selectedAttribute=<属性主键>`。
 
 ## 需要确认才执行的操作
 
@@ -31,4 +31,4 @@
 
 - 配置对象呈现：`/ontology/objects/<API 名>/view`
 - 浏览数据：`/browser/data/<API 名>`
-- 某条关系：关系类型页 `/ontology/relations`，`state` 为 `{"selected":{"className":"platform:Relationship","primaryKey":"<关系名>"}}`（面板里该行就是指向这个地址的链接）
+- 某条关系：关系类型详情页 `/ontology/relations/detail?selected=<关系名>`（面板里该行就是指向这个地址的链接）

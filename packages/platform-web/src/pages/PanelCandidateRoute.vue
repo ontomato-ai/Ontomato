@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, type PanelHostLabels } from "@ontomato/platform-shell";
-import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
+import { panelAddressState } from "@ontomato/contracts/panel-host";
 import type { DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { candidatePanelHost } from "../panel-host";
 
@@ -50,8 +50,8 @@ const labels = computed<PanelHostLabels>(() => ({
   refresh: t("common.refresh"),
 }));
 
-/** The preview's address without the panel's own state; a draft's link in the query stays for the panel to read. */
-const address = computed(() => panelAddress(route.fullPath, {}));
+/** The preview's full address; PanelHost replaces declared deep-link params in place while keeping draft links and other query params. */
+const address = computed(() => route.fullPath);
 const requestedState = computed(() => panelAddressState(route.fullPath));
 
 function reportAddress(input: DisplayPageAddressInput) {

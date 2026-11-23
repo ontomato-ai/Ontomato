@@ -52,8 +52,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
       return () =>
         h("div", { "data-use": useId }, [
           h("button", { "data-select": "task-2", onClick: () => {
-            const state = { selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" } };
-            const address = `${props.address}?state=${encodeURIComponent(JSON.stringify(state))}`;
+            const address = `${props.address}?selectedTask=task-2`;
             emit("display-address", { kind: "state", address });
             emit("display-loaded", { status: "ready" });
             emit("display-dirty", true);
@@ -104,7 +103,7 @@ describe("a panel application's page", () => {
     await flushPromises();
     // The address carries the selection …
     expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({
-      selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" },
+      selectedTask: "task-2",
     });
     // … and the instance is the same one: the reader's selection in the panel survived the write.
     expect(mountedInstances).toHaveLength(1);
@@ -119,16 +118,15 @@ describe("a panel application's page", () => {
   });
 
   it("restores the view from the address on reload", async () => {
-    const state = { selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" } };
-    const { router } = await mountAt(`/applications/app-a/tasks?state=${encodeURIComponent(JSON.stringify(state))}`);
+    const { router } = await mountAt("/applications/app-a/tasks?selectedTask=task-2");
     expect(router.currentRoute.value.path).toBe("/applications/app-a/tasks");
     // The instance starts from what the address named.
-    expect(mountedInstances[0]!.initial).toEqual(state);
+    expect(mountedInstances[0]!.initial).toEqual({ selectedTask: "task-2" });
   });
 
   it("keeps one instance per application and use relation, across addresses of the same page", async () => {
     const { router, wrapper } = await mountAt("/applications/app-a/tasks");
-    await router.replace(`/applications/app-a/tasks?state=${encodeURIComponent(JSON.stringify({ selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" } }))}`);
+    await router.replace("/applications/app-a/tasks?selectedTask=task-2");
     await flushPromises();
     expect(mountedInstances).toHaveLength(1);
     // The state read once is the one the page opened at, not the one just written.
@@ -164,10 +162,10 @@ describe("a panel application's page", () => {
     expect(navigate).not.toHaveBeenCalled();
     expect(onDisplayAddress.mock.calls).toEqual([[{
       kind: "state",
-      address: expect.stringContaining(`${page}?state=`),
+      address: `${page}?selectedTask=task-2`,
     }]]);
     expect(panelAddressState(onDisplayAddress.mock.calls[0]![0].address)).toEqual({
-      selectedTask: { className: "platform:ScheduledTask", primaryKey: "task-2" },
+      selectedTask: "task-2",
     });
     expect(onDisplayLoaded).toHaveBeenLastCalledWith({ status: "ready" });
     expect(onDisplayDirty.mock.calls).toEqual([[true]]);
