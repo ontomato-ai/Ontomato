@@ -25,8 +25,8 @@ describe("createPanelBackController", () => {
       const stop = controller.register({ pushHistory: true, onBack });
       expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toEqual(expect.any(String));
 
-      // Simulate Vue Router's `router.replace` overwriting `history.state` when syncing `?state=`.
-      window.history.replaceState({ current: "/apps/om/applications?state=app-1" }, "", "/apps/om/applications?state=app-1");
+      // Simulate Vue Router's `router.replace` overwriting `history.state` when syncing flat deep-link params.
+      window.history.replaceState({ current: "/apps/om/applications?selected=app-1" }, "", "/apps/om/applications?selected=app-1");
       expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toBeUndefined();
       controller.syncHistorySnapshot();
       expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toEqual(expect.any(String));
@@ -54,7 +54,7 @@ describe("createPanelBackController", () => {
     });
     try {
       controller.register({ pushHistory: true, onBack });
-      window.history.replaceState({ current: "/apps/om/applications?state=app-1" }, "", "/apps/om/applications?state=app-1");
+      window.history.replaceState({ current: "/apps/om/applications?selected=app-1" }, "", "/apps/om/applications?selected=app-1");
       controller.syncHistorySnapshot();
 
       // Cancel: URL and marker are restored to the detail address and onBack does not run.
@@ -62,7 +62,7 @@ describe("createPanelBackController", () => {
       window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
       await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1));
       await vi.waitFor(() =>
-        expect(window.location.pathname + window.location.search).toBe("/apps/om/applications?state=app-1"),
+        expect(window.location.pathname + window.location.search).toBe("/apps/om/applications?selected=app-1"),
       );
       expect(onBack).not.toHaveBeenCalled();
       expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toEqual(expect.any(String));
@@ -146,9 +146,9 @@ describe("createPanelBackController", () => {
     try {
       controller.register({ pushHistory: true, onBack });
       window.history.replaceState(
-        { current: "/ontology/relations?state=rel-1" },
+        { current: "/ontology/relations?selected=rel-1" },
         "",
-        "/#/ontology/relations?state=rel-1",
+        "/#/ontology/relations?selected=rel-1",
       );
       controller.syncHistorySnapshot();
 
@@ -157,7 +157,7 @@ describe("createPanelBackController", () => {
       window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
       expect(routerPopListener).not.toHaveBeenCalled();
       await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1));
-      await vi.waitFor(() => expect(window.location.hash).toBe("#/ontology/relations?state=rel-1"));
+      await vi.waitFor(() => expect(window.location.hash).toBe("#/ontology/relations?selected=rel-1"));
       expect(onBack).not.toHaveBeenCalled();
 
       // Cross-route popstate (e.g. history.go(-2) straight to #/home): passes through to routerPopListener.

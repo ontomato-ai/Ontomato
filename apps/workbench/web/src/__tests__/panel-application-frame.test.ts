@@ -109,7 +109,7 @@ it("holds the entry's page, header and content, in the frame; shares the frame's
     await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .term")?.textContent).toBe("B"));
 
     // Another entry: the same frame, its entry and the shared term kept.
-    await router.push(`${at("autumn")}?frame=${encodeURIComponent(JSON.stringify({ term: "B" }))}`);
+    await router.push(`${at("autumn")}?frame.term=B`);
     await vi.waitFor(() => expect(frameRoot.querySelector(".current")?.textContent).toBe("framed-autumn"));
     expect(element.querySelector(".panel-application-frame")).toBe(frameRoot);
     await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .sdk-page-header-title")?.textContent?.trim()).toBe("Term"));

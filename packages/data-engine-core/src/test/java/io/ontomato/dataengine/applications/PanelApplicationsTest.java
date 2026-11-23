@@ -78,7 +78,7 @@ class PanelApplicationsTest {
     @Test void rejectsDomainPathsOutsideTheAssignedSpaceAndNormalizedDuplicatesWithoutWrites() {
         for (var path : List.of("/ontology/agents", "/applications/app-panel-b/tasks", "/applications/app-panel-ab/tasks",
             "/applications/app-panel-a/%2e%2e/app-panel-b/tasks", "/applications/app-panel-a/%2Ftasks",
-            "/applications/app-panel-a/tasks?state={}")) {
+            "/applications/app-panel-a/tasks?selected=task-1")) {
             assertThrows(ResponseStatusException.class, () -> catalog.putPanelUses("app-panel-a", body(List.of(at("tasks", path)), true), user));
         }
         var widened = new ApplicationController.PanelRegistration(new ApplicationController.PanelEntry("/ontology", "panels"),

@@ -195,7 +195,7 @@ it("edits one agent's definition as one form: its fields, model, skills and data
       expect(fieldItem("/skills")?.textContent).toContain("SQL");
       expect(node("Customer")).toBeTruthy();
     }, { timeout: 5000 });
-    expect(router.currentRoute.value.query.state).toContain('"mode":"edit"');
+    expect(router.currentRoute.value.query.mode).toBe("edit");
     expect(document.querySelector(".panel-host-coded .sdk-object-summary")).not.toBeNull();
     // The owner's rules: who the agent runs as is shown and read-only, with the owner's reason; the avatar and MCP are not drawn.
     expect(fieldItem("/executionUserId")?.querySelector("input")?.disabled).toBe(true);

@@ -291,13 +291,16 @@ describe("the panel host", () => {
     scope.stop();
   });
 
-  it("keeps a page's other parameters, and replaces only its own state", () => {
-    expect(panelAddress("/a/schedules?tab=runs&state=%7B%7D", { selectedTask: null })).toBe(
-      `/a/schedules?tab=runs&state=${encodeURIComponent(JSON.stringify({ selectedTask: null }))}`,
+  it("keeps a page's other parameters, and replaces only its own declared deep-link state", () => {
+    expect(panelAddress("/a/schedules?tab=runs&selectedTask=task-0", { selectedTask: null }, panelP)).toBe(
+      "/a/schedules?tab=runs",
+    );
+    expect(panelAddress("/a/schedules?tab=runs", { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } }, panelP)).toBe(
+      "/a/schedules?tab=runs&selectedTask=task-1",
     );
     // No state is no parameter: an address is the same page whether or not the reader has selected something in it.
-    expect(panelAddress("/a/schedules?tab=runs&state=%7B%7D", {})).toBe("/a/schedules?tab=runs");
-    expect(panelAddress("/a/schedules", {})).toBe("/a/schedules");
+    expect(panelAddress("/a/schedules?tab=runs&selectedTask=task-0", {}, panelP)).toBe("/a/schedules?tab=runs");
+    expect(panelAddress("/a/schedules", {}, panelP)).toBe("/a/schedules");
   });
 
   it("applies external state and accepts reader selections without echoing them to the instance", async () => {
@@ -322,13 +325,13 @@ describe("the panel host", () => {
     instance.run.state(selected("task-2"), bootAddress);
     initial.value = selected("task-2");
     await nextTick();
-    expect(panelAddressState(a.address.value)).toEqual(initial.value);
+    expect(panelAddressState(a.address.value, panelP)).toEqual(initial.value);
     expect(instance.addresses).toEqual([]);
 
     // The address changes outside it: the instance is told, and a late report for the old address changes nothing.
     initial.value = selected("task-0");
     await nextTick();
-    const requested = panelAddress("/applications/app-a/a/schedules", initial.value);
+    const requested = panelAddress("/applications/app-a/a/schedules", initial.value, panelP);
     expect(instance.addresses).toEqual([requested]);
     instance.run.state(selected("task-2"), bootAddress);
     expect(a.address.value).toBe(requested);
@@ -387,11 +390,12 @@ describe("the panel host", () => {
 
   it("shows the state its address names", () => {
     const state = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" }, search: "overdue" };
-    const restored = panelAddressState(panelAddress("/a/schedules", state));
-    expect(restored).toEqual(state);
-    expect(panelAddressState(panelAddress("/a/schedules", { selectedTask: null }))).toEqual({ selectedTask: null });
-    expect(panelAddressState("/a/schedules?state=not-json")).toEqual({});
-    expect(panelAddressState("/a/schedules?state=%5B1%2C2%2C3%5D")).toEqual({});
+    const encoded = panelAddress("/a/schedules", state, panelP);
+    expect(encoded).toBe("/a/schedules?selectedTask=task-1&search=overdue");
+    expect(panelAddressState(encoded, panelP)).toEqual(state);
+    expect(panelAddressState(panelAddress("/a/schedules", { selectedTask: null }, panelP), panelP)).toEqual({});
+    expect(panelAddressState("/a/schedules?state=not-json", panelP)).toEqual({});
+    expect(panelAddressState("/a/schedules?unknown=1", panelP)).toEqual({});
   });
 
   it("normalizes single-type object string shorthands and drops invalid external state values without failing the panel", async () => {
@@ -417,7 +421,7 @@ describe("the panel host", () => {
     expect(port.started("use-a").run.initial).toEqual({
       selectedTask: { className: SCHEDULED_TASK, primaryKey: "nonexistent_acceptance_check" },
     });
-    expect(panelAddressState(a.address.value)).toEqual({
+    expect(panelAddressState(a.address.value, panelP)).toEqual({
       selectedTask: { className: SCHEDULED_TASK, primaryKey: "nonexistent_acceptance_check" },
     });
     scope.stop();
@@ -556,7 +560,7 @@ describe("the panel host", () => {
 
     // The draft the address links: its three parameters go, the page's own and its state stay, and the instance hears it.
     instance.run.draftSettled(link(runs[1]!));
-    const settled = panelAddress("/applications/app-a/a/schedules?tab=runs", selected);
+    const settled = panelAddress("/applications/app-a/a/schedules?tab=runs", selected, panelP);
     expect(a.address.value).toBe(settled);
     expect(instance.addresses).toEqual([settled]);
     instance.run.state(selected, settled);
@@ -592,7 +596,7 @@ describe("the panel host", () => {
     // Leaving the draft: its three parameters go, the page's own and its state stay, and the instance hears it.
     instance.run.draftRefused("No form takes it");
     a.leaveDraft();
-    const left = panelAddress("/applications/app-a/a/schedules?tab=runs", selected);
+    const left = panelAddress("/applications/app-a/a/schedules?tab=runs", selected, panelP);
     expect(a.draftRefusal.value).toBe("");
     expect(a.address.value).toBe(left);
     expect(instance.addresses).toEqual([left]);

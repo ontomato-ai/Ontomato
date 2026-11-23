@@ -758,28 +758,104 @@ test("a panel manifest validates state, placements, and declared slot components
   }).success, false);
 });
 
-test("application addresses carry independent frame and entry state while preserving draft parameters", async () => {
-  const { applicationPanelAddress, parseApplicationPanelAddress, validateApplicationPanelAddressState } = await import("./panel-host");
+test("application addresses carry flat named frame and entry state while preserving shell parameters", async () => {
+  const {
+    applicationPanelAddress,
+    panelAddress,
+    panelAddressState,
+    parseApplicationPanelAddress,
+    validateApplicationPanelAddressState,
+  } = await import("./panel-host");
   const path = "/applications/app-school/orders";
-  const query = new URLSearchParams([["draftPath", "outputs/drafts/秋季.json"], ["tag", "one"], ["tag", "two"]]);
+  const query = new URLSearchParams([["draftPath", "outputs/drafts/秋季.json"], ["standalone", "1"], ["from", "workspace"]]);
   const frame = { term: "秋季 & 春季" };
-  const state = { mode: "list", term: "ignored" };
-  const parsed = parseApplicationPanelAddress(applicationPanelAddress(path, { frame, state, query }));
+  const state = { mode: "list", term: "ignored", tags: ["one", "two"] };
+  const encoded = applicationPanelAddress(path, { frame, state, query });
+  assert.equal(encoded.includes("state="), false);
+  assert.equal(encoded.includes("frame="), false);
+  assert.equal(encoded.includes("frame.term="), true);
+  assert.equal(encoded.includes("tags=one&tags=two"), true);
+  const parsed = parseApplicationPanelAddress(encoded);
   assert.deepEqual(parsed, { path, frame, state, query });
   assert.equal(applicationPanelAddress(path), path);
-  assert.throws(() => parseApplicationPanelAddress(path + "?frame=%7B"), /Invalid JSON.*frame/);
-  assert.throws(() => parseApplicationPanelAddress(path + "?state=%7B%7D&state=%7B%7D"), /state.*more than once/);
 
   const manifest = panelManifestSchema.parse({
     state: {
       term: { type: { kind: "scalar", type: "string" }, deepLink: true },
-      mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "cards" },
+      page: { type: { kind: "scalar", type: "number" }, deepLink: true, default: 1 },
+      onlyMine: { type: { kind: "scalar", type: "boolean" }, deepLink: true, default: false },
+      since: { type: { kind: "scalar", type: "date" }, deepLink: true },
+      selected: { type: { kind: "object", objectType: "platform:Relationship" }, deepLink: true },
+      unionNode: {
+        type: { kind: "object-union", objectTypes: ["platform:Action", "platform:ObjectType"] },
+        deepLink: true,
+      },
+      childAttr: {
+        type: { kind: "child-object", parentType: "platform:ObjectType", collection: "attributes" },
+        deepLink: true,
+      },
+      tags: { type: { kind: "list", items: { kind: "scalar", type: "string" } }, deepLink: true },
+      items: {
+        type: { kind: "list", items: { kind: "object", objectType: "platform:Action" } },
+        deepLink: true,
+      },
       privateSelection: { type: { kind: "scalar", type: "string" } },
     },
     members: {},
   });
+
+  // Flat encoding with manifest: omits defaults, encodes fixed object as primaryKey, object-union as className~primaryKey.
+  const fullState = {
+    mode: "cards", // equals default -> omitted
+    page: 2,
+    onlyMine: true,
+    since: "2026-11-23",
+    selected: { className: "platform:Relationship", primaryKey: "order_has_item" },
+    unionNode: { className: "platform:Action", primaryKey: "act-1" },
+    childAttr: { parent: { objectType: "platform:ObjectType", primaryKey: "Order" }, primaryKey: "amount" },
+    tags: ["a", "b"],
+    items: [
+      { className: "platform:Action", primaryKey: "act-1" },
+      { className: "platform:Action", primaryKey: "act-2" },
+    ],
+    privateSelection: "never-in-url",
+  };
+  const flatUrl = panelAddress(`${path}?standalone=1&from=workspace&frame.term=2026-fall`, fullState, manifest);
+  assert.equal(
+    flatUrl,
+    `${path}?standalone=1&from=workspace&frame.term=2026-fall&page=2&onlyMine=true&since=2026-11-23&selected=order_has_item&unionNode=platform:Action~act-1&childAttr=Order~amount&tags=a&tags=b&items=act-1&items=act-2`,
+  );
+  // Round-trip decoding with manifest restores exact typed values while keeping shell & frame params separate.
+  assert.deepEqual(panelAddressState(flatUrl, manifest), {
+    page: 2,
+    onlyMine: true,
+    since: "2026-11-23",
+    selected: { className: "platform:Relationship", primaryKey: "order_has_item" },
+    unionNode: { className: "platform:Action", primaryKey: "act-1" },
+    childAttr: { parent: { objectType: "platform:ObjectType", primaryKey: "Order" }, primaryKey: "amount" },
+    tags: ["a", "b"],
+    items: [
+      { className: "platform:Action", primaryKey: "act-1" },
+      { className: "platform:Action", primaryKey: "act-2" },
+    ],
+  });
+  // Single-element list param decodes as 1-element array; primaryKey containing `~` round-trips via full form.
+  const tildeState = {
+    selected: { className: "platform:Relationship", primaryKey: "a~b" },
+    tags: ["solo"],
+  };
+  const tildeUrl = panelAddress(path, tildeState, manifest);
+  assert.equal(tildeUrl, `${path}?selected=platform:Relationship~a~b&tags=solo`);
+  assert.deepEqual(panelAddressState(tildeUrl, manifest), tildeState);
+
+  // Invalid values, mismatched object types, and legacy ?state=/?frame= JSON are safely ignored.
+  const malformed = `${path}?page=nope&onlyMine=yes&since=2026/11/23&selected=platform:Other~id&unionNode=missing-sep&state=${encodeURIComponent(JSON.stringify({ mode: "list" }))}&frame=${encodeURIComponent(JSON.stringify({ term: "A" }))}`;
+  assert.deepEqual(panelAddressState(malformed, manifest), {});
+  assert.deepEqual(parseApplicationPanelAddress(malformed, { stateManifest: manifest, frameManifest: manifest }).frame, {});
+
   assert.deepEqual(validateApplicationPanelAddressState("frame", frame, manifest), frame);
-  assert.deepEqual(validateApplicationPanelAddressState("state", state, manifest, ["term"]), { mode: "list" });
+  assert.deepEqual(validateApplicationPanelAddressState("state", { mode: "list", term: "ignored" }, manifest, ["term"]), { mode: "list" });
   assert.throws(() => validateApplicationPanelAddressState("frame", frame, undefined), /frame\.term/);
   assert.throws(() => validateApplicationPanelAddressState("frame", { term: 1 }, manifest), /frame\.term.*declared type/);
   assert.throws(() => validateApplicationPanelAddressState("state", { privateSelection: "x" }, manifest), /state\.privateSelection/);

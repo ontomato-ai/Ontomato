@@ -163,7 +163,7 @@ it("shows a page kept within its application as it was left: its module not run 
     expect(shown(summary)).toBe(false);
     await vi.waitFor(() => {
       expect(router.currentRoute.value.path).toBe(at("tasks"));
-      expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual(deepState);
+      expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({ selectedTask: task.id });
     });
     // Its relation is asked of Java again, by the use relation it was opened for.
     await vi.waitFor(() => expect(sent.filter(request => request.path.endsWith("/resolve-entry") && request.search.includes("useId="))).toHaveLength(1));
@@ -364,15 +364,15 @@ it("takes a kept author page's targets out of the document's stream, and puts th
   }
 });
 
-it("normalizes string shorthand object state in URL and never poisons the kept page for subsequent navigation", async () => {
-  const shorthandUrl = `${at("tasks")}?state=${encodeURIComponent(JSON.stringify({ selectedTask: "nonexistent_acceptance_check" }))}`;
+it("normalizes flat primaryKey object state in URL and never poisons the kept page for subsequent navigation", async () => {
+  const shorthandUrl = `${at("tasks")}?selectedTask=nonexistent_acceptance_check`;
   const { app, element, router } = await openApplication(shorthandUrl);
   try {
     const tasks = await shownPanel(element);
     expect(element.querySelector(".panel-host-error")).toBeNull();
     await vi.waitFor(() =>
       expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({
-        selectedTask: { className: SCHEDULED_TASK, primaryKey: "nonexistent_acceptance_check" },
+        selectedTask: "nonexistent_acceptance_check",
       }),
     );
 

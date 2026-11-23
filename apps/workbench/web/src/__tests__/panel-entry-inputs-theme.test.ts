@@ -61,7 +61,7 @@ it("gives each entry's content its own fixed value, keeps it out of the address,
     props: route => ({ applicationId: String(route.params.applicationId) }),
   }] });
   // An address asking for another term does not move the entry's.
-  await router.push(`${at("spring")}?state=${encodeURIComponent(JSON.stringify({ term: "from the address" }))}`);
+  await router.push(`${at("spring")}?term=${encodeURIComponent("from the address")}`);
   let area!: Readonly<Ref<PanelThemeOverrides | null>>;
   const { app: mounted } = mountPlatformPage(() => h(defineComponent({
     setup() {
