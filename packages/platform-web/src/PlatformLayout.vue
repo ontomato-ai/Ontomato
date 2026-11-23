@@ -7,7 +7,6 @@ import { Link } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 import {
-  AppMenu,
   PlatformPageHeader,
   PlatformShell,
   useAppTheme,
@@ -18,6 +17,7 @@ import {
   type PlatformPreferences,
   type PlatformShellLabels,
 } from "@ontomato/platform-shell";
+import NativeFrameHost, { type NativeFrameSpec } from "./NativeFrameHost.vue";
 import type { PlatformAppDeclaration } from "./apps";
 import { railApp } from "./apps";
 import {applicationShortcuts} from './application-shortcuts';
@@ -146,34 +146,38 @@ watch(
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
 
 /**
- * An application whose pages are its own menu (the ontology manager, the system settings, the permissions) draws that
- * menu in its column, headed by the application's name, with its own entry at the foot (DESIGN.md "Platform shell and
- * layout"). The current row is the page the address shows: a screen of a page (a detail) marks that page.
+ * Native Vue routes belonging to a built-in application with a declared frame panel (Ontology manager's remaining
+ * native pages, System settings, Permissions) run inside that frame panel rather than a shell-drawn menu.
  */
-const menu = computed(() => (activeApp.value?.frame === "menu" && !props.appFramed ? activeApp.value : null));
-const menuGroups = computed<readonly AppMenuGroup[]>(() =>
-  (menu.value?.groups ?? []).map((group) => ({
+const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
+const nativeFrame = computed<NativeFrameSpec | null>(() => {
+  if (props.blocked || props.appFramed) return null;
+  const app = activeApp.value;
+  if (!app?.framePanelId || !app.groups?.length) return null;
+  const groups: AppMenuGroup[] = app.groups.map((group) => ({
     key: group.key,
     ...(group.label ? { label: group.label } : {}),
     items: group.pages,
-  })),
-);
-const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
-function selectMenuPage(path:string){
-  const external=activeApp.value?.id==='ontology'&&!path.startsWith('/ontology/');
-  void router.push({path,query:external?{navigationContext:'ontology'}:{}});
-}
+  }));
+  return {
+    applicationId: app.id,
+    framePanelId: app.framePanelId,
+    title: app.label,
+    groups,
+    activePageId: activePageId.value,
+  };
+});
 
 /**
- * The one header above the page: in a menu application it names the page (the application's name heads the column);
- * an application of one page is named by its own header (the object browser). A page that draws its own header (the
- * ontology manager's, the external MCP services) is left to draw it, so no page has two.
+ * The one header above the page: in a framed menu application it names the page (the application's name heads the
+ * column); an application of one page is named by its own header (the object browser). A page that draws its own header
+ * (the ontology manager's, the external MCP services) is left to draw it, so no page has two.
  */
 const headerTitle = computed(() =>
-  (props.shownPage?.named || menu.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
+  (props.shownPage?.named || nativeFrame.value ? props.shownPage?.title : activeApp.value?.label) ?? props.shownPage?.title ?? "");
 // A page that names itself with a description of its own (a panel entry's) says it, as the page it names.
 const headerDescription = computed(() =>
-  (menu.value || (props.shownPage?.named && props.shownPage.description) ? props.shownPage?.description : activeApp.value?.description)
+  (nativeFrame.value || (props.shownPage?.named && props.shownPage.description) ? props.shownPage?.description : activeApp.value?.description)
     ?? props.shownPage?.description ?? null,
 );
 const headerShown = computed(() => !props.blocked && props.shownPage !== null && !props.shownPage.ownHeader && !props.appFramed);
@@ -199,47 +203,39 @@ const headerLabels = computed(() => ({
     @select-app="emit('selectApp', $event)"
   >
     <!--
-      One page area for every application, so the page is mounted once: the menu of an application that has its own (the
-      ontology manager) is inserted beside the page, never around it. Which application has a menu is known only when the
-      catalog arrives, after the page has been drawn; a page area per case would mount the page a second time then.
+      One page area for every application, so the page is mounted once even when the catalog arrives after initial
+      render: NativeFrameHost keeps the page in place and moves it into `<current-entry>` once the frame attaches.
     -->
-    <div ref="appBody" class="platform-app-body" :class="{ 'has-menu': menu !== null && !blocked }">
-      <AppMenu
-        v-if="menu && !blocked"
-        :title="menu.label"
-        :groups="menuGroups"
-        :foot="menu.foot ?? null"
-        :active-id="activePageId"
-        :aria-label="labels.pages"
-        @select="selectMenuPage"
-      />
-      <div class="platform-app-page">
-        <PlatformPageHeader
-          v-if="headerShown"
-          :title="headerTitle"
-          :description="headerDescription"
-          :actions="pageActions?.actions"
-          :draft="pageActions?.draft ?? null"
-          :labels="headerLabels"
-          :back-label="shownPage?.back ? (shownPage.backLabel ?? labels.back) : undefined"
-          :more="moreActions"
-          :more-label="labels.more"
-          @back="shownPage?.back?.()"
-          @save="pageActions?.draft?.save()"
-          @discard="pageActions?.draft?.discard()"
-        />
-        <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
-        <!--
-          A page that draws its own header carries its own gutter; every other page gets it here, once, with the header's.
-        -->
-        <div
-          v-else
-          class="platform-page-body platform-page-gutter"
-          :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null || appFramed, 'browser-workspace': browserWorkspace }"
-        >
-          <RouterView />
+    <div ref="appBody" class="platform-app-body">
+      <NativeFrameHost :frame="nativeFrame">
+        <div class="platform-app-page">
+          <PlatformPageHeader
+            v-if="headerShown"
+            :title="headerTitle"
+            :description="headerDescription"
+            :actions="pageActions?.actions"
+            :draft="pageActions?.draft ?? null"
+            :labels="headerLabels"
+            :back-label="shownPage?.back ? (shownPage.backLabel ?? labels.back) : undefined"
+            :more="moreActions"
+            :more-label="labels.more"
+            @back="shownPage?.back?.()"
+            @save="pageActions?.draft?.save()"
+            @discard="pageActions?.draft?.discard()"
+          />
+          <div v-if="blocked" class="platform-blocked" role="alert">{{ blocked.message }}</div>
+          <!--
+            A page that draws its own header carries its own gutter; every other page gets it here, once, with the header's.
+          -->
+          <div
+            v-else
+            class="platform-page-body platform-page-gutter"
+            :class="{ 'own-header': shownPage?.ownHeader === true, 'own-frame': shownPage === null || appFramed, 'browser-workspace': browserWorkspace }"
+          >
+            <RouterView />
+          </div>
         </div>
-      </div>
+      </NativeFrameHost>
     </div>
   </PlatformShell>
 </template>
@@ -296,8 +292,7 @@ const headerLabels = computed(() => ({
   color: var(--el-text-color-secondary);
   font-size: var(--text-base);
 }
-@media(max-width:600px){
-  .platform-app-body.has-menu{flex-direction:column;min-width:0}
+@media(max-width:760px){
   .platform-app-page{flex:1;overflow:hidden}
 }
 </style>

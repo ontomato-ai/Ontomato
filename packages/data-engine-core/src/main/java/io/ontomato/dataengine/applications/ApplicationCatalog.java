@@ -25,8 +25,9 @@ import org.springframework.http.HttpStatus;
 @Service
 public class ApplicationCatalog {
     private static final org.slf4j.Logger log = LoggerFactory.getLogger(ApplicationCatalog.class);
+    public static final String DEFAULT_FRAME_PANEL_ID = "builtin-product-platform-frame";
     public record PanelUseLocation(String applicationId, Map<String, String> names, String useId, String path) {}
-    public record EntryMenu(List<Group> groups, List<ApplicationPanelUse> panelUses) {}
+    public record EntryMenu(Map<String, String> names, List<Group> groups, List<ApplicationPanelUse> panelUses) {}
     public record Delivery(List<String> panels, List<String> projections, List<String> packages, List<String> agents,
                            List<PageSkills.Skill> skills) {}
     private record PanelSettings(String framePanelId, JsonNode theme, Delivery delivery) {
@@ -484,10 +485,13 @@ public class ApplicationCatalog {
         result.remove("permissions");
         var settings = app.getJSONObject("panelSettings");
         result.remove("panelSettings");
+        String resolvedFrame = null;
         if (settings != null && settings.containsKey("framePanelId")) {
             var framePanelId = settings.getString("framePanelId");
-            if (panelManaged(app) || BuiltinProductIds.isValid(framePanelId)) result.put("framePanelId", framePanelId);
+            if (panelManaged(app) || BuiltinProductIds.isValid(framePanelId)) resolvedFrame = framePanelId;
         }
+        if (resolvedFrame != null) result.put("framePanelId", resolvedFrame);
+        else if (panelManaged(app)) result.put("framePanelId", DEFAULT_FRAME_PANEL_ID);
         if (panelManaged(app)) result.put("panelUses", visiblePanelUses(app, user, pageKeys));
         else if (hasPanelUseRegistration(app))
             result.put("panelUses", canEnter(app, user) ? visiblePanelUses(app, user, pageKeys) : List.of());
@@ -847,13 +851,16 @@ public class ApplicationCatalog {
         var groupKeys = new HashSet<>(named.stream().map(ApplicationPanelUse::groupKey).toList());
         var groups = app.getList("groups", Group.class).stream().filter(group -> groupKeys.contains(group.key()))
             .sorted(Comparator.comparingInt(Group::sort)).toList();
+        var appNames = app.getObject("names", new TypeReference<Map<String, String>>() {});
         var result = JSONObject.of("applicationId", app.getString("id"), "use", panels ? use : use.withoutInputs(),
-            "menu", new EntryMenu(groups, named));
+            "menu", new EntryMenu(appNames, groups, named));
         var settings = app.getJSONObject("panelSettings");
+        String resolvedFrame = null;
         if (settings != null && settings.containsKey("framePanelId")) {
             var framePanelId = settings.getString("framePanelId");
-            if (panels || BuiltinProductIds.isValid(framePanelId)) result.put("framePanelId", framePanelId);
+            if (panels || BuiltinProductIds.isValid(framePanelId)) resolvedFrame = framePanelId;
         }
+        result.put("framePanelId", resolvedFrame != null ? resolvedFrame : DEFAULT_FRAME_PANEL_ID);
         if (!panels) return result;
         if (settings != null && settings.containsKey("theme")) result.put("theme", settings.getJSONObject("theme"));
         return result;

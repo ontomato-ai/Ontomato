@@ -3,6 +3,26 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
 import { defineComponent, h } from "vue";
 import type { PlatformShellLabels } from "@ontomato/platform-shell";
+import type { NativeFrameSpec } from "../NativeFrameHost.vue";
+
+vi.mock("../NativeFrameHost.vue", () => ({
+  default: defineComponent({
+    name: "NativeFrameHostDouble",
+    props: { frame: { type: Object as () => NativeFrameSpec | null, default: null } },
+    setup(props, { slots }) {
+      return () =>
+        h("div", { class: "native-frame-double", "data-frame-panel": props.frame?.framePanelId ?? "", "data-frame-app": props.frame?.applicationId ?? "" }, [
+          props.frame
+            ? h("aside", { class: "mock-frame-menu", "data-active-page": props.frame.activePageId }, props.frame.groups.flatMap((group) =>
+                group.items.map((item) => h("button", { class: ["mock-frame-row", { active: item.id === props.frame?.activePageId }], "data-id": item.id }, item.label)),
+              ))
+            : null,
+          slots.default?.(),
+        ]);
+    },
+  }),
+}));
+
 import PlatformLayout from "../PlatformLayout.vue";
 import { appDeclarations } from "../partition";
 import { catalogPartition } from "../native-layouts";
@@ -108,13 +128,13 @@ describe("the platform layout", () => {
     // An application the reader opens from the rail opens in the platform (big main's ruling, 2026-11-21): no new tab.
     expect(groups[1]!.findAll("a[target='_blank']")).toHaveLength(0);
 
-    // Its external link: the entry's address with the flag. Opened, the platform's rail is not drawn; the application's
-    // menu and the page header are, and the header offers the entry's external link.
+    // Its external link: the entry's address with the flag. Opened, the platform's rail is not drawn; the page header
+    // and content are, and the header offers the entry's external link (the application's own frame draws its menu).
     await wrapper.setProps({ shownPage: { title: "tasks", named: true, externalLink: "/applications/app-panel/tasks" } });
     await router.push("/applications/app-panel/tasks?standalone=1");
     await flushPromises();
     expect(wrapper.find(".platform-rail").exists()).toBe(false);
-    expect(wrapper.find(".platform-app-menu").exists()).toBe(true);
+    expect(wrapper.find(".platform-app-menu").exists()).toBe(false);
     expect(wrapper.get(".platform-page-header .page-title").text()).toBe("tasks");
     expect(wrapper.find(".platform-page-header .page-more").exists()).toBe(true);
     expect(wrapper.find(".standalone-header").exists()).toBe(false);
@@ -123,21 +143,31 @@ describe("the platform layout", () => {
     await router.push("/applications/app-panel/summary");
     await flushPromises();
     expect(wrapper.find(".platform-rail").exists()).toBe(false);
-    expect(wrapper.find(".platform-app-menu").exists()).toBe(true);
   });
 
-  it('preserves the ontology menu for linked administration pages and restores native navigation on direct entry',async()=>{
-    const {wrapper,router,apps}=await mountLayout('/ontology/objects',['ontology-modeling']);
-    router.addRoute({path:'/permissions/members',component:page('members'),meta:{page:'/permissions/members'}});
-    const ontology=apps.find(app=>app.id==='ontology')!;
-    await wrapper.setProps({apps:apps.map(app=>app.id==='ontology'?{...ontology,frame:'menu' as const,groups:[...(ontology.groups??[]),{key:'governance',pages:[{id:'/permissions/members',label:'Members',icon:'pages'}]}]}:app)});
-    await wrapper.findAll('.page-row').find(row=>row.text()==='Members')!.trigger('click');
+  it("hands the ontology frame spec for linked administration pages and restores native navigation on direct entry", async () => {
+    const { wrapper, router, apps } = await mountLayout("/ontology/objects", ["ontology-modeling"]);
+    router.addRoute({ path: "/permissions/members", component: page("members"), meta: { page: "/permissions/members" } });
+    const ontology = apps.find((app) => app.id === "ontology")!;
+    await wrapper.setProps({
+      apps: apps.map((app) =>
+        app.id === "ontology"
+          ? {
+              ...ontology,
+              framePanelId: "builtin-product-ontology-frame",
+              groups: [...(ontology.groups ?? []), { key: "governance", pages: [{ id: "/permissions/members", label: "Members", icon: "pages" }] }],
+            }
+          : app,
+      ),
+    });
+    await router.push({ path: "/permissions/members", query: { navigationContext: "ontology" } });
     await flushPromises();
-    expect(router.currentRoute.value.query.navigationContext).toBe('ontology');
-    expect(wrapper.find('.platform-app-menu').text()).toContain('Members');
-    expect(wrapper.find('.platform-app-menu .page-row.active').text()).toBe('Members');
-    await router.push('/permissions/members');await flushPromises();
-    expect(wrapper.find('.platform-app-menu').exists()).toBe(false);
+    expect(wrapper.get(".native-frame-double").attributes("data-frame-panel")).toBe("builtin-product-ontology-frame");
+    expect(wrapper.get(".mock-frame-menu").attributes("data-active-page")).toBe("/permissions/members");
+    expect(wrapper.find(".mock-frame-row.active").text()).toBe("Members");
+    await router.push("/permissions/members");
+    await flushPromises();
+    expect(wrapper.find(".mock-frame-menu").exists()).toBe(false);
   });
   it("does not filter the rail by what the account may open", async () => {
     const none = (await mountLayout("/ontology/objects", [])).wrapper.findAll(".rail-row").length;
@@ -151,7 +181,7 @@ describe("the platform layout", () => {
    * menu is then inserted beside the page; the page is not mounted a second time (a second mount loses the clicks of
    * its first second and sends its first requests twice).
    */
-  it("keeps the page mounted when the catalog later gives its application a menu", async () => {
+  it("keeps the page mounted when the catalog later attaches a native frame panel", async () => {
     let mounts = 0;
     const counted = defineComponent({ name: "CountedPage", mounted: () => { mounts += 1; }, render: () => h("p", { class: "page-double" }, "counted") });
     const router = createRouter({
@@ -172,12 +202,13 @@ describe("the platform layout", () => {
     });
     mounted.push(wrapper);
     await flushPromises();
-    expect(wrapper.find(".platform-app-menu").exists()).toBe(false);
+    expect(wrapper.find(".mock-frame-menu").exists()).toBe(false);
 
-    const withMenu = partitionOf().map((app) => (app.id === "ontology" ? { ...app, frame: "menu" as const } : app));
-    await wrapper.setProps({ apps: appDeclarations(generatedNavigation(), closedAccess(["ontology-modeling"]), withMenu, t) });
+    const withFrame = partitionOf().map((app) => (app.id === "ontology" ? { ...app, framePanelId: "builtin-product-ontology-frame" } : app));
+    await wrapper.setProps({ apps: appDeclarations(generatedNavigation(), closedAccess(["ontology-modeling"]), withFrame, t) });
     await flushPromises();
-    expect(wrapper.find(".platform-app-menu").exists()).toBe(true);
+    expect(wrapper.get(".native-frame-double").attributes("data-frame-panel")).toBe("builtin-product-ontology-frame");
+    expect(wrapper.find(".mock-frame-menu").exists()).toBe(true);
     expect(wrapper.find(".platform-page-body .page-double").exists()).toBe(true);
     expect(mounts).toBe(1);
   });

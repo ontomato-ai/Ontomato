@@ -122,6 +122,12 @@ const resolvedActiveId = computed<string | null>(() => {
   return panel?.currentEntry.value?.path ?? null;
 });
 
+const resolvedTitle = computed(() => {
+  if (props.title) return props.title;
+  const names = panel?.entryMenu.value?.names;
+  return names ? (localizedApplicationText(names, currentLocale.value) ?? "") : "";
+});
+
 const resolvedAriaLabel = computed(() => props.ariaLabel || translate("platform.pages", "Pages"));
 
 function handleSelect(id: string) {
@@ -136,7 +142,7 @@ function handleSelect(id: string) {
 
 <template>
   <PlatformAppMenu
-    :title="title"
+    :title="resolvedTitle"
     :groups="resolvedGroups"
     :counts="counts"
     :icons="icons"

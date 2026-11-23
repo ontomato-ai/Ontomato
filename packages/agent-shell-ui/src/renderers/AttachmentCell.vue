@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ElImage } from "element-plus/es/components/image/index";
-import { ElImageViewer } from "element-plus/es/components/image-viewer/index";
+import { ElImage, ElImageViewer } from "@ontomato/foundation-ui/preview";
 import { FileText, ExternalLink, File } from "lucide-vue-next";
 import { cellAttachments } from "./cell-attachments";
 import TableTextCell from "./TableTextCell.vue";
