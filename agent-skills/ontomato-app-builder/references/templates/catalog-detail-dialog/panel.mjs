@@ -1,5 +1,5 @@
-import { computed, watch } from "vue";
-import { draftTarget, mountPanel, usePanelBack, usePanelContext, usePanelFormDraft } from "@ontomato/sdk/panel";
+import { computed } from "vue";
+import { mountPanel, usePanelBack, usePanelContext, usePanelFormDraft } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:AgentDefinition";
 
@@ -38,16 +38,6 @@ await mountPanel({
     function onDiscarded() {
       instance.state.set("creating", false);
     }
-    watch(instance.draft, draft => {
-      if (!draft) return;
-      const target = draftTarget(draft);
-      if (target.kind === "update") {
-        instance.state.set("creating", false);
-        if (target.id !== selectedKey.value) instance.state.set("selected", { className: TYPE, primaryKey: target.id });
-      } else {
-        instance.state.setState({ creating: true, selected: null });
-      }
-    }, { immediate: true });
     function backToCatalog() {
       instance.state.setState({ selected: null, creating: false });
     }

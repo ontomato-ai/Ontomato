@@ -53,8 +53,6 @@ function mountDirect(
       if (maybeAffected) instance.refresh(maybeAffected as never);
       return result;
     },
-    recordDraftCreated: async () => {},
-    reportDraftError: () => {},
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
       reads.push(request);

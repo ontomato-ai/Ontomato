@@ -4,8 +4,8 @@ import { DETAIL_SELECTIONS, detailSelectionAddress } from "../detail-selection";
 
 /*
  * The actions page is the built-in actions panel now: an action's old detail address (a product asset's link to its
- * action, a bookmark, an agent's answer) opens the panel at the page's address with that action selected, and keeps a
- * draft it carried. What this rules out: such an address landing nowhere once the native page is gone.
+ * action, a bookmark, an agent's answer) opens the panel at the page's address with that action selected. What this
+ * rules out: such an address landing nowhere once the native page is gone.
  */
 
 const open = (address: string) => {
@@ -17,8 +17,6 @@ it("opens an action's detail address as the actions panel with the action select
   expect(open("/ontology/assets/actions/approve%20order?back=products")).toEqual({
     path: "/ontology/assets/actions", state: { selected: "approve order" },
   });
-  const drafted = detailSelectionAddress(DETAIL_SELECTIONS, "/ontology/assets/actions/approve?draftPath=outputs%2Fd.json")!;
-  expect(new URL(drafted, "http://page.invalid").searchParams.get("draftPath")).toBe("outputs/d.json");
 });
 
 it("opens the old creation address as the catalog, and leaves the page's own address alone", () => {
@@ -56,15 +54,11 @@ it("opens a relationship's detail address and selected catalog links at the non-
   expect(open("/ontology/relations/belongs_to?back=catalog")).toEqual({
     path: "/ontology/relations/detail", state: { selected: "belongs_to" },
   });
-  const drafted = detailSelectionAddress(DETAIL_SELECTIONS, "/ontology/relations/belongs_to?draftPath=outputs%2Fr.json")!;
-  expect(drafted.split("?")[0]).toBe("/ontology/relations/detail");
-  expect(new URL(drafted, "http://page.invalid").searchParams.get("draftPath")).toBe("outputs/r.json");
 
-  const selectedCatalog = "/ontology/relations?selected=belongs_to&draftPath=outputs%2Fr2.json";
+  const selectedCatalog = "/ontology/relations?selected=belongs_to";
   expect(open(selectedCatalog)).toEqual({
     path: "/ontology/relations/detail", state: { selected: "belongs_to" },
   });
-  expect(new URL(detailSelectionAddress(DETAIL_SELECTIONS, selectedCatalog)!, "http://page.invalid").searchParams.get("draftPath")).toBe("outputs/r2.json");
 
   // The catalog itself (bare or searching) and the detail entry itself are not redirected.
   expect(open("/ontology/relations")).toBeNull();
@@ -78,10 +72,6 @@ it.each(["/ontology/agents", "/agents/settings"])("routes the settings detail at
   expect(open(`${prefix}/agent-1`)).toEqual({
     path: prefix, state: { mode: "edit", selected: "agent-1" },
   });
-  const address = detailSelectionAddress(DETAIL_SELECTIONS, `${prefix}/agent-1?draftRunId=run&draftPath=outputs%2Fa.json`)!;
-  const query = new URL(address, "http://page.invalid").searchParams;
-  expect(query.get("draftRunId")).toBe("run");
-  expect(query.get("draftPath")).toBe("outputs/a.json");
 });
 
 it.each(["capabilities", "skills", "mcp", "models"])("leaves the separate agent platform %s page address alone", (page) => {
@@ -91,7 +81,6 @@ it.each(["capabilities", "skills", "mcp", "models"])("leaves the separate agent 
 it("moves legacy schedule taskId into flat selectedTask without losing other query parameters", () => {
   const query = new URLSearchParams({
     app: "operations", taskId: "task-1", runId: "run-1", external: "true",
-    draftSessionId: "session-1", draftRunId: "run-2", draftPath: "outputs/drafts/task.page-draft.json",
   });
   const converted = detailSelectionAddress(DETAIL_SELECTIONS, `/schedules?${query}`)!;
   expect(panelAddressState(converted)).toEqual({
@@ -99,8 +88,5 @@ it("moves legacy schedule taskId into flat selectedTask without losing other que
   });
   const result = new URL(converted, "http://page.invalid");
   expect(result.searchParams.get("taskId")).toBeNull();
-  expect(result.searchParams.get("draftSessionId")).toBe("session-1");
-  expect(result.searchParams.get("draftRunId")).toBe("run-2");
-  expect(result.searchParams.get("draftPath")).toBe("outputs/drafts/task.page-draft.json");
   expect(detailSelectionAddress(DETAIL_SELECTIONS, converted)).toBeNull();
 });

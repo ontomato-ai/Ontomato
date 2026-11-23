@@ -183,7 +183,6 @@ export function managementPanel(type, checks, typeTable, {
   ].join("\n");
 
   const sdkImports = [
-    ...(edit ? ["draftTarget"] : []),
     "mountPanel",
     "usePanelBack",
     "usePanelContext",
@@ -191,7 +190,7 @@ export function managementPanel(type, checks, typeTable, {
   ];
 
   const module = hasDetail ? [
-    `import { computed${edit ? ", watch" : ""} } from "vue";`,
+    'import { computed } from "vue";',
     `import { ${sdkImports.join(", ")} } from "@ontomato/sdk/panel";`,
     "",
     `const TYPE = ${JSON.stringify(type)};`,
@@ -234,18 +233,6 @@ export function managementPanel(type, checks, typeTable, {
       "    function onDiscarded() {",
       ...(create ? ['      instance.state.set("creating", false);'] : []),
       "    }",
-      "    watch(instance.draft, draft => {",
-      "      if (!draft) return;",
-      "      const target = draftTarget(draft);",
-      '      if (target.kind === "update") {',
-      ...(create ? ['        instance.state.set("creating", false);'] : []),
-      '        if (target.id !== selectedKey.value) instance.state.set("selected", { className: TYPE, primaryKey: target.id });',
-      ...(create ? [
-        "      } else {",
-        "        instance.state.setState({ creating: true, selected: null });",
-      ] : []),
-      "      }",
-      "    }, { immediate: true });",
     ] : []),
     "    function backToCatalog() {",
     ...(create ? ["      instance.state.setState({ selected: null, creating: false });"] : ['      instance.state.set("selected", null);']),

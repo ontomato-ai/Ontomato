@@ -94,7 +94,6 @@ function mountProjection(
     url: () => "/display",
     label: () => "Display",
     initial: options.initial as never,
-    recordDraftCreated: async () => {},
     text: createPanelText(options.messages ?? {}, localeRef, "en"),
     ...noOperations,
     readProjection: async () => projection,

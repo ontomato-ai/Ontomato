@@ -1,7 +1,5 @@
 import { closeGovernanceWindow } from "./governance";
-import { adoptAuthoringDefinition, authoringDraftKind, closeAuthoringRun } from "./authoring";
-import { invalidPageDraft } from "./draft-errors";
-import { ACTION, METRIC_VIEW } from "@ontomato/contracts/platform-object-types";
+import { closeAuthoringRun } from "./authoring";
 import { executionSkillEnvironment } from "./execution-callback";
 import { pageSkillContextSchema } from "@ontomato/contracts/page-skills";
 import { agentHostSendResultSchema, type AgentHostSendRequest } from "@ontomato/contracts/agent-host";
@@ -32,7 +30,6 @@ import {
 import {
   storedDataset,
 } from "@ontomato/contracts/data-retrieval";
-import { draftTarget, pageDraftSchema, type PageDraft } from "@ontomato/contracts/page-draft";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { withDomainSkills } from "../skills/operations";
 import {
@@ -514,85 +511,6 @@ export const assistantService = {
         ),
       );
     return { artifact: result.artifacts.at(-1) ?? null, ...(result.samePathInAnotherRun && { samePathInAnotherRun: true }) };
-  },
-  /**
-   * The page draft a run wrote: its own artifact read, then the envelope every page receives. A create draft whose first
-   * save created its object also names that object, as its page recorded it.
-   */
-  async pageDraft(
-    sessionId: string,
-    runId: string,
-    path: string,
-    owner: AssistantOwner,
-  ): Promise<PageDraft<Record<string, unknown>>> {
-    const { artifact, samePathInAnotherRun } = await this.resolve(sessionId, runId, path, owner, true);
-    if (!artifact || artifact.runId !== runId || artifact.sessionId !== sessionId) {
-      throw new HttpError(404, "Page draft not found", "PAGE_DRAFT_NOT_FOUND",
-        samePathInAnotherRun ? { samePathInAnotherRun } : undefined);
-    }
-    const bytes = await this.content(sessionId, artifact.id, owner);
-    let value: unknown;
-    try {
-      value = JSON.parse(bytes.toString("utf-8"));
-    } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error;
-      throw invalidPageDraft(runId, path, [{ path: [], message: "Expected a JSON object" }]);
-    }
-    const parsed = pageDraftSchema.safeParse(value);
-    if (!parsed.success) throw invalidPageDraft(runId, path, parsed.error.issues);
-    const draft = parsed.data;
-    try {
-      requireFormFieldNames(draft.form, "form");
-    } catch (error) {
-      if (!(error instanceof HttpError)) throw error;
-      throw invalidPageDraft(runId, path, [{ path: ["form"], message: error.message }]);
-    }
-    if (draftTarget(draft).kind === "update") return draft;
-    const created = await db().query(
-      `SELECT created_id FROM ${table("assistant_page_draft_creations")} WHERE session_id=$1 AND run_id=$2 AND path=$3`,
-      [sessionId, runId, path],
-    );
-    return created.rowCount ? { ...draft, created: { id: created.rows[0].created_id } } : draft;
-  },
-  async acceptPageDraft(sessionId: string, runId: string, path: string, owner: AssistantOwner, credentials: AssistantCredentials) {
-    const draft = await this.pageDraft(sessionId, runId, path, owner);
-    const kind = authoringDraftKind(draft.operation);
-    if (!kind) return draft;
-    const target = draftTarget(draft);
-    const objectType = kind === "action" ? ACTION : METRIC_VIEW;
-    if (target.objectType !== objectType) {
-      throw invalidPageDraft(runId, path, [{ path: ["target", "objectType"], message: `Expected ${objectType} for ${draft.operation}` }]);
-    }
-    const targetId = target.kind === "update" ? target.id : undefined;
-    if (draft.form.id !== undefined && draft.form.id !== targetId) {
-      throw invalidPageDraft(runId, path, [{ path: ["form", "id"], message: "The definition does not match the draft target" }]);
-    }
-    const definition = targetId === undefined ? draft.form : { ...draft.form, id: targetId };
-    const accepted = await adoptAuthoringDefinition(owner, credentials, { sessionId, runId, kind, definition });
-    return { ...draft, form: accepted.definition };
-  },
-  /**
-   * Records the object a create draft's first save created, as the reader who may read the draft. Written once: the
-   * same object again is the same record, another one is a conflict, and a draft that names its object records nothing.
-   */
-  async recordPageDraftCreated(
-    sessionId: string,
-    runId: string,
-    path: string,
-    id: string,
-    owner: AssistantOwner,
-  ) {
-    const draft = await this.pageDraft(sessionId, runId, path, owner);
-    if (!draft.created && draftTarget(draft).kind === "update")
-      throw new HttpError(409, "Only a create draft records the object it created", "PAGE_DRAFT_NOT_CREATE");
-    const recorded = await db().query(
-      `INSERT INTO ${table("assistant_page_draft_creations")} AS c (session_id,run_id,path,created_id) VALUES ($1,$2,$3,$4)
-       ON CONFLICT (session_id,run_id,path) DO UPDATE SET created_id=EXCLUDED.created_id WHERE c.created_id=EXCLUDED.created_id
-       RETURNING created_id`,
-      [sessionId, runId, path, id],
-    );
-    if (!recorded.rowCount)
-      throw new HttpError(409, "This draft already created another object", "PAGE_DRAFT_CREATED_CONFLICT");
   },
   /**
    * Which formal output a workspace file is, with the caller scope of the reply that admitted its round. The file's

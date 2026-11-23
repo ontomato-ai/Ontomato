@@ -23,7 +23,7 @@ const lines = {
   selection: (selection: string) => `Selected: ${selection}`,
 };
 const page: PageContext = {
-  url: "/agents/settings/agent-1?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json",
+  url: "/agents/settings/agent-1#details",
   label: "Agent settings · Sales analyst",
   selection: [{ kind: "agent", id: "agent-1", label: "Sales analyst" }],
 };
@@ -69,7 +69,7 @@ it("names a page the shell cannot name yet by its address alone, and no selectio
   expect(pageLineAddress(`earlier\n\n${pageContextLine(unnamed, lines, true)}`, lines)).toBe(unnamed.url);
 });
 
-it("treats a draft parameter, a fragment or a trailing slash as the same page", () => {
+it("treats a fragment or a trailing slash as the same page", () => {
   const sent = samePageAddress(page.url);
   expect(sent).toBe(samePageAddress("/agents/settings/agent-1"));
   expect(pageMoved(sent, { ...page, url: "/agents/settings/agent-1/" })).toBe(false);

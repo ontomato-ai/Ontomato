@@ -57,7 +57,6 @@ async function mountSummary(record: Record<string, unknown>) {
     url: () => "/ontology/applications",
     label: () => "Applications",
     initial: { selected: { className: APPLICATION, primaryKey: String(record.primaryKey) } } as never,
-    recordDraftCreated: async () => {},
     text: createPanelText({}, ref("en"), "en"),
     ...noOperations,
     readProjection: async (id) => projections[id]!,

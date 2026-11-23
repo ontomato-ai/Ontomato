@@ -15,7 +15,7 @@ export const agentDefinitionTypeDetail = {
     { name: "skills", type: "RuntimeSkillRef[]", description: "The skill references selected for the agent." },
     { name: "classNames", type: "string[]", description: "The ontology class names in the agent's configured data scope." },
     { name: "enabledMcpServiceIds", type: "UUID[]", description: "The IDs of MCP services enabled for the agent." },
-    { name: "executionUserId", type: "string | null", description: "The specified execution user's ID, or null to run as the initiating user." },
+    { name: "executionUserId", type: "string | null", description: "Default execution user ID for automated/unattended runs, or null. Interactive runs with a logged-in user inherit that user's permissions." },
     { name: "sortOrder", type: "integer", description: "The position used to order the definition in agent lists." },
   ],
   rules: "Reading, creating, or maintaining definitions in the current domain requires the analysis-agent permission."

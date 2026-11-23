@@ -10,14 +10,14 @@
 
 回答“这是哪一页、选中了什么”时，先看 `selected` 和 `selectedAttribute`，再用上面的读取取当前字段，不要凭记忆。要让读者看到某个类，给出本页地址并带上 `?selected=<类 API 名>`（需要时连同 `&selectedAttribute=<属性主键>`）。
 
-## 起草表单（读者保存后才写入）
+## 填写表单（经确认或读者点击保存后才写入）
 
-起草前先读对应属主的表单（`objectForm` 的 `form`/`createForm`、`attributeForm` 的 `form`/`createForm`），`operation` 用它返回的 `save.draftOperation`，`form` 里只放要改的字段，字段路径以属主表单为准。草稿怎么写（草稿信封、链接参数）见本页生成的技能。把草稿链接交给读者，由读者在表单里检查并保存；不要替读者保存。
+填写前先读对应属主的表单（`objectForm` 的 `form`/`createForm`、`attributeForm` 的 `form`/`createForm`），字段路径以属主表单为准。先用 `present` 打开对应视图或弹窗，再用 `fill_form` 直接填入实时表单；需要保存时调用对应表单的 `page_action`（默认在对话中请读者确认后才提交）。
 
-- 新建对象类型：用 `objectForm` 的 `createForm`，字段是 API 名、主键名、显示名、业务描述；链接里不带 `selected`。格式和重名由属主校验，原因显示在字段旁。
-- 修改对象类型：用 `objectForm` 的 `form`，只有显示名和业务描述可改，API 名只读；链接带 `?selected=<类 API 名>`（属性编辑抽屉开着也不用管，草稿按类型给到对应的表单）。
-- 新建属性：用 `attributeForm` 的 `createForm`；链接里必须带 `?selected=<类 API 名>`（所属类），所属对象类型由页面固定为当前类，读者不能改。
-- 修改属性：用 `attributeForm` 的 `form`，可改显示名、描述、启用、业务键，主键不在表单里改；链接带上 `?selected=<类 API 名>&selectedAttribute=<属性主键>`。
+- 新建对象类型：用 `present` 设 `creating: true` 打开 `objectForm` 创建弹窗，再对 `objectForm` 调 `fill_form` 填 API 名、主键名、显示名、业务描述。格式和重名由属主校验，原因显示在字段旁。
+- 修改对象类型：用 `present` 选中类（`selected: { className: "platform:ObjectType", primaryKey: "<类 API 名>" }`），对 `objectForm` 调 `fill_form`（只有显示名和业务描述可改，API 名只读）。
+- 新建属性：先用 `present` 选中所属类并打开新建属性表单，所属对象类型由页面固定为当前类，读者不能改；对 `attributeForm` 调 `fill_form`。
+- 修改属性：用 `present` 选中类与属性（`selected` 与 `selectedAttribute`），对 `attributeForm` 调 `fill_form`（可改显示名、描述、启用、业务键，主键不在表单里改）。
 
 ## 需要确认才执行的操作
 

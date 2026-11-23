@@ -61,7 +61,6 @@ function mountCount(
     pageKey: "object-count-test",
     url: () => "/count",
     label: () => "Count",
-    recordDraftCreated: async () => {},
     text: createPanelText(options.messages ?? {}, localeRef, "en"),
     ...noOperations,
     readProjection: async () => projection,

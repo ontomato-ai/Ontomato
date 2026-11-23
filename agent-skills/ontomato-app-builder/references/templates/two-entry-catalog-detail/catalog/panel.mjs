@@ -1,5 +1,5 @@
-import { computed, watch } from "vue";
-import { draftTarget, mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+import { computed } from "vue";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:AgentDefinition";
 const DETAIL_PATH = "/applications/app-template-two-entry/detail";
@@ -35,16 +35,6 @@ await mountPanel({
         void navigate(detailAddress(saved.primaryKey, saved.className || TYPE)).catch(() => undefined);
       }
     }
-    watch(instance.draft, draft => {
-      if (!draft) return;
-      const target = draftTarget(draft);
-      if (target.kind === "create") {
-        instance.state.set("creating", true);
-      } else {
-        instance.state.set("creating", false);
-        void navigate(detailAddress(target.id, target.objectType || TYPE)).catch(() => undefined);
-      }
-    }, { immediate: true });
     return { creating, createDialog, startCreate, cancelCreate, openDetail, onCreated };
   },
 });

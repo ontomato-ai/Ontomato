@@ -9,7 +9,7 @@
     名称只有一个字段。只读的函数由属主在每个字段上说明原因，保存被拒时属主按字段给出原因。
   - remove：functions.delete，平台先向读者确认，属主拒绝删除时把原因显示在按钮下面。
 
-  表单始终挂着（只是隐藏），智能体写来的草稿随时能落进表单，读者确认后才保存。
+  The form stays mounted (hidden via v-show) for live editing when selecting or creating a function.
 -->
 <style>
   [v-cloak] { display: none; }
@@ -38,7 +38,7 @@
         <div class="fn-detail-head" v-if="selected">
           <projection slot="remove"></projection>
         </div>
-        <!-- 表单一直挂着（只是隐藏），草稿才有地方落；读者保存或放弃后回到查看。 -->
+        <!-- Keep the form mounted (toggled with v-show) for live editing and assistant remote control. -->
         <projection slot="form" v-show="selected || creating" @saved="saved" @discarded="discard"></projection>
       </div>
     </two-pane-layout>

@@ -108,12 +108,6 @@ export function createPanelOperationSettings(): ShellPanelOperationsPort {
     async write(sessionId, confirmBeforeExecute) {
       return panelOperationSettingsSchema.parse(await nodeApiPut(path(sessionId), { confirmBeforeExecute })).confirmBeforeExecute;
     },
-    async notifyFormEdited(sessionId, target) {
-      await nodeApiPost("/panel-operations/form-edited", {
-        rootSession: { providerId: "workbench", sessionId },
-        target,
-      });
-    },
     async cancelPendingQuestionIntent(questionId, reason) {
       return (await nodeApiPost(
         `/panel-operations/questions/${encodeURIComponent(questionId)}/cancel-if-pending`,

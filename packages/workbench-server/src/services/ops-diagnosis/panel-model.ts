@@ -56,7 +56,7 @@ export const diagnosisModelOperations = [{
   inputSchema, resultSchema: modelSelectionWrite,
   draftOperation: () => operation,
   draftInput: input => inputSchema.parse(input).values,
-  formInstructions: "Set modelSelection.modelId to a domain chat model reference or null to follow the domain default.",
+
   async execute(host, _target, input) {
     const { owner, credentials } = host.executor;
     await assertPermission(credentials, agentDefinitionPermissions);

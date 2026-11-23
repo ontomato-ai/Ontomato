@@ -152,7 +152,6 @@ function mountDirect(
     url: () => "/direct-graph",
     label: () => "Direct Graph",
     initial: options.initial as never,
-    recordDraftCreated: async () => {},
     text: createPanelText({}, ref("en"), "en"),
     ...noOperations,
     readProjection: async (id) => projections[id]!,
@@ -373,7 +372,6 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
     label: () => "Agents",
     initial: { selectedAgent: { className: AGENT_DEFINITION, primaryKey: "agent-1" } },
     ...noOperations,
-    recordDraftCreated: async () => {},
     readProjection: async (id) => projections[id]!,
   });
 
@@ -388,7 +386,6 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {},
-        draft: instance.draft,
         holdUnsaved: () => () => {},
         t: (key: string) => key,
         resources: async () => {},
@@ -475,7 +472,6 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
     url: () => "/agents",
     label: () => "Agents",
     ...noOperations,
-    recordDraftCreated: async () => {},
     readProjection: async () => scopeProjection,
   });
   const chooseScope = vi.fn();
@@ -503,7 +499,6 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
       submit: async () => ({}),
       reset: async () => true,
     },
-    receive: async () => null,
     submit: async () => ({}),
     dirty: () => false,
     discard: () => {},
@@ -522,7 +517,6 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
         projection: () => Promise.reject(new Error("unused")),
         invoke: () => Promise.reject(new Error("unused")),
         projectionsChanged: () => () => {},
-        draft: instance.draft,
         holdUnsaved: () => () => {},
         t: (key: string) => key,
         resources: async () => {},
@@ -1073,7 +1067,6 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
     url: () => "/capability",
     label: () => "Capability",
     ...noOperations,
-    recordDraftCreated: async () => {},
     readProjection: async (id) => projections[id]!,
   });
 
@@ -1088,7 +1081,6 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {},
-        draft: instance.draft,
         holdUnsaved: () => () => {},
         t: (key: string) => key,
         resources: async () => {},

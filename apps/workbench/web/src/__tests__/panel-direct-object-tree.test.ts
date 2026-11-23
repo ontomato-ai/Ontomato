@@ -36,7 +36,7 @@ function mount(config: Record<string, RuntimeJsonValue>, initial: Record<string,
     members: { tree: { target: { projectionId: tree.id }, inputs: { skill: { state: "skill" } }, outputs: { selected: { state: "file" } } } },
   }), {
     pageKey: "p", url: () => "/p", label: () => "P", initial: { skill, ...initial },
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async () => ({ ...tree, config }),
     read: async (request) => {
       reads.push(request);

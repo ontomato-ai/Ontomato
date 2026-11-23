@@ -31,14 +31,14 @@ const ActionsCatalog = {
       set: (value) => instance.state.set("activeTab", value || "definition"),
     });
 
-    const draftVisible = computed(() => instance.draft.value !== null);
-    const detailVisible = computed(() => selected.value !== null || draftVisible.value);
+    const creating = computed(() => values.value.creating === true);
+    const detailVisible = computed(() => selected.value !== null || creating.value);
 
-    // An arriving agent draft (edit or create) switches straight to the definition form tab.
+    // Opening create mode switches straight to the definition form tab.
     watch(
-      instance.draft,
-      (draft) => {
-        if (draft) activeTab.value = "definition";
+      creating,
+      (active) => {
+        if (active) activeTab.value = "definition";
       },
       { immediate: true },
     );
@@ -63,6 +63,7 @@ const ActionsCatalog = {
     watch(selectedKey, (next, prev) => {
       if (next === prev) return;
       instance.state.setState({
+        ...(next !== null && creating.value ? { creating: false } : {}),
         selectedParameter: null,
         activeSegmentId: null,
         draftCode: null,
@@ -72,6 +73,7 @@ const ActionsCatalog = {
     function back() {
       instance.state.setState({
         selected: null,
+        creating: false,
         activeTab: "definition",
         selectedParameter: null,
         activeSegmentId: null,
@@ -81,9 +83,11 @@ const ActionsCatalog = {
 
     function onChooseAction() {
       instance.state.setState({
+        creating: false,
         activeTab: "definition",
         selectedParameter: null,
         activeSegmentId: null,
+        draftCode: null,
       });
     }
 
@@ -99,13 +103,32 @@ const ActionsCatalog = {
     }
 
     function onFormSaved(saved) {
+      const patch = {};
+      if (creating.value) patch.creating = false;
       if (saved?.primaryKey && (!selected.value || selected.value.primaryKey !== saved.primaryKey)) {
-        instance.state.set("selected", {
+        patch.selected = {
           className: saved.className ?? ACTION_TYPE,
           primaryKey: saved.primaryKey,
-        });
+        };
+      }
+      if (Object.keys(patch).length > 0) {
+        instance.state.setState(patch);
       }
       instance.refreshObjects();
+    }
+
+    function onFormDiscarded() {
+      if (creating.value) {
+        instance.state.setState({
+          creating: false,
+          activeTab: "definition",
+          selectedParameter: null,
+          activeSegmentId: null,
+          draftCode: null,
+        });
+      } else if (values.value.draftCode != null) {
+        instance.state.set("draftCode", null);
+      }
     }
 
     // Clicking a parameter reference inside AnnotatedCode switches to Derived definition and highlights that parameter row.
@@ -121,12 +144,14 @@ const ActionsCatalog = {
       tabs: TABS,
       activeTab,
       selected,
+      creating,
       detailVisible,
       back,
       onChooseAction,
       onRemoveDone,
       onStatusDone,
       onFormSaved,
+      onFormDiscarded,
       onSelectRef,
       refresh: () => instance.refreshObjects(),
     };

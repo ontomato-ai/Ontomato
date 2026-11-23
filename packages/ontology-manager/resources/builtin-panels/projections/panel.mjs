@@ -1,6 +1,5 @@
 import { computed, watch } from "vue";
 import {
-  draftTarget,
   mountPanel,
   panelAddress,
   usePanelBack,
@@ -188,25 +187,6 @@ const ProjectionsCataloguePanel = {
     function closeFormGuarded() {
       void formBack.back();
     }
-
-    // Route incoming assistant drafts to either create mode or edit mode on the target projection.
-    watch(
-      instance.draft,
-      (draft) => {
-        if (!draft) return;
-        const target = draftTarget(draft);
-        if (target.kind === "create") {
-          instance.state.setState({ selected: null, creating: true, detailMode: "view" });
-        } else if (target.id) {
-          instance.state.setState({
-            creating: null,
-            selected: { className: PROJECTION_TYPE, primaryKey: target.id },
-            detailMode: "edit",
-          });
-        }
-      },
-      { immediate: true },
-    );
 
     function startCreate() {
       instance.state.setState({ selected: null, creating: true, detailMode: "view" });

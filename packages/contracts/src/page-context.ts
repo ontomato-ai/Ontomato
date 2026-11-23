@@ -179,13 +179,9 @@ export function pageContextOf(report: {page: string; selection: {className: stri
   };
 }
 
-/** The query parameters a draft's handoff adds to an address; they name no page of their own. */
-const DRAFT_QUERY_KEYS = ["draftSessionId", "draftRunId", "draftPath"];
-
-/** The address without what does not change which page it is: the draft handoff, the fragment and a trailing slash. */
+/** The address without what does not change which page it is: the fragment and a trailing slash. */
 export function samePageAddress(url: string): string {
   const parsed = new URL(url.replace(/^#/, ""), "http://page.invalid");
-  for (const key of DRAFT_QUERY_KEYS) parsed.searchParams.delete(key);
   return (parsed.pathname + parsed.search).replace(/\/+$/, "") || "/";
 }
 

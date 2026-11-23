@@ -13,13 +13,12 @@ const RUN = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 /**
  * The assistant host as the agent platform's shell reads it: the agents it lists (none by default), no conversations in
- * its list, a page's draft, and one conversation — created by a first message or reopened empty by its address — whose
- * messages land in `sent` and whose run is admitted and stopped at once.
+ * its list, and one conversation — created by a first message or reopened empty by its address — whose messages land in
+ * `sent` and whose run is admitted and stopped at once.
  */
 export function assistantHostDouble(
   options: {
     agents?: AgentHostAgent[];
-    readPageDraft?: (...args: unknown[]) => unknown;
     sent?: string[];
     /** Every send's whole input, binding included. */
     inputs?: AgentHostSendRequest[];
@@ -32,7 +31,6 @@ export function assistantHostDouble(
     listAgents: async () => options.agents ?? [],
     listPageAgents: async () => ({ agents: options.agents ?? [], defaultAgentId: options.agents?.[0]?.id ?? null }),
     listSessions: async () => ({ sessions: [], nextCursor: null }),
-    readPageDraft: options.readPageDraft ?? (async () => null),
     ...(options.sessionRuns ? { sessionRuns: options.sessionRuns } : {}),
     createSession: async (agentId: string) => session(agentId),
     readHistory: async () => ({

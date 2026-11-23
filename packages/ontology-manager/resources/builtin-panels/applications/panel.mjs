@@ -1,5 +1,5 @@
-import { computed, watch } from "vue";
-import { draftTarget, mountPanel, panelAddress, usePanelContext } from "@ontomato/sdk/panel";
+import { computed } from "vue";
+import { mountPanel, panelAddress, usePanelContext } from "@ontomato/sdk/panel";
 
 const DETAIL_PATH = "/ontology/applications/detail";
 
@@ -68,21 +68,6 @@ const ApplicationsCatalogPanel = {
         void navigateToDetail(saved.primaryKey);
       }
     }
-
-    // Route incoming assistant drafts: create drafts open the dialog; update drafts open the detail entry.
-    watch(
-      instance.draft,
-      (draft) => {
-        if (!draft) return;
-        const target = draftTarget(draft);
-        if (target.kind === "create") {
-          instance.state.set("creating", true);
-        } else if (target.id) {
-          void navigateToDetail(target.id);
-        }
-      },
-      { immediate: true },
-    );
 
     return {
       t,

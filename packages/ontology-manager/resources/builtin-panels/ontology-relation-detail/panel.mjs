@@ -1,7 +1,6 @@
-import { computed, nextTick, watch } from "vue";
+import { computed, nextTick } from "vue";
 import { mountPanel, panelAddress, usePanelContext, usePanelFormDraft, usePanelOutput } from "@ontomato/sdk/panel";
 
-const TYPE = "platform:Relationship";
 const CATALOG_PATH = "/ontology/relations";
 
 await mountPanel({
@@ -38,13 +37,6 @@ await mountPanel({
       if (!reference?.primaryKey) return;
       void navigate(panelAddress("/ontology/objects", { selected: reference.primaryKey })).catch(() => undefined);
     }
-
-    // A draft targeting a specific relationship selects it so the form opens that target.
-    watch(instance.draft, (draft) => {
-      if (draft?.target?.id && draft.target.id !== selectedKey.value) {
-        instance.state.set("selected", { className: TYPE, primaryKey: draft.target.id });
-      }
-    }, { immediate: true });
 
     return {
       selectedKey, recordStatus, detailDraft, goBack, onRemoveDone, openObjectType,

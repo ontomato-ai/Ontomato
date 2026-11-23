@@ -45,7 +45,7 @@ const chosenPanel = (id: string) => ({ className: PRODUCT_PANEL, primaryKey: id 
 function base(reads: PanelMemberReadRequest[], projections: Record<string, DirectProjection | Error>): Omit<DirectPanelInstanceOptions, "nested"> {
   return {
     pageKey: "p", url: () => "/p", label: () => "P", text: createPanelText({}, ref("en"), "en"),
-    ...noOperations, recordDraftCreated: async () => {},
+    ...noOperations,
     readProjection: async (id) => {
       const found = projections[id];
       if (!found) throw new Error(`No projection ${id}`);

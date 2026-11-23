@@ -1,6 +1,5 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import {
-  draftTarget,
   mountPanel,
   panelAddress,
   usePanelBack,
@@ -174,38 +173,6 @@ await mountPanel({
         instance.refreshObjects();
       }
     }));
-
-    // Open the matching view or modal when an assistant draft targets either form on this panel.
-    watch(instance.draft, draft => {
-      if (!draft) return;
-      const target = draftTarget(draft);
-      if (draft.slot === "objectForm") {
-        if (target.kind === "create") {
-          startCreate();
-        } else if (target.id && target.id !== selectedKey.value) {
-          openClass(target.id);
-        }
-        return;
-      }
-      if (draft.slot === "attributeForm") {
-        if (target.kind === "create") {
-          instance.state.set("selectedAttribute", null);
-          creatingAttribute.value = true;
-          return;
-        }
-        if (target.id) {
-          const ownerClass = attributeClass({ primaryKey: target.id });
-          const patch = { selectedAttribute: { className: ATTRIBUTE, primaryKey: target.id } };
-          if (ownerClass && ownerClass !== selectedKey.value) {
-            patch.creating = false;
-            patch.selected = { className: OBJECT_TYPE, primaryKey: ownerClass };
-            patch.className = ownerClass;
-          }
-          creatingAttribute.value = false;
-          instance.state.setState(patch);
-        }
-      }
-    }, { immediate: true });
 
     function objectSaved(object) {
       if (!creating.value) return;

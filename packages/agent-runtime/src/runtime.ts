@@ -97,11 +97,10 @@ function presentationTool(runId: string, callback: RuntimePresentationCallback):
   return {
     name: "present",
     label: "Present",
-    description: "Show an outputs/ artifact or navigate/update a registered site-relative page in the user's current conversation display right in this round. For a page, this performs a real navigation written to the browser address (preserved on refresh) without changing the user's side-by-side or full-page layout (opens side-by-side if no page is open). Optional state applies to any declared public state field of the page in place (not only deepLink fields) without reloading or triggering business writes, and must not duplicate a state query parameter. To fill a form with a draft immediately, pass the page address with draft query parameters; if the form has unsaved user edits, the tool refuses without overwriting (not_opened / blocked_unsaved) — ask the user first and pass overwriteUnsavedDraft: true only after explicit user confirmation. The result reports what the view actually shows at receipt time, including the panel's declared public state values and current live form contents (including unsaved user edits). For an outputs/ artifact card, the display remains temporary and is not saved in the page address.",
+    description: "Show an outputs/ artifact or navigate/update a registered site-relative page in the user's current conversation display right in this round. For a page, this performs a real navigation written to the browser address (preserved on refresh) without changing the user's side-by-side or full-page layout (opens side-by-side if no page is open). Optional state applies to any declared public state field of the page in place (not only deepLink fields) without reloading or triggering business writes, and must not duplicate a state query parameter. Use fill_form to populate a mounted live form and page_action to trigger save or other declared actions. The result reports what the view actually shows at receipt time, including the panel's declared public state values and current live form contents (including unsaved user edits). For an outputs/ artifact card, the display remains temporary and is not saved in the page address.",
     parameters: Type.Object({
       target: Type.String(),
       state: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-      overwriteUnsavedDraft: Type.Optional(Type.Boolean()),
     }, { additionalProperties: false }),
     replay: "never",
     async execute(toolCallId, input, signal) {

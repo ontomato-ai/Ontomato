@@ -13,7 +13,6 @@ import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref,
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { ApplicationEntryMenu, CurrentApplicationEntry } from "@ontomato/contracts/product-panels";
-import { PAGE_DRAFT_QUERY_KEYS, pageDraftLink, type PageDraftLink } from "@ontomato/contracts/page-draft";
 import {
   PANEL_HOST_CHANNEL,
   panelAddress,
@@ -35,7 +34,7 @@ import {
 } from "@ontomato/contracts/panel-manifest";
 import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
-import type { PanelFormEditedTarget, PanelUseRef } from "@ontomato/contracts/panel-agent";
+import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 import type { PanelBackHandlerRegistration } from "./panel-back";
 
@@ -51,7 +50,7 @@ import type { AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
  *
  * Every panel is a Vue component — its `panel.html` template and its module — run in the platform's own document (user's
  * ruling, 2026-11-20: Vue is the only way a panel is written). Its instance has one lifecycle here: the address state,
- * page context, draft, operations, refresh and definition changes it reports. The frame a panel once ran in is kept but
+ * page context, operations, refresh and definition changes it reports. The frame a panel once ran in is kept but
  * no longer one way a panel runs (user's ruling, 2026-11-20): it has no entry, and nothing below falls back to it.
  *
  * What the host does, and a panel's author therefore does not: read the use relation and the record, keep the declared
@@ -68,7 +67,7 @@ import type { AppsSdkReleaseManifest } from "@ontomato/contracts/apps-sdk";
 export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSource> {
   /** What this instance shows. A candidate is read again when the reader comes back to the page. */
   source(): Promise<Source>;
-  /** The page key a draft for this page names: the use relation's, or the one the candidate is previewed as. */
+  /** The page key for this instance: the use relation's, or the one the candidate is previewed as. */
   readonly pageKey: string;
   /** The application use this instance shows, as the message names it to the frame; a candidate preview has none. */
   readonly use: PanelUseRef | null;
@@ -128,7 +127,7 @@ function projectionIdsOf(shown: HostedPanelSource): string[] {
 
 /** What the host hands a panel's instance: where it is, what its address asks for, and where it reports. */
 export interface DirectPanelRun {
-  /** The page's registration key, which a draft names. */
+  /** The page's registration key. */
   pageKey: string;
   /** The instance's address, with its state, as the reader and a message see it. */
   url: () => string;
@@ -143,22 +142,8 @@ export interface DirectPanelRun {
   context(context: PageContext): void;
   operations(operations: readonly PanelOperation[]): void;
   dirty(dirty: boolean): void;
-  /** The reader saved or discarded the draft the address links. */
-  draftSettled(draft: PageDraftLink): void;
-  /**
-   * The draft the address names cannot be used here, in one sentence in the reader's words: the panel goes on as it is,
-   * and the host shows the sentence above it for the reader to dismiss, to leave the draft or to hand back to the agent.
-   */
-  draftRefused(text: string): void;
-  /**
-   * The draft the address links is in its form — or changes nothing there: the page is now what the draft opens. Until
-   * this, or \`draftRefused\`, the host shows that the draft is being opened rather than a page that is about to change.
-   */
-  draftOpened(): void;
   /** The panel cannot run, and why. */
   failed(reason: unknown): void;
-  /** The user manually edited an unsaved form, invalidating pending agent form.save confirmations. */
-  formEdited?(target: PanelFormEditedTarget): void;
   /**
    * The placement's theme, for a panel another panel places: the host lays it over the placed panel's own theme on the
    * placed panel's element, so this placement's values win over the panel's.
@@ -195,7 +180,7 @@ export interface DirectPanelRun {
 /** A started panel instance, as its host drives it. */
 export interface DirectPanelMount {
   /** The address changed outside the instance (the reader went back, a link was followed): its state follows. */
-  address(url: string, options?: { overwriteUnsavedDraft?: boolean }): void;
+  address(url: string): void;
   /** Updates any declared public state fields in place (including non-deepLink fields), without reload or writes. */
   setState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Objects it may show changed: it reads again what it shows of them. */
@@ -240,17 +225,6 @@ export interface PanelInstanceView {
   readonly instance: string;
   /** What the panel's author should know without the panel failing: its CSS reached outside it and applies nowhere. */
   readonly notice: Readonly<ShallowRef<string>>;
-  /**
-   * Whether the draft the address links is still being opened: read, and placed in its form. The panel runs meanwhile, out
-   * of sight, so the reader never sees a page that is about to turn into the draft's.
-   */
-  readonly draftOpening: Readonly<ShallowRef<boolean>>;
-  /** Why the draft the address links cannot be used here; empty when there is none, or the reader closed the notice. */
-  readonly draftRefusal: Readonly<ShallowRef<string>>;
-  /** The notice goes; what the address links is left to the caller. */
-  dismissDraftRefusal(): void;
-  /** The reader leaves the draft: the address drops its draft link and the notice goes. */
-  leaveDraft(): void;
   /** The reader's deep-linkable state, as the address carries it. */
   readonly state: Ref<PanelHostState>;
   /** The instance's address, with its state; never a credential or a form value. */
@@ -277,8 +251,6 @@ export interface PanelInstanceView {
   fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
   /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
   executeAction(request: PageActionRequestInput): Promise<PageActionOutcome>;
-  /** Delivers an updated address (e.g. a draft link with explicit overwrite confirmation) to the running instance. */
-  applyAddress(url: string, options?: { overwriteUnsavedDraft?: boolean }): void;
   /** The frame's content window, once it exists. */
   frame(window: Window | null): void;
 }
@@ -297,11 +269,6 @@ export interface PanelHostLabels {
   failures: { fileUnavailable: string; scriptThrew: string; scriptRejected: string };
   /** What a panel tells its author: its CSS reached outside it. */
   content: { styleOutside: string };
-  /**
-   * The words about a linked draft: shown while it is being opened, and, for one the panel cannot take, handing the reason
-   * back to the agent and the sentence the composer is filled with (`{reason}` stands for the panel's sentence).
-   */
-  draft: { opening: string; close: string; toAgent: string; toAgentText: string };
   /** The page command that reads the panel's shown data again. */
   refresh: string;
 }
@@ -357,8 +324,6 @@ export interface PanelInstanceOptions {
   liveState?: () => Readonly<Record<string, RuntimeJsonValue>> | null;
   /** Entry-wired state field names that cannot be overridden by live state patches. */
   wired?: () => readonly string[];
-  /** Notified when the user manually edits an unsaved form inside this panel. */
-  formEdited?: (target: PanelFormEditedTarget) => void;
   /**
    * Whether the reader is on this instance's page. A page kept while the reader is on another of its application's pages
    * holds no stream and its frame may ask for nothing; shown again, it is checked before its frame may. Absent means
@@ -410,9 +375,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const direct = shallowRef<DirectInstance | null>(null);
   const instance = newPanelInstanceName();
   const notice = shallowRef("");
-  const draftRefusal = shallowRef("");
-  // An instance opened at an address linking a draft says so from the start, while its panel is still being read.
-  const draftOpening = shallowRef(draftLinkOf(options.address()) !== null);
   /** Takes the drawn panel's CSS away again. */
   let dropStyle: (() => void) | undefined;
   const pageContext = shallowRef<PageContext | null>(null);
@@ -428,7 +390,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let frameReady = false;
   let frameAddress = "";
   let adoptedExternalAddress = "";
-  let pendingDirectAddress: { url: string; options?: { overwriteUnsavedDraft?: boolean } } | null = null;
+  let pendingDirectAddress: string | null = null;
   let pendingLiveState: Readonly<Record<string, RuntimeJsonValue>> | null = null;
   let appliedExternalEntry: PanelHostState = {};
   let registration: PanelFrameRegistration | undefined;
@@ -442,14 +404,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** A candidate read again whose definition differs from the one shown; it waits like a changed record does. */
   let pendingCandidate: HostedPanelSource | null = null;
   let pendingObjectRefresh = false;
-  /** The draft the reader settled while the page's address still linked it. */
-  let settledDraft: PageDraftLink | null = null;
   const shownToReader = options.shown ?? (() => true);
-  /** The page's address, without the link of a draft the reader has settled. */
-  const pageAddress = () => {
-    const page = options.address();
-    return settledDraft && linksDraft(page, settledDraft) ? withoutDraftLink(page) : page;
-  };
   let applying = Promise.resolve();
   const answering = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   let settle: () => void = () => {};
@@ -498,7 +453,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   async function adopt(next: HostedPanelSource) {
     error.value = "";
     const requested = requestedState(next.panel) as PanelHostState;
-    const requestedAddress = panelAddress(pageAddress(), requested, next.panel.manifest);
+    const requestedAddress = panelAddress(options.address(), requested, next.panel.manifest);
     // A panel runs in the platform's document (user's ruling, 2026-11-20): the frame below is kept but no
     // longer a way a panel runs.
     if (next.panel.content.module !== undefined) {
@@ -578,7 +533,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         return field?.external && !field.deepLink;
       }),
     );
-    const effectiveAddress = livePatch ? panelAddress(pageAddress(), deepLinkInitial, next.panel.manifest) : requestedAddress;
+    const effectiveAddress = livePatch ? panelAddress(options.address(), deepLinkInitial, next.panel.manifest) : requestedAddress;
     adoptedExternalAddress = requestedAddress;
     if (!replaceDirect(next, deepLinkInitial, effectiveAddress)) return;
     const { element, template, css } = codedPanelTarget(next.panel.content.html);
@@ -594,7 +549,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (pendingDirectAddress !== null) {
       const nextAddress = pendingDirectAddress;
       pendingDirectAddress = null;
-      mount.address(nextAddress.url, nextAddress.options);
+      mount.address(nextAddress);
     }
     if (pendingLiveState !== null) {
       const lateLive = pendingLiveState;
@@ -639,8 +594,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
 
   /** What an instance in this document reports to its host, as a frame would in its messages. */
   function directRun(next: HostedPanelSource, requested: PanelHostState): DirectPanelRun {
-    // A run that starts at an address linking a draft opens that draft first.
-    draftOpening.value = draftLinkOf(address.value) !== null;
     return {
       pageKey: port.pageKey,
       url: () => address.value,
@@ -650,14 +603,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       context: context => (pageContext.value = context),
       operations: offered => (operations.value = offered),
       dirty: reportDirty,
-      draftSettled: settleDraft,
-      draftRefused: (text) => {
-        draftOpening.value = false;
-        draftRefusal.value = text;
-      },
-      draftOpened: () => (draftOpening.value = false),
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
-      ...(options.formEdited ? { formEdited: options.formEdited } : {}),
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
       ...(options.frameState ? { frameState: options.frameState } : {}),
       ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
@@ -672,8 +618,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     dropStyle?.();
     dropStyle = undefined;
     notice.value = "";
-    draftRefusal.value = "";
-    draftOpening.value = false;
   }
 
   /** What decides how a source is drawn: its content and declaration, not its revision or identity. */
@@ -695,7 +639,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         pendingObjectRefresh = false;
         refresh(null);
       }
-      if (source.value && panelAddress(pageAddress(), requestedState(source.value.panel), source.value.panel.manifest) !== adoptedExternalAddress && syncAddress()) return;
+      if (source.value && panelAddress(options.address(), requestedState(source.value.panel), source.value.panel.manifest) !== adoptedExternalAddress && syncAddress()) return;
     }
     const deepLinkOnly = source.value
       ? Object.fromEntries(Object.entries(next).filter(([name]) => source.value!.panel.manifest.state[name]?.deepLink))
@@ -706,7 +650,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** The instance's deep-linkable state changed: the address carries it. */
   function reportState(next: PanelHostState) {
     state.value = next;
-    address.value = panelAddress(pageAddress(), next, source.value?.panel.manifest);
+    address.value = panelAddress(options.address(), next, source.value?.panel.manifest);
   }
 
   /** The instance holds unsaved changes, or no longer does: a definition change waits for them. */
@@ -972,7 +916,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function syncAddress(): boolean {
     const shown = source.value;
     if (!shown) return false;
-    const requested = panelAddress(pageAddress(), requestedState(shown.panel), shown.panel.manifest);
+    const requested = panelAddress(options.address(), requestedState(shown.panel), shown.panel.manifest);
     if (error.value !== "" || displayLoad.value.status === "error") {
       if (requested === address.value) return false;
       if (!direct.value && !document.value) {
@@ -995,33 +939,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   watch([options.address, options.initial, () => JSON.stringify(options.entryInputs?.())], syncAddress);
   watch(() => JSON.stringify(options.entryInputs?.()), syncExternalEntryState);
 
-  /**
-   * The reader saved or discarded the draft the address links: the address drops the link and keeps everything else, and
-   * the frame hears it as any address change. From then on the page's address is read without that link, so the page
-   * catching up later changes nothing; a late word about an earlier draft never drops a link opened since.
-   */
-  function settleDraft(draft: PageDraftLink) {
-    if (!linksDraft(address.value, draft)) return;
-    settledDraft = draft;
-    tellAddress(panelAddress(pageAddress(), state.value, source.value?.panel.manifest));
-  }
-
   /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */
-  function tellAddress(next: string, addressOptions?: { overwriteUnsavedDraft?: boolean }) {
-    // What was said about a draft belongs to that draft: an address that no longer names it takes the line away, and an
-    // address naming another draft opens that one first.
-    if (
-      addressOptions?.overwriteUnsavedDraft
-      || JSON.stringify(draftLinkOf(next)) !== JSON.stringify(draftLinkOf(address.value))
-    ) {
-      draftRefusal.value = "";
-      draftOpening.value = direct.value !== null && draftLinkOf(next) !== null;
-    }
+  function tellAddress(next: string) {
     frameAddress = next;
     address.value = next;
-    if (direct.value) direct.value.mount.address(next, addressOptions);
+    if (direct.value) direct.value.mount.address(next);
     else if (document.value) post({ kind: "address", address: next });
-    else pendingDirectAddress = { url: next, options: addressOptions };
+    else pendingDirectAddress = next;
   }
 
   function applyState(patch: Readonly<Record<string, RuntimeJsonValue>>) {
@@ -1052,7 +976,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     if (payload.kind === "context") pageContext.value = payload.context;
     if (payload.kind === "state") stateReported(payload.state, payload.fromAddress);
-    if (payload.kind === "draft-settled") settleDraft(payload.draft);
     if (payload.kind === "operations") operations.value = payload.operations;
     if (payload.kind === "dirty") reportDirty(payload.dirty);
     if (payload.kind === "failed") {
@@ -1090,14 +1013,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     direct,
     instance,
     notice,
-    draftRefusal,
-    draftOpening,
-    dismissDraftRefusal: () => (draftRefusal.value = ""),
-    leaveDraft() {
-      draftRefusal.value = "";
-      const linked = draftLinkOf(address.value);
-      if (linked) settleDraft(linked);
-    },
     admitted,
     applyState,
     fillForm(request) {
@@ -1123,7 +1038,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       }
       return direct.value.mount.executeAction(request);
     },
-    applyAddress: tellAddress,
     invoke(id, input) {
       if (direct.value) return direct.value.mount.invoke(id, input);
       if (!frame) return Promise.reject(new Error(options.labels.notStarted));
@@ -1139,25 +1053,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       registration = window && source.value ? port.frame(window, source.value, bridgeOpen) : undefined;
     },
   };
-}
-
-/** Whether an address links exactly this draft. */
-/** The draft an address links, if any. */
-function draftLinkOf(address: string) {
-  return pageDraftLink(Object.fromEntries(new URLSearchParams(address.split("?")[1] ?? "")));
-}
-
-function linksDraft(address: string, draft: PageDraftLink) {
-  const linked = draftLinkOf(address);
-  return linked?.sessionId === draft.sessionId && linked.runId === draft.runId && linked.path === draft.path;
-}
-
-/** An address without its draft link, everything else kept. */
-function withoutDraftLink(address: string) {
-  const [path, search = ""] = address.split("?");
-  const query = new URLSearchParams(search);
-  for (const key of PAGE_DRAFT_QUERY_KEYS) query.delete(key);
-  return query.size ? `${path}?${query}` : path!;
 }
 
 /** Escapes a text so it is data or code inside its own element and never ends the element it sits in. */

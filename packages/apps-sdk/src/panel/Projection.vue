@@ -5,7 +5,7 @@ import { type MemberInputs } from "./direct";
 import { memberComponentId, memberProjectionId } from "./projection-element";
 import { frameMemberData } from "./frame-member";
 import { panelMemberKey, type PanelMemberContext } from "./member";
-import { portsOf, readsOwnerForm } from "./ports-of";
+import { portsOf } from "./ports-of";
 import { admittedOperations, watchMemberOperations } from "./member-operations";
 import { slotInputValues } from "./ports";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
@@ -84,7 +84,6 @@ function start(revision = 0) {
       ports: portsOf(projection),
       get operations() { return admittedOperations(operations.value); },
       ...(projection.operations ? { operationBindings: projection.operations } : {}),
-      takesDrafts: readsOwnerForm(projection),
     });
     requestedRevision = 0;
     loaded.value = {

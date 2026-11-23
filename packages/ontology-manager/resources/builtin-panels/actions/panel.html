@@ -1,8 +1,8 @@
 <!--
   Actions: catalog table and selected action details (definition form, derived definition, and code explanation)
   composed purely from official SDK projections.
-  There is no blank manual creation: the new-action ConversationEntry opens this page's agent input; once the owner
-  adopts the agent's definition it arrives as a page draft in ObjectForm for the reader to check and save.
+  There is no blank manual creation: the new-action ConversationEntry opens this page's agent input; the agent opens
+  create mode via `present`, fills the live `ObjectForm` via `fill_form`, and submits via `page_action` when requested.
 -->
 <style>
   [v-cloak] { display: none; }
@@ -123,8 +123,8 @@
         </button>
       </div>
 
-      <!-- Definition tab: owner-declared ObjectForm for viewing/editing or accepting an agent draft. -->
-      <projection slot="form" v-show="activeTab === 'definition'" @saved="onFormSaved"></projection>
+      <!-- Definition tab: owner-declared ObjectForm for viewing, editing, or agent-driven creation via fill_form. -->
+      <projection slot="form" v-show="activeTab === 'definition'" @saved="onFormSaved" @discarded="onFormDiscarded" @cancel="onFormDiscarded"></projection>
 
       <!-- Derived definition tab: summary, grouped effects, selectable parameters, and submission conditions. -->
       <section class="ac-section" v-show="activeTab === 'derived'">

@@ -1,9 +1,8 @@
-import { draftTarget, pageDraftSchema, pageDraftPathSchema } from "@ontomato/contracts/page-draft";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -42,45 +41,23 @@ it("external begin and close retain user authentication and create no platform w
   expect(calls.every(call=>call.token==="user")).toBe(true);
 });
 
-it("platform knowledge import emits separate original-page forms and never calls Java import",async()=>{
+it("platform knowledge import returns fields for each live form and never calls Java import",async()=>{
   const result=JSON.parse((await command("import-knowledge",true,{items:[
     {id:"new",title:"New",text:"New text",tags:["new-tag"],sourceIds:["source"]},
     {id:"existing",title:"Changed",text:"Changed text",sourceIds:["source"]},
   ]})).stdout);
   expect(calls.map(call=>call.path)).toEqual(["/admin/getBussinessKnowledge"]);
-  const drafts=await Promise.all(result.drafts.map(async(entry:{path:string;link:string})=>{
-    const target=/^\[[\s\S]+\]\((#\/ontology\/knowledge\?.*)\)$/.exec(entry.link);
-    expect(target).not.toBeNull();
-    pageDraftPathSchema.parse(entry.path);
-    const link=new URL(target![1].slice(1),"http://platform");
-    expect(link.pathname).toBe("/ontology/knowledge");
-    expect(link.searchParams.get("draftSessionId")).toBe(id);expect(link.searchParams.get("draftRunId")).toBe(run);
-    expect(link.searchParams.get("draftPath")).toBe(entry.path);
-    return pageDraftSchema.parse(JSON.parse(await readFile(path.join(directory,entry.path),"utf8")));
-  }));
-  expect(drafts).toEqual([
-    {pageKey:"business-knowledge",operation:"knowledge.create",target:{objectType:"platform:BusinessKnowledge"},form:{knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
-    {pageKey:"business-knowledge",operation:"knowledge.update",target:{objectType:"platform:BusinessKnowledge",id:"existing"},form:{knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
-  ]);
-  expect(new Set(result.drafts.map((entry:{path:string})=>entry.path)).size).toBe(2);
-  // The draft decides create or update before it exists; its own operation and target must agree with what a page
-  // derives from the draft it reads, so changing either side alone breaks here.
-  // A drafted new item stays pending for review, and names no id in its form: the target says it is a create.
-  const created=drafts.find((draft)=>draftTarget(draft).kind==="create")!;
-  expect((created.form as Record<string,unknown>).status).toBe(0);
-  expect("knowledgeID" in (created.form as Record<string,unknown>)).toBe(false);
-  const targets=drafts.map((draft)=>({target:draftTarget(draft),operation:draft.operation}));
-  expect(targets).toEqual([
-    {target:{kind:"create",objectType:"platform:BusinessKnowledge"},operation:"knowledge.create"},
-    {target:{kind:"update",objectType:"platform:BusinessKnowledge",id:"existing"},operation:"knowledge.update"},
+  expect(result.items).toEqual([
+    {mode:"create",page:"/ontology/knowledge",form:{knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
+    {mode:"update",id:"existing",page:"/ontology/knowledge",form:{knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
   ]);
 });
 
 it("platform import uses the execution callback for its business-page read without a long user key",async()=>{
  const result=JSON.parse((await command("import-knowledge",true,{items:[{id:"new",title:"Title",text:"Text",sourceIds:[]}]},true)).stdout);
  expect(calls).toEqual([{path:"/admin/getBussinessKnowledge",token:"",run,callback:"executor-callback"}]);
- expect(result.drafts).toHaveLength(1);
- expect(await readFile(path.join(directory,result.drafts[0].path),"utf8")).not.toContain("executor-callback");
+ expect(result.items).toHaveLength(1);
+ expect(JSON.stringify(result)).not.toContain("executor-callback");
 });
 
 it("platform work-record updates return only the saved result without a report link",async()=>{

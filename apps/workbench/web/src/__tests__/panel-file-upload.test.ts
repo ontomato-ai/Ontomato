@@ -81,7 +81,6 @@ function open(exists: boolean) {
       outcome: exists && confirmation.kind === "none"
         ? { kind: "refusal", code: "SKILL_EXISTS", message: "A skill named alpha already exists.", details: { skillId: "alpha" } }
         : imported } }),
-    recordDraftCreated: async () => {},
     readProjection: async () => importer,
     read: async (request) => ({ status: "ready", value: (request.operations ? { import: importSkill } : null) as never }),
   });

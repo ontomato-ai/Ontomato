@@ -55,65 +55,6 @@ it("issues a callback only for the same host's directly admitted human run with 
   }
 });
 
-it("forwards overwriteUnsavedDraft in the live page presentation frame", async () => {
-  const view = new AbortController();
-  const binding = { viewId: "55555555-5555-4555-8555-555555555555" };
-  const sent: unknown[] = [];
-  const connectionId = openPresentationView("workbench", owner, binding.viewId, (frame) => sent.push(frame), view.signal);
-  try {
-    const service = {
-      ownRun: vi.fn(async () => {}),
-      resolve: vi.fn(),
-    } as never;
-    const pending = requestPresentation(
-      service,
-      "workbench",
-      owner,
-      {
-        viewId: binding.viewId,
-        sessionId: session.sessionId,
-        runId,
-        toolCallId: "call-overwrite",
-        input: {
-          target: "/ontology/assets/actions?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fa.page-draft.json",
-          overwriteUnsavedDraft: true,
-        },
-      },
-      new AbortController().signal,
-    );
-    await vi.waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toMatchObject({
-      type: "presentation",
-      toolCallId: "call-overwrite",
-      target: {
-        kind: "page",
-        overwriteUnsavedDraft: true,
-      },
-    });
-    receivePresentation("workbench", owner, session.sessionId, runId, {
-      connectionId,
-      toolCallId: "call-overwrite",
-      result: {
-        status: "opened",
-        reason: "target_selected",
-        current: {
-          known: true,
-          observedAt: new Date().toISOString(),
-          placement: "side",
-          target: { kind: "page", url: "/ontology/assets/actions", label: "Actions", selection: [], state: { activeTab: "definition" } },
-          load: { status: "ready" },
-        },
-      },
-    });
-    expect(await pending).toMatchObject({
-      status: "opened",
-      current: { target: { kind: "page", state: { activeTab: "definition" } } },
-    });
-  } finally {
-    view.abort();
-  }
-});
-
 it("supports read-only observe_display round-trips carrying live public state and form contents", async () => {
   const view = new AbortController();
   const binding = { viewId: "66666666-6666-4666-8666-666666666666" };

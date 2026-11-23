@@ -78,8 +78,6 @@ vi.mock("../application-use", () => ({
 
 import {
   dispatchHumanPanelOperation,
-  dispatchPanel,
-  operatePanel,
   prepareHumanPanelOperation,
 } from "../operations";
 
@@ -530,9 +528,8 @@ describe("customer Action boundParams materialization into input.values", () => 
     });
 
     // 2. Agent channel: caller omits all fixed literal/pinned-input params; server injects them into input.values.
-    const agentIntentId = uuid(30);
-    const operated = await operatePanel(owner, credentials, uuid(2), {
-      intentId: agentIntentId,
+    const operated = await prepareHumanPanelOperation(owner, credentials, {
+      agentRun: { runId: uuid(2), sessionId: uuid(3), toolCallId: "fill-save" },
       applicationId: "app-1",
       useId: "students-use",
       operationId: "createForm.save",
@@ -547,13 +544,11 @@ describe("customer Action boundParams materialization into input.values", () => 
         },
       },
     }, "Alice");
-    expect(operated.kind).toBe("confirmation-required");
-    const storedAgent = intents.get(agentIntentId)!;
+    const storedAgent = intents.get(operated.intentId)!;
+    expect(storedAgent.source.kind).toBe("agent-page");
     expect("call" in storedAgent && Object.keys(storedAgent.call.input)).toEqual(["values"]);
 
-    const questionId = (storedAgent as { questionId: string }).questionId;
-    humanAnswer = { role: "notification", kind: "agent-answer", source: { kind: "user" }, replyTo: questionId, answerId: uuid(11) };
-    const agentDone = await dispatchPanel(owner, credentials, uuid(2), agentIntentId);
+    const agentDone = await dispatchHumanPanelOperation(owner, credentials, operated.intentId);
     expect(agentDone).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
     expect(formCalls[1]).toEqual({
       id: "create-student",
@@ -667,8 +662,8 @@ describe("customer Action boundParams materialization into input.values", () => 
     })).rejects.toMatchObject({ status: 403, code: "OPERATION_PARAM_MISMATCH" });
 
     // 2. Tampered pinned input on targeted edit Action (agent channel).
-    await expect(operatePanel(owner, credentials, uuid(2), {
-      intentId: uuid(40),
+    await expect(prepareHumanPanelOperation(owner, credentials, {
+      agentRun: { runId: uuid(2), sessionId: uuid(3), toolCallId: "tampered-save" },
       applicationId: "app-1",
       useId: "students-use",
       operationId: "editForm.save",

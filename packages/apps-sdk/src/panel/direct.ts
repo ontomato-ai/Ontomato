@@ -1,4 +1,4 @@
-import { computed, effectScope, nextTick, onScopeDispose, shallowReactive, shallowRef, watch, type Component, type ComputedRef, type EffectScope, type Ref } from "vue";
+import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, watch, type Component, type ComputedRef, type EffectScope, type Ref } from "vue";
 import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
@@ -17,14 +17,7 @@ import type { PanelText } from "./text";
 import type { PanelContext } from "./context";
 import { admittedOperations, watchMemberOperations, type MemberOperationsState } from "./member-operations";
 import type { PanelMemberContext } from "./member";
-import {
-  createMemberFormDraftChannel,
-  evaluateMemberFormDraft,
-  formTargetKey,
-  formTargetState,
-  memberFormSource,
-} from "./member-forms";
-import { portsOf, readsOwnerForm } from "./ports-of";
+import { portsOf } from "./ports-of";
 import { slotInputValues } from "./ports";
 import { memberComponentId } from "./projection-element";
 
@@ -211,10 +204,6 @@ export interface DirectPanelInstance extends PanelInstance {
   projectionChanged(id: string, revision?: number): void;
   /** How many times a member's projection was read anew, which its drawing is keyed by. */
   projectionVersion(member: string): number;
-  /** Marks a member as mounted in the DOM by `<PanelMember>` until the returned disposer runs. */
-  markDrawn(member: string): () => void;
-  /** Whether a member is currently mounted in the DOM. */
-  isDrawn(member: string): boolean;
   /** Registers a panel-local back/close step (LIFO) with the enclosing host. */
   readonly registerBackHandler?: DirectPanelRun["registerBackHandler"];
   /** Unified host confirmation for leaving unsaved edits. */
@@ -477,63 +466,18 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     const context = scope.run(() => {
       const inputs = computed(() => slotInputValues(direct, member, instance.state.values.value) as MemberInputs);
       const operations = directInstance.memberOperations(member, projection, () => inputs.value);
-      const takesDrafts = readsOwnerForm(projection);
-      const formDraft = takesDrafts && memberComponentId(projection) === "ObjectForm"
-        ? createMemberFormDraftChannel()
-        : undefined;
       const memberContext: PanelMemberContext = {
         key: member,
         projection,
         inputs,
         operations,
         data: directInstance.memberData(member, projection, () => inputs.value),
-        ...(formDraft ? { formDraft } : {}),
       };
       onScopeDispose(instance.register({
         slot: member, projectionId: projection.id, ports: portsOf(projection),
         get operations() { return admittedOperations(operations.value); },
         ...(projection.operations ? { operationBindings: projection.operations } : {}),
-        takesDrafts,
       }));
-      if (formDraft) {
-        const forms = memberFormSource(memberContext, instance);
-        onScopeDispose(instance.forms.registerDraftReceiver(member, {
-          isDrawn: () => directInstance.isDrawn(member),
-          async receive(draft) {
-            const evaluated = await evaluateMemberFormDraft(memberContext, instance, forms, draft);
-            if (!evaluated) return null;
-            const { state, currentTarget, moveTo } = formTargetState(memberContext, instance);
-            if (evaluated.refusal !== null) {
-              // An unmounted create form receives no `instance.draft` on refusal and clearing selection will not mount
-              // a `v-if="selected"` form; reject so the host reports the refusal instead of hiding it.
-              if (evaluated.into.kind === "draft" && !directInstance.isDrawn(member)) throw evaluated.refusal;
-              formDraft.setPending({
-                kind: "refused",
-                target: formTargetKey(evaluated.into),
-                baseline: evaluated.baseline,
-                reason: evaluated.refusal,
-              });
-              if (state !== null && formTargetKey(currentTarget()) !== formTargetKey(evaluated.into)) moveTo(evaluated.into);
-              return new Set();
-            }
-            formDraft.setPending(evaluated.held ? { kind: "accepted", into: evaluated.into, held: evaluated.held } : null);
-            if (state !== null && formTargetKey(currentTarget()) !== formTargetKey(evaluated.into)) moveTo(evaluated.into);
-            return evaluated.marked;
-          },
-          async verifyDrawn(draft) {
-            // Object edit drafts drive bound selection state and may wait for async detail/list reads before mounting
-            // `<projection slot="...">`; only create drafts need immediate confirmation that the template can draw them.
-            if (draft.target.id !== undefined || draft.created !== undefined) return true;
-            if (directInstance.isDrawn(member)) return true;
-            // Allow panel `watch(instance.draft)` handlers and Vue's conditional render flush to mount the create form.
-            await nextTick();
-            await nextTick();
-            if (directInstance.isDrawn(member)) return true;
-            formDraft.setPending(null);
-            return false;
-          },
-        }));
-      }
       return memberContext;
     })!;
     return { kind: "projection", context };
@@ -558,9 +502,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       pageKey: options.pageKey, url: options.url, label: options.label,
       initial: nestedInputs(member) as never,
       // The placed panel's state stays its own; what this one takes of it is its declared outputs, read below.
-      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {},
-      // The page's draft is told about by the panel the reader opened, above it; a placed panel adds no notice of its own.
-      draftRefused: () => {}, draftOpened: () => {},
+      state: () => {}, context: () => {}, operations: () => {}, dirty: () => {},
       failed: (reason) => { failure.value = reason instanceof Error ? reason : new Error(String(reason)); },
       // The theme this panel gives where it places the other: the host lays it over that panel's own.
       ...(direct.members[member]!.theme ? { theme: direct.members[member]!.theme } : {}),
@@ -591,7 +533,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     return { kind: "panel", element, failure };
   }
 
-  const drawnCounts = new Map<string, number>();
   const addressPending = shallowRef(false);
 
   const notifyOperationCompleted = instance.operationCompleted;
@@ -901,21 +842,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         mount.projectionsChanged([revision === undefined ? { id } : { id, revision }]);
     },
     projectionVersion: (member: string) => versions.get(member) ?? 0,
-    markDrawn(member: string) {
-      let active = true;
-      drawnCounts.set(member, (drawnCounts.get(member) ?? 0) + 1);
-      return () => {
-        if (!active) return;
-        active = false;
-        const next = (drawnCounts.get(member) ?? 0) - 1;
-        if (next > 0) drawnCounts.set(member, next);
-        else {
-          drawnCounts.delete(member);
-          instance.forms.retryOffer();
-        }
-      };
-    },
-    isDrawn: (member: string) => (drawnCounts.get(member) ?? 0) > 0,
     ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
     ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
   });
@@ -950,7 +876,6 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     projection: frameOnly("Reading a projection record"),
     invoke: frameOnly("Running a frame operation"),
     projectionsChanged: () => () => {},
-    draft: instance.draft,
     holdUnsaved: () => () => {},
     t: instance.text,
     resources: () => Promise.resolve(),
