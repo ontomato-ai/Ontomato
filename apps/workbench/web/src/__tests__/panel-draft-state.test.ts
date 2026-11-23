@@ -49,7 +49,8 @@ it("opens the draft before showing the page, then moves the panel where the draf
   try {
     // While the draft is read, the reader is told so and never sees the page at the state it is about to leave.
     await vi.waitFor(() => expect(element.querySelector(".panel-host-draft-opening")).not.toBeNull(), { timeout: 8000 });
-    expect((element.querySelector(".panel-host-direct") as HTMLElement | null)?.style.display).toBe("none");
+    const direct = element.querySelector<HTMLElement>(".panel-host-direct");
+    expect(direct === null || direct.style.display === "none").toBe(true);
     await vi.waitFor(() => expect(element.querySelector(".mode")?.textContent).toBe("edit"), { timeout: 8000 });
     await vi.waitFor(() => expect(element.querySelector(".panel-host-draft-opening")).toBeNull());
     expect((element.querySelector(".panel-host-direct") as HTMLElement).style.display).toBe("");
