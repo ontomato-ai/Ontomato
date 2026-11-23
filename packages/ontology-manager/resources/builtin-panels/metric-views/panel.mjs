@@ -7,8 +7,6 @@ import {
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
-const TYPE = "platform:MetricView";
-
 /*
  * Metric views panel: full-width catalog switching to a full-width detail view.
  *
