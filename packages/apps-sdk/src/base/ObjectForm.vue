@@ -1271,13 +1271,10 @@ function saveContext() {
 
 /** Finish the save for the target it started with, whether the page button or the agent requested it. */
 function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
-  const savedHeld = held;
   return async (saved: FormSaveResult) => {
-    if (held === savedHeld) held = null;
     const createdWithoutKey = into.kind === "draft" && saved.primaryKey === null;
     const stillShowingTarget = !unmounted && target.value === into;
     if (stillShowingTarget) {
-      heldRefusal = null;
       if (createdWithoutKey) {
         adopt(ownerOpened.value!);
       } else {
