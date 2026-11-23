@@ -1,10 +1,34 @@
 <template>
   <!-- Outer gate: hide the UI only while the first-screen is pending -->
   <div ref="dashRootRef" class="dash-root" :class="{ 'is-layout-pending': !layoutReady }">
+    <div
+      v-if="hasBoardPreview"
+      class="board-preview-bar"
+      role="region"
+      :aria-label="t('platform.unsavedChanges')"
+    >
+      <div class="board-preview-bar__text">
+        <strong>{{ t("platform.unsavedChanges") }}</strong>
+        <span>{{ previewSummary.displaySummary }}</span>
+      </div>
+      <div v-if="boardPreviewFailure" class="board-preview-bar__failure" role="alert">
+        <strong v-if="boardPreviewFailureHeadline">{{ boardPreviewFailureHeadline }}</strong>
+        <span>{{ boardPreviewFailure.message }}</span>
+      </div>
+      <div class="board-preview-bar__actions">
+        <el-button :disabled="savingBoardPreview" @click="discardBoardPreview">
+          {{ t("common.cancel") }}
+        </el-button>
+        <el-button type="primary" :loading="savingBoardPreview" @click="saveBoardPreview">
+          {{ t("common.save") }}
+        </el-button>
+      </div>
+    </div>
+
     <!-- Empty state: dashboard with no dimensions (vertically centered) -->
     <div
       v-if="
-        normalizeId(props.dashboardId) && Array.isArray(chartGroups) && chartGroups.length === 0
+        normalizeId(props.dashboardId) && Array.isArray(displayedGroups) && displayedGroups.length === 0
       "
       class="empty-state"
     >
@@ -21,8 +45,8 @@
 
     <!-- Main body: group dragging -->
     <Draggable
-      v-else-if="Array.isArray(chartGroups)"
-      v-model="chartGroups"
+      v-else-if="Array.isArray(displayedGroups)"
+      :model-value="displayedGroups"
       class="bi-dashboard"
       item-key="id"
       handle=".group-drag-handle"
@@ -32,7 +56,8 @@
       :group="{ name: 'dashboard-groups', pull: true, put: false }"
       :ghost-class="'drag-ghost'"
       :drag-class="'drag-dragging'"
-      :disabled="dragDisabled"
+      :disabled="dragDisabled || hasBoardPreview"
+      @update:model-value="onGroupsModelUpdate"
       @end="() => persistLayoutDebounced()"
     >
       <template #item="{ element: g }">
@@ -56,7 +81,7 @@
           <!-- Metric dragging -->
           <Draggable
             v-if="Array.isArray(g.metrics)"
-            v-model="g.metrics"
+            :model-value="g.metrics"
             item-key="id"
             tag="div"
             :class="['metrics-section', { 'metrics-empty': g.metrics.length === 0 }]"
@@ -68,13 +93,15 @@
             :prevent-on-filter="false"
             :ghost-class="'drag-ghost'"
             :drag-class="'drag-dragging'"
-            :disabled="dragDisabled"
+            :disabled="dragDisabled || hasBoardPreview"
+            @update:model-value="(next) => onGroupMetricsUpdate(g.id, next)"
             @end="() => persistLayoutDebounced()"
           >
             <template #item="{ element: m }">
               <MetricCard
                 :metric="m"
                 :data-card-id="m.id"
+                :class="{ 'is-preview-modified': modifiedCardIds.has(m.id) }"
                 :selected="isSelected(m.id, 'metric')"
                 :style="gridSpanStyle(m?.layout)"
                 @select="(card) => selectCard(card)"
@@ -87,7 +114,7 @@
 
           <div v-if="Array.isArray(g.charts)" class="charts-wrapper">
             <Draggable
-              v-model="g.charts"
+              :model-value="g.charts"
               item-key="id"
               tag="div"
               :class="[
@@ -103,13 +130,15 @@
               :empty-insert-threshold="48"
               :ghost-class="'drag-ghost'"
               :drag-class="'drag-dragging'"
-              :disabled="dragDisabled"
+              :disabled="dragDisabled || hasBoardPreview"
+              @update:model-value="(next) => onGroupChartsUpdate(g.id, next)"
               @end="() => persistLayoutDebounced()"
             >
               <template #item="{ element: c }">
                 <ChartCard
                   :chart="c"
                   :data-card-id="c.id"
+                  :class="{ 'is-preview-modified': modifiedCardIds.has(c.id) }"
                   :style="gridSpanStyle(c.layout)"
                   :dashboard-id="normalizeId(props.dashboardId)"
                   :selected="isSelected(c.id, 'chart')"
@@ -153,12 +182,13 @@
       :dashboard-id="normalizeId(props.dashboardId)"
       :card="parametersCard"
       @saved="handleParametersSaved"
+      @dirty="(dirty) => { parametersDirty = dirty; }"
     />
   </div>
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { GripVertical, Plus } from "lucide-vue-next";
 import Draggable from "vuedraggable";
@@ -167,6 +197,15 @@ import MetricCard from "./MetricCard.vue";
 import DropdownMenu from "./DropdownMenu.vue";
 import CardParameterDialog from "./CardParameterDialog.vue";
 import MetricSourceDialog from "./MetricSourceDialog.vue";
+import { cardError, cardErrorHeadline } from "./utils/metricCard";
+import {
+  applyBoardPreviewOverlay,
+  boardPreviewModifiedCards,
+  buildBoardSavePlan,
+  canonicalBoardPreviewSnapshot,
+  parseBoardPreviewFill,
+  summarizeBoardPreview,
+} from "../board-preview";
 
 import {
   normalizeId,
@@ -189,6 +228,9 @@ import {
   modifyDashboardLayout,
   modifyDimensionName,
   modifyMetricName,
+  modifyResultSetName,
+  prepareDashboardAgentConfirm,
+  renameDashboard,
   createDimension,
 } from "../api";
 
@@ -206,11 +248,18 @@ const props = defineProps({
   /** The card the page's own address names as chosen, so a board reopened at that address shows the same one chosen. */
   cardId: { type: String, default: "" },
 });
-const emit = defineEmits(["select-card"]);
+const emit = defineEmits(["select-card", "dirty", "board-saved"]);
 
 const dragDisabled = ref(false);
+const boardName = ref("");
 const chartGroups = ref(null);
 const attrShowNameMapByClass = ref({});
+
+const boardPreview = ref(null);
+const savingBoardPreview = ref(false);
+const boardPreviewFailure = ref(null);
+let boardPreviewVersion = 0;
+let unmounted = false;
 
 const metricSourceOpen = ref(false);
 const metricSourceCard = ref(null);
@@ -218,6 +267,25 @@ const metricSourceCard = ref(null);
 const parametersOpen = ref(false);
 const parametersCard = ref(null);
 const parameterDialogRef = ref(null);
+const parametersDirty = ref(false);
+
+const hasBoardPreview = computed(() => Boolean(boardPreview.value));
+const displayedGroups = computed(() =>
+  Array.isArray(chartGroups.value) ? applyBoardPreviewOverlay(chartGroups.value, boardPreview.value) : chartGroups.value
+);
+const modifiedCardIds = computed(() =>
+  Array.isArray(chartGroups.value) ? boardPreviewModifiedCards(chartGroups.value, boardPreview.value) : new Set()
+);
+const previewSummary = computed(() =>
+  boardPreview.value && Array.isArray(chartGroups.value)
+    ? summarizeBoardPreview(boardName.value, chartGroups.value, boardPreview.value)
+    : { displaySummary: "", confirmImpactSummary: "" }
+);
+const boardPreviewFailureHeadline = computed(() =>
+  boardPreviewFailure.value ? cardErrorHeadline(boardPreviewFailure.value, t) : null
+);
+const isDirty = computed(() => hasBoardPreview.value || parametersDirty.value);
+watch(isDirty, (dirty) => emit("dirty", dirty), { flush: "sync", immediate: true });
 
 const loader = createDashboardLoader();
 
@@ -321,7 +389,25 @@ function ensureLayoutObserver() {
 
 async function reloadDashboardGroups(id) {
   const detail = await fetchDashboardLocalDetail(id);
+  boardName.value = String(detail?.name || "");
   chartGroups.value = Array.isArray(detail?.groups) ? detail.groups : [];
+}
+
+function onGroupsModelUpdate(next) {
+  if (hasBoardPreview.value) return;
+  chartGroups.value = next;
+}
+
+function onGroupMetricsUpdate(groupId, next) {
+  if (hasBoardPreview.value || !Array.isArray(chartGroups.value)) return;
+  const target = chartGroups.value.find((group) => group.id === groupId);
+  if (target) target.metrics = next;
+}
+
+function onGroupChartsUpdate(groupId, next) {
+  if (hasBoardPreview.value || !Array.isArray(chartGroups.value)) return;
+  const target = chartGroups.value.find((group) => group.id === groupId);
+  if (target) target.charts = next;
 }
 
 function setDragDisabled(v) {
@@ -420,6 +506,7 @@ async function flushPersistLayout() {
 }
 
 function persistLayoutDebounced() {
+  if (hasBoardPreview.value) return;
   const id = normalizeId(props.dashboardId);
   if (!id) return;
   persistDirty = true;
@@ -543,11 +630,16 @@ watch(
   () => normalizeId(props.dashboardId),
   async (id) => {
     const loadToken = ++dashboardLoadToken;
+    boardPreview.value = null;
+    boardPreviewFailure.value = null;
+    parametersOpen.value = false;
+    parametersDirty.value = false;
 
     // Reset the dashboard reset gate
     resetLayoutGate();
 
     if (!id) {
+      boardName.value = "";
       chartGroups.value = null;
       layoutReady.value = true;
       return;
@@ -580,6 +672,10 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  unmounted = true;
+  boardPreview.value = null;
+  parametersDirty.value = false;
+  emit("dirty", false);
   loader.abort();
 
   if (persistTimer) clearTimeout(persistTimer);
@@ -756,7 +852,7 @@ function selectCard(card) {
 
 /** The card's name as the board shows it. */
 function shownName(cardId) {
-  const card = [...(chartGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])].find((item) => item.id === cardId);
+  const card = [...(displayedGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])].find((item) => item.id === cardId);
   return card?.name || card?.title || String(cardId);
 }
 
@@ -776,6 +872,7 @@ watch([() => props.cardId, chartGroups], ([cardId]) => {
 /* ======================== layout change ======================== */
 
 function handleLayoutChange(card, layout) {
+  if (hasBoardPreview.value) return;
   card.layout = { ...(card.layout || {}), ...layout };
   persistLayoutDebounced();
 }
@@ -808,7 +905,7 @@ function handleParametersSaved(cardId) {
 }
 
 function findCard(cardId) {
-  const groups = Array.isArray(chartGroups.value) ? chartGroups.value : [];
+  const groups = Array.isArray(displayedGroups.value) ? displayedGroups.value : [];
   for (const group of groups) {
     const chart = (group.charts || []).find((item) => item.id === cardId);
     if (chart) return { card: chart, kind: "chart" };
@@ -859,7 +956,201 @@ async function openParametersForCard(cardId, options = {}) {
   return { ok: true };
 }
 
+async function saveBoardPreview() {
+  const id = normalizeId(props.dashboardId);
+  const preview = boardPreview.value;
+  if (!id || !preview) return { ok: false, message: "There are no unsaved dashboard changes to save." };
+  savingBoardPreview.value = true;
+  boardPreviewFailure.value = null;
+  try {
+    const plan = buildBoardSavePlan(boardName.value, preview);
+    if (plan.renameBoard !== undefined) {
+      const ok = await renameDashboard(id, plan.renameBoard);
+      if (!ok) throw new Error(t("common.renameFailed"));
+    }
+    if (plan.layoutGroups) {
+      const ok = await modifyDashboardLayout(id, plan.layoutGroups);
+      if (!ok) throw new Error(t("dashboard.layoutSaveFailedRetry"));
+    } else {
+      for (const item of plan.groupRenames) {
+        const ok = await modifyDimensionName(id, item.groupId, item.dimensionName);
+        if (!ok) throw new Error(t("common.renameFailed"));
+      }
+      for (const item of plan.chartRenames) {
+        const ok = await modifyResultSetName(id, item.chartId, item.resultSetName);
+        if (!ok) throw new Error(t("common.renameFailed"));
+      }
+      for (const item of plan.metricRenames) {
+        const ok = await modifyMetricName(id, item.metricId, item.metricName);
+        if (!ok) throw new Error(t("common.renameFailed"));
+      }
+    }
+    boardPreview.value = null;
+    boardPreviewFailure.value = null;
+    emit("board-saved");
+    await loadDashboardAll(id);
+    return { ok: true };
+  } catch (error) {
+    boardPreviewFailure.value = cardError(error);
+    return { ok: false, message: boardPreviewFailure.value.message };
+  } finally {
+    savingBoardPreview.value = false;
+  }
+}
+
+async function discardBoardPreview() {
+  const id = normalizeId(props.dashboardId);
+  boardPreview.value = null;
+  boardPreviewFailure.value = null;
+  if (id) await loadDashboardAll(id);
+}
+
+async function saveBoardFromAction(operation, agentRun) {
+  const id = normalizeId(props.dashboardId);
+  if (!id || !Array.isArray(chartGroups.value)) {
+    return { ok: false, reason: "action_not_ready", operation, message: "The dashboard is not loaded." };
+  }
+  if (!boardPreview.value) {
+    return { ok: false, reason: "action_unavailable", operation, message: "There are no unsaved dashboard changes to save." };
+  }
+  if (savingBoardPreview.value) {
+    return { ok: false, reason: "action_not_ready", operation, message: "Dashboard changes are currently saving." };
+  }
+
+  const capturedDashboardId = id;
+  const capturedVersion = boardPreview.value.version;
+  const capturedCanonical = canonicalBoardPreviewSnapshot(boardPreview.value);
+  const capturedLoadToken = dashboardLoadToken;
+  const targetLabel = boardName.value || id;
+  const impactSummary = previewSummary.value.confirmImpactSummary;
+
+  let prepared;
+  try {
+    prepared = await prepareDashboardAgentConfirm({
+      dashboardId: capturedDashboardId,
+      operation: "board.save",
+      targetLabel,
+      impactSummary,
+      agentRun,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "failed",
+      operation,
+      message: error instanceof Error ? error.message : "Failed to prepare save confirmation.",
+    };
+  }
+
+  let cancelled = false;
+  let dispatched = false;
+  const isStillValid = () => {
+    if (unmounted) return { ok: false, reason: "stale", message: "The dashboard page was closed." };
+    if (cancelled) return { ok: false, reason: "stale", message: "The save confirmation was cancelled." };
+    if (dispatched) return { ok: false, reason: "stale", message: "The save confirmation was already executed." };
+    if (normalizeId(props.dashboardId) !== capturedDashboardId || dashboardLoadToken !== capturedLoadToken) {
+      return { ok: false, reason: "stale", message: "The dashboard was switched or reloaded." };
+    }
+    if (!boardPreview.value) {
+      return { ok: false, reason: "stale", message: "The unsaved dashboard preview was already saved or discarded." };
+    }
+    if (
+      boardPreview.value.version !== capturedVersion ||
+      canonicalBoardPreviewSnapshot(boardPreview.value) !== capturedCanonical
+    ) {
+      return { ok: false, reason: "stale", message: "The dashboard preview changed after confirmation was requested." };
+    }
+    if (savingBoardPreview.value) {
+      return { ok: false, reason: "stale", message: "Dashboard changes are currently saving." };
+    }
+    return { ok: true };
+  };
+
+  if (prepared.autoMode) {
+    const check = isStillValid();
+    if (!check.ok) {
+      return { ok: false, reason: "stale", operation, intentId: prepared.intentId, message: check.message };
+    }
+    dispatched = true;
+    const saved = await saveBoardPreview();
+    if (saved.ok) return { ok: true, kind: "executed", operation, intentId: prepared.intentId };
+    return { ok: false, reason: "failed", operation, intentId: prepared.intentId, message: saved.message };
+  }
+
+  const confirmation = {
+    intentId: prepared.intentId,
+    questionId: prepared.questionId,
+    operationId: operation,
+    label: prepared.label,
+    isStillValid,
+    async dispatch() {
+      const check = isStillValid();
+      if (!check.ok) {
+        return { ok: false, intentId: prepared.intentId, reason: "stale", message: check.message };
+      }
+      dispatched = true;
+      const saved = await saveBoardPreview();
+      if (saved.ok) {
+        return {
+          ok: true,
+          intentId: prepared.intentId,
+          outcome: { dashboardId: capturedDashboardId },
+          summary: prepared.label,
+        };
+      }
+      return {
+        ok: false,
+        intentId: prepared.intentId,
+        reason: "failed",
+        message: saved.message || "Failed to save dashboard changes.",
+      };
+    },
+    async cancel() {
+      cancelled = true;
+    },
+  };
+
+  return {
+    ok: true,
+    kind: "awaiting_confirmation",
+    operation,
+    intentId: prepared.intentId,
+    questionId: prepared.questionId,
+    label: prepared.label,
+    confirmation,
+  };
+}
+
 async function fillForm(request) {
+  if (request.member === "board") {
+    const id = normalizeId(props.dashboardId);
+    if (!id || !Array.isArray(chartGroups.value)) {
+      return {
+        ok: false,
+        reason: "form_not_ready",
+        member: "board",
+        message: "The dashboard is not loaded yet.",
+      };
+    }
+    if (boardPreview.value && request.overwriteUnsaved !== true) {
+      return {
+        ok: false,
+        reason: "blocked_unsaved",
+        member: "board",
+        message: "The dashboard already has unsaved preview changes.",
+      };
+    }
+    const parsed = parseBoardPreviewFill(id, chartGroups.value, request.values, ++boardPreviewVersion);
+    if (!parsed.ok) return parsed;
+    boardPreview.value = parsed.preview;
+    boardPreviewFailure.value = null;
+    return {
+      ok: true,
+      member: "board",
+      filledFields: parsed.filledFields,
+      ...(parsed.rejectedFields ? { rejectedFields: parsed.rejectedFields } : {}),
+    };
+  }
   if (request.member && request.member !== "card.parameters") {
     return {
       ok: false,
@@ -917,18 +1208,48 @@ async function executeAction(request) {
       ? { ok: true, kind: "executed", operation }
       : { ok: false, reason: "action_unavailable", operation, message: opened.message };
   }
-  if (operation === "card.parameters.save" || operation === "form.save") {
+  if (operation === "card.parameters.save") {
     if (!parameterDialogRef.value) {
       return { ok: false, reason: "action_not_ready", operation, message: "The card parameter dialog is not open." };
     }
-    return parameterDialogRef.value.saveFromAction(operation);
+    return parameterDialogRef.value.saveFromAction(operation, request.agentRun);
   }
-  if (operation === "card.parameters.discard" || operation === "form.discard") {
+  if (operation === "card.parameters.discard") {
     if (!parametersOpen.value || !parameterDialogRef.value) {
       return { ok: false, reason: "action_not_ready", operation, message: "The card parameter dialog is not open." };
     }
     parameterDialogRef.value.discard();
     return { ok: true, kind: "executed", operation };
+  }
+  if (operation === "board.save") {
+    return saveBoardFromAction(operation, request.agentRun);
+  }
+  if (operation === "board.discard") {
+    if (!hasBoardPreview.value) {
+      return { ok: false, reason: "action_unavailable", operation, message: "There are no unsaved dashboard changes to discard." };
+    }
+    await discardBoardPreview();
+    return { ok: true, kind: "executed", operation };
+  }
+  if (operation === "form.save") {
+    if (parametersOpen.value && parameterDialogRef.value) {
+      return parameterDialogRef.value.saveFromAction(operation, request.agentRun);
+    }
+    if (hasBoardPreview.value) {
+      return saveBoardFromAction(operation, request.agentRun);
+    }
+    return { ok: false, reason: "action_not_ready", operation, message: "No unsaved dashboard or parameter changes to save." };
+  }
+  if (operation === "form.discard") {
+    if (parametersOpen.value && parameterDialogRef.value) {
+      parameterDialogRef.value.discard();
+      return { ok: true, kind: "executed", operation };
+    }
+    if (hasBoardPreview.value) {
+      await discardBoardPreview();
+      return { ok: true, kind: "executed", operation };
+    }
+    return { ok: false, reason: "action_not_ready", operation, message: "There are no unsaved changes to discard." };
   }
   return {
     ok: false,
@@ -943,6 +1264,7 @@ defineExpose({
     const id = normalizeId(props.dashboardId);
     return id ? loadDashboardAll(id) : Promise.resolve();
   },
+  isDirty: () => isDirty.value,
   selectCardById,
   openParametersForCard,
   fillForm,
@@ -965,6 +1287,52 @@ defineExpose({
 
 .dash-root.is-layout-pending {
   visibility: hidden;
+}
+
+.board-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: var(--spacing-md);
+  padding: 10px 14px;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: var(--radius-md);
+  background: var(--el-color-primary-light-9);
+  flex-shrink: 0;
+}
+
+.board-preview-bar__text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+}
+
+.board-preview-bar__failure {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  color: var(--el-color-danger);
+  font-size: var(--text-xs);
+}
+
+.board-preview-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.is-preview-modified {
+  outline: 1.5px dashed var(--el-color-primary);
+  outline-offset: -1px;
 }
 
 /* Empty state: no dimensions */

@@ -41,7 +41,8 @@ Run `close` when finished. Expired or closed writes fail with HTTP 409; begin a 
 When asked to add or change business knowledge, use the [extraction workflow](references/extraction.md).
 
 - With `present`, `fill_form` and `page_action`, use the live business-knowledge form. Run
-  `import-knowledge` to prepare its fields. The `form` member holds one live form at a time.
+  `import-knowledge` to prepare its fields. For updates, fill only the fields being changed.
+  Send `status: 0` only for new entries. The `form` member holds one live form at a time.
   Show one item and wait for the user to review and save it before filling the next. Keep any
   unsaved item visible until it is settled. Use `page_action` to request a save only when asked.
 - In a background or delegated run without page tools, an explicitly requested import of

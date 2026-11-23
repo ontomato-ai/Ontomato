@@ -55,6 +55,7 @@ if (platform && command === "import-knowledge") {
   const existing = new Map(Object.entries(result.data));
   const items = args.items.map((item) => {
     const previous = existing.get(item.id);
+    const tags = item.tags ?? (previous ? undefined : []);
     return {
       mode: previous ? "update" : "create",
       ...(previous ? { id: previous.knowledgeID } : {}),
@@ -62,8 +63,8 @@ if (platform && command === "import-knowledge") {
       form: {
         knowledgeTitle: item.title,
         knowledgeText: item.text,
-        knowledgeTags: item.tags ?? previous?.knowledgeTags ?? [],
-        status: previous ? previous.status : 0,
+        ...(tags !== undefined ? { knowledgeTags: tags } : {}),
+        ...(!previous ? { status: 0 } : {}),
       },
     };
   });

@@ -298,7 +298,8 @@ function describeSkill({ name, description, content, state, projections, operati
     reads,
     ...(hasPlacedMembers ? [[
       "### Address a nested panel",
-      'A snapshot from `observe_display` can identify a mounted child with a `memberPath` such as `[{member:"preview",selection:{stateValue:"order-preview",target:{panelId:"order-preview"}}},{member:"details"}]`. For `/nested`, keep these object segments, including their selection and item key when present. For `/read`, keep the same segments and append the named data projection, for example `{member:"summary"}`.',
+      'Use the object segments from the display snapshot to address the mounted child. A fixed child uses `{member:"preview"}` with no `selection`. For a child selected from state, use the declared object reference and resolved target, for example `{member:"preview",selection:{stateValue:{className:"platform:ProductPanel",primaryKey:"order-preview"},target:{panelId:"order-preview"}}}` when the member permits that panel.',
+      'For `/nested`, send the path to the child, for example `[{member:"preview"},{member:"details"}]` for two fixed children. For `/read`, append the member for the named data projection, for example `{member:"summary"}`. A terminal `objectDetail` selection may omit `selection.target` only in `/nested`. Omit `itemKey` from every segment in both requests. The `/read` schema rejects it and `/nested` rejects it during path resolution.',
       'For `fill_form` and `page_action`, take each segment\'s `member` string in order. In the example use `fill_form({ member: "form", memberPath: ["preview", "details"], values: { "/name": "Updated name" } })`, then, if asked to save, `page_action({ operation: "form.save", memberPath: ["preview", "details"] })`. Here `form` is the local form member in the child. Omit `memberPath` for tools acting in the root panel.',
     ].join("\n")] : []),
     [
