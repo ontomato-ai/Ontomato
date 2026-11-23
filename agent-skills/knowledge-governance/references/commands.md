@@ -33,5 +33,8 @@ $ONTOMATO_ONTOLOGY_URL/ontology/ai/knowledge-governance/<recordId>/runs/<runId>/
 with the window's token as `tk` and the window's run and session IDs in
 `X-Ontomato-Run-Id` and `X-Ontomato-Session-Id`. When the ontology base is the run callback
 address ending in `/ontology`, it also sends `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK`.
-The owner returns `{imported: [<id>, ...], status: "pending"}`. A reused ID with different title
-or text is refused. Use the [extraction workflow](extraction.md) for live forms.
+The Java import receipt for both `import-pending` and external `import-knowledge` lists newly
+written IDs in `imported` and existing IDs with the same title and text in `skipped`.
+`status: "pending"` is present only when `imported` has entries and applies only to those IDs.
+Skipped entries keep their current state. A reused ID with different title or text is refused.
+Use the [extraction workflow](extraction.md) for live forms.
