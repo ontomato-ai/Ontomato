@@ -6,7 +6,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
-import type { PanelChildObjectIdentity, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { PanelChildObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import {
   authoredReadParameterSource,
@@ -51,12 +51,15 @@ import type { ListRowSlotOperation } from "../panel/slot-context";
 import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
 import { resolveValueMapEntry, type ResolvedValueMapEntry } from "./display-value";
 import ListRowSlotHost from "./ListRowSlotHost.vue";
+import ObjectListBatchActions from "./ObjectListBatchActions.vue";
 import ObjectListRowActions, { type ResolvedRowActionItem } from "./ObjectListRowActions.vue";
+import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
 import {
   formatOperationOutcome,
   resolveOperationInputFields,
+  type OperationBatchReceipt as BatchReceipt,
   type OperationOutcome,
   type SingleOperationOutcome,
 } from "./operation-dispatch";
@@ -212,14 +215,7 @@ const props = withDefaults(
     subtitleLines?: number;
     /** How many items a page holds when the owner's read pages (a query's cursor, or page numbers); 20 by default. */
     pageSize?: number;
-    /**
-     * Automatically selects the first listed item only in two cases:
-     * (a) on first showing when nothing is selected yet, and
-     * (b) after the reader changes search or filter parameters and the previously selected item is no longer listed
-     *     (selecting the first new match, or clearing selection to null when no items match).
-     * Clearing selection elsewhere (entering or cancelling create, closing detail, manual deselect, or subsequent
-     * refreshes while nothing is selected) is never overridden.
-     */
+    /** On the initial load, select the first listed item if there is no current selection. */
     fallbackToFirst?: boolean;
     /** Whether clicking the selected item again clears the selection; off, a click always selects. */
     toggleable?: boolean;
@@ -378,6 +374,10 @@ defineSlots<{
 }>();
 
 const slots = useSlots();
+const batchReceipt = shallowRef<BatchReceipt | null>(null);
+function publishBatchReceipt(receipt: BatchReceipt | null) {
+  batchReceipt.value = receipt;
+}
 
 const { t, te, locale } = useI18n();
 const slot = useProjectionSlot();
@@ -394,6 +394,8 @@ if (!datum) {
 const placement = panel.manifest.members[member.key]!;
 const declaration = directReadDeclaration(member.projection, datum);
 const rowObjectType = directReadRowType(member.projection, datum) ?? objectType;
+const hasObjectRows = datumName === "objects" || declaration?.rowType !== undefined
+  || ("type" in datum.source && (datum.source.type.kind === "ObjectType" || datum.source.type.kind === "PlatformObjectType"));
 const signatureParams = declaration?.parameterMode === "fixed" ? declaration.params : {};
 const requiredParamNames = new Set(declaration?.parameterMode === "fixed" ? (declaration.requiredParams ?? []) : []);
 
@@ -677,7 +679,6 @@ const filterSignature = computed(() =>
   JSON.stringify(nonPagingParamNames.map((name) => currentParams.value[name] ?? null)),
 );
 let initialLoadDone = false;
-let pendingFilterFallback = false;
 let pendingScrollToTop = false;
 
 // Synchronously clear local search and reset paging when switching dynamic type, so useMemberData issues one read.
@@ -706,7 +707,6 @@ if ("object" in datum.source) {
     (next, prev) => {
       if (next === prev) return;
       initialLoadDone = false;
-      pendingFilterFallback = false;
       activeRowLabel.value = null;
       expandedKey.value = null;
       resetPaging();
@@ -715,17 +715,13 @@ if ("object" in datum.source) {
   );
 }
 
-// Synchronously arm filter-change fallback and reset paging whenever search or any filter input changes,
-// before useMemberData's pre-flush watch runs.
+// Reset paging before useMemberData's pre-flush watch reacts to search or filter changes.
 if (nonPagingParamNames.length > 0) {
   watch(
     filterSignature,
     (next, prev) => {
       if (next === prev) return;
-      if (initialLoadDone) {
-        pendingFilterFallback = true;
-        pendingScrollToTop = true;
-      }
+      if (initialLoadDone) pendingScrollToTop = true;
       if (pageMode !== "none") resetPaging();
     },
     { flush: "sync" },
@@ -897,7 +893,11 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => {
   });
 });
 
-const total = computed<number | null>(() => (hasActiveLocalFilter.value ? rows.value.length : parsedData.value.total));
+const total = computed<number | null>(() => {
+  if (hasActiveLocalFilter.value) return rows.value.length;
+  if (datumState.value.status === "empty" && isCompleteList.value) return 0;
+  return parsedData.value.total;
+});
 const effectiveHasTotal = computed(
   () =>
     isCompleteList.value
@@ -909,9 +909,10 @@ const queryStatus = computed(() => parsedData.value.status);
 const diagnostics = computed(() => parsedData.value.diagnostics);
 const queryReason = computed(() => parsedData.value.reason);
 
-function rowSelectionValue(row: PlatformObjectRecord): ObjectListRef {
+function rowSelectionValue(row: PlatformObjectRecord) {
   return panelRecordObjectRef(row, activeType.value ?? rowObjectType);
 }
+const listedRefs = computed(() => rows.value.map(rowSelectionValue));
 
 function rowItemKey(row: PlatformObjectRecord) {
   return panelRecordItemKey(row, { fallbackClassName: activeType.value ?? rowObjectType });
@@ -1038,7 +1039,11 @@ const footerReady = computed(
 );
 const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.value : effectiveHasTotal.value));
 const footerTotal = computed<number | null>(() => (loadingMore.value ? lastKnownTotal.value : total.value));
-const showFooterTotal = computed(() => footerReady.value && footerHasTotal.value && footerTotal.value !== null);
+const showFooterTotal = computed(() => footerHasTotal.value && footerTotal.value !== null && (
+  footerReady.value
+  || (datumState.value.status === "ready" && queryStatus.value === "ok")
+  || (datumState.value.status === "empty" && isCompleteList.value)
+));
 
 const showPageSizeSelect = computed(
   () =>
@@ -1219,32 +1224,16 @@ function setChecked(next: readonly ObjectListRef[]) {
   emit("update:checked", next);
 }
 
-function applyFallback(listed: readonly PlatformObjectRecord[]) {
-  const isInitialLoad = !initialLoadDone;
+function selectInitially(listed: readonly PlatformObjectRecord[]) {
+  if (initialLoadDone) return;
   initialLoadDone = true;
-  const filterChanged = pendingFilterFallback;
-  pendingFilterFallback = false;
-
-  if (!hasSelectedBinding || !props.fallbackToFirst) return;
-
-  // (a) First showing with no selection yet: pick the first row when non-empty.
-  if (isInitialLoad) {
-    if (chosenIdentity.value === null && listed.length > 0) {
-      setSelected(rowSelectionValue(listed[0]!));
-    }
-    return;
-  }
-
-  // (b) After search/filters changed and the previously selected item disappeared: pick the first match or clear to null.
-  if (filterChanged && chosenIdentity.value !== null) {
-    if (listed.some((row) => rowIdentityKey(row) === chosenIdentity.value)) return;
-    setSelected(listed.length > 0 ? rowSelectionValue(listed[0]!) : null);
+  if (hasSelectedBinding && props.fallbackToFirst && chosenIdentity.value === null && listed.length > 0) {
+    setSelected(rowSelectionValue(listed[0]!));
   }
 }
 
 let lastListedSignature: string | null = null;
-function publishListed(listed: readonly PlatformObjectRecord[]) {
-  const refs = listed.map(rowSelectionValue);
+function publishListed(refs: readonly ObjectListRef[]) {
   const signature = JSON.stringify(refs);
   if (signature === lastListedSignature) return;
   lastListedSignature = signature;
@@ -1261,7 +1250,7 @@ watch(
     if (state.status === "empty") {
       pendingScrollToTop = false;
       publishListed([]);
-      applyFallback([]);
+      selectInitially([]);
       return;
     }
     if (state.status !== "ready" || parsedData.value.status !== "ok") {
@@ -1280,9 +1269,8 @@ watch(
       bucket.push(item);
     }
     for (const [itemType, items] of byType) panel.instance.nameObjects(itemType, items);
-    const listed = rows.value;
-    publishListed(listed);
-    applyFallback(listed);
+    publishListed(listedRefs.value);
+    selectInitially(rows.value);
     if (pendingScrollToTop) {
       pendingScrollToTop = false;
       scrollTop.value = 0;
@@ -1312,10 +1300,7 @@ if (pageMode === "none") {
       if (datumState.value.status !== "ready" || parsedData.value.status !== "ok") return;
       scrollTop.value = 0;
       if (scrollContainerRef.value) scrollContainerRef.value.scrollTop = 0;
-      pendingFilterFallback = true;
-      const listed = rows.value;
-      publishListed(listed);
-      applyFallback(listed);
+      publishListed(listedRefs.value);
     },
     { flush: "sync" },
   );
@@ -1825,6 +1810,13 @@ function cellSegments(row: PlatformObjectRecord, key: string, empty = "—") {
   return textSegmentsFor(row, key, text);
 }
 
+function subtitleSegments(row: PlatformObjectRecord, column: ObjectListColumn) {
+  if (!column.subtitleKey) return [];
+  const text = fieldValue(row, column.subtitleKey);
+  if (text !== "") return textSegmentsFor(row, column.subtitleKey, text);
+  return column.subtitleEmptyKey ? [{ text: panel.t(column.subtitleEmptyKey), hit: false }] : [];
+}
+
 function columnMapped(row: PlatformObjectRecord, column: ObjectListColumn): ResolvedValueMapEntry | null {
   if (!column.valueMap) return null;
   return resolveValueMapEntry(rawRecordField(row, column.key), column.valueMap, {
@@ -1981,12 +1973,7 @@ const rowOpPendingInputFields = computed<readonly OperationInputField[]>(() => {
 const rowOpOutcome = computed<OperationOutcome | null>(() =>
   rowOpReceipt.value?.kind === "dispatched" ? rowOpReceipt.value.outcome ?? null : null,
 );
-const rowOpBatchItems = computed(() => (rowOpOutcome.value?.kind === "batch" ? rowOpOutcome.value.items : []));
-const rowOpBatchDone = computed(() => rowOpBatchItems.value.filter((item) => item.outcome.kind === "success").length);
 const saidRowOp = (single: SingleOperationOutcome) => formatOperationOutcome(single, t);
-const nameOfRowOp = (target: PanelObjectIdentity) =>
-  rowOpNamed.value.find(({ target: known }) =>
-    known.objectType === target.objectType && known.primaryKey === target.primaryKey)?.label ?? target.primaryKey;
 
 const hasCustomRowActionSlot = computed(() =>
   Boolean(
@@ -2534,6 +2521,11 @@ const selectedRowLabel = computed<string | null>(() => {
 });
 
 useMemberOutput("status", () => datumState.value.status);
+useMemberOutput("listed", () => {
+  if (!hasObjectRows) return null;
+  if (datumState.value.status === "empty") return [];
+  return datumState.value.status === "ready" && queryStatus.value === "ok" ? listedRefs.value : null;
+});
 useMemberOutput("total", () => {
   if (datumState.value.status === "ready" && parsedData.value.status === "ok") {
     return parsedData.value.hasTotal ? parsedData.value.total : null;
@@ -2593,7 +2585,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
           {{ t("platform.listSelectedCount", { count: checkedRefs.length }) }}
         </span>
       </div>
-      <div v-if="canCheck && checkedRefs.length > 0" class="sdk-object-list-batch-actions" role="group">
+      <ObjectListBatchActions v-if="canCheck && checkedRefs.length > 0" :publish-receipt="publishBatchReceipt">
         <span v-if="isTable" class="sdk-object-list-selected-count" role="status">
           {{ t("platform.listSelectedCount", { count: checkedRefs.length }) }}
         </span>
@@ -2601,11 +2593,20 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
         <button type="button" class="sdk-object-list-link-btn" @click="clearChecked">
           {{ t("platform.listClearSelection") }}
         </button>
-      </div>
+      </ObjectListBatchActions>
       <div v-if="$slots['toolbar-actions']" class="sdk-object-list-toolbar-actions">
         <slot name="toolbar-actions"></slot>
       </div>
     </div>
+
+    <OperationBatchReceipt
+      v-if="batchReceipt"
+      class="sdk-object-list-batch-receipt"
+      :items="batchReceipt.items"
+      :named="batchReceipt.named"
+      dismissible
+      @dismiss="publishBatchReceipt(null)"
+    />
 
     <div v-if="showCreateRow" class="sdk-object-list-create-row" data-create-row="true">
       <slot name="create-row"></slot>
@@ -2799,8 +2800,8 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                               <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                             </template>
                           </span>
-                          <span v-if="column.subtitleKey && fieldValue(entry.row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
-                            <template v-for="(part, index) in cellSegments(entry.row, column.subtitleKey, '')" :key="index">
+                          <span v-if="subtitleSegments(entry.row, column).length" class="sdk-object-list-cell-sub">
+                            <template v-for="(part, index) in subtitleSegments(entry.row, column)" :key="index">
                               <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                             </template>
                           </span>
@@ -2860,8 +2861,8 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                             <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                           </template>
                         </span>
-                        <span v-if="column.subtitleKey && fieldValue(entry.row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
-                          <template v-for="(part, index) in cellSegments(entry.row, column.subtitleKey, '')" :key="index">
+                        <span v-if="subtitleSegments(entry.row, column).length" class="sdk-object-list-cell-sub">
+                          <template v-for="(part, index) in subtitleSegments(entry.row, column)" :key="index">
                             <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                           </template>
                         </span>
@@ -3515,16 +3516,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
       <template v-if="rowOpReceipt">
         <p v-if="rowOpReceipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ rowOpReceipt.message }}</p>
         <p v-else-if="rowOpOutcome === null" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-        <div v-else-if="rowOpOutcome.kind === 'batch'" class="sdk-object-list-op-batch" role="status">
-          <p>{{ t("platform.operationBatchDone", { done: rowOpBatchDone, total: rowOpBatchItems.length }) }}</p>
-          <ul>
-            <li
-              v-for="item in rowOpBatchItems"
-              :key="item.target.objectType + ':' + item.target.primaryKey"
-              :data-outcome="item.outcome.kind"
-            >{{ nameOfRowOp(item.target) }}: {{ saidRowOp(item.outcome) }}</li>
-          </ul>
-        </div>
+        <OperationBatchReceipt v-else-if="rowOpOutcome.kind === 'batch'" :items="rowOpOutcome.items" :named="rowOpNamed" />
         <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="rowOpOutcome.kind">{{ saidRowOp(rowOpOutcome) }}</p>
       </template>
     </div>
@@ -3807,16 +3799,10 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
   color: var(--el-color-danger);
   font-size: var(--text-xs);
 }
-.sdk-object-list-op-batch {
-  font-size: var(--text-xs);
-  color: var(--el-text-color-regular);
-}
-.sdk-object-list-op-batch p {
-  margin: 0 0 var(--spacing-2xs);
-}
-.sdk-object-list-op-batch ul {
-  margin: 0;
-  padding-inline-start: var(--spacing-md);
+.sdk-object-list-batch-receipt {
+  padding: var(--spacing-sm);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
 }
 .sdk-object-list-row-chevron {
   display: inline-block;

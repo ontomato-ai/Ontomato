@@ -92,6 +92,7 @@
               "key": "label",
               "labelKey": "name",
               "subtitleKey": "subtitle",
+              "subtitleEmptyKey": "noDescription",
               "minWidth": 220,
               "wrap": true
             },
@@ -375,6 +376,7 @@
         "pageDescription": "Manage domain action definitions, status, derived rules, and code explanations",
         "refresh": "Refresh",
         "keywordPlaceholder": "Filter by name or description",
+        "noDescription": "No description",
         "name": "Name",
         "condition": "Condition",
         "empty": "This domain has no actions yet.",
@@ -406,6 +408,7 @@
         "pageDescription": "维护域内动作定义、状态、推导规则与代码解释",
         "refresh": "刷新",
         "keywordPlaceholder": "按名称或描述筛选",
+        "noDescription": "未填写说明",
         "name": "名称",
         "condition": "条件",
         "empty": "本域还没有动作。",

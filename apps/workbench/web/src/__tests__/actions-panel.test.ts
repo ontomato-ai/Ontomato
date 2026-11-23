@@ -133,7 +133,6 @@ const catalogRows = [
   {
     primaryKey: "cancel-order",
     label: "Cancel order",
-    subtitle: "Cancels an open order",
     fieldLabels: {
       function: "Function",
       origin: "Origin",
@@ -468,6 +467,9 @@ describe("builtin actions panel detail mount lifecycle", () => {
       expect(element.querySelector('[data-member="catalog"]')).not.toBeNull();
       expect(element.textContent).toContain("Approve order");
     });
+    const cancelRow = [...element.querySelectorAll('[data-member="catalog"] tbody tr')]
+      .find((row) => row.textContent?.includes("Cancel order"));
+    expect(cancelRow?.querySelector(".sdk-object-list-cell-sub")?.textContent?.trim()).toBeTruthy();
     const initialCatalogEl = element.querySelector('[data-member="catalog"]');
     expect(catalogSection(element).style.display).not.toBe("none");
     expect(element.querySelector(".ac-detail")).toBeNull();

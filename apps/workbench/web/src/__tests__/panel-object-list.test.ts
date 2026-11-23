@@ -300,10 +300,11 @@ it("pairs zero-config SegmentedControl ordered counts with ObjectList flat statu
   const summaryTexts = [...element.querySelectorAll(".sdk-object-summary-text")].map((node) => node.textContent);
   expect(summaryTexts[1]).toContain("Line 2");
 
-  // Switching status tab via SegmentedControl updates flat `status` input and falls back selection to k-2.
+  // Switching status tabs updates the list while the detail stays on the selected record.
   radios[1]!.click();
   await vi.waitFor(() => expect(instance.state.values.value.status).toBe("pending"));
-  await vi.waitFor(() => expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-2")));
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Pending Order rule"));
+  expect(instance.state.values.value.selectedKnowledge).toEqual(knowledge("k-1"));
   expect(radios[1]!.getAttribute("aria-checked")).toBe("true");
 
   // Once selection is cleared to null (e.g. clicking New), ObjectList does NOT auto-reselect on subsequent reads.
@@ -1764,8 +1765,8 @@ it("renders total count, clickable numeric page jump buttons, and ellipsis foldi
       name: "Paged objects",
       componentId: "@ontomato/sdk:ObjectList",
       inputs: { type: { kind: "scalar", type: "string" } },
-      outputs: {},
-      config: { pageSize: 10 },
+      outputs: { selected: { kind: "object", objectType: USER } },
+      config: { pageSize: 10, fallbackToFirst: true },
       data: {
         objects: {
           source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
@@ -1778,16 +1779,18 @@ it("renders total count, clickable numeric page jump buttons, and ellipsis foldi
   const manifest = definePanel({
     state: {
       selectedType: { type: { kind: "scalar", type: "string" } },
+      selected: { type: { kind: "object", objectType: USER } },
     },
     members: {
       list: {
         target: { projectionId: "paged-objects" },
         inputs: { type: { state: "selectedType" } },
+        outputs: { selected: { state: "selected" } },
       },
     },
   });
 
-  const { element, reads } = mountDirect(
+  const { instance, element, reads } = mountDirect(
     manifest,
     projections,
     (request) => {
@@ -1807,6 +1810,7 @@ it("renders total count, clickable numeric page jump buttons, and ellipsis foldi
 
   // Page 1 of 12: [1, 2, …, 12] + total count
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-pagination")).not.toBeNull());
+  expect(instance.state.values.value.selected).toEqual({ className: USER, primaryKey: "u-1" });
   expect(element.querySelector(".sdk-object-list-page-total")?.textContent?.trim()).toBe("120 items");
   const pageButtons = () => [...element.querySelectorAll<HTMLButtonElement>(".sdk-object-list-page-num")];
   expect(pageButtons().map((btn) => btn.textContent?.trim())).toEqual(["1", "2", "12"]);
@@ -1818,6 +1822,7 @@ it("renders total count, clickable numeric page jump buttons, and ellipsis foldi
   pageButtons()[2]!.click();
   await vi.waitFor(() => expect(reads.at(-1)?.runtimeParams?.page).toEqual({ number: 12, size: 10 }));
   await vi.waitFor(() => expect(element.textContent).toContain("User page 12"));
+  expect(instance.state.values.value.selected).toEqual({ className: USER, primaryKey: "u-1" });
   expect(pageButtons().map((btn) => btn.textContent?.trim())).toEqual(["1", "11", "12"]);
   expect(pageButtons()[2]!.getAttribute("aria-current")).toBe("page");
   expect(element.querySelectorAll(".sdk-object-list-page-ellipsis")).toHaveLength(1);
@@ -2010,6 +2015,7 @@ it("clears search and optional filter parameters back to page 1 from the narrowe
 
   // Un-narrowed empty shows emptyHint and no Clear filters button.
   await vi.waitFor(() => expect(element.querySelector('[data-state="empty"]')?.getAttribute("data-empty")).toBe("none"));
+  expect(element.querySelector(".sdk-object-list-page-total")?.textContent).toMatch(/\b0\b/u);
   expect(element.querySelector(".fui-data-state-hint")?.textContent?.trim()).toBe("Click New in the header to create one");
   expect(element.querySelector(".fui-data-state-clear")).toBeNull();
 
@@ -2018,6 +2024,7 @@ it("clears search and optional filter parameters back to page 1 from the narrowe
   instance.state.set("statusFilter", "archived");
   instance.state.set("keyword", "ghost");
   await vi.waitFor(() => expect(element.querySelector('[data-state="empty"]')?.getAttribute("data-empty")).toBe("no-match"));
+  expect(element.querySelector(".sdk-object-list-page-total")?.textContent).toMatch(/\b0\b/u);
   expect(element.querySelector(".fui-data-state-hint")).toBeNull();
 
   // Clicking Clear filters resets search, optional filter params, and paging in one read.
@@ -2128,7 +2135,7 @@ it("renders #filters, #batch-actions, #toolbar-actions, and #create-row inline c
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-create-row .test-create-form")?.textContent).toBe("New item form"));
 });
 
-it("enforces exact fallbackToFirst semantics across initial load, filter change, create/cancel, and refresh", async () => {
+it("selects the first item on initial load and preserves selection through server filters and search", async () => {
   const projections: Record<string, DirectProjection> = {
     "fallback-list": {
       ...meta,
@@ -2176,17 +2183,17 @@ it("enforces exact fallbackToFirst semantics across initial load, filter change,
   // (a) Initial load selects first item when nothing is selected and no draft is active.
   await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-1")));
 
-  // (b) Changing filter so current selection disappears selects the new first item.
   instance.state.set("status", "pending");
-  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual(knowledge("k-2")));
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-item-btn")?.textContent).toContain("Beta Pending"));
+  expect(instance.state.values.value.selected).toEqual(knowledge("k-1"));
 
-  // (b) Changing search so no items match clears selection to null.
   const searchInput = element.querySelector<HTMLInputElement>('input[type="search"]')!;
   searchInput.value = "nonexistent";
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
-  await vi.waitFor(() => expect(instance.state.values.value.selected).toBeNull());
+  await vi.waitFor(() => expect(element.querySelector('[data-state="empty"]')).not.toBeNull());
+  expect(instance.state.values.value.selected).toEqual(knowledge("k-1"));
 
-  // Clearing search while currently unselected must NOT auto-select.
+  instance.state.set("selected", null);
   searchInput.value = "";
   searchInput.dispatchEvent(new Event("input", { bubbles: true }));
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(1));
@@ -2432,7 +2439,7 @@ it("performs zero-request local search across nested/array fields, updates liste
   expect(reads).toHaveLength(1);
 });
 
-it("applies zero-request local field equality filters and panel-shared search with exact fallbackToFirst semantics", async () => {
+it("publishes listed refs as a readonly member output and preserves selection through local filters", async () => {
   const projections: Record<string, DirectProjection> = {
     "local-filter-fallback": {
       ...meta,
@@ -2442,7 +2449,6 @@ it("applies zero-request local field equality filters and panel-shared search wi
       inputs: {},
       outputs: {
         selected: { kind: "object", objectType: WORKFLOW },
-        listed: { kind: "list", items: { kind: "object", objectType: WORKFLOW } },
       },
       // Panel owns the shared search box so searchable=false hides duplicate input while still honoring bound `search`.
       config: { fallbackToFirst: true, searchable: false },
@@ -2454,13 +2460,12 @@ it("applies zero-request local field equality filters and panel-shared search wi
       query: { type: { kind: "scalar", type: "string" } },
       layer: { type: { kind: "scalar", type: "string" } },
       selected: { type: { kind: "object", objectType: WORKFLOW } },
-      listed: { type: { kind: "list", items: { kind: "object", objectType: WORKFLOW } } },
     },
     members: {
       list: {
         target: { projectionId: "local-filter-fallback" },
         inputs: { search: { state: "query" }, layer: { state: "layer" } },
-        outputs: { selected: { state: "selected" }, listed: { state: "listed" } },
+        outputs: { selected: { state: "selected" } },
       },
     },
   });
@@ -2472,30 +2477,29 @@ it("applies zero-request local field equality filters and panel-shared search wi
   ];
 
   const { instance, element, reads } = mountDirect(manifest, projections, () => ready(rows));
+  expect(instance.outputs.list?.listed ?? null).toBeNull();
 
   // Initial load selects the first item and hides duplicate search input when searchable=false.
   await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: WORKFLOW, primaryKey: "wf-1" }));
+  expect(instance.outputs.list?.listed).toEqual(rows.map(({ primaryKey }) => ({ className: WORKFLOW, primaryKey })));
   expect(element.querySelector('input[type="search"]')).toBeNull();
   expect(reads).toHaveLength(1);
 
-  // Local field filter narrows to governance -> wf-1 disappears, fallback picks wf-3 with 0 extra reads.
   instance.state.set("layer", "governance");
-  await vi.waitFor(() => expect(instance.state.values.value.selected).toEqual({ className: WORKFLOW, primaryKey: "wf-3" }));
-  expect(instance.state.values.value.listed).toEqual([{ className: WORKFLOW, primaryKey: "wf-3" }]);
+  await vi.waitFor(() => expect(instance.outputs.list?.listed).toEqual([{ className: WORKFLOW, primaryKey: "wf-3" }]));
+  expect(instance.state.values.value.selected).toEqual({ className: WORKFLOW, primaryKey: "wf-1" });
   expect(reads).toHaveLength(1);
 
-  // Panel-shared search narrows to empty -> selection clears to null and Clear filters resets both layer and query.
   instance.state.set("query", "no-match");
-  await vi.waitFor(() => expect(instance.state.values.value.selected).toBeNull());
-  expect(instance.state.values.value.listed).toEqual([]);
+  await vi.waitFor(() => expect(instance.outputs.list?.listed).toEqual([]));
+  expect(instance.state.values.value.selected).toEqual({ className: WORKFLOW, primaryKey: "wf-1" });
 
   const clearBtn = element.querySelector<HTMLButtonElement>(".fui-data-state-clear")!;
   clearBtn.click();
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-list-item-btn")).toHaveLength(3));
   expect(instance.state.values.value.layer).toBeNull();
   expect(instance.state.values.value.query).toBeNull();
-  // Clearing filters when selection was already null must not re-select automatically.
-  expect(instance.state.values.value.selected).toBeNull();
+  expect(instance.state.values.value.selected).toEqual({ className: WORKFLOW, primaryKey: "wf-1" });
   expect(reads).toHaveLength(1);
 });
 

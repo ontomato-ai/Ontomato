@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { randomId } from "@ontomato/contracts/random-id";
@@ -16,11 +16,13 @@ import {
   filterAllowedOperationInput,
   formatOperationLabel,
   isOperationReady,
+  listBatchReceiptKey,
   resolveOperationInputFields,
   resolveOperationTarget,
   useOperationRunner,
   type OperationOutcome,
 } from "./operation-dispatch";
+import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
 
@@ -89,6 +91,7 @@ const slot = useProjectionSlot();
 const panel = usePanelContext();
 const member = useMember();
 const labels = useDataStateLabels();
+const publishBatchReceipt = inject(listBatchReceiptKey, null);
 
 /** The member's operations, as their owners admit them now. */
 const operations = useMemberOperations();
@@ -113,11 +116,9 @@ const {
   read,
   receipt,
   outcome,
-  batchItems: items,
-  batchDone: done,
+  named,
   inputDialogOpen,
   said,
-  nameOf,
   trigger,
   confirmInput,
   run,
@@ -139,7 +140,10 @@ const {
     }
     return { ok: true };
   },
-  onDone: (_name, answered) => emit("done", answered),
+  onDone: (_name, answered) => {
+    if (answered.kind === "batch") publishBatchReceipt?.({ items: answered.items, named: named.value });
+    emit("done", answered);
+  },
 });
 
 const values = computed(() => panel.instance.state.values.value);
@@ -194,6 +198,7 @@ const ready = computed(() =>
 
 function onTriggerClick() {
   if (!descriptor.value || !ready.value) return;
+  if (targetInfo.value.batch) publishBatchReceipt?.(null);
   trigger(props.operation, descriptor.value);
 }
 
@@ -267,6 +272,7 @@ const unregisterAction = panel.instance.registerActionHandler(
         message: `Operation '${props.operation}' requires input fields: ${missing.join(", ")}.`,
       };
     }
+    if (targetInfo.value.batch) publishBatchReceipt?.(null);
     const status = await run(props.operation, descriptor.value, filteredInput, agentContext);
     const dispatchedResponse = receipt.value ?? agentContext?.completed?.response;
     if (dispatchedResponse) {
@@ -355,16 +361,9 @@ onBeforeUnmount(unregisterAction);
     <template v-if="receipt">
       <p v-if="receipt.kind === 'not-dispatched'" role="alert">{{ receipt.message }}</p>
       <p v-else-if="outcome === null" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-      <div v-else-if="outcome.kind === 'batch'" class="sdk-operation-batch" role="status">
-        <p>{{ t("platform.operationBatchDone", { done, total: items.length }) }}</p>
-        <ul>
-          <li
-            v-for="item in items"
-            :key="item.target.objectType + ':' + item.target.primaryKey"
-            :data-outcome="item.outcome.kind"
-          >{{ nameOf(item.target) }}: {{ said(item.outcome) }}</li>
-        </ul>
-      </div>
+      <template v-else-if="outcome.kind === 'batch'">
+        <OperationBatchReceipt v-if="!publishBatchReceipt" class="sdk-operation-batch" :items="outcome.items" :named="named" />
+      </template>
       <p v-else role="alert" :data-outcome="outcome.kind">{{ said(outcome) }}</p>
     </template>
   </div>
@@ -379,15 +378,5 @@ onBeforeUnmount(unregisterAction);
   margin: var(--spacing-xs) 0 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
-}
-.sdk-operation-batch ul {
-  margin: var(--spacing-xs) 0 0;
-  padding-inline-start: var(--spacing-lg);
-}
-.sdk-operation-batch li[data-outcome="success"] {
-  color: var(--el-text-color-secondary);
-}
-.sdk-operation-batch li:not([data-outcome="success"]) {
-  color: var(--el-color-danger-text);
 }
 </style>

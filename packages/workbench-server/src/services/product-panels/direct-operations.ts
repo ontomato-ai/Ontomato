@@ -378,7 +378,7 @@ async function runWithConcurrency<T>(items: readonly T[], limit: number, work: (
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
 }
 
-async function resolveBatchUnavailableReasons(
+export async function resolveBatchUnavailableReasons(
   host: ReturnType<typeof operationHost>,
   handler: PanelWriteServerOperation,
   targets: readonly { rowKey: string; target: PanelRecordTarget }[],

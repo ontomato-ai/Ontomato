@@ -364,6 +364,15 @@ it("forwards fill_form and recovers page_action intent status when receipt is lo
       outcome: batchPartial,
       error: { code: "TASK_RUNNING", message: "Task t2 is running" },
     });
+    const batchSkipped = {
+      kind: "batch",
+      items: [
+        { target: { objectType: "platform:ScheduledTask", primaryKey: "t1" }, outcome: { kind: "skipped", reason: "Already running" } },
+      ],
+    };
+    expect(presentationResultSchema.parse(await abortRecover("act-batch-skipped", {
+      ...baseIntent, dispatched: true, outcome: batchSkipped,
+    }))).toMatchObject({ status: "executed", reason: "action_completed", outcome: batchSkipped });
     expect(await abortRecover("act-unknown", {
       ...baseIntent, dispatched: true, outcome: { kind: "unknown", message: "Upstream timed out" },
     })).toMatchObject({

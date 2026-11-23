@@ -6,6 +6,7 @@ import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-op
 import { panelUploadAccepted, panelUploadSize, type PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMemberOperations } from "../panel/member";
+import { formatOperationOutcome } from "./operation-dispatch";
 
 /**
  * The control of one operation that takes a file (its owner declares an `upload`), run as the reader the way an
@@ -127,7 +128,7 @@ async function write(file: PanelUploadReceipt, overwrite: boolean): Promise<void
     return;
   }
   const message = outcome === null || outcome.kind === "batch" ? t("platform.operationUnknown", { message: "" })
-    : outcome.kind === "unknown" ? t("platform.operationUnknown", { message: outcome.message }) : outcome.message;
+    : formatOperationOutcome(outcome, t);
   receipt.value = { message, ok: false, file };
 }
 

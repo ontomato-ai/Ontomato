@@ -151,11 +151,16 @@ const singleOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("unknown"), message: z.string() }).strict(),
 ]);
 
+const batchItemOutcomeSchema = z.discriminatedUnion("kind", [
+  ...singleOutcomeSchema.options,
+  z.object({ kind: z.literal("skipped"), reason: z.string().min(1), code: key.optional() }).strict(),
+]);
+
 export const panelOperationOutcomeSchema = z.discriminatedUnion("kind", [
   ...singleOutcomeSchema.options,
   z.object({
     kind: z.literal("batch"),
-    items: z.array(z.object({ target: panelObjectIdentitySchema, outcome: singleOutcomeSchema }).strict()).nonempty(),
+    items: z.array(z.object({ target: panelObjectIdentitySchema, outcome: batchItemOutcomeSchema }).strict()).nonempty(),
     /** The owner may report the affected objects and types from successful writes once for the batch. */
     affected: panelOperationAffectedSchema.optional(),
   }).strict(),
@@ -291,13 +296,14 @@ export const panelHumanOperationDispatchResponseSchema = z.discriminatedUnion("k
 export type PanelHumanOperationDispatchResponse = z.infer<typeof panelHumanOperationDispatchResponseSchema>;
 
 export type SinglePanelOperationOutcome = z.infer<typeof singleOutcomeSchema>;
+export type BatchItemOperationOutcome = z.infer<typeof batchItemOutcomeSchema>;
 
 /**
  * Single authoritative classification of an owner panel operation outcome for agent-facing receipts,
  * shared by live browser receipts, confirmed-dispatch summaries, and server timeout recovery.
  *
  * Strictly distinguishes the 4 real states:
- * - `executed`: single success or batch where every item succeeded.
+ * - `executed`: single success or a completed batch with only successful or skipped items.
  * - `partial`: refusal/failure that still persisted `savedFields` or recorded affected writes, or a batch with both
  *   recorded writes and explicit refusals/failures (never disguised as full `executed` or clean `failed`).
  * - `failed`: `not-dispatched`, refusal/failure with no recorded writes, or an all-failed batch — preserving the
@@ -331,9 +337,9 @@ export type PanelOperationAgentClassification =
       readonly outcome?: PanelOperationOutcome | null;
     };
 
-function hasRecordedSingleWrites(outcome: SinglePanelOperationOutcome): boolean {
+function hasRecordedSingleWrites(outcome: BatchItemOperationOutcome): boolean {
   if (outcome.kind === "success") return true;
-  if (outcome.kind === "unknown") return false;
+  if (outcome.kind === "unknown" || outcome.kind === "skipped") return false;
   return Object.keys(outcome.savedFields ?? {}).length > 0
     || Boolean(outcome.affected?.objects.length || outcome.affected?.removed?.length || outcome.affected?.objectTypes.length);
 }
@@ -411,11 +417,13 @@ export function classifyPanelOperationOutcome(
       item.kind === "refusal" || item.kind === "failure",
     );
   const succeededCount = outcome.items.filter((item) => item.outcome.kind === "success").length;
+  const skippedCount = outcome.items.filter((item) => item.outcome.kind === "skipped").length;
+  const skipped = skippedCount ? `, ${skippedCount} skipped` : "";
   if (problems.length === 0) {
     return {
       kind: "executed",
       outcome,
-      summary: `Batch completed: ${succeededCount}/${outcome.items.length} succeeded.`,
+      summary: `Batch completed: ${succeededCount}/${outcome.items.length} succeeded${skipped}.`,
     };
   }
   const firstProblem = problems[0]!;
@@ -441,7 +449,7 @@ export function classifyPanelOperationOutcome(
     message: firstProblem.message,
     outcome,
     ...(savedFields.length ? { savedFields } : {}),
-    summary: `Batch partially completed: ${succeededCount}/${outcome.items.length} succeeded, ${problems.length} failed (${firstProblem.code}: ${firstProblem.message}).`,
+    summary: `Batch partially completed: ${succeededCount}/${outcome.items.length} succeeded${skipped}, ${problems.length} failed (${firstProblem.code}: ${firstProblem.message}).`,
   };
 }
 

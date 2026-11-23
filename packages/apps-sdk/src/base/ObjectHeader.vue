@@ -24,6 +24,7 @@ import {
   type OperationOutcome,
 } from "./operation-dispatch";
 import OperationButton from "./OperationButton.vue";
+import OperationBatchReceipt from "./OperationBatchReceipt.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
 import OperationResult from "./OperationResult.vue";
 import { displayFieldText, rawRecordField } from "./record-field";
@@ -192,13 +193,11 @@ const {
   read: moreRead,
   receipt: moreReceipt,
   outcome: moreOutcome,
-  batchItems: moreBatchItems,
-  batchDone: moreBatchDone,
+  named: moreNamed,
   inputDialogOpen: moreInputDialogOpen,
   pendingDescriptor: morePendingDescriptor,
   pendingInputFields: morePendingInputFields,
   said,
-  nameOf,
   trigger: triggerMoreOperation,
   confirmInput: confirmMoreInput,
   run: runMoreOperation,
@@ -490,16 +489,7 @@ onBeforeUnmount(clearHeaderActionHandlers);
         <template v-if="moreReceipt">
           <p v-if="moreReceipt.kind === 'not-dispatched'" class="sdk-object-header-alert" role="alert">{{ moreReceipt.message }}</p>
           <p v-else-if="moreOutcome === null" class="sdk-object-header-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
-          <div v-else-if="moreOutcome.kind === 'batch'" class="sdk-object-header-batch" role="status">
-            <p>{{ t("platform.operationBatchDone", { done: moreBatchDone, total: moreBatchItems.length }) }}</p>
-            <ul>
-              <li
-                v-for="item in moreBatchItems"
-                :key="item.target.objectType + ':' + item.target.primaryKey"
-                :data-outcome="item.outcome.kind"
-              >{{ nameOf(item.target) }}: {{ said(item.outcome) }}</li>
-            </ul>
-          </div>
+          <OperationBatchReceipt v-else-if="moreOutcome.kind === 'batch'" :items="moreOutcome.items" :named="moreNamed" />
           <p v-else class="sdk-object-header-alert" role="alert" :data-outcome="moreOutcome.kind">{{ said(moreOutcome) }}</p>
         </template>
       </div>
@@ -633,16 +623,6 @@ onBeforeUnmount(clearHeaderActionHandlers);
   color: var(--el-color-danger-text);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
-}
-.sdk-object-header-batch ul {
-  margin: var(--spacing-xs) 0 0;
-  padding-inline-start: var(--spacing-lg);
-}
-.sdk-object-header-batch li[data-outcome="success"] {
-  color: var(--el-text-color-secondary);
-}
-.sdk-object-header-batch li:not([data-outcome="success"]) {
-  color: var(--el-color-danger-text);
 }
 </style>
 
