@@ -1404,10 +1404,10 @@ it("gives a metric parameter the chosen object's key and keeps the owner's trunc
     const customer = { className: "person", primaryKey: "p1" };
     // A partial result is still the owner's answer, with its hint, even when the processed part has no rows.
     expect(await read({ customer, year: 2024 })).toEqual({
-      status: "ready", value: { columns, rows: [{ value: 15 }], truncation: metricTruncation },
+      status: "ready", value: { columns, rows: [{ value: 15 }], truncation: metricTruncation, sourceObjectTypes: [] },
     });
     expect(await read({ customer, year: 2025 })).toEqual({
-      status: "ready", value: { columns, rows: [], truncation: metricTruncation },
+      status: "ready", value: { columns, rows: [], truncation: metricTruncation, sourceObjectTypes: [] },
     });
     for (const [year, { status, message }] of Object.entries(metricRefusals))
       expect(await read({ customer, year: Number(year) }))

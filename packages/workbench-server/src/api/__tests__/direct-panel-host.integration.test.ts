@@ -522,6 +522,8 @@ it("reads the authoritative operation type table while isolating stale published
   const customerReads = {
     query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },
     record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+    form: { source: "object", parameterMode: "fixed", params: { values: "panelFormValues", changedField: "changedField" }, result: "panelFormDescription" },
+    createForm: { source: "type", parameterMode: "fixed", params: { values: "panelFormValues", changedField: "changedField" }, result: "panelFormDescription" },
   };
   expect(objectTypes.CostCenter).toEqual({ reads: customerReads });
   expect(objectTypes.expense.reads).toEqual(customerReads);
