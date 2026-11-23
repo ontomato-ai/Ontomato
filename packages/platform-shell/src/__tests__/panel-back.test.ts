@@ -171,6 +171,43 @@ describe("createPanelBackController", () => {
       window.removeEventListener("popstate", routerPopListener);
     }
   });
+
+  it("uses per-registration isDirty on Escape and browser Back so a clean sub-layer closes without prompting", async () => {
+    window.history.replaceState({ current: "/ontology/objects" }, "", "/#/ontology/objects");
+    let subDirty = false;
+    const confirmLeaveUnsaved = vi.fn(async () => true);
+    const outerBack = vi.fn();
+    const innerBack = vi.fn();
+    const controller = createPanelBackController({
+      active: () => true,
+      allowHistory: () => true,
+      // Whole panel is dirty (e.g. outer form has unsaved edits).
+      isDirty: () => true,
+      confirmLeaveUnsaved,
+    });
+    try {
+      controller.register({ pushHistory: true, onBack: outerBack });
+      // Inner sub-editor is currently clean.
+      controller.register({ pushHistory: true, isDirty: () => subDirty, onBack: innerBack });
+
+      // Escape on clean inner layer closes without prompting despite whole panel being dirty.
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      expect(innerBack).toHaveBeenCalledOnce();
+      expect(confirmLeaveUnsaved).not.toHaveBeenCalled();
+
+      // Re-register inner layer as dirty and trigger browser Back -> must prompt once before calling innerBack.
+      subDirty = true;
+      const innerBack2 = vi.fn();
+      controller.register({ pushHistory: true, isDirty: () => subDirty, onBack: innerBack2 });
+      window.history.replaceState({ current: "/ontology/objects" }, "", "/#/ontology/objects");
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      await vi.waitFor(() => expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(innerBack2).toHaveBeenCalledOnce());
+      expect(outerBack).not.toHaveBeenCalled();
+    } finally {
+      controller.dispose();
+    }
+  });
 });
 
 describe("confirmDanger and unified unsaved-changes confirmation", () => {

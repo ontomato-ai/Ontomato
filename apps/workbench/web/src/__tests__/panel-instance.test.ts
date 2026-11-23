@@ -145,7 +145,20 @@ describe("a panel's instance", () => {
   it("calls a draft unclaimed only once every form slot has registered and declined it", async () => {
     const panelInstance = instance();
     const declining = {
-      handle: { fields: shallowRef([]), values: shallowRef({}), errors: shallowRef({}), changed: shallowRef(new Set<string>()), busy: ref(false), set: () => {} },
+      handle: {
+        fields: shallowRef([]),
+        values: shallowRef({}),
+        errors: shallowRef({}),
+        changed: shallowRef(new Set<string>()),
+        busy: ref(false),
+        dirty: ref(false),
+        dirtyFields: shallowRef(new Set<string>()),
+        submitting: ref(false),
+        canSubmit: ref(false),
+        set: () => {},
+        submit: async () => ({}),
+        reset: async () => true,
+      },
       // The owner's form for the draft's target performs another operation.
       receive: async () => null,
       submit: async () => ({}),

@@ -30,12 +30,17 @@ export {
   type PanelBackHandle,
   type UsePanelBackOptions,
 } from "../panel/back";
+export {
+  usePanelFormDraft,
+  type UsePanelFormDraftOptions,
+} from "../panel/form-draft";
+export type { PageHeaderDraft, PageHeaderLabels } from "../base/page-header-types";
 export { usePanelDetailHeader } from "../panel/detail-header";
 export type { PanelInstance } from "../panel/instance";
 export { applyPanelRequest } from "../panel/instance";
 export { defineComponentMeta } from "../components";
 export type { ComponentCatalogue, ComponentMetadata, ComponentPort, ComponentPorts, ComponentRole } from "../components";
-export type { PanelFormAdapter, ReceivedPanelDraft } from "../panel/draft";
+export type { PanelFormAdapter, PanelFormHandle, ReceivedPanelDraft } from "../panel/draft";
 /** Whether a received draft creates an object or edits one, and which: `draftTarget(instance.draft.value)`. */
 export { draftTarget, type PageDraftObjectRef, type PageDraftTarget } from "@ontomato/contracts/page-draft";
 export type { PanelOperationBinding } from "../panel/types";

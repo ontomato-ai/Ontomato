@@ -455,6 +455,14 @@ export const components: readonly ComponentMetadata[] = [
       "One titled group of a page's content, with one line of what it is for and the platform's spacing and hairline between groups that follow one another. It binds nothing.",
   }),
   defineComponentMeta({
+    componentId: "PageHeader",
+    module: "@ontomato/sdk/base",
+    exportName: "PageHeader",
+    role: "presentation",
+    meaning:
+      "Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text or a projection-bound component in `#title`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
+  }),
+  defineComponentMeta({
     componentId: "PathTree",
     module: "@ontomato/sdk/base",
     exportName: "PathTree",
