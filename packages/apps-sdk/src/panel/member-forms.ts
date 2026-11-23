@@ -1,4 +1,4 @@
-import { declaredCustomerFormSaveName } from "@ontomato/contracts/panel-projection";
+import { declaredCustomerFormSaveName, hasDeclaredPlatformFormSave } from "@ontomato/contracts/panel-projection";
 import { readonly, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageDraft } from "@ontomato/contracts/page-draft";
@@ -274,10 +274,12 @@ export function emptyActionSaveWiring(): ActionSaveWiring {
   return { params: {}, wiredPaths: new Set() };
 }
 
-/** Whether a customer-class form relies on an Action for saving. */
+/** Whether a form relies on a customer Action (rather than a declared platform `form.save`) for saving. */
 export function isCustomerActionForm(projection: Pick<ProductProjection, "operations">, objectType: string): boolean {
-  const actions = Object.entries(projection.operations ?? {}).filter(([, binding]) => binding.operation.kind === "Action");
-  return !objectType.startsWith("platform:") || actions.length === 1 || actions.some(([name]) => name === "save" || name === "create");
+  if (hasDeclaredPlatformFormSave(projection.operations)) return false;
+  return !objectType.startsWith("platform:")
+    || declaredCustomerFormSaveName(projection.operations, false) !== undefined
+    || declaredCustomerFormSaveName(projection.operations, true) !== undefined;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, RuntimeJsonValue> {

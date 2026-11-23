@@ -3,9 +3,9 @@ import { test } from "node:test";
 import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
 import { bindPanelAuthoringChart, expandPanelAuthoringMember, panelAuthoringMemberSchema, panelManifestSchema } from "./panel-check";
 import { panelOperationDeclarationSchema } from "./panel-operations";
-import { declaredCustomerFormSaveName } from "./panel-projection";
+import { declaredCustomerFormSaveName, hasDeclaredPlatformFormSave } from "./panel-projection";
 import { dashboardCardPrimaryKey } from "./dashboard";
-import { DASHBOARD_CARD, platformObjectTypes } from "./platform-object-types";
+import { CREATE_SCHEDULED_TASK, DASHBOARD_CARD, platformObjectTypes } from "./platform-object-types";
 import { platformTypeTableEntrySchema } from "./platform-type-table";
 import { productProjectionInputSchema } from "./product-panels";
 
@@ -722,6 +722,7 @@ test("operation params support declarative formField and formFields wiring for c
     payload: { formFields: { level: "/grade", note: "/remark" } },
   });
   assert.equal(expanded.projection.operations?.approveKnowledge?.operation.kind, "PlatformOperation");
+  assert.equal(hasDeclaredPlatformFormSave(expanded.projection.operations), false);
   assert.equal(declaredCustomerFormSaveName(expanded.projection.operations, false), "save");
   assert.doesNotThrow(() => productProjectionInputSchema.parse({
     ...expanded.projection,
@@ -729,6 +730,23 @@ test("operation params support declarative formField and formFields wiring for c
     description: "",
     visibility: "domain",
   }));
+
+  // When a projection declares a platform form.save, customer Actions on the same form never become fallback form saves.
+  const mixedWithPlatformSave = {
+    save: { operation: { kind: "PlatformOperation" as const, id: `${type}.save` }, target: { input: "target" } },
+    review: { operation: { kind: "Action" as const, id: "review-customer" } },
+  };
+  assert.equal(hasDeclaredPlatformFormSave(mixedWithPlatformSave), true);
+  assert.equal(declaredCustomerFormSaveName(mixedWithPlatformSave, true), undefined);
+  assert.equal(declaredCustomerFormSaveName(mixedWithPlatformSave, false), undefined);
+
+  const mixedWithPlatformCreate = {
+    create: { operation: { kind: "PlatformOperation" as const, id: CREATE_SCHEDULED_TASK } },
+    review: { operation: { kind: "Action" as const, id: "review-task" } },
+  };
+  assert.equal(hasDeclaredPlatformFormSave(mixedWithPlatformCreate), true);
+  assert.equal(declaredCustomerFormSaveName(mixedWithPlatformCreate, true), undefined);
+  assert.equal(declaredCustomerFormSaveName(mixedWithPlatformCreate, false), undefined);
 
   // Non-pointer formField and empty formFields maps are rejected by the schema.
   assert.equal(panelAuthoringMemberSchema.safeParse({
