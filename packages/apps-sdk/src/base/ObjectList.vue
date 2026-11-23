@@ -2505,7 +2505,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
       <div
         v-else-if="isCards"
         ref="scrollContainerRef"
-        role="listbox"
+        :role="rowSelectable ? 'listbox' : undefined"
         class="sdk-object-list-cards"
         :data-virtualized="isVirtualized ? 'true' : undefined"
         @scroll="onContainerScroll"
@@ -2800,7 +2800,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
       <ul
         v-else
         ref="scrollContainerRef"
-        role="listbox"
+        :role="rowSelectable ? 'listbox' : undefined"
         class="sdk-object-list-items"
         :data-row-density="listHasTwoLines ? 'two-line' : 'single'"
         :data-virtualized="isVirtualized ? 'true' : undefined"

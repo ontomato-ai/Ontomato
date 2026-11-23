@@ -136,7 +136,7 @@ it("asks Node for an object's detail panel by the object alone, and reads inside
   await router.push(panelAddress(objectUse.path, { picked: taskRef }));
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
   try {
-    await vi.waitFor(() => expect(element.querySelector('[data-member="detail"] [data-member="tasks"] [role="option"]')).not.toBeNull());
+    await vi.waitFor(() => expect(element.querySelector('[data-member="detail"] [data-member="tasks"] .sdk-object-list-row')).not.toBeNull());
     // Node was asked by the object alone: which panel shows its detail is Node's to say.
     expect(nestedReads(sent)).toEqual([{
       source: { kind: "registered", applicationId: application, useId: objectUse.id },
