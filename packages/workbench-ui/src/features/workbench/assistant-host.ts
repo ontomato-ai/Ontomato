@@ -17,7 +17,7 @@ import {
   type AssistantFeedback,
   type AssistantFeedbackWrite,
 } from "@ontomato/contracts/assistant-chat";
-import { ApiRequestError, nodeApiFetch, nodeApiGet, nodeApiPut } from "../../utils/api";
+import { ApiRequestError, nodeApiFetch, nodeApiGet, nodeApiPost, nodeApiPut } from "../../utils/api";
 
 /** The workbench mounts the agent-host proxy and its own assistant actions here. */
 const PREFIX = "/assistant";
@@ -107,6 +107,12 @@ export function createPanelOperationSettings(): ShellPanelOperationsPort {
     },
     async write(sessionId, confirmBeforeExecute) {
       return panelOperationSettingsSchema.parse(await nodeApiPut(path(sessionId), { confirmBeforeExecute })).confirmBeforeExecute;
+    },
+    async notifyFormEdited(sessionId, target) {
+      await nodeApiPost("/panel-operations/form-edited", {
+        rootSession: { providerId: "workbench", sessionId },
+        target,
+      });
     },
   };
 }

@@ -41,6 +41,9 @@ export {
   type DisplayObjectChange,
   type DisplayObjectRefresh,
   type DisplayPage,
+  type DisplayPageAdmissionResult,
+  type DisplayPageController,
+  type DisplayStateUpdate,
   type DisplayTarget,
   type DisplayView,
 } from "./conversation-display";

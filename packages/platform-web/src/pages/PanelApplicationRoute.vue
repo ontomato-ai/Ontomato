@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
+import { computed, inject, markRaw, onBeforeUnmount, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type AppMenuGroup, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
@@ -9,10 +9,11 @@ import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationFrameContextOf, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
-import { PageComposer, type DisplayObjectRefresh } from "@ontomato/agent-shell-ui";
+import { PageComposer, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import EntryUnit from "./EntryUnit.vue";
 import { entryCountsChanged } from "../entry-counts";
@@ -51,6 +52,8 @@ const props = defineProps<{
    */
   address?: string;
   objectRefresh?: DisplayObjectRefresh | null;
+  liveState?: DisplayStateUpdate | null;
+  registerPageController?: (controller: DisplayPageController) => () => void;
 }>();
 const emit = defineEmits<{
   /** What the reader looks at in the panel, as its instance reports it: what a message written beside it carries. */
@@ -60,6 +63,8 @@ const emit = defineEmits<{
   "display-dirty": [dirty: boolean];
   /** Which page skill a message written beside the shown page reaches, as Node answered it with the page's panel. */
   "display-skill": [context: PageSkillContext];
+  /** The reader manually edited an unsaved form inside the shown panel. */
+  "form-edited": [target: PanelFormEditedTarget];
 }>();
 
 const route = useRoute();
@@ -69,9 +74,21 @@ const { t, locale, fallbackLocale } = useI18n();
 const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 /** What the conversation's and an operation's changes reach: the shown page's instance. */
-type ShownInstance = Pick<PanelInstanceView, "refresh">;
+type ShownInstance = Pick<PanelInstanceView, "refresh" | "applyState" | "applyAddress">;
 const host = ref<ShownInstance | null>(null);
 const frameHost = ref<ShownInstance | null>(null);
+if (props.registerPageController) {
+  const unregister = props.registerPageController({
+    applyState(patch) {
+      if (!host.value) throw new Error("Panel is not mounted yet");
+      host.value.applyState(patch);
+    },
+    applyAddress(url, options) {
+      host.value?.applyAddress(url, options);
+    },
+  });
+  onBeforeUnmount(unregister);
+}
 /** The Manager's counts, where it is installed: told which object types a write changed, they decide whether to re-read. */
 const countedTypesChanged = inject(countedTypesChangedKey, null);
 const platformApplications = inject(platformApplicationsKey, null);
@@ -539,6 +556,10 @@ function stateOf(page: KeptPage) {
   return merged;
 }
 
+const liveStatePatch = computed(() =>
+  props.liveState && props.liveState.instance === openedPath.value ? props.liveState.patch : null,
+);
+
 function reportContext(page: KeptPage, context: PageContext) {
   page.context = { ...context, label: pageName.value || context.label };
   if (page === shownPage.value) emit("context", page.context);
@@ -584,6 +605,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
             :wired="Object.keys(page.use.inputs ?? {})"
             :address="addressOf(page)"
             :initial="stateOf(page)"
+            :live-state="page === shownPage ? liveStatePatch : null"
             :frame-state="frameState"
             :draft-to-agent="draftToAgent"
             :leave-draft="leaveDraft"
@@ -592,6 +614,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
             @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
             @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
             @context="(context: PageContext) => reportContext(page, context)"
+            @form-edited="(target: PanelFormEditedTarget) => page === shownPage && emit('form-edited', target)"
             @reopened="markReopened(page)"
             @withdrawn="withdraw(page)"
           />
@@ -621,6 +644,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           :wired="Object.keys(page.use.inputs ?? {})"
           :address="addressOf(page)"
           :initial="stateOf(page)"
+          :live-state="page === shownPage ? liveStatePatch : null"
           :frame-state="frameState"
           :draft-to-agent="draftToAgent"
           :leave-draft="leaveDraft"
@@ -629,6 +653,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
           @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
           @context="(context: PageContext) => reportContext(page, context)"
+          @form-edited="(target: PanelFormEditedTarget) => page === shownPage && emit('form-edited', target)"
           @reopened="markReopened(page)"
           @withdrawn="withdraw(page)"
         />

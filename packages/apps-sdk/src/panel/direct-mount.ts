@@ -13,6 +13,7 @@ import type { ComponentPackageResponse } from "@ontomato/contracts/component-pac
 import { createPanelText } from "./text";
 import { draftRefusalText } from "./draft-refusal";
 import { isListAttachedPanelMember } from "./row-member";
+import { checkPanelValue, type PanelFieldValue } from "./state";
 import PanelMember from "./PanelMember.vue";
 
 /*
@@ -148,7 +149,14 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     return {
       instance,
       member: (ref, slots) => h(PanelMember, { instance, member: ref, key: `${ref}:${instance.projectionVersion(ref)}` }, slots),
-      address: (url) => panelRun.address(url),
+      address: (url, addressOptions) => panelRun.address(url, addressOptions),
+      setState(patch) {
+        const entries = Object.entries(patch);
+        if (!entries.length) return;
+        const checked: Record<string, PanelFieldValue> = {};
+        for (const [name, value] of entries) checked[name] = checkPanelValue(options.manifest, name, value);
+        instance.state.setState(checked);
+      },
       refresh(target, affected) {
         // Unseen, what an operation changed is held as everything; seen, only the data it concerns are read again.
         if (affected && active) instance.refresh(affected);

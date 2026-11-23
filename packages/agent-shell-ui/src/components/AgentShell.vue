@@ -210,8 +210,28 @@ provide(shellContextKey, {
     if (conversation.sending.value) throw new Error(props.labels.working);
     await send(message);
   },
-  questions: conversationQuestions(conversation),
+  questions: (() => {
+    const base = conversationQuestions(conversation);
+    return {
+      ...base,
+      async answer(requestId, answer, selectedOption) {
+        await pendingFormEditFlush;
+        return base.answer(requestId, answer, selectedOption);
+      },
+    };
+  })(),
 });
+
+/** Tracks in-flight form-edited notifications so answering a pending confirmation waits for invalidation to land. */
+let pendingFormEditFlush: Promise<void> = Promise.resolve();
+onBeforeUnmount(
+  display.onFormEdited((target) => {
+    const id = conversation.state.sessionId;
+    if (!id || !props.panelOperations?.notifyFormEdited) return;
+    const notify = props.panelOperations.notifyFormEdited(id, target).catch(() => undefined);
+    pendingFormEditFlush = pendingFormEditFlush.then(() => notify);
+  }),
+);
 
 /**
  * The open conversation's choice whether agents ask before a panel operation, once the host told it; null for a new
@@ -375,6 +395,7 @@ const linePrompts = () => ({
   pageAddress: props.labels.pageContextAddress,
   selection: props.labels.selectionContext,
   highlight: props.labels.highlightContext,
+  state: props.labels.stateContext,
 });
 /**
  * What a reopened conversation already carries, read when the shell first sends in it: its history shows the line each

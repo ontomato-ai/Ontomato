@@ -41,6 +41,7 @@ const written = (text: string) => writtenText(text, {
   pageAddress: labels.value.pageContextAddress,
   selection: labels.value.selectionContext,
   highlight: labels.value.highlightContext,
+  state: labels.value.stateContext,
   file: labels.value.fileContext,
   closed: labels.value.pageContextClosed,
 });

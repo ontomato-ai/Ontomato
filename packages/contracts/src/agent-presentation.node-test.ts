@@ -7,6 +7,11 @@ import {
   agentHostSessionRunFrameSchema,
 } from "./agent-host";
 import {
+  pageContextLine,
+  pageContextSchema,
+  writtenText,
+} from "./page-context";
+import {
   displayPageAddressInputSchema,
   displaySnapshotSchema,
   presentationFrameSchema,
@@ -26,11 +31,15 @@ test("present accepts only workspace outputs or a site-relative page and rejects
     target: "outputs/result.dataset.json",
   });
   assert.deepEqual(presentRequestSchema.parse({ target: address, state }), { target: address, state });
+  assert.deepEqual(presentRequestSchema.parse({ target: address, overwriteUnsavedDraft: true }), {
+    target: address, overwriteUnsavedDraft: true,
+  });
   for (const invalid of [
     { target: "result.dataset.json" },
     { target: "outputs/../result.dataset.json" },
     { target: "outputs/", state },
     { target: "outputs/result.dataset.json", state },
+    { target: "outputs/result.dataset.json", overwriteUnsavedDraft: true },
     { target: "https://example.com/page" },
     { target: "//[", state },
     { target: "/\\example.com/page" },
@@ -38,6 +47,29 @@ test("present accepts only workspace outputs or a site-relative page and rejects
     { target: `${address}?%73tate=%7B%7D`, state },
     { target: address, useId: "tasks" },
   ]) assert.equal(presentRequestSchema.safeParse(invalid).success, false, JSON.stringify(invalid));
+});
+
+test("pageContext carries declared public state on every message line and writtenText strips standalone state lines", () => {
+  const ctx = pageContextSchema.parse({
+    url: address,
+    label: "Tasks",
+    selection: [],
+    state: { tab: "history", filter: "active", checked: [{ className: "platform:ScheduledTask", primaryKey: "t-1" }] },
+  });
+  const prompts = {
+    page: ({ label, url }: { label: string; url: string }) => `Current page: ${label} (${url})`,
+    pageAddress: (url: string) => `Current page: ${url}`,
+    selection: (label: string) => `Selected: ${label}`,
+    state: (value: string) => `State: ${value}`,
+    file: ({ label, path }: { label: string; path: string }) => `Current file: ${label} (${path})`,
+    closed: "Current page: closed",
+  };
+  const firstLine = pageContextLine(ctx, prompts, true);
+  assert.match(firstLine, /^Current page: Tasks \(\/applications\/scheduling\/tasks\)；State: \{"tab":"history"/);
+  const followUpLine = pageContextLine(ctx, prompts, false);
+  assert.match(followUpLine, /^State: \{"tab":"history"/);
+  assert.equal(writtenText(`Check this tab\n\n${followUpLine}`, prompts), "Check this tab");
+  assert.equal(writtenText(`Check this tab\n\n${firstLine}`, prompts), "Check this tab");
 });
 
 test("run requests carry the view identity and ready identifies a particular connection", () => {

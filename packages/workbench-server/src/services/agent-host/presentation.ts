@@ -125,7 +125,12 @@ export async function requestPresentation(
       target = { kind: "artifact", artifact };
     } else {
       await service.ownRun(sessionId, runId, owner);
-      target = { kind: "page", address: input.target, ...(input.state === undefined ? {} : { state: input.state }) };
+      target = {
+        kind: "page",
+        address: input.target,
+        ...(input.state === undefined ? {} : { state: input.state }),
+        ...(input.overwriteUnsavedDraft ? { overwriteUnsavedDraft: true } : {}),
+      };
     }
   } catch (error) {
     if (!(error instanceof HttpError) || (error.status !== 403 && error.status !== 404)) throw error;

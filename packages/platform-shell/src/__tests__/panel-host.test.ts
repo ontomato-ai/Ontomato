@@ -92,7 +92,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
   const listeners = new Set<(revisions: readonly ProductDefinitionRevision[]) => void>();
   /** Each started instance of a panel with a module, by use: what the host gave it, and what it was told since. */
   const coded = new Map<string, {
-    run: DirectPanelRun; projectionsChanged: { id: string; revision?: number }[][]; addresses: string[]; invoked: string[];
+    run: DirectPanelRun; projectionsChanged: { id: string; revision?: number }[][]; addresses: string[]; invoked: string[]; statePatches: Record<string, unknown>[];
   }>();
   const frames = new Map<Window, unknown[]>();
   const sent = new WeakMap<Window, unknown[]>();
@@ -109,13 +109,14 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
         // The panel runs in the platform's document, started here.
         coded: async (_source, run) => {
           if (stand.codedFailure) throw stand.codedFailure;
-          const started = { run, projectionsChanged: [] as { id: string; revision?: number }[][], addresses: [] as string[], invoked: [] as string[] };
+          const started = { run, projectionsChanged: [] as { id: string; revision?: number }[][], addresses: [] as string[], invoked: [] as string[], statePatches: [] as Record<string, unknown>[] };
           coded.set(use.id, started);
           // The instance runs: it reports its state at the address it was given.
           run.state(run.initial, run.url());
           return {
             refresh() {}, activate() {}, dispose() {},
             address: url => { started.addresses.push(url); },
+            setState: patch => { started.statePatches.push({ ...patch }); },
             invoke: id => { started.invoked.push(id); return Promise.resolve(`answer of ${id}`); },
             projectionsChanged: projections => { started.projectionsChanged.push([...projections]); },
           };
@@ -577,6 +578,42 @@ describe("the panel host", () => {
     await expect(first).resolves.toBe("answer of runTask.runNow");
     await expect(second).resolves.toBe("answer of task.clear");
     expect(port.started("use-a").invoked).toEqual(["runTask.runNow", "task.clear"]);
+    scope.stop();
+  });
+
+  it("applies non-deepLink declared public state on mount and in place without reloading or writing to the address", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    const formEdits: unknown[] = [];
+    const scope = effectScope();
+    const a = scope.run(() => usePanelInstance(port.port("use-a"), {
+      labels,
+      label: (source) => source.kind === "registered" ? source.panel.name : "",
+      address: () => "/applications/app-a/a/schedules",
+      initial: () => ({}),
+      liveState: () => ({ search: "daily", selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-9" } }),
+      formEdited: (target) => formEdits.push(target),
+    }))!;
+    await a.ready;
+    const started = port.started("use-a");
+    // Mount received BOTH deepLink and non-deepLink declared public state, while address keeps only deepLink.
+    expect(started.run.initial).toEqual({
+      search: "daily",
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-9" },
+    });
+    expect(a.address.value).toContain("selectedTask");
+    expect(a.address.value).not.toContain("daily");
+
+    // In-place live update of non-deepLink state does not remount and rejects undeclared/wrong-type fields.
+    const mountedDirect = a.direct.value;
+    a.applyState({ search: "hourly" });
+    expect(a.direct.value).toBe(mountedDirect);
+    expect(started.statePatches).toEqual([{ search: "hourly" }]);
+    expect(() => a.applyState({ undeclared: "x" })).toThrow(/no declared public field/);
+    expect(() => a.applyState({ search: 42 })).toThrow(/holds no/);
+
+    started.run.formEdited?.({ kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-9" });
+    expect(formEdits).toEqual([{ kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-9" }]);
     scope.stop();
   });
 });

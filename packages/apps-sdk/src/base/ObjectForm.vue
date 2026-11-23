@@ -345,12 +345,16 @@ let loaded: string | null = null;
 const fieldMessages = (list: readonly { field: string; message: string }[]) =>
   Object.fromEntries(list.map(({ field, message }) => [field, message]));
 
+/** Whether the reader has manually edited any field since the current baseline or received draft was adopted. */
+const userEdited = ref(false);
+
 function adopt(
   baseline: PanelFormDescription,
   shown: PanelFormDescription = baseline,
   marked: ReadonlySet<string> = new Set(),
   written: ReadonlySet<string> = new Set(),
 ) {
+  userEdited.value = false;
   submitted.value = written;
   ownerOpened.value = baseline;
   ownerShown.value = shown;
@@ -486,6 +490,23 @@ function reread() {
   );
 }
 useProjectionObjectRefresh((id) => id === key.value, () => {
+  if (hasActiveDraft.value && !userEdited.value && !saving.value && target.value) {
+    const current = target.value;
+    const reading = ++latestRead;
+    void forms.describe({ target: current, changedField: null }).then((answer) => {
+      if (reading !== latestRead || userEdited.value || saving.value) return;
+      if (jsonValuesEqual(pruneInactivePanelFormVariants(answer.fields, answer.values), pruneInactivePanelFormVariants(fields.value, values.value))) {
+        held = null;
+        adopt(answer);
+        void panel.instance.settleDraft(slot.slot).catch(showRefusal);
+      } else {
+        pendingRefresh = true;
+      }
+    }, () => {
+      pendingRefresh = true;
+    });
+    return;
+  }
   pendingRefresh = true;
   refreshWhenClean();
 });
@@ -516,7 +537,16 @@ function edit(path: string, next: PanelFormValues) {
   const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
   if (described) submitted.value = new Set([...submitted.value, described.path]);
   values.value = next;
+  userEdited.value = true;
   editedAt.set(path, ++edits);
+  const currentTarget = target.value;
+  if (currentTarget) {
+    panel.instance.notifyFormEdited(
+      currentTarget.kind === "object"
+        ? { kind: "object", objectType: currentTarget.objectType, primaryKey: currentTarget.primaryKey }
+        : { kind: "draft", objectType },
+    );
+  }
   const field = activeFieldAt(fields.value, next, path);
   if (field?.refreshOnChange) askOwner(path);
 }

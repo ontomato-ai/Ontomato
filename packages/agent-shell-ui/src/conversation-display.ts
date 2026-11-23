@@ -1,4 +1,4 @@
-import { computed, nextTick, shallowRef } from "vue";
+import { computed, nextTick, shallowRef, watch } from "vue";
 import type {
   DisplayLoad,
   DisplayPageAddressInput,
@@ -6,10 +6,13 @@ import type {
   PresentationFrame,
   PresentationReceipt,
 } from "@ontomato/contracts/agent-presentation";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageContext } from "@ontomato/contracts/page-context";
+import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import { panelStateValueSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { fileName } from "./artifacts";
 import type { OpenArtifact, ShellFeatureDeclaration } from "./types";
@@ -45,11 +48,31 @@ export type DisplayTarget = { kind: "artifact"; open: OpenArtifact } | ({ kind: 
 /** Whether a reader's navigation adds a step to the browser's history or replaces the current one. */
 export type DisplayHistory = "push" | "replace";
 
+/** Result of checking whether the initiating reader is admitted to open a target page address. */
+export type DisplayPageAdmissionResult =
+  | { ok: true }
+  | { ok: false; reason: "forbidden" | "not_found" | "unsupported_target"; error?: { code: string; message: string } };
+
+/** Live state patch handed to a newly opened panel instance (covering all declared public state fields). */
+export interface DisplayStateUpdate {
+  readonly seq: number;
+  readonly instance: string;
+  readonly patch: Readonly<Record<string, RuntimeJsonValue>>;
+}
+
+/** In-place controls exposed by a currently mounted panel page to its display controller. */
+export interface DisplayPageController {
+  applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
+  applyAddress?(url: string, options?: { overwriteUnsavedDraft?: boolean }): void;
+}
+
 export interface ConversationDisplayHost {
   /** The host's page declarations: which pages sit beside the conversation. */
   features: () => readonly ShellFeatureDeclaration[];
   /** The page an address opens here (a link, the address bar); null when it is none of this host's. */
   resolve?: (address: string) => DisplayPage | null;
+  /** Optional live admission check run before opening a new page via `present`. */
+  admit?: (address: string) => Promise<DisplayPageAdmissionResult>;
   /** The page a column entry opens; null when the entry is no page of this display. */
   feature?: (id: string) => DisplayPage | null;
   /**
@@ -108,6 +131,9 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   const reportedSkill = shallowRef<PageSkillContext | null>(null);
   const load = shallowRef<DisplayLoad>(READY);
   const objectRefresh = shallowRef<DisplayObjectRefresh | null>(null);
+  const liveState = shallowRef<DisplayStateUpdate | null>(null);
+  const controllers = new Map<string, DisplayPageController>();
+  const formEditedListeners = new Set<(target: PanelFormEditedTarget) => void>();
   function refreshObjects(change: DisplayObjectChange) {
     objectRefresh.value = { seq: (objectRefresh.value?.seq ?? 0) + 1, ...change };
   }
@@ -143,6 +169,9 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       reportedSkill.value = null;
       load.value = READY;
       unsaved = false;
+      if (liveState.value && (next.target?.kind !== "page" || liveState.value.instance !== next.target.instance)) {
+        liveState.value = null;
+      }
     }
     shown.value = next;
     // A page opened anew reads what it shows from its owner, whatever happened while it was not open.
@@ -169,7 +198,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   function selected(observedAt = new Date().toISOString()): Selected {
     const current = shown.value.target!;
     const full = current.kind === "page" && (shown.value.view === "full" || !feature.value?.withConversation);
-    const where = full ? "full-page" : placement!();
+    const where = full ? "full-page" : (placement ? placement() : "side");
     if (current.kind === "artifact") {
       const { runId, path } = current.open.artifact;
       return { known: true, observedAt, placement: where, target: { kind: "artifact", runId, path, title: current.open.title }, load: load.value };
@@ -181,24 +210,42 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     return { status: "not_opened", reason, current: snapshot(), ...(error ? { error } : {}) };
   }
 
-  /** What an agent asked to show: an artifact the host resolved, or a page address with the state it opens at. */
-  function presented(frame: PresentationFrame): DisplayTarget | NotOpenedReason | { error: { code: string; message: string } } {
-    if (frame.target.kind === "artifact") {
-      const { artifact } = frame.target;
-      return { kind: "artifact", open: { key: `${artifact.runId}:${artifact.path}`, artifact, title: fileName(artifact.path) } };
-    }
-    let address = frame.target.address;
-    // The state a page opens at rides in its address, as a reader's link carries it; a value no panel state can hold
-    // is refused here, at the edge where it arrives.
-    if (frame.target.state !== undefined) {
-      try {
-        address = panelAddress(address, frame.target.state);
-      } catch (error) {
-        return { error: { code: "invalid_state", message: error instanceof Error ? error.message : String(error) } };
+  function hasDraftQuery(address: string): boolean {
+    return pageDraftLink(Object.fromEntries(new URLSearchParams(address.split("?")[1] ?? ""))) !== null;
+  }
+
+  function validateStatePatch(state: Record<string, RuntimeJsonValue>): { ok: true } | { ok: false; error: { code: string; message: string } } {
+    for (const [name, value] of Object.entries(state)) {
+      const parsed = panelStateValueSchema.safeParse(value);
+      if (!parsed.success) {
+        return { ok: false, error: { code: "invalid_state", message: `Invalid value for state '${name}': ${parsed.error.issues[0]?.message ?? "invalid type"}` } };
       }
     }
-    const next = host.resolve?.(address) ?? null;
-    return next ? { kind: "page", ...next } : "unsupported_target";
+    return { ok: true };
+  }
+
+  async function waitForLoadSettle(targetPage: DisplayTarget, timeoutMs = 5000): Promise<void> {
+    await nextTick();
+    if (load.value.status !== "loading") return;
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        stop();
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      const stop = watch(
+        () => [load.value.status, shown.value.target] as const,
+        ([status, currentTarget]) => {
+          if (status !== "loading" || currentTarget !== targetPage) finish();
+        },
+        { immediate: true },
+      );
+    });
+    await nextTick();
   }
 
   async function write(next: DisplayPage | null, view: DisplayView, history: DisplayHistory): Promise<boolean> {
@@ -251,6 +298,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     load: computed(() => load.value),
     /** What the shown page reads its objects again by; it keeps counting across pages. */
     objectRefresh: computed(() => objectRefresh.value),
+    /** Initial live state patch (including non-deepLink declared public state) for a newly presented panel instance. */
+    liveState: computed(() => liveState.value),
     refreshObjects,
 
     /** Whether an in-app address opens a page of this display. */
@@ -336,6 +385,21 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     dirty(value: boolean) {
       unsaved = value;
     },
+    /** A mounted panel page registers its in-place live state controller for `present`. */
+    registerPageController(instance: string, controller: DisplayPageController): () => void {
+      controllers.set(instance, controller);
+      return () => {
+        if (controllers.get(instance) === controller) controllers.delete(instance);
+      };
+    },
+    /** A mounted panel form reports that the user manually edited an unsaved form field. */
+    formEdited(target: PanelFormEditedTarget) {
+      for (const listener of formEditedListeners) listener(target);
+    },
+    onFormEdited(listener: (target: PanelFormEditedTarget) => void): () => void {
+      formEditedListeners.add(listener);
+      return () => formEditedListeners.delete(listener);
+    },
 
     /** The outlet drawing the side reports where it sits; it takes the report back when it goes. */
     placed(probe: DisplayPlacementProbe): () => void {
@@ -348,27 +412,130 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     snapshot,
 
     /**
-     * An agent's request to show something (design 5): in turn with the reader's own operations, never over unsaved
-     * changes, beside the conversation, and out of the address — a reload does not show it again, and the page the
-     * reader had navigated to leaves the address once it has been replaced. The result is what is shown once the switch
-     * is drawn, with what its loader knows by then.
+     * An agent's request to show an artifact or navigate/update a page in place:
+     * - Artifacts stay temporary and out of the address bar.
+     * - Pages perform a real navigation written into the browser address (restored on reload) without changing the
+     *   user's chosen side-by-side or full-page layout (opening side-by-side only when no page is currently open).
+     * - Declared public state patches (including non-deepLink fields) apply in place without reloading or writing.
+     * - Draft links never silently overwrite unsaved form edits; they return `blocked_unsaved` unless the agent
+     *   re-issues the call with `overwriteUnsavedDraft: true` after explicit user confirmation.
+     * - Unauthorized entries are rejected before opening, returning the refusal reason in the receipt.
      */
     present: (frame: PresentationFrame) =>
       inOrder(async (): Promise<DisplayPresentationResult> => {
-        const next = presented(frame);
-        if (typeof next === "string") return notOpened(next);
-        if (!("kind" in next)) return notOpened("unsupported_target", next.error);
         const current = shown.value;
-        const same =
-          current.target?.kind === next.kind &&
-          (next.kind === "artifact" ? current.target.kind === "artifact" && current.target.open.key === next.open.key
-            : current.target.kind === "page" && current.target.address === next.address);
-        if (!same) {
-          if (dropsUnsaved(next)) return notOpened("blocked_unsaved");
-          commit({ target: next, view: next.kind === "page" ? "side" : current.view, restorable: false });
-          if (current.restorable) await write(null, shown.value.view, "replace");
+        if (frame.target.kind === "artifact") {
+          const { artifact } = frame.target;
+          const next: DisplayTarget = {
+            kind: "artifact",
+            open: { key: `${artifact.runId}:${artifact.path}`, artifact, title: fileName(artifact.path) },
+          };
+          const same = current.target?.kind === "artifact" && current.target.open.key === next.open.key;
+          if (!same) {
+            if (dropsUnsaved(next)) return notOpened("blocked_unsaved");
+            commit({ target: next, view: current.view, restorable: false });
+            if (current.restorable) await write(null, shown.value.view, "replace");
+          }
+          await nextTick();
+          const shownNow = selected();
+          return shownNow.load.status === "error"
+            ? { status: "opened", reason: "load_error", current: shownNow, ...(shownNow.load.error ? { error: shownNow.load.error } : {}) }
+            : { status: "opened", reason: "target_selected", current: shownNow };
         }
-        await nextTick();
+
+        const { address: rawAddress, state: rawState, overwriteUnsavedDraft } = frame.target;
+        if (rawState !== undefined) {
+          const valid = validateStatePatch(rawState);
+          if (!valid.ok) return notOpened("unsupported_target", valid.error);
+        }
+
+        let resolved = host.resolve?.(rawAddress) ?? null;
+        const currentPage = current.target?.kind === "page" ? current.target : null;
+        const sameInstance =
+          currentPage !== null && resolved !== null && currentPage.instance === resolved.instance;
+
+        if (!sameInstance && host.admit) {
+          const admission = await host.admit(rawAddress);
+          if (!admission.ok) return notOpened(admission.reason, admission.error);
+          if (resolved === null) resolved = host.resolve?.(rawAddress) ?? null;
+        }
+        if (!resolved) return notOpened("unsupported_target");
+
+        const nextTarget: DisplayTarget = { kind: "page", ...resolved };
+        const hasDraft = hasDraftQuery(resolved.address);
+        if (!sameInstance) {
+          if (dropsUnsaved(nextTarget)) {
+            return notOpened("blocked_unsaved", {
+              code: "UNSAVED_CHANGES",
+              message: "The current page has unsaved changes. Ask the user to save or discard them before navigating away.",
+            });
+          }
+        } else if (hasDraft && (unsaved || host.leave.leaves(null)) && !overwriteUnsavedDraft) {
+          return notOpened("blocked_unsaved", {
+            code: "UNSAVED_FORM_CONFLICT",
+            message: "The current form has unsaved edits from the user. Do not overwrite them silently; ask the user whether to keep their edits or replace them with your draft, and only call present again with overwriteUnsavedDraft: true after the user confirms.",
+          });
+        }
+
+        // Preserve the user's chosen side-by-side or full-page layout; open side-by-side when no page is open.
+        const nextView: DisplayView = current.target?.kind === "page" ? current.view : "side";
+
+        if (sameInstance && currentPage) {
+          const controller = controllers.get(resolved.instance);
+          if (rawState !== undefined && Object.keys(rawState).length > 0) {
+            if (controller) {
+              try {
+                controller.applyState(rawState);
+              } catch (error) {
+                return notOpened("unsupported_target", {
+                  code: "invalid_state",
+                  message: error instanceof Error ? error.message : String(error),
+                });
+              }
+            } else {
+              try {
+                const withState = panelAddress(resolved.address, rawState);
+                resolved = host.resolve?.(withState) ?? { ...resolved, address: withState };
+              } catch (error) {
+                return notOpened("unsupported_target", {
+                  code: "invalid_state",
+                  message: error instanceof Error ? error.message : String(error),
+                });
+              }
+            }
+          }
+          if (hasDraft && overwriteUnsavedDraft && controller?.applyAddress) {
+            controller.applyAddress(resolved.address, { overwriteUnsavedDraft: true });
+          }
+          const updatedTarget: DisplayTarget = {
+            kind: "page",
+            ...resolved,
+            // When state was applied in place without changing the base address, keep any reactive address update.
+            address: resolved.address !== rawAddress || resolved.address !== currentPage.address
+              ? resolved.address
+              : shown.value.target?.kind === "page" ? shown.value.target.address : resolved.address,
+          };
+          if (updatedTarget.address !== currentPage.address || !current.restorable || current.view !== nextView) {
+            commit({ target: updatedTarget, view: nextView, restorable: true });
+            await write(updatedTarget, nextView, "replace");
+          }
+          await nextTick();
+          await nextTick();
+        } else {
+          if (rawState !== undefined && Object.keys(rawState).length > 0) {
+            liveState.value = {
+              seq: (liveState.value?.seq ?? 0) + 1,
+              instance: resolved.instance,
+              patch: rawState,
+            };
+          } else {
+            liveState.value = null;
+          }
+          commit({ target: nextTarget, view: nextView, restorable: true });
+          await write(resolved, nextView, "push");
+          await waitForLoadSettle(nextTarget);
+        }
+
         const shownNow = selected();
         return shownNow.load.status === "error"
           ? { status: "opened", reason: "load_error", current: shownNow, ...(shownNow.load.error ? { error: shownNow.load.error } : {}) }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runtimeJsonObjectSchema } from "./agent-runtime-values";
 import { panelChildObjectIdentitySchema, panelMemberPathSchema } from "./panel-manifest";
 import { platformHasChildCollection } from "./platform-object-types";
 
@@ -115,6 +116,8 @@ export const pageContextSchema = z
     selection: z.array(pageSelectionSchema).max(100).readonly(),
     /** What components on the page highlight (such as search hits or a directed path), separate from selection. */
     highlights: z.array(pageHighlightSchema).max(20).readonly().optional(),
+    /** Current values of the panel's declared public state (tabs, filters, view modes, selections, etc.). */
+    state: runtimeJsonObjectSchema.optional(),
   })
   .strict();
 export type PageContext = z.infer<typeof pageContextSchema>;
@@ -163,6 +166,8 @@ export interface PageLinePrompts {
   selection: (label: string) => string;
   /** Optional wrapper for highlighted graph/component results (search hits or a directed path). */
   highlight?: (label: string) => string;
+  /** Optional wrapper for the panel's declared public state snapshot. */
+  state?: (state: string) => string;
 }
 
 /** A run of escaped bytes beyond ASCII: the UTF-8 of characters a reader reads, such as a board's Chinese name. */
@@ -201,7 +206,14 @@ export function pageContextLine(page: PageContext, prompts: PageLinePrompts, car
     ...(carriesPage ? [pagePart(page, prompts)] : []),
     ...page.selection.map((item) => prompts.selection(selectionPart(item))),
     ...(page.highlights ?? []).flatMap((item) => highlightParts(item, prompts.highlight)),
+    ...(page.state && Object.keys(page.state).length > 0 ? [statePart(page.state, prompts.state)] : []),
   ].join(PART_SEPARATOR);
+}
+
+/** The panel's current declared public state as the trailing context line reports it. */
+function statePart(state: Record<string, unknown>, format: PageLinePrompts["state"]): string {
+  const serialized = JSON.stringify(state);
+  return format ? format(serialized) : `State: ${serialized}`;
 }
 
 /**
@@ -324,7 +336,8 @@ export function writtenText(text: string, prompts: PageLinePrompts & { file: Fil
   const line = text.slice(at + 2);
   const told = line === prompts.closed || fileLinePath(line, prompts.file) !== null || pageLineAddress(line, prompts) !== null
     || selectionLine(line, prompts.selection)
-    || (prompts.highlight !== undefined && selectionLine(line, prompts.highlight));
+    || (prompts.highlight !== undefined && selectionLine(line, prompts.highlight))
+    || (prompts.state !== undefined ? selectionLine(line, prompts.state) : line.startsWith("State: "));
   return told ? text.slice(0, at) : text;
 }
 
