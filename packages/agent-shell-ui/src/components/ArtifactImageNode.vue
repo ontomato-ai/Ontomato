@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
-import { Maximize2 } from "lucide-vue-next";
+import { Maximize2, Table2 } from "lucide-vue-next";
 import { artifactPath } from "@ontomato/contracts/agent-artifact-markdown";
 import { fileName } from "../artifacts";
 import { messageContextKey, shellContextKey } from "../context";
@@ -17,6 +17,7 @@ const message = inject(messageContextKey)!;
 const path = computed(() => (props.node.loading ? null : artifactPath(props.node.src)));
 const caption = computed(() => props.node.alt.trim() || undefined);
 const title = computed(() => caption.value ?? (path.value ? fileName(path.value) : ""));
+const isDataset = computed(() => /\.(?:csv|dataset\.json)$/i.test(path.value ?? ""));
 
 const artifact = ref<RuntimeArtifact | null>(null);
 const resolvedPath = ref<string | null>(null);
@@ -38,17 +39,21 @@ function expand() {
   <span v-if="node.loading" class="inline-artifact pending" aria-busy="true" />
   <figure v-else-if="path" class="inline-artifact">
     <figcaption class="inline-caption">
-      <span class="inline-title">{{ title }}</span>
+      <Table2 v-if="isDataset" :size="16" class="inline-kind" aria-hidden="true" />
+      <span class="inline-title" :title="title">{{ title }}</span>
+      <div class="inline-actions">
       <SlotOutlet v-if="artifact" :content="shell.slots.artifactActions" :scope="{ artifact, title, caption }" />
       <button
         type="button"
         class="inline-expand"
         :title="shell.labels.value.open"
         :aria-label="shell.labels.value.open"
+        :disabled="!artifact"
         @click="expand"
       >
         <Maximize2 :size="14" />
       </button>
+      </div>
     </figcaption>
     <ArtifactView
       :key="`${message.runId}:${path}`"
@@ -80,10 +85,10 @@ function expand() {
 }
 .inline-caption {
   display: flex;
-  align-items: center;
+   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 8px 8px 14px;
+  padding: 12px 12px 12px 16px;
   border-bottom: 1px solid var(--el-border-color-light);
 }
 .inline-title {
@@ -92,15 +97,21 @@ function expand() {
   font-size: var(--text-sm, 13px);
   font-weight: 600;
   color: var(--el-text-color-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  padding-block: 5px;
 }
+.inline-kind { flex-shrink: 0; margin-top: 7px; color: var(--el-text-color-secondary); }
+.inline-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; flex-shrink: 0; max-width: 50%; }
 .inline-expand {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -113,6 +124,12 @@ function expand() {
 }
 .inline-expand:focus-visible {
   outline: 2px solid var(--el-color-primary);
+}
+.inline-expand:disabled { opacity: .4; cursor: default; }
+@media (max-width: 480px) {
+  .inline-caption { flex-wrap: wrap; gap: 6px; }
+  .inline-title { flex-basis: calc(100% - 30px); }
+  .inline-actions { max-width: 100%; margin-left: auto; }
 }
 .inline-artifact :deep(.artifact-pending),
 .inline-artifact :deep(.artifact-missing) {

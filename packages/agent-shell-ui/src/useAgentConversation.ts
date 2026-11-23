@@ -66,7 +66,9 @@ export function useAgentConversation(
   const activeRunId = computed(
     () => Object.values(state.runs).find((run) => run.status === "running")?.id ?? null,
   );
-  const busy = computed(() => sending.value || activeRunId.value !== null);
+  const delegatedRunId = computed(() => tasks.value?.tasks.find(task =>
+    task.kind === "agent" && (task.status === "starting" || task.status === "running"))?.root.runId ?? null);
+  const busy = computed(() => sending.value || activeRunId.value !== null || delegatedRunId.value !== null);
 
   function stopTasks() {
     detachTasks?.();
@@ -293,7 +295,7 @@ export function useAgentConversation(
   });
 
   async function cancel() {
-    const runId = activeRunId.value;
+    const runId = activeRunId.value ?? delegatedRunId.value;
     const sessionId = state.sessionId;
     if (!runId || !sessionId) return;
     const current = token;

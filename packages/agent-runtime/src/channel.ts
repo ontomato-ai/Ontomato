@@ -15,6 +15,19 @@ import type { Scope, MessageRow } from "./store";
 import { ChannelStore } from "./channel-store";
 import { RuntimeError, safeMessage } from "./errors";
 import { runtimeLogger, runtimeDiagnostic } from "./logging";
+import { datasetPayloadSchema } from "@ontomato/contracts/data-retrieval";
+
+/** Include a small, complete dataset in the tool result so its consumer needs no second read. */
+function smallDataset(name: string, bytes: Buffer) {
+  if (!name.endsWith(".dataset.json") || bytes.length > 32_768) return undefined;
+  let decoded: unknown;
+  try { decoded = JSON.parse(bytes.toString("utf8")); } catch { return undefined; }
+  const parsed = datasetPayloadSchema.safeParse(decoded);
+  if (!parsed.success || parsed.data.rows.length > 10) return undefined;
+  const { rows, columns, assumptions, selfCheck, truncation, queryCoverage } = parsed.data;
+  const summary = { rows, columns, assumptions, selfCheck, truncation, queryCoverage };
+  return Buffer.byteLength(JSON.stringify(summary)) <= 4_096 ? summary : undefined;
+}
 
 export interface ExternalAgentCaller { kind:"external";actor:AgentActorRef;authority:AgentRunContext["authority"];language:string;credential:AgentCredential }
 export interface AgentProvider { id: string; hostId: string; url: string; token: string }
@@ -92,7 +105,12 @@ export class AgentChannel {
     add(intent.session);add(intent.channel.root.session);
     let parent=intent.channel.requestedBy;
     while(parent) { add(parent.session);parent=(await this.facts.intent(this.scope(parent.session,domain),parent.runId)).channel.requestedBy; }
-    for(const session of sessions.values()) this.emitChange(this.scope(session,domain),session.sessionId);
+    for(const session of sessions.values()) {
+      const scope = this.scope(session,domain);
+      this.emitChange(scope,session.sessionId);
+      if (session.sessionId !== intent.session.sessionId || session.providerId !== intent.session.providerId)
+        this.runtime.publishSessionRun(scope, { type: "delegated_changed", sessionId: session.sessionId, runId: intent.channel.root.runId });
+    }
   }
   subscribe(scope: Scope, sessionId: string, listener: Listener) {
     const id = JSON.stringify([scope,sessionId]), set = this.listeners.get(id) ?? new Set<Listener>();
@@ -460,8 +478,11 @@ export class AgentChannel {
     const downloaded=[];
     if(command.files && source) for(const file of result.files) {
       const response=await this.file(intent,file.id);
-      const path=await this.runtime.importAgentFile(scope,source.runId,intent.id,file,Buffer.from(await response.arrayBuffer()));
-      downloaded.push({id:file.id,path,taskId:intent.id});
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const path = await this.runtime.importAgentFile(scope, source.runId, intent.id, file, bytes);
+      const dataset = result.retrieval?.datasets.some(dataset => dataset.id === file.id)
+        ? smallDataset(file.name, bytes) : undefined;
+      downloaded.push({ id: file.id, path, taskId: intent.id, ...(dataset ? { dataset } : {}) });
     }
     if (command.view !== "messages") return { taskId:intent.id,sessionRef:intent.session,...result,questions,...(command.files && source?{downloaded}:{}) };
     const messages = (await this.runtime.store.messages(entry.scope, intent.session.sessionId)).filter(row => row.runId === intent.id && row.message.role !== "system" && row.messageSeq > (command.cursor ?? 0)).slice(0, command.limit ?? 50);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
+import { computed, inject, ref, watch } from "vue";
 import { ChevronRight, CircleAlert, Database, LoaderCircle } from "lucide-vue-next";
 import type { AgentTaskError,ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
 import { shellContextKey } from "../../context";
@@ -15,6 +15,8 @@ const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value.tasks!);
 const running = computed(() => props.task.status === "running" || props.task.status === "starting");
 const { open, toggle } = useAutoFold(() => running.value);
+const visited = ref(open.value);
+watch(open, value => { if (value) visited.value = true; });
 
 function reason(error: AgentTaskError) {
   return labels.value.errors[error.code] ?? error.message ?? labels.value.status.failed;
@@ -32,7 +34,7 @@ function reason(error: AgentTaskError) {
       <span class="detail">{{ task.title }}</span>
       <ChevronRight :size="14" class="chevron" />
     </component>
-    <div v-if="open && task.process.mode !== 'page'" class="task-body">
+    <div v-if="visited && task.process.mode !== 'page'" v-show="open" class="task-body">
       <p v-if="task.error" class="task-error">{{ reason(task.error) }}</p>
       <ul v-if="task.retrieval?.datasets.length" class="datasets">
         <li v-for="dataset in task.retrieval.datasets" :key="dataset.id">

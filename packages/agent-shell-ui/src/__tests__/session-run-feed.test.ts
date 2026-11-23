@@ -114,6 +114,21 @@ describe("the page's one list feed", () => {
     expect(sessions.value.map((entry) => entry.latestRun?.status ?? null)).toEqual(["running", "stopped"]);
   });
 
+  it("keeps delegation activity on a stopped main run and clears it on completion", async () => {
+    const host = port();
+    const { sessions } = page(host);
+    await settle();
+    await dispatch(host, { type: "ready" });
+    host.reads.shift()!.resolve(host.snapshot([a, b], "stopped"));
+    await settle();
+    for (const delegatedRunning of [true, false]) {
+      await dispatch(host, { type: "delegated_changed", sessionId: a, runId });
+      host.reads.shift()!.resolve({ sessions: [{ sessionId: a, latestRun: { ...runOf("stopped"), delegatedRunning } }] });
+      await settle();
+      expect(sessions.value[0]!.latestRun).toMatchObject({ status: "stopped", delegatedRunning });
+    }
+  });
+
   it("hands the page a notice for a conversation no list shows, without reading or inserting it", async () => {
     const host = port();
     const { sessions, onNotice } = page(host);

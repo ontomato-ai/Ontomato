@@ -34,7 +34,28 @@ export function piModel(config: ResolvedModel): Model<ModelApi> {
 }
 const streamProvider: StreamFn = (model, context, options) => {
   switch (model.api) {
-    case "openai-completions": return openaiCompletions(model as Model<"openai-completions">, context, options);
+    case "openai-completions": {
+      const chatModel = model as Model<"openai-completions">;
+      if (!/^(?:deepseek\/)?deepseek-(?:v4-(?:flash|pro)|flash|pro)$/iu.test(model.id)) {
+        return openaiCompletions(chatModel, context, options);
+      }
+      return openaiCompletions(chatModel, context, {
+        ...options,
+        async onPayload(payload, requestModel) {
+          const request = await options?.onPayload?.(payload, requestModel) ?? payload;
+          // Gateways can enable DeepSeek thinking by default and omit reasoning on individual tool calls.
+          // Preserve any reasoning that was returned and keep old tool-call transcripts replayable.
+          if (request && typeof request === "object" && "messages" in request && Array.isArray(request.messages)) {
+            for (const message of request.messages) {
+              if (message?.role === "assistant" && message.tool_calls?.length && message.reasoning_content == null) {
+                message.reasoning_content = "";
+              }
+            }
+          }
+          return request;
+        },
+      });
+    }
     case "openai-responses": return openaiResponses(model as Model<"openai-responses">, context, options);
     case "anthropic-messages": return anthropicMessages(model as Model<"anthropic-messages">, context, options);
     case "google-generative-ai": return googleGenerativeAi(model as Model<"google-generative-ai">, context, options);
@@ -253,4 +274,3 @@ export async function testModel(config: ResolvedModel, prompt: string, correlati
     throw new RuntimeError(502, "MODEL_TEST_FAILED", "Model connection test failed");
   return { type: "chat" as const, content: message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n") };
 }
-

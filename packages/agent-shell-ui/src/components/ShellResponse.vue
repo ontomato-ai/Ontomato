@@ -29,7 +29,7 @@ const feedbackBusy = ref(false);
 
 /** The runtime names the answer when the run stops, so feedback has a target only then. */
 const target = computed(() =>
-  props.sessionId && !props.item.running && props.item.answerMessageId
+    props.sessionId && !props.item.running && props.item.answerMessageId && props.item.answerText.trim()
     ? { sessionId: props.sessionId, runId: props.item.runId, messageId: props.item.answerMessageId }
     : null,
 );
@@ -44,6 +44,12 @@ const taskCount = computed(() =>
 const delegating = computed(() => props.item.process.some((block) =>
   block.kind === "task" && (block.task.status === "running" || block.task.status === "starting")));
 const { open, toggle, reveal } = useAutoFold(() => props.item.running || delegating.value);
+const processVisited = ref(open.value);
+watch(open, value => { if (value) processVisited.value = true; });
+const retrievalStatus = computed(() => {
+  const progress = props.item.retrievalProgress;
+  return progress ? labels.value.retrievalProgress?.[progress] : undefined;
+});
 
 /** A task the reader picked from the task list: its card is in the process, which opens; the conversation scrolls to it. */
 watch(() => shell.taskFocus?.value, (focus) => {
@@ -139,22 +145,22 @@ async function submit(value: ShellFeedbackValue) {
           type="button"
           class="process-toggle"
           :aria-expanded="open"
-          :aria-live="item.running ? 'off' : 'polite'"
+          :aria-live="retrievalStatus || !item.running ? 'polite' : 'off'"
           @click="toggle"
         >
-          <LoaderCircle v-if="item.running" :size="12" class="spin" />
-          <span>{{ status }}</span>
+          <LoaderCircle v-if="item.running || delegating" :size="12" class="spin" />
+          <span>{{ retrievalStatus || status }}</span>
           <ChevronRight :size="14" class="chevron" />
         </button>
-        <div v-else class="process-toggle" :aria-live="item.running ? 'off' : 'polite'">
+        <div v-else class="process-toggle" :aria-live="retrievalStatus || !item.running ? 'polite' : 'off'">
           <LoaderCircle v-if="item.running" :size="12" class="spin" />
-          <span>{{ status }}</span>
+          <span>{{ retrievalStatus || status }}</span>
         </div>
         <button v-if="taskCount && shell.openTasks" type="button" class="process-toggle tasks-entry" @click="shell.openTasks(item.runId)">
           {{ labels.tasks!.count(taskCount) }}
         </button>
       </div>
-      <div v-if="open && hasProcess" class="process-body">
+      <div v-if="processVisited && hasProcess" v-show="open" class="process-body">
         <template v-for="block in item.process" :key="block.key">
           <ShellProcess v-if="block.kind === 'steps'" :steps="block.steps" :active="block.active" />
           <TaskCard v-else-if="block.kind === 'task'" :task="block.task" :session-id="sessionId ?? ''" />
@@ -165,7 +171,7 @@ async function submit(value: ShellFeedbackValue) {
         </template>
       </div>
     </section>
-    <div v-if="item.running && !hasProcess" class="waiting" aria-live="polite">
+    <div v-if="item.running && !hasProcess && !retrievalStatus" class="waiting" aria-live="polite">
       <span class="dot" /><span class="dot" /><span class="dot" />
       <span class="sr-only">{{ labels.working }}</span>
     </div>
@@ -184,7 +190,7 @@ async function submit(value: ShellFeedbackValue) {
       <span>{{ item.end.errorMessage || labels.failed }}</span>
     </div>
 
-    <div v-if="!item.running && item.answerMessageId" class="actions">
+    <div v-if="!item.running && item.answerMessageId && item.answerText.trim()" class="actions">
       <button type="button" class="shell-message-action" :title="labels.copy" :aria-label="labels.copy" @click="copy">
         <Check v-if="copied" :size="15" />
         <Copy v-else :size="15" />

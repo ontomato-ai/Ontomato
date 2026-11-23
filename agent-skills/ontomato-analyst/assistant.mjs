@@ -129,16 +129,27 @@ function errorValue(error) {
 }
 
 async function startRetrieval(args) {
+  const intentFile = option(args, "--intent");
+  const queryIntent = intentFile ? readJson(intentFile) : undefined;
   const question = args.join(" ");
   if (!question.trim()) throw new Error("start-retrieval requires the complete question");
   const retrieverRef = JSON.parse(fs.readFileSync(path.join(dir, "retriever-ref.json"), "utf8"));
+  let intentSupported = false;
+  if (queryIntent) {
+    const directory = await sendAgentCommand({ op: "list" }, { cfg, headers });
+    intentSupported = (directory.agents ?? []).some(item =>
+      item.ref?.providerId === retrieverRef.providerId && item.ref?.agentId === retrieverRef.agentId &&
+      item.contextSchema?.properties?.queryIntent?.type === "object");
+  }
   const [retrieverResult, recallResult] = await Promise.allSettled([
-    sendAgentCommand({ op: "start", agent: retrieverRef, message: question }, { cfg, headers }),
+    sendAgentCommand({ op: "start", agent: retrieverRef, message: question,
+      ...(queryIntent && intentSupported ? { context: { queryIntent } } : {}) }, { cfg, headers }),
     recallMetrics(question),
   ]);
   console.log(JSON.stringify({
     retriever: retrieverResult.status === "fulfilled" ? retrieverResult.value : errorValue(retrieverResult.reason),
     recall: recallResult.status === "fulfilled" ? recallResult.value : errorValue(recallResult.reason),
+    ...(queryIntent && !intentSupported ? { queryIntentStatus: "unsupported_by_retriever", queryIntentApplied: false } : {}),
   }));
   if (retrieverResult.status === "rejected" || recallResult.status === "rejected") process.exitCode = 1;
 }
