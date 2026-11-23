@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { appsSdkComponentCatalogEntrySchema } from "./apps-sdk";
 import { bindPanelAuthoringChart, expandPanelAuthoringMember, panelAuthoringMemberSchema, panelManifestSchema } from "./panel-check";
 import { panelOperationDeclarationSchema } from "./panel-operations";
+import { declaredCustomerFormSaveName } from "./panel-projection";
 import { dashboardCardPrimaryKey } from "./dashboard";
 import { DASHBOARD_CARD, platformObjectTypes } from "./platform-object-types";
 import { platformTypeTableEntrySchema } from "./platform-type-table";
@@ -705,6 +706,9 @@ test("operation params support declarative formField and formFields wiring for c
           payload: { formFields: { level: "/grade", note: "/remark" } },
         },
       },
+      approveKnowledge: {
+        operation: approve.id, type, target: { literal: { className: type, primaryKey: "article" } },
+      },
     },
   });
   assert("component" in member);
@@ -717,6 +721,8 @@ test("operation params support declarative formField and formFields wiring for c
     customer_name: { formField: "/name" },
     payload: { formFields: { level: "/grade", note: "/remark" } },
   });
+  assert.equal(expanded.projection.operations?.approveKnowledge?.operation.kind, "PlatformOperation");
+  assert.equal(declaredCustomerFormSaveName(expanded.projection.operations, false), "save");
   assert.doesNotThrow(() => productProjectionInputSchema.parse({
     ...expanded.projection,
     name: "Customer form",

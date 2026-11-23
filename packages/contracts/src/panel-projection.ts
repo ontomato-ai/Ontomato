@@ -174,9 +174,7 @@ export function declaredCustomerFormSaveName(
   operations: Readonly<Record<string, ProjectionOperationBinding>> | undefined,
   creating: boolean,
 ): string | undefined {
-  const declared = Object.entries(operations ?? {});
-  if (declared.some(([, binding]) => binding.operation.kind === "PlatformOperation")) return undefined;
-  const actions = declared.filter(([, binding]) => binding.operation.kind === "Action");
+  const actions = Object.entries(operations ?? {}).filter(([, binding]) => binding.operation.kind === "Action");
   const matchesTarget = (binding: ProjectionOperationBinding) => creating === (binding.target === undefined);
   if (actions.length === 1) return actions.find(([, binding]) => matchesTarget(binding))?.[0];
   const names = creating ? ["create", "save"] : ["save"];

@@ -708,6 +708,10 @@ it("includes customer Action create and edit ObjectForms in Draft a change and d
     config: {},
     operations: {
       save: { operation: { kind: "Action", id: "create-order" } },
+      approveKnowledge: {
+        operation: { kind: "PlatformOperation", id: "knowledge.approve" },
+        target: { literal: { className: "platform:BusinessKnowledge", primaryKey: "article" } },
+      },
     },
   });
   extraProjections.set("order-edit-form", {
