@@ -12,8 +12,7 @@
         "type": {
           "kind": "scalar",
           "type": "boolean"
-        },
-        "deepLink": true
+        }
       }
     },
     "members": {

@@ -2,12 +2,14 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { buildTestContextSchema } from "./build-tests";
 import { pageContextSchema } from "./page-context";
-import { pageDraftLinkSchema } from "./page-draft";
+import { PAGE_DRAFT_QUERY_KEYS, pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import {
-  matchesDirectPanelValue, panelDeepLinkStateValueSchema, panelMemberPathSchema, panelMemberPathSegmentSchema,
+  normalizeExternalPanelState, normalizeExternalPanelValue, panelChildObjectIdentitySchema,
+  panelMemberPathSchema, panelMemberPathSegmentSchema,
   panelObjectIdentitySchema, panelObjectRefSchema, panelOpenRequestSchema, panelOperationSchema,
-  panelOperationUnavailableSchema, type PanelDeepLinkStateValue, type PanelManifest, type PanelObjectIdentity,
+  panelOperationUnavailableSchema, type DirectPanelPortType, type PanelDeepLinkStateValue,
+  type PanelManifest, type PanelObjectIdentity, type PanelStateField,
 } from "./panel-manifest";
 import { domainComponentIdSchema, domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { panelOwnerOperationDescriptorSchema } from "./panel-operations";
@@ -277,57 +279,222 @@ type PanelAddressState = Record<string, PanelDeepLinkStateValue>;
 const addressStateSchema = panelOpenRequestSchema.shape.state;
 const addressSections = z.object({ frame: addressStateSchema, state: addressStateSchema }).strict();
 
-/** Split a canonical site route, as supplied by the router, into its two state sections and other query parameters. */
-export function parseApplicationPanelAddress(address: string) {
+/** Prefix used for application frame deep-link state parameters in canonical panel URLs (`frame.<name>=...`). */
+export const PANEL_FRAME_QUERY_PREFIX = "frame.";
+
+/**
+ * Shell-owned query parameters that may appear alongside flat panel state in a route URL and must never be
+ * interpreted as panel state or overwritten when panel state changes.
+ */
+export const PANEL_ADDRESS_RESERVED_QUERY_KEYS = [
+  ...PAGE_DRAFT_QUERY_KEYS,
+  "standalone",
+  "from",
+  "navigationContext",
+] as const;
+
+const RESERVED_QUERY_KEY_SET: ReadonlySet<string> = new Set(PANEL_ADDRESS_RESERVED_QUERY_KEYS);
+
+function isReservedOrFrameKey(key: string): boolean {
+  return RESERVED_QUERY_KEY_SET.has(key) || key.startsWith(PANEL_FRAME_QUERY_PREFIX);
+}
+
+function formatQueryString(params: URLSearchParams): string {
+  // Keep RFC 3986 query characters `:` and `~` unencoded so URLs stay readable and match Vue Router fullPath.
+  return params.toString().replaceAll("%3A", ":").replaceAll("%7E", "~");
+}
+
+function joinAddress(path: string, params: URLSearchParams): string {
+  const search = formatQueryString(params);
+  return search ? `${path}?${search}` : path;
+}
+
+function isPlainDeepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length
+      && a.every((item, index) => isPlainDeepEqual(item, b[index]));
+  }
+  const aKeys = Object.keys(a as Record<string, unknown>);
+  const bKeys = Object.keys(b as Record<string, unknown>);
+  return aKeys.length === bKeys.length
+    && aKeys.every((k) => Object.hasOwn(b as object, k)
+      && isPlainDeepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
+function encodeFlatItem(value: PanelDeepLinkStateValue, type?: DirectPanelPortType): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Panel address number state must be finite");
+    return String(value);
+  }
+  if (typeof value === "boolean") return value ? "true" : "false";
+  const ref = panelObjectRefSchema.safeParse(value);
+  if (ref.success) {
+    if (type?.kind === "object" && type.objectType === ref.data.className && !ref.data.primaryKey.includes("~")) {
+      return ref.data.primaryKey;
+    }
+    return `${ref.data.className}~${ref.data.primaryKey}`;
+  }
+  const child = panelChildObjectIdentitySchema.safeParse(value);
+  if (child.success) {
+    if (
+      type?.kind === "child-object"
+      && type.parentType === child.data.parent.objectType
+      && !child.data.parent.primaryKey.includes("~")
+    ) {
+      return `${child.data.parent.primaryKey}~${child.data.primaryKey}`;
+    }
+    return `${child.data.parent.objectType}~${child.data.parent.primaryKey}~${child.data.primaryKey}`;
+  }
+  throw new Error(`Unsupported deep-link value in panel address: ${JSON.stringify(value)}`);
+}
+
+function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStateField): string[] {
+  if (value === null || value === undefined) return [];
+  if (field) {
+    if (!field.deepLink) return [];
+    if (field.default !== undefined && isPlainDeepEqual(value, field.default)) return [];
+    if (value === "" && (field.default === undefined || field.default === "")) return [];
+    if (
+      Array.isArray(value)
+      && value.length === 0
+      && (field.default === undefined || (Array.isArray(field.default) && field.default.length === 0))
+    ) {
+      return [];
+    }
+  } else {
+    if (value === "") return [];
+    if (Array.isArray(value) && value.length === 0) return [];
+  }
+  if (Array.isArray(value)) {
+    const itemType = field?.type.kind === "list" ? field.type.items : undefined;
+    return value.map((item) => encodeFlatItem(item, itemType));
+  }
+  return [encodeFlatItem(value, field?.type)];
+}
+
+function collapseBucket(
+  bucket: Record<string, string[]>,
+  manifest?: Pick<PanelManifest, "state">,
+): PanelAddressState {
+  const raw: Record<string, PanelDeepLinkStateValue> = {};
+  for (const [name, values] of Object.entries(bucket)) {
+    raw[name] = values.length === 1 ? values[0]! : values;
+  }
+  return manifest ? normalizeExternalPanelState(manifest, raw) : raw;
+}
+
+/**
+ * Split a canonical site route into its flat-encoded frame state (`frame.<name>`), entry state (`<name>`),
+ * and preserved shell/other query parameters. When manifests are provided, declared `deepLink` fields are decoded
+ * to their typed values and undeclared query keys remain in `query`.
+ */
+export function parseApplicationPanelAddress(
+  address: string,
+  options?: {
+    frameManifest?: Pick<PanelManifest, "state">;
+    stateManifest?: Pick<PanelManifest, "state">;
+  },
+) {
   const separator = address.indexOf("?");
   const path = applicationPanelUsePathSchema.parse(separator < 0 ? address : address.slice(0, separator));
-  const query = new URLSearchParams(separator < 0 ? "" : address.slice(separator + 1));
-  function read(section: "frame" | "state"): unknown {
-    const values = query.getAll(section);
-    if (values.length === 0) return {};
-    if (values.length > 1) throw new Error(`The panel address supplies '${section}' more than once`);
-    query.delete(section);
-    try {
-      return JSON.parse(values[0]!);
-    } catch {
-      throw new Error(`Invalid JSON in the panel address's '${section}' section`);
+  const rawParams = new URLSearchParams(separator < 0 ? "" : address.slice(separator + 1));
+  const query = new URLSearchParams();
+  const frameBucket: Record<string, string[]> = {};
+  const stateBucket: Record<string, string[]> = {};
+
+  for (const [key, value] of rawParams.entries()) {
+    if (RESERVED_QUERY_KEY_SET.has(key)) {
+      query.append(key, value);
+      continue;
+    }
+    if (key.startsWith(PANEL_FRAME_QUERY_PREFIX) && key.length > PANEL_FRAME_QUERY_PREFIX.length) {
+      const name = key.slice(PANEL_FRAME_QUERY_PREFIX.length);
+      if (options?.frameManifest && !options.frameManifest.state[name]?.deepLink) {
+        query.append(key, value);
+      } else {
+        (frameBucket[name] ??= []).push(value);
+      }
+      continue;
+    }
+    if (options?.stateManifest && !options.stateManifest.state[key]?.deepLink) {
+      query.append(key, value);
+    } else {
+      (stateBucket[key] ??= []).push(value);
     }
   }
-  return { path, ...addressSections.parse({ frame: read("frame"), state: read("state") }), query };
+
+  return {
+    path,
+    frame: collapseBucket(frameBucket, options?.frameManifest),
+    state: collapseBucket(stateBucket, options?.stateManifest),
+    query,
+  };
 }
 
-/** Encode the resolved frame and content state once, preserving other query parameters such as a draft link. */
+/**
+ * Encode frame (`frame.<name>`) and content (`<name>`) deep-link state as flat named query parameters,
+ * omitting null/empty/default values and preserving shell query parameters (such as draft links and `standalone`).
+ */
 export function applicationPanelAddress(path: string, {
-  frame = {}, state = {}, query,
-}: { frame?: PanelAddressState; state?: PanelAddressState; query?: URLSearchParams } = {}): string {
+  frame = {}, state = {}, query, frameManifest, stateManifest,
+}: {
+  frame?: PanelAddressState;
+  state?: PanelAddressState;
+  query?: URLSearchParams;
+  frameManifest?: Pick<PanelManifest, "state">;
+  stateManifest?: Pick<PanelManifest, "state">;
+} = {}): string {
   const route = applicationPanelUsePathSchema.parse(path);
   const values = addressSections.parse({ frame, state });
-  const params = new URLSearchParams(query);
-  for (const section of ["frame", "state"] as const) {
-    params.delete(section);
-    if (Object.keys(values[section]).length > 0) params.set(section, JSON.stringify(values[section]));
+  const params = new URLSearchParams();
+  if (query) {
+    for (const [key, value] of query.entries()) {
+      if (key.startsWith(PANEL_FRAME_QUERY_PREFIX)) continue;
+      params.append(key, value);
+    }
   }
-  const search = params.toString();
-  return search ? `${route}?${search}` : route;
+  for (const [name, value] of Object.entries(values.frame)) {
+    const key = `${PANEL_FRAME_QUERY_PREFIX}${name}`;
+    params.delete(key);
+    const field = frameManifest?.state[name];
+    for (const encoded of encodeFlatStateValues(value, field)) {
+      params.append(key, encoded);
+    }
+  }
+  for (const [name, value] of Object.entries(values.state)) {
+    if (isReservedOrFrameKey(name)) continue;
+    params.delete(name);
+    const field = stateManifest?.state[name];
+    for (const encoded of encodeFlatStateValues(value, field)) {
+      params.append(name, encoded);
+    }
+  }
+  return joinAddress(route, params);
 }
 
-/** Verify address inputs after resolving the definitions, and remove keys owned by the entry's declared wiring. */
+/** Verify and normalize address inputs after resolving definitions, removing keys owned by the entry's declared wiring. */
 export function validateApplicationPanelAddressState(
   section: "frame" | "state",
   values: PanelAddressState,
   manifest: Pick<PanelManifest, "state"> | undefined,
   controlled: readonly string[] = [],
 ): PanelAddressState {
-  return Object.fromEntries(Object.entries(values).filter(([name, value]) => {
-    if (controlled.includes(name)) return false;
+  const result: PanelAddressState = {};
+  for (const [name, value] of Object.entries(values)) {
+    if (controlled.includes(name)) continue;
     const fields = manifest?.state;
     const field = fields && Object.hasOwn(fields, name) ? fields[name] : undefined;
     if (!field?.deepLink) throw new Error(`Panel address field '${section}.${name}' is not declared for deep linking`);
-    if (!matchesDirectPanelValue(field.type, value)) {
+    const normalized = normalizeExternalPanelValue(field.type, value);
+    if (!normalized.ok) {
       throw new Error(`Panel address field '${section}.${name}' does not match its declared type`);
     }
-    return true;
-  }));
+    result[name] = normalized.value;
+  }
+  return result;
 }
 
 /** The route owned by the application use. */
@@ -336,39 +503,55 @@ export function panelUsePath(path: string): string {
 }
 
 /**
- * The address a panel instance is at: the page's own address with the state it restores — and nothing else. The page's
- * other parameters are kept, its own `state` is replaced, and a page with no state carries none, so an address is the
- * same page whatever the reader has selected in it.
+ * Build a panel address with flat named query parameters for its deep-linkable state.
+ *
+ * When `manifest` is supplied, every declared `deepLink` field in `manifest.state` is replaced from `state`
+ * (omitting null, empty, and default values; encoding fixed-type objects as bare `primaryKey` and multi-type
+ * `object-union` references as `className~primaryKey`), while all shell-reserved, `frame.*`, and non-deepLink query
+ * parameters on `path` are preserved untouched. Without `manifest`, each key supplied in `state` is updated/removed
+ * in place while preserving other query parameters.
  */
-export function panelAddress(path: string, state: Record<string, unknown>): string {
+export function panelAddress(
+  path: string,
+  state: Record<string, unknown>,
+  manifest?: Pick<PanelManifest, "state">,
+): string {
   const values = panelOpenRequestSchema.shape.state.parse(state);
-  const [route, search = ""] = path.split("?");
-  const query = new URLSearchParams(search);
-  query.delete("state");
-  if (Object.keys(values).length) query.set("state", JSON.stringify(values));
-  const rest = query.toString();
-  return rest ? `${route}?${rest}` : route!;
+  const separator = path.indexOf("?");
+  const route = separator < 0 ? path : path.slice(0, separator);
+  const params = new URLSearchParams(separator < 0 ? "" : path.slice(separator + 1));
+  if (manifest) {
+    for (const [name, field] of Object.entries(manifest.state)) {
+      if (field.deepLink && !isReservedOrFrameKey(name)) params.delete(name);
+    }
+  }
+  for (const [name, value] of Object.entries(values)) {
+    if (isReservedOrFrameKey(name)) continue;
+    if (manifest && !manifest.state[name]?.deepLink) continue;
+    params.delete(name);
+    const field = manifest?.state[name];
+    for (const encoded of encodeFlatStateValues(value, field)) {
+      params.append(name, encoded);
+    }
+  }
+  return joinAddress(route, params);
 }
 
 /**
- * The state an address restores, or none. Malformed JSON or entries that cannot cross the deep-link boundary are
- * safely ignored so a hand-edited or stale URL never crashes the route; the host further normalizes and validates
- * remaining entries against the panel's manifest.
+ * Extract the entry panel's flat query parameters from an address. Shell-reserved keys (`standalone`, `from`,
+ * `navigationContext`, draft keys) and `frame.*` keys are excluded. When `manifest` is provided, values are decoded
+ * and validated against `manifest.state` (invalid values are safely ignored).
  */
-export function panelAddressState(address: string): Record<string, PanelDeepLinkStateValue> {
-  const raw = new URL(address, "http://page.invalid").searchParams.get("state");
-  if (raw === null) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return {};
+export function panelAddressState(
+  address: string,
+  manifest?: Pick<PanelManifest, "state">,
+): Record<string, PanelDeepLinkStateValue> {
+  const params = new URL(address, "http://page.invalid").searchParams;
+  const bucket: Record<string, string[]> = {};
+  for (const [key, value] of params.entries()) {
+    if (isReservedOrFrameKey(key)) continue;
+    if (manifest && !manifest.state[key]?.deepLink) continue;
+    (bucket[key] ??= []).push(value);
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-  const result: Record<string, PanelDeepLinkStateValue> = {};
-  for (const [name, value] of Object.entries(parsed)) {
-    const entry = panelDeepLinkStateValueSchema.safeParse(value);
-    if (entry.success) result[name] = entry.data;
-  }
-  return result;
+  return collapseBucket(bucket, manifest);
 }

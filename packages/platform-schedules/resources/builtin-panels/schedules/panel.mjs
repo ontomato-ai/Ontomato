@@ -419,6 +419,7 @@ await mountPanel({
       select, closePane, busy, toggle, runNow, askDelete, edit, command, showRecords,
       runGroups, historyRecords, runsLoading, runsFailure, nextCursor, loadingMore, loadMore, runId, expanded, toggleRun, hasDetails,
       latestRun, latestResult, openResult, saved, created, cancelForm, closeEditOnEscape,
+      openEdit: () => setMode("edit"),
       startCreate: () => instance.state.set("compose", "new"),
       refresh: () => instance.refreshObjects(),
     };

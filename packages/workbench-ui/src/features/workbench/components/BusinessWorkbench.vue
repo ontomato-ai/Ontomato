@@ -12,7 +12,6 @@ import {
 import { useLeaveConfirmation, usePageAccess, usePageAdmission, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
 import { getWorkbenchAppearance } from "../api";
 import { createAssistantClient, createAssistantFeedback, createPanelOperationSettings } from "../assistant-host";
@@ -264,7 +263,7 @@ const opensModels = computed(() => canOpen(routes.usage.path));
 function openSettings() {
   if (!editsAgents.value) return void router.push(routes.systemAgentModels.path);
   void router.push(agentId.value
-    ? panelAddress(routes.agents.path, { selected: { className: AGENT_DEFINITION, primaryKey: agentId.value }, mode: "edit" })
+    ? panelAddress(routes.agents.path, { selected: agentId.value, mode: "edit" })
     : routes.agents.path);
 }
 

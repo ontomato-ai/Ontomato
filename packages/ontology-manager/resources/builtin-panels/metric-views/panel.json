@@ -30,8 +30,7 @@
           "kind": "scalar",
           "type": "boolean"
         },
-        "default": false,
-        "deepLink": true
+        "default": false
       }
     },
     "members": {

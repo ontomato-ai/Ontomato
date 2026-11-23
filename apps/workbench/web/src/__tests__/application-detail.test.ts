@@ -5,7 +5,7 @@ import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { panelAddress, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
+import { panelAddress, panelAddressState, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { APPLICATION, PRODUCT_PANEL, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
@@ -188,7 +188,7 @@ function mountDetailRoute(
           panelUses: [use],
         },
       ];
-      await router.push(panelAddress(use.path, initialState));
+      await router.push(panelAddress(use.path, initialState, detailPanel.manifest));
       return mountPlatformPage(() => h(RouterView), router);
     },
   };
@@ -303,7 +303,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
 
       // 3. Switch to non-panel app with entriesList still loading (total === null):
       //    Must NOT show "0 entries" or flash the empty-entries InfoBanner.
-      await route.router.push(panelAddress(use.path, { selected: appRef("app-non-panel"), tab: "entries" }));
+      await route.router.push(panelAddress(use.path, { selected: appRef("app-non-panel"), tab: "entries" }, detailPanel.manifest));
       await vi.waitFor(() => {
         expect(element.textContent).toContain("Non-panel App");
       });
@@ -320,7 +320,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
 
       // 5. Switch to Assets tab on app-editable while usedPanelsList is still pending (total === null):
       //    Heading shows count-less "Used panels", NOT "Used panels (0)".
-      await route.router.push(panelAddress(use.path, { selected: appRef("app-editable"), tab: "assets" }));
+      await route.router.push(panelAddress(use.path, { selected: appRef("app-editable"), tab: "assets" }, detailPanel.manifest));
       await vi.waitFor(() => {
         const heading = element.querySelector(".apps-assets-grid .apps-card-title")?.textContent?.trim();
         expect(heading).toBe("Used panels");
@@ -343,7 +343,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
 
       // 7. Switch to app-no-panels whose usedPanelsList returns empty (real total === 0):
       //    Heading accurately displays "Used panels (0)".
-      await route.router.push(panelAddress(use.path, { selected: appRef("app-no-panels"), tab: "assets" }));
+      await route.router.push(panelAddress(use.path, { selected: appRef("app-no-panels"), tab: "assets" }, detailPanel.manifest));
       await vi.waitFor(() => {
         const heading = element.querySelector(".apps-assets-grid .apps-card-title")?.textContent?.trim();
         expect(heading).toBe("Used panels (0)");
@@ -410,7 +410,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
       // 1. Address restore on the SAME panel instance: App B + panel-b2 (non-first item).
       //    Must keep inspectedPanel = panel-b2 and NOT clear or fall back to panel-b1.
       await route.router.push(
-        panelAddress(use.path, { selected: appRef("app-b"), tab: "assets", inspectedPanel: panelRef("panel-b2") }),
+        panelAddress(use.path, { selected: appRef("app-b"), tab: "assets", inspectedPanel: panelRef("panel-b2") }, detailPanel.manifest),
       );
       await vi.waitFor(() => {
         expect(element.querySelector(".apps-assets-grid .sdk-object-list-item-btn.chosen")?.textContent).toContain("Beta Second");
@@ -418,7 +418,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
       });
       // Confirm same panel DOM instance was reused, and URL state kept panel-b2.
       expect(element.querySelector(".apps-detail")).toBe(rootNode);
-      expect(JSON.parse(String(route.router.currentRoute.value.query.state))).toMatchObject({
+      expect(panelAddressState(route.router.currentRoute.value.fullPath, detailPanel.manifest)).toMatchObject({
         selected: appRef("app-b"),
         tab: "assets",
         inspectedPanel: panelRef("panel-b2"),
@@ -435,14 +435,14 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
       // 2. Address restore to App C carrying the SAME panel ID (panel-b2, non-first item in App C).
       //    Must STILL preserve panel-b2 instead of clearing it and falling back to panel-c1.
       await route.router.push(
-        panelAddress(use.path, { selected: appRef("app-c"), tab: "assets", inspectedPanel: panelRef("panel-b2") }),
+        panelAddress(use.path, { selected: appRef("app-c"), tab: "assets", inspectedPanel: panelRef("panel-b2") }, detailPanel.manifest),
       );
       await vi.waitFor(() => {
         expect(element.textContent).toContain("Gamma First");
         expect(element.querySelector(".apps-assets-grid .sdk-object-list-item-btn.chosen")?.textContent).toContain("Beta Second");
         expect(element.querySelector(".apps-card-head .apps-card-title")?.textContent?.trim()).toBe("Beta Second");
       });
-      expect(JSON.parse(String(route.router.currentRoute.value.query.state))).toMatchObject({
+      expect(panelAddressState(route.router.currentRoute.value.fullPath, detailPanel.manifest)).toMatchObject({
         selected: appRef("app-c"),
         tab: "assets",
         inspectedPanel: panelRef("panel-b2"),
@@ -451,13 +451,13 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
       // 3. Normal application switch WITHOUT inspectedPanel in the address:
       //    Old inspectedPanel (panel-b2) must be cleared so usedPanelsList falls back to App A's first item (panel-a1).
       await route.router.push(
-        panelAddress(use.path, { selected: appRef("app-a"), tab: "assets" }),
+        panelAddress(use.path, { selected: appRef("app-a"), tab: "assets" }, detailPanel.manifest),
       );
       await vi.waitFor(() => {
         expect(element.querySelector(".apps-assets-grid .sdk-object-list-item-btn.chosen")?.textContent).toContain("Alpha First");
         expect(element.querySelector(".apps-card-head .apps-card-title")?.textContent?.trim()).toBe("Alpha First");
       });
-      expect(JSON.parse(String(route.router.currentRoute.value.query.state))).toMatchObject({
+      expect(panelAddressState(route.router.currentRoute.value.fullPath, detailPanel.manifest)).toMatchObject({
         selected: appRef("app-a"),
         tab: "assets",
         inspectedPanel: panelRef("panel-a1"),
@@ -511,7 +511,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
       });
 
       // 1. Live setState specifying both selected and a different inspectedPanel:
-      //    Keeps panel-b2 and resets unspecified entriesView back to "list".
+      //    Keeps panel-b2 and resets unspecified entriesView back to default "list" (omitted from flat URL).
       route.controller()!.applyState({
         selected: appRef("app-b"),
         inspectedPanel: panelRef("panel-b2"),
@@ -519,11 +519,12 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
       await vi.waitFor(() => {
         expect(element.querySelector(".apps-assets-grid .sdk-object-list-item-btn.chosen")?.textContent).toContain("Beta Second");
       });
-      expect(JSON.parse(String(route.router.currentRoute.value.query.state))).toMatchObject({
+      const stateAfterB = panelAddressState(route.router.currentRoute.value.fullPath, detailPanel.manifest);
+      expect(stateAfterB).toMatchObject({
         selected: appRef("app-b"),
         inspectedPanel: panelRef("panel-b2"),
-        entriesView: "list",
       });
+      expect(stateAfterB.entriesView).toBeUndefined();
 
       // 2. Live setState switching to App C while explicitly naming the SAME panel-b2 ID:
       //    Must STILL keep panel-b2 instead of falling back to panel-c1.
@@ -535,7 +536,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
         expect(element.textContent).toContain("Gamma First");
         expect(element.querySelector(".apps-assets-grid .sdk-object-list-item-btn.chosen")?.textContent).toContain("Beta Second");
       });
-      expect(JSON.parse(String(route.router.currentRoute.value.query.state))).toMatchObject({
+      expect(panelAddressState(route.router.currentRoute.value.fullPath, detailPanel.manifest)).toMatchObject({
         selected: appRef("app-c"),
         inspectedPanel: panelRef("panel-b2"),
       });
@@ -548,7 +549,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
       await vi.waitFor(() => {
         expect(element.querySelector(".apps-assets-grid .sdk-object-list-item-btn.chosen")?.textContent).toContain("Alpha First");
       });
-      expect(JSON.parse(String(route.router.currentRoute.value.query.state))).toMatchObject({
+      expect(panelAddressState(route.router.currentRoute.value.fullPath, detailPanel.manifest)).toMatchObject({
         selected: appRef("app-a"),
         inspectedPanel: panelRef("panel-a1"),
       });

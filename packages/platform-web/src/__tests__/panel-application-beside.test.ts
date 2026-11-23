@@ -50,7 +50,7 @@ vi.mock("../panel-host", () => ({
 const instances: { initial: Record<string, unknown>; report: () => void; dirty: (value: boolean) => void }[] = [];
 /** A frame that has not reported yet: it mounts, and says what it shows only when this is called. */
 const silent = ref(false);
-const selected = (primaryKey: string) => ({ selectedTask: { className: SCHEDULED_TASK, primaryKey } });
+const selected = (primaryKey: string) => ({ selectedTask: primaryKey });
 const contextOf = (address: string, primaryKey: string | null) => ({
   url: address,
   label: "Scheduled tasks (trial)",
@@ -64,7 +64,7 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
     props: { port: Object, address: String, initial: { type: Object, default: () => ({}) }, labels: Object },
     emits: ["display-address", "display-dirty", "context"],
     setup(props, { emit }) {
-      const opened = (props.initial as { selectedTask?: { primaryKey: string } }).selectedTask?.primaryKey ?? null;
+      const opened = typeof props.initial.selectedTask === "string" ? props.initial.selectedTask : null;
       const report = () => emit("context", contextOf(panelAddress(props.address!, props.initial), opened));
       instances.push({ initial: props.initial, report, dirty: value => emit("display-dirty", value) });
       if (!silent.value) report();

@@ -5,8 +5,7 @@
         "type": {
           "kind": "scalar",
           "type": "boolean"
-        },
-        "deepLink": true
+        }
       },
       "selected": {
         "type": {

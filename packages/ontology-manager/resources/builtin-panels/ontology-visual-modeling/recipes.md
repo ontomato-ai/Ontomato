@@ -5,9 +5,9 @@
 ## 看页面上是什么
 
 - 画布上是本域的全部对象类型和关系类型，节点和边都写属主给的名字，不是内码。
-- `selectedNode` 是选中的对象类型（主键是类的 API 名），`selectedEdge` 是选中的关系类型（主键是关系名）；点画布空白处两个都清空。地址里带 `state={"selectedNode":{"className":"platform:ObjectType","primaryKey":"<类>"}}` 就是直接打开并选中那个类。
-- `className` 跟着 `selectedNode` 走，属性列表（`attributes` 的 `rows`）就是它的属性；`selectedAttribute` 指向其中一条。
-- `dialog` 是页面开着的对话框：`class`（新建对象类型）、`relation`（新建关系类型），页头两个命令打开的就是它。
+- `selectedNode` 是选中的对象类型（主键是类的 API 名），`selectedEdge` 是选中的关系类型（主键是关系名）；点画布空白处两个都清空。地址里带 `?selectedNode=<类>` 或 `?selectedEdge=<关系名>` 就是直接打开并选中它。
+- `className` 跟着 `selectedNode` 走（不写入地址），属性列表（`attributes` 的 `rows`）就是它的属性；`selectedAttribute` 指向其中一条。
+- `dialog` 是页面开着的对话框：`class`（新建对象类型）、`relation`（新建关系类型），仅公开状态、不写入地址，页头两个命令打开的就是它。
 - 回答“现在选了什么、在改什么”时，先看这几个状态，再用上面两个读取取当前字段，不要凭记忆。
 
 ## 起草表单（读者保存后才写入）
@@ -29,4 +29,4 @@
 ## 跳转
 
 - 选中一个类时可以“浏览数据”：打开 `/browser/data/<类的 API 名>`。
-- 本体图谱页 `/ontology/playground` 选中某个类后“去建模”会带着它打开本页（地址里 `state` 带 `selectedNode`）。
+- 本体图谱页 `/ontology/playground` 选中某个类后“去建模”会带着它打开本页（`/ontology/visual-modeling?selectedNode=<类>`）。

@@ -1,8 +1,8 @@
 import type { RouteLocation } from "vue-router";
-import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
+import { panelAddress } from "@ontomato/contracts/panel-host";
 import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL } from "@ontomato/contracts/platform-object-types";
+import { RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -45,7 +45,7 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
       if (use === platformRoutes.agents.path && ["capabilities", "skills", "mcp", "models"].includes(agentId!)) return null;
       return agentId === "new"
         ? { mode: "create" }
-        : { selected: { className: AGENT_DEFINITION, primaryKey: agentId! }, mode: "edit" };
+        : { selected: agentId!, mode: "edit" };
     },
   })),
   {
@@ -53,33 +53,28 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     use: `${platformRoutes.relations.path}/detail`,
     state: ({ relationship }) => relationship === "detail"
       ? null
-      : { selected: { className: RELATIONSHIP, primaryKey: relationship! } },
+      : { selected: relationship! },
   },
-  // Legacy catalog links carrying `selected` in state forward straight to the non-menu relation detail entry.
+  // Legacy catalog links carrying `selected` forward straight to the non-menu relation detail entry.
   {
     path: platformRoutes.relations.path,
     use: `${platformRoutes.relations.path}/detail`,
     state: (_params, query): Record<string, PanelStateValue> | null => {
-      const state = panelAddressState(`${platformRoutes.relations.path}?${query}`);
-      const selected = state.selected;
-      if (!selected || typeof selected !== "object" || Array.isArray(selected) || !("primaryKey" in selected)) return null;
-      return { selected };
+      const selected = query.get("selected");
+      if (!selected || !selected.trim()) return null;
+      const prefix = `${RELATIONSHIP}~`;
+      const primaryKey = selected.startsWith(prefix) ? selected.slice(prefix.length) : selected;
+      return primaryKey ? { selected: primaryKey } : null;
     },
   },
   {
     path: platformRoutes.schedules.path,
     use: platformRoutes.schedules.path,
-    consumeQuery: ["app", "taskId", "runId"],
+    consumeQuery: ["taskId"],
     state: (_params, query): Record<string, PanelStateValue> | null => {
-      const app = query.get("app");
       const taskId = query.get("taskId");
-      const runId = query.get("runId");
-      if (!app && !taskId && !runId) return null;
-      return {
-        ...(app && { app }),
-        ...(taskId && { selectedTask: { className: SCHEDULED_TASK, primaryKey: taskId } }),
-        ...(runId && { runId }),
-      };
+      if (!taskId) return null;
+      return { selectedTask: taskId };
     },
   },
   // The visual modeling page: the graph's "go to modeling" carries the class or relation to select.
@@ -92,46 +87,43 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
       const id = query.get("id");
       if (!id) return null;
       return query.get("focus") === "relation"
-        ? { selectedEdge: { className: RELATIONSHIP, primaryKey: id } }
-        : { selectedNode: { className: OBJECT_TYPE, primaryKey: id } };
+        ? { selectedEdge: id }
+        : { selectedNode: id };
     },
   },
   // The object types page: a class's detail address opens the catalog with that class selected.
   {
     path: platformRoutes.object.path,
     use: platformRoutes.objects.path,
-    state: ({ className }) => ({ selected: { className: OBJECT_TYPE, primaryKey: className! } }),
+    state: ({ className }) => ({ selected: className! }),
   },
-  // The actions page: an action's detail selects it; the old page's `new` (its creation dialog) opens the catalog, since
-  // an action is created by asking the page's agent.
+  // The actions page: an action's detail selects it; the old page's `new` opens the catalog.
   {
     path: platformRoutes.action.path,
     use: platformRoutes.actions.path,
     state: ({ id }): Record<string, PanelStateValue> =>
-      id === "new" ? {} : { selected: { className: ACTION, primaryKey: id! } },
+      id === "new" ? {} : { selected: id! },
   },
-  // The functions page: a function's detail selects it; the old page's `new` opens the owner's blank form, as the page's
-  // own "New function" command does.
+  // The functions page: a function's detail selects it; the old page's `new` opens the catalog (creating is not deep-linked).
   {
     path: platformRoutes.function.path,
     use: platformRoutes.functions.path,
     state: ({ id }): Record<string, PanelStateValue> =>
-      id === "new" ? { creating: true } : { selected: { className: FUNCTION, primaryKey: id! } },
+      id === "new" ? {} : { selected: id! },
   },
-  // The metric views page: a metric's detail selects it; the old page's `new` opens the owner's blank form, as the
-  // page's own "New Metric View" command does.
+  // The metric views page: a metric's detail selects it; the old page's `new` opens the catalog (creating is not deep-linked).
   {
     path: platformRoutes.metric.path,
     use: platformRoutes.metrics.path,
     state: ({ id }): Record<string, PanelStateValue> =>
-      id === "new" ? { creating: true } : { selected: { className: METRIC_VIEW, primaryKey: id! } },
+      id === "new" ? {} : { selected: id! },
   },
   // The skill library: a skill's detail address opens the library with that skill selected.
   {
     path: platformRoutes.ontologySkill.path,
     use: platformRoutes.ontologySkills.path,
     state: ({ skillId }): Record<string, PanelStateValue> => ({
-      selected: { className: SKILL, primaryKey: skillId! },
+      selected: skillId!,
     }),
   },
 ];
@@ -155,7 +147,11 @@ export function detailSelectionAddress(entries: readonly DetailSelection[], addr
     if (entry.consumeQuery) {
       const query = new URLSearchParams(url.search);
       for (const key of entry.consumeQuery) query.delete(key);
-      return panelAddress(`${entry.use}?${query}`, { ...state, ...panelAddressState(address) });
+      const merged: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(state)) {
+        if (!query.has(key)) merged[key] = value;
+      }
+      return panelAddress(query.size ? `${entry.use}?${query}` : entry.use, merged);
     }
     const kept = new URLSearchParams();
     for (const key of PAGE_DRAFT_QUERY_KEYS) {

@@ -195,7 +195,7 @@ describe("PanelApplicationRoute + usePanelBack + ObjectForm integration", () => 
       // Open detail: deep-link state updates and host pushes a history marker.
       element.querySelector<HTMLButtonElement>(".open-item")!.click();
       await vi.waitFor(() => expect(element.querySelector('[data-field="/name"] input')).not.toBeNull());
-      expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({ selected: itemRef });
+      expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({ selected: itemRef.primaryKey });
       expect((window.history.state as Record<string, unknown>).__ontomatoPanelBack).toEqual(expect.any(String));
 
       // Clean browser Back returns to list and clears deep-link state.

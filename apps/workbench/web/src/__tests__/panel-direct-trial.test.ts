@@ -106,7 +106,7 @@ it("runs the trial's P: choose a task, see it summed up and in its form, run it 
     options()[0]!.click();
     await vi.waitFor(() => expect(element.querySelector("[data-member='summary'] .sdk-object-summary-title")?.textContent).toBe("Nightly audit"));
     await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>("[data-member='form'] [data-field='/name'] input")?.value).toBe("Task t-1"));
-    expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } });
+    expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({ selectedTask: "t-1" });
 
     // Run now: prepared, confirmed and dispatched once by the host; what the owner reports changed is read again once.
     const button = await vi.waitFor(() => {

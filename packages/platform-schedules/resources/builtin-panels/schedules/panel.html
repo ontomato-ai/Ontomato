@@ -184,7 +184,7 @@
             <div><h2>{{ t("form.editTitle") }}</h2><p>{{ selectedRow?.label }} · {{ t("form.conflictHint") }}</p></div>
             <sdk-button text size="small" @click="cancelForm">{{ t("action.close") }}</sdk-button>
           </div>
-          <projection slot="editForm" @saved="saved" @discarded="cancelForm"></projection>
+          <projection slot="editForm" @saved="saved" @discarded="cancelForm" @draft-refused="openEdit"></projection>
           <sdk-alert :title="t('form.identity')" type="info" :closable="false" show-icon></sdk-alert>
         </div>
 

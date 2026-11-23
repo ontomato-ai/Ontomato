@@ -132,7 +132,7 @@ it("runs beside a conversation, reporting its state to the conversation, while a
     });
     option.click();
     // The page beside the conversation does not move: its state goes to the conversation.
-    await vi.waitFor(() => expect(panelAddressState(updates.at(-1)?.address ?? "")).toEqual(selected));
+    await vi.waitFor(() => expect(panelAddressState(updates.at(-1)?.address ?? "")).toEqual({ selectedTask: task.id }));
     expect(navigate).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(member(beside.element, "summary")?.querySelector(".sdk-object-summary-title")?.textContent).toBe(task.title));
 

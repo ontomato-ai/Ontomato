@@ -599,7 +599,7 @@ await mountPanel({
       draftSessionId: "session-1",
       draftRunId: "run-1",
       draftPath: "outputs/drafts/new.page-draft.json",
-      state: JSON.stringify({ compose: "new" }),
+      compose: "new",
     });
     await router.push(`/applications/app-ops-model/two-forms?${query}`);
     await router.isReady();

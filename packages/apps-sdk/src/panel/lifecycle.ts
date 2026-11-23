@@ -3,7 +3,7 @@ import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import { normalizeExternalPanelState, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity, type PanelOperation } from "@ontomato/contracts/panel-manifest";
+import { panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity, type PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { receivePanelDraft, type PanelDraftSource } from "./draft";
 import { PanelDraftUnusable, unreadableDraft } from "./draft-refusal";
@@ -84,12 +84,13 @@ export function runPanel(options: PanelRunOptions): PanelRun {
       .catch((reason: unknown) => reports.draftRefused(reason instanceof PanelDraftUnusable ? reason : unreadableDraft(link.path, reason)));
   }
   function addressStatePatch(next: string): Record<string, PanelFieldValue> | null {
-    const hasState = new URL(next, "http://page.invalid").searchParams.has("state");
+    const params = new URL(next, "http://page.invalid").searchParams;
+    const hasState = Object.entries(instance.manifest.state).some(([name, field]) => field.deepLink && params.has(name));
     const hasDraft = pageDraftLinkOf(next) !== null;
-    // A draft link without an explicit `state` parameter opens over the page as it is rather than wiping deep-link
+    // A draft link without explicit deep-link state opens over the page as it is rather than wiping deep-link
     // selections (which would unmount conditional `v-if` forms before the draft is even read).
     if (!hasState && hasDraft) return null;
-    const normalized = normalizeExternalPanelState(instance.manifest, panelAddressState(next));
+    const normalized = panelAddressState(next, instance.manifest);
     const resolved: Record<string, PanelFieldValue> = {};
     let changed = false;
     for (const [name, field] of Object.entries(instance.manifest.state)) {

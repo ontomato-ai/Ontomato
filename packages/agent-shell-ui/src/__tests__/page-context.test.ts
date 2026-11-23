@@ -120,7 +120,7 @@ it("reads back whichever target a reopened conversation told last, or that it sa
 it("shows the reader's message without the line it carries for the agent", () => {
   const prompts = { ...lines, file: (file: { label: string; path: string }) => `Current file: ${file.label} (${file.path})`, closed: "The page was closed." };
   const asked = "Approve the selected one.\n\nThen tell me what changed.";
-  const url = "/applications/app-business-knowledge/review?state=%7B%22selected%22%3A%7B%22primaryKey%22%3A%22k-1%22%7D%7D";
+  const url = "/applications/app-business-knowledge/review?selected=k-1";
   // The page and its selection, the selection alone, a file, a closed page: each is the agent's, not the reader's.
   expect(writtenText(`${asked}\n\n${pageContextLine({ ...page, url }, lines, true)}`, prompts)).toBe(asked);
   expect(writtenText(`${asked}\n\n${pageContextLine({ ...page, url, label: "" }, lines, true)}`, prompts)).toBe(asked);

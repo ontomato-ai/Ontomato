@@ -21,4 +21,4 @@
 ## 去别处
 
 - 返回关系类型目录：点页头「返回关系类型」，或打开 `/ontology/relations`。
-- 查看两端对象类型：点右侧「对象连接」里的来源对象或目标对象卡片，打开 `/ontology/objects`，`state` 为 `{"selected":{"className":"platform:ObjectType","primaryKey":"<类名>"}}`。
+- 查看两端对象类型：点右侧「对象连接」里的来源对象或目标对象卡片，打开 `/ontology/objects?selected=<类名>`。

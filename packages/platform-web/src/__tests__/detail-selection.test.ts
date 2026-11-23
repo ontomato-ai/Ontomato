@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import { ACTION, AGENT_DEFINITION, FUNCTION, METRIC_VIEW, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import { DETAIL_SELECTIONS, detailSelectionAddress } from "../detail-selection";
 
 /*
@@ -16,7 +15,7 @@ const open = (address: string) => {
 
 it("opens an action's detail address as the actions panel with the action selected", () => {
   expect(open("/ontology/assets/actions/approve%20order?back=products")).toEqual({
-    path: "/ontology/assets/actions", state: { selected: { className: ACTION, primaryKey: "approve order" } },
+    path: "/ontology/assets/actions", state: { selected: "approve order" },
   });
   const drafted = detailSelectionAddress(DETAIL_SELECTIONS, "/ontology/assets/actions/approve?draftPath=outputs%2Fd.json")!;
   expect(new URL(drafted, "http://page.invalid").searchParams.get("draftPath")).toBe("outputs/d.json");
@@ -27,63 +26,57 @@ it("opens the old creation address as the catalog, and leaves the page's own add
   expect(open("/ontology/assets/actions")).toBeNull();
 });
 
-it("opens a function's detail address as the functions panel with the function selected, and the old creation address as its blank form", () => {
+it("opens a function's detail address as the functions panel with the function selected, and the old creation address as the catalog", () => {
   expect(open("/ontology/assets/functions/fn%201?back=products")).toEqual({
-    path: "/ontology/assets/functions", state: { selected: { className: FUNCTION, primaryKey: "fn 1" } },
+    path: "/ontology/assets/functions", state: { selected: "fn 1" },
   });
-  expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: { creating: true } });
+  expect(open("/ontology/assets/functions/new")).toEqual({ path: "/ontology/assets/functions", state: {} });
   expect(open("/ontology/assets/functions")).toBeNull();
 });
 
-it("opens a metric view's detail address as the metric views panel with that metric selected, and the old creation address as its blank form", () => {
+it("opens a metric view's detail address as the metric views panel with that metric selected, and the old creation address as the catalog", () => {
   expect(open("/ontology/assets/metrics/mv%201?back=products")).toEqual({
-    path: "/ontology/assets/metrics", state: { selected: { className: METRIC_VIEW, primaryKey: "mv 1" } },
+    path: "/ontology/assets/metrics", state: { selected: "mv 1" },
   });
-  expect(open("/ontology/assets/metrics/new")).toEqual({ path: "/ontology/assets/metrics", state: { creating: true } });
+  expect(open("/ontology/assets/metrics/new")).toEqual({ path: "/ontology/assets/metrics", state: {} });
   expect(open("/ontology/assets/metrics")).toBeNull();
 });
 
 
 it("opens a class's detail address as the object types panel with that class selected, and leaves the page's own address alone", () => {
   expect(open("/ontology/objects/Order?back=catalog")).toEqual({
-    path: "/ontology/objects", state: { selected: { className: OBJECT_TYPE, primaryKey: "Order" } },
+    path: "/ontology/objects", state: { selected: "Order" },
   });
   expect(open("/ontology/objects")).toBeNull();
   // A page deeper than the class's own is not a detail address of this page.
   expect(open("/ontology/objects/Order/view")).toBeNull();
 });
 
-it("opens a relationship's detail address and legacy selected catalog links at the non-menu relation detail entry", () => {
+it("opens a relationship's detail address and selected catalog links at the non-menu relation detail entry", () => {
   expect(open("/ontology/relations/belongs_to?back=catalog")).toEqual({
-    path: "/ontology/relations/detail", state: { selected: { className: RELATIONSHIP, primaryKey: "belongs_to" } },
+    path: "/ontology/relations/detail", state: { selected: "belongs_to" },
   });
   const drafted = detailSelectionAddress(DETAIL_SELECTIONS, "/ontology/relations/belongs_to?draftPath=outputs%2Fr.json")!;
   expect(drafted.split("?")[0]).toBe("/ontology/relations/detail");
   expect(new URL(drafted, "http://page.invalid").searchParams.get("draftPath")).toBe("outputs/r.json");
 
-  const legacySelected = `/ontology/relations?${new URLSearchParams({
-    state: JSON.stringify({ selected: { className: RELATIONSHIP, primaryKey: "belongs_to" } }),
-    draftPath: "outputs/r2.json",
-  })}`;
-  expect(open(legacySelected)).toEqual({
-    path: "/ontology/relations/detail", state: { selected: { className: RELATIONSHIP, primaryKey: "belongs_to" } },
+  const selectedCatalog = "/ontology/relations?selected=belongs_to&draftPath=outputs%2Fr2.json";
+  expect(open(selectedCatalog)).toEqual({
+    path: "/ontology/relations/detail", state: { selected: "belongs_to" },
   });
-  expect(new URL(detailSelectionAddress(DETAIL_SELECTIONS, legacySelected)!, "http://page.invalid").searchParams.get("draftPath")).toBe("outputs/r2.json");
+  expect(new URL(detailSelectionAddress(DETAIL_SELECTIONS, selectedCatalog)!, "http://page.invalid").searchParams.get("draftPath")).toBe("outputs/r2.json");
 
-  // The catalog itself (bare, searching, or creating) and the detail entry itself are not redirected.
+  // The catalog itself (bare or searching) and the detail entry itself are not redirected.
   expect(open("/ontology/relations")).toBeNull();
-  expect(open(`/ontology/relations?${new URLSearchParams({ state: JSON.stringify({ search: "order" }) })}`)).toBeNull();
-  expect(open(`/ontology/relations?${new URLSearchParams({ state: JSON.stringify({ creating: true }) })}`)).toBeNull();
+  expect(open("/ontology/relations?search=order")).toBeNull();
   expect(open("/ontology/relations/detail")).toBeNull();
-  expect(open(`/ontology/relations/detail?${new URLSearchParams({
-    state: JSON.stringify({ selected: { className: RELATIONSHIP, primaryKey: "belongs_to" } }),
-  })}`)).toBeNull();
+  expect(open("/ontology/relations/detail?selected=belongs_to")).toBeNull();
 });
 
 it.each(["/ontology/agents", "/agents/settings"])("routes the settings detail at %s to the shared panel state", (prefix) => {
   expect(open(`${prefix}/new`)).toEqual({ path: prefix, state: { mode: "create" } });
   expect(open(`${prefix}/agent-1`)).toEqual({
-    path: prefix, state: { mode: "edit", selected: { className: AGENT_DEFINITION, primaryKey: "agent-1" } },
+    path: prefix, state: { mode: "edit", selected: "agent-1" },
   });
   const address = detailSelectionAddress(DETAIL_SELECTIONS, `${prefix}/agent-1?draftRunId=run&draftPath=outputs%2Fa.json`)!;
   const query = new URL(address, "http://page.invalid").searchParams;
@@ -95,20 +88,19 @@ it.each(["capabilities", "skills", "mcp", "models"])("leaves the separate agent 
   expect(open(`/agents/settings/${page}`)).toBeNull();
 });
 
-it("moves legacy schedule filters and run selection into state without losing other query or explicit state", () => {
+it("moves legacy schedule taskId into flat selectedTask without losing other query parameters", () => {
   const query = new URLSearchParams({
     app: "operations", taskId: "task-1", runId: "run-1", external: "true",
-    state: JSON.stringify({ app: "agents", compose: "edit" }),
     draftSessionId: "session-1", draftRunId: "run-2", draftPath: "outputs/drafts/task.page-draft.json",
   });
   const converted = detailSelectionAddress(DETAIL_SELECTIONS, `/schedules?${query}`)!;
   expect(panelAddressState(converted)).toEqual({
-    app: "agents", compose: "edit", selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" }, runId: "run-1",
+    app: "operations", selectedTask: "task-1", runId: "run-1", external: "true",
   });
   const result = new URL(converted, "http://page.invalid");
-  result.searchParams.delete("state");
-  expect(Object.fromEntries(result.searchParams)).toEqual({
-    external: "true", draftSessionId: "session-1", draftRunId: "run-2", draftPath: "outputs/drafts/task.page-draft.json",
-  });
+  expect(result.searchParams.get("taskId")).toBeNull();
+  expect(result.searchParams.get("draftSessionId")).toBe("session-1");
+  expect(result.searchParams.get("draftRunId")).toBe("run-2");
+  expect(result.searchParams.get("draftPath")).toBe("outputs/drafts/task.page-draft.json");
   expect(detailSelectionAddress(DETAIL_SELECTIONS, converted)).toBeNull();
 });

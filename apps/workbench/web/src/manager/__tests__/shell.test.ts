@@ -102,13 +102,12 @@ describe("open-source Ontology Service page", () => {
   ])("old visual modeling address %s lands on the modeling page", async (url, selection, primaryKey) => {
     await start(url);
     expect(hash().startsWith("#!/ontology/visual-modeling") || hash().startsWith("#/ontology/visual-modeling")).toBe(true);
-    const state = new URLSearchParams(hash().split("?")[1] ?? "").get("state");
+    const query = new URLSearchParams(hash().split("?")[1] ?? "");
     if (selection === null) {
-      expect(state).toBeNull();
+      expect(query.size).toBe(0);
       return;
     }
-    const selected = JSON.parse(state!)[selection];
-    expect(selected.primaryKey).toBe(primaryKey);
+    expect(query.get(selection)).toBe(primaryKey);
   });
 
   it("the current application is marked in the rail", async () => {

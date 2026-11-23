@@ -181,8 +181,8 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         }),
       })));
       await vi.waitFor(() => expect(router.currentRoute.value.query.taskId).toBeUndefined());
-      expect(JSON.parse(String(router.currentRoute.value.query.state))).toEqual({
-        app: "agents", selectedTask: { className: "platform:ScheduledTask", primaryKey: taskId }, runId,
+      expect(router.currentRoute.value.query).toEqual({
+        app: "agents", selectedTask: taskId, runId,
       });
       await vi.waitFor(() => expect(element.querySelector(".schedules [data-run].focused")).not.toBeNull());
     }
@@ -190,8 +190,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
     if (!refused) {
       const list = element.querySelector(".schedules");
       await router.push("/schedules?app=operations");
-      expect(router.currentRoute.value.query.app).toBeUndefined();
-      expect(JSON.parse(String(router.currentRoute.value.query.state))).toEqual({ app: "operations" });
+      expect(router.currentRoute.value.query).toEqual({ app: "operations" });
       await vi.waitFor(() => expect(element.querySelector('.schedules [data-app="operations"]')?.getAttribute("aria-pressed")).toBe("true"));
       expect(Array.from(element.querySelectorAll(".schedules [data-task]"), item => item.getAttribute("data-task"))).toEqual([operationsRow.primaryKey]);
       expect(element.querySelector(".schedules")).toBe(list);
@@ -210,9 +209,9 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         browserFocus.mockRestore();
       }
       await vi.waitFor(() => expect(element.querySelector<HTMLElement>('[data-form="edit"]')?.style.display).toBe(""));
-      await vi.waitFor(() => expect(JSON.parse(String(router.currentRoute.value.query.state))).toMatchObject({
-        selectedTask: { className: "platform:ScheduledTask", primaryKey: operationsRow.primaryKey },
-        compose: "edit",
+      await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({
+        app: "operations",
+        selectedTask: operationsRow.primaryKey,
       }));
       const editor = element.querySelector<HTMLElement>('[data-form="edit"]')!;
       expect(document.activeElement).toBe(editor);
@@ -307,9 +306,8 @@ it("opens the edit form from a draft link even when the owner refuses the draft"
     return nothingAt(request);
   }, router);
   useApplicationCatalog().applications.value = catalogFixture();
-  const state = { selectedTask: { className: "platform:ScheduledTask", primaryKey: taskId }, compose: "edit" };
   await router.push({ path: "/schedules", query: {
-    state: JSON.stringify(state), draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json",
+    selectedTask: taskId, draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json",
   } });
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
   try {

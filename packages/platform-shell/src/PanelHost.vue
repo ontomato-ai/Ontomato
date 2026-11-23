@@ -89,6 +89,8 @@ const emit = defineEmits<{
   context: [context: import("@ontomato/contracts/page-context").PageContext];
   /** The instance's address, with its declared deep-linkable state. */
   "display-address": [input: DisplayPageAddressInput];
+  /** The instance's live deep-linkable state values (including declared defaults omitted from the URL). */
+  "display-state": [state: import("./panel-host").PanelHostState];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
   /** The reader manually edited an unsaved form inside this panel. */
@@ -190,6 +192,7 @@ watch(view.pageContext, (context) => context && emit("context", context));
 // The instance's address exists once its record is read; before that there is none to report, and reporting an empty one
 // would replace the page's address — and the draft link in it — before the panel has read it.
 watch(view.address, (address) => emit("display-address", { kind: "state", address }));
+watch(view.state, (state) => emit("display-state", state), { immediate: true });
 watch(view.displayLoad, (load) => emit("display-loaded", load));
 watch(view.dirty, (dirty) => emit("display-dirty", dirty), { flush: "sync", immediate: true });
 

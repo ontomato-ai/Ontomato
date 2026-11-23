@@ -43,7 +43,7 @@ it("opens the draft before showing the page, then moves the panel where the draf
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/applications/:applicationId/:panelPath(.*)", component: PanelApplicationRoute, props: (route) => ({ applicationId: String(route.params.applicationId) }) },
   ] });
-  await router.push(`${scenario.address}&state=${encodeURIComponent(JSON.stringify({ mode: "view" }))}`);
+  await router.push(`${scenario.address}&mode=view`);
   await router.isReady();
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
   try {
@@ -56,7 +56,7 @@ it("opens the draft before showing the page, then moves the panel where the draf
     expect((element.querySelector(".panel-host-direct") as HTMLElement).style.display).toBe("");
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(element.querySelector(".mode")?.textContent).toBe("edit");
-    expect(JSON.parse(String(router.currentRoute.value.query.state))).toMatchObject({ mode: "edit" });
+    expect(router.currentRoute.value.query.mode).toBe("edit");
   } finally {
     app.unmount();
   }
@@ -76,7 +76,7 @@ it("moves the panel where the draft is edited when the page was open at another 
     { path: "/applications/:applicationId/:panelPath(.*)", component: PanelApplicationRoute, props: (route) => ({ applicationId: String(route.params.applicationId) }) },
   ] });
   const bare = scenario.address.split("?")[0]!;
-  await router.push(`${bare}?state=${encodeURIComponent(JSON.stringify({ mode: "view" }))}`);
+  await router.push(`${bare}?mode=view`);
   await router.isReady();
   const { app, element } = mountPlatformPage(() => h(RouterView), router);
   try {

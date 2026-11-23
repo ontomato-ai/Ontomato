@@ -28,8 +28,7 @@
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": true
+        }
       },
       "inspectedPanel": {
         "type": {

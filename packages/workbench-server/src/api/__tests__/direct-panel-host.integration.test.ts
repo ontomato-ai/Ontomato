@@ -462,7 +462,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     expect(response.status).toBe(200);
     const { panel } = productPanelResponseSchema.parse(await response.json());
     expect(panel).toMatchObject({ visibility: "platform", ownerId: null, editable: false });
-    expect(panel.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: true });
+    expect(panel.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: false });
     definitions.set(catalogue, panel.manifest.members);
   }
   for (const catalogue of ["projections", "panels"]) {

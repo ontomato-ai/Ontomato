@@ -10,10 +10,10 @@
   - `detail.record`：任务记录；`detail.form`：属主表单，`values.task` 里是标题、应用、频率、时区、通知邮箱，根上是应用自己的参数；`revision` 是当前修订号。
   - `history.runs`：执行记录，新到旧，一页一页（`cursor` 取上一页的 `nextCursor`）。每条有状态、触发方式、开始时间、耗时（毫秒）、失败原因 `error`、结果摘要、结果链接 `resultLink`、执行详情 `executionDetails` 和运行时的配置 `snapshot`。
 - 状态 `runId`：定位到一条运行（`focus.run`）。
-- 状态 `compose`：`"new"` 打开新建表单（`newForm`），`"edit"` 打开选中任务的编辑表单（`editForm`）。
+- 状态 `compose`：`"new"` 打开新建表单（`newForm`），`"edit"` 打开选中任务的编辑表单（`editForm`）；仅公开状态，不写入地址（智能体通过 `present` 改状态或带草稿链接打开）。
 - 应用名来自 `apps.catalog`；可选应用、是否可用及不可用原因来自 `choices.form` 里 `/task/appId` 字段的选项。
 
-打开某个状态的地址：`/schedules?state=<JSON>`，例如 `{"app":"agents"}`、`{"selectedTask":{"className":"platform:ScheduledTask","primaryKey":"<任务ID>"}}`，或再加 `"runId":"<运行ID>"` 打开某条运行。
+打开某个状态的地址：使用扁平具名参数，例如 `/schedules?app=agents`、`/schedules?selectedTask=<任务ID>`，或再加 `&runId=<运行ID>` 打开某条运行。
 
 ## 回答问题
 
@@ -21,9 +21,9 @@
 
 ## 起草（默认交给人保存）
 
-**编辑**：先读该任务的 `form`（`editForm` 成员）。`task` 下是标题、应用、频率、时区和通知邮箱，根上是该应用自己的参数。编辑草稿的入口状态用 `{"selectedTask":{"className":"platform:ScheduledTask","primaryKey":"<任务ID>"},"compose":"edit"}`，直接打开这条任务的编辑表单。
+**编辑**：先读该任务的 `form`（`editForm` 成员）。`task` 下是标题、应用、频率、时区和通知邮箱，根上是该应用自己的参数。草稿链接带上 `?selectedTask=<任务ID>` 与草稿参数（或通过 `present({ target, state: { selectedTask, compose: "edit" } })`），打开后草稿会自动展开这条任务的编辑表单。
 
-**新建**：读 `createForm`（`newForm` 成员）。先定 `task.appId`，再按这个应用返回的字段填参数（换应用或改了带 `refreshOnChange` 的选项后，字段会变，按新表单填）。用页面状态 `compose: "new"` 打开新建表单。新建的任务保存后直接启用。不可用的应用（选项 `disabled`）不要选，把 `disabledReason` 告诉用户。
+**新建**：读 `createForm`（`newForm` 成员）。先定 `task.appId`，再按这个应用返回的字段填参数（换应用或改了带 `refreshOnChange` 的选项后，字段会变，按新表单填）。通过 `present` 设置页面状态 `compose: "new"` 或带新建草稿链接打开新建表单。新建的任务保存后直接启用。不可用的应用（选项 `disabled`）不要选，把 `disabledReason` 告诉用户。
 
 频率五种写法：`{"kind":"interval","every":2,"unit":"hour"}`（unit 为 minute/hour/day）、`{"kind":"daily","time":"09:00"}`、`{"kind":"weekly","weekday":1,"time":"09:00"}`（1=周一…7=周日）、`{"kind":"monthly","day":1,"time":"09:00"}`（没有这天的月份在最后一天运行）、`{"kind":"cron","expression":"0 30 2 * * *"}`（六段，秒在最前）。时区用 IANA 名称，如 `Asia/Shanghai`。通知邮箱可留空。
 

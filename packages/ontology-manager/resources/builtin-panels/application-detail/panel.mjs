@@ -2,6 +2,7 @@ import { computed, nextTick, watch } from "vue";
 import {
   draftTarget,
   mountPanel,
+  panelAddress,
   usePanelContext,
   usePanelFormDraft,
   usePanelOutput,
@@ -164,8 +165,7 @@ const ApplicationDetailPanel = {
         if (!draft) return;
         const target = draftTarget(draft);
         if (target.kind === "create") {
-          const query = new globalThis.URLSearchParams({ state: JSON.stringify({ creating: true }) });
-          void navigate(`${CATALOG_PATH}?${query}`).catch(() => undefined);
+          void navigate(CATALOG_PATH).catch(() => undefined);
           return;
         }
         if (target.id && target.id !== selectedKey.value) {
@@ -274,10 +274,9 @@ const ApplicationDetailPanel = {
       }
     }
 
-    async function openCatalogueRecord(path, className, primaryKey) {
+    async function openCatalogueRecord(path, primaryKey) {
       try {
-        const state = JSON.stringify({ selected: { className, primaryKey } });
-        await navigate(`${path}?${new globalThis.URLSearchParams({ state })}`);
+        await navigate(panelAddress(path, { selected: primaryKey }));
       } catch (reason) {
         notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
       }
@@ -285,7 +284,7 @@ const ApplicationDetailPanel = {
 
     function openPanelCatalogue(panelId) {
       if (!panelId) return;
-      void openCatalogueRecord("/ontology/panels", PANEL, panelId);
+      void openCatalogueRecord("/ontology/panels", panelId);
     }
 
     function onNavigateReference(reference) {
@@ -293,7 +292,7 @@ const ApplicationDetailPanel = {
       if (reference.className === PANEL) {
         openPanelCatalogue(reference.primaryKey);
       } else if (reference.className === PROJECTION) {
-        void openCatalogueRecord("/ontology/projections", PROJECTION, reference.primaryKey);
+        void openCatalogueRecord("/ontology/projections", reference.primaryKey);
       }
     }
 

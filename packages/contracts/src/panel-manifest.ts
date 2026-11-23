@@ -378,25 +378,118 @@ export function matchesDirectPanelValue(type: DirectPanelPortType, value: unknow
   }
 }
 
+const FLAT_OBJECT_REF_SEPARATOR = "~";
+
+function decodeFlatObjectRef(raw: string, expectedObjectType?: string): PanelObjectRef | null {
+  if (!raw.trim()) return null;
+  if (expectedObjectType !== undefined) {
+    const prefix = `${expectedObjectType}${FLAT_OBJECT_REF_SEPARATOR}`;
+    if (raw.startsWith(prefix)) {
+      const primaryKey = raw.slice(prefix.length);
+      return primaryKey.length > 0 ? { className: expectedObjectType, primaryKey } : null;
+    }
+    // Reject values explicitly tagged with another className (e.g. `platform:Other~id`).
+    if (raw.includes(FLAT_OBJECT_REF_SEPARATOR)) return null;
+    return { className: expectedObjectType, primaryKey: raw };
+  }
+  const sep = raw.indexOf(FLAT_OBJECT_REF_SEPARATOR);
+  if (sep <= 0 || sep === raw.length - 1) return null;
+  return { className: raw.slice(0, sep), primaryKey: raw.slice(sep + 1) };
+}
+
+function decodeFlatChildObjectRef(raw: string, parentType: string): PanelChildObjectIdentity | null {
+  const prefix = `${parentType}${FLAT_OBJECT_REF_SEPARATOR}`;
+  const rest = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+  const sep = rest.indexOf(FLAT_OBJECT_REF_SEPARATOR);
+  if (sep <= 0 || sep === rest.length - 1) return null;
+  const parentKey = rest.slice(0, sep);
+  const primaryKey = rest.slice(sep + 1);
+  if (!parentKey || !primaryKey) return null;
+  return { parent: { objectType: parentType, primaryKey: parentKey }, primaryKey };
+}
+
 /**
  * Normalizes a single externally supplied (URL / deep-link) state value against a declared field type:
- * - For a single fixed-type `kind: "object"` field, a non-empty string shorthand is promoted to
- *   `{ className: type.objectType, primaryKey: value }`.
- * - Any value that does not match the declared field type is rejected so callers can safely ignore it
- *   instead of crashing the panel.
+ * - Scalar query strings are coerced to their declared `number` / `boolean` / `date` / `string` types.
+ * - Single fixed-type `kind: "object"` accepts either bare `primaryKey` or `objectType~primaryKey` (or an object ref).
+ * - Multi-type `kind: "object-union"` accepts `className~primaryKey` (or an object ref) verified against allowed types.
+ * - `kind: "child-object"` accepts `parentKey~primaryKey` or `parentType~parentKey~primaryKey` (or a child identity).
+ * - `kind: "list"` accepts either a single query value or repeated query values, normalizing every element.
+ * - Any value that does not match the declared field type is rejected so callers can safely ignore malformed URLs.
  */
 export function normalizeExternalPanelValue(
   type: DirectPanelPortType,
   value: unknown,
 ): { ok: true; value: PanelDeepLinkStateValue } | { ok: false } {
   if (value === null) return { ok: true, value: null };
-  const candidate = type.kind === "object" && typeof value === "string"
-    ? (value.trim().length > 0 ? { className: type.objectType, primaryKey: value } : undefined)
-    : value;
-  if (candidate === undefined) return { ok: false };
-  const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
-  if (!parsed.success || !matchesDirectPanelValue(type, parsed.data)) return { ok: false };
-  return { ok: true, value: parsed.data };
+  switch (type.kind) {
+    case "scalar": {
+      if (Array.isArray(value)) return { ok: false };
+      if (type.type === "string") return typeof value === "string" ? { ok: true, value } : { ok: false };
+      if (type.type === "date") {
+        return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value)
+          ? { ok: true, value }
+          : { ok: false };
+      }
+      if (type.type === "number") {
+        if (typeof value === "number" && Number.isFinite(value)) return { ok: true, value };
+        if (typeof value === "string" && value.trim() !== "") {
+          const parsedNumber = Number(value);
+          if (Number.isFinite(parsedNumber)) return { ok: true, value: parsedNumber };
+        }
+        return { ok: false };
+      }
+      if (typeof value === "boolean") return { ok: true, value };
+      if (value === "true") return { ok: true, value: true };
+      if (value === "false") return { ok: true, value: false };
+      return { ok: false };
+    }
+    case "object": {
+      if (Array.isArray(value)) return { ok: false };
+      const candidate = typeof value === "string" ? decodeFlatObjectRef(value, type.objectType) : value;
+      if (!candidate) return { ok: false };
+      const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
+      return parsed.success && matchesDirectPanelValue(type, parsed.data)
+        ? { ok: true, value: parsed.data }
+        : { ok: false };
+    }
+    case "object-union": {
+      if (Array.isArray(value)) return { ok: false };
+      const candidate = typeof value === "string" ? decodeFlatObjectRef(value) : value;
+      if (!candidate) return { ok: false };
+      const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
+      return parsed.success && matchesDirectPanelValue(type, parsed.data)
+        ? { ok: true, value: parsed.data }
+        : { ok: false };
+    }
+    case "child-object": {
+      if (Array.isArray(value)) return { ok: false };
+      const candidate = typeof value === "string" ? decodeFlatChildObjectRef(value, type.parentType) : value;
+      if (!candidate) return { ok: false };
+      const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
+      return parsed.success && matchesDirectPanelValue(type, parsed.data)
+        ? { ok: true, value: parsed.data }
+        : { ok: false };
+    }
+    case "list": {
+      const rawItems = Array.isArray(value) ? value : [value];
+      const normalizedItems: PanelDeepLinkStateValue[] = [];
+      for (const item of rawItems) {
+        if (item === null) return { ok: false };
+        const normalized = normalizeExternalPanelValue(type.items, item);
+        if (!normalized.ok) return { ok: false };
+        normalizedItems.push(normalized.value);
+      }
+      return { ok: true, value: normalizedItems };
+    }
+    case "json":
+    case "placement": {
+      const parsed = panelDeepLinkStateValueSchema.safeParse(value);
+      return parsed.success && matchesDirectPanelValue(type, parsed.data)
+        ? { ok: true, value: parsed.data }
+        : { ok: false };
+    }
+  }
 }
 
 /**

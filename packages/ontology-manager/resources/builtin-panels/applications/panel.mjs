@@ -1,7 +1,6 @@
 import { computed, watch } from "vue";
-import { draftTarget, mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+import { draftTarget, mountPanel, panelAddress, usePanelContext } from "@ontomato/sdk/panel";
 
-const APPLICATION = "platform:Application";
 const DETAIL_PATH = "/ontology/applications/detail";
 
 const ApplicationsCatalogPanel = {
@@ -31,11 +30,10 @@ const ApplicationsCatalogPanel = {
     ]);
 
     function detailAddress(primaryKey, tab) {
-      const payload = {
-        selected: { className: APPLICATION, primaryKey },
+      return panelAddress(DETAIL_PATH, {
+        selected: primaryKey,
         ...(tab && tab !== "identity" ? { tab } : {}),
-      };
-      return `${DETAIL_PATH}?${new globalThis.URLSearchParams({ state: JSON.stringify(payload) })}`;
+      });
     }
 
     let forwarding = false;
@@ -74,7 +72,7 @@ const ApplicationsCatalogPanel = {
       }
     }
 
-    // Forward legacy catalogue detail deep links (?state={"selected":...}) directly to the dedicated detail entry.
+    // Forward catalogue detail deep links (?selected=...) directly to the dedicated detail entry.
     watch(
       () => ({
         selectedKey: values.value.selected?.primaryKey ?? "",
