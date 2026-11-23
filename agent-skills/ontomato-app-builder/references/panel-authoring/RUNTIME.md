@@ -1,14 +1,9 @@
 <!-- Generated from SDK declarations and panel contracts by pnpm --filter @ontomato/contracts generate:panel-runtime-reference. -->
 # Panel runtime reference
 
-## Imports and application icons
+## Imports
 
 Direct panel modules can import `vue`, `@ontomato/sdk/panel`.
-
-For a domain application, choose `declaration.icon` from `node "$SKILL/ontomato.mjs" sdk icons`.
-The built-in icons identify the platform's own entries.
-To show an application by its icon key, draw `<component :is="appIcon(key)" :size="16" />` with `appIcon` from
-`@ontomato/sdk/panel`: it is the platform's own icon for the key, and an unknown key draws the platform's fallback.
 
 ## Vue setup
 
@@ -92,49 +87,6 @@ interface PanelStateStore {
   setState(patch: Readonly<Record<string, PanelFieldValue>>): void;
   /** The fields an address or an open request may carry, with the values they hold now. */
   deepLinkable(): Record<string, PanelDeepLinkStateValue>;
-}
-```
-
-### usePanelBack
-
-Registers a panel-local back/close layer with the enclosing host (LIFO). While `active` is truthy:
-- Browser Back (when `pushHistory` is true, the default) runs `onBack` after the host's unified unsaved-changes guard.
-- Pressing Escape (when no modal dialog, drawer, dropdown, or popover is open) runs `onBack` after the same guard.
-- Calling the returned `back()` runs the same guard and then `onBack`, keeping UI back buttons and browser Back in sync.
-
-```ts
-function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, options?: UsePanelBackOptions | undefined): PanelBackHandle
-```
-
-### UsePanelBackOptions
-
-```ts
-interface UsePanelBackOptions {
-  /**
-   * Whether activating this back layer pushes a browser history entry so browser Back invokes `onBack`.
-   * Defaults to `true`.
-   */
-  pushHistory?: MaybeRefOrGetter<boolean>;
-  /**
-   * Form slot(s) owned by this back layer (for example `"attributeForm"` when closing an inline sub-editor while
-   * another form on the same panel stays open). When provided, only those form slots are checked for unsaved changes
-   * and discarded on confirmation, leaving other forms on the panel untouched. Pass `[]` for a purely local view layer
-   * that owns no forms. Omit to guard and discard all dirty forms in the panel.
-   */
-  forms?: MaybeRefOrGetter<string | readonly string[] | undefined>;
-}
-```
-
-### PanelBackHandle
-
-```ts
-interface PanelBackHandle {
-  /**
-   * Runs the same guarded back step as Escape or browser Back (for example from a "Back to list" button): asks the
-   * host's unified unsaved-changes confirmation first and calls `onBack` only if allowed. Resolves `true` when `onBack`
-   * ran, `false` when cancelled or when `active` is currently `false`.
-   */
-  back: () => Promise<boolean>;
 }
 ```
 
@@ -252,14 +204,47 @@ interface PanelFormHandle {
 }
 ```
 
-### usePanelNarrow
+### usePanelBack
 
-Observes a panel container element's own inline width via `ResizeObserver` and reports whether it is narrow
-(`width > 0` and `width <= breakpoint`), resolving the breakpoint from a CSS design token on that element
-(default `--pane-narrow-breakpoint`). Never reads `window.innerWidth`.
+Registers a panel-local back/close layer with the enclosing host (LIFO). While `active` is truthy:
+- Browser Back (when `pushHistory` is true, the default) runs `onBack` after the host's unified unsaved-changes guard.
+- Pressing Escape (when no modal dialog, drawer, dropdown, or popover is open) runs `onBack` after the same guard.
+- Calling the returned `back()` runs the same guard and then `onBack`, keeping UI back buttons and browser Back in sync.
 
 ```ts
-function usePanelNarrow(element: MaybeRefOrGetter<HTMLElement | null | undefined>, options?: UsePanelNarrowOptions): ComputedRef<boolean>
+function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, options?: UsePanelBackOptions | undefined): PanelBackHandle
+```
+
+### UsePanelBackOptions
+
+```ts
+interface UsePanelBackOptions {
+  /**
+   * Whether activating this back layer pushes a browser history entry so browser Back invokes `onBack`.
+   * Defaults to `true`.
+   */
+  pushHistory?: MaybeRefOrGetter<boolean>;
+  /**
+   * Form slot(s) owned by this back layer (for example `"attributeForm"` when closing an inline sub-editor while
+   * another form on the same panel stays open). When provided, only those form slots are checked for unsaved changes
+   * and discarded on confirmation, leaving other forms on the panel untouched. Pass `[]` for a purely local view layer
+   * that owns no forms. Omit to guard and discard all dirty forms in the panel.
+   */
+  forms?: MaybeRefOrGetter<string | readonly string[] | undefined>;
+}
+```
+
+### PanelBackHandle
+
+```ts
+interface PanelBackHandle {
+  /**
+   * Runs the same guarded back step as Escape or browser Back (for example from a "Back to list" button): asks the
+   * host's unified unsaved-changes confirmation first and calls `onBack` only if allowed. Resolves `true` when `onBack`
+   * ran, `false` when cancelled or when `active` is currently `false`.
+   */
+  back: () => Promise<boolean>;
+}
 ```
 
 ### savePanelFile
@@ -398,13 +383,12 @@ in panel templates / slots) instead of formatting business fields in panel HTML:
 - `<metric-card>` (`MetricCard`): single or multi-KPI statistic cards (`card`, `compact`, or `inline` variants) bound
   directly to `data.result` (`metricOutput`), `data.record`, `data.rows`, `data.objects`, or standalone `value`/`items`.
 
-Every entry (full page, beside a conversation, or inside a custom frame's current-entry slot) receives a definite-height
-content box with no host page header, host padding, or outer card frame; the bottom composer floats over the page
-without occupying content-box height (reserve bottom scroll room such as `calc(var(--page-content-gap) + 56px)` on
-scrollable views). Style panels against that box with normal HTML, CSS, and Vue (natural stacking, or filling the box
-with inner scrolling and a `rem`/`px` `min-height`) rather than layout components or CSS viewport units (`vh`, `vw`,
-`dvh`, etc.), and use `<sdk-dialog>` / `<sdk-drawer>` for overlays. Wire `usePanelBack` so browser Back, Escape, and
-in-page back buttons share the host's unified unsaved-changes guard.
+Every entry (full page or beside a conversation) receives a content box with no host page header, host padding, or
+outer card frame. Style panels with normal HTML, CSS, and Vue (prefer container-relative sizing and CSS `@container`
+rather than `window.innerWidth` or viewport units so the layout stays comfortable when hosted beside a conversation),
+and use `<sdk-dialog>` / `<sdk-drawer>` for overlays. When a single panel hosts an editable in-panel sub-view (rather
+than navigating to a separate detail entry), wire `usePanelBack` so browser Back, Escape, and in-page back buttons
+share the host's unified unsaved-changes guard.
 
 ## Draft links and instance state
 
@@ -472,3 +456,18 @@ The value has `className` and `primaryKey`. Linking the graph and relation list 
 
 - State field type `{ kind: "child-object"; parentType: string; collection: string }`.
 - A value in that field `{ parent: { objectType: string; primaryKey: string }; primaryKey: string }`.
+
+### Object reference shapes quick reference
+
+| Where | Shape |
+| --- | --- |
+| Panel state, `?state=`, `@saved` event | `{ className, primaryKey }` |
+| Assistant `/operate` `call.target` | `{ kind: "object", objectType, primaryKey }` |
+| `page-draft.json` / `instance.draft` / `draftTarget` | `{ objectType, id }` (omit `id` for create) |
+| `instance.pageContext.value.selection` item | `{ id, label, ... }` |
+
+## Application icons
+
+Choose an application's `declaration.icon` from `node "$SKILL/ontomato.mjs" sdk icons`.
+To render an application icon by key in a catalog panel, draw `<component :is="appIcon(key)" :size="16" />` with
+`appIcon` from `@ontomato/sdk/panel`.

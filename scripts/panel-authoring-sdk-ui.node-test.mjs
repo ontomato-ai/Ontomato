@@ -683,3 +683,56 @@ test("checkPanelWorkspace accepts official display components bound to metricOut
   }));
   assert.equal(result.status, "valid");
 });
+
+test("every shipped skill template workspace passes checkPanelWorkspace", () => {
+  const script = `
+    import { resolve } from "node:path";
+    import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+    import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
+    import { componentMetadata } from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/apps-sdk/reference.mjs")).href)};
+    const components = componentMetadata({
+      tsconfig: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/tsconfig.json"),
+      source: resolve(${JSON.stringify(ROOT)}, "packages/apps-sdk/src/catalogue.ts"),
+    }).map(({ metadata }) => ({ ...metadata, ports: { props: [], events: [], slots: [] } }));
+    const catalogue = { version: "1.0.0", components };
+    const typeTable = {
+      resultSchemas: {
+        panelRecordList: { type: "array" },
+        panelRecord: { type: "object" },
+        panelFormDescription: { type: "object", required: ["fields"] },
+      },
+      objectTypes: {
+        "platform:AgentDefinition": {
+          reads: {
+            list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+            record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+            form: { source: "object", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
+            createForm: { source: "type", parameterMode: "fixed", params: {}, result: "panelFormDescription" },
+          },
+          operations: [{ id: "platform:AgentDefinition.save", kind: "form.save", effect: "write", target: { source: "draft" }, inputSchema: {}, batch: false }],
+        },
+      },
+    };
+    const dirs = [
+      "agent-skills/ontomato-app-builder/references/templates/catalog-detail-dialog",
+      "agent-skills/ontomato-app-builder/references/templates/two-entry-catalog-detail/catalog",
+      "agent-skills/ontomato-app-builder/references/templates/two-entry-catalog-detail/detail",
+    ];
+    const results = [];
+    for (const dir of dirs) {
+      const res = await checkPanelWorkspace(resolve(${JSON.stringify(ROOT)}, dir), { checks, catalogue, version: "1.0.0", typeTable });
+      results.push({ dir, status: res.status, unchecked: res.unchecked.length });
+    }
+    console.log(JSON.stringify(results));
+  `;
+  const results = JSON.parse(execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", script], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }));
+  assert.equal(results.length, 3);
+  for (const item of results) {
+    assert.equal(item.status, "valid", `${item.dir} failed checkPanelWorkspace`);
+    assert.equal(item.unchecked, 0, `${item.dir} had unchecked references`);
+  }
+});

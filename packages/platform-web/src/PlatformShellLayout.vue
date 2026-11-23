@@ -93,9 +93,8 @@ const appFramed = provideApplicationFrame();
 const readAppCounts = (appId: string) => activeMenuApps.value.has(appId);
 const activeEntryCount: typeof entryCount = (appId, use) => {
   if (!readAppCounts(appId)) return null;
-  // When the active route is a panel entry of an application with its own frame panel, that frame owns its counts.
-  const app = catalog.applications.value.find((item) => item.id === appId);
-  if ((appFramed.value || Boolean(app?.framePanelId)) && panelEntryApplication(route.path) === appId) return null;
+  // When the active route is framed (or awaiting admission for its declared frame), that frame owns its menu counts.
+  if (appFramed.value && panelEntryApplication(route.path) === appId) return null;
   return entryCount(appId, use);
 };
 const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers, activeEntryCount));

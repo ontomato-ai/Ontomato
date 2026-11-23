@@ -378,12 +378,21 @@ function resetPaging() {
   }
 }
 
+function defaultFilterParamValue(name: string): unknown {
+  const key = paramNameOf(name);
+  const input = placement.inputs?.[key];
+  if (input && "state" in input) {
+    return panel.manifest.state[input.state]?.default;
+  }
+  return undefined;
+}
+
 const pagingParams = new Set(["cursor", "size", "page"]);
 const nonPagingParamNames = [...new Set([...Object.keys(datum.params), ...Object.keys(signatureParams)])]
   .filter((name) => !pagingParams.has(name));
 const clearableFilterParams = nonPagingParamNames
   .filter((name) => name !== "search" && !requiredParamNames.has(name) && isWritableParam(name))
-  .map((name) => useMemberParam(paramNameOf(name)));
+  .map((name) => ({ name, param: useMemberParam(paramNameOf(name)) }));
 
 const currentParams = computed(() =>
   paramValues(member.projection, datum, placement, member.inputs.value, panel.instance.ownParams(member.key)),
@@ -892,6 +901,8 @@ const narrowed = computed(
     || nonPagingParamNames.some((name) => {
       if (name === "search" || isFixedLiteral(name) || requiredParamNames.has(name)) return false;
       const value = currentParams.value[name];
+      const defaultValue = defaultFilterParamValue(name);
+      if (defaultValue !== undefined && value === defaultValue) return false;
       return value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && value.length === 0);
     }),
 );
@@ -900,10 +911,12 @@ function clearFilters() {
   if ((hasServerSearch || isLocalSearchActive.value) && searchParam && isWritableParam("search") && searchParam.value.value !== null) {
     searchParam.set(null);
   }
-  for (const param of clearableFilterParams) {
+  for (const { name, param } of clearableFilterParams) {
     const value = param.value.value;
-    if (value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0)) {
-      param.set(null);
+    const defaultValue = defaultFilterParamValue(name);
+    const resetValue = defaultValue !== undefined ? defaultValue : null;
+    if (value !== resetValue && value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0)) {
+      param.set(resetValue as never);
     }
   }
   for (const { param, writable } of localFilterParamEntries) {

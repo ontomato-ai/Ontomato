@@ -468,3 +468,60 @@ it("hides the select-all check bar when empty and emits choose only on explicit 
   await nextTick();
   expect(chosenEvents).toEqual([task("t-2")]);
 });
+
+it("treats a filter state field at its default value as unfiltered and restores that default on clearFilters", async () => {
+  const statusManifest: DirectPanelManifest = {
+    state: {
+      status: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false, default: "all" },
+      search: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false, default: null },
+    },
+    members: {
+      tasks: {
+        target: { projectionId: "schedules-tasks" },
+        inputs: { status: { state: "status" }, search: { state: "search" } },
+        outputs: {},
+      },
+    },
+  };
+  const statusProjections: Record<string, DirectProjection> = {
+    ...baseProjections,
+    "schedules-tasks": {
+      ...baseProjections["schedules-tasks"]!,
+      inputs: { status: { kind: "scalar", type: "string" }, search: { kind: "scalar", type: "string" } },
+      outputs: {},
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: "platform:BusinessKnowledge" } },
+          read: "query",
+          params: { status: { input: "status" }, search: { input: "search" } },
+        },
+      },
+      config: {
+        searchable: false,
+        emptyText: "panel.empty",
+        noMatchText: "panel.noMatch",
+      },
+    },
+  };
+  const { instance, element } = mountDirect(() => ready({ rows: [], total: 0 }), {
+    manifest: statusManifest,
+    projections: statusProjections,
+    messages: { en: { "panel.empty": "Nothing yet", "panel.noMatch": "No matching items" } },
+  });
+
+  // At default status="all" with no search, an empty result is truly empty (not narrowed).
+  await vi.waitFor(() => expect(element.querySelector("[data-state='empty']")?.textContent).toContain("Nothing yet"));
+  expect(element.querySelector("[data-state='empty'] button")).toBeNull();
+
+  // Narrowing status to "pending" shows the no-match wording and Clear filters action.
+  instance.state.set("status", "pending");
+  await vi.waitFor(() => expect(element.querySelector("[data-state='empty']")?.textContent).toContain("No matching items"));
+  const clearBtn = element.querySelector("[data-state='empty'] button") as HTMLButtonElement | null;
+  expect(clearBtn).not.toBeNull();
+
+  // Clicking Clear filters restores status to its declared default "all" rather than null.
+  clearBtn!.click();
+  await nextTick();
+  expect(instance.state.values.value.status).toBe("all");
+  await vi.waitFor(() => expect(element.querySelector("[data-state='empty']")?.textContent).toContain("Nothing yet"));
+});
