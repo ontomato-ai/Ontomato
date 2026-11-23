@@ -390,7 +390,7 @@ describe("the panel host", () => {
     expect(restored).toEqual(state);
     expect(panelAddressState(panelAddress("/a/schedules", { selectedTask: null }))).toEqual({ selectedTask: null });
     expect(panelAddressState("/a/schedules?state=not-json")).toEqual({});
-    expect(panelAddressState(`/a/schedules?state=${encodeURIComponent(JSON.stringify({ selectedTask: { bogus: 1 }, search: "ok" }))}`)).toEqual({ search: "ok" });
+    expect(panelAddressState("/a/schedules?state=%5B1%2C2%2C3%5D")).toEqual({});
   });
 
   it("normalizes single-type object string shorthands and drops invalid external state values without failing the panel", async () => {
@@ -398,7 +398,7 @@ describe("the panel host", () => {
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
     const initial = ref<Record<string, unknown>>({
       selectedTask: "nonexistent_acceptance_check",
-      search: 12345,
+      search: { bogus: 1 },
       ignoredUnknown: "abc",
     });
     const scope = effectScope();
