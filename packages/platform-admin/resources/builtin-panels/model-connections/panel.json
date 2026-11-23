@@ -1,0 +1,399 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ModelConnection"
+        },
+        "deepLink": true
+      },
+      "creatingConnection": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        }
+      },
+      "modelDialog": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "editingModel": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ModelEntry"
+        }
+      },
+      "discoverDialog": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        }
+      }
+    },
+    "members": {
+      "connections": {
+        "component": "ObjectList",
+        "type": "platform:ModelConnection",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "selected"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "fallbackToFirst": true,
+          "emptyText": "connections.empty"
+        },
+        "name": "Model connections",
+        "description": "Named connections configured in the current domain",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000001"
+      },
+      "connectionHeader": {
+        "component": "ObjectHeader",
+        "type": "platform:ModelConnection",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "name": "Selected connection summary",
+        "description": "Displays the selected connection name, provider, and read-only metadata outputs",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000002"
+      },
+      "connectionForm": {
+        "component": "ObjectForm",
+        "type": "platform:ModelConnection",
+        "target": "selected",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:ModelConnection.save",
+        "config": {
+          "actions": "none"
+        },
+        "name": "Connection settings form",
+        "description": "Edit provider, API base URL, API key, and extra headers of the selected connection",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000003"
+      },
+      "connectionCreateForm": {
+        "component": "ObjectForm",
+        "type": "platform:ModelConnection",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:ModelConnection.save",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "New connection form",
+        "description": "Create a new named model connection in this domain",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000004"
+      },
+      "deleteConnection": {
+        "component": "OperationButton",
+        "type": "platform:ModelConnection",
+        "target": "selected",
+        "operation": "modelConnections.delete",
+        "config": {
+          "type": "danger",
+          "plain": true
+        },
+        "name": "Delete connection",
+        "description": "Delete the selected connection and its models after confirming impact",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000005"
+      },
+      "modelsList": {
+        "component": "ObjectList",
+        "type": "platform:ModelConnection",
+        "target": "selected",
+        "data": {
+          "rows": "models"
+        },
+        "operations": {
+          "deleteModel": {
+            "operation": "modelEntries.delete",
+            "type": "platform:ModelEntry",
+            "target": "row"
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "models.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "models.colName",
+              "subtitleKey": "upstreamModel",
+              "minWidth": 180
+            },
+            {
+              "key": "typeLabel",
+              "labelKey": "models.colType",
+              "kind": "tag",
+              "width": 110
+            },
+            {
+              "key": "specs",
+              "labelKey": "models.colSpecs",
+              "minWidth": 160
+            },
+            {
+              "key": "defaultTag",
+              "labelKey": "models.colDefault",
+              "kind": "tag",
+              "width": 130
+            }
+          ],
+          "rowActions": {
+            "maxVisible": 3,
+            "items": [
+              {
+                "kind": "local",
+                "id": "test",
+                "labelKey": "models.test"
+              },
+              {
+                "kind": "local",
+                "id": "edit",
+                "labelKey": "models.edit",
+                "primary": true
+              },
+              {
+                "kind": "operation",
+                "operation": "deleteModel",
+                "labelKey": "models.delete",
+                "danger": true
+              }
+            ]
+          }
+        },
+        "name": "Connection models",
+        "description": "Public chat and embedding models referencing the selected connection",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000006"
+      },
+      "createModelForm": {
+        "component": "ObjectForm",
+        "type": "platform:ModelConnection",
+        "target": "selected",
+        "data": {
+          "form": "createModelForm"
+        },
+        "operation": "modelConnections.addModel",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "Add model form",
+        "description": "Add a chat or embedding model under the selected connection",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000007"
+      },
+      "editModelForm": {
+        "component": "ObjectForm",
+        "type": "platform:ModelEntry",
+        "target": "editingModel",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:ModelEntry.save",
+        "config": {
+          "actions": "footer"
+        },
+        "name": "Edit model form",
+        "description": "Edit a model's public name, upstream ID, type, and parameters",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000008"
+      },
+      "discoverModels": {
+        "component": "PanelData",
+        "type": "platform:ModelConnection",
+        "operation": "modelConnections.discover",
+        "name": "Discover models",
+        "description": "Fetch candidate model IDs using the current connection form draft",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-100000000009"
+      },
+      "testModel": {
+        "component": "PanelData",
+        "type": "platform:ModelConnection",
+        "operation": "modelConnections.test",
+        "name": "Test model connection",
+        "description": "Send a minimal chat or embedding request using the current connection form draft",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-10000000000a"
+      },
+      "usagesList": {
+        "component": "ObjectList",
+        "type": "platform:ModelConnection",
+        "target": "selected",
+        "data": {
+          "rows": "usages"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "usages.empty",
+          "columns": [
+            {
+              "key": "where",
+              "labelKey": "usages.colWhere",
+              "minWidth": 180
+            },
+            {
+              "key": "model",
+              "labelKey": "usages.colModel",
+              "minWidth": 160
+            }
+          ]
+        },
+        "name": "Connection usages",
+        "description": "Domain defaults and ontology agents using models on the selected connection",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-10000000000b"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Connections & models",
+        "panel.description": "Manage named upstream connections and public chat or embedding models routed through the gateway.",
+        "connections.title": "Connections",
+        "connections.add": "Add connection",
+        "connections.addTitle": "Add connection",
+        "connections.empty": "No connections configured yet.",
+        "connections.emptyHint": "Add a named connection to start configuring chat and embedding models.",
+        "connections.settings": "Connection settings",
+        "connections.saved": "Connection saved.",
+        "connections.created": "Connection created.",
+        "connections.deleted": "Connection deleted.",
+        "models.title": "Models",
+        "models.empty": "No models on this connection yet.",
+        "models.discover": "Fetch model list",
+        "models.add": "Add model",
+        "models.addTitle": "Add model",
+        "models.editTitle": "Edit model",
+        "models.colName": "Public name",
+        "models.colType": "Type",
+        "models.colSpecs": "Specifications",
+        "models.colDefault": "Default",
+        "models.test": "Test",
+        "models.edit": "Edit",
+        "models.delete": "Delete",
+        "models.saved": "Model saved.",
+        "models.testing": "Testing {name}…",
+        "models.testChatOk": "{name}: connected ({reply})",
+        "models.testEmbeddingOk": "{name}: connected ({dimensions} dimensions)",
+        "models.testFailed": "{name}: test failed — {message}",
+        "discover.title": "Fetch models from {name}",
+        "discover.search": "Filter model IDs…",
+        "discover.loading": "Fetching model list…",
+        "discover.empty": "No models returned by upstream.",
+        "discover.noMatch": "No matching models.",
+        "discover.failed": "Unable to fetch model list: {message}",
+        "discover.retry": "Retry",
+        "discover.manual": "Add manually",
+        "discover.add": "Add",
+        "discover.close": "Close",
+        "usages.title": "Where models are used",
+        "usages.empty": "No defaults or ontology agents reference this connection yet.",
+        "usages.colWhere": "Used by",
+        "usages.colModel": "Model",
+        "action.openUsage": "Model usage"
+      },
+      "zh-CN": {
+        "panel.name": "连接和模型",
+        "panel.description": "维护域内命名连接及经网关路由的公开对话、向量模型。",
+        "connections.title": "连接",
+        "connections.add": "新建连接",
+        "connections.addTitle": "新建连接",
+        "connections.empty": "还没有配置连接。",
+        "connections.emptyHint": "先新建一条命名连接，再在其下添加对话或向量模型。",
+        "connections.settings": "连接配置",
+        "connections.saved": "连接已保存。",
+        "connections.created": "连接已创建。",
+        "connections.deleted": "连接已删除。",
+        "models.title": "模型列表",
+        "models.empty": "该连接下还没有模型。",
+        "models.discover": "拉取模型列表",
+        "models.add": "添加模型",
+        "models.addTitle": "添加模型",
+        "models.editTitle": "编辑模型",
+        "models.colName": "公开名",
+        "models.colType": "类型",
+        "models.colSpecs": "规格",
+        "models.colDefault": "默认用途",
+        "models.test": "测试连接",
+        "models.edit": "编辑",
+        "models.delete": "删除",
+        "models.saved": "模型已保存。",
+        "models.testing": "正在测试 {name}…",
+        "models.testChatOk": "{name}：连接正常（{reply}）",
+        "models.testEmbeddingOk": "{name}：连接正常（{dimensions} 维）",
+        "models.testFailed": "{name}：测试失败 — {message}",
+        "discover.title": "从 {name} 拉取模型列表",
+        "discover.search": "搜索模型 ID…",
+        "discover.loading": "正在拉取模型列表…",
+        "discover.empty": "上游未返回模型列表。",
+        "discover.noMatch": "没有匹配的模型。",
+        "discover.failed": "无法拉取模型列表：{message}",
+        "discover.retry": "重试",
+        "discover.manual": "手动添加",
+        "discover.add": "添加",
+        "discover.close": "关闭",
+        "usages.title": "模型引用",
+        "usages.empty": "域默认和本体智能体暂未引用该连接下的模型。",
+        "usages.colWhere": "使用方",
+        "usages.colModel": "模型",
+        "action.openUsage": "模型用途"
+      },
+      "zh-TW": {
+        "panel.name": "連線與模型",
+        "panel.description": "維護域內命名連線及經閘道路由的公開對話與向量模型。",
+        "connections.title": "連線",
+        "connections.add": "新增連線",
+        "connections.addTitle": "新增連線",
+        "connections.empty": "尚未設定任何連線。",
+        "connections.emptyHint": "請先新增命名連線，再於其下新增對話或向量模型。",
+        "connections.settings": "連線設定",
+        "connections.saved": "連線已儲存。",
+        "connections.created": "連線已建立。",
+        "connections.deleted": "連線已刪除。",
+        "models.title": "模型清單",
+        "models.empty": "此連線下尚無模型。",
+        "models.discover": "取得模型清單",
+        "models.add": "新增模型",
+        "models.addTitle": "新增模型",
+        "models.editTitle": "編輯模型",
+        "models.colName": "公開名稱",
+        "models.colType": "類型",
+        "models.colSpecs": "規格",
+        "models.colDefault": "預設用途",
+        "models.test": "測試連線",
+        "models.edit": "編輯",
+        "models.delete": "刪除",
+        "models.saved": "模型已儲存。",
+        "models.testing": "正在測試 {name}…",
+        "models.testChatOk": "{name}：連線正常（{reply}）",
+        "models.testEmbeddingOk": "{name}：連線正常（{dimensions} 維）",
+        "models.testFailed": "{name}：測試失敗 — {message}",
+        "discover.title": "從 {name} 取得模型清單",
+        "discover.search": "搜尋模型 ID…",
+        "discover.loading": "正在取得模型清單…",
+        "discover.empty": "上游未回傳模型清單。",
+        "discover.noMatch": "沒有符合的模型。",
+        "discover.failed": "無法取得模型清單：{message}",
+        "discover.retry": "重試",
+        "discover.manual": "手動新增",
+        "discover.add": "新增",
+        "discover.close": "關閉",
+        "usages.title": "模型引用",
+        "usages.empty": "域預設與本體智慧體暫未引用此連線下的模型。",
+        "usages.colWhere": "使用方",
+        "usages.colModel": "模型",
+        "action.openUsage": "模型用途"
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-model-usage",
+      "input": {
+        "name": "Model usage",
+        "description": "Configure domain default chat and embedding models, manage vector rebuilds, and review agent model usages"
+      }
+    }
+  ]
+}

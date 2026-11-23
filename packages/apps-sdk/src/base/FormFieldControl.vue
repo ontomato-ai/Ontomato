@@ -169,7 +169,8 @@ function setFrequency(next: FrequencyDraft) {
     <template v-if="control.kind === 'text' || control.kind === 'markdown'">
       <el-input
         :model-value="text"
-        :type="control.kind === 'markdown' || control.multiline ? 'textarea' : 'text'"
+        :type="control.kind === 'markdown' || control.multiline ? 'textarea' : (control.kind === 'text' && control.secret ? 'password' : 'text')"
+        :show-password="control.kind === 'text' && control.secret === true && !control.multiline"
         :rows="control.kind === 'text' && control.multiline && !control.rows ? 3 : undefined"
         :autosize="control.kind === 'markdown' ? { minRows: 6 } : (control.kind === 'text' && control.multiline && control.rows ? { minRows: control.rows, maxRows: Math.max(control.rows, 24) } : undefined)"
         :placeholder="control.kind === 'text' ? control.placeholder ?? undefined : undefined"

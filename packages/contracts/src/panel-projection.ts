@@ -706,6 +706,7 @@ export {
 const simpleControls = [
   z.object({
     kind: z.literal("text"), multiline: z.boolean().optional(),
+    secret: z.boolean().optional(),
     placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
     rows: positiveInteger.optional(),
   }).strict(),

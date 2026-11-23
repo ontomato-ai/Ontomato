@@ -29,6 +29,53 @@
     },
     "icon": "settings",
     "groups": [],
-    "permissions": []
+    "permissions": [],
+    "panelUses": [
+      {
+        "id": "model-usage",
+        "pageKey": "model-usage",
+        "panelId": "builtin-product-model-usage",
+        "path": "/settings/model-config/usage",
+        "access": { "permissionCode": "system-config" },
+        "inputs": {
+          "domain": { "literal": { "className": "platform:ModelUsage", "primaryKey": "domain" } }
+        },
+        "names": {
+          "en": "Model usage",
+          "zh-CN": "模型用途",
+          "zh-TW": "模型用途",
+          "ja": "モデル用途",
+          "de": "Modellverwendung",
+          "fr": "Utilisation des modèles",
+          "it": "Utilizzo dei modelli",
+          "ar": "استخدام النماذج"
+        },
+        "descriptions": {
+          "en": "Configure domain default chat and embedding models, vector rebuilds, and agent model usage",
+          "zh-CN": "配置域默认对话模型、向量模型、向量索引重建及智能体模型用途"
+        }
+      },
+      {
+        "id": "model-connections",
+        "pageKey": "model-connections",
+        "panelId": "builtin-product-model-connections",
+        "path": "/settings/model-config/providers",
+        "access": { "permissionCode": "system-config" },
+        "names": {
+          "en": "Connections & models",
+          "zh-CN": "连接和模型",
+          "zh-TW": "連線與模型",
+          "ja": "接続とモデル",
+          "de": "Verbindungen & Modelle",
+          "fr": "Connexions et modèles",
+          "it": "Connessioni e modelli",
+          "ar": "الاتصالات والنماذج"
+        },
+        "descriptions": {
+          "en": "Manage domain named model connections and public chat or embedding models",
+          "zh-CN": "维护域内命名连接及公开对话、向量模型"
+        }
+      }
+    ]
   }
 }
