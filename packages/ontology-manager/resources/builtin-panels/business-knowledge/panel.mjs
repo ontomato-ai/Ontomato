@@ -4,6 +4,12 @@ import { mountPanel, usePanelBack, usePanelContext, usePanelOutput } from "@onto
 const TYPE = "platform:BusinessKnowledge";
 const NARROW_WIDTH = 760;
 
+function sameRef(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (a.className ?? TYPE) === (b.className ?? TYPE) && a.primaryKey === b.primaryKey;
+}
+
 await mountPanel({
   setup() {
     const ctx = usePanelContext();
@@ -83,10 +89,21 @@ await mountPanel({
     );
 
     let prevSelected = selected.value;
-    watch(selected, (value, old) => {
-      prevSelected = old ?? null;
-      if (value && mode.value === "view") returnTarget.value = value;
-    });
+    let handlingUserSelect = false;
+    watch(
+      selected,
+      (value, old) => {
+        if (old !== undefined) prevSelected = old ?? null;
+        if (handlingUserSelect) return;
+        if (mode.value === "view" || mode.value === "edit") {
+          if (value) returnTarget.value = value;
+          if (!sameRef(formTarget.value, value)) {
+            instance.state.set("formTarget", value ?? null);
+          }
+        }
+      },
+      { immediate: true },
+    );
     watch([selected, editing], ([sel, isEditing]) => {
       if (!sel && !isEditing) detailOpen.value = false;
     });
@@ -114,7 +131,10 @@ await mountPanel({
           }
           detailOpen.value = true;
         } else if (next === "edit") {
-          if (!formTarget.value && selected.value) instance.state.set("formTarget", selected.value);
+          if (!sameRef(formTarget.value, selected.value)) {
+            instance.state.set("formTarget", selected.value);
+          }
+          if (selected.value) returnTarget.value = selected.value;
           detailOpen.value = true;
         }
       },
@@ -126,14 +146,21 @@ await mountPanel({
       detailOpen.value = true;
       if (!editing.value) return;
 
-      const target = formTarget.value;
-      if (!(await confirmLeave())) {
-        instance.state.set("selected", mode.value === "create" ? null : (target ?? prevSelected));
-        return;
+      // ObjectList writes `selected` synchronously before emitting `choose`; defer
+      // syncing `formTarget` until leave confirmation resolves so dirty edits stay intact.
+      handlingUserSelect = true;
+      try {
+        const target = formTarget.value;
+        if (!(await confirmLeave())) {
+          instance.state.set("selected", mode.value === "create" ? null : (target ?? prevSelected));
+          return;
+        }
+        requestDiscard();
+        returnTarget.value = nextSelection;
+        instance.state.setState({ mode: "view", selected: nextSelection, formTarget: nextSelection });
+      } finally {
+        handlingUserSelect = false;
       }
-      requestDiscard();
-      returnTarget.value = nextSelection;
-      instance.state.setState({ mode: "view", selected: nextSelection, formTarget: nextSelection });
     }
 
     function openEdit() {
