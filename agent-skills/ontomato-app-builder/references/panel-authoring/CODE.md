@@ -5,7 +5,7 @@ with `<projection slot="memberKey"></projection>`, where `slot` matches a key in
 templates, CSS (`@container`), and events for layout and interactions.
 
 Style colors, typography, spacing, and radii with platform design variables (`--sdk-*`, `--text-*`, `--spacing-*`,
-`--radius-*`, `--page-gutter`, `--page-content-gap`) from `node "$SKILL/ontomato.mjs" sdk read docs/components.md`
+`--radius-*`, `--page-gutter`, `--page-content-gap`) from `node "$SKILL/scripts/ontomato.mjs" sdk read docs/components.md`
 (`Theme tokens`) or `sdk read components.json` (`themeTokens`). Never use `--el-*` variables in CSS or `panel.json`
 `theme`.
 
@@ -17,7 +17,7 @@ to the URL `?state=` parameter). Put assistant instructions in `recipes.md`.
 Mount the Vue page in `panel.mjs` with `mountPanel` (see the
 [two-entry catalog → detail template](../templates/two-entry-catalog-detail/README.md) or
 [single-panel catalog-detail template](../templates/catalog-detail-dialog/panel.mjs)). Read
-[runtime imports and setup](RUNTIME.md#imports), `node "$SKILL/ontomato.mjs" sdk read docs/index.md`, and
+[runtime imports and setup](RUNTIME.md#imports), `node "$SKILL/scripts/ontomato.mjs" sdk read docs/index.md`, and
 `sdk read docs/components.md` for component data ports, `config`, outputs, and events.
 
 Use the platform's data-free interface components directly as template tags (no script import needed):
@@ -89,7 +89,7 @@ await mountPanel({
 
 ## Open a panel at a specific state
 
-Mark target state fields with `deepLink: true` in `manifest.state`. Use `node "$SKILL/ontomato.mjs" panel uses <app-id>`
+Mark target state fields with `deepLink: true` in `manifest.state`. Use `node "$SKILL/scripts/ontomato.mjs" panel uses <app-id>`
 to confirm the destination entry's registered `path`, encode `?state=` once via `URLSearchParams`
 (for example `` `${path}?${new URLSearchParams({ state: JSON.stringify(state) })}` ``), and call
 `usePanelContext().navigate(address)` (captured in `setup()`). For links in Markdown or recipes, give site-relative
@@ -130,7 +130,7 @@ paths beginning with a single `/` and pass raw JSON once into `URLSearchParams` 
 ## Read declared data
 
 Inspect any read with `panel type <type-id> --read <name>` (for example
-`node "$SKILL/ontomato.mjs" panel type platform:Action --read definition`). Omit `--read` to see all reads and
+`node "$SKILL/scripts/ontomato.mjs" panel type platform:Action --read definition`). Omit `--read` to see all reads and
 operations for that type.
 
 Use the [member fields reference](FIELDS.md) to bind each component's named datum and map ports via `state`. A
@@ -341,7 +341,7 @@ Registration writes each new projection's UUID into `panel.json` as `id` (keep i
   apps, declare app-owned permissions (e.g. `app:app-my-app:view`).
 - Set `"allowStandalone": true` when the application should support standalone external links (`standalone=1`, copied
   from the sidebar application menu or application properties).
-- Choose `declaration.icon` from `node "$SKILL/ontomato.mjs" sdk icons`.
+- Choose `declaration.icon` from `node "$SKILL/scripts/ontomato.mjs" sdk icons`.
 - Omit `defaultAgent` to use the general assistant; set `{ kind: "id", id }` or `{ kind: "preset", agentKind }` only
   when that agent already selects this panel's skill.
 

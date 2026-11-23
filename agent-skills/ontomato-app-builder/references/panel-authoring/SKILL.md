@@ -6,7 +6,7 @@ description: Build and register an Ontomato panel from declared read functions, 
 # Author an Ontomato panel
 
 1. **Discover available reads and operations before writing code.** Run
-   `node "$SKILL/ontomato.mjs" panel type <type-id>` (and `--read <name>` for one read's parameters and `resultSchema`).
+   `node "$SKILL/scripts/ontomato.mjs" panel type <type-id>` (and `--read <name>` for one read's parameters and `resultSchema`).
    - **Customer ontology classes** (for example `Student`): projections only bind read and write functions — bind the
      platform's generic read functions parameterized by class (list objects of a class / get one object by ID, listed
      under `panel type <class>`), MetricViews for filtered/calculated reads, and Actions for writes. Until generic
@@ -38,8 +38,8 @@ description: Build and register an Ontomato panel from declared read functions, 
    [troubleshooting](CODE.md#when-a-panel-looks-wrong) if anything looks off.
 
 ```sh
-node "$SKILL/ontomato.mjs" panel check "$WORKSPACE"
-node "$SKILL/ontomato.mjs" panel register "$WORKSPACE"
+node "$SKILL/scripts/ontomato.mjs" panel check "$WORKSPACE"
+node "$SKILL/scripts/ontomato.mjs" panel register "$WORKSPACE"
 ```
 
 ## Registration files (`panel.json` vs. `registration.json`)

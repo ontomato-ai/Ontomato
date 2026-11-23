@@ -9,7 +9,7 @@ import { managementPanel, writeManagementPanel } from "./panel-scaffold.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const DIR = path.dirname(fileURLToPath(import.meta.url));
+const SKILL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function die(message) {
   console.error(message);
@@ -17,7 +17,7 @@ function die(message) {
 }
 
 function loadConfig() {
-  const text = fs.readFileSync(path.join(DIR, "application.yml"), "utf8");
+  const text = fs.readFileSync(path.join(SKILL_DIR, "application.yml"), "utf8");
   const cfg = {};
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -564,7 +564,7 @@ async function productCommand(api, [command, ...args]) {
 }
 
 function usage() {
-  die(`usage: ontomato.mjs [--lang <tag>] <command>
+  die(`usage: scripts/ontomato.mjs [--lang <tag>] <command>
   test start|status|stop [--workspace <id>] [--sample test-data/sample.json]
   sdk current
   sdk icons
