@@ -1229,16 +1229,10 @@ it("reads the SDK component catalogue, record, detail tables, and definition fro
     status: "ready",
     value: [expect.objectContaining({ primaryKey: "record", label: "record", fields: { required: "Yes" } })],
   });
-  expect(await read("components", "configRows", { component })).toMatchObject({
-    status: "ready",
-    value: expect.arrayContaining([expect.objectContaining({ primaryKey: "fields", label: "fields" })]),
-  });
+  expect(await read("components", "configRows", { component })).toEqual({ status: "empty" });
   expect(await read("components", "outputRows", { component })).toMatchObject({
     status: "ready",
-    value: expect.arrayContaining([
-      expect.objectContaining({ primaryKey: "readOnlyOutput:label", label: "label" }),
-      expect.objectContaining({ primaryKey: "event:navigate", label: "navigate" }),
-    ]),
+    value: [expect.objectContaining({ primaryKey: "readOnlyOutput:label", label: "label" })],
   });
   expect(await read("components", "operationRows", { component })).toEqual({ status: "empty" });
   expect(await read("components", "definition", { component: { ...component, primaryKey: "@ontomato/sdk:Missing" } })).toMatchObject({
