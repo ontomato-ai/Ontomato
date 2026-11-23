@@ -188,7 +188,7 @@ export interface PanelInstance {
   reportHighlight(member: string, highlight: Readonly<Ref<PageHighlight | null>>): () => void;
   /** The state an address or an open request may carry, for this instance. */
   deepLink(): Record<string, PanelDeepLinkStateValue>;
-  /** All declared public state fields (excluding canvas node-positions) with their current values. */
+  /** All declared public state fields with their current values. */
   publicState(): Record<string, RuntimeJsonValue>;
   /** Notifies the host that the user manually edited an unsaved form, invalidating pending agent save confirmations. */
   notifyFormEdited(target: PanelFormEditedTarget): void;
@@ -294,8 +294,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const translate = options.translate ?? ((key: string) => key);
   function publicState(): Record<string, RuntimeJsonValue> {
     const result: Record<string, RuntimeJsonValue> = {};
-    for (const [name, field] of Object.entries(manifest.state)) {
-      if (field.type.kind === "node-positions") continue;
+    for (const name of Object.keys(manifest.state)) {
       result[name] = (state.values.value[name] ?? null) as RuntimeJsonValue;
     }
     return result;
