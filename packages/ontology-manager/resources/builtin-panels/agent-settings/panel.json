@@ -14,16 +14,6 @@
           "type": "string"
         },
         "deepLink": true
-      },
-      "listedAgents": {
-        "type": {
-          "kind": "list",
-          "items": {
-            "kind": "object",
-            "objectType": "platform:AgentDefinition"
-          }
-        },
-        "deepLink": false
       }
     },
     "members": {
@@ -34,8 +24,7 @@
           "rows": "list"
         },
         "state": {
-          "selected": "selected",
-          "listed": "listedAgents"
+          "selected": "selected"
         },
         "config": {
           "subtitleField": "description",
