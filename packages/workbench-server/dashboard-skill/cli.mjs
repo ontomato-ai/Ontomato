@@ -9,9 +9,17 @@ const {values,positionals}=parseArgs({allowPositionals:true,options:{
 const [command]=positionals,env=process.env;
 async function call(endpoint,body){
   if(!env.ONTOMATO_WORKBENCH_URL)throw new Error("Set ONTOMATO_WORKBENCH_URL to the platform base before /api");
+  const url=env.ONTOMATO_WORKBENCH_URL.replace(/\/$/,"")+"/api/dashboards"+endpoint;
+  const callbackUrl=Boolean(env.ONTOMATO_RUN_ID)&&new URL(url).pathname.startsWith(`/api/assistant/executions/${env.ONTOMATO_RUN_ID}/`);
   const headers={"Content-Type":"application/json"};
-  for(const [variable,header] of [["ONTOMATO_TK","tk"],["ONTOMATO_API_KEY","X-API-Key"],["ONTOMATO_EXECUTION_CALLBACK","X-Ontomato-Callback-Credential"],["ONTOMATO_LANGUAGE","Accept-Language"],["ONTOMATO_SESSION_ID","X-Ontomato-Session-Id"],["ONTOMATO_RUN_ID","X-Ontomato-Run-Id"],["ONTOMATO_CORRELATION_ID","X-Correlation-Id"]])if(env[variable])headers[header]=env[variable];
-  const response=await fetch(env.ONTOMATO_WORKBENCH_URL.replace(/\/$/,"")+"/api/dashboards"+endpoint,{method:body===undefined?"GET":"POST",headers,body:body===undefined?undefined:JSON.stringify(body),redirect:"error"});
+  if(callbackUrl){
+    if(env.ONTOMATO_EXECUTION_CALLBACK)headers["X-Ontomato-Callback-Credential"]=env.ONTOMATO_EXECUTION_CALLBACK;
+  }else{
+    if(env.ONTOMATO_TK)headers.tk=env.ONTOMATO_TK;
+    if(env.ONTOMATO_API_KEY)headers["X-API-Key"]=env.ONTOMATO_API_KEY;
+  }
+  for(const [variable,header] of [["ONTOMATO_LANGUAGE","Accept-Language"],["ONTOMATO_SESSION_ID","X-Ontomato-Session-Id"],["ONTOMATO_RUN_ID","X-Ontomato-Run-Id"],["ONTOMATO_CORRELATION_ID","X-Correlation-Id"]])if(env[variable])headers[header]=env[variable];
+  const response=await fetch(url,{method:body===undefined?"GET":"POST",headers,body:body===undefined?undefined:JSON.stringify(body),redirect:"error"});
   const text=await response.text();
   if(!response.ok)throw new Error(`HTTP ${response.status}: ${text}`);
   return JSON.parse(text);

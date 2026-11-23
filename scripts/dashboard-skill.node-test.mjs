@@ -72,19 +72,47 @@ test("read commands retain current rows and truncation and use the supplied iden
   assert.deepEqual(api.calls.map(call=>call.path),["/api/dashboards","/api/dashboards/board%3A1","/api/dashboards/query-card","/api/dashboards/card-parameter-form"]);
   assert.ok(api.calls.every(call=>call.headers.tk==="fixture-reader"));
 });
-test("background callback credential sends X-Ontomato-Callback-Credential and X-Ontomato-Run-Id",async t=>{
+test("normal turn with both user and callback credentials omits X-Ontomato-Callback-Credential on service root",async t=>{
+  const dir=await workspace(t),api=await server(t,{data:{id:"board:1",name:"Board",groups:[{charts:[{id:"card:1",name:"Card"}],metrics:[]}]}});
+  const form={id:"board:1",name:"Renamed"};
+  await writeFile(path.join(dir,"form.json"),JSON.stringify(form));
+  const dualCredEnv={ONTOMATO_TK:"fixture-reader",ONTOMATO_EXECUTION_CALLBACK:"wbc1.panel-callback-only"};
+  for(const args of [
+    ["list"],
+    ["read","--dashboard-id","board:1"],
+    ["link","--dashboard-id","board:1"],
+    ["card","--dashboard-id","board:1","--card-id","card:1"],
+    ["parameters","--dashboard-id","board:1","--card-id","card:1"],
+    ["save","--operation","dashboard.rename","--form","form.json"],
+  ]){
+    await invoke(dir,api.base,args,dualCredEnv);
+  }
+  assert.equal(api.calls.length,6);
+  for(const call of api.calls){
+    assert.equal(call.headers.tk,"fixture-reader");
+    assert.equal(call.headers["x-ontomato-callback-credential"],undefined);
+  }
+  await invoke(dir,api.base,["read","--dashboard-id","board:1"],{ONTOMATO_TK:"",ONTOMATO_API_KEY:"api-key-1",ONTOMATO_EXECUTION_CALLBACK:"wbc1.panel-callback-only"});
+  const apiKeyCall=api.calls.at(-1);
+  assert.equal(apiKeyCall.headers["x-api-key"],"api-key-1");
+  assert.equal(apiKeyCall.headers.tk,undefined);
+  assert.equal(apiKeyCall.headers["x-ontomato-callback-credential"],undefined);
+});
+test("background callback base sends X-Ontomato-Callback-Credential and X-Ontomato-Run-Id without user headers",async t=>{
   const dir=await workspace(t),api=await server(t);
+  const callbackBase=`${api.base}/api/assistant/executions/${runId}/workbench`;
   const form={id:"board",name:"Scheduled Rename"};
   await writeFile(path.join(dir,"form.json"),JSON.stringify(form));
-  await invoke(dir,api.base,["read","--dashboard-id","board:1"],{ONTOMATO_TK:"",ONTOMATO_EXECUTION_CALLBACK:"cb-token-123"});
-  await invoke(dir,api.base,["save","--operation","dashboard.rename","--form","form.json"],{ONTOMATO_TK:"",ONTOMATO_EXECUTION_CALLBACK:"cb-token-123"});
+  await invoke(dir,callbackBase,["read","--dashboard-id","board:1"],{ONTOMATO_TK:"stale-user-tk",ONTOMATO_API_KEY:"stale-key",ONTOMATO_EXECUTION_CALLBACK:"cb-token-123"});
+  await invoke(dir,callbackBase,["save","--operation","dashboard.rename","--form","form.json"],{ONTOMATO_TK:"",ONTOMATO_EXECUTION_CALLBACK:"cb-token-123"});
   assert.equal(api.calls.length,2);
   for(const call of api.calls){
     assert.equal(call.headers["x-ontomato-callback-credential"],"cb-token-123");
     assert.equal(call.headers["x-ontomato-run-id"],runId);
     assert.equal(call.headers.tk,undefined);
+    assert.equal(call.headers["x-api-key"],undefined);
   }
-  assert.equal(api.calls[0].path,"/api/dashboards/board%3A1");
-  assert.equal(api.calls[1].path,"/api/dashboards/modify");
+  assert.equal(api.calls[0].path,`/api/assistant/executions/${runId}/workbench/api/dashboards/board%3A1`);
+  assert.equal(api.calls[1].path,`/api/assistant/executions/${runId}/workbench/api/dashboards/modify`);
   assert.deepEqual(api.calls[1].body,form);
 });
