@@ -6,7 +6,9 @@ it is on, its avatar, instructions, model, skills, execution identity, data scop
 ## State in the address
 
 `selected` is the shown `platform:AgentDefinition`; `mode` is `list`, `edit` or `create`. Both travel in the
-address. Opening with no state selects the first agent, as the original page's bare address did.
+address. Opening with no state selects the first agent, as the original page's bare address did. `listedAgents` is
+non-deep-linked output state (`deepLink: false`) written by the `list` projection for default selection and
+post-delete fallback; do not pass it in `present` or links.
 
 ## Editing or creating an agent
 
