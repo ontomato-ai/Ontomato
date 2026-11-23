@@ -360,10 +360,10 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(componentsDoc, /`<sdk-button>`/);
     assert.match(componentsDoc, /`v-sdk-loading`/);
     assert.match(componentsDoc, /`--sdk-color-primary`/);
-    const relationsDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("ObjectRelations\n"));
+    const ontologyGraphDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("OntologyGraph\n"));
     assert.match(
-      relationsDoc,
-      /Inputs:\n\n- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
+      ontologyGraphDoc,
+      /Inputs:\n\n[\s\S]*?- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
       "docs/components.md must print both layers and objectTypes for object-union ports",
     );
     assert.match(
