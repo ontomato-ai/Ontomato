@@ -308,6 +308,8 @@ export default {
     "formControlUnavailable": "This field cannot be edited here yet",
     "formFieldNotSavedByAction": "Not modified by the current save action",
     "formActionUnwiredFields": "Cannot save: the current save action does not accept changes to {fields}",
+    "formSaveFailed": "{action} failed: {message}",
+    "formSaveFailedFor": "{action} ({target}) failed: {message}",
     "formOptionNoLonger": "No longer offered",
     "formAvatarIcon": "Avatar icon",
     "formAvatarColor": "Avatar colour",
