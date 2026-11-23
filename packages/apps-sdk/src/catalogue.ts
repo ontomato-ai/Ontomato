@@ -445,12 +445,25 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectRelations",
     role: "control",
     meaning:
-      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction and stored/derived line semantics, and moving selection to a clicked peer node with its complete identity.",
-    effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection state.",
+      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction, stored/derived line semantics, and optional edge binding details (`reads`, `operations`, `viaInput`). Supports filtering by relation kind (`visibleRelationKinds` and optional `showRelationFilter` multi-select), optional header summary (`showSummary`) and empty-group collapsing (`collapseEmptyGroups`), moving selection to a clicked peer node (`selected`), and promoting a peer node as graph start (`allowSetStart` / `start`). Exposes `status`, `edgeCount`, and `label` as read-only outputs.",
+    effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection, start, and visible relation kinds state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // The node a reader moved to, when no state the author bound holds it.
     data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
-    outputs: { selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+    inputs: {
+      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
+    },
+    outputs: {
+      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
+      visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
+    },
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      edgeCount: { kind: "scalar", type: "number" },
+      label: { kind: "scalar", type: "string" },
+    },
   }),
   defineComponentMeta({
     componentId: "SegmentedControl",

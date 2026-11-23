@@ -1252,3 +1252,124 @@ it("draws only the relation kinds the panel's state holds, in type and instance 
   await vi.waitFor(() => expect(canvasRecorder.nodes).toHaveLength(3));
   expect(canvasRecorder.edges.map((edge) => edge.id).sort()).toEqual(["e-1", "e-2"]);
 });
+
+it("syncs visibleRelationKinds bidirectionally between direct ObjectRelations and OntologyGraph and promotes start via bound start output", async () => {
+  const nodeUnion = { kind: "object-union" as const, layers: allLayers };
+  const kindsType = { kind: "list" as const, items: { kind: "object" as const, objectType: ONTOLOGY_RELATION_KIND } };
+  const graphProjection: ProductProjection = {
+    ...meta, id: "sync-graph", name: "Sync Graph", componentId: "@ontomato/sdk:OntologyGraph",
+    inputs: { mode: { kind: "scalar", type: "string" }, start: nodeUnion, selected: nodeUnion, node: nodeUnion },
+    outputs: { selected: nodeUnion, visibleRelationKinds: kindsType },
+    config: {},
+    data: {
+      schema: { source: typeSource(ONTOLOGY_TYPE), read: "schema", params: {} },
+      counts: { source: typeSource(ONTOLOGY_TYPE), read: "counts", params: {} },
+      start: { source: typeSource(ONTOLOGY_TYPE), read: "start", params: {} },
+      neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: { node: { input: "node" } } },
+    },
+  };
+  const relationsProjection: ProductProjection = {
+    ...meta, id: "sync-relations", name: "Sync Relations", componentId: "@ontomato/sdk:ObjectRelations",
+    inputs: { selected: nodeUnion, visibleRelationKinds: kindsType },
+    outputs: { selected: nodeUnion, start: nodeUnion, visibleRelationKinds: kindsType },
+    config: { showRelationFilter: true, showSummary: true, collapseEmptyGroups: true },
+    data: {
+      neighbors: { source: typeSource(ONTOLOGY_TYPE), read: "neighbors", params: { node: { input: "selected" } } },
+    },
+  };
+  const manifest: PanelManifest = {
+    state: {
+      mode: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false, default: "instance" },
+      start: { type: nodeUnion, personal: false, deepLink: false, external: false },
+      selected: { type: nodeUnion, personal: false, deepLink: false, external: false },
+      kinds: { type: kindsType, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      graph: {
+        target: { projectionId: "sync-graph" },
+        inputs: { mode: { state: "mode" }, start: { state: "start" }, selected: { state: "selected" } },
+        outputs: { selected: { state: "selected" }, visibleRelationKinds: { state: "kinds" } },
+      },
+      relations: {
+        target: { projectionId: "sync-relations" },
+        inputs: { selected: { state: "selected" }, visibleRelationKinds: { state: "kinds" } },
+        outputs: { selected: { state: "selected" }, start: { state: "start" }, visibleRelationKinds: { state: "kinds" } },
+      },
+    },
+  };
+  const actionNode = { className: ACTION, primaryKey: "act-1", label: "Approve Order", layer: "capability" as const };
+  const workflowNode = { className: WORKFLOW, primaryKey: "wf-1", label: "Order Pipeline", layer: "capability" as const };
+  const userNode = { className: USER, primaryKey: "u-1", label: "Alice", layer: "governance" as const };
+
+  const { instance, element } = mountDirect(
+    manifest,
+    { "sync-graph": graphProjection, "sync-relations": relationsProjection },
+    (request) => {
+      if (request.dataName === "schema") return ready({
+        layers: ["capability", "governance"],
+        objectTypes: [
+          { id: ACTION, layer: "capability", labelKey: "platformOntology.types.action" },
+          { id: WORKFLOW, layer: "capability", labelKey: "platformOntology.types.workflow" },
+          { id: USER, layer: "governance", labelKey: "platformOntology.types.user" },
+        ],
+        relationKinds: [
+          { id: "action.hasOwner", from: ACTION, to: USER, derived: false, owner: "java-action", labelKey: "platformOntology.relations.actionHasOwner" },
+          { id: "workflow.invokesAction", from: WORKFLOW, to: ACTION, derived: true, owner: "java-workflow", labelKey: "platformOntology.relations.workflowInvokesAction" },
+        ],
+      });
+      if (request.dataName === "counts") return ready({ counts: [] });
+      if (request.dataName === "start") return ready({ node: actionNode });
+      return ready({
+        node: actionNode,
+        neighbors: [workflowNode, userNode],
+        edges: [
+          { id: "e-1", relationKind: "workflow.invokesAction", from: { className: WORKFLOW, primaryKey: "wf-1" }, to: { className: ACTION, primaryKey: "act-1" }, direction: "incoming", derived: true },
+          { id: "e-2", relationKind: "action.hasOwner", from: { className: ACTION, primaryKey: "act-1" }, to: { className: USER, primaryKey: "u-1" }, direction: "outgoing", derived: false },
+        ],
+        relations: [
+          { relationKind: "workflow.invokesAction", status: "ok", edgeCount: 1 },
+          { relationKind: "action.hasOwner", status: "ok", edgeCount: 1 },
+        ],
+      });
+    },
+  );
+
+  // Select Approve Order so both graph and relations show both relation kinds
+  instance.state.set("selected", { className: ACTION, primaryKey: "act-1" });
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-relations-group")).toHaveLength(2));
+  await vi.waitFor(() => expect(canvasRecorder.edges.map((edge) => edge.id).sort()).toEqual(["e-1", "e-2"]));
+
+  // Changing the ObjectRelations multi-select filter updates shared panel state and filters OntologyGraph too
+  const selectTrigger = element.querySelector<HTMLElement>(".sdk-object-relations-filter-select .el-select__wrapper")
+    ?? element.querySelector<HTMLElement>(".sdk-object-relations-filter-select");
+  expect(selectTrigger).not.toBeNull();
+  selectTrigger!.click();
+  await vi.waitFor(() => expect(document.querySelectorAll(".el-select-dropdown__item").length).toBeGreaterThanOrEqual(2));
+  const ownerOption = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find((item) =>
+    item.textContent?.includes("action.hasOwner") || item.textContent?.toLowerCase().includes("owner"),
+  );
+  expect(ownerOption).not.toBeUndefined();
+  ownerOption!.click();
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-relations-group")).toHaveLength(1));
+  expect(element.querySelector(".sdk-object-relations-group")?.getAttribute("data-relation-kind")).toBe("action.hasOwner");
+  await vi.waitFor(() => expect(canvasRecorder.edges.map((edge) => edge.id)).toEqual(["e-2"]));
+  expect(instance.state.values.value.kinds).toEqual([
+    { className: ONTOLOGY_RELATION_KIND, primaryKey: "action.hasOwner" },
+  ]);
+
+  // "Set as start" button is shown automatically because outputs.start is bound, and promotes Alice to start
+  const setStartButton = element.querySelector<HTMLButtonElement>(
+    '[data-relation-kind="action.hasOwner"] .sdk-object-relations-set-start',
+  )!;
+  expect(setStartButton).not.toBeNull();
+  setStartButton.click();
+  await vi.waitFor(() =>
+    expect(instance.state.values.value.start).toEqual({ className: USER, primaryKey: "u-1" }),
+  );
+
+  // Clearing the selected option resets visibleRelationKinds to null and restores all groups & graph edges
+  ownerOption!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.kinds).toBeNull());
+  await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-relations-group")).toHaveLength(2));
+  await vi.waitFor(() => expect(canvasRecorder.edges.map((edge) => edge.id).sort()).toEqual(["e-1", "e-2"]));
+});
