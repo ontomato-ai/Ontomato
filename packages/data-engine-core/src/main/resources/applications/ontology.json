@@ -16,6 +16,7 @@
   ],
   "scheduleAdapter": "java:ontology",
   "framePanelId": "builtin-product-ontology-frame",
+  "allowStandalone": false,
   "declaration": {
     "names": {
       "en": "Ontology manager",

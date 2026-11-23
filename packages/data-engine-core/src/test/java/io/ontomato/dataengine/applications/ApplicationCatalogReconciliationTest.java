@@ -188,7 +188,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
             List.of(), List.of(), List.of(), List.of(use));
         catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(declared.id(), declared.kind(),
             declared.rail(), declared.category(), declared.sort(), declared.entry(), declared.entryAccess(),
-            declared.scheduleAdapter(), metadata, "builtin-product-native-frame")));
+            declared.scheduleAdapter(), metadata, null, "builtin-product-native-frame")));
 
         var viewer = new QueryAccessService.GrantUser("viewer", "domain");
         when(identity.getCurrentUser()).thenReturn(viewer);

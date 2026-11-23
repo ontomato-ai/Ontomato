@@ -233,7 +233,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectSummary",
     role: "presentation",
     meaning:
-      "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags and clickable object references. Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object.",
+      "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags, clickable object references, and optional one-click copy buttons (`config.copyableFields`, resolving `#/...` hash links against the current browser origin and pathname). Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object.",
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*"],
     data: { record: { results: ["panelRecord"], required: true } },
@@ -565,7 +565,7 @@ export const components: readonly ComponentMetadata[] = [
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
           "business", "by", "changedField", "className", "cursor", "defaultAppId", "entryId", "keyword", "layers", "limit", "node",
-          "operation", "origin", "page", "path", "rating", "relationKinds",
+          "operation", "orgId", "origin", "page", "parentId", "path", "rating", "relationKinds",
           "runId", "scope", "search", "section", "size", "sort", "source", "sourceType", "status", "template", "type", "values",
         ],
       },

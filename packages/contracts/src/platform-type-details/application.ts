@@ -30,6 +30,17 @@ export const applicationTypeDetail = {
       description: "Whether the current caller may manage the application's sharing and grants under product edit authority.",
     },
     {
+      name: "allowStandalone",
+      type: "boolean",
+      description: "Whether this application can be opened standalone without the platform sidebar and expose an external link.",
+    },
+    {
+      name: "externalLink",
+      type: "string",
+      optional: true,
+      description: "The standalone entry link exposed when standalone opening is enabled; omitted when disabled.",
+    },
+    {
       name: "entry",
       type: "ApplicationCatalogueEntry",
       description: "The application's landing path with an optional renderer and home path.",

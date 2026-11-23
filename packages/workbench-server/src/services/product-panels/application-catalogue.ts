@@ -7,6 +7,7 @@ import {
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { APPLICATION, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
+import { allowsStandalone, applicationRootPath } from "@ontomato/contracts/platform-identity";
 import { applicationPanelUseSchema } from "@ontomato/contracts/product-panels";
 import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
 import { config } from "../../config/application";
@@ -40,6 +41,20 @@ const querySchema = z.object({
 type ApplicationCatalogueRow = z.infer<typeof applicationCatalogueQueryResultSchema>["rows"][number];
 type ApplicationCatalogueDetail = z.infer<typeof applicationCatalogueRecordSchema>;
 
+/** Canonical hash-route external link (`#/...?standalone=1`) for an application that allows standalone opening. */
+export function applicationStandaloneLink(
+  row: Pick<ApplicationCatalogueDetail, "id" | "entry" | "allowStandalone">,
+): string | undefined {
+  if (!allowsStandalone(row)) return undefined;
+  const { path, home } = row.entry;
+  if (path.startsWith("/__external/")) return undefined;
+  const landing = path.startsWith("/apps/") ? applicationRootPath(row.id) : (home ?? path);
+  const [routePath, search = ""] = landing.split("?");
+  const query = new URLSearchParams(search);
+  query.set("standalone", "1");
+  return `#${routePath}?${query}`;
+}
+
 /** Project the Java owner's catalogue row or detail onto the generic record shown by panel components. */
 export function toApplicationPanelRecord(
   row: ApplicationCatalogueRow | ApplicationCatalogueDetail, locale?: string,
@@ -49,6 +64,7 @@ export function toApplicationPanelRecord(
   const names = { kind: "localized", values: row.names } as const;
   const descriptions = { kind: "localized", values: row.descriptions } as const;
   const subtitle = panelRecordFieldText(descriptions, language, "en");
+  const allowStandalone = allowsStandalone(row);
   const fields: PanelRecord["fields"] = {
     id: row.id,
     names,
@@ -58,6 +74,7 @@ export function toApplicationPanelRecord(
     canMaintain: row.canMaintain,
     canEditEntries: row.canEditEntries,
     canGrant: row.canGrant,
+    allowStandalone,
     sourceKind: row.source,
     source: word(row.source),
     maintenance: word(row.canMaintain ? "maintainable" : "readOnly"),
@@ -69,6 +86,7 @@ export function toApplicationPanelRecord(
     names: tForLocale(language, "panels.productCatalog.name"),
     descriptions: tForLocale(language, "panels.productCatalog.description"),
     icon: word("icon"),
+    allowStandalone: word("allowStandalone"),
     source: word("source"),
     maintenance: word("maintenance"),
     entryCount: word("entryCount"),
@@ -90,6 +108,11 @@ export function toApplicationPanelRecord(
     if (row.framePanelId !== undefined) {
       fields.framePanel = { kind: "reference", className: PRODUCT_PANEL, primaryKey: row.framePanelId, label: row.framePanelId };
       fieldLabels.framePanel = word("framePanel");
+    }
+    const externalLink = applicationStandaloneLink(row);
+    if (externalLink !== undefined) {
+      fields.externalLink = externalLink;
+      fieldLabels.externalLink = word("externalLink");
     }
   }
   return {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { copyExternalLink, externalLinkTab, rememberExternalLinkTab } from "./external-link";
+import { clearExternalLinkTab, copyExternalLink, externalLinkTab, rememberExternalLinkTab } from "./external-link";
+import { allowsStandalone } from "@ontomato/contracts/platform-identity";
 import { useRoute, useRouter, RouterView, RouterLink } from "vue-router";
 import { Link } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -110,11 +111,37 @@ const moreActions = computed(() => props.shownPage?.externalLink
     onClick: () => void copyExternalLink(props.shownPage!.externalLink!, { copied: props.labels.externalLinkCopied, title: props.labels.copyExternalLink }) }]
   : []);
 const externalTab = ref(externalLinkTab());
-watch(() => route.query.standalone, (flag) => {
-  if (flag !== '1' || externalTab.value) return;
-  externalTab.value = true;
-  rememberExternalLinkTab();
-}, { immediate: true });
+const standaloneRequested = ref(route.query.standalone === "1");
+const standaloneAllowed = computed(() => allowsStandalone(activeApp.value));
+const hideRail = computed(() => {
+  if (!standaloneAllowed.value) return false;
+  if (externalTab.value) return true;
+  return (route.query.standalone === "1" || standaloneRequested.value) && !props.loading;
+});
+watch(
+  [() => route.query.standalone, () => activeApp.value, () => props.loading],
+  ([flag, app, loading]) => {
+    if (flag === "1") standaloneRequested.value = true;
+    if (app && !allowsStandalone(app)) {
+      standaloneRequested.value = false;
+      if (externalTab.value) {
+        externalTab.value = false;
+        clearExternalLinkTab();
+      }
+      if (flag !== undefined) {
+        const { standalone: _dropped, ...rest } = route.query;
+        void router.replace({ path: route.path, query: rest, hash: route.hash });
+      }
+      return;
+    }
+    if (!standaloneRequested.value || externalTab.value) return;
+    if (loading && app === null) return;
+    standaloneRequested.value = false;
+    externalTab.value = true;
+    rememberExternalLinkTab();
+  },
+  { immediate: true },
+);
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
 
 /**
@@ -159,7 +186,7 @@ const headerLabels = computed(() => ({
 <template>
   <PlatformShell
     :loading="loading"
-    :hide-rail="externalTab"
+    :hide-rail="hideRail"
     :class="{ 'object-browser-layout': browserWorkspace }"
     :apps="blocked ? [] : railApps"
     :active-app-id="activeAppId"

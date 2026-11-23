@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { projectionElement } from "../panel/projection-element";
-import { computed, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
@@ -53,6 +53,8 @@ const props = withDefaults(
     emptyText?: string;
     /** Optional panel message key shown when the requested object cannot be found or has been removed. */
     missingText?: string;
+    /** Field keys that show a one-click copy button beside their displayed value; hash routes (`#/...`) resolve to the full browser URL. */
+    copyableFields?: readonly string[];
   }>(),
   {
     showTitle: true,
@@ -62,6 +64,7 @@ const props = withDefaults(
     bodyField: undefined,
     emptyText: undefined,
     missingText: undefined,
+    copyableFields: undefined,
   },
 );
 
@@ -118,6 +121,61 @@ watch(record, (found) => {
 
 function fieldText(current: PlatformObjectRecord, name: string): string {
   return displayFieldText(current.fields[name], locale.value, t);
+}
+
+const copiedField = ref<string | null>(null);
+let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+onBeforeUnmount(() => {
+  if (copiedTimer !== null) clearTimeout(copiedTimer);
+});
+
+function isCopyableField(name: string): boolean {
+  return Boolean(props.copyableFields?.includes(name));
+}
+
+function resolvedFieldText(current: PlatformObjectRecord, name: string): string {
+  const text = fieldText(current, name);
+  if (isCopyableField(name) && text.startsWith("#/") && typeof window !== "undefined") {
+    return `${window.location.origin}${window.location.pathname}${text}`;
+  }
+  return text;
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall back to a hidden textarea so plain-HTTP deployments can still copy.
+  }
+  if (typeof document === "undefined") return false;
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.append(field);
+  field.select();
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    field.remove();
+  }
+}
+
+async function copyFieldValue(name: string, text: string) {
+  if (!text) return;
+  if (!(await copyText(text))) return;
+  copiedField.value = name;
+  if (copiedTimer !== null) clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => {
+    if (copiedField.value === name) copiedField.value = null;
+    copiedTimer = null;
+  }, 1800);
 }
 
 /** A reference the reader followed is handed over at the output named for its field, or at `navigate`. */
@@ -184,7 +242,28 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
           <dl v-if="articleExtraFields.length" class="sdk-object-summary-article-extra">
             <template v-for="name in articleExtraFields" :key="name">
               <dt>{{ current.fieldLabels?.[name] ?? name }}</dt>
-              <dd>{{ fieldText(current, name) || "—" }}</dd>
+              <dd>
+                <span v-if="isCopyableField(name) && resolvedFieldText(current, name) !== ''" class="sdk-object-summary-copyable">
+                  <span class="sdk-object-summary-text sdk-object-summary-copyable-value">{{ resolvedFieldText(current, name) }}</span>
+                  <button
+                    type="button"
+                    class="sdk-object-summary-copy-btn"
+                    :class="{ copied: copiedField === name }"
+                    :title="copiedField === name ? t('common.copied') : t('common.copy')"
+                    :aria-label="copiedField === name ? t('common.copied') : t('common.copy')"
+                    @click="void copyFieldValue(name, resolvedFieldText(current, name))"
+                  >
+                    <svg v-if="copiedField === name" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  </button>
+                </span>
+                <template v-else>{{ fieldText(current, name) || "—" }}</template>
+              </dd>
             </template>
           </dl>
         </template>
@@ -229,6 +308,25 @@ function navigateTo(reference: PlatformFieldReference, fieldName: string) {
                   <template v-for="(part, index) in textHighlightSegments(fieldText(current, name), current.highlights?.[name])" :key="index">
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                   </template>
+                </span>
+                <span v-else-if="isCopyableField(name) && resolvedFieldText(current, name) !== ''" class="sdk-object-summary-copyable">
+                  <span class="sdk-object-summary-text sdk-object-summary-copyable-value">{{ resolvedFieldText(current, name) }}</span>
+                  <button
+                    type="button"
+                    class="sdk-object-summary-copy-btn"
+                    :class="{ copied: copiedField === name }"
+                    :title="copiedField === name ? t('common.copied') : t('common.copy')"
+                    :aria-label="copiedField === name ? t('common.copied') : t('common.copy')"
+                    @click="void copyFieldValue(name, resolvedFieldText(current, name))"
+                  >
+                    <svg v-if="copiedField === name" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  </button>
                 </span>
                 <span v-else-if="fieldText(current, name) !== ''" class="sdk-object-summary-text">
                   <template v-for="(part, index) in textHighlightSegments(fieldText(current, name), current.highlights?.[name])" :key="index">
@@ -340,6 +438,45 @@ dd {
 /* An owner's text keeps its own line breaks: a knowledge item's body reads as its owner wrote it. */
 .sdk-object-summary-text {
   white-space: pre-wrap;
+}
+.sdk-object-summary-copyable {
+  align-items: flex-start;
+  display: inline-flex;
+  gap: var(--spacing-xs);
+  max-width: 100%;
+}
+.sdk-object-summary-copyable-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.sdk-object-summary-copy-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--radius-sm);
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  width: 24px;
+}
+.sdk-object-summary-copy-btn:hover {
+  background: var(--el-fill-color-light);
+  border-color: var(--el-border-color);
+  color: var(--el-text-color-primary);
+}
+.sdk-object-summary-copy-btn.copied {
+  border-color: var(--el-color-success-light-5);
+  color: var(--el-color-success);
+}
+.sdk-object-summary-copy-btn:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
 }
 .sdk-object-summary-title {
   font-size: var(--text-base);

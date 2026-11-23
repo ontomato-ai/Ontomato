@@ -53,11 +53,26 @@ public class ApplicationCatalog {
         }
     }
     public record Builtin(String id, String kind, String rail, String category, int sort, JSONObject entry,
-                          List<String> entryAccess, String scheduleAdapter, Declaration declaration, String framePanelId) {
+                          List<String> entryAccess, String scheduleAdapter, Declaration declaration,
+                          Boolean allowStandalone, String framePanelId) {
         public Builtin(String id, String kind, String rail, String category, int sort, JSONObject entry,
                        List<String> entryAccess, String scheduleAdapter, Declaration declaration) {
-            this(id, kind, rail, category, sort, entry, entryAccess, scheduleAdapter, declaration, null);
+            this(id, kind, rail, category, sort, entry, entryAccess, scheduleAdapter, declaration, null, null);
         }
+
+        public Builtin(String id, String kind, String rail, String category, int sort, JSONObject entry,
+                       List<String> entryAccess, String scheduleAdapter, Declaration declaration,
+                       Boolean allowStandalone) {
+            this(id, kind, rail, category, sort, entry, entryAccess, scheduleAdapter, declaration, allowStandalone, null);
+        }
+
+        public boolean allowsStandalone() {
+            return !Boolean.FALSE.equals(allowStandalone);
+        }
+    }
+
+    static boolean allowsStandalone(JSONObject app) {
+        return app == null || !Boolean.FALSE.equals(app.get("allowStandalone"));
     }
     private record BuiltinEntry(String applicationId, ApplicationPanelUse use) {
         String conflict(String domainId, String domainApplicationId) {
@@ -131,7 +146,8 @@ public class ApplicationCatalog {
                     "panelUses", JSON.parseArray(row.getString("panel_uses"), ApplicationPanelUse.class),
                     "groups", JSON.parseArray(row.getString("groups"), Group.class),
                     "permissions", JSON.parseArray(row.getString("declaration_permissions"), Permission.class),
-                    "panelSettings", JSON.parseObject(row.getString("panel_settings")));
+                    "panelSettings", JSON.parseObject(row.getString("panel_settings")),
+                    "allowStandalone", row.getObject("allow_standalone") instanceof Boolean flag ? flag : true);
                 var updated = row.getObject("updated_at", OffsetDateTime.class);
                 if (updated != null) app.put("updatedAt", updated.toInstant());
                 return app;
@@ -351,7 +367,8 @@ public class ApplicationCatalog {
         var summary = JSONObject.of("id", id, "names", app.getJSONObject("names"), "descriptions", app.getJSONObject("descriptions"),
             "icon", app.getString("icon"), "source", builtin ? "builtin" : "domain", "canMaintain", maintain,
             "canGrant", !builtin && grants.allowedFor(user.getDomainId(), user.getId(), id, "edit"),
-            "canEditEntries", maintain && panelManaged(app), "entryCount", entryCount);
+            "canEditEntries", maintain && panelManaged(app), "entryCount", entryCount,
+            "allowStandalone", allowsStandalone(app));
         if (app.get("updatedAt") instanceof Instant ts) summary.put("updatedAt", ts.toString());
         var ownerId = app.getString("ownerUserId");
         if (!builtin && ownerId != null && !ownerId.isBlank()) {
@@ -414,13 +431,15 @@ public class ApplicationCatalog {
             lockCatalog();
             var current = require(id);
             requireDomainMaintainer(current, user);
-            var errors = ApplicationCatalogueForm.identityErrors(JSONObject.of(
-                "names", update.names(), "descriptions", update.descriptions(), "icon", update.icon()));
+            var candidate = JSONObject.of("names", update.names(), "descriptions", update.descriptions(), "icon", update.icon());
+            if (update.allowStandalone() != null) candidate.put("allowStandalone", update.allowStandalone());
+            var errors = ApplicationCatalogueForm.identityErrors(candidate);
             if (!errors.isEmpty()) throw bad(errors.getFirst().get("message").asText());
             requireIconChange(current, update.icon(), user);
-            db.update("UPDATE sys_application SET names=?::jsonb,descriptions=?::jsonb,icon=?,updated_at=now() WHERE id=? AND domain_id=?",
-                JSON.toJSONString(update.names()), JSON.toJSONString(update.descriptions()), update.icon(), id, user.getDomainId());
-            return update;
+            boolean allowStandalone = update.allowStandalone() != null ? update.allowStandalone() : allowsStandalone(current);
+            db.update("UPDATE sys_application SET names=?::jsonb,descriptions=?::jsonb,icon=?,allow_standalone=?,updated_at=now() WHERE id=? AND domain_id=?",
+                JSON.toJSONString(update.names()), JSON.toJSONString(update.descriptions()), update.icon(), allowStandalone, id, user.getDomainId());
+            return new ApplicationController.IdentityUpdate(update.names(), update.descriptions(), update.icon(), allowStandalone);
         });
     }
 
@@ -457,6 +476,7 @@ public class ApplicationCatalog {
     private JSONObject view(JSONObject app, User user, BuiltinPageKeys pageKeys) {
         var result = new JSONObject(app);
         result.put("entry", publicEntry(app));
+        result.put("allowStandalone", allowsStandalone(app));
         result.remove("permissions");
         var settings = app.getJSONObject("panelSettings");
         result.remove("panelSettings");
@@ -529,7 +549,7 @@ public class ApplicationCatalog {
                 validateBuiltinPermissionOwnership(d.id(), claimed, ownedCodes);
                 validateMappings(d.id(), null, d.entry(), declaration.pageSkills(), declaration.panelUses());
                 var panelSettings = d.framePanelId() != null ? JSONObject.of("framePanelId", d.framePanelId()) : new JSONObject();
-                save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, declaration, panelSettings);
+                save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, declaration, panelSettings, d.allowsStandalone());
                 access.declare(require(d.id()), declaration, old.isEmpty());
             }
             var apps = all();
@@ -576,9 +596,10 @@ public class ApplicationCatalog {
             }
             requireIconChange(old.orElse(null), declaration.icon(), user);
             String owner = old.isEmpty() ? user.getId() : old.get().getString("ownerUserId");
+            boolean allowStandalone = old.map(ApplicationCatalog::allowsStandalone).orElse(true);
             String path=kind.equals("product")?"/products/"+id+"?applicationId="+id:"/apps/"+id+"/";
             save(id, user.getDomainId(), List.of("hosted","product").contains(kind) ? "workbench" : "data-engine", owner, kind, "apps", "business", 100,
-                JSONObject.of("path",path), List.of(permissionPrefix(id) + "entry"), null, releaseId, declaration);
+                JSONObject.of("path",path), List.of(permissionPrefix(id) + "entry"), null, releaseId, declaration, new JSONObject(), allowStandalone);
             var application = require(id);
             access.declare(application, declaration, old.isEmpty());
             return JSONObject.of("applicationId", id, "releaseId", releaseId, "entryPath",path);
@@ -616,20 +637,15 @@ public class ApplicationCatalog {
     }
 
     private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
-                      JSONObject entry, List<String> entryAccess, String adapter, String releaseId, Declaration d) {
-        save(id, domain, service, owner, kind, rail, category, sort, entry, entryAccess, adapter, releaseId, d, new JSONObject());
-    }
-
-    private void save(String id, String domain, String service, String owner, String kind, String rail, String category, int sort,
-                      JSONObject entry, List<String> entryAccess, String adapter, String releaseId, Declaration d, JSONObject panelSettings) {
+                      JSONObject entry, List<String> entryAccess, String adapter, String releaseId, Declaration d, JSONObject panelSettings, boolean allowStandalone) {
         db.update("""
-            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,declaration_permissions,panel_settings,updated_at)
-            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,now()) ON CONFLICT(id) DO UPDATE SET
+            INSERT INTO sys_application(id,domain_id,owner_service,owner_user_id,kind,names,descriptions,icon,rail,category,sort,entry,entry_access,schedule_adapter,release_id,groups,entry_path,page_skills,panel_uses,declaration_permissions,panel_settings,allow_standalone,updated_at)
+            VALUES(?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?::jsonb,?::jsonb,?,?,?::jsonb,?,?::jsonb,?::jsonb,?::jsonb,?::jsonb,?,now()) ON CONFLICT(id) DO UPDATE SET
             names=excluded.names,descriptions=excluded.descriptions,icon=excluded.icon,rail=excluded.rail,category=excluded.category,sort=excluded.sort,
             entry=excluded.entry,entry_access=excluded.entry_access,schedule_adapter=excluded.schedule_adapter,
-            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,declaration_permissions=excluded.declaration_permissions,panel_settings=excluded.panel_settings,updated_at=now()
+            release_id=excluded.release_id,groups=excluded.groups,entry_path=excluded.entry_path,page_skills=excluded.page_skills,panel_uses=excluded.panel_uses,declaration_permissions=excluded.declaration_permissions,panel_settings=excluded.panel_settings,allow_standalone=excluded.allow_standalone,updated_at=now()
             """, id,domain,service,owner,kind,JSON.toJSONString(d.names()),JSON.toJSONString(d.descriptions()),d.icon(),rail,category,sort,
-            entry.toJSONString(),JSON.toJSONString(entryAccess),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),JSON.toJSONString(d.permissions()),panelSettings.toJSONString());
+            entry.toJSONString(),JSON.toJSONString(entryAccess),adapter,releaseId,JSON.toJSONString(d.groups()),entry.getString("path"),JSON.toJSONString(d.pageSkills()),JSON.toJSONString(d.panelUses(), JSONWriter.Feature.WriteMapNullValue),JSON.toJSONString(d.permissions()),panelSettings.toJSONString(),allowStandalone);
     }
     public static void validateId(String id) {
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}")) throw bad("Invalid application ID");
@@ -860,7 +876,7 @@ public class ApplicationCatalog {
             "permissions", app.getList("permissions", Permission.class));
         var result = JSONObject.of("applicationId", id, "entry", app.getJSONObject("entry"),
             "panelUses", app.getList("panelUses", ApplicationPanelUse.class), "declaration", declaration,
-            "entryAccess", app.getList("entryAccess", String.class));
+            "entryAccess", app.getList("entryAccess", String.class), "allowStandalone", allowsStandalone(app));
         result.putAll(app.getJSONObject("panelSettings"));
         return result;
     }
@@ -944,15 +960,16 @@ public class ApplicationCatalog {
             validateMappings(id, user.getDomainId(), entry, List.of(), uses);
             panels.requireCurrent(user.getDomainId(), settings.framePanelId(), uses, settings.delivery(), settings.theme(),
                 supplied == null ? null : changedIcon(old, supplied.icon()), locale);
+            boolean allowStandalone = body.allowStandalone() != null ? body.allowStandalone() : (old == null || allowsStandalone(old));
             if (old != null && supplied == null) {
-                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,panel_settings=?::jsonb,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
+                db.update("UPDATE sys_application SET entry=?::jsonb,entry_path=?,entry_access=?::jsonb,panel_uses=?::jsonb,panel_settings=?::jsonb,allow_standalone=?,page_skills='[]'::jsonb,updated_at=now() WHERE id=?",
                     entry.toJSONString(), entryPath, JSON.toJSONString(entryAccess), JSON.toJSONString(uses, JSONWriter.Feature.WriteMapNullValue),
-                    settings.json().toJSONString(), id);
+                    settings.json().toJSONString(), allowStandalone, id);
             } else {
                 var declaration = new Declaration(supplied.names(), supplied.descriptions(), supplied.icon(), supplied.groups(), supplied.permissions(), List.of(), uses);
                 save(id, user.getDomainId(), "workbench", old == null ? user.getId() : old.getString("ownerUserId"),
                     "product", old == null ? "apps" : old.getString("rail"), old == null ? "business" : old.getString("category"),
-                    old == null ? 100 : old.getIntValue("sort"), entry, entryAccess, null, null, declaration, settings.json());
+                    old == null ? 100 : old.getIntValue("sort"), entry, entryAccess, null, null, declaration, settings.json(), allowStandalone);
                 access.declare(require(id), declaration, old == null);
                 if (old == null && body.shared() != null) {
                     grants.share(id, Boolean.TRUE.equals(body.shared()));

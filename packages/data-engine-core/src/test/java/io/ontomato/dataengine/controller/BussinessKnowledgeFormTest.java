@@ -124,6 +124,10 @@ class BussinessKnowledgeFormTest {
 		assertEquals("integer", status.getJSONObject("valueSchema").getString("type"));
 
 		assertEquals("hidden", field(form, "/knowledgeID").getJSONObject("control").getString("kind"));
+		for (Object rawField : form.getJSONArray("fields")) {
+			assertFalse(((JSONObject) rawField).containsKey("defaultValue"),
+					"CRUD fields should not declare defaultValue (which adds a Reset-to-default control)");
+		}
 	}
 
 	@Test

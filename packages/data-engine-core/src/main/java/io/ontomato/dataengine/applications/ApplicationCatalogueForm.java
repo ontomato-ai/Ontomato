@@ -34,7 +34,8 @@ final class ApplicationCatalogueForm {
         objectSchema(JSONObject.of("kind", JSONObject.of("const", "id"), "id", STRING), List.of("kind", "id")),
         objectSchema(JSONObject.of("kind", JSONObject.of("const", "preset"), "agentKind", STRING), List.of("kind", "agentKind"))));
     private static final JSONObject IDENTITY_SCHEMA = objectSchema(JSONObject.of(
-        "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING), List.of("names", "descriptions", "icon"));
+        "names", STRING_MAP, "descriptions", STRING_MAP, "icon", STRING, "allowStandalone", BOOLEAN),
+        List.of("names", "descriptions", "icon"));
     private static final JSONObject GROUPS_SCHEMA = PanelFormFields.arraySchema(objectSchema(
         JSONObject.of("key", STRING, "names", STRING_MAP, "sort", INTEGER), List.of("key", "names", "sort")));
     private static final JSONObject PERMISSIONS_SCHEMA = PanelFormFields.arraySchema(objectSchema(
@@ -70,8 +71,11 @@ final class ApplicationCatalogueForm {
 
     JSONObject identity(JSONObject app, JSONObject draft) {
         var values = draft == null ? JSONObject.of("names", app.getJSONObject("names"),
-            "descriptions", app.getJSONObject("descriptions"), "icon", app.getString("icon")) : draft;
-        return describe(identityFields(), values, draft == null ? List.of() : identityErrors(draft),
+            "descriptions", app.getJSONObject("descriptions"), "icon", app.getString("icon"),
+            "allowStandalone", ApplicationCatalog.allowsStandalone(app)) : draft;
+        var fields = identityFields();
+        fields.add(allowStandaloneField());
+        return describe(fields, values, draft == null ? List.of() : identityErrors(draft),
             APPLICATIONS + app.getString("id") + "/identity", "saveIdentity", IDENTITY_SCHEMA);
     }
 
@@ -128,6 +132,7 @@ final class ApplicationCatalogueForm {
             "declaration", JSONObject.of("names", new JSONObject(), "descriptions", new JSONObject(),
                 "icon", "pages", "groups", List.of(), "permissions", List.of()),
             "shared", false,
+            "allowStandalone", true,
             "entry", JSONObject.of("path", ApplicationCatalog.assignedPanelRoot(id), "renderer", "panels"),
             "entryAccess", List.of(DOMAIN_MEMBER), "panelUses", List.of()) : draft;
         var permissions = values.get("declaration") instanceof Map<?, ?> declaration ? declaration.get("permissions") : null;
@@ -141,8 +146,13 @@ final class ApplicationCatalogueForm {
             PanelFormFields.option(false, copy.getString("initialGrant.private")),
             PanelFormFields.option(true, copy.getString("initialGrant.domain")))),
             BOOLEAN, false, "initialGrant.help"));
+        fields.add(allowStandaloneField());
         return describe(fields, values, draft == null ? List.of() : entryErrors(id, draft, null, conflicts),
             APPLICATIONS + id + "/panel-uses?create=true", "create", registrationSchema(true));
+    }
+
+    private JSONObject allowStandaloneField() {
+        return field("/allowStandalone", "allowStandalone", PanelFormFields.switchControl(), BOOLEAN, false, "allowStandalone.help");
     }
 
     private JSONArray identityFields() {
@@ -256,7 +266,7 @@ final class ApplicationCatalogueForm {
     private static JSONObject registrationSchema(boolean create) {
         var props = JSONObject.of("entry", ENTRY_SCHEMA, "panelUses", PanelFormFields.arraySchema(USE_SCHEMA),
             "entryAccess", STRING_ARRAY, "declaration", DECLARATION_SCHEMA,
-            "framePanelId", STRING, "theme", OBJECT, "delivery", OBJECT);
+            "framePanelId", STRING, "theme", OBJECT, "delivery", OBJECT, "allowStandalone", BOOLEAN);
         if (create) props.put("shared", BOOLEAN);
         return objectSchema(props,
             create ? List.of("entry", "panelUses", "entryAccess", "declaration") : List.of("entry", "panelUses"));
@@ -275,7 +285,15 @@ final class ApplicationCatalogueForm {
     static List<ObjectNode> identityErrors(JSONObject values) {
         var errors = new PanelFormErrors();
         validateIdentity(values, "", errors);
+        validateAllowStandalone(values, errors);
         return errors.list();
+    }
+
+    private static void validateAllowStandalone(JSONObject values, PanelFormErrors errors) {
+        if (values.containsKey("allowStandalone") && values.get("allowStandalone") != null
+                && !(values.get("allowStandalone") instanceof Boolean)) {
+            errors.invalidOption("/allowStandalone", "Expected a boolean value");
+        }
     }
 
     private static void validateIdentity(JSONObject values, String prefix, PanelFormErrors errors) {
@@ -325,6 +343,7 @@ final class ApplicationCatalogueForm {
                     || !(DOMAIN_MEMBER.equals(code) || ApplicationCatalog.ownsPermissionCode(id, code)))
                 errors.invalidOption("/entryAccess", "Use domain-member or one permission of this application");
         }
+        validateAllowStandalone(values, errors);
         validateUses(id, values, root, declaration, existing == null, conflicts, errors);
         return errors.list();
     }

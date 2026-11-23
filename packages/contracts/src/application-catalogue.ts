@@ -14,6 +14,7 @@ const summary = applicationMetadataSchema.pick({ names: true, descriptions: true
   canEditEntries: z.boolean(),
   canGrant: z.boolean(),
   entryCount: z.number().int().nonnegative(),
+  allowStandalone: z.boolean().optional(),
   updatedAt: z.string().optional(),
   ownerName: z.string().optional(),
 });
@@ -50,10 +51,12 @@ export const applicationCatalogueFormRequestSchema = panelFormRequestSchema.exte
 });
 export type ApplicationCatalogueFormRequest = z.infer<typeof applicationCatalogueFormRequestSchema>;
 
-export const applicationIdentityUpdateSchema = applicationMetadataSchema.pick({ names: true, descriptions: true, icon: true });
+export const applicationIdentityUpdateSchema = applicationMetadataSchema.pick({ names: true, descriptions: true, icon: true }).extend({
+  allowStandalone: z.boolean().optional(),
+});
 export const applicationCatalogueCreateSchema = registerApplicationPanelUsesRequestSchema.required({
   declaration: true, entryAccess: true,
 });
 export const applicationEntriesUpdateSchema = registerApplicationPanelUsesRequestSchema.omit({
-  declaration: true, entryAccess: true,
+  declaration: true, entryAccess: true, allowStandalone: true,
 });

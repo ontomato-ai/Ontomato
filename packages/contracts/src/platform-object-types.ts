@@ -32,6 +32,11 @@ export const WORKFLOW = "platform:Workflow";
 export const TRIGGER = "platform:Trigger";
 export const DEFINITION = "platform:Definition";
 export const ROLE = "platform:Role";
+export const PERMISSION_POLICY = "platform:PermissionPolicy";
+export const ORG_UNIT = "platform:OrgUnit";
+export const ORG_MEMBERSHIP = "platform:OrgMembership";
+export const ORG_POSITION = "platform:OrgPosition";
+export const ORG_GRANT = "platform:OrgGrant";
 export const SDK_COMPONENT = "platform:SDKComponent";
 export const PRODUCT_PROJECTION = "platform:ProductProjection";
 export const PRODUCT_PANEL = "platform:ProductPanel";
@@ -90,6 +95,24 @@ export const DELETE_OBJECT_TYPE = "objectTypes.delete";
 export const DELETE_ATTRIBUTE = "attributes.delete";
 export const DELETE_RELATIONSHIP = "relationships.delete";
 export const SET_PRIMARY_KEY = "attributes.setPrimaryKey";
+export const REMOVE_USER = "users.remove";
+export const ADD_USER_MEMBER = "users.addMember";
+export const REVOKE_USER_API_KEY = "users.revokeApiKey";
+export const DELETE_ROLE = "roles.delete";
+export const DELETE_PERMISSION_POLICY = "permissionPolicies.delete";
+export const SAVE_POLICY_MENU_PERMISSIONS = "permissionPolicies.saveMenuPermissions";
+export const SAVE_POLICY_API_PERMISSIONS = "permissionPolicies.saveApiPermissions";
+export const REFRESH_POLICY_API_CATALOG = "permissionPolicies.refreshApiCatalog";
+export const SAVE_POLICY_DATA_PERMISSIONS = "permissionPolicies.saveDataPermissions";
+export const DELETE_ORG_UNIT = "orgUnits.delete";
+export const ADD_ORG_UNIT_MEMBER = "orgUnits.addMember";
+export const SET_ORG_MEMBERSHIP_LOCKED = "orgMemberships.setLocked";
+export const REMOVE_ORG_MEMBERSHIP = "orgMemberships.remove";
+export const DELETE_ORG_POSITION = "orgPositions.delete";
+export const DELETE_ORG_GRANT = "orgGrants.delete";
+const governancePageQuery = {
+  query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },
+} as const;
 const referenceReads = {
   options: { source: "type", parameterMode: "fixed", params: {}, result: "panelOptionList" },
   resolve: { source: "type", parameterMode: "fixed", params: { values: "optionValues" }, requiredParams: ["values"], result: "panelOptionList" },
@@ -275,14 +298,80 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       ...referenceReads,
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
+      ...governancePageQuery,
+      record: modelReads.record,
+      form: modelReads.form,
+      effectivePermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      lookupAccount: {
+        source: "type", parameterMode: "fixed", params: { keyword: "keyword" }, requiredParams: ["keyword"], result: "panelOptionList",
+      },
     },
+    operations: [`${USER}.save`, REMOVE_USER, ADD_USER_MEMBER, REVOKE_USER_API_KEY],
   },
   [ROLE]: {
     ...describeType("role", "governance"),
     reads: {
       ...referenceReads,
       options: { source: "type", parameterMode: "fixed", params: { keyword: "keyword", page: "page" }, result: "panelOptionList" },
+      ...governancePageQuery,
+      ...modelReads,
     },
+    operations: [`${ROLE}.save`, DELETE_ROLE],
+  },
+  [PERMISSION_POLICY]: {
+    ...describeType("permissionPolicy"),
+    reads: {
+      ...referenceReads,
+      ...governancePageQuery,
+      ...modelReads,
+      menuPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      apiPermissions: { source: "object", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecord" },
+      dataPermissions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+    },
+    operations: [
+      `${PERMISSION_POLICY}.save`, DELETE_PERMISSION_POLICY,
+      SAVE_POLICY_MENU_PERMISSIONS, SAVE_POLICY_API_PERMISSIONS, REFRESH_POLICY_API_CATALOG, SAVE_POLICY_DATA_PERMISSIONS,
+    ],
+  },
+  [ORG_UNIT]: {
+    ...describeType("orgUnit"),
+    reads: {
+      ...metadataList,
+      ...referenceReads,
+      record: modelReads.record,
+      form: modelReads.form,
+      createForm: {
+        source: "type", parameterMode: "fixed", params: { ...definitionFormParams, parentId: "keyword" }, result: "panelFormDescription",
+      },
+      members: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      memberCandidates: { source: "object", parameterMode: "fixed", params: { keyword: "keyword" }, result: "panelOptionList" },
+      positions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      grants: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      inheritedGrants: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+    },
+    operations: [`${ORG_UNIT}.save`, DELETE_ORG_UNIT, ADD_ORG_UNIT_MEMBER],
+  },
+  [ORG_MEMBERSHIP]: {
+    ...describeType("orgMembership"),
+    reads: { record: modelReads.record },
+    operations: [SET_ORG_MEMBERSHIP_LOCKED, REMOVE_ORG_MEMBERSHIP],
+  },
+  [ORG_POSITION]: {
+    ...describeType("orgPosition"),
+    reads: {
+      record: modelReads.record,
+      form: modelReads.form,
+      createForm: {
+        source: "type", parameterMode: "fixed", params: { ...definitionFormParams, orgId: "keyword" },
+        requiredParams: ["orgId"], result: "panelFormDescription",
+      },
+    },
+    operations: [`${ORG_POSITION}.save`, DELETE_ORG_POSITION],
+  },
+  [ORG_GRANT]: {
+    ...describeType("orgGrant"),
+    reads: { record: modelReads.record, form: modelReads.form },
+    operations: [`${ORG_GRANT}.save`, DELETE_ORG_GRANT],
   },
   [SDK_COMPONENT]: {
     ...describeType("sdkComponent", "product"),

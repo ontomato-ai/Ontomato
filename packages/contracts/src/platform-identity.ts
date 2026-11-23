@@ -18,6 +18,7 @@ export const builtinApplicationSchema = z.object({
   entry: z.object({ path: z.string(), renderer: z.string(), home: z.string().optional() }),
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), declaration: applicationDeclarationSchema,
   framePanelId: z.string().min(1).optional(),
+  allowStandalone: z.boolean().optional(),
 });
 export type BuiltinApplication = z.infer<typeof builtinApplicationSchema>;
 export const applicationCatalogSchema = z.array(z.object({
@@ -27,8 +28,14 @@ export const applicationCatalogSchema = z.array(z.object({
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),
   panelUses: z.array(applicationPanelUseSchema).optional(),
   framePanelId: z.string().min(1).optional(),
+  allowStandalone: z.boolean().optional(),
 }));
 export type CatalogApplication = z.infer<typeof applicationCatalogSchema>[number];
+
+/** Whether an application permits opening in standalone mode (`standalone=1`); defaults to enabled when omitted. */
+export function allowsStandalone(app: { allowStandalone?: boolean } | null | undefined): boolean {
+  return app?.allowStandalone !== false;
+}
 
 /** The platform entry, which resolves a panel application to its first available use. */
 export function applicationRootPath(applicationId: string): string {

@@ -162,6 +162,7 @@ const labels = computed(() => ({
   theme: { light: t("platform.themeLight"), dark: t("platform.themeDark") },
   signOut: t("platform.signOut"),
   opensInNewTab: t("platform.openInNewTab"),
+  openStandalone: t("platform.openStandalone"),
   pages: t("platform.pages"),
   save: t("platform.save"),
   discard: t("platform.discard"),

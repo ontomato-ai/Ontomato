@@ -232,8 +232,10 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  /** Emitted when the single viewing selection changes. */
+  /** Emitted when the single viewing selection changes (including automatic fallback). */
   "update:selected": [value: ObjectListSelection | null];
+  /** Emitted only when the reader explicitly clicks or activates a row/card to select it. */
+  choose: [value: ObjectListSelection | null];
   /** Emitted when the explicit multi-selection set changes. */
   "update:checked": [value: readonly ObjectListRef[]];
   /**
@@ -839,12 +841,17 @@ const showFooter = computed(
   () => showFooterTotal.value || showPageControls.value || showCursorPageControls.value || showLoadMore.value,
 );
 
+const showCheckRow = computed(
+  () => canCheck && !isTable.value && (rows.value.length > 0 || checkedRefs.value.length > 0),
+);
+
 const showToolbar = computed(
   () =>
     canSearch.value
     || Boolean(slots.filters)
     || Boolean(slots["toolbar-actions"])
-    || (canCheck && (!isTable.value || checkedRefs.value.length > 0)),
+    || showCheckRow.value
+    || (canCheck && checkedRefs.value.length > 0),
 );
 
 function hasRenderableVNodes(vnodes: readonly VNode[]): boolean {
@@ -1410,6 +1417,7 @@ function choose(row: PlatformObjectRecord) {
     ? null
     : rowSelectionValue(row);
   setSelected(next);
+  emit("choose", next);
 }
 
 function focusRowByIdentity(identity: string, mode: "table" | "cards" | "list") {
@@ -1593,7 +1601,7 @@ watch(someVisibleChecked, () => {
       <div v-if="$slots.filters" class="sdk-object-list-filters">
         <slot name="filters"></slot>
       </div>
-      <div v-if="canCheck && !isTable" class="sdk-object-list-check-row">
+      <div v-if="showCheckRow" class="sdk-object-list-check-row">
         <label class="sdk-object-list-select-all" :class="{ disabled: !rows.length }">
           <input
             :ref="selectAllCheckboxRef"

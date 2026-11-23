@@ -602,6 +602,8 @@ export const registerApplicationPanelUsesRequestSchema = z.object({
   entryAccess: z.array(id).min(1).optional(),
   /** Optional initial domain sharing intent when creating an application. */
   shared: z.boolean().optional(),
+  /** Whether the application allows standalone open (`standalone=1`) and exposes an external link; defaults to true. */
+  allowStandalone: z.boolean().optional(),
   ...applicationEntrySettings,
 }).strict();
 export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplicationPanelUsesRequestSchema>;
@@ -618,6 +620,7 @@ export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesRe
 export const applicationPanelUsesManagementSchema = applicationPanelUsesResponseSchema.extend({
   declaration: applicationMetadataSchema,
   entryAccess: z.array(id).min(1),
+  allowStandalone: z.boolean().optional(),
   ...applicationEntrySettings,
 });
 export type ApplicationPanelUsesManagement = z.infer<typeof applicationPanelUsesManagementSchema>;
