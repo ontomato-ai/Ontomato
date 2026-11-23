@@ -3,7 +3,7 @@ import {before,test} from "node:test";
 import {createServer} from "node:http";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {mkdtemp,readFile,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
