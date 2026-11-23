@@ -1,10 +1,16 @@
 import { computed, ref, shallowRef, type ComputedRef, type Ref, type ShallowRef } from "vue";
+import type { PageActionConfirmedDispatchResult, PendingPageActionConfirmation } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { slotInputState, type PanelContext, type ProjectionSlot } from "../panel/context";
-import type { PanelWriteResult } from "../panel/instance";
+import {
+  PanelConfirmationDeferred,
+  PanelOperationDeferred,
+  summarizeDispatchResponse,
+  type PanelWriteResult,
+} from "../panel/instance";
 import type { PanelMemberContext } from "../panel/member";
 import { readOperationInput } from "../panel/read-operation-input";
 import { stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
@@ -290,38 +296,117 @@ export function useOperationRunner(options: {
         return;
       }
 
+      const applyWriteAnswer = (
+        answer: { decision: "confirm" | "cancel"; response?: PanelHumanOperationDispatchResponse; named: PanelWriteResult["named"] },
+      ) => {
+        if (answer.decision === "cancel" || !answer.response) return undefined;
+        named.value = answer.named;
+        if (
+          targetInfo.checkedState !== null
+          && answer.response.kind === "dispatched"
+          && answer.response.outcome?.kind === "batch"
+        ) {
+          const changed = new Set(
+            answer.response.outcome.items
+              .filter(({ outcome: itemOutcome }) => itemOutcome.kind === "success")
+              .map(({ target: done }) => JSON.stringify([done.objectType, done.primaryKey])),
+          );
+          panel.instance.state.set(
+            targetInfo.checkedState,
+            targetInfo.checkedObjects.filter(({ className, primaryKey }) =>
+              !changed.has(JSON.stringify([className, primaryKey]))),
+          );
+        }
+        const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
+        if (answered?.kind === "success") panel.notify({ kind: "success", text: said(answered) });
+        else receipt.value = answer.response;
+        if (answered) options.onDone?.(operationName, answered);
+        return answered;
+      };
+
+      const capturedTargetSig = JSON.stringify(targetInfo.target ?? null);
+      const capturedCheckedSig = JSON.stringify(targetInfo.checkedTargets);
       const onConfirmed = () => {
         dispatchingOperation.value = operationName;
       };
       const [first, ...rest] = targetInfo.checkedTargets.map((object) => ({ target: object, input: effectiveInput }));
-      const answer = await panel.instance.writeOperation(
-        operationId,
-        first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: effectiveInput } },
-        { onConfirmed },
-      );
-      if (answer.decision === "cancel") return;
-      named.value = answer.named;
-      if (
-        targetInfo.checkedState !== null
-        && answer.response.kind === "dispatched"
-        && answer.response.outcome?.kind === "batch"
-      ) {
-        const changed = new Set(
-          answer.response.outcome.items
-            .filter(({ outcome: itemOutcome }) => itemOutcome.kind === "success")
-            .map(({ target: done }) => JSON.stringify([done.objectType, done.primaryKey])),
+      let answer: PanelWriteResult;
+      try {
+        answer = await panel.instance.writeOperation(
+          operationId,
+          first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: effectiveInput } },
+          { onConfirmed },
         );
-        panel.instance.state.set(
-          targetInfo.checkedState,
-          targetInfo.checkedObjects.filter(({ className, primaryKey }) =>
-            !changed.has(JSON.stringify([className, primaryKey]))),
-        );
+      } catch (reason) {
+        if (reason instanceof PanelOperationDeferred) {
+          const deferred = reason;
+          const { preparation } = deferred;
+          const isStillValid = () => {
+            const currentInfo = resolveOperationTarget(panel, slot, member, descriptor, panel.instance.state.values.value);
+            if (JSON.stringify(currentInfo.target ?? null) !== capturedTargetSig) {
+              return { ok: false as const, reason: "stale", message: "The selected target changed after confirmation was requested." };
+            }
+            if (JSON.stringify(currentInfo.checkedTargets) !== capturedCheckedSig) {
+              return { ok: false as const, reason: "stale", message: "The checked batch selection changed after confirmation was requested." };
+            }
+            if (!isOperationReady(descriptor, currentInfo, running.value)) {
+              return { ok: false as const, reason: "stale", message: "This operation is no longer available." };
+            }
+            return { ok: true as const };
+          };
+          const confirmation: PendingPageActionConfirmation = {
+            intentId: preparation.intentId,
+            questionId: preparation.questionId!,
+            operationId: preparation.operationId,
+            label: preparation.label,
+            isStillValid,
+            async dispatch(): Promise<PageActionConfirmedDispatchResult> {
+              const check = isStillValid();
+              if (!check.ok) {
+                await deferred.cancelNow({ code: "ACTION_CONFIRMATION_STALE", message: check.message }).catch(() => undefined);
+                return { ok: false, intentId: preparation.intentId, reason: "stale", message: check.message };
+              }
+              runningOperation.value = operationName;
+              dispatchingOperation.value = operationName;
+              failure.value = null;
+              receipt.value = null;
+              try {
+                const confirmed = await deferred.dispatchNow();
+                if (confirmed.decision !== "confirm") {
+                  return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "Operation was cancelled." };
+                }
+                applyWriteAnswer({ ...confirmed, named: deferred.named });
+                if (confirmed.response.kind === "not-dispatched") {
+                  return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
+                }
+                return {
+                  ok: true,
+                  intentId: preparation.intentId,
+                  outcome: confirmed.response.outcome,
+                  summary: summarizeDispatchResponse(confirmed.response),
+                };
+              } catch (dispatchReason) {
+                failure.value = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
+                return {
+                  ok: false,
+                  intentId: preparation.intentId,
+                  reason: "failed",
+                  message: failure.value.message,
+                };
+              } finally {
+                runningOperation.value = null;
+                dispatchingOperation.value = null;
+              }
+            },
+            cancel: deferred.cancelNow,
+          };
+          throw new PanelConfirmationDeferred(confirmation);
+        }
+        throw reason;
       }
-      const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
-      if (answered?.kind === "success") panel.notify({ kind: "success", text: said(answered) });
-      else receipt.value = answer.response;
-      if (answered) options.onDone?.(operationName, answered);
+      applyWriteAnswer(answer);
     } catch (reason) {
+      if (reason instanceof PanelConfirmationDeferred) throw reason;
       failure.value = reason instanceof Error ? reason : new Error(String(reason));
     } finally {
       runningOperation.value = null;

@@ -1,5 +1,13 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { displayLoadSchema, PANEL_LOAD_ERROR_CODES, type DisplayLoad } from "@ontomato/contracts/agent-presentation";
+import {
+  displayLoadSchema,
+  PANEL_LOAD_ERROR_CODES,
+  type DisplayLoad,
+  type FormFillOutcome,
+  type FormFillRequestInput,
+  type PageActionOutcome,
+  type PageActionRequestInput,
+} from "@ontomato/contracts/agent-presentation";
 import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
 import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
@@ -197,6 +205,8 @@ export interface DirectPanelMount {
   /** Whether its reads may run: not while its page is out of the reader's view. */
   activate(active: boolean): void;
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
+  fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
+  executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
   dispose(): void;
 }
 
@@ -263,6 +273,10 @@ export interface PanelInstanceView {
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
   /** Applies a live patch to any declared public state fields in place (no reload, no business writes). */
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
+  /** Fills explicit fields on a mounted live form through the form's own editing entry. */
+  fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
+  /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
+  executeAction(request: PageActionRequestInput): Promise<PageActionOutcome>;
   /** Delivers an updated address (e.g. a draft link with explicit overwrite confirmation) to the running instance. */
   applyAddress(url: string, options?: { overwriteUnsavedDraft?: boolean }): void;
   /** The frame's content window, once it exists. */
@@ -1086,6 +1100,29 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     },
     admitted,
     applyState,
+    fillForm(request) {
+      if (!direct.value?.mount.fillForm) {
+        return Promise.resolve({
+          ok: false,
+          reason: "form_not_ready",
+          ...(request.member ? { member: request.member } : {}),
+          ...(request.memberPath ? { memberPath: request.memberPath } : {}),
+          message: "The panel is not mounted and ready for form filling.",
+        });
+      }
+      return direct.value.mount.fillForm(request);
+    },
+    executeAction(request) {
+      if (!direct.value?.mount.executeAction) {
+        return Promise.resolve({
+          ok: false,
+          reason: "action_not_ready",
+          operation: request.operation,
+          message: "The panel is not mounted and ready for actions.",
+        });
+      }
+      return direct.value.mount.executeAction(request);
+    },
     applyAddress: tellAddress,
     invoke(id, input) {
       if (direct.value) return direct.value.mount.invoke(id, input);

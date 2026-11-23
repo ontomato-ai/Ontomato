@@ -281,7 +281,9 @@ export const assistantService = {
   async prepare(body: AgentPrepareRequest, owner: AssistantOwner, credentials: AssistantCredentials): Promise<RuntimeStartRunRequest> {
     const { sessionId, runId: id, input, authority } = body;
     const { agent: a } = await this.admitAgent(body.agent.agentId,owner,credentials,authority);
-    const executionUserId = isAppBuilderKind(a.kind) ? null : a.execution_user_id;
+    // When a logged-in user is present (direct chat or delegated sub-agent under a user chat),
+    // both reads and writes inherit that user's permissions. `execution_user_id` is only for unattended automation.
+    const executionUserId = isAppBuilderKind(a.kind) || body.userRecipient != null ? null : a.execution_user_id;
     const executionCredentials = await agentExecutionCredentials(a.id, executionUserId, owner, credentials);
     const context = isAppBuilderKind(a.kind) ? z.object({ workspaceId: z.string().uuid(), variables: z.record(z.unknown()).optional() }).strict().safeParse(body.context) : null;
     if (context && !context.success) throw new HttpError(400,"App builder requires context.workspaceId containing an owned workspace UUID","CONTEXT_REQUIRED");
