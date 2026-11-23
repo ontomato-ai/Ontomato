@@ -12,7 +12,6 @@ const components = new Map<string, { source: DomainComponentRuntime["source"]; c
 
 const officialLoaders: Readonly<Record<ComponentOfficialSpecifier, () => Promise<Readonly<Record<string, unknown>>> | Readonly<Record<string, unknown>>>> = {
   vue: () => Vue as unknown as Record<string, unknown>,
-  echarts: () => import("@ontomato/apps-sdk/echarts") as Promise<Record<string, unknown>>,
   "@ontomato/sdk": () => import("@ontomato/apps-sdk/sdk") as Promise<Record<string, unknown>>,
   [SDK_UI_ENTRY_SPECIFIER]: () => import("@ontomato/apps-sdk/ui") as Promise<Record<string, unknown>>,
   "@ontomato/sdk/panel": () => ({

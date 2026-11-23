@@ -144,12 +144,20 @@ const conversation = useAgentConversation(
 if (sessionStream) {
   onBeforeUnmount(
     sessionStream.attach({
-      present: async (frame) =>
-        !documentVisible()
+      present: async (frame) => {
+        if (frame.target.kind === "observe") {
+          return !documentVisible()
+            ? { status: "observed", reason: "view_unavailable", current: display.snapshot() }
+            : frame.sessionId === conversation.state.sessionId
+              ? display.present(frame)
+              : { status: "observed", reason: "not_viewing_session", current: display.snapshot() };
+        }
+        return !documentVisible()
           ? { status: "not_opened", reason: "view_unavailable", current: display.snapshot() }
           : frame.sessionId === conversation.state.sessionId
             ? display.present(frame)
-            : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() },
+            : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() };
+      },
       objectChanged: ({ session, target, affected }) => {
         if (session.sessionId === conversation.state.sessionId) display.refreshObjects(affected ? { target, affected } : { target });
       },
@@ -210,8 +218,28 @@ provide(shellContextKey, {
     if (conversation.sending.value) throw new Error(props.labels.working);
     await send(message);
   },
-  questions: conversationQuestions(conversation),
+  questions: (() => {
+    const base = conversationQuestions(conversation);
+    return {
+      ...base,
+      async answer(requestId, answer, selectedOption) {
+        await pendingFormEditFlush;
+        return base.answer(requestId, answer, selectedOption);
+      },
+    };
+  })(),
 });
+
+/** Tracks in-flight form-edited notifications so answering a pending confirmation waits for invalidation to land. */
+let pendingFormEditFlush: Promise<void> = Promise.resolve();
+onBeforeUnmount(
+  display.onFormEdited((target) => {
+    const id = conversation.state.sessionId;
+    if (!id || !props.panelOperations?.notifyFormEdited) return;
+    const notify = props.panelOperations.notifyFormEdited(id, target).catch(() => undefined);
+    pendingFormEditFlush = pendingFormEditFlush.then(() => notify);
+  }),
+);
 
 /**
  * The open conversation's choice whether agents ask before a panel operation, once the host told it; null for a new
@@ -375,6 +403,8 @@ const linePrompts = () => ({
   pageAddress: props.labels.pageContextAddress,
   selection: props.labels.selectionContext,
   highlight: props.labels.highlightContext,
+  state: props.labels.stateContext,
+  forms: props.labels.formsContext,
 });
 /**
  * What a reopened conversation already carries, read when the shell first sends in it: its history shows the line each

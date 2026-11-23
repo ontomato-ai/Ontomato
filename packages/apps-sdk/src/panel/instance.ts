@@ -1,7 +1,7 @@
 import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, reactive, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
-import type { PageContext, PageHighlight } from "@ontomato/contracts/page-context";
+import type { PageContext, PageFormSnapshot, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
   type PanelStateValue,
@@ -20,7 +20,7 @@ import { handlerFor } from "./handlers";
 import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelOperationBinding } from "./types";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
-import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
+import type { PanelHumanOperationPreparation, PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelReadCall, PanelWriteInvocation } from "./human-operations";
 
@@ -188,6 +188,11 @@ export interface PanelInstance {
   reportHighlight(member: string, highlight: Readonly<Ref<PageHighlight | null>>): () => void;
   /** The state an address or an open request may carry, for this instance. */
   deepLink(): Record<string, PanelDeepLinkStateValue>;
+  /** All declared public state fields with their current values. */
+  publicState(): Record<string, RuntimeJsonValue>;
+  /** Notifies the host that the user manually edited an unsaved form, invalidating pending agent save confirmations. */
+  notifyFormEdited(target: PanelFormEditedTarget): void;
+  onFormEdited(listener: (target: PanelFormEditedTarget) => void): () => void;
 }
 
 /**
@@ -208,6 +213,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const state = createPanelState(manifest, options.initial);
   const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
   const settledListeners = new Set<(link: PageDraftLink) => void>();
+  const formEditedListeners = new Set<(target: PanelFormEditedTarget) => void>();
   const objectChanged = (object: PanelObjectIdentity | null) => {
     for (const listener of objectListeners) listener(object);
   };
@@ -286,6 +292,13 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const names = shallowReactive(new Map<string, string>());
   const highlights = shallowReactive(new Map<string, Readonly<Ref<PageHighlight | null>>>());
   const translate = options.translate ?? ((key: string) => key);
+  function publicState(): Record<string, RuntimeJsonValue> {
+    const result: Record<string, RuntimeJsonValue> = {};
+    for (const name of Object.keys(manifest.state)) {
+      result[name] = (state.values.value[name] ?? null) as RuntimeJsonValue;
+    }
+    return result;
+  }
   const pageContext = computed<PageContext>(() => {
     const reportedHighlights = [
       ...[...highlights.values()].flatMap((entry) => {
@@ -294,6 +307,11 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
         return [prefix.length ? { ...value, memberPath: prefix as PublisherPath } : value];
       }),
       ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.highlights ?? []),
+    ];
+    const currentPublicState = publicState();
+    const reportedForms: PageFormSnapshot[] = [
+      ...forms.snapshots().map((form) => (prefix.length ? { ...form, memberPath: prefix as PublisherPath } : form)),
+      ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.forms ?? []),
     ];
     return {
       pageKey: options.pageKey,
@@ -306,6 +324,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
         ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.selection ?? []),
       ],
       ...(reportedHighlights.length ? { highlights: reportedHighlights } : {}),
+      ...(Object.keys(currentPublicState).length ? { state: currentPublicState } : {}),
+      ...(reportedForms.length ? { forms: reportedForms } : {}),
     };
   });
   return {
@@ -433,6 +453,14 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       };
     },
     deepLink: () => state.deepLinkable(),
+    publicState,
+    notifyFormEdited(target) {
+      for (const listener of formEditedListeners) listener(target);
+    },
+    onFormEdited(listener) {
+      formEditedListeners.add(listener);
+      return () => formEditedListeners.delete(listener);
+    },
   };
 }
 

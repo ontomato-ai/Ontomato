@@ -1,11 +1,19 @@
 import { computed, type ComputedRef } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
-import type { PanelFieldTone, PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
+import type {
+  PanelDisplayValueMap,
+  PanelDisplayValueMapEntry,
+  PanelFieldTone,
+  PanelRecordFieldValue,
+} from "@ontomato/contracts/panel-projection";
+import { hasAppIcon } from "@ontomato/platform-shell";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import type { MemberDataState } from "../panel/direct";
 import { readerDataState, type PanelMemberContext } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
+import type { PanelText } from "../panel/text";
+import { resolveLocalizedText } from "./localized-text";
 import { isRecordReference } from "./record-field";
 
 /** Supported display modes for `TypedValue` and `RecordTemplate` field formatting. */
@@ -39,6 +47,20 @@ export interface TypedNumberFormat {
   readonly useGrouping?: boolean;
 }
 
+/** Pure presentation mapping for one exact scalar value (`label`/`labelKey`/`labels`, `tone`, `icon`). */
+export type TypedValueMapEntry = PanelDisplayValueMapEntry;
+
+/** Map from exact scalar string key to pure presentation overrides (no calculation or threshold evaluation). */
+export type TypedValueMap = PanelDisplayValueMap;
+
+/** Resolved presentation overrides returned by `resolveValueMapEntry` when an exact raw value matches `valueMap`. */
+export interface ResolvedValueMapEntry {
+  readonly matchedKey: string;
+  readonly label: string | null;
+  readonly tone?: PanelFieldTone;
+  readonly icon?: string;
+}
+
 /** Per-field formatting options accepted by `RecordTemplate`'s `fieldFormats` prop. */
 export interface TypedFieldFormat {
   /** Explicit display kind; defaults to `"auto"`. */
@@ -53,6 +75,8 @@ export interface TypedFieldFormat {
   readonly separator?: string;
   /** Optional list style (`"inline"` or `"tags"`). */
   readonly listStyle?: "inline" | "tags";
+  /** Optional exact raw-value to display label/tone/icon mapping (pure presentation; no threshold expressions). */
+  readonly valueMap?: TypedValueMap;
 }
 
 /** Token produced by `parseTemplateTokens` when splitting a declarative fixed-sentence template string. */
@@ -84,6 +108,57 @@ export function asTone(value: unknown): PanelFieldTone | undefined {
   return typeof value === "string" && VALID_TONES.has(value as PanelFieldTone)
     ? (value as PanelFieldTone)
     : undefined;
+}
+
+/**
+ * Converts a scalar runtime value into an exact lookup key for `valueMap` / `toneMap`.
+ * Pure exact matching only: strings stay exact, finite numbers stringify in base-10, booleans become `"true"`/`"false"`.
+ * Objects, arrays, `null`, and `undefined` never match; no range, threshold, or expression comparisons are ever performed.
+ */
+export function exactValueMapKey(raw: unknown): string | null {
+  const unwrapped = unwrapJsonField(raw);
+  if (typeof unwrapped === "string") return unwrapped;
+  if (typeof unwrapped === "boolean") return unwrapped ? "true" : "false";
+  if (typeof unwrapped === "number" && Number.isFinite(unwrapped)) return String(unwrapped);
+  return null;
+}
+
+/**
+ * Resolves a pure presentation mapping entry (`label`/`labelKey`/`labels`, `tone`, `icon`) for an exact raw scalar
+ * value. Returns `null` when `valueMap` is omitted or has no own property matching `exactValueMapKey(raw)`.
+ */
+export function resolveValueMapEntry(
+  raw: unknown,
+  valueMap: TypedValueMap | undefined,
+  options: {
+    locale: string;
+    panelText?: PanelText;
+    t?: (key: string) => string;
+    te?: (key: string) => boolean;
+  },
+): ResolvedValueMapEntry | null {
+  if (!valueMap || typeof valueMap !== "object" || Array.isArray(valueMap)) return null;
+  const key = exactValueMapKey(raw);
+  if (key === null || !Object.hasOwn(valueMap, key)) return null;
+  const entry = valueMap[key];
+  if (!entry || typeof entry !== "object") return null;
+  const resolvedLabel = resolveLocalizedText({
+    key: entry.labelKey,
+    map: entry.labels,
+    fallback: entry.label,
+    locale: options.locale,
+    panelText: options.panelText,
+    t: options.t ?? ((k) => k),
+    te: options.te ?? (() => false),
+  });
+  const iconCandidate = typeof entry.icon === "string" ? entry.icon.trim() : "";
+  const icon = iconCandidate && hasAppIcon(iconCandidate) ? iconCandidate : undefined;
+  return {
+    matchedKey: key,
+    label: resolvedLabel.length > 0 ? resolvedLabel : null,
+    tone: asTone(entry.tone),
+    icon,
+  };
 }
 
 /**

@@ -84,7 +84,7 @@ const CHECK_EXPORTS = [
   "BUILTIN_PRODUCT_ID_PREFIX", "builtinProductIdSchema", "domainProductIdSchema", "isBuiltinProductId",
   "builtinApplicationPanelUseSchema", "builtinProductPanelInputSchema", "builtinProductProjectionInputSchema",
   "panelModuleImports", "componentOfficialSpecifiers", "isComponentOfficialSpecifier", "componentModuleImports",
-  "checkAuthoringTemplate", "checkAuthoringScript", "checkAuthoringStyles", "checkAuthoringTheme",
+  "checkAuthoringDirectApiCalls", "checkAuthoringTemplate", "checkAuthoringScript", "checkAuthoringStyles", "checkAuthoringTheme",
   "SDK_UI_COMPONENTS", "SDK_UI_DIRECTIVES", "SDK_THEME_TOKENS", "SDK_RENAMED_EXPORTS", "SDK_UI_ENTRY_SPECIFIER",
   "applicationIconKeys", "domainApplicationIconKeys", "applicationCatalogueRecordSchema", "applicationIdentityUpdateSchema", "draftReadOperationIds",
   "COMPONENT_PACKAGES_PATH", "componentPackageNameSchema",

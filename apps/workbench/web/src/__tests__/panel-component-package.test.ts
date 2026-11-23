@@ -108,3 +108,42 @@ it("gives component packages @ontomato/sdk/ui with untouched primitive identity 
   await expect(packageComponent("@example/ui-pkg:LegacyBtn", async () => uiRelease))
     .rejects.toThrow(/imports 'element-plus'/u);
 });
+
+it("keeps useMemberData/useMemberRead for component packages while removing them from panel entry and blocking bare echarts", async () => {
+  const { packageComponent } = await import("../../../../../packages/apps-sdk/src/panel/component-packages");
+  const panelEntry = await import("../../../../../packages/apps-sdk/src/entries/panel");
+  expect("useMemberData" in panelEntry).toBe(false);
+  expect("useMemberRead" in panelEntry).toBe(false);
+
+  const guardRoot = "/apps-sdk/component-packages/example-guard/1.0.0-ghi/";
+  const guardRelease: ComponentPackageResponse = {
+    name: "@example/guard-pkg", version: "1.0.0", author: "Example", digest: "c".repeat(64), artifactRoot: guardRoot,
+    components: [
+      { componentId: "@example/guard-pkg:MemberReader", module: "@example/guard-pkg/member", exportName: "MemberReader", role: "presentation", meaning: "Reader", data: {}, ports: { props: [], events: [], slots: [] } },
+      { componentId: "@example/guard-pkg:BareEcharts", module: "@example/guard-pkg/echarts", exportName: "BareEcharts", role: "presentation", meaning: "Bare echarts", data: {}, ports: { props: [], events: [], slots: [] } },
+    ] as never,
+    entries: {
+      "@example/guard-pkg/member": "dist/member.mjs",
+      "@example/guard-pkg/echarts": "dist/echarts.mjs",
+    },
+    styles: [],
+  };
+  const pkgFiles: Record<string, string> = {
+    [`${guardRoot}dist/member.mjs`]: 'import { useMemberData, useMemberRead } from "@ontomato/sdk/panel"; export const MemberReader = { useMemberData, useMemberRead };',
+    [`${guardRoot}dist/echarts.mjs`]: 'import * as echarts from "echarts"; export const BareEcharts = echarts;',
+  };
+  vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+    const path = new URL(String(input), location.origin).pathname;
+    return pkgFiles[path] === undefined ? new Response("missing", { status: 404 }) : new Response(pkgFiles[path], { headers: { "content-type": "text/javascript" } });
+  }));
+
+  const loaded = await packageComponent("@example/guard-pkg:MemberReader", async () => guardRelease) as unknown as {
+    useMemberData: unknown;
+    useMemberRead: unknown;
+  };
+  expect(typeof loaded.useMemberData).toBe("function");
+  expect(typeof loaded.useMemberRead).toBe("function");
+
+  await expect(packageComponent("@example/guard-pkg:BareEcharts", async () => guardRelease))
+    .rejects.toThrow(/imports 'echarts'/u);
+});

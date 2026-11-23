@@ -33,6 +33,7 @@ import type {
 import { projectionElement } from "../panel/projection-element";
 import type { ListRowSlotOperation } from "../panel/slot-context";
 import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
+import { resolveValueMapEntry, type ResolvedValueMapEntry } from "./display-value";
 import ListRowSlotHost from "./ListRowSlotHost.vue";
 import ObjectListRowActions, { type ResolvedRowActionItem } from "./ObjectListRowActions.vue";
 import OperationInputDialog from "./OperationInputDialog.vue";
@@ -337,7 +338,7 @@ defineSlots<{
 
 const slots = useSlots();
 
-const { t, locale } = useI18n();
+const { t, te, locale } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const member = useMember();
@@ -1731,6 +1732,41 @@ function cellSegments(row: PlatformObjectRecord, key: string, empty = "—") {
   return textSegmentsFor(row, key, text);
 }
 
+function columnMapped(row: PlatformObjectRecord, column: ObjectListColumn): ResolvedValueMapEntry | null {
+  if (!column.valueMap) return null;
+  return resolveValueMapEntry(rawRecordField(row, column.key), column.valueMap, {
+    locale: locale.value,
+    panelText: panel.t,
+    t,
+    te,
+  });
+}
+
+function columnIsTag(row: PlatformObjectRecord, column: ObjectListColumn): boolean {
+  if (fieldValue(row, column.key) === "") return false;
+  return column.kind === "tag" || Boolean(columnMapped(row, column)?.tone);
+}
+
+function columnTone(row: PlatformObjectRecord, column: ObjectListColumn): string {
+  return columnMapped(row, column)?.tone ?? row.tones?.[column.key] ?? "default";
+}
+
+function columnIconName(row: PlatformObjectRecord, column: ObjectListColumn): string | undefined {
+  const mappedIcon = columnMapped(row, column)?.icon;
+  if (mappedIcon) return mappedIcon;
+  if (column.iconKey) {
+    const rawIcon = fieldValue(row, column.iconKey);
+    if (rawIcon) return rawIcon;
+  }
+  return undefined;
+}
+
+function columnCellSegments(row: PlatformObjectRecord, column: ObjectListColumn) {
+  const mappedLabel = columnMapped(row, column)?.label;
+  if (mappedLabel) return textSegmentsFor(row, column.key, mappedLabel);
+  return cellSegments(row, column.key, columnEmpty(column));
+}
+
 function selectAllCheckboxRef(element: unknown) {
   if (element instanceof HTMLInputElement) element.indeterminate = someVisibleChecked.value;
 }
@@ -2200,22 +2236,31 @@ useMemberOutput("firstItem", () => {
                         <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
                       </span>
                       <span
-                        v-else-if="column.kind === 'tag' && fieldValue(entry.row, column.key) !== ''"
+                        v-else-if="columnIsTag(entry.row, column)"
                         class="sdk-object-list-tag"
-                        :data-tone="entry.row.tones?.[column.key] ?? 'default'"
+                        :data-tone="columnTone(entry.row, column)"
                       >
-                        <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                        <component
+                          :is="appIcon(columnMapped(entry.row, column)!.icon!)"
+                          v-if="columnMapped(entry.row, column)?.icon"
+                          :size="13"
+                          :stroke-width="2"
+                          class="sdk-object-list-tag-icon"
+                          :data-icon="columnMapped(entry.row, column)!.icon"
+                          aria-hidden="true"
+                        />
+                        <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
                           <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                         </template>
                       </span>
                       <template v-else-if="column.kind === 'time'">{{ fieldValue(entry.row, column.key) !== '' ? timeText(fieldValue(entry.row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
-                      <div v-else class="sdk-object-list-cell" :class="{ 'has-icon': Boolean(column.iconKey && fieldValue(entry.row, column.iconKey)) }">
-                        <span v-if="column.iconKey && fieldValue(entry.row, column.iconKey)" class="sdk-object-list-cell-icon" aria-hidden="true">
-                          <component :is="appIcon(fieldValue(entry.row, column.iconKey))" :size="16" :stroke-width="1.75" />
+                      <div v-else class="sdk-object-list-cell" :class="{ 'has-icon': Boolean(columnIconName(entry.row, column)) }">
+                        <span v-if="columnIconName(entry.row, column)" class="sdk-object-list-cell-icon" :data-icon="columnIconName(entry.row, column)" aria-hidden="true">
+                          <component :is="appIcon(columnIconName(entry.row, column)!)" :size="16" :stroke-width="1.75" />
                         </span>
                         <div class="sdk-object-list-cell-text">
                           <span class="sdk-object-list-cell-main">
-                            <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                            <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
                               <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                             </template>
                           </span>
@@ -2252,22 +2297,31 @@ useMemberOutput("firstItem", () => {
                       <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
                     </span>
                     <span
-                      v-else-if="column.kind === 'tag' && fieldValue(entry.row, column.key) !== ''"
+                      v-else-if="columnIsTag(entry.row, column)"
                       class="sdk-object-list-tag"
-                      :data-tone="entry.row.tones?.[column.key] ?? 'default'"
+                      :data-tone="columnTone(entry.row, column)"
                     >
-                      <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                      <component
+                        :is="appIcon(columnMapped(entry.row, column)!.icon!)"
+                        v-if="columnMapped(entry.row, column)?.icon"
+                        :size="13"
+                        :stroke-width="2"
+                        class="sdk-object-list-tag-icon"
+                        :data-icon="columnMapped(entry.row, column)!.icon"
+                        aria-hidden="true"
+                      />
+                      <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
                         <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                       </template>
                     </span>
                     <template v-else-if="column.kind === 'time'">{{ fieldValue(entry.row, column.key) !== '' ? timeText(fieldValue(entry.row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
-                    <div v-else class="sdk-object-list-cell" :class="{ 'has-icon': Boolean(column.iconKey && fieldValue(entry.row, column.iconKey)) }">
-                      <span v-if="column.iconKey && fieldValue(entry.row, column.iconKey)" class="sdk-object-list-cell-icon" aria-hidden="true">
-                        <component :is="appIcon(fieldValue(entry.row, column.iconKey))" :size="16" :stroke-width="1.75" />
+                    <div v-else class="sdk-object-list-cell" :class="{ 'has-icon': Boolean(columnIconName(entry.row, column)) }">
+                      <span v-if="columnIconName(entry.row, column)" class="sdk-object-list-cell-icon" :data-icon="columnIconName(entry.row, column)" aria-hidden="true">
+                        <component :is="appIcon(columnIconName(entry.row, column)!)" :size="16" :stroke-width="1.75" />
                       </span>
                       <div class="sdk-object-list-cell-text">
                         <span class="sdk-object-list-cell-main">
-                          <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                          <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
                             <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                           </template>
                         </span>
@@ -2541,20 +2595,38 @@ useMemberOutput("firstItem", () => {
                       <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
                     </span>
                     <span
-                      v-else-if="column.kind === 'tag' && fieldValue(entry.row, column.key) !== ''"
+                      v-else-if="columnIsTag(entry.row, column)"
                       class="sdk-object-list-tag"
-                      :data-tone="entry.row.tones?.[column.key] ?? 'default'"
+                      :data-tone="columnTone(entry.row, column)"
                     >
-                      <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                      <component
+                        :is="appIcon(columnMapped(entry.row, column)!.icon!)"
+                        v-if="columnMapped(entry.row, column)?.icon"
+                        :size="13"
+                        :stroke-width="2"
+                        class="sdk-object-list-tag-icon"
+                        :data-icon="columnMapped(entry.row, column)!.icon"
+                        aria-hidden="true"
+                      />
+                      <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
                         <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                       </template>
                     </span>
                     <template v-else-if="column.kind === 'time'">{{ fieldValue(entry.row, column.key) !== '' ? timeText(fieldValue(entry.row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
-                    <template v-else>
-                      <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                    <span v-else class="sdk-object-list-card-value">
+                      <component
+                        :is="appIcon(columnMapped(entry.row, column)!.icon!)"
+                        v-if="columnMapped(entry.row, column)?.icon"
+                        :size="13"
+                        :stroke-width="1.85"
+                        class="sdk-object-list-tag-icon"
+                        :data-icon="columnMapped(entry.row, column)!.icon"
+                        aria-hidden="true"
+                      />
+                      <template v-for="(part, index) in columnCellSegments(entry.row, column)" :key="index">
                         <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                       </template>
-                    </template>
+                    </span>
                   </dd>
                 </template>
               </dl>
@@ -3460,14 +3532,24 @@ useMemberOutput("firstItem", () => {
 }
 /* Tags are light fills: neutral, or a status's soft fill with its readable text colour. */
 .sdk-object-list-tag {
+  align-items: center;
   background: var(--ui-fill-tertiary);
   border-radius: var(--radius-xs);
   color: var(--el-text-color-regular);
-  display: inline-block;
+  display: inline-flex;
   font-size: var(--text-xs);
+  gap: 4px;
   line-height: var(--leading-xs);
   padding: 0 var(--spacing-xs);
   white-space: nowrap;
+}
+.sdk-object-list-tag-icon {
+  flex: none;
+}
+.sdk-object-list-card-value {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
 }
 .sdk-object-list-tag[data-tone="info"] {
   background: var(--el-color-info-light-9);

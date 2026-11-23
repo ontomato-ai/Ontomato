@@ -99,6 +99,33 @@ it("says a form has unsaved changes, and asks before discarding them", async () 
   mount.dispose();
 });
 
+it("reports live form contents and unsaved user edits reactively in instance.pageContext.forms", async () => {
+  const { mount, app, element } = open([]);
+  await vi.waitFor(() => expect(element.querySelector('[data-field="/name"] input')).not.toBeNull());
+  await vi.waitFor(() => expect(mount.instance.pageContext.value.forms).toEqual([
+    {
+      member: "form",
+      target: { kind: "object", objectType: FUNCTION, primaryKey: "a-1" },
+      dirty: false,
+      values: { name: "Orders", slug: "orders", entries: [{ title: "Home", inputs: "{}" }] },
+    },
+  ]));
+  const name = element.querySelector<HTMLInputElement>('[data-field="/name"] input')!;
+  name.value = "Orders (edited mid-round)";
+  name.dispatchEvent(new Event("input"));
+  await vi.waitFor(() => expect(mount.instance.pageContext.value.forms).toEqual([
+    {
+      member: "form",
+      target: { kind: "object", objectType: FUNCTION, primaryKey: "a-1" },
+      dirty: true,
+      dirtyFields: ["/name"],
+      values: { name: "Orders (edited mid-round)", slug: "orders", entries: [{ title: "Home", inputs: "{}" }] },
+    },
+  ]));
+  app.unmount();
+  mount.dispose();
+});
+
 // Regression for A-33: confirming leave on a dirty ObjectForm that has both `form` and `createForm` must discard and
 // leave cleanly to the list without re-prompting or reverting `selected` back onto the detail record.
 it("returns to list cleanly when confirming leave on a dirty form with createForm via usePanelBack", async () => {

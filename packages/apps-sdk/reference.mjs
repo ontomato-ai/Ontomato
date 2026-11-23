@@ -278,7 +278,7 @@ export function exportedTypeDefinitions({ root, tsconfig, entries }) {
       if (!declaration) continue;
       if (ts.isTypeAliasDeclaration(declaration)) {
         const expanded = checker.typeToString(checker.getDeclaredTypeOfSymbol(symbol), undefined, FULL);
-        const body = expanded.length <= 4 * PRINTED_LIMIT && expanded !== name ? expanded : declaration.type.getText();
+        const body = expanded.length <= 8 * PRINTED_LIMIT && expanded !== name ? expanded : declaration.type.getText();
         definitions.set(name, `type ${name} = ${body};`);
       } else if (ts.isInterfaceDeclaration(declaration)) {
         if (declaration.members.some((member) => ts.isMethodSignature(member))) continue;
