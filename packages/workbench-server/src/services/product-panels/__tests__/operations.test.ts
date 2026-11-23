@@ -725,3 +725,130 @@ it("admits a cross-member form.save write operation bound to another form member
     target: { source: "draft", slot: "relationForm" },
   });
 });
+
+it("marks a batch operation unavailable only when every item in a non-empty array target is unavailable", async () => {
+  const unavailableBatch = vi.fn(async (_host, targets: readonly { target: { primaryKey: string }; rowKey: string }[]) => {
+    const reasons = new Map<string, { reason: string }>();
+    for (const entry of targets) {
+      if (entry.target.primaryKey !== "k-draft") {
+        reasons.set(entry.rowKey, { reason: `Already approved: ${entry.target.primaryKey}` });
+      }
+    }
+    return reasons;
+  });
+  const unavailableFallback = vi.fn(async (_host, target: { primaryKey: string }) =>
+    target.primaryKey === "k-draft" ? undefined : { reason: `Single unavailable: ${target.primaryKey}` });
+
+  const makeBatchHandler = (
+    overrides: Pick<serverOperations.PanelWriteServerOperation, "unavailable" | "unavailableBatch">,
+  ): serverOperations.PanelWriteServerOperation => ({
+    handlerRef: APPROVE_KNOWLEDGE,
+    labelKey: "test.batch",
+    kind: "action",
+    binding: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE },
+    effect: "write",
+    batch: true,
+    targetType: BUSINESS_KNOWLEDGE,
+    targetInput: "knowledge",
+    targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(BUSINESS_KNOWLEDGE), primaryKey: z.string() }),
+    inputSchema: z.object({}).strict(),
+    resultSchema: z.object({ approved: z.boolean() }).strict(),
+    targetLabel: async (_host, target) => target.primaryKey,
+    execute: async () => ({ kind: "success", data: { approved: true } }),
+    executeBatch: async () => ({ kind: "success", data: { approved: true } }),
+    ...overrides,
+  });
+
+  const panel = {
+    id: "panel-batch-availability",
+    manifest: {
+      state: {
+        checked: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
+      },
+      members: {
+        toolbar: {
+          target: { projectionId: "toolbar-proj" },
+          inputs: { checked: { state: "checked" } },
+        },
+      },
+    },
+  };
+  const projection = {
+    id: "toolbar-proj",
+    name: "Toolbar",
+    description: "",
+    visibility: "domain" as const,
+    componentId: "@ontomato/sdk:OperationButton",
+    inputs: {
+      checked: { kind: "list" as const, items: { kind: "object" as const, objectType: BUSINESS_KNOWLEDGE } },
+    },
+    outputs: {},
+    data: {},
+    config: { operation: "approveAll" },
+    operations: {
+      approveAll: {
+        operation: { kind: "PlatformOperation" as const, id: APPROVE_KNOWLEDGE },
+        target: { input: "checked" },
+      },
+    },
+  };
+  const actor = { owner, credentials };
+  const placement = {
+    panel: panel as never,
+    projection: projection as never,
+    member: panel.manifest.members.toolbar,
+    slot: "toolbar",
+  };
+  const approved1 = { className: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-1" };
+  const approved2 = { className: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-2" };
+  const draft = { className: BUSINESS_KNOWLEDGE, primaryKey: "k-draft" };
+
+  // 1. Handler with unavailableBatch (and unavailable, verifying unavailableBatch takes precedence)
+  const spy = mockRegisteredOperation(makeBatchHandler({ unavailableBatch, unavailable: unavailableFallback }));
+
+  // All selected items unavailable -> returns first target's unavailable reason
+  const allUnavailable = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, approved2] });
+  expect(allUnavailable.approveAll).toMatchObject({ unavailable: { reason: "Already approved: k-approved-1" } });
+  expect(unavailableBatch).toHaveBeenCalledTimes(1);
+  expect(unavailableBatch).toHaveBeenCalledWith(
+    expect.objectContaining({ locale: "en", executor: actor }),
+    [
+      { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-1" }, rowKey: "0" },
+      { target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-approved-2" }, rowKey: "1" },
+    ],
+  );
+  expect(unavailableFallback).not.toHaveBeenCalled();
+
+  // Mixed selection (at least one available) -> remains available
+  const mixed = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, draft] });
+  expect(mixed.approveAll).not.toHaveProperty("unavailable");
+  expect(unavailableBatch).toHaveBeenCalledTimes(2);
+
+  // Empty array -> remains available without invoking handler checks
+  const empty = await readAdmittedProjectionOperations(actor, placement, { checked: [] });
+  expect(empty.approveAll).not.toHaveProperty("unavailable");
+  expect(unavailableBatch).toHaveBeenCalledTimes(2);
+
+  // Pinned literal array input on member -> also checked
+  const pinnedPlacement = {
+    ...placement,
+    member: {
+      ...panel.manifest.members.toolbar,
+      inputs: { checked: { literal: [approved2, approved1] } },
+    },
+  };
+  const pinnedResult = await readAdmittedProjectionOperations(actor, pinnedPlacement as never, {});
+  expect(pinnedResult.approveAll).toMatchObject({ unavailable: { reason: "Already approved: k-approved-2" } });
+
+  // 2. Handler implementing only unavailable (no unavailableBatch) -> falls back to concurrent per-item checks
+  spy.mockRestore();
+  mockRegisteredOperation(makeBatchHandler({ unavailable: unavailableFallback }));
+
+  const fallbackAllUnavailable = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, approved2] });
+  expect(fallbackAllUnavailable.approveAll).toMatchObject({ unavailable: { reason: "Single unavailable: k-approved-1" } });
+  expect(unavailableFallback).toHaveBeenCalledTimes(2);
+
+  const fallbackMixed = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, draft] });
+  expect(fallbackMixed.approveAll).not.toHaveProperty("unavailable");
+  expect(unavailableFallback).toHaveBeenCalledTimes(4);
+});

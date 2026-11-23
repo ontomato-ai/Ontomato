@@ -878,7 +878,7 @@ test("flat panel URLs encode empty string lists as named empty parameters withou
     assert.equal(singletonEmptyUrl, `${path}?tags=`);
     assert.deepEqual(panelAddressState(singletonEmptyUrl, manifest), { tags: [] });
 
-    for (const tags of [[], ["a"], ["a", "b"]]) {
+    for (const tags of [[], ["a"], ["a", ""], ["a", "b"]]) {
       const state = { tags };
       const panelUrl = panelAddress(path, state, manifest);
       assert.deepEqual(panelAddressState(panelUrl, manifest), state, panelUrl);
@@ -889,6 +889,64 @@ test("flat panel URLs encode empty string lists as named empty parameters withou
       assert.deepEqual(parsed.frame, state, forwarded);
       assert.deepEqual(parsed.state, state, forwarded);
     }
+  }
+});
+
+test("unnamed query parameters (=x, tags=&=tags, frame.=x) are ignored without error when parsing or rebuilding panel addresses", async () => {
+  const { applicationPanelAddress, panelAddress, panelAddressState, parseApplicationPanelAddress } = await import("./panel-host");
+  const path = "/applications/app-school/orders";
+  const manifest = panelManifestSchema.parse({
+    state: {
+      tags: { type: { kind: "list", items: { kind: "scalar", type: "string" } }, deepLink: true },
+      page: { type: { kind: "scalar", type: "number" }, deepLink: true, default: 1 },
+      term: { type: { kind: "scalar", type: "string" }, deepLink: true },
+    },
+    members: {},
+  });
+
+  const cases = [
+    {
+      url: `${path}?tags=&=tags`,
+      untypedState: { tags: "" },
+      typedState: { tags: [] },
+      rebuilt: `${path}?tags=`,
+    },
+    {
+      url: `${path}?=x`,
+      untypedState: {},
+      typedState: {},
+      rebuilt: path,
+    },
+    {
+      url: `${path}?frame.=x&page=2`,
+      untypedState: { page: "2" },
+      typedState: { page: 2 },
+      rebuilt: `${path}?page=2`,
+    },
+  ];
+
+  for (const { url, untypedState, typedState, rebuilt } of cases) {
+    // Manifest-free parsing and rebuilding: unnamed keys never enter frame/state/query and never throw on re-encode.
+    const raw = parseApplicationPanelAddress(url);
+    assert.deepEqual(raw.frame, {}, url);
+    assert.deepEqual(raw.state, untypedState, url);
+    assert.deepEqual([...raw.query.entries()], [], url);
+    assert.equal(applicationPanelAddress(raw.path, raw), rebuilt, url);
+    assert.deepEqual(panelAddressState(url), untypedState, url);
+    assert.equal(panelAddress(url, {}), rebuilt, url);
+
+    // Manifest-aware parsing and rebuilding: unnamed keys are ignored while valid named parameters round-trip cleanly.
+    const parsed = parseApplicationPanelAddress(url, { frameManifest: manifest, stateManifest: manifest });
+    assert.deepEqual(parsed.frame, {}, url);
+    assert.deepEqual(parsed.state, typedState, url);
+    assert.deepEqual([...parsed.query.entries()], [], url);
+    assert.equal(
+      applicationPanelAddress(parsed.path, { ...parsed, frameManifest: manifest, stateManifest: manifest }),
+      rebuilt,
+      url,
+    );
+    assert.deepEqual(panelAddressState(url, manifest), typedState, url);
+    assert.equal(panelAddress(url, parsed.state, manifest), rebuilt, url);
   }
 });
 

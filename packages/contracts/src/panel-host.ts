@@ -293,6 +293,10 @@ export const PANEL_ADDRESS_RESERVED_QUERY_KEYS = [
 
 const RESERVED_QUERY_KEY_SET: ReadonlySet<string> = new Set(PANEL_ADDRESS_RESERVED_QUERY_KEYS);
 
+function isUnnamedQueryKey(key: string): boolean {
+  return key === "" || key === PANEL_FRAME_QUERY_PREFIX;
+}
+
 function isReservedOrFrameKey(key: string): boolean {
   return RESERVED_QUERY_KEY_SET.has(key) || key.startsWith(PANEL_FRAME_QUERY_PREFIX);
 }
@@ -429,11 +433,13 @@ export function parseApplicationPanelAddress(
   const stateBucket: Record<string, string[]> = {};
 
   for (const [key, value] of rawParams.entries()) {
+    // Ignore unnamed query parameters (`?=x` or `?frame.=x`) so legacy/malformed URLs never produce empty state keys.
+    if (isUnnamedQueryKey(key)) continue;
     if (RESERVED_QUERY_KEY_SET.has(key)) {
       query.append(key, value);
       continue;
     }
-    if (key.startsWith(PANEL_FRAME_QUERY_PREFIX) && key.length > PANEL_FRAME_QUERY_PREFIX.length) {
+    if (key.startsWith(PANEL_FRAME_QUERY_PREFIX)) {
       const name = key.slice(PANEL_FRAME_QUERY_PREFIX.length);
       if (options?.frameManifest && !options.frameManifest.state[name]?.deepLink) {
         query.append(key, value);
@@ -475,7 +481,7 @@ export function applicationPanelAddress(path: string, {
   const params = new URLSearchParams();
   if (query) {
     for (const [key, value] of query.entries()) {
-      if (key.startsWith(PANEL_FRAME_QUERY_PREFIX)) continue;
+      if (isUnnamedQueryKey(key) || key.startsWith(PANEL_FRAME_QUERY_PREFIX)) continue;
       params.append(key, value);
     }
   }
@@ -537,6 +543,8 @@ export function panelAddress(
   const separator = path.indexOf("?");
   const route = separator < 0 ? path : path.slice(0, separator);
   const params = new URLSearchParams(separator < 0 ? "" : path.slice(separator + 1));
+  params.delete("");
+  params.delete(PANEL_FRAME_QUERY_PREFIX);
   if (manifest) {
     for (const [name, field] of Object.entries(manifest.state)) {
       if (!field.deepLink || isReservedOrFrameKey(name)) continue;
@@ -564,7 +572,7 @@ export function panelAddressState(
   const params = new URL(address, "http://page.invalid").searchParams;
   const bucket: Record<string, string[]> = {};
   for (const [key, value] of params.entries()) {
-    if (isReservedOrFrameKey(key)) continue;
+    if (isUnnamedQueryKey(key) || isReservedOrFrameKey(key)) continue;
     if (manifest && !manifest.state[key]?.deepLink) continue;
     (bucket[key] ??= []).push(value);
   }
