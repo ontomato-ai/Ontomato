@@ -465,9 +465,8 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     expect(panel.manifest.state.creating).toMatchObject({ type: { kind: "scalar", type: "boolean" }, deepLink: false });
     definitions.set(catalogue, panel.manifest.members);
   }
-  for (const catalogue of ["projections", "panels"]) {
-    expect(definitions.get(catalogue)?.preview?.target).toEqual({ fromState: "selected", candidates: { rule: "usable" } });
-  }
+  expect(definitions.get("projections")?.preview?.target).toEqual({ fromState: "selected", candidates: { rule: "usable" } });
+  expect(definitions.get("panels")?.preview?.target).toEqual({ fromState: "previewTarget", candidates: { rule: "usable" } });
   const application = definitions.get("applications")!;
   const detailResponse = await request("GET", "product-panels/builtin-product-ontology-application-detail");
   expect(detailResponse.status).toBe(200);
