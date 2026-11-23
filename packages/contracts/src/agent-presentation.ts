@@ -39,6 +39,20 @@ export const observeDisplayRequestSchema = z.object({
 }).strict();
 export type ObserveDisplayRequest = z.infer<typeof observeDisplayRequestSchema>;
 
+/** Target object or create-draft identity an agent observed and expects a live form or page action to bind to. */
+export const expectedPageTargetSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("object"),
+    objectType: runtimeKeySchema,
+    primaryKey: runtimeKeySchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("draft"),
+    objectType: runtimeKeySchema,
+  }).strict(),
+]);
+export type ExpectedPageTarget = z.infer<typeof expectedPageTargetSchema>;
+
 /** Fill explicit fields in a live form currently displayed beside the conversation. */
 export const fillFormRequestSchema = z.object({
   mode: z.literal("fill_form"),
@@ -53,6 +67,12 @@ export const fillFormRequestSchema = z.object({
   ),
   /** Explicitly allow modifying a form that already has unsaved edits after the user confirms. */
   overwriteUnsaved: z.boolean().optional(),
+  /** Expected mounted page instance ID observed from `observe_display`/`present`; rejects as `stale` on mismatch. */
+  expectedPageInstanceId: runtimeKeySchema.optional(),
+  /** Expected mounted nested panel member instance ID observed from `memberInstances`; rejects as `stale` on mismatch. */
+  expectedMemberInstanceId: runtimeKeySchema.optional(),
+  /** Expected form target (object or create-draft) observed on screen; rejects as `stale` if the form switched target. */
+  expectedTarget: expectedPageTargetSchema.optional(),
 }).strict();
 export type FillFormRequest = z.infer<typeof fillFormRequestSchema>;
 
@@ -63,10 +83,21 @@ export const pageActionRequestSchema = z.object({
   operation: runtimeKeySchema,
   /** Optional nested panel member path keys when disambiguating nested panel actions. */
   memberPath: z.array(runtimeKeySchema).min(1).optional(),
-  /** For row actions on a list member, the stable primary key of the loaded row. */
+  /**
+   * For row actions on a list member: the composite `<className>:<primaryKey>` key (required to disambiguate
+   * mixed-type lists) or the plain `<primaryKey>` on single-type lists.
+   */
   rowKey: runtimeKeySchema.optional(),
   /** Optional unbound action parameters (never form save field values). */
   input: runtimeJsonObjectSchema.optional(),
+  /** Expected mounted page instance ID observed from `observe_display`/`present`; rejects as `stale` on mismatch. */
+  expectedPageInstanceId: runtimeKeySchema.optional(),
+  /** Expected mounted nested panel member instance ID observed from `memberInstances`; rejects as `stale` on mismatch. */
+  expectedMemberInstanceId: runtimeKeySchema.optional(),
+  /** Expected target object or create-draft observed on screen; rejects as `stale` on mismatch. */
+  expectedTarget: expectedPageTargetSchema.optional(),
+  /** Expected checked row keys (`<className>:<primaryKey>`, or plain `<primaryKey>` for single-type lists) for batch actions. */
+  expectedCheckedKeys: z.array(runtimeKeySchema).optional(),
 }).strict();
 export type PageActionRequest = z.infer<typeof pageActionRequestSchema>;
 
@@ -118,7 +149,16 @@ const selectedDisplaySchema = observedDisplaySchema.extend({
       path: outputPathSchema,
       title: z.string(),
     }).strict(),
-    pageContextSchema.extend({ kind: z.literal("page"), state: runtimeJsonObjectSchema.optional() }),
+    pageContextSchema.extend({
+      kind: z.literal("page"),
+      state: runtimeJsonObjectSchema.optional(),
+      /** Unique ID of this mounted page instance; changes on remount or switching pages. */
+      pageInstanceId: runtimeKeySchema.optional(),
+      /** Unique instance IDs of mounted nested panel members keyed by dotted member path. */
+      memberInstances: z.record(runtimeKeySchema, runtimeKeySchema).optional(),
+      /** Current checked row keys (`<className>:<primaryKey>`) per list-of-object state field. */
+      checkedKeys: z.record(runtimeKeySchema, z.array(runtimeKeySchema)).optional(),
+    }),
   ]),
   load: displayLoadSchema,
 });
@@ -162,6 +202,9 @@ export interface FormFillRequestInput {
   readonly memberPath?: readonly string[];
   readonly values: Readonly<Record<string, RuntimeJsonValue>>;
   readonly overwriteUnsaved?: boolean;
+  readonly expectedPageInstanceId?: string;
+  readonly expectedMemberInstanceId?: string;
+  readonly expectedTarget?: ExpectedPageTarget;
 }
 
 /** In-browser outcome returned by a mounted panel or form adapter for a `fill_form` request. */
@@ -180,7 +223,8 @@ export type FormFillOutcome =
         | "form_ambiguous"
         | "form_not_ready"
         | "blocked_unsaved"
-        | "all_fields_rejected";
+        | "all_fields_rejected"
+        | "stale";
       readonly member?: string;
       readonly memberPath?: readonly string[];
       readonly rejectedFields?: readonly FormFieldRejection[];
@@ -210,6 +254,7 @@ const notFilledResultSchema = z.object({
     "form_not_ready",
     "blocked_unsaved",
     "all_fields_rejected",
+    "stale",
   ]),
   member: runtimeKeySchema.optional(),
   memberPath: z.array(runtimeKeySchema).min(1).optional(),
@@ -223,6 +268,10 @@ export interface PageActionRequestInput {
   readonly memberPath?: readonly string[];
   readonly rowKey?: string;
   readonly input?: Readonly<Record<string, RuntimeJsonValue>>;
+  readonly expectedPageInstanceId?: string;
+  readonly expectedMemberInstanceId?: string;
+  readonly expectedTarget?: ExpectedPageTarget;
+  readonly expectedCheckedKeys?: readonly string[];
   readonly agentRun: {
     readonly sessionId: string;
     readonly runId: string;
@@ -378,6 +427,9 @@ export const presentationFrameSchema = z.object({
       memberPath: z.array(runtimeKeySchema).min(1).optional(),
       values: runtimeJsonObjectSchema,
       overwriteUnsaved: z.boolean().optional(),
+      expectedPageInstanceId: runtimeKeySchema.optional(),
+      expectedMemberInstanceId: runtimeKeySchema.optional(),
+      expectedTarget: expectedPageTargetSchema.optional(),
     }).strict(),
     z.object({
       kind: z.literal("page_action"),
@@ -385,6 +437,10 @@ export const presentationFrameSchema = z.object({
       memberPath: z.array(runtimeKeySchema).min(1).optional(),
       rowKey: runtimeKeySchema.optional(),
       input: runtimeJsonObjectSchema.optional(),
+      expectedPageInstanceId: runtimeKeySchema.optional(),
+      expectedMemberInstanceId: runtimeKeySchema.optional(),
+      expectedTarget: expectedPageTargetSchema.optional(),
+      expectedCheckedKeys: z.array(runtimeKeySchema).optional(),
     }).strict(),
   ]),
 }).strict();

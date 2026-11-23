@@ -12,6 +12,7 @@ import type {
   PresentationReceipt,
 } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { panelStateValueSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
@@ -67,12 +68,20 @@ export interface DisplayPageController {
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
+  /** Live binding metadata (nested panel instance IDs and list checked keys) included in display snapshots. */
+  snapshotMeta?(): {
+    readonly memberInstances?: Readonly<Record<string, string>>;
+    readonly checkedKeys?: Readonly<Record<string, readonly string[]>>;
+  };
+  /** True while the page route, panel host, or declared members are still loading asynchronously. */
+  isLoading?(): boolean;
 }
 
 /** Pending conversation confirmation bound to a specific live session and mounted page instance. */
 export interface BoundPageActionConfirmation {
   readonly sessionId: string;
   readonly pageInstance: string;
+  readonly pageInstanceId: string;
   readonly confirmation: PendingPageActionConfirmation;
 }
 
@@ -96,6 +105,8 @@ export interface ConversationDisplayHost {
   leave: { leaves(address: string | null): boolean; confirm(): Promise<boolean> };
   /** What is shown before anything is opened (the builder opens its workspace beside the conversation). */
   initial?: { page: DisplayPage; view: DisplayView };
+  /** Maximum milliseconds `fill_form`/`page_action` wait for a navigating or loading page/form/action to become ready (default 5000). */
+  readinessTimeoutMs?: number;
 }
 
 interface Shown {
@@ -147,7 +158,12 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   const objectRefresh = shallowRef<DisplayObjectRefresh | null>(null);
   const liveState = shallowRef<DisplayStateUpdate | null>(null);
   const controllers = new Map<string, DisplayPageController>();
+  const controllersRevision = shallowRef(0);
   const pendingStates = new Map<string, Record<string, RuntimeJsonValue>>();
+  const readinessTimeoutMs = host.readinessTimeoutMs ?? 5000;
+  const pageInstanceId = shallowRef<string | null>(host.initial ? randomId() : null);
+  let controllerMountedForCurrentPage = false;
+  const inFlightPageActions = new Set<Promise<unknown>>();
   function refreshObjects(change: DisplayObjectChange) {
     objectRefresh.value = { seq: (objectRefresh.value?.seq ?? 0) + 1, ...change };
   }
@@ -176,15 +192,30 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
 
   const pendingConfirmations = new Map<string, BoundPageActionConfirmation>();
 
+  function cancelConfirmationsForPage(instance: string, instanceId?: string | null) {
+    for (const [questionId, bound] of pendingConfirmations.entries()) {
+      if (bound.pageInstance === instance && (instanceId === undefined || bound.pageInstanceId === instanceId)) {
+        pendingConfirmations.delete(questionId);
+        void bound.confirmation.cancel({
+          code: "FORM_CONFIRMATION_STALE",
+          message: "The page closed, remounted, or navigated away before confirmation.",
+        }).catch(() => undefined);
+      }
+    }
+  }
+
   function commit(next: Shown) {
     const current = shown.value.target;
     const sameInstance =
       current?.kind === "page" && next.target?.kind === "page" && current.instance === next.target.instance;
     if (!sameInstance) {
+      const previousPageInstanceId = pageInstanceId.value;
       reported.value = null;
       reportedSkill.value = null;
       load.value = READY;
       unsaved = false;
+      pageInstanceId.value = next.target?.kind === "page" ? randomId() : null;
+      controllerMountedForCurrentPage = false;
       if (liveState.value && (next.target?.kind !== "page" || liveState.value.instance !== next.target.instance)) {
         liveState.value = null;
       }
@@ -192,15 +223,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
         if (next.target?.kind !== "page" || instance !== next.target.instance) pendingStates.delete(instance);
       }
       if (current?.kind === "page") {
-        for (const [questionId, bound] of pendingConfirmations.entries()) {
-          if (bound.pageInstance === current.instance) {
-            pendingConfirmations.delete(questionId);
-            void bound.confirmation.cancel({
-              code: "FORM_CONFIRMATION_STALE",
-              message: "The page closed or navigated away before confirmation.",
-            }).catch(() => undefined);
-          }
-        }
+        cancelConfirmationsForPage(current.instance, previousPageInstanceId);
       }
     }
     shown.value = next;
@@ -233,7 +256,26 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       const { runId, path } = current.open.artifact;
       return { known: true, observedAt, placement: where, target: { kind: "artifact", runId, path, title: current.open.title }, load: load.value };
     }
-    return { known: true, observedAt, placement: where, target: { kind: "page", ...pageContext.value! }, load: load.value };
+    const meta = controllers.get(current.instance)?.snapshotMeta?.();
+    const memberInstances = meta?.memberInstances && Object.keys(meta.memberInstances).length
+      ? { ...meta.memberInstances }
+      : undefined;
+    const checkedKeys = meta?.checkedKeys && Object.keys(meta.checkedKeys).length
+      ? Object.fromEntries(Object.entries(meta.checkedKeys).map(([k, v]) => [k, [...v]]))
+      : undefined;
+    return {
+      known: true,
+      observedAt,
+      placement: where,
+      target: {
+        kind: "page",
+        ...pageContext.value!,
+        ...(pageInstanceId.value ? { pageInstanceId: pageInstanceId.value } : {}),
+        ...(memberInstances ? { memberInstances } : {}),
+        ...(checkedKeys ? { checkedKeys } : {}),
+      },
+      load: load.value,
+    };
   }
 
   function notOpened(reason: NotOpenedReason, error?: { code: string; message: string }): DisplayPresentationResult {
@@ -272,6 +314,63 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       );
     });
     await nextTick();
+  }
+
+  function waitForSignalOrInterval(maxMs: number): Promise<void> {
+    if (maxMs <= 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        stop();
+        resolve();
+      };
+      const timer = setTimeout(finish, Math.min(50, maxMs));
+      const stop = watch(
+        () => [load.value.status, controllersRevision.value, shown.value.target, pageInstanceId.value] as const,
+        () => finish(),
+      );
+    });
+  }
+
+  async function waitForPageController(
+    targetInstance: string,
+    startPageInstanceId: string | null,
+    deadline: number,
+    verifyActive?: () => "view_unavailable" | "not_viewing_session" | null,
+  ): Promise<
+    | { readonly ok: true; readonly controller: DisplayPageController | null }
+    | { readonly ok: false; readonly kind: "inactive"; readonly reason: "view_unavailable" | "not_viewing_session" }
+    | { readonly ok: false; readonly kind: "stale" }
+    | { readonly ok: false; readonly kind: "load_error"; readonly error?: { code: string; message: string } }
+  > {
+    await nextTick();
+    while (true) {
+      const inactive = verifyActive?.() ?? null;
+      if (inactive) return { ok: false, kind: "inactive", reason: inactive };
+      const currentTarget = shown.value.target;
+      if (!currentTarget || currentTarget.kind !== "page" || currentTarget.instance !== targetInstance || pageInstanceId.value !== startPageInstanceId) {
+        return { ok: false, kind: "stale" };
+      }
+      if (load.value.status === "error") {
+        return { ok: false, kind: "load_error", ...(load.value.error ? { error: load.value.error } : {}) };
+      }
+      const controller = controllers.get(targetInstance) ?? null;
+      if (controller && load.value.status !== "loading" && !controller.isLoading?.()) {
+        return { ok: true, controller };
+      }
+      // A non-loading page with no registered controller is a static/unsupported page; do not stall.
+      if (!controller && load.value.status === "ready") {
+        return { ok: true, controller: null };
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        return { ok: true, controller };
+      }
+      await waitForSignalOrInterval(remaining);
+    }
   }
 
   async function write(next: DisplayPage | null, view: DisplayView, history: DisplayHistory): Promise<boolean> {
@@ -316,6 +415,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   return {
     target,
     page,
+    pageInstanceId: computed(() => pageInstanceId.value),
     feature,
     view: computed(() => shown.value.view),
     restorable: computed(() => shown.value.restorable),
@@ -413,7 +513,16 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     },
     /** A mounted panel page registers its in-place live state controller for `present`. */
     registerPageController(instance: string, controller: DisplayPageController): () => void {
+      if (shown.value.target?.kind === "page" && shown.value.target.instance === instance) {
+        if (controllerMountedForCurrentPage) {
+          const previousId = pageInstanceId.value;
+          pageInstanceId.value = randomId();
+          cancelConfirmationsForPage(instance, previousId);
+        }
+        controllerMountedForCurrentPage = true;
+      }
       controllers.set(instance, controller);
+      controllersRevision.value += 1;
       const pending = pendingStates.get(instance);
       if (pending) {
         pendingStates.delete(instance);
@@ -431,7 +540,10 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
         }
       }
       return () => {
-        if (controllers.get(instance) === controller) controllers.delete(instance);
+        if (controllers.get(instance) === controller) {
+          controllers.delete(instance);
+          controllersRevision.value += 1;
+        }
       };
     },
 
@@ -453,6 +565,30 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     },
 
     /**
+     * Resolves and removes the live-bound page confirmation for `questionId`, waiting for any in-flight
+     * `page_action` preparation on this tab to finish registering its confirmation closure when the SSE
+     * confirmation question arrived before the preparation HTTP response returned.
+     */
+    async waitPendingActionConfirmation(questionId: string): Promise<BoundPageActionConfirmation | null> {
+      const immediate = pendingConfirmations.get(questionId);
+      if (immediate) {
+        pendingConfirmations.delete(questionId);
+        return immediate;
+      }
+      while (inFlightPageActions.size > 0) {
+        const batch = [...inFlightPageActions];
+        await Promise.allSettled(batch);
+        const found = pendingConfirmations.get(questionId);
+        if (found) {
+          pendingConfirmations.delete(questionId);
+          return found;
+        }
+        if ([...inFlightPageActions].every((promise) => batch.includes(promise))) break;
+      }
+      return null;
+    },
+
+    /**
      * An agent's request to show an artifact or navigate/update a page in place:
      * - Artifacts stay temporary and out of the address bar.
      * - Pages perform a real navigation written into the browser address (restored on reload) without changing the
@@ -461,8 +597,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
      * - Live fills use the mounted form controller, which checks for unsaved edits.
      * - Unauthorized entries are rejected before opening, returning the refusal reason in the receipt.
      */
-    present: (frame: PresentationFrame, verifyActive?: () => "view_unavailable" | "not_viewing_session" | null) =>
-      inOrder(async (): Promise<DisplayPresentationResult> => {
+    present(frame: PresentationFrame, verifyActive?: () => "view_unavailable" | "not_viewing_session" | null) {
+      const run = inOrder(async (): Promise<DisplayPresentationResult> => {
         const inactive = verifyActive?.() ?? null;
         if (inactive) {
           const unknown = { known: false as const, reason: inactive };
@@ -486,7 +622,46 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               error: { code: "NO_PAGE_SHOWN", message: "No page is currently open beside the conversation." },
             };
           }
-          const controller = controllers.get(currentTarget.instance);
+          const startPageInstanceId = pageInstanceId.value;
+          if (
+            frame.target.expectedPageInstanceId !== undefined
+            && frame.target.expectedPageInstanceId !== startPageInstanceId
+          ) {
+            return {
+              status: "not_executed",
+              reason: "stale",
+              operation: frame.target.operation,
+              current: snapshot(),
+              error: {
+                code: "STALE",
+                message: "The displayed page changed or remounted since the last observation.",
+              },
+            };
+          }
+          const deadline = Date.now() + readinessTimeoutMs;
+          const waited = await waitForPageController(currentTarget.instance, startPageInstanceId, deadline, verifyActive);
+          if (!waited.ok) {
+            if (waited.kind === "inactive") {
+              return { status: "not_executed", reason: waited.reason, operation: frame.target.operation, current: { known: false, reason: waited.reason } };
+            }
+            if (waited.kind === "stale") {
+              return {
+                status: "not_executed",
+                reason: "stale",
+                operation: frame.target.operation,
+                current: snapshot(),
+                error: { code: "STALE", message: "The page closed, remounted, or navigated away while waiting for readiness." },
+              };
+            }
+            return {
+              status: "not_executed",
+              reason: "action_not_ready",
+              operation: frame.target.operation,
+              current: snapshot(),
+              error: waited.error ?? { code: "LOAD_ERROR", message: "The page failed to load." },
+            };
+          }
+          const controller = waited.controller;
           if (!controller?.executeAction) {
             return {
               status: "not_executed",
@@ -496,21 +671,80 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               error: { code: "UNSUPPORTED_PAGE", message: "The currently displayed page does not expose a live action controller." },
             };
           }
-          const outcome = await controller.executeAction({
+          const actionRequest: PageActionRequestInput = {
             operation: frame.target.operation,
             ...(frame.target.memberPath === undefined ? {} : { memberPath: frame.target.memberPath }),
             ...(frame.target.rowKey === undefined ? {} : { rowKey: frame.target.rowKey }),
             ...(frame.target.input === undefined ? {} : { input: frame.target.input }),
+            ...(frame.target.expectedPageInstanceId === undefined ? {} : { expectedPageInstanceId: frame.target.expectedPageInstanceId }),
+            ...(frame.target.expectedMemberInstanceId === undefined ? {} : { expectedMemberInstanceId: frame.target.expectedMemberInstanceId }),
+            ...(frame.target.expectedTarget === undefined ? {} : { expectedTarget: frame.target.expectedTarget }),
+            ...(frame.target.expectedCheckedKeys === undefined ? {} : { expectedCheckedKeys: frame.target.expectedCheckedKeys }),
             agentRun: { sessionId: frame.sessionId, runId: frame.runId, toolCallId: frame.toolCallId },
-          });
-          await nextTick();
-          await nextTick();
+          };
+          let outcome = await controller.executeAction(actionRequest);
+          while (
+            !outcome.ok
+            && (outcome.reason === "action_not_ready"
+              || (outcome.reason === "action_not_found" && (load.value.status === "loading" || controller.isLoading?.())))
+            && Date.now() < deadline
+          ) {
+            await waitForSignalOrInterval(deadline - Date.now());
+            const retryInactive = verifyActive?.() ?? null;
+            if (retryInactive) {
+              return { status: "not_executed", reason: retryInactive, operation: frame.target.operation, current: { known: false, reason: retryInactive } };
+            }
+            const nowTarget = shown.value.target;
+            if (!nowTarget || nowTarget.kind !== "page" || nowTarget.instance !== currentTarget.instance || pageInstanceId.value !== startPageInstanceId) {
+              return {
+                status: "not_executed",
+                reason: "stale",
+                operation: frame.target.operation,
+                current: snapshot(),
+                error: { code: "STALE", message: "The page closed, remounted, or navigated away while waiting for the action." },
+              };
+            }
+            if (load.value.status === "error") {
+              return {
+                status: "not_executed",
+                reason: "action_not_ready",
+                operation: frame.target.operation,
+                current: snapshot(),
+                error: load.value.error ?? { code: "LOAD_ERROR", message: "The page failed to load." },
+              };
+            }
+            outcome = await controller.executeAction(actionRequest);
+          }
+          const stillSamePage =
+            shown.value.target?.kind === "page"
+            && shown.value.target.instance === currentTarget.instance
+            && pageInstanceId.value === startPageInstanceId;
           if (outcome.ok && outcome.kind === "awaiting_confirmation") {
+            if (!stillSamePage) {
+              await outcome.confirmation.cancel({
+                code: "FORM_CONFIRMATION_STALE",
+                message: "The page closed, remounted, or navigated away while preparing confirmation.",
+              }).catch(() => undefined);
+              return {
+                status: "not_executed",
+                reason: "stale",
+                operation: outcome.operation,
+                intentId: outcome.intentId,
+                current: snapshot(),
+                error: {
+                  code: "STALE",
+                  message: "The page closed, remounted, or navigated away while preparing confirmation.",
+                },
+              };
+            }
             pendingConfirmations.set(outcome.questionId, {
               sessionId: frame.sessionId,
               pageInstance: currentTarget.instance,
+              pageInstanceId: startPageInstanceId ?? "",
               confirmation: outcome.confirmation,
             });
+            await nextTick();
+            await nextTick();
             return {
               status: "awaiting_confirmation",
               reason: "confirmation_required",
@@ -521,6 +755,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               current: snapshot(),
             };
           }
+          await nextTick();
+          await nextTick();
           if (outcome.ok && outcome.kind === "executed") {
             return {
               status: "executed",
@@ -550,7 +786,45 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               error: { code: "NO_PAGE_SHOWN", message: "No page is currently open beside the conversation." },
             };
           }
-          const controller = controllers.get(currentTarget.instance);
+          const startPageInstanceId = pageInstanceId.value;
+          if (
+            frame.target.expectedPageInstanceId !== undefined
+            && frame.target.expectedPageInstanceId !== startPageInstanceId
+          ) {
+            return {
+              status: "not_filled",
+              reason: "stale",
+              ...(frame.target.member ? { member: frame.target.member } : {}),
+              ...(frame.target.memberPath?.length ? { memberPath: [...frame.target.memberPath] } : {}),
+              current: snapshot(),
+              error: {
+                code: "STALE",
+                message: "The displayed page changed or remounted since the last observation.",
+              },
+            };
+          }
+          const deadline = Date.now() + readinessTimeoutMs;
+          const waited = await waitForPageController(currentTarget.instance, startPageInstanceId, deadline, verifyActive);
+          if (!waited.ok) {
+            if (waited.kind === "inactive") {
+              return { status: "not_filled", reason: waited.reason, current: { known: false, reason: waited.reason } };
+            }
+            if (waited.kind === "stale") {
+              return {
+                status: "not_filled",
+                reason: "stale",
+                current: snapshot(),
+                error: { code: "STALE", message: "The page closed, remounted, or navigated away while waiting for readiness." },
+              };
+            }
+            return {
+              status: "not_filled",
+              reason: "form_not_ready",
+              current: snapshot(),
+              error: waited.error ?? { code: "LOAD_ERROR", message: "The page failed to load." },
+            };
+          }
+          const controller = waited.controller;
           if (!controller?.fillForm) {
             return {
               status: "not_filled",
@@ -559,16 +833,52 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               error: { code: "UNSUPPORTED_PAGE", message: "The currently displayed page does not expose a live form controller." },
             };
           }
-          const outcome = await controller.fillForm({
+          const fillRequest: FormFillRequestInput = {
             ...(frame.target.member === undefined ? {} : { member: frame.target.member }),
             ...(frame.target.memberPath === undefined ? {} : { memberPath: frame.target.memberPath }),
             values: frame.target.values,
             ...(frame.target.overwriteUnsaved ? { overwriteUnsaved: true } : {}),
-          });
+            ...(frame.target.expectedPageInstanceId === undefined ? {} : { expectedPageInstanceId: frame.target.expectedPageInstanceId }),
+            ...(frame.target.expectedMemberInstanceId === undefined ? {} : { expectedMemberInstanceId: frame.target.expectedMemberInstanceId }),
+            ...(frame.target.expectedTarget === undefined ? {} : { expectedTarget: frame.target.expectedTarget }),
+          };
+          let outcome = await controller.fillForm(fillRequest);
+          while (
+            !outcome.ok
+            && (outcome.reason === "form_not_ready"
+              || (outcome.reason === "form_not_found" && (load.value.status === "loading" || controller.isLoading?.())))
+            && Date.now() < deadline
+          ) {
+            await waitForSignalOrInterval(deadline - Date.now());
+            const retryInactive = verifyActive?.() ?? null;
+            if (retryInactive) {
+              return { status: "not_filled", reason: retryInactive, current: { known: false, reason: retryInactive } };
+            }
+            const nowTarget = shown.value.target;
+            if (!nowTarget || nowTarget.kind !== "page" || nowTarget.instance !== currentTarget.instance || pageInstanceId.value !== startPageInstanceId) {
+              return {
+                status: "not_filled",
+                reason: "stale",
+                current: snapshot(),
+                error: { code: "STALE", message: "The page closed, remounted, or navigated away while waiting for the form." },
+              };
+            }
+            if (load.value.status === "error") {
+              return {
+                status: "not_filled",
+                reason: "form_not_ready",
+                current: snapshot(),
+                error: load.value.error ?? { code: "LOAD_ERROR", message: "The page failed to load." },
+              };
+            }
+            outcome = await controller.fillForm(fillRequest);
+          }
           await nextTick();
           await nextTick();
           const stillSamePage =
-            shown.value.target?.kind === "page" && shown.value.target.instance === currentTarget.instance;
+            shown.value.target?.kind === "page"
+            && shown.value.target.instance === currentTarget.instance
+            && pageInstanceId.value === startPageInstanceId;
           if (outcome.ok && stillSamePage) {
             const shownNow = selected();
             return {
@@ -583,7 +893,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
           }
           return {
             status: "not_filled",
-            reason: outcome.ok ? "form_not_ready" : outcome.reason,
+            reason: outcome.ok ? "stale" : outcome.reason,
             ...(outcome.member ? { member: outcome.member } : {}),
             ...(outcome.memberPath?.length ? { memberPath: [...outcome.memberPath] } : {}),
             ...(outcome.rejectedFields?.length ? { rejectedFields: [...outcome.rejectedFields] } : {}),
@@ -591,7 +901,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
             ...(!outcome.ok && outcome.message
               ? { error: { code: outcome.reason.toUpperCase(), message: outcome.message } }
               : outcome.ok
-                ? { error: { code: "FORM_NOT_READY", message: "The page closed or navigated away while filling the form." } }
+                ? { error: { code: "STALE", message: "The page closed, remounted, or navigated away while filling the form." } }
                 : {}),
           };
         }
@@ -706,7 +1016,13 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
         return shownNow.load.status === "error"
           ? { status: "opened", reason: "load_error", current: shownNow, ...(shownNow.load.error ? { error: shownNow.load.error } : {}) }
           : { status: "opened", reason: "target_selected", current: shownNow };
-      }),
+      });
+      if (frame.target.kind === "page_action") {
+        inFlightPageActions.add(run);
+        void run.finally(() => inFlightPageActions.delete(run));
+      }
+      return run;
+    },
   };
 }
 

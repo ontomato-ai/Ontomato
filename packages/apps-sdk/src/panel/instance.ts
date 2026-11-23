@@ -7,6 +7,7 @@ import {
   type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 import type {
+  ExpectedPageTarget,
   FormFillOutcome,
   FormFillRequestInput,
   PageActionOutcome,
@@ -14,6 +15,7 @@ import type {
   PendingPageActionConfirmation,
 } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import {
   childObjectNameKey, createPanelState, objectNameKey, panelSelection, stateObject, stateObjects, type PanelInitialState, type PanelObjectRef,
@@ -32,7 +34,21 @@ import type {
   PanelHumanOperationPreparation,
 } from "@ontomato/contracts/panel-agent";
 import type { PanelCompletedOperation, PanelOperationAffected, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
-import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelReadCall, PanelWriteInvocation } from "./human-operations";
+import type {
+  ConfirmPanelOperation,
+  PanelHumanOperations,
+  PanelLocalConfirmationRequest,
+  PanelLocalConfirmationResponse,
+  PanelOperationDescriptor,
+  PanelReadCall,
+  PanelWriteInvocation,
+} from "./human-operations";
+import {
+  PanelSubmissionStaleError,
+  verifySubmissionUnchanged,
+  type SubmissionCheckResult,
+  type SubmissionEvaluator,
+} from "./operation-binding";
 
 /*
  * One panel instance's runtime (overall design 3.4): its state, the projections it registered, the operations it offers,
@@ -88,17 +104,24 @@ export interface PanelWriteOperationOptions {
   onConfirmed?: () => void;
   /** Present only when this write was initiated by an agent `page_action` call. */
   agentContext?: PanelAgentActionContext;
+  /**
+   * Recomputes the live 4-tuple `(instanceId, operationId, target, payload)` for this UI entry so both
+   * default confirmation and full-auto pre-dispatch verify through the single universal check.
+   */
+  evaluateSubmission?: SubmissionEvaluator;
 }
 
 /** Thrown internally by `writeOperation` when an agent-initiated write awaits default conversation confirmation. */
 export class PanelOperationDeferred extends Error {
   readonly preparation: PanelHumanOperationPreparation;
   readonly named: PanelWriteResult["named"];
+  readonly isStillValid: () => SubmissionCheckResult;
   readonly dispatchNow: () => Promise<AppBridgeConfirmPanelOperationResult>;
   readonly cancelNow: (reason: { readonly code: string; readonly message: string }) => Promise<void>;
   constructor(input: {
     preparation: PanelHumanOperationPreparation;
     named: PanelWriteResult["named"];
+    isStillValid: () => SubmissionCheckResult;
     dispatchNow: () => Promise<AppBridgeConfirmPanelOperationResult>;
     cancelNow: (reason: { readonly code: string; readonly message: string }) => Promise<void>;
   }) {
@@ -106,6 +129,7 @@ export class PanelOperationDeferred extends Error {
     this.name = "PanelOperationDeferred";
     this.preparation = input.preparation;
     this.named = input.named;
+    this.isStillValid = input.isStillValid;
     this.dispatchNow = input.dispatchNow;
     this.cancelNow = input.cancelNow;
   }
@@ -142,6 +166,8 @@ export type PanelMountedActionResult =
 export type PanelMountedActionHandler = (request: {
   readonly rowKey?: string;
   readonly input?: Readonly<Record<string, RuntimeJsonValue>>;
+  readonly expectedTarget?: ExpectedPageTarget;
+  readonly expectedCheckedKeys?: readonly string[];
   readonly agentContext?: PanelAgentActionContext;
 }) => Promise<PanelMountedActionResult>;
 
@@ -160,9 +186,13 @@ export function summarizeDispatchResponse(response: PanelHumanOperationDispatchR
 
 /** What a panel placed in one of an instance's members publishes into it: its operations, its unsaved changes. */
 export interface NestedPublisher {
+  readonly instanceId: string;
   readonly operations: readonly PanelOperationBinding[];
   dirty(): boolean;
   readonly context: PageContext | null;
+  memberInstances?(): Readonly<Record<string, string>>;
+  checkedKeys?(): Readonly<Record<string, readonly string[]>>;
+  isLoading?(): boolean;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
 }
@@ -174,6 +204,12 @@ export interface PanelOperationCompletion {
 }
 
 export interface PanelInstance {
+  /** Unique immutable identifier for this mounted panel instance; changes on remount or nested member swap. */
+  readonly instanceId: string;
+  /** True once this panel instance has been disposed/unmounted. */
+  isDisposed(): boolean;
+  /** Marks this panel instance as disposed so any pending confirmation or full-auto dispatch is invalidated. */
+  markDisposed(): void;
   readonly manifest: PanelManifest;
   readonly state: PanelStateStore;
   // A computed context, read only at its top: a deep read-only type of it recurses through the member paths' JSON values
@@ -264,6 +300,12 @@ export interface PanelInstance {
   deepLink(): Record<string, PanelDeepLinkStateValue>;
   /** All declared public state fields with their current values. */
   publicState(): Record<string, RuntimeJsonValue>;
+  /** Instance IDs of currently mounted nested panel members keyed by dotted member path. */
+  memberInstances(): Readonly<Record<string, string>>;
+  /** Current checked row keys (`<className>:<primaryKey>`) per object-list state field (including nested panels). */
+  checkedKeys(): Readonly<Record<string, readonly string[]>>;
+  /** Posts a conversation confirmation question for a destructive local UI action (e.g. discarding dirty form edits). */
+  requestLocalConfirmation?(input: PanelLocalConfirmationRequest): Promise<PanelLocalConfirmationResponse>;
   /** Fills explicit fields on a mounted live form (top-level or nested panel) using the form's own edit entry. */
   fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
   /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
@@ -294,6 +336,8 @@ function namedTargets(confirmation: PanelHumanOperationPreparation["confirmation
 }
 
 export function createPanelInstance(manifest: PanelManifest, options: PanelInstanceOptions): PanelInstance {
+  const instanceId = randomId();
+  let disposed = false;
   const state = createPanelState(manifest, options.initial);
   const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
   const operationCompletedListeners = new Set<(event: PanelOperationCompletion) => void>();
@@ -351,20 +395,50 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     // write does, and is read again from there; the receipt itself rereads nothing.
     const path = writeOptions?.memberPath ?? operationPath(operationId);
     const agentScope = writeOptions?.agentContext;
+    const evaluator = writeOptions?.evaluateSubmission;
+    const frozen = agentScope && evaluator ? evaluator("prepare") : null;
+    if (frozen && !frozen.ok) {
+      throw new PanelSubmissionStaleError(frozen.message);
+    }
     const preparation = agentScope?.agentRun
       ? await options.operations.prepare(operationId, invocation, path, agentScope.agentRun)
       : await options.operations.prepare(operationId, invocation, path);
     const named = namedTargets(preparation.confirmation);
     if (agentScope && preparation.autoMode === false && preparation.questionId) {
+      if (frozen?.ok && evaluator) {
+        const preCheck = verifySubmissionUnchanged(frozen, evaluator, "auto-dispatch");
+        if (!preCheck.ok) {
+          await options.operations.cancel?.(preparation.intentId, {
+            code: "ACTION_CONFIRMATION_STALE",
+            message: preCheck.message,
+          }).catch(() => undefined);
+          throw new PanelSubmissionStaleError(preCheck.message, preparation.intentId);
+        }
+      }
+      const isStillValid: () => SubmissionCheckResult = frozen?.ok && evaluator
+        ? () => verifySubmissionUnchanged(frozen, evaluator, "confirm")
+        : () => ({ ok: true as const });
       throw new PanelOperationDeferred({
         preparation,
         named,
+        isStillValid,
         dispatchNow: () => options.confirmOperation(preparation, {
           ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
           skipDialog: true,
         }),
         cancelNow: (reason) => options.operations.cancel?.(preparation.intentId, reason) ?? Promise.resolve(),
       });
+    }
+    if (agentScope && preparation.autoMode === true && frozen?.ok && evaluator) {
+      // Full-auto skips only the conversation question — never the universal 4-tuple verification before dispatch.
+      const check = verifySubmissionUnchanged(frozen, evaluator, "auto-dispatch");
+      if (!check.ok) {
+        await options.operations.cancel?.(preparation.intentId, {
+          code: "ACTION_CONFIRMATION_STALE",
+          message: check.message,
+        }).catch(() => undefined);
+        throw new PanelSubmissionStaleError(check.message, preparation.intentId);
+      }
     }
     const skipDialog = Boolean(agentScope && preparation.autoMode === true);
     const confirmHooks = writeOptions?.onConfirmed || skipDialog
@@ -404,7 +478,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       if (!publisher?.fillForm) {
         return {
           ok: false,
-          reason: "form_not_found",
+          reason: request.expectedMemberInstanceId !== undefined ? "stale" : "form_not_found",
           ...(request.member ? { member: request.member } : {}),
           memberPath: request.memberPath,
           message: `Nested panel member '${head}' is not mounted.`,
@@ -420,7 +494,18 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       };
     }
     if (request.member) {
-      return forms.fill(request.member, request.values, { overwriteUnsaved: request.overwriteUnsaved });
+      if (request.expectedMemberInstanceId !== undefined && request.expectedMemberInstanceId !== instanceId) {
+        return {
+          ok: false,
+          reason: "stale",
+          member: request.member,
+          message: "The target panel member instance was replaced or remounted.",
+        };
+      }
+      return forms.fill(request.member, request.values, {
+        overwriteUnsaved: request.overwriteUnsaved,
+        ...(request.expectedTarget ? { expectedTarget: request.expectedTarget } : {}),
+      });
     }
     const mounted = forms.mountedSlots().map((slot) => ({ member: slot, memberPath: undefined as readonly string[] | undefined }));
     for (const [member, publisher] of publishers.entries()) {
@@ -432,7 +517,11 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       }
     }
     if (mounted.length === 0) {
-      return { ok: false, reason: "form_not_found", message: "No form is currently open on this page." };
+      return {
+        ok: false,
+        reason: request.expectedMemberInstanceId !== undefined ? "stale" : "form_not_found",
+        message: "No form is currently open on this page.",
+      };
     }
     if (mounted.length > 1) {
       return {
@@ -451,7 +540,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       if (!publisher?.executeAction) {
         return {
           ok: false,
-          reason: "action_not_found",
+          reason: request.expectedMemberInstanceId !== undefined ? "stale" : "action_not_found",
           operation: request.operation,
           message: `Nested panel member '${head}' is not mounted.`,
         };
@@ -462,6 +551,14 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       });
     }
     if (request.operation === "page.refresh") {
+      if (request.expectedMemberInstanceId !== undefined && request.expectedMemberInstanceId !== instanceId) {
+        return {
+          ok: false,
+          reason: "stale",
+          operation: request.operation,
+          message: "The target nested panel member was replaced or remounted.",
+        };
+      }
       objectChanged(null);
       return { ok: true, kind: "executed", operation: "page.refresh" };
     }
@@ -476,6 +573,15 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
           operation: request.operation.slice(dot + 1),
         });
       }
+    }
+
+    if (request.expectedMemberInstanceId !== undefined && request.expectedMemberInstanceId !== instanceId) {
+      return {
+        ok: false,
+        reason: "stale",
+        operation: request.operation,
+        message: "The target nested panel member was replaced or remounted.",
+      };
     }
 
     const fullOperationId = prefix.length
@@ -503,6 +609,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const result = await matchedHandler({
         ...(request.rowKey !== undefined ? { rowKey: request.rowKey } : {}),
         ...(request.input !== undefined ? { input: request.input } : {}),
+        ...(request.expectedTarget !== undefined ? { expectedTarget: request.expectedTarget } : {}),
+        ...(request.expectedCheckedKeys !== undefined ? { expectedCheckedKeys: request.expectedCheckedKeys } : {}),
         agentContext,
       });
       if (!result.ok) {
@@ -543,6 +651,15 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
           questionId: confirmation.questionId,
           label: confirmation.label,
           confirmation,
+        };
+      }
+      if (error instanceof PanelSubmissionStaleError) {
+        return {
+          ok: false,
+          reason: "stale",
+          operation: request.operation,
+          ...(error.intentId ? { intentId: error.intentId } : {}),
+          message: error.message,
         };
       }
       return {
@@ -610,7 +727,38 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       ...(reportedForms.length ? { forms: reportedForms } : {}),
     };
   });
+  function memberInstances(): Readonly<Record<string, string>> {
+    const result: Record<string, string> = {};
+    for (const [member, publisher] of publishers.entries()) {
+      result[member] = publisher.value.instanceId;
+      for (const [subKey, subId] of Object.entries(publisher.value.memberInstances?.() ?? {})) {
+        result[`${member}.${subKey}`] = subId;
+      }
+    }
+    return result;
+  }
+  function checkedKeys(): Readonly<Record<string, readonly string[]>> {
+    const result: Record<string, readonly string[]> = {};
+    for (const [name, { type }] of Object.entries(manifest.state)) {
+      if (type.kind === "list" && type.items.kind === "object") {
+        result[name] = stateObjects(state.values.value[name]).map(
+          ({ className, primaryKey }) => `${className}:${primaryKey}`,
+        );
+      }
+    }
+    for (const [member, publisher] of publishers.entries()) {
+      for (const [subKey, keys] of Object.entries(publisher.value.checkedKeys?.() ?? {})) {
+        result[`${member}.${subKey}`] = keys;
+      }
+    }
+    return result;
+  }
   return {
+    instanceId,
+    isDisposed: () => disposed,
+    markDisposed() {
+      disposed = true;
+    },
     manifest,
     state,
     pageContext,
@@ -715,6 +863,11 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     deepLink: () => state.deepLinkable(),
     publicState,
+    memberInstances,
+    checkedKeys,
+    ...(options.operations.requestLocalConfirmation
+      ? { requestLocalConfirmation: (input: PanelLocalConfirmationRequest) => options.operations.requestLocalConfirmation!(input) }
+      : {}),
     fillForm,
     executeAction,
     registerActionHandler,

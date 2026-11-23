@@ -1,5 +1,5 @@
-import { computed, ref, shallowRef, type ComputedRef, type Ref, type ShallowRef } from "vue";
-import type { PageActionConfirmedDispatchResult, PendingPageActionConfirmation } from "@ontomato/contracts/agent-presentation";
+import { computed, onScopeDispose, ref, shallowRef, type ComputedRef, type Ref, type ShallowRef } from "vue";
+import type { PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
@@ -12,6 +12,11 @@ import {
   type PanelAgentActionContext,
   type PanelWriteResult,
 } from "../panel/instance";
+import {
+  createDeferredConfirmation,
+  PanelSubmissionStaleError,
+  type SubmissionEvaluator,
+} from "../panel/operation-binding";
 import type { PanelMemberContext } from "../panel/member";
 import { readOperationInput } from "../panel/read-operation-input";
 import { stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
@@ -198,8 +203,14 @@ export function useOperationRunner(options: {
   slot: () => ProjectionSlot | null;
   member: () => PanelMemberContext | null;
   t: OperationTranslator;
+  /** Checks whether the mounted UI entry (button or overflow item) is still visible and enabled. */
+  isEntryAvailable?: (operationName: string) => { readonly ok: true } | { readonly ok: false; readonly message: string };
   onDone?: (operationName: string, outcome: OperationOutcome) => void;
 }): OperationRunner {
+  let runnerDisposed = false;
+  onScopeDispose(() => {
+    runnerDisposed = true;
+  });
   const runningOperation = ref<string | null>(null);
   const running = computed(() => runningOperation.value !== null);
   const dispatchingOperation = ref<string | null>(null);
@@ -304,10 +315,25 @@ export function useOperationRunner(options: {
 
       const declaredDraftSlot = panel.manifest.members[slot.slot]?.operationDrafts?.[operationName]?.slot;
       if (declaredDraftSlot) {
+        const evaluateOrigin = () => {
+          if (runnerDisposed || !options.panel() || options.panel()!.instance.isDisposed()) {
+            return { ok: false as const, message: "The triggering action button was closed or unmounted." };
+          }
+          const currentMember = options.member();
+          if (currentMember) {
+            const opsState = currentMember.operations.value;
+            if (opsState.status !== "ready" || !opsState.value[operationName] || opsState.value[operationName]!.unavailable) {
+              return { ok: false as const, message: `Operation '${operationName}' is no longer available.` };
+            }
+          }
+          const entryCheck = options.isEntryAvailable?.(operationName);
+          if (entryCheck && !entryCheck.ok) return entryCheck;
+          return { ok: true as const };
+        };
         if (descriptor.kind === "form.save" && declaredDraftSlot === slot.slot) {
           await panel.instance.forms.submit(
             slot.slot,
-            agentContext ? { operationId, descriptor, agentContext } : undefined,
+            agentContext ? { operationId, descriptor, evaluateOrigin, agentContext } : undefined,
           );
         } else {
           const binding = slot.projection.operations?.[operationName];
@@ -315,7 +341,8 @@ export function useOperationRunner(options: {
             operationId,
             descriptor,
             ...(binding ? { binding } : {}),
-            ...(member ? { memberInputs: member.inputs.value } : {}),
+            ...(member ? { memberInputs: member.inputs.value, readMemberInputs: () => options.member()?.inputs.value } : {}),
+            evaluateOrigin,
             ...(agentContext ? { agentContext } : {}),
           });
         }
@@ -350,8 +377,57 @@ export function useOperationRunner(options: {
         return answered;
       };
 
-      const capturedTargetSig = JSON.stringify(targetInfo.target ?? null);
-      const capturedCheckedSig = JSON.stringify(targetInfo.checkedTargets);
+      const evaluateButtonSubmission: SubmissionEvaluator = (phase) => {
+        const currentPanel = options.panel();
+        const currentSlot = options.slot();
+        const currentMember = options.member();
+        if (runnerDisposed || !currentPanel || !currentSlot || currentPanel.instance.isDisposed()) {
+          return { ok: false, message: "The action button or panel was closed or unmounted." };
+        }
+        if (phase === "confirm" && running.value) {
+          return { ok: false, message: "Another operation is currently running." };
+        }
+        let liveDescriptor: PanelOwnerOperationDescriptor = descriptor;
+        if (currentMember) {
+          const opsState = currentMember.operations.value;
+          if (opsState.status !== "ready" || !opsState.value[operationName]) {
+            return { ok: false, message: `Operation '${operationName}' is no longer available.` };
+          }
+          liveDescriptor = opsState.value[operationName]!;
+        }
+        const entryCheck = options.isEntryAvailable?.(operationName);
+        if (entryCheck && !entryCheck.ok) {
+          return entryCheck;
+        }
+        const currentInfo = resolveOperationTarget(
+          currentPanel,
+          currentSlot,
+          currentMember,
+          liveDescriptor,
+          currentPanel.instance.state.values.value,
+        );
+        if (!isOperationReady(liveDescriptor, currentInfo, phase === "confirm" ? running.value : false)) {
+          return { ok: false, message: "This operation is no longer available." };
+        }
+        const liveBoundInput = resolveBoundOperationParams(currentSlot, currentMember, operationName);
+        const liveAllowedFields = resolveOperationInputFields(currentPanel, currentSlot, operationName, liveDescriptor);
+        const liveFilteredProvided = filterAllowedOperationInput(providedInput, liveAllowedFields);
+        const liveEffectiveInput: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(liveDescriptor.inputSchema)
+          ? wrapActionOperationInput(liveDescriptor.inputSchema, liveBoundInput, liveFilteredProvided)
+          : { ...liveFilteredProvided, ...liveBoundInput };
+        return {
+          ok: true,
+          instanceId: currentPanel.instance.instanceId,
+          operationId: currentPanel.instance.operationIdOf(currentSlot.slot, operationName),
+          target: currentInfo.checkedState !== null ? currentInfo.checkedTargets : currentInfo.target,
+          payload: {
+            input: liveEffectiveInput,
+            ...(currentInfo.checkedState !== null
+              ? { calls: currentInfo.checkedTargets.map((object) => ({ target: object, input: liveEffectiveInput })) }
+              : {}),
+          },
+        };
+      };
       const onConfirmed = () => {
         dispatchingOperation.value = operationName;
       };
@@ -361,37 +437,23 @@ export function useOperationRunner(options: {
         answer = await panel.instance.writeOperation(
           operationId,
           first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: effectiveInput } },
-          { onConfirmed, ...(agentContext ? { agentContext } : {}) },
+          {
+            onConfirmed,
+            ...(agentContext ? { agentContext, evaluateSubmission: evaluateButtonSubmission } : {}),
+          },
         );
       } catch (reason) {
         if (reason instanceof PanelOperationDeferred) {
           const deferred = reason;
           const { preparation } = deferred;
-          const isStillValid = () => {
-            const currentInfo = resolveOperationTarget(panel, slot, member, descriptor, panel.instance.state.values.value);
-            if (JSON.stringify(currentInfo.target ?? null) !== capturedTargetSig) {
-              return { ok: false as const, reason: "stale", message: "The selected target changed after confirmation was requested." };
-            }
-            if (JSON.stringify(currentInfo.checkedTargets) !== capturedCheckedSig) {
-              return { ok: false as const, reason: "stale", message: "The checked batch selection changed after confirmation was requested." };
-            }
-            if (!isOperationReady(descriptor, currentInfo, running.value)) {
-              return { ok: false as const, reason: "stale", message: "This operation is no longer available." };
-            }
-            return { ok: true as const };
-          };
-          const confirmation: PendingPageActionConfirmation = {
+          const confirmation = createDeferredConfirmation({
             intentId: preparation.intentId,
             questionId: preparation.questionId!,
             operationId: preparation.operationId,
             label: preparation.label,
-            isStillValid,
-            async dispatch(): Promise<PageActionConfirmedDispatchResult> {
-              const check = isStillValid();
-              if (!check.ok) {
-                await deferred.cancelNow({ code: "ACTION_CONFIRMATION_STALE", message: check.message }).catch(() => undefined);
-                return { ok: false, intentId: preparation.intentId, reason: "stale", message: check.message };
-              }
+            isStillValid: deferred.isStillValid,
+            cancel: deferred.cancelNow,
+            async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
               runningOperation.value = operationName;
               dispatchingOperation.value = operationName;
               failure.value = null;
@@ -424,8 +486,7 @@ export function useOperationRunner(options: {
                 dispatchingOperation.value = null;
               }
             },
-            cancel: deferred.cancelNow,
-          };
+          });
           throw new PanelConfirmationDeferred(confirmation);
         }
         throw reason;
@@ -434,7 +495,7 @@ export function useOperationRunner(options: {
       applyWriteAnswer(answer);
       return "executed";
     } catch (reason) {
-      if (reason instanceof PanelConfirmationDeferred) throw reason;
+      if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
       failure.value = reason instanceof Error ? reason : new Error(String(reason));
       return "executed";
     } finally {
