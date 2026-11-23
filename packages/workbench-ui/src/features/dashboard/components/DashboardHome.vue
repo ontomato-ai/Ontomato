@@ -42,6 +42,9 @@ const panelRef = ref<{
 } | null>(null);
 const { dashboardItems, loadingDashboards, currentDashboardId, editingDashboardId, editingDashboardName } =
   storeToRefs(store);
+const currentDashboardName = computed(
+  () => dashboardItems.value.find((item) => item.id === currentDashboardId.value)?.name ?? ""
+);
 
 function onPanelDirty(dirty: boolean) {
   panelDirty.value = dirty;
@@ -454,6 +457,7 @@ onMounted(async () => {
         ref="panelRef"
         :key="currentDashboardId"
         :dashboard-id="currentDashboardId"
+        :dashboard-name="currentDashboardName"
         :card-id="chosenCardId"
         :editing-board-name="Boolean(currentDashboardId && editingDashboardId === currentDashboardId)"
         @select-card="(card: { id: string; name: string } | null) => writeCard(card)"

@@ -272,6 +272,8 @@ const { t } = useI18n();
  */
 const props = defineProps({
   dashboardId: { type: String, default: "" },
+  /** Latest saved board name from the tab strip so direct tab renames keep the local preview baseline current. */
+  dashboardName: { type: String, default: "" },
   /** The card the page's own address names as chosen, so a board reopened at that address shows the same one chosen. */
   cardId: { type: String, default: "" },
   /** Whether the user is currently editing this dashboard's title inline in the tab strip. */
@@ -283,6 +285,15 @@ const dragDisabled = ref(false);
 const boardName = ref("");
 const chartGroups = ref(null);
 const attrShowNameMapByClass = ref({});
+
+watch(
+  () => props.dashboardName,
+  (nextName) => {
+    const trimmed = String(nextName || "").trim();
+    if (!trimmed) return;
+    boardName.value = trimmed;
+  },
+);
 
 const boardPreview = ref(null);
 const savingBoardPreview = ref(false);
