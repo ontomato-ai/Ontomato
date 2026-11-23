@@ -1171,7 +1171,7 @@ it("reads the metric and function catalogues, a definition and its forms with th
   }
 });
 
-it("reads the SDK component catalogue and definition from the installed SDK release", async () => {
+it("reads the SDK component catalogue, record, detail tables, and definition from the installed SDK release", async () => {
   const componentType = "platform:SDKComponent";
   const typeSource = { type: { kind: "PlatformObjectType", id: componentType } };
   const read = await ownerReadPanel("sdk-components", {
@@ -1181,6 +1181,12 @@ it("reads the SDK component catalogue and definition from the installed SDK rele
       data: {
         matches: { source: typeSource, read: "catalogue", params: { search: { input: "search" } } },
         definition: { source: { object: { input: "component" } }, read: "definition", params: {} },
+        record: { source: { object: { input: "component" } }, read: "record", params: {} },
+        dataRows: { source: { object: { input: "component" } }, read: "dataRows", params: {} },
+        configRows: { source: { object: { input: "component" } }, read: "configRows", params: {} },
+        inputRows: { source: { object: { input: "component" } }, read: "inputRows", params: {} },
+        outputRows: { source: { object: { input: "component" } }, read: "outputRows", params: {} },
+        operationRows: { source: { object: { input: "component" } }, read: "operationRows", params: {} },
       },
     },
   });
@@ -1201,6 +1207,40 @@ it("reads the SDK component catalogue and definition from the installed SDK rele
   expect(definition.status).toBe("ready");
   if (definition.status !== "ready") throw new Error(definition.status);
   expect(appsSdkComponentCatalogEntrySchema.parse(definition.value)).toEqual(summary);
+  expect(await read("components", "record", { component })).toMatchObject({
+    status: "ready",
+    value: {
+      primaryKey: "@ontomato/sdk:ObjectSummary",
+      className: componentType,
+      label: "ObjectSummary",
+      subtitle: "@ontomato/sdk",
+      fields: {
+        componentId: "ObjectSummary",
+        package: "@ontomato/sdk",
+        module: summary.module,
+        exportName: summary.exportName,
+        role: "Presentation",
+        meaning: summary.meaning,
+      },
+      tags: { bindsElement: summary.bindsElement },
+    },
+  });
+  expect(await read("components", "dataRows", { component })).toMatchObject({
+    status: "ready",
+    value: [expect.objectContaining({ primaryKey: "record", label: "record", fields: { required: "Yes" } })],
+  });
+  expect(await read("components", "configRows", { component })).toMatchObject({
+    status: "ready",
+    value: expect.arrayContaining([expect.objectContaining({ primaryKey: "fields", label: "fields" })]),
+  });
+  expect(await read("components", "outputRows", { component })).toMatchObject({
+    status: "ready",
+    value: expect.arrayContaining([
+      expect.objectContaining({ primaryKey: "readOnlyOutput:label", label: "label" }),
+      expect.objectContaining({ primaryKey: "event:navigate", label: "navigate" }),
+    ]),
+  });
+  expect(await read("components", "operationRows", { component })).toEqual({ status: "empty" });
   expect(await read("components", "definition", { component: { ...component, primaryKey: "@ontomato/sdk:Missing" } })).toMatchObject({
     status: "error", message: "SDK component '@ontomato/sdk:Missing' is not in the current release.",
   });
