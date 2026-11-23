@@ -447,6 +447,7 @@ export const assistantService = {
     }
     if (snapshot?.latestRun?.run.status === "running")
       throw new HttpError(409, "Conversation is running", "SESSION_BUSY");
+    if (snapshot) await c.deleteSession(sessionId);
     const scopes = (await db().query(`SELECT retrieval_scope_id FROM ${table("assistant_turns")} WHERE session_id=$1 AND retrieval_scope_id IS NOT NULL`, [sessionId])).rows;
     const removed = new Set<string>();
     for (const scope of scopes) {
@@ -460,7 +461,6 @@ export const assistantService = {
         }
       } catch (error) { if (!(error instanceof HttpError && error.status === 404)) throw error; }
     }
-    if (snapshot) await c.deleteSession(sessionId);
     await transaction(async (tx) => {
       await tx.query(
         `DELETE FROM ${table("assistant_external_threads")} WHERE session_id=$1`,

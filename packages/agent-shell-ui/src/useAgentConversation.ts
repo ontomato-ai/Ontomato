@@ -58,17 +58,65 @@ export function useAgentConversation(
   let knownMessageSeq = 0;
   /** The conversation's delegated work, as the host's task stream last reported it. */
   const tasks = shallowRef<AgentTasksSnapshot | null>(null);
+  /** Accepted queued runs acknowledged by `send()` before the task stream projects them. */
+  const localQueued = ref<Array<{ runId: string; inputIds: string[]; createdAt: string }>>([]);
   let detachTasks: (() => void) | null = null;
   let taskTimer: ReturnType<typeof setTimeout> | null = null;
 
+  const queuedRuns = computed(() => {
+    const byRun = new Map<string, { runId: string; inputIds: string[]; createdAt: string }>();
+    for (const entry of tasks.value?.queuedRuns ?? []) {
+      if (!state.runs[entry.runId]) byRun.set(entry.runId, { ...entry, inputIds: [...entry.inputIds] });
+    }
+    for (const entry of localQueued.value) {
+      if (state.runs[entry.runId]) continue;
+      if (tasks.value?.preparationFailures?.some((failure) => failure.runId === entry.runId)) continue;
+      const existing = byRun.get(entry.runId);
+      if (existing) {
+        for (const id of entry.inputIds) if (!existing.inputIds.includes(id)) existing.inputIds.push(id);
+      } else {
+        byRun.set(entry.runId, { ...entry, inputIds: [...entry.inputIds] });
+      }
+    }
+    return [...byRun.values()];
+  });
+
+  const viewTasks = computed<AgentTasksSnapshot | null>(() => {
+    if (!tasks.value && !queuedRuns.value.length) return null;
+    return {
+      sessionId: tasks.value?.sessionId ?? state.sessionId ?? "",
+      tasks: tasks.value?.tasks ?? [],
+      qualityResults: tasks.value?.qualityResults ?? [],
+      ...(tasks.value?.preparationFailures ? { preparationFailures: tasks.value.preparationFailures } : {}),
+      ...(queuedRuns.value.length ? { queuedRuns: queuedRuns.value } : {}),
+    };
+  });
+
   const pendingQuestions=computed(()=>state.pendingQuestions);
-  const items = computed(() => conversationItems(state, tasks.value));
+  const items = computed(() => conversationItems(state, viewTasks.value));
   const activeRunId = computed(
     () => Object.values(state.runs).find((run) => run.status === "running")?.id ?? null,
   );
   const delegatedRunId = computed(() => tasks.value?.tasks.find(task =>
     task.kind === "agent" && (task.status === "starting" || task.status === "running"))?.root.runId ?? null);
-  const busy = computed(() => sending.value || activeRunId.value !== null || delegatedRunId.value !== null);
+  const queuedRunId = computed(() => queuedRuns.value[0]?.runId ?? null);
+  const busy = computed(
+    () => sending.value || activeRunId.value !== null || delegatedRunId.value !== null || queuedRunId.value !== null,
+  );
+
+  function rememberQueued(runId: string, inputId: string) {
+    if (state.runs[runId]) return;
+    const existing = localQueued.value.find((entry) => entry.runId === runId);
+    if (existing) {
+      if (!existing.inputIds.includes(inputId)) {
+        localQueued.value = localQueued.value.map((entry) =>
+          entry.runId === runId ? { ...entry, inputIds: [...entry.inputIds, inputId] } : entry,
+        );
+      }
+      return;
+    }
+    localQueued.value = [...localQueued.value, { runId, inputIds: [inputId], createdAt: new Date().toISOString() }];
+  }
 
   function stopTasks() {
     detachTasks?.();
@@ -89,7 +137,20 @@ export function useAgentConversation(
     detachTasks = host.subscribe(sessionId, {
       frame(frame) {
         if (selection === token) {
-          tasks.value = { sessionId: frame.sessionId, tasks: frame.tasks, qualityResults: frame.qualityResults, preparationFailures: frame.preparationFailures };
+          tasks.value = {
+            sessionId: frame.sessionId,
+            tasks: frame.tasks,
+            qualityResults: frame.qualityResults,
+            preparationFailures: frame.preparationFailures,
+            queuedRuns: frame.queuedRuns,
+          };
+          const serverQueued = new Set((frame.queuedRuns ?? []).map((entry) => entry.runId));
+          localQueued.value = localQueued.value.filter(
+            (entry) =>
+              !serverQueued.has(entry.runId) &&
+              !state.runs[entry.runId] &&
+              !frame.preparationFailures?.some((failure) => failure.runId === entry.runId),
+          );
           if (frame.notifications) applyNotifications(state, frame.notifications);
           // The questions waiting for the reader belong to the conversation, not to a run: one may arrive after the reply
           // that led to it has ended, so the session's own list replaces what the last run reported.
@@ -108,6 +169,7 @@ export function useAgentConversation(
     token++;
     stopTasks();
     tasks.value = null;
+    localQueued.value = [];
     stream.stop();
     Object.assign(state, emptyConversation(sessionId));
     loading.value = false;
@@ -250,6 +312,9 @@ export function useAgentConversation(
       if(result.snapshot) {
         if(state.runs[result.snapshot.run.id]) applyRunSnapshot(state,result.snapshot);
         else attach(result.snapshot);
+      } else if (result.delivery.status === "starting") {
+        rememberQueued(result.delivery.runId, result.input.id);
+        if (!detachTasks && state.sessionId) followTasks(state.sessionId);
       }
       pendingInput.value = null;
       return { createdSession, ...result };
@@ -272,6 +337,7 @@ export function useAgentConversation(
 
   function attach(snapshot: AgentHostRunSnapshot) {
     applyRunSnapshot(state, snapshot);
+    localQueued.value = localQueued.value.filter((entry) => entry.runId !== snapshot.run.id);
     for (const message of snapshot.messages) knownMessageSeq = Math.max(knownMessageSeq, message.messageSeq);
     artifactRevision.value++;
     followTasks(state.sessionId!);
@@ -295,14 +361,16 @@ export function useAgentConversation(
   });
 
   async function cancel() {
-    const runId = activeRunId.value ?? delegatedRunId.value;
+    const runId = activeRunId.value ?? delegatedRunId.value ?? queuedRunId.value;
     const sessionId = state.sessionId;
     if (!runId || !sessionId) return;
     const current = token;
+    const hadRun = Boolean(state.runs[runId]);
     try {
       await port().cancel(sessionId, runId);
+      if (current === token) localQueued.value = localQueued.value.filter((entry) => entry.runId !== runId);
     } finally {
-      if (current === token) await stream.load(subscription(runId));
+      if (current === token && hadRun) await stream.load(subscription(runId));
     }
   }
 
@@ -352,6 +420,8 @@ export function useAgentConversation(
     pendingInput,
     busy,
     activeRunId,
+    queuedRuns,
+    queuedRunId,
     artifactRevision,
     open,
     followRun,

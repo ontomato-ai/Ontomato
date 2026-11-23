@@ -1,3 +1,4 @@
+import { agentRunIntentSchema } from "@ontomato/contracts/agent-channel";
 import { runtimeMessageSchema } from "@ontomato/contracts/agent-runtime-messages";
 import { runtimeSessionHistorySchema, type SessionHistoryQuery } from "@ontomato/contracts/session-history";
 import { modelOptionsSchema } from "@ontomato/contracts/model-settings";
@@ -166,6 +167,11 @@ export class RuntimeClient {
   async run(id: string) {
     return runtimeRunSnapshotSchema.parse(
       await this.request(`/v1/runs/${encodeURIComponent(id)}`),
+    );
+  }
+  async channelIntent(id: string) {
+    return agentRunIntentSchema.parse(
+      await this.request(`/v1/channel/intents/${encodeURIComponent(id)}`),
     );
   }
   /** The run's lifecycle view only; no events, messages or artifacts. */
