@@ -34,6 +34,8 @@ const props = withDefaults(defineProps<{
   address: string;
   /** The deep-linkable state the page address currently requests. */
   initial?: Record<string, unknown>;
+  /** State values supplied by the application entry. */
+  entryInputs?: Readonly<Record<string, RuntimeJsonValue>>;
   /** Pending live state patch (including non-deepLink declared public state) for a newly mounted panel. */
   liveState?: Readonly<Record<string, RuntimeJsonValue>> | null;
   /** The title drawn above the frame; absent when the frame is the whole surface. */
@@ -151,6 +153,7 @@ const view = usePanelInstance(props.port, {
   },
   address: () => props.address,
   initial: () => props.initial ?? {},
+  entryInputs: () => props.entryInputs,
   liveState: () => props.liveState ?? null,
   wired: () => props.wired,
   formEdited: (target) => emit("form-edited", target),

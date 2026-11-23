@@ -418,7 +418,7 @@ function decodeFlatChildObjectRef(raw: string, parentType: string): PanelChildOb
  * - Multi-type `kind: "object-union"` accepts `className~primaryKey` (or an object ref) verified against allowed types.
  * - `kind: "child-object"` accepts `parentKey~primaryKey` or `parentType~parentKey~primaryKey` (or a child identity).
  * - `kind: "list"` decodes an explicit empty query value (`""`, from `?name=`) as `[]` (used when clearing a non-empty
- *   list default; single-element `[""]` is not distinguished from `[]` in flat query strings), and otherwise accepts a
+ *   list default), and otherwise accepts a
  *   single query value or repeated query values, normalizing every non-null element.
  * - Any value that does not match the declared field type is rejected so callers can safely ignore malformed URLs.
  */
@@ -503,11 +503,11 @@ export function normalizeExternalPanelValue(
 }
 
 /**
- * Normalizes externally supplied (URL / deep-link) panel state against a manifest:
+ * Normalizes URL state against a panel manifest:
  * keeps only `deepLink` fields, promotes single-type object string shorthands, and drops invalid values
  * so malformed query parameters fall back to defaults instead of poisoning or crashing the panel.
  */
-export function normalizeExternalPanelState(
+export function normalizePanelDeepLinkState(
   manifest: Pick<PanelManifest, "state">,
   raw: Readonly<Record<string, unknown>>,
 ): Record<string, PanelDeepLinkStateValue> {

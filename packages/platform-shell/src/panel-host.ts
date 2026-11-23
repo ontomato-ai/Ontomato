@@ -19,7 +19,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import {
   matchesDirectPanelValue,
-  normalizeExternalPanelState,
+  normalizePanelDeepLinkState,
   panelStateValueSchema,
   type PanelObjectIdentity,
   type PanelOperation,
@@ -125,7 +125,7 @@ export interface DirectPanelRun {
   /** The instance's address, with its state, as the reader and a message see it. */
   url: () => string;
   label: () => string;
-  /** The declared deep-linkable state the address asks for. */
+  /** The initial state supplied by the address, the entry and live state. */
   initial: PanelHostState;
   /**
    * Its deep-linkable state, as it holds it at the address it was told last: the host carries it into the address, and
@@ -337,6 +337,8 @@ export interface PanelInstanceOptions {
   address: () => string;
   /** The current external address's requested state, including updates on the same page. */
   initial: () => Record<string, unknown>;
+  /** State values supplied by the application entry. */
+  entryInputs?: () => Readonly<Record<string, RuntimeJsonValue>> | undefined;
   /** Optional initial live state patch (covering all declared public state, not only deepLink) for a newly opened panel. */
   liveState?: () => Readonly<Record<string, RuntimeJsonValue>> | null;
   /** Entry-wired state field names that cannot be overridden by live state patches. */
@@ -911,7 +913,16 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   function requestedState(panel: HostedPanelSource["panel"]) {
-    return normalizeExternalPanelState(panel.manifest, options.initial());
+    const fromAddress = normalizePanelDeepLinkState(panel.manifest, options.initial());
+    for (const name of options.wired?.() ?? []) delete fromAddress[name];
+    return { ...fromAddress, ...entryState(panel) };
+  }
+
+  function entryState(panel: HostedPanelSource["panel"], externalOnly = false): PanelHostState {
+    return Object.fromEntries(Object.entries(options.entryInputs?.() ?? {}).filter(([name]) => {
+      const field = panel.manifest.state[name];
+      return field?.external && (!externalOnly || !field.deepLink);
+    }));
   }
 
   function syncAddress(): boolean {
@@ -937,7 +948,13 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     tellAddress(requested);
     return true;
   }
-  watch([options.address, options.initial], syncAddress);
+  watch([options.address, options.initial, () => JSON.stringify(options.entryInputs?.())], syncAddress);
+  watch(() => JSON.stringify(options.entryInputs?.()), () => {
+    if (source.value && direct.value) {
+      const patch = entryState(source.value.panel, true);
+      if (Object.keys(patch).length) direct.value.mount.setState?.(patch);
+    }
+  });
 
   /**
    * The reader saved or discarded the draft the address links: the address drops the link and keeps everything else, and
