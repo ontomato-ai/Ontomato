@@ -71,6 +71,29 @@ const panelGroups = computed<readonly PlatformPanelGroup[]>(() =>
 );
 
 const panelFoot = computed<PlatformPanelPage | null>(() => (props.foot ? toPanelPage(props.foot) : null));
+
+/**
+ * Resolves the highlighted menu entry: prefers an exact id match, and otherwise falls back to the longest ancestor
+ * path prefix so a hidden child entry (e.g. `/ontology/relations/detail`) keeps its parent menu item highlighted.
+ */
+const matchedActiveId = computed<string | null>(() => {
+  const active = props.activeId;
+  if (!active) return null;
+  const ids: string[] = [];
+  for (const group of panelGroups.value) {
+    for (const page of group.pages) ids.push(page.id);
+  }
+  if (panelFoot.value) ids.push(panelFoot.value.id);
+  if (ids.includes(active)) return active;
+  if (!active.startsWith("/")) return active;
+  let best: string | null = null;
+  for (const id of ids) {
+    if (id.length > 1 && id.startsWith("/") && active.startsWith(`${id}/`) && (!best || id.length > best.length)) {
+      best = id;
+    }
+  }
+  return best ?? active;
+});
 </script>
 
 <template>
@@ -79,7 +102,7 @@ const panelFoot = computed<PlatformPanelPage | null>(() => (props.foot ? toPanel
     <select
       class="mobile-page-select"
       :aria-label="ariaLabel"
-      :value="activeId ?? ''"
+      :value="matchedActiveId ?? ''"
       @change="emit('select', ($event.target as HTMLSelectElement).value)"
     >
       <optgroup v-for="group in panelGroups" :key="group.key" :label="group.label || title || ariaLabel">
@@ -93,7 +116,7 @@ const panelFoot = computed<PlatformPanelPage | null>(() => (props.foot ? toPanel
       class="app-menu-pages"
       :groups="panelGroups"
       :foot="panelFoot"
-      :active-page-id="activeId ?? null"
+      :active-page-id="matchedActiveId"
       @select-page="emit('select', $event)"
     />
   </aside>

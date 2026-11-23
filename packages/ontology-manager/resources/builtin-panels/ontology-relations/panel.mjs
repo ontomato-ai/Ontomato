@@ -37,7 +37,7 @@ await mountPanel({
     });
 
     const creating = computed(() => instance.state.values.value.creating === true);
-    const setCreating = (value) => instance.state.set("creating", value);
+    const setCreating = (value) => instance.state.set("creating", value ? true : null);
 
     function detailAddress(primaryKey) {
       const state = JSON.stringify({ selected: { className: TYPE, primaryKey } });
@@ -46,7 +46,7 @@ await mountPanel({
 
     function open(row) {
       if (!row?.primaryKey) return;
-      setCreating(false);
+      if (creating.value) setCreating(false);
       void navigate(detailAddress(row.primaryKey)).catch(() => undefined);
     }
 
