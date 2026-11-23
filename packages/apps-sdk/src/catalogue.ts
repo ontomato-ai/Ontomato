@@ -212,6 +212,7 @@ export const components: readonly ComponentMetadata[] = [
       search: { kind: "scalar", type: "string" },
     },
     readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
       total: { kind: "scalar", type: "number" },
       filteredCount: { kind: "scalar", type: "number" },
       checkedCount: { kind: "scalar", type: "number" },
@@ -260,6 +261,7 @@ export const components: readonly ComponentMetadata[] = [
     data: { record: { results: ["panelRecord"], required: false } },
     readOnlyOutputs: {
       label: { kind: "scalar", type: "string" },
+      status: { kind: "scalar", type: "string" },
     },
   }),
   defineComponentMeta({
@@ -359,6 +361,14 @@ export const components: readonly ComponentMetadata[] = [
       positions: { kind: "json" },
       // The zoom the canvas shows, to two decimals, as the reader zooms.
       zoom: { kind: "scalar", type: "number" },
+    },
+    readOnlyOutputs: {
+      status: { kind: "scalar", type: "string" },
+      error: { kind: "scalar", type: "string" },
+      pathStatus: { kind: "scalar", type: "string" },
+      pathHops: { kind: "scalar", type: "number" },
+      nodeCount: { kind: "scalar", type: "number" },
+      edgeCount: { kind: "scalar", type: "number" },
     },
   }),
   defineComponentMeta({

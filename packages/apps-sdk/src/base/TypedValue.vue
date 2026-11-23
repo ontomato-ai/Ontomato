@@ -206,16 +206,17 @@ const effectiveKind = computed(() =>
   }),
 );
 
-const resolvedEmptyText = computed(() =>
-  resolveLocalizedText({
+const resolvedEmptyText = computed(() => {
+  if (!props.emptyKey && props.emptyText === "") return "";
+  return resolveLocalizedText({
     key: props.emptyKey,
     fallback: props.emptyText,
     locale: locale.value,
     panelText: panel?.t,
     t: translate,
     te: hasTranslation,
-  }) || "—",
-);
+  }) || "—";
+});
 
 const isEmptyValue = computed(() => {
   const raw = resolved.value.raw;

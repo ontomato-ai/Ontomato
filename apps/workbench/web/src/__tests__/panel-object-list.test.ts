@@ -2777,3 +2777,79 @@ it("shows ObjectSummary title by default and hides the h3 heading when config.sh
   ownerLink.click();
   await vi.waitFor(() => expect(instance.state.values.value.navigated).toEqual({ className: USER, primaryKey: "u-9" }));
 });
+
+it("supports showHeader/showFooter suppression, searchFields allowlist, compact showChevron, and status output", async () => {
+  const projections: Record<string, DirectProjection> = {
+    "headless-table": {
+      ...meta,
+      id: "headless-table",
+      name: "Headless table",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: {
+        layout: "table",
+        showHeader: false,
+        showFooter: false,
+        searchable: false,
+        columns: [
+          { key: "label", subtitleKey: "code" },
+          { key: "kind", kind: "tag", align: "right" },
+        ],
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} } },
+    },
+    "filtered-compact": {
+      ...meta,
+      id: "filtered-compact",
+      name: "Filtered compact",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { search: { kind: "scalar", type: "string" } },
+      outputs: {},
+      config: {
+        layout: "list",
+        searchable: false,
+        showFooter: false,
+        showChevron: true,
+        searchFields: ["label", "code"],
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      search: { type: { kind: "scalar", type: "string" }, default: "" },
+    },
+    members: {
+      table: { target: { projectionId: "headless-table" } },
+      compact: {
+        target: { projectionId: "filtered-compact" },
+        inputs: { search: { state: "search" } },
+      },
+    },
+  });
+  const rows = [
+    { primaryKey: "k-1", label: "Order", fields: { code: "order_code", kind: "string", hidden: "secret_token" } },
+    { primaryKey: "k-2", label: "Customer", fields: { code: "cust_code", kind: "int", hidden: "order_hidden" } },
+  ];
+  const { instance, element } = mountDirect(manifest, projections, () => ready(rows));
+  await vi.waitFor(() => {
+    expect(instance.outputs.table?.status).toBe("ready");
+    expect(instance.outputs.compact?.status).toBe("ready");
+  });
+
+  // Table omits thead and footer when showHeader: false and showFooter: false.
+  expect(element.querySelector("thead")).toBeNull();
+  expect(element.querySelector(".sdk-object-list-pagination")).toBeNull();
+  expect(element.querySelectorAll("tbody tr")).toHaveLength(2);
+
+  // Compact list renders trailing chevron and restricts local search to searchFields.
+  expect(element.querySelectorAll(".sdk-object-list-item-chevron")).toHaveLength(2);
+  instance.state.set("search", "secret_token");
+  await nextTick();
+  expect(instance.outputs.compact?.filteredCount).toBe(0);
+
+  instance.state.set("search", "order_code");
+  await nextTick();
+  expect(instance.outputs.compact?.filteredCount).toBe(1);
+});

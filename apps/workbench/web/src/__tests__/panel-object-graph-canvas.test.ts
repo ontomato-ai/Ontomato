@@ -622,3 +622,30 @@ it("separates 'no path found in the visible graph' from 'relations hidden due to
     partialNotice: publicEn.platform.graphEdgesForbidden,
   }]);
 });
+
+it("publishes graph status, counts, and shortest-path read-only outputs for panels", async () => {
+  const { instance } = mount(false);
+  await vi.waitFor(() => expect(instance.outputs.graph?.status).toBe("ready"));
+  expect(instance.outputs.graph?.nodeCount).toBe(2);
+  expect(instance.outputs.graph?.edgeCount).toBe(1);
+  expect(instance.outputs.graph?.pathStatus).toBe("idle");
+  expect(instance.outputs.graph?.pathHops ?? null).toBeNull();
+
+  // Direct path: person -> org (1 hop).
+  instance.state.setState({
+    pathFrom: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+    pathTo: { className: OBJECT_TYPE, primaryKey: "org" } as never,
+  });
+  await nextTick();
+  expect(instance.outputs.graph?.pathStatus).toBe("found");
+  expect(instance.outputs.graph?.pathHops).toBe(1);
+
+  // Reverse direction has no directed edge: not-found.
+  instance.state.setState({
+    pathFrom: { className: OBJECT_TYPE, primaryKey: "org" } as never,
+    pathTo: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+  });
+  await nextTick();
+  expect(instance.outputs.graph?.pathStatus).toBe("not-found");
+  expect(instance.outputs.graph?.pathHops ?? null).toBeNull();
+});

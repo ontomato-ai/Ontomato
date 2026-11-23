@@ -650,3 +650,41 @@ describe("MetricCard", () => {
     expect(standalone.container.querySelector(".sdk-metric-card-description")?.textContent?.trim()).toBe("Enforced across workspace");
   });
 });
+
+describe("TypedValue emptyText", () => {
+  it("renders empty text verbatim when emptyText is explicitly set to an empty string", async () => {
+    const empty = mountStandalone(TypedValue, { value: null, emptyText: "" });
+    expect(empty.container.querySelector(".sdk-typed-value-empty")?.textContent).toBe("");
+
+    const boundProjection: DirectProjection = {
+      ...meta,
+      id: "empty-desc-val",
+      name: "Optional description",
+      componentId: "@ontomato/sdk:TypedValue",
+      inputs: { rel: { kind: "object", objectType: RELATIONSHIP } },
+      outputs: {},
+      config: { field: "desc", emptyText: "" },
+      data: { record: { source: { object: { input: "rel" } }, read: "record", params: {} } },
+    };
+    const manifest: DirectPanelManifest = {
+      state: {
+        rel: { type: { kind: "object", objectType: RELATIONSHIP }, personal: false, deepLink: false, external: false },
+      },
+      members: {
+        view: {
+          target: { projectionId: boundProjection.id },
+          inputs: { rel: { state: "rel" } },
+        },
+      },
+    };
+    const bound = mountProjection(
+      boundProjection,
+      () => ready({ primaryKey: "r-1", label: "Links", fields: { desc: "" } }),
+      { manifest, initial: { rel: { className: RELATIONSHIP, primaryKey: "r-1" } } },
+    );
+    await vi.waitFor(() => {
+      expect(bound.container.querySelector(".sdk-typed-value-empty")).not.toBeNull();
+    });
+    expect(bound.container.querySelector(".sdk-typed-value-empty")?.textContent).toBe("");
+  });
+});

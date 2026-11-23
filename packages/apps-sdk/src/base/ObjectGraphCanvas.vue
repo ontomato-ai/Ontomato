@@ -7,7 +7,7 @@ import type { PageHighlight } from "@ontomato/contracts/page-context";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { G6GraphCanvas, layoutByForce, layoutByRelations, type GraphCanvasPoint, type GraphCanvasTone, type GraphCanvasViewport, type LayoutRoom } from "@ontomato/foundation-ui/graph/g6";
 import { usePanelContext } from "../panel/context";
-import { useMember, useMemberParam } from "../panel/member";
+import { useMember, useMemberOutput, useMemberParam } from "../panel/member";
 import { savePanelFile } from "../panel/save-file";
 import { useGraphRecords, type EdgeEndsConfig } from "./object-graph-data";
 import { findDirectedGraphPath } from "./object-graph-path";
@@ -326,6 +326,25 @@ const reportedHighlight = computed<PageHighlight | null>(() => {
 });
 const stopReportingHighlight = instance.reportHighlight(member.key, reportedHighlight);
 onBeforeUnmount(stopReportingHighlight);
+
+useMemberOutput("status", () =>
+  resolved.value.loading
+    ? "loading"
+    : resolved.value.error
+      ? "error"
+      : resolved.value.nodes.length > 0
+        ? "ready"
+        : "empty",
+);
+useMemberOutput("error", () => resolved.value.error ?? null);
+useMemberOutput("pathStatus", () => pathResult.value.status);
+useMemberOutput("pathHops", () =>
+  pathResult.value.status === "found" || pathResult.value.status === "same-node"
+    ? pathResult.value.hops
+    : null,
+);
+useMemberOutput("nodeCount", () => resolved.value.nodes.length);
+useMemberOutput("edgeCount", () => resolved.value.links.length);
 
 /** Every node where the reader put it, else where its relations place it. */
 const drawnNodes = computed(() => resolved.value.nodes.map((node) => ({

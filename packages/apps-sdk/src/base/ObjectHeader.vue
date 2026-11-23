@@ -87,6 +87,8 @@ const emit = defineEmits<{
 }>();
 
 defineSlots<{
+  /** Optional leading icon or badge rendered before the object title and subtitle. */
+  leading?(): unknown;
   /** Additional custom actions rendered beside or instead of projection operations. */
   actions?(): unknown;
 }>();
@@ -251,6 +253,9 @@ watch(
 
 if (member.value) {
   useMemberOutput("label", () => resolvedTitle.value || null);
+  useMemberOutput("status", () =>
+    recordData.value?.status ?? (props.record !== undefined || props.title !== undefined ? "ready" : "awaiting"),
+  );
 }
 
 function handleMoreCommand(command: string | number | Record<string, unknown>) {
@@ -266,6 +271,9 @@ function handleMoreCommand(command: string | number | Record<string, unknown>) {
     <data-state v-if="pendingRecord" :result="pendingRecord" :labels="labels"></data-state>
     <template v-else>
       <div class="sdk-object-header-row">
+        <div v-if="$slots.leading" class="sdk-object-header-leading">
+          <slot name="leading"></slot>
+        </div>
         <div class="sdk-object-header-identity">
           <div class="sdk-object-header-title-line">
             <h2 v-if="resolvedTitle" class="sdk-object-header-title">{{ resolvedTitle }}</h2>
@@ -377,6 +385,11 @@ function handleMoreCommand(command: string | number | Record<string, unknown>) {
   justify-content: space-between;
   gap: var(--spacing-sm) var(--spacing-md);
   min-width: 0;
+}
+.sdk-object-header-leading {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
 }
 .sdk-object-header-identity {
   display: flex;

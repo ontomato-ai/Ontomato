@@ -127,8 +127,11 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "pagination",
   "pageSizes",
   "showChevron",
+  "showHeader",
+  "showFooter",
   "creatingRow",
   "searchable",
+  "searchFields",
   "groupBy",
   "groupEmptyLabel",
   "localFilters",
@@ -212,8 +215,12 @@ const props = withDefaults(
     pagination?: "auto" | "pages" | "load-more";
     /** Selectable page sizes offered in the pagination footer when `pagination === "pages"` and the read accepts `size` or `page`. */
     pageSizes?: readonly number[];
-    /** Whether selectable table rows render a subtle trailing chevron (`>`) column. */
+    /** Whether selectable table or compact list rows render a subtle trailing chevron (`>`). */
     showChevron?: boolean;
+    /** Whether table layout renders its `<thead>` column header row; defaults to `true`. */
+    showHeader?: boolean;
+    /** Whether the bottom total/pagination footer is rendered; defaults to `true`. */
+    showFooter?: boolean;
     /** Controls visibility of the top `#create-row` inline form block; omitted, shown whenever `#create-row` has content. */
     creatingRow?: boolean;
     /**
@@ -223,6 +230,11 @@ const props = withDefaults(
      * provides the search box) while still reading the bound `search` state.
      */
     searchable?: boolean;
+    /**
+     * Optional allowlist of record keys (`"label"`, `"primaryKey"`, `"subtitle"`, or field/tag keys) checked during
+     * local search. Omitted, all record fields and tags are searched.
+     */
+    searchFields?: readonly string[];
     /**
      * Record field key used to group filtered rows under collapsible section headers showing each group's label and
      * real-time filtered count (groups with zero matching rows are omitted). Works across list, table, and card layouts.
@@ -258,8 +270,11 @@ const props = withDefaults(
     pagination: "auto",
     pageSizes: () => [10, 20, 50],
     showChevron: false,
+    showHeader: true,
+    showFooter: true,
     creatingRow: undefined,
     searchable: undefined,
+    searchFields: undefined,
     groupBy: undefined,
     groupEmptyLabel: undefined,
     localFilters: undefined,
@@ -316,6 +331,8 @@ defineSlots<{
   actions?(props: RowSlotScope): unknown;
   /** Expanded detail region rendered inline below a row when toggled open. */
   "row-detail"?(props: RowSlotScope & { collapse: () => void }): unknown;
+  /** Custom leading badge or icon rendered before each compact list item's title and subtitle. */
+  "item-leading"?(props: RowSlotScope): unknown;
   /** Custom card renderer in `"cards"` layout; falls back to the default card when empty. */
   card?(
     props: RowSlotScope & {
@@ -504,6 +521,9 @@ const actionColumnStyle = computed<Record<string, string | undefined>>(() => ({
 }));
 const showRowChevron = computed(
   () => Boolean(props.showChevron) && isTable.value && canSelect && !hasRowDetailSlot.value && !hasActionColumn.value,
+);
+const showListChevron = computed(
+  () => Boolean(props.showChevron) && !isTable.value && !isCards.value && !hasActionColumn.value,
 );
 const tableColumnCount = computed(
   () =>
@@ -781,7 +801,7 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => {
   const filters = activeLocalFieldFilters.value;
   const fallbackClassName = activeType.value ?? objectType;
   return rawRows.value.filter((row) => {
-    if (query !== "" && !matchesLocalSearch(row, query, locale.value, t)) return false;
+    if (query !== "" && !matchesLocalSearch(row, query, locale.value, t, props.searchFields)) return false;
     for (const [fieldKey, expected] of filters) {
       if (!matchesLocalFieldFilter(row, fieldKey, expected, fallbackClassName, locale.value, t)) return false;
     }
@@ -956,7 +976,9 @@ const showLoadMore = computed(
 );
 
 const showFooter = computed(
-  () => showFooterTotal.value || showPageControls.value || showCursorPageControls.value || showLoadMore.value,
+  () =>
+    props.showFooter !== false
+    && (showFooterTotal.value || showPageControls.value || showCursorPageControls.value || showLoadMore.value),
 );
 
 const showCheckRow = computed(
@@ -1952,6 +1974,7 @@ const selectedRowLabel = computed<string | null>(() => {
   return match ? (match.label || match.primaryKey) : null;
 });
 
+useMemberOutput("status", () => datumState.value.status);
 useMemberOutput("total", () => (datumState.value.status === "ready" ? parsedData.value.total : 0));
 useMemberOutput("filteredCount", () => (datumState.value.status === "ready" ? rows.value.length : 0));
 useMemberOutput("checkedCount", () => checkedRefs.value.length);
@@ -2040,7 +2063,7 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
         @scroll="onContainerScroll"
       >
         <table class="sdk-object-list-table">
-          <thead>
+          <thead v-if="showHeader !== false">
             <tr>
               <th v-if="hasRowDetailSlot" class="sdk-object-list-expand-col"></th>
               <th v-if="canCheck" class="sdk-object-list-check-col">
@@ -2150,7 +2173,7 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
                       :fallback-to-default="true"
                     >
                       <button
-                        v-if="referenceField(entry.row, column.key)"
+                        v-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
                         type="button"
                         class="sdk-object-ref-link"
                         @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
@@ -2202,7 +2225,7 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
                       </div>
                     </list-row-slot-host>
                     <button
-                      v-else-if="referenceField(entry.row, column.key)"
+                      v-else-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
                       type="button"
                       class="sdk-object-ref-link"
                       @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
@@ -2491,7 +2514,7 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
                       </template>
                     </list-row-slot-host>
                     <button
-                      v-else-if="referenceField(entry.row, column.key)"
+                      v-else-if="column.kind !== 'text' && referenceField(entry.row, column.key)"
                       type="button"
                       class="sdk-object-ref-link"
                       @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
@@ -2669,54 +2692,65 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
                 class="sdk-object-list-item-btn"
                 :data-row-density="listHasTwoLines ? 'two-line' : 'single'"
                 :aria-selected="entry.key === chosenIdentity"
-                :class="{ chosen: entry.key === chosenIdentity, 'sdk-object-list-item-two-line': listHasTwoLines }"
+                :class="{
+                  chosen: entry.key === chosenIdentity,
+                  'sdk-object-list-item-two-line': listHasTwoLines,
+                  'has-leading': Boolean($slots['item-leading']),
+                  'has-chevron': showListChevron,
+                }"
                 @click="choose(entry.row)"
                 @keydown="onListItemKeydown(entry.row, $event)"
               >
-                <span class="sdk-object-list-item-head" :class="{ 'sdk-object-list-item-head-dot': statusStyle === 'dot' }">
+                <span v-if="$slots['item-leading']" class="sdk-object-list-item-leading" aria-hidden="true">
+                  <slot name="item-leading" v-bind="rowSlotProps(entry.row, entry.rowIndex)"></slot>
+                </span>
+                <span class="sdk-object-list-item-content">
+                  <span class="sdk-object-list-item-head" :class="{ 'sdk-object-list-item-head-dot': statusStyle === 'dot' }">
+                    <span
+                      v-if="statusField && statusStyle === 'dot' && fieldValue(entry.row, statusField) !== ''"
+                      class="sdk-object-list-status-dot"
+                      :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                      :title="fieldValue(entry.row, statusField)"
+                      aria-hidden="true"
+                    ></span>
+                    <span class="sdk-object-list-item-label">
+                      <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </span>
+                    <span
+                      v-if="statusField && statusStyle !== 'dot' && fieldValue(entry.row, statusField) !== ''"
+                      class="sdk-object-list-tag"
+                      :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                    >{{ fieldValue(entry.row, statusField) }}</span>
+                  </span>
                   <span
-                    v-if="statusField && statusStyle === 'dot' && fieldValue(entry.row, statusField) !== ''"
-                    class="sdk-object-list-status-dot"
-                    :data-tone="entry.row.tones?.[statusField] ?? 'default'"
-                    :title="fieldValue(entry.row, statusField)"
-                    aria-hidden="true"
-                  ></span>
-                  <span class="sdk-object-list-item-label">
-                    <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
+                    v-if="fieldValue(entry.row, summaryKey) !== ''"
+                    class="sdk-object-list-item-sub"
+                    :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
+                    :style="{ WebkitLineClamp: subtitleLines }"
+                  >
+                    <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
                       <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                     </template>
                   </span>
-                  <span
-                    v-if="statusField && statusStyle !== 'dot' && fieldValue(entry.row, statusField) !== ''"
-                    class="sdk-object-list-tag"
-                    :data-tone="entry.row.tones?.[statusField] ?? 'default'"
-                  >{{ fieldValue(entry.row, statusField) }}</span>
+                  <span v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-item-tags">
+                    <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
+                      <span
+                        v-if="isRecordReference(item)"
+                        role="link"
+                        tabindex="0"
+                        class="sdk-object-ref-link"
+                        @click.stop="navigateTo(toFieldReference(item), tagsField)"
+                        @keydown.enter.stop.prevent="navigateTo(toFieldReference(item), tagsField)"
+                      >
+                        {{ referenceDisplayLabel(item) }}
+                      </span>
+                      <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                    </template>
+                  </span>
                 </span>
-                <span
-                  v-if="fieldValue(entry.row, summaryKey) !== ''"
-                  class="sdk-object-list-item-sub"
-                  :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
-                  :style="{ WebkitLineClamp: subtitleLines }"
-                >
-                  <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
-                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                  </template>
-                </span>
-                <span v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-item-tags">
-                  <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
-                    <span
-                      v-if="isRecordReference(item)"
-                      role="link"
-                      tabindex="0"
-                      class="sdk-object-ref-link"
-                      @click.stop="navigateTo(toFieldReference(item), tagsField)"
-                      @keydown.enter.stop.prevent="navigateTo(toFieldReference(item), tagsField)"
-                    >
-                      {{ referenceDisplayLabel(item) }}
-                    </span>
-                    <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
-                  </template>
-                </span>
+                <span v-if="showListChevron" class="sdk-object-list-item-chevron" aria-hidden="true">›</span>
               </button>
               <div v-if="hasActionColumn" class="sdk-object-list-row-inline-actions" @click.stop>
                 <list-row-slot-host
@@ -3359,6 +3393,7 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
   margin: calc(var(--spacing-sm) + 3px) 0 0;
 }
 .sdk-object-list-item-btn {
+  align-items: center;
   background: transparent;
   border: 0;
   border-radius: var(--radius-xs);
@@ -3367,15 +3402,35 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
   cursor: pointer;
   display: flex;
   flex: 1;
-  flex-direction: column;
   font-size: var(--text-sm);
-  gap: calc(var(--spacing-xs) / 2);
-  justify-content: center;
+  gap: var(--spacing-sm);
   min-height: var(--list-row-height, 44px);
   min-width: 0;
   padding: var(--spacing-sm) 0;
   text-align: left;
   width: 100%;
+}
+.sdk-object-list-item-leading {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.sdk-object-list-item-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: calc(var(--spacing-xs) / 2);
+  justify-content: center;
+  min-width: 0;
+}
+.sdk-object-list-item-chevron {
+  color: var(--el-text-color-placeholder);
+  flex: 0 0 auto;
+  font-size: var(--text-md, 16px);
+  line-height: 1;
+}
+.sdk-object-list-item-btn.chosen .sdk-object-list-item-chevron {
+  color: var(--brand-link, var(--el-color-primary));
 }
 .sdk-object-list-item-btn.sdk-object-list-item-two-line {
   min-height: var(--list-row-two-line-height, 60px);

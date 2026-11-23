@@ -96,15 +96,39 @@ function collectFieldSearchTexts(
 }
 
 /**
- * Extract all searchable text fragments from a record: its `label`, `primaryKey`, `subtitle`, every field value
- * (including references, localized maps, arrays and nested JSON/object fields such as attribute lists), and tags.
+ * Extract searchable text fragments from a record. When `searchFields` is omitted or empty, searches `label`,
+ * `primaryKey`, `subtitle`, every field value (including references, localized maps, arrays and nested JSON/object
+ * fields such as attribute lists), and tags. When `searchFields` is supplied, restricts matching to those named keys.
  */
 export function extractSearchableTexts(
   row: PlatformObjectRecord,
   locale: string,
   translate: (key: string) => string,
+  searchFields?: readonly string[],
 ): readonly string[] {
   const texts: string[] = [];
+  if (searchFields && searchFields.length > 0) {
+    for (const key of searchFields) {
+      if (key === "label") {
+        if (row.label) texts.push(row.label);
+      } else if (key === "primaryKey") {
+        if (row.primaryKey) texts.push(row.primaryKey);
+      } else if (key === "subtitle") {
+        if (row.subtitle) texts.push(row.subtitle);
+      } else {
+        if (Object.hasOwn(row.fields, key)) {
+          collectFieldSearchTexts(row.fields[key], locale, translate, texts);
+        }
+        const tagList = row.tags?.[key];
+        if (tagList) {
+          for (const tag of tagList) {
+            if (tag.trim() !== "") texts.push(tag);
+          }
+        }
+      }
+    }
+    return texts;
+  }
   if (row.label) texts.push(row.label);
   if (row.primaryKey) texts.push(row.primaryKey);
   if (row.subtitle) texts.push(row.subtitle);
@@ -127,9 +151,10 @@ export function matchesLocalSearch(
   normalizedQuery: string,
   locale: string,
   translate: (key: string) => string,
+  searchFields?: readonly string[],
 ): boolean {
   if (!normalizedQuery) return true;
-  const texts = extractSearchableTexts(row, locale, translate);
+  const texts = extractSearchableTexts(row, locale, translate, searchFields);
   return texts.some((fragment) => fragment.toLowerCase().includes(normalizedQuery));
 }
 
