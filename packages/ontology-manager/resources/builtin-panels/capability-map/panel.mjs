@@ -34,7 +34,7 @@ function identityKey(value) {
 
 const CapabilityMap = {
   setup() {
-    const { instance, navigate, t } = usePanelContext();
+    const { instance, navigate } = usePanelContext();
     const state = instance.state;
     const values = state.values;
 
