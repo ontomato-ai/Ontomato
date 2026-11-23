@@ -3321,3 +3321,32 @@ test("targetless customer Actions live in top-level type table operations and om
   assert.deepEqual(snapshot.action?.affects, ["Order"]);
 
 });
+
+test("projectionOperation preserves draft targets on read actions so panelOperationSchema accepts them", () => {
+  const manifest = panelManifestSchema.parse({
+    state: {},
+    members: {
+      definition: {
+        target: { projectionId: "metric-definition-form" },
+        readOperationInputs: {
+          test: { draft: { slot: "definition" }, parameters: { fields: {} } },
+          testExecute: { draft: { slot: "definition" }, parameters: { fields: {} } },
+        },
+      },
+    },
+  });
+  const placed = projectionOperation(manifest, "definition", "test", {
+    kind: "action",
+    effect: "read",
+    batch: false,
+    handlerRef: "platform:MetricView.test",
+    label: "Test",
+    target: { source: "draft", slot: "definition" },
+    inputSchema: { type: "object", properties: {} },
+    resultSchema: {},
+  });
+  assert.deepEqual(placed.target, { source: "draft", slot: "definition" });
+  const parsed = panelOperationSchema.parse(placed);
+  assert.equal(parsed.id, "definition.test");
+  assert.deepEqual(parsed.target, { source: "draft", slot: "definition" });
+});
