@@ -42,7 +42,13 @@ export function panelOperations(
           if (descriptor.effect === "read")
             return read(operation.id, { target: operationCall(operation, state.values.value).target, input: input ?? {} });
           if (draftSlot) {
-            return forms.submit(draftSlot, { operationId: operation.id, descriptor, extraInput: input });
+            const binding = registration.operationBindings?.[name];
+            return forms.submit(draftSlot, {
+              operationId: operation.id,
+              descriptor,
+              ...(binding ? { binding } : {}),
+              extraInput: input,
+            });
           }
           return write(operation.id, operationInvocation(operation, state.values.value, input ?? {}));
         },

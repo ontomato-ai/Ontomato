@@ -3,7 +3,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
-import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import type { PanelFormField, PanelFormValues, ProjectionOperationBinding } from "@ontomato/contracts/panel-projection";
 import type { PageDraft, PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import { PanelDraftUnusable } from "./draft-refusal";
 import { pageDraftLink, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/contracts/page-draft";
@@ -60,6 +60,7 @@ export interface PanelFormHandle {
 export interface FormSubmitOverride {
   readonly operationId: string;
   readonly descriptor: PanelOwnerOperationDescriptor;
+  readonly binding?: ProjectionOperationBinding;
   readonly extraInput?: Readonly<Record<string, unknown>>;
 }
 

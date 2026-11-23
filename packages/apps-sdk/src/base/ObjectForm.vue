@@ -22,12 +22,18 @@ import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember, useMemberOutput } from "../panel/member";
 import {
+  applyActionSaveReadOnly,
   editedInput,
+  emptyActionSaveWiring,
   evaluateMemberFormDraft,
+  formSave,
   formTargetKey,
+  hasDeclaredCustomerActionSave,
   itemKeysEqual,
   memberFormSource,
   MemberDataUnavailable,
+  resolveActionSaveWiring,
+  type ActionSaveWiring,
   type FormSource,
   type HeldMemberDraft,
 } from "../panel/member-forms";
@@ -254,17 +260,52 @@ const fixedValues = computed<Readonly<Record<string, RuntimeJsonValue>>>(() => O
     if (part === undefined) throw new Error(`The fixed field ${path} reads ${from.path} of the state '${from.state}', which holds none`);
     return [[path, part]];
   })));
+/** Localized explanation shown on fields that the form's bound customer save Action does not accept. */
+const actionFieldReadOnlyReason = computed(() => (
+  te("platform.formFieldNotSavedByAction")
+    ? t("platform.formFieldNotSavedByAction")
+    : "Not modified by the current save action"
+));
+/**
+ * Active customer Action save wiring governing field editability on this form: only the form's own named save
+ * operation (`formSave`) determines which fields are editable; other operations on the same form are never unioned or
+ * intersected. Null for platform `form.save` forms.
+ */
+const actionSaveWiring = computed<ActionSaveWiring | null>(() => {
+  const currentTarget = target.value;
+  if (!currentTarget) return null;
+  const opsState = member.operations.value;
+  if (opsState.status !== "ready") return null;
+  const save = formSave(opsState);
+  if (save) {
+    if (save.descriptor.kind === "form.save") return null;
+    if (currentTarget.kind === "draft" && save.descriptor.target.source !== "none" && save.descriptor.target.source !== "draft") {
+      return null;
+    }
+    return resolveActionSaveWiring(save.descriptor, member.projection.operations?.[save.name]);
+  }
+  if (currentTarget.kind === "object" && hasDeclaredCustomerActionSave(member.projection)) {
+    return emptyActionSaveWiring();
+  }
+  return null;
+});
+
 /** Whether a path is a fixed field or inside one. */
 const isFixed = (path: string) => Object.keys(fixedValues.value).some((fixed) => path === fixed || path.startsWith(`${fixed}/`));
 /** Values with the fixed fields as the page fixes them. */
 function fixValues(next: PanelFormValues): PanelFormValues {
   return Object.entries(fixedValues.value).reduce((all, [path, value]) => withValueAt(all, path, value) as PanelFormValues, next);
 }
-/** An owner's description with the fixed fields read-only and their values the page's. */
+/** An owner's description with fixed fields and customer Action save-wiring read-only overlays applied. */
 function fixDescription(next: PanelFormDescription): PanelFormDescription {
+  const withFixed = next.fields.map((field) => (field.path in fixedValues.value ? { ...field, readOnly: true } : field));
+  const wiring = actionSaveWiring.value;
+  const effectiveFields = wiring === null
+    ? withFixed
+    : applyActionSaveReadOnly(withFixed, wiring.wiredPaths, actionFieldReadOnlyReason.value);
   return {
     ...next,
-    fields: next.fields.map((field) => (field.path in fixedValues.value ? { ...field, readOnly: true } : field)),
+    fields: effectiveFields,
     values: fixValues(next.values),
   };
 }
@@ -558,6 +599,11 @@ watch(fixedValues, (next, previous) => {
   opened.value = fixDescription(ownerOpened.value);
   description.value = fixDescription(ownerShown.value);
   values.value = fixValues(released.reduce((all, path) => withValueAt(all, path, valueAt(baseline, path) ?? null), values.value));
+});
+watch([actionSaveWiring, actionFieldReadOnlyReason], () => {
+  if (!ownerOpened.value || !ownerShown.value) return;
+  opened.value = fixDescription(ownerOpened.value);
+  description.value = fixDescription(ownerShown.value);
 });
 
 /** One field changed: the form holds the value; a field the owner's form depends on has the owner asked again. */
@@ -1151,7 +1197,16 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
     const saved = await forms.save(into, {
       values: payloadValues, submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
       ...(revision === undefined ? {} : { revision }),
-    }, override);
+    }, override, {
+      changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value])],
+      baselineValues: opened.value?.values,
+      formatUnwiredFieldRefusal: (paths) => ({
+        message: te("platform.formActionUnwiredFields")
+          ? t("platform.formActionUnwiredFields", { fields: paths.join(", ") })
+          : `Cannot save: the current save action does not accept changes to ${paths.join(", ")}`,
+        fieldMessage: () => actionFieldReadOnlyReason.value,
+      }),
+    });
     submitted.value = new Set();
     held = null;
     ownerOpened.value = { ...ownerShown.value!, values: payloadValues };

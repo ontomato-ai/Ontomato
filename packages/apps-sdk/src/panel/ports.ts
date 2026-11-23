@@ -1,5 +1,5 @@
 import { type PanelManifest, type PanelOperation, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import type { ProjectionPorts } from "@ontomato/contracts/panel-projection";
+import type { ProjectionOperationBinding, ProjectionPorts } from "@ontomato/contracts/panel-projection";
 import { stateObject, stateObjects, type PanelFieldValue } from "./state";
 import type { PanelWriteInvocation } from "./human-operations";
 import type { MemberOperations } from "./member-operations";
@@ -20,6 +20,8 @@ export interface PanelProjectionRegistration {
   ports: ProjectionPorts;
   /** The operations its record names, as the owners admit them now, by local name: what the header and an agent list. */
   readonly operations: MemberOperations;
+  /** The projection's authored operation bindings, by local name, carrying parameter wiring where declared. */
+  readonly operationBindings?: Readonly<Record<string, ProjectionOperationBinding>>;
   /** Whether it reads an owner's form, which a draft is offered to. */
   takesDrafts: boolean;
 }

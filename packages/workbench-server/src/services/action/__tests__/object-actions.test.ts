@@ -224,6 +224,35 @@ describe("executing an action on a customer object", () => {
     expect(JSON.parse(String(body.get("param")))).toEqual({ order_id: "00123", amount: 12.5 });
   });
 
+  it("forwards explicit empty string and JSON null clear values to /action/form and /action/execute without dropping them", async () => {
+    const { host, sent } = hostWith({
+      "/api/data-query/action/form": ok({
+        ...openedForm,
+        values: { order_id: "00123", note: "", amount: "null" },
+        parameters: { order_id: "00123", note: "", amount: null },
+      }),
+      "/api/data-query/action/execute": ok({
+        result: "{\"cleared\":true}", error: null, spendTime: 2, affects: ["Order"], partialQuery: null,
+      }),
+    });
+
+    const outcome = await operation.execute(host, target, { values: { note: "", amount: "null" } });
+
+    expect(outcome).toEqual({
+      kind: "success",
+      data: { result: "{\"cleared\":true}", affects: ["Order"] },
+      affected: { objects: [order], objectTypes: ["Order"] },
+    });
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({
+      id: "approve-order",
+      parameters: { order_id: "00123" },
+      readOnlyParameters: ["order_id"],
+      values: { note: "", amount: "null" },
+    });
+    const body = sent[1]?.init.body as FormData;
+    expect(JSON.parse(String(body.get("param")))).toEqual({ order_id: "00123", note: "", amount: null });
+  });
+
   it("refuses invalid values with the owner's field errors and does not execute", async () => {
     const errors = [{ field: "/values/amount", code: "required", message: "Amount is required" }];
     const { host, sent } = hostWith({ "/api/data-query/action/form": ok({ ...openedForm, errors }) });

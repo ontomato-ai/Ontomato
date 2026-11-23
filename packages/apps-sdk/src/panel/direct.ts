@@ -448,6 +448,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       onScopeDispose(instance.register({
         slot: member, projectionId: projection.id, ports: portsOf(projection),
         get operations() { return admittedOperations(operations.value); },
+        ...(projection.operations ? { operationBindings: projection.operations } : {}),
         takesDrafts,
       }));
       if (formDraft) {

@@ -332,7 +332,7 @@ export function expandPanelAuthoringMember(
   ): Record<string, ProjectionOperationParam> | undefined {
     const entries = Object.entries(rawParams ?? {}).map(([param, source]): readonly [string, ProjectionOperationParam] => {
       const paramPath = `${prefix}.${param}`;
-      if ("literal" in source || "row" in source || "rowField" in source) return [param, source];
+      if ("literal" in source || "row" in source || "rowField" in source || "formField" in source || "formFields" in source) return [param, source];
       if ("input" in source) {
         if (!inputTypes.has(source.input)) fail(paramPath, `Input '${source.input}' is not declared on this member`);
         return [param, source];
