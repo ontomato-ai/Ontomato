@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
@@ -137,6 +138,49 @@ class ApplicationStandaloneToggleTest {
             new ApplicationController.IdentityUpdate(Map.of("en", "One"), Map.of(), "pages"), user);
         assertEquals(false, preserved.allowStandalone());
         verify(db, times(2)).update(contains("allow_standalone=?"), any(), any(), eq("pages"), eq(false), eq("app-one"), eq("d-1"));
+    }
+
+    @Test
+    void builtinResourcesDeclareExpectedAllowStandaloneDefaultsAndReconcileUpdatesExistingRows() throws Exception {
+        var settings = ApplicationCatalogUpgrade.Builtins.readDeclaration(new ClassPathResource("applications/settings.json"));
+        var ontology = ApplicationCatalogUpgrade.Builtins.readDeclaration(new ClassPathResource("applications/ontology.json"));
+        var browser = ApplicationCatalogUpgrade.Builtins.readDeclaration(new ClassPathResource("applications/browser.json"));
+        assertFalse(settings.allowsStandalone());
+        assertFalse(ontology.allowsStandalone());
+        assertTrue(browser.allowsStandalone());
+
+        var db = mock(JdbcTemplate.class);
+        var transactions = mock(TransactionTemplate.class);
+        doAnswer(inv -> {
+            inv.<java.util.function.Consumer<TransactionStatus>>getArgument(0).accept(mock(TransactionStatus.class));
+            return null;
+        }).when(transactions).executeWithoutResult(any());
+        var access = mock(ApplicationAccess.class);
+        when(access.builtinPermissions(anyString())).thenReturn(List.of());
+        var catalog = spy(new ApplicationCatalog(db, transactions, access, "{}", mock(PanelResources.class), mock(ProductGrantService.class)));
+
+        var existingSettings = JSONObject.of(
+            "id", "settings",
+            "ownerService", "data-engine",
+            "kind", "native",
+            "entry", JSONObject.of("path", "/settings", "renderer", "settings"),
+            "entryAccess", List.of("system-config"),
+            "pageSkills", List.of(),
+            "panelUses", List.of(),
+            "groups", List.of(),
+            "permissions", List.of(),
+            "panelSettings", new JSONObject(),
+            "allowStandalone", true);
+        doReturn(List.of(existingSettings)).when(catalog).all();
+
+        catalog.reconcileBuiltins("data-engine", List.of(settings));
+
+        // Verify the upsert SQL updates allow_standalone on conflict with false for an existing stored built-in row.
+        verify(db).update(
+            argThat((String sql) -> sql.contains("ON CONFLICT(id) DO UPDATE SET") && sql.contains("allow_standalone=excluded.allow_standalone")),
+            eq("settings"), isNull(), eq("data-engine"), isNull(), eq("native"),
+            any(), any(), eq("settings"), eq("bottom"), eq("admin"), eq(20),
+            any(), any(), isNull(), isNull(), any(), eq("/settings"), any(), any(), any(), any(), eq(false));
     }
 
     @Test

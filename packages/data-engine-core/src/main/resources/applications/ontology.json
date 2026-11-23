@@ -15,6 +15,7 @@
     "skill-management"
   ],
   "scheduleAdapter": "java:ontology",
+  "allowStandalone": false,
   "declaration": {
     "names": {
       "en": "Ontology manager",
