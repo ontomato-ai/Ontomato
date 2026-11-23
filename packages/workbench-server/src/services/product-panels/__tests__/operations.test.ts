@@ -547,6 +547,32 @@ it("requires confirmation for a batch without an impact inspector", async () => 
   expect(handler.executeBatch).not.toHaveBeenCalled();
 });
 
+it("freezes a localized input schema and dispatches the batch in the same locale", async () => {
+  const { handler, request } = installBatchOwner();
+  const describeInputSchema: NonNullable<serverOperations.PanelServerOperation["describeInputSchema"]> = async (_host, locale) => ({
+    type: "object",
+    properties: { status: { type: "number", title: locale === "fr" ? "Statut" : "Status" } },
+  });
+  mockRegisteredOperation({ ...handler, describeInputSchema });
+  handler.executeBatch.mockResolvedValue({
+    kind: "batch",
+    items: request.calls.map(({ target: { objectType, primaryKey } }) => ({
+      target: { objectType, primaryKey }, outcome: { kind: "success", data: { done: true } },
+    })),
+  });
+  const viewer = { ...credentials, locale: "fr" };
+  const { intentId: _id, ...input } = request;
+
+  const descriptor = await readPanelOperationDescriptor(owner, viewer, input);
+  expect(descriptor.inputSchema).toHaveProperty("properties.status.title", "Statut");
+  const { intentId } = await prepareHumanPanelOperation(owner, viewer, input);
+  expect(intents.get(intentId)?.operation.inputSchema).toEqual(descriptor.inputSchema);
+  await expect(dispatchHumanPanelOperation(owner, viewer, intentId)).resolves.toMatchObject({
+    kind: "dispatched", outcome: { kind: "batch" },
+  });
+  expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ locale: "fr" }), input.calls, intentId);
+});
+
 it("runs a registered read using the reader and preview context without creating an intent", async () => {
   const binding = { kind: "PlatformOperation" as const, id: "metricViews.testExecute" };
   const input = { applicationId: "A", useId: "tasks", operationId: "run.testExecute", call: {

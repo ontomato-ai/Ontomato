@@ -485,17 +485,29 @@ describe("action catalog reads", () => {
     expect(sent.map(request => request.body)).toEqual([{ status: "PUBLISHED" }, { status: "PUBLISHED" }]);
   });
 
-  it("describes the status change and the delete from the catalog operations", () => {
+  it("describes the status change and the delete from the catalog operations", async () => {
+    const statusField = {
+      path: "/status", label: "Publication state", required: false, readOnly: false,
+      control: { kind: "select", options: [{
+        value: "PUBLISHED", label: "Live", description: null, disabled: false, disabledReason: null,
+      }] },
+      valueSchema: { type: "string", enum: ["PUBLISHED"] },
+    };
+    const sent = ownerAnswering({ "/action/definitionForm": ok({ ...form, fields: [statusField] }) });
     const adapter = createActionReadAdapter(owner, viewer);
 
-    const status = adapter["actions.setStatus.describe"]();
-    const remove = adapter["actions.delete.describe"]();
+    const status = await adapter["actions.setStatus.describe"]();
+    const remove = await adapter["actions.delete.describe"]();
 
     expect(panelOwnerOperationDescriptorSchema.parse(status)).toEqual(status);
     expect(status).toMatchObject({
       handlerRef: "actions.setStatus", label: "Change status", effect: "write", batch: true,
       target: { source: "input", input: "action" },
+      inputSchema: { properties: { status: {
+        title: statusField.label, oneOf: [{ const: "PUBLISHED", title: statusField.control.options[0].label }],
+      } } },
     });
+    expect(sent).toEqual([{ path: "/action/definitionForm", body: { target: { kind: "draft" }, changedField: null } }]);
     expect(status.inspectImpact).toBeUndefined();
     expect(remove).toMatchObject({
       handlerRef: "actions.delete", label: "Delete", effect: "write", batch: false,
