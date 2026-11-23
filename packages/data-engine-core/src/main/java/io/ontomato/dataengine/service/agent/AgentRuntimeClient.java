@@ -61,10 +61,11 @@ public class AgentRuntimeClient {
         // The runtime owns request timeouts and retries; a shorter host deadline would truncate them.
         timeout = null;
       } else if ((path.equals("/v1/models/test") || path.equals("/v1/models/discover")) && body != null) {
-        var retry = JSONObject.from(body).getJSONObject("retry");
-        var provider = retry == null ? null : retry.getJSONObject("provider");
-        long configured = provider == null ? 300000 : provider.getLongValue("timeoutMs", 300000);
-        timeout = Duration.ofMillis(Math.max(1, configured)).plusSeconds(10);
+        // One attempt lasts the draft model's timeout, and the gateway may retry it as that model configures.
+        var model = JSONObject.from(body).getJSONObject("model");
+        long seconds = model == null ? 300 : Math.max(1, model.getLongValue("timeoutSeconds", 300));
+        long attempts = 1 + (model == null ? 2 : model.getLongValue("maxRetries", 2));
+        timeout = Duration.ofSeconds(seconds * Math.max(1, attempts)).plusSeconds(10);
       } else if (path.contains("/status?waitFor=stopped")) {
         // The runtime holds a stop wait for at most 60 seconds; this must not time out first.
         timeout = Duration.ofSeconds(70);
@@ -197,19 +198,13 @@ public class AgentRuntimeClient {
   public String modelText(String domain, String correlation, String prompt)
       throws Exception {
     JSONObject settings = json(domain, correlation, "/v1/models/settings", "GET", null, null);
-    String ref = settings.getString("defaultModelId");
-    int slash = ref == null ? -1 : ref.indexOf('/');
-    JSONObject provider = slash < 1 ? null : settings.getJSONObject("providers").getJSONObject(ref.substring(0, slash));
-    JSONObject model = null;
-    if (provider != null) for (Object item : provider.getJSONArray("models")) {
-      var candidate = (JSONObject) item;
-      if (ref.substring(slash + 1).equals(candidate.getString("id")) && "chat".equals(candidate.getString("type"))) model = candidate;
-    }
-    if (model == null) throw new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No domain default model is configured");
-    provider = JSON.parseObject(provider.toJSONString()); provider.remove("models");
-    var result = json(domain, correlation, "/v1/models/test", "POST", JSONObject.of("providerId", ref.substring(0, slash),
-        "provider", provider, "model", model, "prompt", prompt,
-        "retry", JSONObject.of("provider", JSONObject.of("timeoutMs", 20000, "maxRetries", 0, "maxRetryDelayMs", 60000))), null);
+    String name = settings.getString("defaultModel");
+    JSONObject model = name == null ? null : settings.getJSONObject("models").getJSONObject(name);
+    if (model == null || !"chat".equals(model.getString("type")))
+      throw new AgentHttpException(422, "MODEL_NOT_CONFIGURED", "No domain default model is configured");
+    String connection = model.getString("connection");
+    var result = json(domain, correlation, "/v1/models/test", "POST", JSONObject.of("connectionName", connection,
+        "connection", settings.getJSONObject("connections").getJSONObject(connection), "model", model, "prompt", prompt), null);
     return result.getString("content");
   }
 

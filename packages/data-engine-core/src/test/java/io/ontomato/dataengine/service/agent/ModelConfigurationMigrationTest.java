@@ -22,7 +22,7 @@ import com.alibaba.fastjson2.JSONWriter;
 
 class ModelConfigurationMigrationTest {
     @Test void missingReferencesRemainExplicitAndLegacyNamesMayContainSlashes() {
-        var mapping = JSONObject.parseObject("{\"references\":{\"main\":\"gateway/chat\"},\"unconfiguredProviderId\":\"legacy\"}");
+        var mapping = JSONObject.parseObject("{\"references\":{\"main\":\"gateway/chat\"},\"unavailablePrefix\":\"legacy\"}");
         assertEquals("gateway/chat", ModelConfigurationMigration.rewrite("main", mapping));
         assertEquals("legacy/gone", ModelConfigurationMigration.rewrite("gone", mapping));
         mapping.getJSONObject("references").put("old/name", "gateway/slashed");
@@ -40,18 +40,18 @@ class ModelConfigurationMigrationTest {
         when(jdbc.queryForList(startsWith("SELECT content"),eq("d"))).thenReturn(List.of(Map.of("content",config.toJSONString())));
         when(runtime.json(eq("d"),anyString(),eq("/v1/models/import-embedding"),eq("POST"),any(),isNull()))
             .thenThrow(new java.io.IOException("offline"))
-            .thenReturn(JSONObject.of("importedModelId","gateway/embed","embeddingModelId","gateway/embed"));
+            .thenReturn(JSONObject.of("importedModelId","embed","embeddingModel","embed"));
         assertThrows(java.io.IOException.class, () -> migration.migrateDomain("d"));
         verifyNoInteractions(tx);
         when(runtime.json(eq("d"),anyString(),eq("/v1/models/migration-map"),eq("GET"),isNull(),isNull()))
-            .thenReturn(JSONObject.parseObject("{\"references\":{\"main\":\"gateway/chat\"},\"unconfiguredProviderId\":\"legacy\"}"));
+            .thenReturn(JSONObject.parseObject("{\"references\":{\"main\":\"gateway/chat\"},\"unavailablePrefix\":\"legacy\"}"));
         when(runtime.json(eq("d"),anyString(),eq("/v1/models/options"),eq("GET"),isNull(),isNull()))
-            .thenReturn(JSONObject.of("embeddingModelId","gateway/embed"));
+            .thenReturn(JSONObject.of("embeddingModel","embed"));
         migration.migrateDomain("d");
         var input = org.mockito.ArgumentCaptor.forClass(Object.class);
         verify(runtime,atLeastOnce()).json(eq("d"),anyString(),eq("/v1/models/import-embedding"),eq("POST"),input.capture(),isNull());
         assertEquals(45000,((JSONObject)input.getValue()).getLongValue("timeoutMs"));
-        verify(jdbc).update(startsWith("UPDATE vector_rebuild_state SET model_ref"),eq("https://gateway/v1"),eq("embed"),eq("gateway/embed"),eq("d"));
+        verify(jdbc).update(startsWith("UPDATE vector_rebuild_state SET model_ref"),eq("https://gateway/v1"),eq("embed"),eq("embed"),eq("d"));
         verify(jdbc).update(startsWith("UPDATE business_config SET content="),eq("d"),eq(old.toJSONString()));
         verify(vectors).modelSettingsChanged("d");
         migration.stop();
@@ -89,7 +89,7 @@ class ModelConfigurationMigrationTest {
                 .thenThrow(new AgentHttpException(status, "INVALID_REQUEST", "Do not log old-key"));
             when(db.runtime.json(eq("d"), anyString(), eq("/v1/models/migration-map"), eq("GET"), isNull(), isNull()))
                 .thenThrow(new AgentHttpException(503, "DEPENDENCY_UNAVAILABLE", "offline"))
-                .thenReturn(JSONObject.parseObject("{\"references\":{},\"unconfiguredProviderId\":\"legacy\"}"));
+                .thenReturn(JSONObject.parseObject("{\"references\":{},\"unavailablePrefix\":\"legacy\"}"));
             assertThrows(AgentHttpException.class, () -> db.migration.migrateDomain("d"));
             db.migration.migrateDomain("d");
             db.migration.migrateDomain("d");
@@ -106,7 +106,7 @@ class ModelConfigurationMigrationTest {
             JSONObject before = db.config();
             when(db.runtime.json(eq("d"), anyString(), eq("/v1/models/import-embedding"), eq("POST"), any(), isNull()))
                 .thenThrow(new AgentHttpException(503, "DEPENDENCY_UNAVAILABLE", "offline"))
-                .thenReturn(JSONObject.of("importedModelId", "gateway/embed", "embeddingModelId", "gateway/embed"));
+                .thenReturn(JSONObject.of("importedModelId", "embed", "embeddingModel", "embed"));
             assertThrows(AgentHttpException.class, () -> db.migration.migrateDomain("d"));
             assertEquals(before, db.config());
             db.migration.migrateDomain("d");
@@ -141,9 +141,9 @@ class ModelConfigurationMigrationTest {
             jdbc.execute("CREATE TABLE vector_rebuild_state (domain_id text PRIMARY KEY, model_ref text, base_url text, model_name text, dimensions integer, status text, cleared boolean)");
             migration = new ModelConfigurationMigration(jdbc, runtime, vectors, new TransactionTemplate(new DataSourceTransactionManager(source)), mock(VectorRebuildStateDao.class));
             when(runtime.json(eq("d"), anyString(), eq("/v1/models/migration-map"), eq("GET"), isNull(), isNull()))
-                .thenReturn(JSONObject.parseObject("{\"references\":{},\"unconfiguredProviderId\":\"legacy\"}"));
+                .thenReturn(JSONObject.parseObject("{\"references\":{},\"unavailablePrefix\":\"legacy\"}"));
             when(runtime.json(eq("d"), anyString(), eq("/v1/models/options"), eq("GET"), isNull(), isNull()))
-                .thenReturn(JSONObject.of("embeddingModelId", null));
+                .thenReturn(JSONObject.of("embeddingModel", null));
         }
         void seed(JSONObject old) {
             JSONObject config = JSONObject.of("embeddingModelProperties", old, "embeddingVectorSource", JSONObject.of("dimensions", 2048), "unrelated", "keep");

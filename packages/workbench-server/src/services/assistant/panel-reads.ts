@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { runtimeIdSchema } from "@ontomato/contracts/agent-runtime-values";
 import { agentExecutionOptionsSchema, type AssistantAgentDefinition } from "@ontomato/contracts/assistant-chat";
-import { modelReferenceSchema } from "@ontomato/contracts/model-settings";
+import { modelNameSchema } from "@ontomato/contracts/model-settings";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { PanelFormRequest, PanelOption, PanelRecord } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
@@ -66,7 +66,7 @@ export function createAgentOptionReadAdapters(viewer: AssistantCredentials) {
         const options = new Map((await modelOptions()).map(option => [option.value, option]));
         return { options: values.map((value): PanelOption => {
           if (value === null) return options.get(null)!;
-          const ref = modelReferenceSchema.parse(value);
+          const ref = modelNameSchema.parse(value);
           return options.get(ref) ?? { primaryKey: ref, value: ref, label: ref, unavailable: { reason: text("unavailable") } };
         }) };
       },

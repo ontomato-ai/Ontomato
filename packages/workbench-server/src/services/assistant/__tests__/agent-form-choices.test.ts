@@ -23,8 +23,8 @@ const owner = { domainId: "domain", userId: "alice" };
 const answer = (url: string) => {
   if (url.includes("/model-options"))
     return Response.json({ success: true, data: {
-      models: [{ ref: "local/dev-model", name: "Dev model", type: "chat" }, { ref: "local/embed", name: "Embedder", type: "embedding", dimensions: 8 }],
-      defaultModelId: "local/dev-model", embeddingModelId: null,
+      models: [{ name: "dev-model", type: "chat" }, { name: "embed", type: "embedding", dimensions: 8 }],
+      defaultModel: "dev-model", embeddingModel: null,
     } });
   if (url.includes("/platform/agent-execution/options"))
     return Response.json({ canSetExecutionUser: true, users: [{ id: "u-1", name: "Wang" }] });
@@ -36,13 +36,13 @@ it("offers the domain's default model and the reader's own permissions by name, 
   vi.stubGlobal("fetch", vi.fn(async (url: string) => answer(String(url))));
   const options = createAgentOptionReadAdapters(viewer as never);
   const models = (await options.models.options()).options;
-  expect(models[0]).toEqual({ primaryKey: "@default", value: null, label: "Domain default (Dev model (local/dev-model))" });
-  expect(models.slice(1)).toEqual([{ primaryKey: "local/dev-model", value: "local/dev-model", label: "Dev model (local/dev-model)" }]);
+  expect(models[0]).toEqual({ primaryKey: "@default", value: null, label: "Domain default (dev-model)" });
+  expect(models.slice(1)).toEqual([{ primaryKey: "dev-model", value: "dev-model", label: "dev-model" }]);
   const users = (await options.users.options({})).options;
   expect(users[0]).toEqual({ primaryKey: "@default", value: null, label: "The reader's own permissions" });
   expect(users.slice(1).map(({ value }) => value)).toEqual(["u-1"]);
   // A held empty value reads as the same choice.
-  expect((await options.models.resolve([null])).options[0]!.label).toBe("Domain default (Dev model (local/dev-model))");
+  expect((await options.models.resolve([null])).options[0]!.label).toBe("Domain default (dev-model)");
 });
 
 it("asks only for the agent's name before it is saved", async () => {

@@ -44,7 +44,7 @@ public class ModelSettingsController {
   public Object save(@RequestBody JSONObject body, HttpServletRequest request) throws Exception {
     String domain = domain(request);
     var saved = runtime.json(domain, "model-settings", "/v1/models/settings", "PUT", body, null);
-    if (saved.getString("embeddingModelId") != null) vectors.modelSettingsChanged(domain);
+    if (saved.getString("embeddingModel") != null) vectors.modelSettingsChanged(domain);
     return success(saved);
   }
 

@@ -18,12 +18,12 @@ const t = i18n.global.t as (key: string, params?: Record<string, unknown>) => st
 
 const options: ModelOptions = {
   models: [
-    { ref: "gateway/qwen-main", name: "Qwen", type: "chat" },
-    { ref: "deepseek/deepseek-chat", name: "deepseek/deepseek-chat", type: "chat" },
-    { ref: "gateway/embed", name: "Embed", type: "embedding", dimensions: 1024 },
+    { name: "qwen-main", type: "chat" },
+    { name: "deepseek-chat", type: "chat" },
+    { name: "embed", type: "embedding", dimensions: 1024 },
   ],
-  defaultModelId: "gateway/qwen-main",
-  embeddingModelId: "gateway/embed",
+  defaultModel: "qwen-main",
+  embeddingModel: "embed",
 };
 
 vi.mock("../../../../agents/api", () => ({ loadModelOptions: async () => options }));

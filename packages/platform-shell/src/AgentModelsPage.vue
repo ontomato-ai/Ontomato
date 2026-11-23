@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, shallowRef } from "vue";
 import { ElMessage } from "element-plus";
-import { modelLabel, modelSelectionView, selectedModelId } from "@ontomato/contracts/model-selection";
+import { modelSelectionView, selectedModelId } from "@ontomato/contracts/model-selection";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import { useAgentModelLabels, type AgentModelEntry, type AgentModelSource } from "./agent-models";
 import { confirmDanger } from "./confirm-danger";
@@ -96,8 +96,8 @@ const draft = computed(() => ({
 }));
 
 const followDefault = computed(() => {
-  const current = models.value?.models.find((model) => model.ref === models.value?.defaultModelId);
-  return labels.value.followDefault(current ? modelLabel(current) : null);
+  const current = models.value?.models.find((model) => model.name === models.value?.defaultModel);
+  return labels.value.followDefault(current?.name ?? null);
 });
 
 function view(agent: AgentModelEntry) {

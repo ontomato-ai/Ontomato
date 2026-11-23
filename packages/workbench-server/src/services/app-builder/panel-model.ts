@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { modelReferenceSchema } from "@ontomato/contracts/model-settings";
+import { modelNameSchema } from "@ontomato/contracts/model-settings";
 import { BUILDER_AGENT } from "@ontomato/contracts/platform-object-types";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import { panelFormSaveInputSchema, type PanelFormDescription, type PanelFormField, type PanelFormRequest, type PanelRecord } from "@ontomato/contracts/panel-projection";
@@ -22,7 +22,7 @@ const operation = `${BUILDER_AGENT}.save`;
 const createValues = z.object({ name: builderAgentName }).strict();
 const saveInput = panelFormSaveInputSchema.omit({ revision: true }).strict();
 const id = z.string().uuid();
-const modelChoiceSchema = z.union([z.literal(DOMAIN_DEFAULT_MODEL_OPTION), modelReferenceSchema]);
+const modelChoiceSchema = z.union([z.literal(DOMAIN_DEFAULT_MODEL_OPTION), modelNameSchema]);
 const batchModelsPatch = z.record(id, z.union([modelChoiceSchema, z.null()]));
 const result = z.union([
   z.object({ id, modelSelection: modelPanelValues }).strict(),

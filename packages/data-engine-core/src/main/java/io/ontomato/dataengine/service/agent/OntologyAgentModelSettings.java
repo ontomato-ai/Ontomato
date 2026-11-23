@@ -64,12 +64,12 @@ public class OntologyAgentModelSettings {
     JSONObject selection = input.getJSONObject("modelSelection");
     AgentJson.fields(selection, "modelId");
     Object value = selection.get("modelId");
-    if (value != null && (!(value instanceof String) || (!((String) value).contains("/") || ((String) value).endsWith("/"))))
+    if (value != null && (!(value instanceof String) || ((String) value).isBlank()))
       throw AgentHttpException.invalid("modelId must be a nonempty string or null");
     String model = value == null ? null : ((String) value).trim();
     if (model != null) {
       var options = runtime.json(domain, "agent-model-selection", "/v1/models/options", "GET", null, null);
-      boolean exists = options.getJSONArray("models").stream().anyMatch(item -> model.equals(((JSONObject) item).getString("ref")) && "chat".equals(((JSONObject) item).getString("type")));
+      boolean exists = options.getJSONArray("models").stream().anyMatch(item -> model.equals(((JSONObject) item).getString("name")) && "chat".equals(((JSONObject) item).getString("type")));
       if (!exists) throw AgentHttpException.invalid("The selected model does not exist in this domain");
     }
     jdbc.update("INSERT INTO ontology_agent_settings(domain_id,agent_id,model_selection) VALUES(?,?::uuid,?::jsonb) ON CONFLICT(domain_id,agent_id) DO UPDATE SET model_selection=EXCLUDED.model_selection,model_reference_migrated=true",
