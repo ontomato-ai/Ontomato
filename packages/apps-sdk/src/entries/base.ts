@@ -25,6 +25,8 @@ export type {
   TypedFieldFormat,
   TypedNumberFormat,
   TypedValueKind,
+  TypedValueMap,
+  TypedValueMapEntry,
 } from "../base/display-value";
 export type { MetricCardItem } from "../base/metric-card-types";
 export { default as ObjectForm } from "../base/ObjectForm.vue";

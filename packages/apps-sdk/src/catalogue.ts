@@ -505,7 +505,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "TypedValue",
     role: "presentation",
     meaning:
-      "Displays one typed field value according to its owner-declared type — text, tabular number (`numberFormat`), localized date/datetime/relative-time, localized boolean, semantic status tag (`tone` or `record.tones`), tag list, clickable object reference (`navigate`), multi-language name, list, or code/JSON — without computing business logic. Reads from its projection's `record` (`panelRecord`) or metric `result` (`metricOutput`, scalar/first-row or named column at `rowIndex`) datum, or renders a direct `value` prop standalone or inside a slot.",
+      "Displays one typed field value according to its owner-declared type — text, tabular number (`numberFormat`), localized date/datetime/relative-time, localized boolean, semantic status tag (`tone` or `record.tones`), tag list, clickable object reference (`navigate`), multi-language name, list, or code/JSON — with optional exact-match `valueMap` (`{ [rawValue]: { label?, labelKey?, labels?, tone?, icon? } }`) mapping raw scalar values to localized labels, semantic tones, and platform icons without computing new values or evaluating range/threshold expressions. Reads from its projection's `record` (`panelRecord`) or metric `result` (`metricOutput`, scalar/first-row or named column at `rowIndex`) datum, or renders a direct `value` prop standalone or inside a slot.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "MetricView:*"],
     data: {
@@ -519,7 +519,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "RecordTemplate",
     role: "presentation",
     meaning:
-      "Fills already-provided values from one record (`record`) or one metric result row (`result` at `rowIndex`) into a fixed `{fieldKey}` sentence template (`template`, `templateKey`, or locale-keyed `templates`), with optional per-field `fieldFormats`. Pure display with no expressions, calculation, or conditional sentence branching — derived values and business conditions belong in a MetricView, Action, or owner read. Each placeholder renders via `TypedValue`, keeping references clickable (`navigate`), booleans/names localized, tones tinted, and numbers tabular.",
+      "Fills already-provided values from one record (`record`) or one metric result row (`result` at `rowIndex`) into a fixed `{fieldKey}` sentence template (`template`, `templateKey`, or locale-keyed `templates`), with optional per-field `fieldFormats` (including exact-match `valueMap`). Pure display with no expressions, calculation, or conditional sentence branching — derived values and business conditions belong in a MetricView, Action, or owner read. Each placeholder renders via `TypedValue`, keeping references clickable (`navigate`), booleans/names localized, tones tinted, and numbers tabular.",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "MetricView:*"],
     data: {
@@ -533,7 +533,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "InfoBanner",
     role: "presentation",
     meaning:
-      "Standardized informational, reminder, warning, success, or danger callout banner (`tone` or `toneField`) for detail cards and guidance notices. Renders static or localized copy (`title`/`text`, `titleKey`/`textKey`, `titles`/`texts`), custom slot content (`#default`, `#actions`), or already-provided values bound from a `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field` or a fixed `{fieldKey}` `template` (no calculation or conditional branching).",
+      "Standardized informational, reminder, warning, success, or danger callout banner (`tone`, `toneField`, exact-match `toneMap`/`valueMap`, or platform `icon`) for detail cards and guidance notices. Renders static or localized copy (`title`/`text`, `titleKey`/`textKey`, `titles`/`texts`), custom slot content (`#default`, `#actions`), or already-provided values bound from a `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field` or a fixed `{fieldKey}` `template` (with optional `fieldFormats`; no calculation, range thresholds, or conditional branching).",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "MetricView:*"],
     data: {

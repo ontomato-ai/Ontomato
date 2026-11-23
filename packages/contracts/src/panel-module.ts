@@ -22,11 +22,11 @@ export type PanelModuleSpecifier = typeof panelModuleSpecifiers[keyof typeof pan
 
 /**
  * The official module entries that component packages and author-registered components may import.
- * Excludes `element-plus` and any `element-plus/*` subpath; UI primitives come from `@ontomato/sdk/ui`.
+ * Excludes third-party bare specifiers such as `element-plus` and `echarts`; UI primitives come from
+ * `@ontomato/sdk/ui` and charts come from `@ontomato/sdk/chart`.
  */
 export const componentOfficialSpecifiers = [
   "vue",
-  "echarts",
   "@ontomato/sdk",
   SDK_UI_ENTRY_SPECIFIER,
   "@ontomato/sdk/panel",
@@ -67,7 +67,9 @@ export async function panelModuleImports(source: string) {
     if (!isPanelModuleSpecifier(specifier)) {
       const hint = specifier === "element-plus" || specifier?.startsWith("element-plus/")
         ? `; use <sdk-*> tags in panel.html or usePanelContext().notify() from ${panelModuleSpecifiers.sdk}`
-        : "";
+        : specifier === "echarts" || specifier?.startsWith("echarts/")
+          ? "; use <e-chart> in panel.html or the MetricChart projection component instead"
+          : "";
       throw new Error(`A panel's module imports ${specifier ?? "a computed module"}, which the platform does not give it${hint}`);
     }
     return [{ specifier, start, end, dynamic: type === "dynamic" }];
@@ -98,6 +100,9 @@ export async function componentModuleImports(
     if (specifier === "element-plus" || specifier.startsWith("element-plus/")) {
       throw new Error(`Component module imports '${specifier}'; import SDK UI primitives from '${SDK_UI_ENTRY_SPECIFIER}' instead`);
     }
+    if (specifier === "echarts" || specifier.startsWith("echarts/")) {
+      throw new Error(`Component module imports '${specifier}'; import chart components from '@ontomato/sdk/chart' instead`);
+    }
     const isRelative = specifier.startsWith("./") || specifier.startsWith("../");
     if (isRelative) {
       if (!allowRelative) {
@@ -125,7 +130,8 @@ export type SdkAuthoringViolationKind =
   | "forbidden-import"
   | "forbidden-directive"
   | "forbidden-token"
-  | "forbidden-export";
+  | "forbidden-export"
+  | "forbidden-direct-api";
 
 export interface SdkAuthoringViolation {
   readonly file: string;
@@ -571,7 +577,201 @@ export function checkAuthoringTemplate(
   return violations.sort((a, b) => a.line - b.line || a.column - b.column);
 }
 
-/** Check JS/TS script source for forbidden `element-plus` imports and renamed SDK exports. */
+const DIRECT_API_GUIDANCE = "Use a declared projection to read business data or invoke a registered operation instead";
+const DIRECT_API_IDENTIFIERS = /\b(?:fetch|XMLHttpRequest|EventSource|WebSocket)\b/gu;
+const DIRECT_API_PATH_PATTERN = /\/api\//gu;
+const REGEX_PRECEDING_CHAR = /[(=,:;[!?&|{+*\-~^%]/u;
+const REGEX_PRECEDING_KEYWORD = /\b(?:return|case|throw|typeof|void|delete|in|of|new|yield|await)$/u;
+
+function canStartRegexLiteral(source: string, slashIndex: number): boolean {
+  let j = slashIndex - 1;
+  while (j >= 0 && /\s/u.test(source[j]!)) j--;
+  if (j < 0) return true;
+  if (REGEX_PRECEDING_CHAR.test(source[j]!)) return true;
+  const tail = source.slice(Math.max(0, j - 10), j + 1);
+  return REGEX_PRECEDING_KEYWORD.test(tail);
+}
+
+/**
+ * Simple lexical scan (no AST) that strips JS comments, regex literals, and string/template contents into an
+ * offset-preserving code string while collecting string/template segments for hardcoded `/api/` path checks.
+ */
+function scanScriptLexemes(source: string): { codeOnly: string; stringSegments: Array<{ offset: number; text: string }> } {
+  const out: string[] = [];
+  const stringSegments: Array<{ offset: number; text: string }> = [];
+  const len = source.length;
+  // Stack of open brace depths for `${...}` interpolations inside template literals.
+  const templateBraceDepths: number[] = [];
+  let i = 0;
+
+  const pushBlank = (text: string) => {
+    for (let k = 0; k < text.length; k++) {
+      const c = text[k]!;
+      out.push(c === "\n" || c === "\r" ? c : " ");
+    }
+  };
+
+  const scanTemplateChunk = () => {
+    const segStart = i;
+    while (i < len) {
+      const c = source[i]!;
+      if (c === "\\" && i + 1 < len) {
+        pushBlank(source.slice(i, i + 2));
+        i += 2;
+        continue;
+      }
+      if (c === "`") {
+        stringSegments.push({ offset: segStart, text: source.slice(segStart, i) });
+        out.push(" ");
+        i++;
+        return;
+      }
+      if (c === "$" && source[i + 1] === "{") {
+        stringSegments.push({ offset: segStart, text: source.slice(segStart, i) });
+        out.push("${");
+        i += 2;
+        templateBraceDepths.push(0);
+        return;
+      }
+      out.push(c === "\n" || c === "\r" ? c : " ");
+      i++;
+    }
+    stringSegments.push({ offset: segStart, text: source.slice(segStart, i) });
+  };
+
+  while (i < len) {
+    const ch = source[i]!;
+    if (ch === "/" && source[i + 1] === "/") {
+      const start = i;
+      i += 2;
+      while (i < len && source[i] !== "\n" && source[i] !== "\r") i++;
+      pushBlank(source.slice(start, i));
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      const start = i;
+      i += 2;
+      while (i < len && !(source[i] === "*" && source[i + 1] === "/")) i++;
+      if (i < len) i += 2;
+      pushBlank(source.slice(start, i));
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      out.push(" ");
+      i++;
+      const segStart = i;
+      while (i < len) {
+        const c = source[i]!;
+        if (c === "\\" && i + 1 < len) {
+          pushBlank(source.slice(i, i + 2));
+          i += 2;
+          continue;
+        }
+        if (c === quote) {
+          stringSegments.push({ offset: segStart, text: source.slice(segStart, i) });
+          out.push(" ");
+          i++;
+          break;
+        }
+        out.push(c === "\n" || c === "\r" ? c : " ");
+        i++;
+      }
+      continue;
+    }
+    if (ch === "`") {
+      out.push(" ");
+      i++;
+      scanTemplateChunk();
+      continue;
+    }
+    if (ch === "/" && canStartRegexLiteral(source, i)) {
+      let j = i + 1;
+      let inClass = false;
+      let closed = false;
+      while (j < len && source[j] !== "\n" && source[j] !== "\r") {
+        const c = source[j]!;
+        if (c === "\\" && j + 1 < len) {
+          j += 2;
+          continue;
+        }
+        if (c === "[") inClass = true;
+        else if (c === "]") inClass = false;
+        else if (c === "/" && !inClass) {
+          closed = true;
+          j++;
+          break;
+        }
+        j++;
+      }
+      if (closed) {
+        pushBlank(source.slice(i, j));
+        i = j;
+        continue;
+      }
+    }
+    if (templateBraceDepths.length > 0) {
+      if (ch === "{") {
+        templateBraceDepths[templateBraceDepths.length - 1]!++;
+      } else if (ch === "}") {
+        const top = templateBraceDepths[templateBraceDepths.length - 1]!;
+        if (top === 0) {
+          templateBraceDepths.pop();
+          out.push("}");
+          i++;
+          scanTemplateChunk();
+          continue;
+        }
+        templateBraceDepths[templateBraceDepths.length - 1] = top - 1;
+      }
+    }
+    out.push(ch);
+    i++;
+  }
+
+  return { codeOnly: out.join(""), stringSegments };
+}
+
+/**
+ * Simple lexical/regex check blocking direct business API calls (`fetch`, `XMLHttpRequest`, `EventSource`,
+ * `WebSocket`, and hardcoded `"/api/"` string/template paths) in panel and author-registered component scripts.
+ */
+export function checkAuthoringDirectApiCalls(source: string, file: string): SdkAuthoringViolation[] {
+  const violations: SdkAuthoringViolation[] = [];
+  const { codeOnly, stringSegments } = scanScriptLexemes(source);
+
+  for (const match of codeOnly.matchAll(DIRECT_API_IDENTIFIERS)) {
+    const found = match[0];
+    violations.push(makeViolation(
+      source,
+      file,
+      match.index!,
+      "forbidden-direct-api",
+      found,
+      DIRECT_API_GUIDANCE,
+      `Do not call '${found}' directly to request business APIs; read business data through a declared projection or invoke a registered operation instead`,
+    ));
+  }
+
+  for (const segment of stringSegments) {
+    for (const match of segment.text.matchAll(DIRECT_API_PATH_PATTERN)) {
+      const found = match[0];
+      violations.push(makeViolation(
+        source,
+        file,
+        segment.offset + match.index!,
+        "forbidden-direct-api",
+        found,
+        DIRECT_API_GUIDANCE,
+        `Do not hardcode business API path '${found}'; read business data through a declared projection or invoke a registered operation instead`,
+      ));
+    }
+  }
+
+  return violations.sort((a, b) => a.line - b.line || a.column - b.column);
+}
+
+/** Check JS/TS script source for forbidden third-party imports, renamed SDK exports, and direct API calls. */
 export async function checkAuthoringScript(
   source: string,
   file: string,
@@ -617,6 +817,14 @@ export async function checkAuthoringScript(
         source, file, start, "forbidden-import", specifier, replacement,
         `Do not import '${specifier}'; use '${replacement}'`,
       ));
+    } else if (specifier === "echarts" || specifier?.startsWith("echarts/")) {
+      const replacement = isPanel
+        ? "<e-chart> in panel.html or the MetricChart projection component"
+        : "@ontomato/sdk/chart";
+      violations.push(makeViolation(
+        source, file, start, "forbidden-import", specifier, replacement,
+        `Do not import '${specifier}'; use '${replacement}'`,
+      ));
     }
   }
 
@@ -629,6 +837,8 @@ export async function checkAuthoringScript(
       ));
     }
   }
+
+  violations.push(...checkAuthoringDirectApiCalls(source, file));
 
   return violations.sort((a, b) => a.line - b.line || a.column - b.column);
 }

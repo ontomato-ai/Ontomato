@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import type { PanelFieldTone, PanelRecordFieldArrayItem, PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
+import { appIcon } from "@ontomato/platform-shell";
 import { panelContextKey, projectionKey } from "../panel/context";
 import { panelMemberKey } from "../panel/member";
 import type { PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
@@ -13,11 +14,13 @@ import {
   formatTypedNumber,
   formatTypedTime,
   inferValueKind,
+  resolveValueMapEntry,
   unwrapJsonField,
   useOptionalMemberDatum,
   type DisplayDataStateKind,
   type TypedNumberFormat,
   type TypedValueKind,
+  type TypedValueMap,
 } from "./display-value";
 import { resolveLocalizedText } from "./localized-text";
 import {
@@ -46,8 +49,13 @@ const props = withDefaults(
     rowIndex?: number;
     /** Display kind: `"auto"` infers from runtime value shape, record tones/tags, or metric column type. */
     kind?: TypedValueKind;
-    /** Optional semantic tone for `"tag"` or badge display; falls back to `record.tones[field]` when bound. */
+    /** Optional semantic tone for `"tag"` or badge display; falls back to `valueMap` or `record.tones[field]`. */
     tone?: PanelFieldTone;
+    /**
+     * Optional exact raw-value to display presentation mapping (`{ [rawValue]: { label?, labelKey?, labels?, tone?, icon? } }`).
+     * Pure presentation only: exact key match without calculation or range/threshold expressions; unmatched values fall back as-is.
+     */
+    valueMap?: TypedValueMap;
     /** Optional unit suffix rendered beside numeric or scalar values (for example `"%"`, `"ms"`). */
     unit?: string;
     /** Optional `Intl.NumberFormat` options applied when formatting `"number"` values. */
@@ -69,6 +77,7 @@ const props = withDefaults(
     rowIndex: 0,
     kind: "auto",
     tone: undefined,
+    valueMap: undefined,
     unit: undefined,
     numberFormat: undefined,
     separator: ", ",
@@ -183,13 +192,25 @@ const resolved = computed<ResolvedSource>(() => {
   };
 });
 
+const mappedEntry = computed(() =>
+  resolveValueMapEntry(resolved.value.raw, props.valueMap, {
+    locale: locale.value,
+    panelText: panel?.t,
+    t: translate,
+    te: hasTranslation,
+  }),
+);
+
 const effectiveTone = computed<PanelFieldTone | undefined>(() => {
   if (props.tone) return props.tone;
+  if (mappedEntry.value?.tone) return mappedEntry.value.tone;
   const rec = resolved.value.record;
   const key = resolved.value.fieldKey;
   if (rec && key && rec.tones?.[key]) return asTone(rec.tones[key]);
   return undefined;
 });
+
+const mappedIcon = computed<string | undefined>(() => mappedEntry.value?.icon);
 
 const isTagsField = computed(() => {
   const rec = resolved.value.record;
@@ -290,6 +311,7 @@ const formattedTime = computed(() => {
 const displayText = computed<string>(() => {
   const raw = resolved.value.raw;
   if (isEmptyValue.value) return "";
+  if (mappedEntry.value?.label) return mappedEntry.value.label;
   const kind = effectiveKind.value;
   if (kind === "number") {
     return formatTypedNumber(unwrapJsonField(raw), locale.value, props.numberFormat);
@@ -373,7 +395,18 @@ function navigateTo(reference: PlatformFieldReference) {
       v-else-if="effectiveKind === 'tag'"
       class="sdk-typed-value-tag"
       :data-tone="effectiveTone ?? 'default'"
-    >{{ displayText }}</span>
+    >
+      <component
+        :is="appIcon(mappedIcon)"
+        v-if="mappedIcon"
+        :size="13"
+        :stroke-width="2"
+        class="sdk-typed-value-icon"
+        :data-icon="mappedIcon"
+        aria-hidden="true"
+      />
+      <span>{{ displayText }}</span>
+    </span>
 
     <span v-else-if="effectiveKind === 'tags' || (effectiveKind === 'list' && listStyle === 'tags')" class="sdk-typed-value-tags">
       <template v-for="(item, idx) in listItems" :key="idx">
@@ -403,7 +436,16 @@ function navigateTo(reference: PlatformFieldReference) {
 
     <code v-else-if="effectiveKind === 'code' || effectiveKind === 'json'" class="sdk-typed-value-code">{{ displayText }}</code>
 
-    <span v-else class="sdk-typed-value-text">
+    <span v-else class="sdk-typed-value-text" :data-tone="effectiveTone">
+      <component
+        :is="appIcon(mappedIcon)"
+        v-if="mappedIcon"
+        :size="14"
+        :stroke-width="1.85"
+        class="sdk-typed-value-icon"
+        :data-icon="mappedIcon"
+        aria-hidden="true"
+      />
       <span>{{ displayText }}</span><template v-if="unit">{{ " " }}<span class="sdk-typed-value-unit">{{ unit }}</span></template>
     </span>
   </span>
@@ -432,8 +474,29 @@ function navigateTo(reference: PlatformFieldReference) {
 
 .sdk-typed-value-text {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
+  gap: 4px;
   min-width: 0;
+}
+
+.sdk-typed-value-text[data-tone="info"] {
+  color: var(--el-color-info-text);
+}
+
+.sdk-typed-value-text[data-tone="success"] {
+  color: var(--el-color-success-text);
+}
+
+.sdk-typed-value-text[data-tone="warning"] {
+  color: var(--el-color-warning-text);
+}
+
+.sdk-typed-value-text[data-tone="danger"] {
+  color: var(--el-color-danger-text);
+}
+
+.sdk-typed-value-icon {
+  flex: none;
 }
 
 .sdk-typed-value.is-truncate .sdk-typed-value-text {
@@ -486,6 +549,7 @@ function navigateTo(reference: PlatformFieldReference) {
 .sdk-typed-value-tag {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   padding: 0 var(--spacing-xs);
   border: 0;
   border-radius: var(--radius-xs);

@@ -151,7 +151,10 @@ const ActionsCatalog = {
       { key: "derived", label: "derived" },
       { key: "code", label: "code" },
     ];
-    const activeTab = ref("definition");
+    const activeTab = computed({
+      get: () => (typeof instance.state.values.value.activeTab === "string" && instance.state.values.value.activeTab ? instance.state.values.value.activeTab : "definition"),
+      set: (value) => instance.state.set("activeTab", value || "definition"),
+    });
     /** An agent's draft opens the definition form as it arrives, a new action's draft too (nothing is selected then). */
     const draftVisible = computed(() => instance.draft.value !== null);
     watch(instance.draft, (draft) => {

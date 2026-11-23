@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   type DomainComponentInput, type registerDomainComponentRequestSchema, type updateDomainComponentRequestSchema,
 } from "@ontomato/contracts/domain-components";
-import { componentModuleImports, readModuleFacts } from "@ontomato/contracts/panel-module";
+import { checkAuthoringDirectApiCalls, componentModuleImports, readModuleFacts } from "@ontomato/contracts/panel-module";
 import { DOMAIN_COMPONENT_PREFIX } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
 import type { z } from "zod";
@@ -39,10 +39,12 @@ export async function readDomainComponent(owner: ProductOwner, credentials: Assi
   return record;
 }
 
-async function checkSource({ source }: DomainComponentInput) {
+export async function checkDomainComponentSource({ source }: DomainComponentInput) {
   if (source.module === undefined) return;
   try {
     await componentModuleImports(source.module, { allowRelative: false });
+    const directApiViolations = checkAuthoringDirectApiCalls(source.module, "source.module");
+    if (directApiViolations.length > 0) throw new Error(directApiViolations[0]!.message);
     const { exports } = await readModuleFacts(source.module);
     if (!exports.some(entry => "name" in entry && entry.name === "default")) throw new Error("The module must export a Vue component as default");
   } catch (cause) {
@@ -56,7 +58,7 @@ export async function registerDomainComponent(
   await assertAppBuilderAccess(credentials);
   const id = request.declaration.componentId ?? DOMAIN_COMPONENT_PREFIX + randomUUID();
   const input = { ...request, declaration: { ...request.declaration, componentId: id } };
-  await checkSource(input);
+  await checkDomainComponentSource(input);
   return transaction(async client => {
     await lockProducts(client, owner);
     const { rows: collisions } = await client.query(
@@ -119,7 +121,7 @@ export async function updateDomainComponent(
 ) {
   if (input.declaration.componentId !== id)
     throw new HttpError(400, "field 'declaration.componentId' must match the component being updated", "INVALID_REQUEST");
-  await checkSource(input);
+  await checkDomainComponentSource(input);
   return transaction(async client => {
     const current = await currentForChange(client, owner, credentials, id, revision);
     if (!isDeepStrictEqual(current.declaration, input.declaration)) {

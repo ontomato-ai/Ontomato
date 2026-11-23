@@ -283,12 +283,13 @@ function savePanelFile(file: { mime: "image/png" | "text/csv" | "application/zip
 
 ### usePanelData
 
+Legacy compatibility hook retained temporarily for existing built-in panels. New panels must not read raw
+records via `usePanelData`; use `usePanelOutput` / `usePanelOutputs` for read-only projection outputs, or render
+business data through an official or dedicated component.
+
 One datum of one member, kept current while the calling component is mounted. Call it in a component's setup,
 before any `await`.
 
-- Use this hook for panel coordination (such as deciding visibility, navigation or follow-up state when no component
-  output already carries the value). Do not use it to render business fields in the panel template; render business
-  data through an official component, its configuration, or a dedicated component.
 - `member` is a member the panel declares; `name` is a datum its projection names under `data.<name>`. The read, its
   mappings and the object it needs are the projection's: nothing about the read is written in the page.
 - The member's inputs come from the panel state its placement binds; the datum is read again whenever that state
@@ -394,13 +395,18 @@ in panel templates / slots) instead of formatting business fields in panel HTML:
 
 - `<typed-value>` (`TypedValue`): formats one typed field value (text, number, date/datetime/relative-time, boolean,
   status tag, tags, clickable object reference, localized map, list, code/JSON) from `data.record`, `data.result`
-  (`metricOutput` scalar/first-row or named column), or a direct `value` prop.
+  (`metricOutput` scalar/first-row or named column), or a direct `value` prop. Supports exact-match `valueMap`
+  (`{ [rawValue]: { label?, labelKey?, labels?, tone?, icon? } }`) for mapping raw codes/booleans/enums to localized
+  text, semantic tones, and platform icons (pure exact match; no calculation or range/threshold expressions).
 - `<record-template>` (`RecordTemplate`): fills already-provided values from `data.record` or one row of
   `data.result` (`metricOutput`) into a fixed `{fieldKey}` sentence template (`template`, `templateKey`, or
-  locale-keyed `templates`, with per-field `fieldFormats`). Strictly presentation-only: no expressions, calculation,
-  or conditional sentence branching.
+  locale-keyed `templates`, with per-field `fieldFormats` including `valueMap`). Strictly presentation-only: no
+  expressions, calculation, or conditional sentence branching.
 - `<info-banner>` (`InfoBanner`): standardized `info`/`success`/`warning`/`danger` callout banner supporting static/
-  localized copy, slots, or already-provided `data.record` / `data.result` fields and fixed templates.
+  localized copy, slots, or already-provided `data.record` / `data.result` fields and fixed templates, plus exact-match
+  `toneMap`/`valueMap` and platform `icon`.
+- `ObjectList` columns also accept `column.valueMap` with the same exact-match `{ label?, labelKey?, labels?, tone?, icon? }`
+  shape (or use `<typed-value :value="value" :value-map="..." />` inside `#cell-<columnKey>` slots).
 - `<object-ref-card>` (`ObjectRefCard`): clickable object reference card (icon/monogram, caption, localized name,
   monospace identifier, optional badge) from `data.record` (via `field` or the record itself), `data.result`, or a
   direct `reference` prop — ideal for composing relationship `Source → Target` blocks.

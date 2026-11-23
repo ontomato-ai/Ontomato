@@ -8,6 +8,7 @@ import {
   appsSdkUiPrimitiveEntrySchema,
 } from "./apps-sdk";
 import {
+  checkAuthoringDirectApiCalls,
   checkAuthoringScript,
   checkAuthoringStyles,
   checkAuthoringTemplate,
@@ -140,21 +141,24 @@ test("appsSdkComponentCatalogSchema validates SDK-owned UI primitive, directive,
   assert.equal(catalogue.themeTokens?.length, 1);
 });
 
-test("componentModuleImports allows @ontomato/sdk/* official specifiers and rejects element-plus", async () => {
+test("componentModuleImports allows @ontomato/sdk/* official specifiers and rejects element-plus and bare echarts", async () => {
   assert.ok(componentOfficialSpecifiers.includes(SDK_UI_ENTRY_SPECIFIER));
   assert.equal(isComponentOfficialSpecifier("@ontomato/sdk/chart"), true);
   assert.equal(isComponentOfficialSpecifier("@ontomato/sdk/base"), true);
   assert.equal(isComponentOfficialSpecifier("element-plus"), false);
+  assert.equal(isComponentOfficialSpecifier("echarts"), false);
 
   const allowed = await componentModuleImports(`
     import { ref } from "vue";
     import { SdkButton, vSdkLoading } from "@ontomato/sdk/ui";
+    import { EChart } from "@ontomato/sdk/chart";
     import { MetricChart } from "@ontomato/sdk/base";
     import { helper } from "./helper.js";
   `);
   assert.deepEqual(allowed.map(item => [item.specifier, item.kind]), [
     ["vue", "official"],
     ["@ontomato/sdk/ui", "official"],
+    ["@ontomato/sdk/chart", "official"],
     ["@ontomato/sdk/base", "official"],
     ["./helper.js", "relative"],
   ]);
@@ -168,8 +172,20 @@ test("componentModuleImports allows @ontomato/sdk/* official specifiers and reje
     /import SDK UI primitives from '@ontomato\/sdk\/ui'/u,
   );
   await assert.rejects(
+    componentModuleImports('import * as echarts from "echarts";'),
+    /import chart components from '@ontomato\/sdk\/chart'/u,
+  );
+  await assert.rejects(
+    componentModuleImports('import { init } from "echarts/core";'),
+    /import chart components from '@ontomato\/sdk\/chart'/u,
+  );
+  await assert.rejects(
     panelModuleImports('import { ElButton } from "element-plus";'),
     /use <sdk-\*> tags in panel\.html/u,
+  );
+  await assert.rejects(
+    panelModuleImports('import * as echarts from "echarts";'),
+    /use <e-chart> in panel\.html or the MetricChart projection component/u,
   );
 });
 
@@ -279,4 +295,53 @@ test("checkAuthoringTemplate and checkAuthoringStyles allow normal HTML/CSS, SDK
 
   const scriptSource = 'export const snippet = "<button>Click</button><el-button>Docs</el-button>";\n';
   assert.deepEqual(await checkAuthoringScript(scriptSource, "panel.mjs"), []);
+});
+
+test("checkAuthoringDirectApiCalls and checkAuthoringScript block direct API requests and allow comments or safe identifiers", async () => {
+  const blocked = [
+    'import * as echarts from "echarts";',
+    'async function load(id) {',
+    '  const res = await fetch("/api/orders");',
+    '  const xhr = new XMLHttpRequest();',
+    "  const sse = new EventSource('/api/stream');",
+    '  const ws = new WebSocket(`wss://example.com/api/ws/${id}`);',
+    '  return { res, xhr, sse, ws };',
+    '}',
+  ].join("\n");
+
+  const directOnly = checkAuthoringDirectApiCalls(blocked, "panel.mjs");
+  assert.deepEqual(
+    directOnly.map(v => ({ line: v.line, kind: v.kind, found: v.found })),
+    [
+      { line: 3, kind: "forbidden-direct-api", found: "fetch" },
+      { line: 3, kind: "forbidden-direct-api", found: "/api/" },
+      { line: 4, kind: "forbidden-direct-api", found: "XMLHttpRequest" },
+      { line: 5, kind: "forbidden-direct-api", found: "EventSource" },
+      { line: 5, kind: "forbidden-direct-api", found: "/api/" },
+      { line: 6, kind: "forbidden-direct-api", found: "WebSocket" },
+      { line: 6, kind: "forbidden-direct-api", found: "/api/" },
+    ],
+  );
+  for (const v of directOnly) {
+    assert.match(v.message, /declared projection.*registered operation/u);
+  }
+
+  const allViolations = await checkAuthoringScript(blocked, "Widget.vue");
+  assert.equal(allViolations[0]!.kind, "forbidden-import");
+  assert.equal(allViolations[0]!.found, "echarts");
+  assert.equal(allViolations[0]!.replacement, "@ontomato/sdk/chart");
+  assert.equal(allViolations.length, 1 + directOnly.length);
+
+  const allowed = [
+    '// Never call fetch("/api/orders") or new WebSocket("/api/ws") directly.',
+    '/* XMLHttpRequest and EventSource are also ignored in block comments: "/api/ignored" */',
+    'const quotePattern = /["\']/gu;',
+    'const prefetchData = true;',
+    'const fetchCount = 3;',
+    'const myWebSocketLabel = "fetch XMLHttpRequest EventSource WebSocket";',
+    'const safePath = "/applications/demo/rapid/capital";',
+    'export default { setup() { return { quotePattern, prefetchData, fetchCount, myWebSocketLabel, safePath }; } };',
+  ].join("\n");
+  assert.deepEqual(checkAuthoringDirectApiCalls(allowed, "panel.mjs"), []);
+  assert.deepEqual(await checkAuthoringScript(allowed, "panel.mjs", { target: "panel" }), []);
 });

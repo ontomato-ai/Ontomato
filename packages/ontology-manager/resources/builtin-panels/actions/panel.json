@@ -25,6 +25,14 @@
         },
         "deepLink": true,
         "default": ""
+      },
+      "activeTab": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "default": "definition"
       }
     },
     "members": {

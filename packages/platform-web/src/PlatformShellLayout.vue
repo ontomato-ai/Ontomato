@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n";
 import {
   agentModelLabelsKey,
   confirmDanger,
+  pageAdmissionKey,
   platformApplicationNameKey,
   pilotPageKey,
   platformPageAccessKey,
@@ -25,7 +26,8 @@ import { catalogPartition, type NativeLayout } from "./native-layouts";
 import type { PlatformBrand } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelEntryApplication, useApplicationCatalog } from "./catalog";
-import { nodeApiRequest } from "@ontomato/workbench-ui";
+import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
+import { resolveApplicationEntry } from "./panel-host";
 import { appAt } from "./apps";
 import { pilotPageResolver as resolvePilotPages } from "./pilot-pages";
 import { providePlatformPageCounter } from "./page-counter";
@@ -229,10 +231,48 @@ onBeforeUnmount(() => {
  * Whether the account may open a page of the navigation: the applications whose column is their own (the agent
  * platform, knowledge governance) list an entry from it, by the same rule the guard and the menus read.
  */
-provide(platformPageAccessKey, (path: string) =>
+const hasPageAccess = (path: string) =>
   Boolean(panelEntryApplication(path)) ||
-  availablePages(host.navigation.value, host.access).some((page) => page.path === path),
-);
+  availablePages(host.navigation.value, host.access).some((page) => page.path === path);
+
+provide(platformPageAccessKey, hasPageAccess);
+provide(pageAdmissionKey, async (address: string) => {
+  const path = address.replace(/^#/, "").split("?")[0] ?? "";
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return { ok: false, reason: "unsupported_target", error: { code: "UNSUPPORTED_TARGET", message: "Expected a site-relative path" } };
+  }
+  if (path === platformRoutes.dashboards.path) {
+    return hasPageAccess(path)
+      ? { ok: true }
+      : { ok: false, reason: "forbidden", error: { code: "FORBIDDEN", message: t("platform.pageAccessDenied") } };
+  }
+  if (path.startsWith("/applications/") || panelEntryApplication(path) !== null || !hasPageAccess(path)) {
+    try {
+      await resolveApplicationEntry({ path });
+      return { ok: true };
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 403) {
+        return { ok: false, reason: "forbidden", error: { code: "FORBIDDEN", message: error.message } };
+      }
+      if (host.navigation.value.pages.some((page) => page.path === path) && !hasPageAccess(path)) {
+        return { ok: false, reason: "forbidden", error: { code: "FORBIDDEN", message: t("platform.pageAccessDenied") } };
+      }
+      if (error instanceof ApiRequestError && error.status === 404) {
+        return {
+          ok: false,
+          reason: path.startsWith("/applications/") ? "not_found" : "unsupported_target",
+          error: { code: "NOT_FOUND", message: error.message },
+        };
+      }
+      return {
+        ok: false,
+        reason: "forbidden",
+        error: { code: "ACCESS_CHECK_FAILED", message: error instanceof Error ? error.message : String(error) },
+      };
+    }
+  }
+  return { ok: true };
+});
 provide(platformApplicationNameKey, (id: string) => declarations.value.find((app) => app.id === id)?.label ?? id);
 
 /** The applications' model pages' words, in the platform's language. */

@@ -1,7 +1,10 @@
 import type { Component } from "vue";
 import {
   AlarmClock,
+  AlertCircle,
+  AlertTriangle,
   AppWindow,
+  Ban,
   BookOpen,
   Bot,
   Boxes,
@@ -11,11 +14,18 @@ import {
   CalendarClock,
   ChartColumn,
   ChartNoAxesCombined,
+  Check,
+  CheckCircle2,
   Circle,
+  CircleDot,
   ClipboardList,
+  Clock,
   Component as ComponentIcon,
   Database,
   ExternalLink,
+  Eye,
+  EyeOff,
+  Flag,
   Folder,
   GitBranch,
   Globe,
@@ -23,14 +33,19 @@ import {
   Grid2X2,
   HeartPulse,
   House,
+  Info,
   Layers,
   LayoutDashboard,
   Link2,
+  Lock,
   Microscope,
+  MinusCircle,
   MousePointerClick,
   Network,
   Package,
   PanelsTopLeft,
+  PauseCircle,
+  PlayCircle,
   Presentation,
   Puzzle,
   ScanEye,
@@ -42,13 +57,17 @@ import {
   Sliders,
   Sparkles,
   SquareFunction,
+  Star,
   Table2,
   Tags,
+  Unlock,
   UserCog,
   Users,
   Wallet,
   Waypoints,
   Workflow,
+  X,
+  XCircle,
 } from "lucide-vue-next";
 
 /** Applications name icons; the shell resolves a curated set so the rail does not pull in whole icon packs. */
@@ -122,7 +141,32 @@ const appIcons: Record<string, Component> = {
   /** app-builder and other applications made later */
   builder: Sliders,
   pages: Table2,
+  /** Curated semantic status and indicator icons for display valueMap and banners */
+  check: Check,
+  "check-circle": CheckCircle2,
+  x: X,
+  "x-circle": XCircle,
+  "alert-triangle": AlertTriangle,
+  "alert-circle": AlertCircle,
+  info: Info,
+  clock: Clock,
+  ban: Ban,
+  "minus-circle": MinusCircle,
+  star: Star,
+  flag: Flag,
+  lock: Lock,
+  unlock: Unlock,
+  eye: Eye,
+  "eye-off": EyeOff,
+  "pause-circle": PauseCircle,
+  "play-circle": PlayCircle,
+  sparkles: Sparkles,
+  "circle-dot": CircleDot,
 };
+
+export function hasAppIcon(name: string): boolean {
+  return Object.hasOwn(appIcons, name);
+}
 
 export function appIcon(name: string): Component {
   return appIcons[name] ?? Circle;
