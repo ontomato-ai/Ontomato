@@ -47,6 +47,30 @@
         },
         "deepLink": false,
         "default": null
+      },
+      "tab": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "default": "overview"
+      },
+      "detailMode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "default": "view"
+      },
+      "templateFilter": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "default": "all"
       }
     },
     "members": {

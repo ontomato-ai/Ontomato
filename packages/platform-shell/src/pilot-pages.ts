@@ -37,3 +37,17 @@ export const pilotPageKey: InjectionKey<PilotPageRegistry> = Symbol("pilot-page"
 export function usePilotPage(): PilotPageRegistry {
   return inject(pilotPageKey, null) ?? (() => () => null);
 }
+
+/** Whether the initiating user is admitted to open a given site-relative page address. */
+export type PageAdmissionResult =
+  | { ok: true }
+  | { ok: false; reason: "forbidden" | "not_found" | "unsupported_target"; error?: { code: string; message: string } };
+
+export type PageAdmissionChecker = (address: string) => Promise<PageAdmissionResult>;
+
+export const pageAdmissionKey: InjectionKey<PageAdmissionChecker> = Symbol("page-admission");
+
+/** Checks live admission for a page address before opening it beside a conversation; null when unprovided. */
+export function usePageAdmission(): PageAdmissionChecker | null {
+  return inject(pageAdmissionKey, null);
+}

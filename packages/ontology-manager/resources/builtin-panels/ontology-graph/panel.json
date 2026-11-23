@@ -23,6 +23,14 @@
         "deepLink": true,
         "default": ""
       },
+      "filter": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "default": "all"
+      },
       "positions": {
         "type": {
           "kind": "json"

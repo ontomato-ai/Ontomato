@@ -1,6 +1,6 @@
 import {
   createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
-  inspectPanelOperationImpactRequestSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
+  inspectPanelOperationImpactRequestSchema, panelFormEditedNotificationSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
   panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
   panelUploadRequestSchema, readPanelOperationRequestSchema, readPanelOperationResponseSchema, updatePanelOperationSettingsRequestSchema,
 } from "@ontomato/contracts/panel-agent";
@@ -13,7 +13,7 @@ import {
   productPanelReadRequestSchema,
 } from "@ontomato/contracts/panel-host";
 import {
-  dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings, prepareHumanPanelOperation,
+  dispatchHumanPanelOperation, inspectPanelOperationImpact, invalidateFormConfirmations, ownPanelSettings, prepareHumanPanelOperation,
   projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor, stagePanelUpload,
 } from "../../services/product-panels/operations";
 import { panelOperationStore } from "../../services/product-panels/operation-store";
@@ -353,6 +353,11 @@ panelOperationsRouter.post("/panel-operations/intents/:intentId/dispatch", wrap(
   const { intentId } = panelHumanOperationIntentParamsSchema.parse(req.params);
   dispatchPanelHumanOperationIntentRequestSchema.parse(req.body);
   res.json(panelHumanOperationDispatchResponseSchema.parse(await dispatchHumanPanelOperation(owner, credentials, intentId)));
+}));
+panelOperationsRouter.post("/panel-operations/form-edited", wrap(async (req, res) => {
+  const { owner } = context(req);
+  const notification = panelFormEditedNotificationSchema.parse(req.body);
+  res.json(await invalidateFormConfirmations(owner, notification));
 }));
 panelOperationsRouter.get("/panel-operation-settings/:providerId/:sessionId",wrap(async(req,res)=>{
   const c=context(req),root=agentSessionRefSchema.parse(req.params);

@@ -28,6 +28,36 @@ export const panelOperationStore = {
   async outcome(owner: AssistantOwner, id: string, outcome: PanelOperationOutcome) {
     await db().query(`UPDATE ${t("panel_operation_intents")} SET intent=jsonb_set(intent,'{outcome}',$4::jsonb) WHERE domain_id=$1 AND owner_id=$2 AND id=$3`, [owner.domainId,owner.userId,id,JSON.stringify(outcome)]);
   },
+  async invalidatePendingFormSaves(
+    owner: AssistantOwner,
+    match: { rootSession?: AgentSessionRef; targetType: string; primaryKey?: string | null },
+    reason: { code: string; message: string },
+  ): Promise<number> {
+    const params: unknown[] = [owner.domainId, owner.userId, JSON.stringify(reason), match.targetType];
+    const clauses = [
+      "domain_id=$1",
+      "owner_id=$2",
+      "intent->>'dispatched'='false'",
+      "intent->'operation'->>'kind'='form.save'",
+      "intent->'source'->>'kind' IS NULL",
+      "intent->'invalidated' IS NULL",
+    ];
+    if (match.primaryKey) {
+      params.push(match.primaryKey);
+      clauses.push(`intent->'call'->'target'->>'kind'='object' AND intent->'call'->'target'->>'objectType'=$4 AND intent->'call'->'target'->>'primaryKey'=$${params.length}`);
+    } else {
+      clauses.push("intent->'call'->'target'->>'kind'='draft' AND intent->'binding'->>'id'=$4");
+    }
+    if (match.rootSession) {
+      params.push(match.rootSession.providerId, match.rootSession.sessionId);
+      clauses.push(`intent->'rootSession'->>'providerId'=$${params.length - 1} AND intent->'rootSession'->>'sessionId'=$${params.length}`);
+    }
+    const result = await db().query(
+      `UPDATE ${t("panel_operation_intents")} SET intent=jsonb_set(intent,'{invalidated}',$3::jsonb) WHERE ${clauses.join(" AND ")}`,
+      params,
+    );
+    return result.rowCount ?? 0;
+  },
   async settings(owner: AssistantOwner, root: AgentSessionRef) {
     const row = (await db().query(`SELECT confirm_before_execute FROM ${t("panel_operation_settings")} WHERE domain_id=$1 AND owner_id=$2 AND provider_id=$3 AND session_id=$4`, [owner.domainId,owner.userId,root.providerId,root.sessionId])).rows[0];
     return {rootSession:root,confirmBeforeExecute:row ? row.confirm_before_execute as boolean : true};

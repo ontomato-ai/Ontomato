@@ -42,7 +42,16 @@ export {
   type DataEngineTransport,
 } from "./agent-models";
 export { platformApplicationNameKey, platformPageAccessKey, useApplicationName, usePageAccess } from "./page-access";
-export { pilotPageKey, usePilotPage, type PilotPage, type PilotPageResolver } from "./pilot-pages";
+export {
+  pageAdmissionKey,
+  pilotPageKey,
+  usePageAdmission,
+  usePilotPage,
+  type PageAdmissionChecker,
+  type PageAdmissionResult,
+  type PilotPage,
+  type PilotPageResolver,
+} from "./pilot-pages";
 export {
   codedPanelTarget,
   newPanelInstanceName,
