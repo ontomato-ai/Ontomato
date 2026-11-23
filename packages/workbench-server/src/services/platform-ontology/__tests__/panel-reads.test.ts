@@ -4,14 +4,23 @@ import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import {
   directProjectionPortsSchema,
   panelReadParameterSchemas,
+  panelRecordFieldText,
   validateDirectProjection,
 } from "@ontomato/contracts/panel-projection";
 import {
   ACTION,
+  AGENT_DEFINITION,
+  APPLICATION,
+  FUNCTION,
   OBJECT_TYPE,
+  ONTOLOGY_RELATION_KIND,
   ONTOLOGY_TYPE,
+  PRODUCT_PANEL,
+  PRODUCT_PROJECTION,
+  SCHEDULED_TASK,
+  SDK_COMPONENT,
+  TRIGGER,
   USER,
-  platformObjectTypes,
 } from "@ontomato/contracts/platform-object-types";
 import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { WorkbenchIdentity } from "../../../identity/types";
@@ -255,15 +264,7 @@ describe("createPlatformOntologyReadAdapter", () => {
     });
   });
 
-  it("matches all five registered platform:OntologyType read declarations for graph and picker projections", () => {
-    expect(Object.keys(platformObjectTypes[ONTOLOGY_TYPE]?.reads ?? {}).sort()).toEqual([
-      "counts",
-      "neighbors",
-      "objects",
-      "schema",
-      "start",
-    ]);
-
+  it("keeps the graph, relations and object picker projections valid", () => {
     const projectionSchema = directProjectionPortsSchema.superRefine(validateDirectProjection);
     const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
     const anyLayerObject: {
@@ -346,5 +347,99 @@ describe("createPlatformOntologyReadAdapter", () => {
     for (const projection of projections) {
       expect(() => projectionSchema.parse(projection)).not.toThrow();
     }
+  });
+});
+
+describe("platform ontology catalogue reads", () => {
+  it("groups translated type labels by layer and keeps zero, refusal, failure and unavailable counts distinct", async () => {
+    stubOwnerHttp({
+      "/action/queryList": () => Response.json({ message: "No action permission" }, { status: 403 }),
+      "/workflow/subjects": () => Response.json({ message: "Subjects unavailable" }, { status: 500 }),
+    });
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+    const rows = panelReadResultSchemas.panelRecordList.parse(await reads.list());
+    const row = (type: string) => rows.find(entry => entry.primaryKey === type)!;
+    expect([...new Set(rows.map(entry => entry.fields.layerId))]).toEqual(["fact", "capability", "governance", "product"]);
+    expect(row(OBJECT_TYPE)).toMatchObject({
+      className: ONTOLOGY_TYPE, label: "对象类型",
+      fields: { typeId: OBJECT_TYPE, count: 2, countStatus: "ok" },
+    });
+    expect(panelRecordFieldText(row(OBJECT_TYPE).fields.layer, "en")).toBe("Fact");
+    expect(panelRecordFieldText(row(OBJECT_TYPE).fields.layer, "zh-CN")).toBe("事实层");
+    expect(row(FUNCTION).fields).toMatchObject({ count: 0, countStatus: "ok" });
+    for (const [type, status] of [[ACTION, "refused"], [USER, "failed"], [SCHEDULED_TASK, "unavailable"]]) {
+      const record = panelReadResultSchemas.panelRecord.parse(await reads.record(type));
+      for (const fields of [row(type).fields, record.fields]) {
+        expect(fields.countStatus).toBe(status);
+        expect(fields.countReason).toEqual(expect.any(String));
+        expect(fields).not.toHaveProperty("count");
+      }
+    }
+    expect(panelRecordFieldText(row(ACTION).fields.countStatusLabel, "en")).toBe("No permission");
+  });
+
+  it.each([
+    [SDK_COMPONENT, "/ontology/components", "cm.dirComponents"],
+    [PRODUCT_PROJECTION, "/ontology/projections", "cm.dirProjections"],
+    [PRODUCT_PANEL, "/ontology/panels", "cm.dirPanels"],
+    [APPLICATION, "/ontology/applications", "cm.dirApplications"],
+    [AGENT_DEFINITION, "/ontology/agents", "cm.dirAgents"],
+  ])("publishes scalar instance-directory outputs for %s", async (type, directoryPath, directoryNameKey) => {
+    stubOwnerHttp();
+    const reads = createPlatformOntologyReadAdapter(owner, { ...viewer, locale: "en" });
+    const record = panelReadResultSchemas.panelRecord.parse(await reads.record(type));
+    expect(record).toMatchObject({
+      primaryKey: type, className: ONTOLOGY_TYPE, outputs: { directoryPath, directoryNameKey },
+      fields: { typeId: type, layerId: "product", directoryPath, directoryNameKey },
+    });
+  });
+
+  it("returns detail from the type owner and signals a missing record", async () => {
+    stubOwnerHttp();
+    const reads = createPlatformOntologyReadAdapter(owner, { ...viewer, locale: "en" });
+    const action = panelReadResultSchemas.panelRecord.parse(await reads.record(ACTION));
+    expect(action).toMatchObject({ label: "Action", fields: { count: 3, countStatus: "ok" } });
+    expect(action).not.toHaveProperty("outputs");
+    const agent = panelReadResultSchemas.panelRecord.parse(await reads.record(AGENT_DEFINITION));
+    for (const field of ["definition", "rules"]) {
+      expect(panelRecordFieldText(agent.fields[field], "en")).toMatch(/[A-Za-z]/);
+      expect(panelRecordFieldText(agent.fields[field], "zh-CN")).toMatch(/[\u4e00-\u9fff]/);
+    }
+    await expect(reads.record("platform:Unknown")).rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
+  });
+
+  it("returns typed rows for public properties and registered read and operation signatures", async () => {
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+    const properties = panelReadResultSchemas.panelRecordList.parse(reads.properties(AGENT_DEFINITION));
+    expect(properties.find(row => row.primaryKey === "name")?.fields).toMatchObject({
+      name: "name", type: "string", optional: false, description: { kind: "localized" },
+    });
+    const signatures = panelReadResultSchemas.panelRecordList.parse(await reads.reads(TRIGGER));
+    expect(signatures.find(row => row.primaryKey === "query")?.fields).toMatchObject({
+      name: "query", parameters: expect.arrayContaining(["search"]), result: "panelRecordQuery", source: "type",
+    });
+    const operations = panelReadResultSchemas.panelRecordList.parse(await reads.operations(AGENT_DEFINITION));
+    const id = `${AGENT_DEFINITION}.save`;
+    expect(operations.find(row => row.primaryKey === id)?.fields).toMatchObject({
+      id, kind: "form.save", effect: "write", inputs: expect.arrayContaining(["values"]), batch: false,
+    });
+  });
+
+  it("expands incoming and outgoing declarations and retains relation-kind identities and target unions", () => {
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+    const relations = panelReadResultSchemas.panelRecordList.parse(reads.typeRelations(ACTION));
+    expect(relations.map(row => row.fields)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ direction: "outgoing", relationKind: "action.uses-function", peer: FUNCTION, derived: false }),
+      expect.objectContaining({ direction: "incoming", relationKind: "user.created-action", peer: USER, derived: false }),
+      expect.objectContaining({ direction: "incoming", relationKind: "projection.binds-target", peer: PRODUCT_PROJECTION }),
+    ]));
+    const kinds = panelReadResultSchemas.panelRecordList.parse(reads.relationKinds());
+    expect(kinds.find(row => row.primaryKey === "projection.binds-target")).toMatchObject({
+      className: ONTOLOGY_RELATION_KIND,
+      fields: {
+        id: "projection.binds-target", from: PRODUCT_PROJECTION, to: expect.arrayContaining([ACTION, USER]),
+        derived: false, owner: "node-product-panels",
+      },
+    });
   });
 });

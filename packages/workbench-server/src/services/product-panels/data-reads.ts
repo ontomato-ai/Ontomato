@@ -12,7 +12,7 @@ import { authoredReadParameterSource, directReadDeclaration, panelReadParameterI
 import {
   AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
-  ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
+  ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
   PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
   type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
@@ -360,6 +360,15 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       start: async () => (await ontology()).start(),
       neighbors: async (_selection, params) => (await ontology()).neighbors(params),
       objects: async (_selection, params) => (await ontology()).objects(params),
+      list: async () => (await ontology()).list(),
+      record: async selection => (await ontology()).record(selection.primaryKey!),
+      properties: async (_selection, params) => (await ontology()).properties(params.type as string),
+      typeRelations: async (_selection, params) => (await ontology()).typeRelations(params.type as string),
+      reads: async (_selection, params) => (await ontology()).reads(params.type as string),
+      operations: async (_selection, params) => (await ontology()).operations(params.type as string),
+    },
+    [ONTOLOGY_RELATION_KIND]: {
+      list: async () => (await ontology()).relationKinds(),
     },
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),

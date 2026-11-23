@@ -11,6 +11,7 @@ import {
 } from "@ontomato/contracts/platform-ontology";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import type { ProductOwner } from "../product-governance/grants";
+import { createPlatformOntologyCatalogueReads } from "./catalogue-reads";
 import {
   readPlatformOntologyCounts,
   readPlatformOntologyNeighbors,
@@ -31,7 +32,7 @@ export interface PlatformOntologyObjectsReadParams {
   page?: { number: number; size: number };
 }
 
-export interface PlatformOntologyReadAdapter {
+export interface PlatformOntologyReadAdapter extends ReturnType<typeof createPlatformOntologyCatalogueReads> {
   schema(): Promise<PlatformOntologySchemaResponse>;
   counts(): Promise<PlatformOntologyCountsResponse>;
   start(): Promise<PlatformOntologyStartResponse>;
@@ -40,8 +41,7 @@ export interface PlatformOntologyReadAdapter {
 }
 
 /**
- * Named panel data reads for `platform:OntologyType` (`schema`, `counts`, `start`, `neighbors`, `objects`),
- * serving the four-layer capability map and platform ontology explorers.
+ * Named reads for the four-layer platform ontology and its type and relation catalogues.
  */
 export function createPlatformOntologyReadAdapter(
   owner: ProductOwner,
@@ -49,6 +49,8 @@ export function createPlatformOntologyReadAdapter(
   callerUserName?: string,
 ): PlatformOntologyReadAdapter {
   return {
+    ...createPlatformOntologyCatalogueReads(owner, viewer),
+
     schema(): Promise<PlatformOntologySchemaResponse> {
       return readPlatformOntologySchema();
     },

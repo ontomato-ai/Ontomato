@@ -134,6 +134,10 @@ const referenceReads = {
 } as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
 
 const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
+const ontologyTypeDetailList = {
+  source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
+  requiredParams: ["type"], result: "panelRecordList",
+} as const satisfies PlatformReadDeclaration;
 /** A catalogue searched and paged like the business knowledge list, for definitions with no further filter. */
 const definitionQuery = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
@@ -483,9 +487,21 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         source: "type", parameterMode: "fixed", params: { type: "ontologyType", search: "keyword", page: "page" },
         requiredParams: ["type"], result: "panelOntologyObjects",
       },
+      ...metadataList,
+      record: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          directoryPath: { kind: "scalar", type: "string" },
+          directoryNameKey: { kind: "scalar", type: "string" },
+        },
+      },
+      properties: ontologyTypeDetailList,
+      typeRelations: ontologyTypeDetailList,
+      reads: ontologyTypeDetailList,
+      operations: ontologyTypeDetailList,
     },
   },
-  [ONTOLOGY_RELATION_KIND]: describeType("ontologyRelationKind"),
+  [ONTOLOGY_RELATION_KIND]: { ...describeType("ontologyRelationKind"), reads: metadataList },
   [FEEDBACK_RECORD]: {
     ...describeType("feedbackRecord"),
     reads: {

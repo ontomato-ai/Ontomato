@@ -74,6 +74,7 @@ import {
 } from "./product-panels";
 import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from "./product-projections";
 import { panelDefinitionSnapshotSchema } from "./product-subscriptions";
+import { platformTypeTableEntrySchema } from "./platform-type-table";
 
 const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
 const platformOperation = (id: string) => ({ kind: "PlatformOperation" as const, id });
@@ -2269,6 +2270,27 @@ test("platform ontology start uses the same full node as neighbors, or null", ()
   assert.deepEqual(platformOntologyStartResponseSchema.parse({ node: null }), { node: null });
   assert.equal(platformOntologyStartResponseSchema.safeParse({ node: identity, label: node.label, layer: node.layer }).success, false);
   assert.deepEqual(platformOntologyNeighborsResponseSchema.parse({ node, neighbors: [], edges: [], relations: [] }).node, node);
+});
+
+test("platform ontology catalogues publish standard list, record and required detail reads to the type table", () => {
+  const typeReads = platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[ONTOLOGY_TYPE].reads }).reads!;
+  const relationReads = platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[ONTOLOGY_RELATION_KIND].reads }).reads!;
+  for (const list of [typeReads.list, relationReads.list]) {
+    assert.deepEqual(list, { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" });
+  }
+  assert.deepEqual(typeReads.record, {
+    source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+    outputs: {
+      directoryPath: { kind: "scalar", type: "string" },
+      directoryNameKey: { kind: "scalar", type: "string" },
+    },
+  });
+  for (const name of ["properties", "typeRelations", "reads", "operations"]) {
+    assert.deepEqual(typeReads[name], {
+      source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
+      requiredParams: ["type"], result: "panelRecordList",
+    });
+  }
 });
 
 test("platform ontology reads preserve declared topology, owner status and scoped object identities", () => {
