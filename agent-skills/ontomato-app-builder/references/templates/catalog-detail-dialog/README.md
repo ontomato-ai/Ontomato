@@ -18,16 +18,16 @@ and browser back stack.
 
 ```sh
 template="$SKILL/references/templates/catalog-detail-dialog"
-node "$SKILL/ontomato.mjs" panel check "$template"
-node "$SKILL/ontomato.mjs" panel register "$template"
+node "$SKILL/scripts/ontomato.mjs" panel check "$template"
+node "$SKILL/scripts/ontomato.mjs" panel register "$template"
 ```
 
 Open `/applications/app-template-catalog-detail/manage` (or generate a customized copy for any type with
-`node "$SKILL/ontomato.mjs" panel scaffold <type-id> ./my-panel --id app-my-panel`).
+`node "$SKILL/scripts/ontomato.mjs" panel scaffold <type-id> ./my-panel --id app-my-panel`).
 
 ## Adapting this template to another type
 
-1. **Inspect the type**: run `node "$SKILL/ontomato.mjs" panel type <type-id>` and update `TYPE` in `panel.mjs`,
+1. **Inspect the type**: run `node "$SKILL/scripts/ontomato.mjs" panel type <type-id>` and update `TYPE` in `panel.mjs`,
    `objectType` / `type` / `data` / `operation` in `panel.json`, and IDs/paths in `registration.json`. For customer
    ontology classes, bind the platform's generic read functions parameterized by class (`list` / `record` shown by
    `panel type <class>`).

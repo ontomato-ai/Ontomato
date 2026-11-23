@@ -16,18 +16,18 @@ Recommended pattern for multi-column catalog + detail management applications:
 
 ```sh
 base="$SKILL/references/templates/two-entry-catalog-detail"
-node "$SKILL/ontomato.mjs" panel check "$base/catalog"
-node "$SKILL/ontomato.mjs" panel check "$base/detail"
+node "$SKILL/scripts/ontomato.mjs" panel check "$base/catalog"
+node "$SKILL/scripts/ontomato.mjs" panel check "$base/detail"
 
-node "$SKILL/ontomato.mjs" panel register "$base/catalog"
-node "$SKILL/ontomato.mjs" panel register "$base/detail"
+node "$SKILL/scripts/ontomato.mjs" panel register "$base/catalog"
+node "$SKILL/scripts/ontomato.mjs" panel register "$base/detail"
 ```
 
 Open `/applications/app-template-two-entry/catalog`.
 
 ## Adapting to a customer ontology class or another platform type
 
-1. Inspect the type with `node "$SKILL/ontomato.mjs" panel type <type-id>`.
+1. Inspect the type with `node "$SKILL/scripts/ontomato.mjs" panel type <type-id>`.
    - For a customer ontology class (for example `Student`), bind the platform's generic read functions parameterized by
      class (`list` / `record` shown by `panel type <class>`) and your published Actions for writes.
    - For a platform type (for example `platform:RelationType`), bind its built-in reads and operations.

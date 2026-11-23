@@ -142,7 +142,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         [objectType]: { reads: { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } },
           operations: [] },
       }, resultSchemas: { panelRecordList: { type: "array" } } });
-      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
+      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
       const checked = exec([cli, "panel", "check", "panel", "--sdk-dir", sdk, "--component-package", author, "--type-table", "types.json"]);
       assert.deepEqual(JSON.parse(checked), { status: "valid", version, unchecked: [] });
     });
@@ -155,7 +155,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       const trial = { component: "OperationButton", operation: "metricViews.test" };
       const descriptor = join(workspace, "panel.json");
       const document = { manifest: { state: {}, members: { metricEditor: editor, preview: trial } } };
-      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
+      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
       const check = () => execFileSync(process.execPath, [
         cli, "panel", "check", workspace, "--builtin", "--sdk-dir", join(out, version),
       ], { encoding: "utf8", stdio: "pipe" });

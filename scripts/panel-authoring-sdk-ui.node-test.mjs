@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TSX_LOADER = join(ROOT, "packages/contracts/node_modules/tsx/dist/loader.mjs");
-const PANEL_CHECK_URL = pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/panel-check.mjs")).href;
+const PANEL_CHECK_URL = pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")).href;
 const CONTRACTS_CHECK_URL = pathToFileURL(join(ROOT, "packages/contracts/src/panel-check.ts")).href;
 
 function runCheck(kind, directory) {
@@ -541,7 +541,7 @@ test("panel check allows normal HTML/CSS layout, semantic buttons, and data-free
 
   const runCli = (...args) => execFileSync(
     process.execPath,
-    ["--import", TSX_LOADER, join(ROOT, "agent-skills/ontomato-app-builder/ontomato.mjs"), ...args],
+    ["--import", TSX_LOADER, join(ROOT, "agent-skills/ontomato-app-builder/scripts/ontomato.mjs"), ...args],
     { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
   );
 

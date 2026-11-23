@@ -10,8 +10,8 @@ Pick the matching layout from the [page templates](templates/README.md).
 
 ```sh
 template="$SKILL/references/templates/catalog-detail-dialog"
-node "$SKILL/ontomato.mjs" panel check "$template"
-node "$SKILL/ontomato.mjs" panel register "$template"
+node "$SKILL/scripts/ontomato.mjs" panel check "$template"
+node "$SKILL/scripts/ontomato.mjs" panel register "$template"
 ```
 
 Open `/applications/app-template-catalog-detail/manage`. Clicking a row opens the full-width detail view with a
@@ -22,7 +22,7 @@ Open `/applications/app-template-catalog-detail/manage`. Clicking a row opens th
 Generate a single-panel starter for any type from the type table:
 
 ```sh
-node "$SKILL/ontomato.mjs" panel scaffold platform:AgentDefinition ./agents-panel --id app-my-agent-management
+node "$SKILL/scripts/ontomato.mjs" panel scaffold platform:AgentDefinition ./agents-panel --id app-my-agent-management
 ```
 
 The starter writes `panel.html`, `panel.mjs`, `panel.json`, and `registration.json` using the `catalog-detail-dialog`

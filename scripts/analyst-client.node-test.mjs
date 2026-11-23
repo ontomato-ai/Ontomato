@@ -99,7 +99,7 @@ test("skill packages bundle the one analyst transport source", async () => {
     readFile(new URL(root + "client.mjs", import.meta.url), "utf8");
   const source = await read("../agent-skills/ontomato-analyst/");
   for (const root of [
-    "../agent-skills/ontomato-app-builder/",
+    "../agent-skills/ontomato-app-builder/scripts/",
     "../agent-skills/ontomato-ontomap-builder/",
   ])
     assert.equal(await read(root), source);

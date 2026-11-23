@@ -360,6 +360,38 @@ describe("the menu of an application whose pages are its own menu", () => {
     const select = root.querySelector<HTMLSelectElement>(".mobile-page-select");
     expect(select?.value).toBe("/ontology/playground");
   });
+
+  it("highlights the parent menu entry for hidden child entry routes without false sibling prefix matches", async () => {
+    const groups = [
+      {
+        key: "facts",
+        label: "Facts",
+        items: [
+          { id: "/ontology/objects", label: "Object types" },
+          { id: "/ontology/relations", label: "Relation types" },
+        ],
+      },
+    ];
+    const childRoot = await mount(AppMenu, {
+      title: "Ontology manager",
+      groups,
+      activeId: "/ontology/relations/detail",
+      ariaLabel: "Pages",
+    });
+    const activeRows = childRoot.querySelectorAll(".page-row.active");
+    expect(activeRows).toHaveLength(1);
+    expect(activeRows[0]?.textContent).toContain("Relation types");
+    expect(childRoot.querySelector<HTMLSelectElement>(".mobile-page-select")?.value).toBe("/ontology/relations");
+    app?.unmount();
+
+    const siblingRoot = await mount(AppMenu, {
+      title: "Ontology manager",
+      groups,
+      activeId: "/ontology/relations-extra",
+      ariaLabel: "Pages",
+    });
+    expect(siblingRoot.querySelectorAll(".page-row.active")).toHaveLength(0);
+  });
 });
 
 describe("platform shell", () => {
