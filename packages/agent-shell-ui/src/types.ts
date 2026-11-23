@@ -143,6 +143,11 @@ export interface ShellPanelOperationsPort {
   write(sessionId: string, confirmBeforeExecute: boolean): Promise<boolean>;
   /** Notifies the server that the user manually edited an unsaved form, invalidating pending agent save confirmations. */
   notifyFormEdited?(sessionId: string, target: PanelFormEditedTarget): Promise<void>;
+  /** Cancels a pending agent-page intent bound to a question when the original live page instance is gone. */
+  cancelPendingQuestionIntent?(
+    questionId: string,
+    reason: { readonly code: string; readonly message: string },
+  ): Promise<{ readonly stale: boolean; readonly intentId?: string }>;
 }
 
 /**

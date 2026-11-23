@@ -5,13 +5,15 @@ import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
-  ObserveDisplayRequest, PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
+  FillFormRequest, ObserveDisplayRequest, PageActionRequest, PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
   PresentRequest, RuntimePresentationCallback,
 } from "@ontomato/contracts/agent-presentation";
+import { isPanelHumanOperationIntent } from "@ontomato/contracts/panel-agent";
 import { environment } from "../../config/environment";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { callbackCredential } from "../agent-runtime/callback-credential";
+import { panelOperationStore } from "../product-panels/operation-store";
 import type { AgentHostOwner, AgentHostService, AgentPresentationHost } from "./types";
 import type { AgentVisibilityReader } from "./visibility";
 
@@ -100,7 +102,19 @@ function notOpened(
   return { status: "not_opened", reason, current: { known: false, reason }, ...(error ? { error } : {}) };
 }
 
-const receiptMissing: PresentationResult = {
+function notFilled(
+  reason: "view_unavailable" | "forbidden" | "not_found", error?: { code: string; message: string },
+): PresentationResult {
+  return { status: "not_filled", reason, current: { known: false, reason }, ...(error ? { error } : {}) };
+}
+
+function notExecuted(
+  reason: "view_unavailable" | "forbidden" | "not_found", error?: { code: string; message: string },
+): PresentationResult {
+  return { status: "not_executed", reason, current: { known: false, reason }, ...(error ? { error } : {}) };
+}
+
+const receiptMissing: Extract<PresentationResult, { status: "unknown" }> = {
   status: "unknown", reason: "receipt_missing", current: { known: false, reason: "receipt_missing" },
 };
 
@@ -109,25 +123,49 @@ const callKey = (connectionId: string, runId: string, toolCallId: string) =>
 
 export async function requestPresentation(
   service: AgentHostService, host: AgentPresentationHost, owner: AgentHostOwner,
-  call: PresentationBinding & Pick<PresentationFrame, "sessionId" | "runId" | "toolCallId"> & { input: PresentRequest | ObserveDisplayRequest },
+  call: PresentationBinding & Pick<PresentationFrame, "sessionId" | "runId" | "toolCallId"> & { input: PresentRequest | ObserveDisplayRequest | FillFormRequest | PageActionRequest },
   signal: AbortSignal,
 ): Promise<PresentationResult> {
   const { viewId, sessionId, runId, toolCallId, input } = call;
   const route = viewKey(host, owner, viewId);
   const connection = views.get(route);
   const isObserve = "mode" in input && input.mode === "observe";
-  if (!connection) {
-    return isObserve
+  const isFillForm = "mode" in input && input.mode === "fill_form";
+  const isPageAction = "mode" in input && input.mode === "page_action";
+  const unavailable = (): PresentationResult =>
+    isObserve
       ? { status: "observed", reason: "view_unavailable", current: { known: false, reason: "view_unavailable" } }
-      : notOpened("view_unavailable");
-  }
+      : isFillForm
+        ? notFilled("view_unavailable")
+        : isPageAction
+          ? notExecuted("view_unavailable")
+          : notOpened("view_unavailable");
+  if (!connection) return unavailable();
 
   const gone = AbortSignal.any([connection.signal, signal]);
   let target: PresentationFrame["target"];
   try {
-    if ("mode" in input) {
+    if ("mode" in input && input.mode === "observe") {
       await service.ownRun(sessionId, runId, owner);
       target = { kind: "observe" };
+    } else if ("mode" in input && input.mode === "fill_form") {
+      await service.ownRun(sessionId, runId, owner);
+      target = {
+        kind: "fill_form",
+        ...(input.member === undefined ? {} : { member: input.member }),
+        ...(input.memberPath === undefined ? {} : { memberPath: input.memberPath }),
+        values: input.values,
+        ...(input.overwriteUnsaved ? { overwriteUnsaved: true } : {}),
+      };
+    } else if ("mode" in input && input.mode === "page_action") {
+      await service.ownRun(sessionId, runId, owner);
+      target = {
+        kind: "page_action",
+        operation: input.operation,
+        ...(input.memberPath === undefined ? {} : { memberPath: input.memberPath }),
+        ...(input.rowKey === undefined ? {} : { rowKey: input.rowKey }),
+        ...(input.input === undefined ? {} : { input: input.input }),
+      };
     } else if (input.target.startsWith("outputs/")) {
       const { artifact } = await service.resolve(sessionId, runId, input.target, owner);
       if (!artifact) return notOpened("not_found");
@@ -144,13 +182,10 @@ export async function requestPresentation(
   } catch (error) {
     if (!(error instanceof HttpError) || (error.status !== 403 && error.status !== 404)) throw error;
     const reason = error.status === 403 ? "forbidden" : "not_found";
-    return notOpened(reason, { code: error.code ?? reason.toUpperCase(), message: error.message });
+    const err = { code: error.code ?? reason.toUpperCase(), message: error.message };
+    return isFillForm ? notFilled(reason, err) : isPageAction ? notExecuted(reason, err) : notOpened(reason, err);
   }
-  if (gone.aborted || views.get(route) !== connection) {
-    return isObserve
-      ? { status: "observed", reason: "view_unavailable", current: { known: false, reason: "view_unavailable" } }
-      : notOpened("view_unavailable");
-  }
+  if (gone.aborted || views.get(route) !== connection) return unavailable();
 
   const key = callKey(connection.id, runId, toolCallId);
   const deadline = AbortSignal.any([gone, AbortSignal.timeout(30_000)]);
@@ -160,7 +195,46 @@ export async function requestPresentation(
       deadline.removeEventListener("abort", abandon);
       resolve(result);
     };
-    const abandon = () => finish(receiptMissing);
+    const abandon = () => {
+      if (!isPageAction) {
+        finish(receiptMissing);
+        return;
+      }
+      // Recover the authoritative server intent status when a page_action receipt is lost so the agent never retries.
+      void panelOperationStore.findByAgentToolCall(owner, runId, toolCallId).then((stored) => {
+        if (stored?.kind === "current" && isPanelHumanOperationIntent(stored.intent)) {
+          const { intent } = stored;
+          if (intent.source.kind === "agent-page") {
+            if (intent.dispatched) {
+              finish({
+                status: "executed",
+                reason: "action_completed",
+                operation: intent.operation.id,
+                intentId: intent.intentId,
+                ...(intent.outcome !== null ? { outcome: intent.outcome } : {}),
+                current: { known: false, reason: "receipt_missing" },
+              });
+              return;
+            }
+            if (!intent.invalidated && intent.source.questionId) {
+              finish({
+                status: "awaiting_confirmation",
+                reason: "confirmation_required",
+                operation: intent.operation.id,
+                intentId: intent.intentId,
+                questionId: intent.source.questionId,
+                label: intent.operation.label,
+                current: { known: false, reason: "receipt_missing" },
+              });
+              return;
+            }
+            finish({ ...receiptMissing, intentId: intent.intentId });
+            return;
+          }
+        }
+        finish(receiptMissing);
+      }, () => finish(receiptMissing));
+    };
     pendingCalls.set(key, { connection, sessionId, finish });
     deadline.addEventListener("abort", abandon, { once: true });
     connection.send({ type: "presentation", sessionId, runId, toolCallId, target });

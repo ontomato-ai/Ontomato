@@ -1,4 +1,5 @@
 import { shallowReactive, shallowRef, type Ref } from "vue";
+import type { FormFieldRejection, FormFillOutcome } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
@@ -64,6 +65,20 @@ export interface FormSubmitOverride {
   readonly extraInput?: Readonly<Record<string, unknown>>;
 }
 
+/** Outcome of filling explicit fields on a single mounted form adapter. */
+export type PanelFormAdapterFillResult =
+  | {
+      readonly ok: true;
+      readonly filledFields: readonly string[];
+      readonly rejectedFields?: readonly FormFieldRejection[];
+    }
+  | {
+      readonly ok: false;
+      readonly reason: "form_not_ready" | "blocked_unsaved" | "all_fields_rejected";
+      readonly rejectedFields?: readonly FormFieldRejection[];
+      readonly message?: string;
+    };
+
 /**
  * One form projection's adapter. The owner's form decides everything about a draft: which operation it is
  * (`save.draftOperation` for the draft's target), whether its values are valid, and what they normalise to.
@@ -78,6 +93,15 @@ export interface PanelFormAdapter {
    * (the refusal is then said on the form). Only a failure to ask rejects.
    */
   receive(draft: PageDraft<Record<string, unknown>>): Promise<ReadonlySet<string> | null>;
+  /**
+   * Fills explicit field values into this live form through its own editing entry, marking modified fields and keeping
+   * the form unsaved. Refuses with `blocked_unsaved` when the form already has unsaved edits unless `overwriteUnsaved`
+   * is true. Never reloads or discards untouched fields.
+   */
+  fill?(
+    values: Readonly<Record<string, RuntimeJsonValue>>,
+    options?: { overwriteUnsaved?: boolean },
+  ): Promise<PanelFormAdapterFillResult>;
   /** Saves what the form holds now, through the owner, at the revision it was read at where the owner has one. */
   submit(override?: FormSubmitOverride): Promise<unknown>;
   /** Whether this form holds unsaved changes of the reader's, as the host must be told. */
@@ -331,6 +355,26 @@ export class PanelFormAdapters {
   /** The form a slot holds, for the projections that edit one of its fields; undefined until it registers. */
   handle(slot: string): PanelFormHandle | undefined {
     return this.#bySlot.get(slot)?.handle;
+  }
+
+  /** Mounted form slot keys in manifest declaration order. */
+  mountedSlots(): string[] {
+    return this.#orderedSlots(this.#bySlot.keys());
+  }
+
+  /** Fills explicit fields on the mounted form in `slot` through its live editing entry. */
+  async fill(
+    slot: string,
+    values: Readonly<Record<string, RuntimeJsonValue>>,
+    options?: { overwriteUnsaved?: boolean },
+  ): Promise<FormFillOutcome> {
+    const adapter = this.#bySlot.get(slot);
+    if (!adapter) return { ok: false, reason: "form_not_found", member: slot, message: `Form '${slot}' is not mounted` };
+    if (!adapter.fill) return { ok: false, reason: "form_not_ready", member: slot, message: `Form '${slot}' does not support live filling` };
+    const result = await adapter.fill(values, options);
+    return result.ok
+      ? { ok: true, member: slot, filledFields: result.filledFields, ...(result.rejectedFields?.length ? { rejectedFields: result.rejectedFields } : {}) }
+      : { ok: false, reason: result.reason, member: slot, ...(result.rejectedFields?.length ? { rejectedFields: result.rejectedFields } : {}), ...(result.message ? { message: result.message } : {}) };
   }
 
   /**

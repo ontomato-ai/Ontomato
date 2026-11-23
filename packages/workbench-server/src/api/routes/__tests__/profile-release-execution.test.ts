@@ -93,7 +93,8 @@ async function call(path:string,method:string){
     ...(method==="POST"?{body:JSON.stringify({releaseId})}:{})});
 }
 
-it.each(endpoints)("checks %s dependencies as the selected executor while retaining initiator ownership",async(path,method,status)=>{
+it.each(endpoints)("inherits the logged-in user's permissions on %s even when the agent configures a default executor",async(path,method,status)=>{
+  state.visible=new Set(["U"]);
   const response=await call(path,method);
   expect(response.status).toBe(status);
   if(method==="GET")expect(await response.json()).toMatchObject({asset:{id:profileId},releaseId,issues:[]});
@@ -103,9 +104,19 @@ it.each(endpoints)("checks %s dependencies as the selected executor while retain
     expect(state.bind).toHaveBeenCalledWith(owner,expect.any(String),profileId,releaseId,[],{});
   }
   const capability=state.post.mock.calls.find(([name])=>name==="projection-object-contract")!;
-  expect(capability[3].headers).toMatchObject({"X-API-Key":"V-key"});
-  expect(capability[3].headers).not.toHaveProperty("tk");
+  expect(capability[3].headers).toMatchObject({tk:"U-token"});
+  expect(capability[3].headers).not.toHaveProperty("X-API-Key");
+  expect(state.post.mock.calls.some(([name])=>name==="agent-execution-resolve")).toBe(false);
   expect(state.post.mock.calls.filter(([name])=>name==="product-grant-owner-resources").every(([, ,body])=>body.userId==="U")).toBe(true);
+});
+
+it.each(endpoints)("rejects %s when the logged-in user lacks ontology access even if the default executor has it",async(path,method)=>{
+  state.visible=new Set(["V"]);
+  const response=await call(path,method);
+  expect(response.status).toBe(404);
+  expect(await response.json()).toMatchObject({error:{code:"ONTOLOGY_QUERY_FAILED"}});
+  expect(state.post.mock.calls.some(([name])=>name==="agent-execution-resolve")).toBe(false);
+  expect(state.create).not.toHaveBeenCalled();
 });
 
 it.each(endpoints)("still rejects %s when U has no Profile use even though V does",async(path,method)=>{

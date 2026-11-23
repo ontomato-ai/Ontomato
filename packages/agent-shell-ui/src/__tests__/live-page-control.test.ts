@@ -277,4 +277,74 @@ describe("live agent page control (requirement-64995244)", () => {
     expect(display.page.value?.address).not.toContain("creating");
     unregister();
   });
+
+  it("executes fill_form and page_action through the mounted page controller and invalidates pending confirmation on navigation", async () => {
+    const { display } = setup();
+    await display.present(frame({ kind: "page", address: "/actions" }));
+
+    const fillForm = vi.fn(async () => ({
+      ok: true as const,
+      member: "form",
+      filledFields: ["/name"],
+    }));
+    const cancel = vi.fn(async () => {});
+    const dispatch = vi.fn(async () => ({
+      ok: true as const,
+      intentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      outcome: { kind: "success", data: {} },
+      summary: "Saved",
+    }));
+    const executeAction = vi.fn(async () => ({
+      ok: true as const,
+      kind: "awaiting_confirmation" as const,
+      operation: "form.save",
+      intentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      questionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      label: "Save",
+      confirmation: {
+        intentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        questionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        operationId: "form.save",
+        label: "Save",
+        isStillValid: () => ({ ok: true as const }),
+        dispatch,
+        cancel,
+      },
+    }));
+    const unregister = display.registerPageController("/actions", {
+      applyState() {},
+      fillForm,
+      executeAction,
+    });
+
+    // Rejecting via verifyActive guard never leaks another session's snapshot.
+    const rejected = await display.present(
+      frame({ kind: "fill_form", member: "form", values: { "/name": "X" } }),
+      () => "not_viewing_session",
+    );
+    expect(rejected).toEqual({
+      status: "not_filled",
+      reason: "not_viewing_session",
+      current: { known: false, reason: "not_viewing_session" },
+    });
+    expect(fillForm).not.toHaveBeenCalled();
+
+    // Live fill_form updates the mounted form.
+    const filled = await display.present(frame({ kind: "fill_form", member: "form", values: { "/name": "Action A" } }));
+    expect(filled).toMatchObject({ status: "filled", reason: "form_updated", member: "form", filledFields: ["/name"] });
+
+    // page_action returns awaiting_confirmation and binds the confirmation to this live page instance.
+    const awaiting = await display.present(frame({ kind: "page_action", operation: "form.save" }));
+    expect(awaiting).toMatchObject({
+      status: "awaiting_confirmation",
+      intentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      questionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    });
+
+    // Navigating away cancels the pending confirmation and drops it from memory.
+    await display.present(frame({ kind: "page", address: "/graph" }));
+    expect(cancel).toHaveBeenCalledWith(expect.objectContaining({ code: "FORM_CONFIRMATION_STALE" }));
+    expect(display.takePendingActionConfirmation("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")).toBeNull();
+    unregister();
+  });
 });

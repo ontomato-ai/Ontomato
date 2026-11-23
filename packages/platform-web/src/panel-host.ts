@@ -544,7 +544,9 @@ function directOptions(
       preparation.intentId,
       changed,
       undefined,
-      hooks?.onConfirmed ? { onConfirmed: hooks.onConfirmed } : undefined,
+      hooks?.onConfirmed || hooks?.skipDialog
+        ? { ...(hooks.onConfirmed ? { onConfirmed: hooks.onConfirmed } : {}), ...(hooks.skipDialog ? { skipDialog: true } : {}) }
+        : undefined,
     ),
     expandPageComposer: expandDeclaredComposer,
     navigate: panelNavigator(router ?? platformRouter(), beside),

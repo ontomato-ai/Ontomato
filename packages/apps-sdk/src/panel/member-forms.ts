@@ -543,6 +543,34 @@ function prepareActionSaveInput(
   return { input: { values: serialized } };
 }
 
+export function resolveFormSaveAnswer(
+  answer: { readonly decision: "confirm" | "cancel"; readonly response?: import("@ontomato/contracts/panel-agent").PanelHumanOperationDispatchResponse },
+  target: PanelFormTarget,
+  descriptorKind: "form.save" | "action",
+  objectType: string | null,
+): FormSaveResult {
+  if (answer.decision === "cancel" || !answer.response) throw new Error("The save was cancelled");
+  const { response } = answer;
+  if (response.kind === "not-dispatched") throw new Error(response.message);
+  const outcome = response.outcome;
+  if (outcome === null) throw new Error("Whether the owner saved is not known");
+  if (outcome.kind === "success") {
+    if (target.kind === "object") return { primaryKey: target.primaryKey, message: outcome.message };
+    // A new object is the one of the form's type the owner reports it created.
+    const created = (outcome.affected?.objects ?? []).filter((object) => object.objectType === objectType);
+    if (created.length === 1) return { primaryKey: created[0]!.primaryKey, message: outcome.message };
+    // A customer Action (such as a targetless create Action) may succeed without reporting a single new primary key.
+    if (descriptorKind === "action") return { primaryKey: null, message: outcome.message };
+    throw new Error("The owner did not report the one object it created");
+  }
+  if (outcome.kind === "refusal" || outcome.kind === "failure") {
+    // The owner names each refused field by its JSON Pointer.
+    throw new PlatformObjectRefusal(outcome.message, fieldMessages(outcome.errors), undefined, outcome.savedFields);
+  }
+  if (outcome.kind === "batch") throw new Error("A form's save is one call, not a batch");
+  throw new Error(outcome.message);
+}
+
 export function memberFormSource(member: PanelMemberContext, instance: PanelInstance): FormSource {
   const { projection } = member;
   /** The datum a target's form is read from, and the run inputs that read it for the target and the form's values. */
@@ -610,27 +638,8 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       if ("refusal" in prepared) throw prepared.refusal;
       const callTarget = descriptor.target.source === "none" ? null : target;
       const answer = await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } });
-      if (answer.decision === "cancel") throw new Error("The save was cancelled");
-      const { response } = answer;
-      if (response.kind === "not-dispatched") throw new Error(response.message);
-      const outcome = response.outcome;
-      if (outcome === null) throw new Error("Whether the owner saved is not known");
-      if (outcome.kind === "success") {
-        if (target.kind === "object") return { primaryKey: target.primaryKey, message: outcome.message };
-        // A new object is the one of the form's type the owner reports it created.
-        const { type } = formRead(target, undefined, null);
-        const created = (outcome.affected?.objects ?? []).filter((object) => object.objectType === type);
-        if (created.length === 1) return { primaryKey: created[0]!.primaryKey, message: outcome.message };
-        // A customer Action (such as a targetless create Action) may succeed without reporting a single new primary key.
-        if (descriptor.kind === "action") return { primaryKey: null, message: outcome.message };
-        throw new Error("The owner did not report the one object it created");
-      }
-      if (outcome.kind === "refusal" || outcome.kind === "failure") {
-        // The owner names each refused field by its JSON Pointer.
-        throw new PlatformObjectRefusal(outcome.message, fieldMessages(outcome.errors), undefined, outcome.savedFields);
-      }
-      if (outcome.kind === "batch") throw new Error("A form's save is one call, not a batch");
-      throw new Error(outcome.message);
+      const { type } = target.kind === "object" ? { type: target.objectType } : formRead(target, undefined, null);
+      return resolveFormSaveAnswer(answer, target, descriptor.kind, type);
     },
   };
 }

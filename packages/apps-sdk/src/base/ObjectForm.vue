@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
 import { confirmDanger } from "@ontomato/platform-shell";
+import type { FormFieldRejection, PageActionConfirmedDispatchResult, PendingPageActionConfirmation } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import {
@@ -22,6 +23,11 @@ import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember, useMemberOutput } from "../panel/member";
 import {
+  PanelConfirmationDeferred,
+  PanelOperationDeferred,
+  summarizeDispatchResponse,
+} from "../panel/instance";
+import {
   applyActionSaveReadOnly,
   editedInput,
   emptyActionSaveWiring,
@@ -33,6 +39,7 @@ import {
   memberFormSource,
   MemberDataUnavailable,
   resolveActionSaveWiring,
+  resolveFormSaveAnswer,
   type ActionSaveWiring,
   type FormSource,
   type FormSaveResult,
@@ -492,7 +499,44 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   unmounted = true;
+  unregisterDiscard?.();
+  unregisterReset?.();
+  unregisterSave?.();
 });
+
+const unregisterDiscard = panel.instance.registerActionHandler(
+  panel.instance.operationIdOf(slot.slot, "discard"),
+  async () => {
+    if (!mounted || unmounted || !opened.value || loading.value || saving.value) {
+      return { ok: false, reason: "action_not_ready", message: "The form is not ready to discard." };
+    }
+    discard();
+    return { ok: true, outcome: { discarded: true } };
+  },
+);
+const unregisterReset = panel.instance.registerActionHandler(
+  panel.instance.operationIdOf(slot.slot, "reset"),
+  async () => {
+    if (!mounted || unmounted || !opened.value || loading.value || saving.value) {
+      return { ok: false, reason: "action_not_ready", message: "The form is not ready to reset." };
+    }
+    discard();
+    return { ok: true, outcome: { discarded: true } };
+  },
+);
+let unregisterSave: (() => void) | null = null;
+watch(admittedSave, (save) => {
+  unregisterSave?.();
+  unregisterSave = null;
+  if (!save) return;
+  unregisterSave = panel.instance.registerActionHandler(
+    panel.instance.operationIdOf(slot.slot, save.name),
+    async () => {
+      const outcome = await write();
+      return { ok: true, outcome };
+    },
+  );
+}, { immediate: true });
 let pendingRefresh = false;
 /**
  * The form is moving itself to show a draft it just took: what it held before is that earlier draft's, not the reader's,
@@ -653,6 +697,19 @@ const editedAt = new Map<string, number>();
 /** A question to the owner on its way, and the field changed since that the next question is about. */
 const asking = ref(false);
 let askNext: string | null = null;
+let askSettledResolvers: (() => void)[] = [];
+function waitForOwnerAsk(): Promise<void> {
+  if (!asking.value && askNext === null) return Promise.resolve();
+  return new Promise((resolve) => {
+    askSettledResolvers.push(resolve);
+  });
+}
+function flushOwnerAskWaiters() {
+  if (asking.value || askNext !== null || !askSettledResolvers.length) return;
+  const waiters = askSettledResolvers;
+  askSettledResolvers = [];
+  for (const resolve of waiters) resolve();
+}
 /**
  * Asks the owner for its form again for the values as they are now, `changedField` the field that set it off. One
  * question at a time: edits made while one is on its way wait for its answer and set off one more, for the values then.
@@ -691,6 +748,7 @@ function askOwner(changedField: string) {
     const again = askNext;
     askNext = null;
     if (again !== null) askOwner(again);
+    else flushOwnerAskWaiters();
   });
 }
 
@@ -1055,6 +1113,112 @@ useProjectionForm({
     }
     return evaluated.marked;
   },
+  async fill(rawValues, options) {
+    if (!mounted || unmounted || !target.value || !opened.value || loading.value || saving.value || failure.value) {
+      return {
+        ok: false,
+        reason: "form_not_ready",
+        message: failure.value?.reason.message ?? "The form is not ready for editing.",
+      };
+    }
+    if (asking.value || askNext !== null) {
+      await waitForOwnerAsk();
+      const postFailure = failure.value as { reason: Error; retry: () => void } | null;
+      if (!mounted || unmounted || !target.value || !opened.value || loading.value || saving.value || postFailure) {
+        return {
+          ok: false,
+          reason: "form_not_ready",
+          message: postFailure?.reason.message ?? "The form is no longer ready for editing.",
+        };
+      }
+    }
+    if (dirty.value && !options?.overwriteUnsaved) {
+      return {
+        ok: false,
+        reason: "blocked_unsaved",
+        message: "The form already has unsaved edits. Ask the user before overwriting them with overwriteUnsaved: true.",
+      };
+    }
+
+    const pending = new Map<string, RuntimeJsonValue>();
+    for (const [rawKey, value] of Object.entries(rawValues)) {
+      const pointer = rawKey.startsWith("/") ? rawKey : `/${rawKey}`;
+      pending.set(pointer, value);
+    }
+    const startTargetKey = targetKey(target.value);
+    const startReading = latestRead;
+    const filledFields: string[] = [];
+    const rejectedFields: FormFieldRejection[] = [];
+
+    const applyField = (pointer: string, value: RuntimeJsonValue) => {
+      edit(pointer, withValueAt(values.value, pointer, value));
+      const described = fields.value.find((item) => pointer === item.path || pointer.startsWith(`${item.path}/`));
+      const nextChanged = new Set(changed.value);
+      nextChanged.add(pointer);
+      if (described) nextChanged.add(described.path);
+      changed.value = nextChanged;
+      if (pointer in invalid.value) markInvalid(pointer, null);
+      filledFields.push(pointer);
+    };
+
+    while (pending.size > 0) {
+      if (unmounted || latestRead !== startReading || targetKey(target.value) !== startTargetKey || failure.value || saving.value) {
+        break;
+      }
+      // Apply any currently active `refreshOnChange` field first so dependent fields unlock before validation.
+      let refreshEntry: [string, RuntimeJsonValue] | null = null;
+      for (const entry of pending) {
+        const [pointer] = entry;
+        if (isFixed(pointer)) continue;
+        const field = activeFieldAt(fields.value, values.value, pointer);
+        if (field && field.control.kind !== "hidden" && !field.readOnly && field.refreshOnChange) {
+          refreshEntry = entry;
+          break;
+        }
+      }
+      if (refreshEntry) {
+        const [pointer, value] = refreshEntry;
+        pending.delete(pointer);
+        applyField(pointer, value);
+        const editsAfter = edits;
+        await waitForOwnerAsk();
+        if (edits !== editsAfter) break;
+        continue;
+      }
+
+      for (const [pointer, value] of pending) {
+        if (isFixed(pointer)) {
+          rejectedFields.push({ path: pointer, reason: "fixed", message: `Field ${pointer} is fixed by page state.` });
+          continue;
+        }
+        const field = activeFieldAt(fields.value, values.value, pointer);
+        if (!field || field.control.kind === "hidden") {
+          rejectedFields.push({ path: pointer, reason: "unknown_field", message: `Field ${pointer} is not active in this form.` });
+          continue;
+        }
+        if (field.readOnly) {
+          rejectedFields.push({ path: pointer, reason: "read_only", message: field.readOnlyReason ?? `Field ${pointer} is read-only.` });
+          continue;
+        }
+        applyField(pointer, value);
+      }
+      pending.clear();
+    }
+
+    if (filledFields.length === 0) {
+      return {
+        ok: false,
+        reason: "all_fields_rejected",
+        rejectedFields,
+        message: "None of the requested fields could be edited in this form.",
+      };
+    }
+    return {
+      ok: true,
+      filledFields,
+      ...(rejectedFields.length ? { rejectedFields } : {}),
+    };
+  },
   submit: (override) => write(override),
   dirty: () => dirty.value,
   discard,
@@ -1260,6 +1424,11 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
   if (failure.value) throw failure.value.reason;
   if (loading.value || asking.value) throw new Error(t("common.loading"));
   if (Object.keys(activeInvalid.value).length) throw new Error(t("platform.formFixInvalid"));
+  const capturedTargetKey = targetKey(into);
+  const capturedEdits = edits;
+  const capturedOpened = ownerOpened.value;
+  const capturedDirty = dirty.value;
+  const descriptorKind = override?.descriptor.kind ?? admittedSave.value?.descriptor.kind ?? "form.save";
   saving.value = true;
   refusal.value = null;
   errors.value = {};
@@ -1270,6 +1439,74 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
     await finishSave(saved);
     return saved;
   } catch (reason) {
+    if (reason instanceof PanelOperationDeferred) {
+      const deferred = reason;
+      const { preparation } = deferred;
+      const isStillValid = () => {
+        if (unmounted) return { ok: false as const, reason: "stale", message: "The form was closed or unmounted." };
+        if (targetKey(target.value) !== capturedTargetKey)
+          return { ok: false as const, reason: "stale", message: "The form switched to a different target." };
+        if (ownerOpened.value !== capturedOpened)
+          return { ok: false as const, reason: "stale", message: "The form was already saved or reloaded." };
+        if (edits !== capturedEdits)
+          return { ok: false as const, reason: "stale", message: "The form contents changed after confirmation was requested." };
+        if (dirty.value !== capturedDirty)
+          return { ok: false as const, reason: "stale", message: "The form unsaved state changed." };
+        if (saving.value || loading.value || asking.value)
+          return { ok: false as const, reason: "stale", message: "The form is currently busy." };
+        return { ok: true as const };
+      };
+      const confirmation: PendingPageActionConfirmation = {
+        intentId: preparation.intentId,
+        questionId: preparation.questionId!,
+        operationId: preparation.operationId,
+        label: preparation.label,
+        isStillValid,
+        async dispatch(): Promise<PageActionConfirmedDispatchResult> {
+          const check = isStillValid();
+          if (!check.ok) {
+            await deferred.cancelNow({ code: "FORM_CONFIRMATION_STALE", message: check.message }).catch(() => undefined);
+            return { ok: false, intentId: preparation.intentId, reason: "stale", message: check.message };
+          }
+          saving.value = true;
+          refusal.value = null;
+          errors.value = {};
+          try {
+            const confirmed = await deferred.dispatchNow();
+            if (confirmed.decision !== "confirm") {
+              return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "The save was cancelled." };
+            }
+            if (confirmed.response.kind === "not-dispatched") {
+              return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
+            }
+            const saved = resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
+            await finishSave(saved);
+            return {
+              ok: true,
+              intentId: preparation.intentId,
+              outcome: confirmed.response.outcome,
+              summary: summarizeDispatchResponse(confirmed.response),
+            };
+          } catch (dispatchReason) {
+            if (dispatchReason instanceof PlatformObjectRefusal && targetKey(target.value) === targetKey(into)) {
+              takeSavedFields(dispatchReason);
+            }
+            showRefusal(dispatchReason);
+            return {
+              ok: false,
+              intentId: preparation.intentId,
+              reason: "failed",
+              message: dispatchReason instanceof Error ? dispatchReason.message : String(dispatchReason),
+            };
+          } finally {
+            saving.value = false;
+          }
+        },
+        cancel: deferred.cancelNow,
+      };
+      throw new PanelConfirmationDeferred(confirmation);
+    }
+    if (reason instanceof PanelConfirmationDeferred) throw reason;
     if (reason instanceof PlatformObjectRefusal && targetKey(target.value) === targetKey(into)) takeSavedFields(reason);
     showRefusal(reason);
     throw reason;

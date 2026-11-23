@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Comment, Fragment, Text, computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, shallowRef, useSlots, watch, type Slot, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
+import type { PageActionConfirmedDispatchResult, PendingPageActionConfirmation } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
@@ -22,7 +23,12 @@ import { appIcon } from "@ontomato/platform-shell";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { paramValues } from "../panel/direct";
-import type { PanelWriteResult } from "../panel/instance";
+import {
+  PanelConfirmationDeferred,
+  PanelOperationDeferred,
+  summarizeDispatchResponse,
+  type PanelWriteResult,
+} from "../panel/instance";
 import { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam } from "../panel/member";
 import { admittedOperations } from "../panel/member-operations";
 import type {
@@ -2014,17 +2020,93 @@ async function executeRowOperation(
       rowOpRead.value = await panel.instance.readOperation(operationId, { target, input });
       return;
     }
-    const answer = await panel.instance.writeOperation(
-      operationId,
-      { call: { target, input } },
-    );
-    if (answer.decision === "cancel") return;
-    rowOpNamed.value = answer.named;
-    const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
-    if (answered?.kind === "success") panel.notify({ kind: "success", text: saidRowOp(answered) });
-    else rowOpReceipt.value = answer.response;
-    if (answered) emit("operation-done", operationName, answered, rowSelectionValue(row));
+    const applyRowAnswer = (
+      answer: { decision: "confirm" | "cancel"; response?: PanelHumanOperationDispatchResponse; named: PanelWriteResult["named"] },
+    ) => {
+      if (answer.decision === "cancel" || !answer.response) return undefined;
+      rowOpNamed.value = answer.named;
+      const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
+      if (answered?.kind === "success") panel.notify({ kind: "success", text: saidRowOp(answered) });
+      else rowOpReceipt.value = answer.response;
+      if (answered) emit("operation-done", operationName, answered, rowSelectionValue(row));
+      return answered;
+    };
+    let answer: PanelWriteResult;
+    try {
+      answer = await panel.instance.writeOperation(
+        operationId,
+        { call: { target, input } },
+      );
+    } catch (reason) {
+      if (reason instanceof PanelOperationDeferred) {
+        const deferred = reason;
+        const { preparation } = deferred;
+        const capturedRowKey = row.primaryKey;
+        const isStillValid = () => {
+          const liveRow = rows.value.find((item) => item.primaryKey === capturedRowKey);
+          if (!liveRow) return { ok: false as const, reason: "stale", message: `Row '${capturedRowKey}' is no longer displayed.` };
+          const liveRowOp = rowOperationsFor(liveRow)[operationName];
+          if (!liveRowOp?.available) {
+            return {
+              ok: false as const,
+              reason: "stale",
+              message: liveRowOp?.unavailable?.reason ?? `Operation '${operationName}' is no longer available on row '${capturedRowKey}'.`,
+            };
+          }
+          if (rowOpRunning.value) return { ok: false as const, reason: "stale", message: "Another row operation is currently running." };
+          return { ok: true as const };
+        };
+        const confirmation: PendingPageActionConfirmation = {
+          intentId: preparation.intentId,
+          questionId: preparation.questionId!,
+          operationId: preparation.operationId,
+          label: preparation.label,
+          isStillValid,
+          async dispatch(): Promise<PageActionConfirmedDispatchResult> {
+            const check = isStillValid();
+            if (!check.ok) {
+              await deferred.cancelNow({ code: "ROW_ACTION_CONFIRMATION_STALE", message: check.message }).catch(() => undefined);
+              return { ok: false, intentId: preparation.intentId, reason: "stale", message: check.message };
+            }
+            rowOpRunning.value = true;
+            rowOpFailure.value = null;
+            rowOpReceipt.value = null;
+            try {
+              const confirmed = await deferred.dispatchNow();
+              if (confirmed.decision !== "confirm") {
+                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "Operation was cancelled." };
+              }
+              applyRowAnswer({ ...confirmed, named: deferred.named });
+              if (confirmed.response.kind === "not-dispatched") {
+                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
+              }
+              return {
+                ok: true,
+                intentId: preparation.intentId,
+                outcome: confirmed.response.outcome,
+                summary: summarizeDispatchResponse(confirmed.response),
+              };
+            } catch (dispatchReason) {
+              rowOpFailure.value = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
+              return {
+                ok: false,
+                intentId: preparation.intentId,
+                reason: "failed",
+                message: rowOpFailure.value.message,
+              };
+            } finally {
+              rowOpRunning.value = false;
+            }
+          },
+          cancel: deferred.cancelNow,
+        };
+        throw new PanelConfirmationDeferred(confirmation);
+      }
+      throw reason;
+    }
+    applyRowAnswer(answer);
   } catch (reason) {
+    if (reason instanceof PanelConfirmationDeferred) throw reason;
     rowOpFailure.value = reason instanceof Error ? reason : new Error(String(reason));
   } finally {
     rowOpRunning.value = false;
@@ -2086,6 +2168,62 @@ async function confirmRowOpInput(providedInput: Record<string, RuntimeJsonValue>
   rowOpInputDialogOpen.value = false;
   await executeRowOperation(row, operationName, descriptor, boundInput, provided);
 }
+
+const unregisterRowActionHandlers = Object.keys(member.projection.operations ?? {}).map((operationName) =>
+  panel.instance.registerActionHandler(
+    panel.instance.operationIdOf(slot.slot, operationName),
+    async ({ rowKey, input }) => {
+      if (!rowKey) {
+        return { ok: false, reason: "input_required", message: `Row action '${operationName}' requires rowKey.` };
+      }
+      const row = rows.value.find((item) => item.primaryKey === rowKey);
+      if (!row) {
+        return { ok: false, reason: "action_not_found", message: `Row '${rowKey}' is not currently loaded in this list.` };
+      }
+      const descriptor = admittedOpMap.value[operationName];
+      const binding = member.projection.operations?.[operationName];
+      if (!descriptor || !binding) {
+        return { ok: false, reason: "action_not_ready", message: `Row operation '${operationName}' is not ready yet.` };
+      }
+      const rowOp = rowOperationsFor(row)[operationName];
+      if (!rowOp || !rowOp.available) {
+        return {
+          ok: false,
+          reason: "action_unavailable",
+          message: rowOp?.unavailable?.reason ?? `Operation '${operationName}' is not available on row '${rowKey}'.`,
+        };
+      }
+      const boundInput = resolveRowOperationParams(binding, row, member.inputs.value);
+      const allFields = resolveOperationInputFields(panel, slot, operationName, descriptor);
+      const allowedKeys = allowedRowOperationInputKeys(binding, allFields);
+      const filteredExtra = filterAllowedRowOperationInput(input, allowedKeys);
+      const baseInput: Record<string, RuntimeJsonValue> = { ...filteredExtra, ...boundInput };
+      const suppliedKeys = new Set(Object.keys(baseInput));
+      const missing = allFields
+        .filter((field) => field.required && allowedKeys.has(field.name) && !suppliedKeys.has(field.name))
+        .map((field) => field.name);
+      if (missing.length > 0) {
+        return {
+          ok: false,
+          reason: "input_required",
+          message: `Row operation '${operationName}' requires input fields: ${missing.join(", ")}.`,
+        };
+      }
+      await executeRowOperation(row, operationName, descriptor, boundInput, filteredExtra);
+      if (rowOpFailure.value) {
+        return { ok: false, reason: "failed", message: rowOpFailure.value.message };
+      }
+      if (rowOpRead.value) {
+        return { ok: true, outcome: rowOpRead.value };
+      }
+      return { ok: true, outcome: rowOpOutcome.value ?? rowOpReceipt.value ?? undefined };
+    },
+    { scope: "row" },
+  ),
+);
+onBeforeUnmount(() => {
+  for (const unregister of unregisterRowActionHandlers) unregister();
+});
 
 function triggerRowAction(row: PlatformObjectRecord, index: number, item: ResolvedRowActionItem) {
   activeRowLabel.value = row.label || row.primaryKey;
