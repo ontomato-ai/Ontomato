@@ -1,5 +1,7 @@
 import { expect, it, vi } from "vitest";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
+import { presentationResultSchema } from "@ontomato/contracts/agent-presentation";
+import { GENERAL_SETTINGS } from "@ontomato/contracts/platform-object-types";
 import { panelOperationStore } from "../../product-panels/operation-store";
 import { openPresentationView, presentationCallback, receivePresentation, requestPresentation, visibilityReader } from "../presentation";
 
@@ -252,6 +254,25 @@ it("forwards fill_form and recovers page_action intent status when receipt is lo
       reason: "failed",
       intentId,
       error: { code: "REVISION_CONFLICT", message: "Changed" },
+    });
+    const settings = { objectType: GENERAL_SETTINGS, primaryKey: "general" };
+    const partialSave = {
+      kind: "refusal",
+      code: "FORBIDDEN",
+      message: "DSL timeout — This setting cannot be changed",
+      savedFields: { "/knowledgeMaxResult": 18 },
+      affected: { objects: [settings], objectTypes: [GENERAL_SETTINGS] },
+      errors: [{ field: "/dslCookerTimeoutSeconds", code: "target_unavailable", message: "DSL timeout — This setting cannot be changed" }],
+    };
+    const recovered = await abortRecover("act-partial-save", {
+      ...baseIntent, dispatched: true, outcome: partialSave,
+      call: { target: { ...settings, kind: "object" }, input: { values: { knowledgeMaxResult: 18, dslCookerTimeoutSeconds: 40 } } },
+    });
+    expect(presentationResultSchema.parse(recovered)).toMatchObject({
+      status: "executed",
+      reason: "action_completed",
+      intentId,
+      outcome: partialSave,
     });
     expect(await abortRecover("act-unknown", {
       ...baseIntent, dispatched: true, outcome: { kind: "unknown", message: "Upstream timed out" },
