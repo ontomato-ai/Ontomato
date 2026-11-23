@@ -192,6 +192,11 @@ export interface DirectPanelMount {
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
+  snapshotMeta?(): {
+    readonly memberInstances?: Readonly<Record<string, string>>;
+    readonly checkedKeys?: Readonly<Record<string, readonly string[]>>;
+  };
+  isLoading?(): boolean;
   dispose(): void;
 }
 
@@ -251,6 +256,13 @@ export interface PanelInstanceView {
   fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
   /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
   executeAction(request: PageActionRequestInput): Promise<PageActionOutcome>;
+  /** Live binding metadata (nested panel instance IDs and checked row keys) for display snapshots. */
+  snapshotMeta(): {
+    readonly memberInstances?: Readonly<Record<string, string>>;
+    readonly checkedKeys?: Readonly<Record<string, readonly string[]>>;
+  };
+  /** True while the panel definition, direct mount, or declared members are still loading. */
+  isLoading(): boolean;
   /** The frame's content window, once it exists. */
   frame(window: Window | null): void;
 }
@@ -1037,6 +1049,14 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         });
       }
       return direct.value.mount.executeAction(request);
+    },
+    snapshotMeta() {
+      return direct.value?.mount.snapshotMeta?.() ?? {};
+    },
+    isLoading() {
+      if (displayLoad.value.status === "error") return false;
+      if (displayLoad.value.status === "loading" || !direct.value) return true;
+      return direct.value.mount.isLoading?.() ?? false;
     },
     invoke(id, input) {
       if (direct.value) return direct.value.mount.invoke(id, input);

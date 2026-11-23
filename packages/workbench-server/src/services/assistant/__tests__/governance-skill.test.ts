@@ -60,6 +60,16 @@ it("platform import uses the execution callback for its business-page read witho
  expect(JSON.stringify(result)).not.toContain("executor-callback");
 });
 
+it("pending import uses the platform governance window and the execution callback", async () => {
+  await command("import-pending", true, {
+    items: [{ id: "new", title: "New", text: "New text", sourceIds: ["source"] }],
+  }, true);
+  expect(calls).toEqual([
+    { path: "/window", token: "host-callback", run },
+    { path: `/ontology/ai/knowledge-governance/${id}/runs/${run}/actions/import_knowledge`, token: "governance-grant", run, callback: "executor-callback" },
+  ]);
+});
+
 it("platform work-record updates return only the saved result without a report link",async()=>{
   const result=JSON.parse((await command("update-work-record",true,{summary:"Reviewed"})).stdout);
   expect(result).toEqual({saved:true});

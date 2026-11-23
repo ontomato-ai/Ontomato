@@ -7,6 +7,7 @@ import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-st
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMember, useMemberOperations } from "../panel/member";
 import { missingOperationDescriptorResult } from "../panel/member-operations";
+import { matchesExpectedCheckedKeys, matchesExpectedTarget } from "../panel/operation-binding";
 import { useDataStateLabels } from "./data-state-labels";
 import { readConfigString } from "./localized-text";
 import {
@@ -124,6 +125,18 @@ const {
   slot: () => slot,
   member: () => member,
   t,
+  isEntryAvailable: () => {
+    if (hiddenByAvailability.value) {
+      return {
+        ok: false,
+        message: descriptor.value?.unavailable?.reason ?? `Operation '${props.operation}' is currently hidden or unavailable.`,
+      };
+    }
+    if (props.disabled) {
+      return { ok: false, message: `Operation '${props.operation}' is currently disabled.` };
+    }
+    return { ok: true };
+  },
   onDone: (_name, answered) => emit("done", answered),
 });
 
@@ -184,9 +197,31 @@ function onTriggerClick() {
 
 const unregisterAction = panel.instance.registerActionHandler(
   panel.instance.operationIdOf(slot.slot, props.operation),
-  async ({ input, agentContext }) => {
+  async ({ input, expectedTarget, expectedCheckedKeys, agentContext }) => {
     if (!descriptor.value) {
       return missingOperationDescriptorResult(operations.value, props.operation);
+    }
+    if (expectedCheckedKeys !== undefined && targetInfo.value.checkedState !== null) {
+      if (!matchesExpectedCheckedKeys(targetInfo.value.checkedTargets, expectedCheckedKeys)) {
+        return {
+          ok: false,
+          reason: "stale",
+          message: "The checked batch selection changed since your last observation.",
+        };
+      }
+    }
+    if (expectedTarget !== undefined) {
+      const declaredDraftSlot = panel.manifest.members[slot.slot]?.operationDrafts?.[props.operation]?.slot;
+      const currentTarget = declaredDraftSlot
+        ? (panel.instance.forms.snapshot(declaredDraftSlot)?.target ?? null)
+        : targetInfo.value.target;
+      if (!matchesExpectedTarget(currentTarget, expectedTarget)) {
+        return {
+          ok: false,
+          reason: "stale",
+          message: "The target object or draft changed since your last observation.",
+        };
+      }
     }
     if (hiddenByAvailability.value) {
       return {

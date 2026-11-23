@@ -279,4 +279,52 @@ test("fill_form and page_action requests, frames, and receipts validate on the s
     current: { known: false, reason: "receipt_missing" },
   };
   assert.deepEqual(presentationResultSchema.parse(missingWithIntent), missingWithIntent);
+
+  const boundFillInput = {
+    mode: "fill_form",
+    member: "form",
+    memberPath: ["detail"],
+    values: { "/name": "Scoped" },
+    expectedPageInstanceId: "page-1",
+    expectedMemberInstanceId: "nested-1",
+    expectedTarget: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+  };
+  assert.deepEqual(fillFormRequestSchema.parse(boundFillInput), boundFillInput);
+  const boundActionInput = {
+    mode: "page_action",
+    operation: "list.batchDelete",
+    rowKey: "platform:ScheduledTask:task-1",
+    expectedPageInstanceId: "page-1",
+    expectedMemberInstanceId: "nested-1",
+    expectedTarget: { kind: "draft", objectType: "platform:ScheduledTask" },
+    expectedCheckedKeys: ["platform:ScheduledTask:task-1", "platform:ScheduledTask:task-2"],
+  };
+  assert.deepEqual(pageActionRequestSchema.parse(boundActionInput), boundActionInput);
+
+  const selectedWithBinding = {
+    known: true,
+    observedAt: "2026-11-23T14:00:00Z",
+    placement: "side",
+    target: {
+      kind: "page",
+      url: address,
+      label: "Tasks",
+      selection: [],
+      pageInstanceId: "page-1",
+      memberInstances: { detail: "nested-1" },
+      checkedKeys: { checked: ["platform:ScheduledTask:task-1"] },
+    },
+    load: { status: "ready" },
+  };
+  const staleFillReceipt = {
+    connectionId: id,
+    toolCallId: "fill-2",
+    result: {
+      status: "not_filled",
+      reason: "stale",
+      member: "form",
+      current: selectedWithBinding,
+    },
+  };
+  assert.deepEqual(presentationReceiptSchema.parse(staleFillReceipt), staleFillReceipt);
 });

@@ -31,6 +31,14 @@ import {
   type PanelAgentActionContext,
 } from "../panel/instance";
 import {
+  createDeferredConfirmation,
+  matchesExpectedTarget,
+  PanelSubmissionStaleError,
+  verifySubmissionUnchanged,
+  type SubmissionCheckPhase,
+  type SubmissionEvaluator,
+} from "../panel/operation-binding";
+import {
   applyActionSaveReadOnly,
   editedInput,
   emptyActionSaveWiring,
@@ -493,25 +501,104 @@ onBeforeUnmount(() => {
   unregisterSave?.();
 });
 
+async function handleDiscardAction(
+  operationName: "discard" | "reset",
+  request: {
+    readonly expectedTarget?: import("@ontomato/contracts/agent-presentation").ExpectedPageTarget;
+    readonly agentContext?: PanelAgentActionContext;
+  },
+) {
+  if (request.expectedTarget !== undefined && !matchesExpectedTarget(target.value, request.expectedTarget)) {
+    return { ok: false as const, reason: "stale" as const, message: "The form switched to a different target object or draft." };
+  }
+  if (!mounted || unmounted || panel.instance.isDisposed() || !opened.value || loading.value || saving.value || asking.value) {
+    return { ok: false as const, reason: "action_not_ready" as const, message: `The form is not ready to ${operationName}.` };
+  }
+  if (!canSettle.value) {
+    return { ok: false as const, reason: "action_unavailable" as const, message: `The form has no unsaved changes to ${operationName}.` };
+  }
+  if (!request.agentContext) {
+    discard();
+    return { ok: true as const, outcome: { discarded: true } };
+  }
+  if (!panel.instance.requestLocalConfirmation) {
+    return {
+      ok: false as const,
+      reason: "action_unavailable" as const,
+      message: "Conversation confirmation is unavailable for discarding unsaved edits.",
+    };
+  }
+  const evaluateDiscardSubmission: SubmissionEvaluator = (phase) => {
+    if (unmounted || !mounted || panel.instance.isDisposed()) {
+      return { ok: false, message: "The form was closed or unmounted." };
+    }
+    if (!target.value || !opened.value || loading.value || asking.value || failure.value) {
+      return { ok: false, message: "The form is no longer ready." };
+    }
+    if (phase === "confirm" && saving.value) {
+      return { ok: false, message: "The form is currently saving." };
+    }
+    if (!canSettle.value) {
+      return { ok: false, message: "The form no longer has unsaved changes." };
+    }
+    return {
+      ok: true,
+      instanceId: panel.instance.instanceId,
+      operationId: panel.instance.operationIdOf(slot.slot, operationName),
+      target: target.value,
+      payload: {
+        values: prunedValues.value,
+        baseline: ownerOpened.value?.values ?? null,
+        changed: [...changed.value].sort(),
+        edited: [...editedPaths.value].sort(),
+      },
+    };
+  };
+  const frozen = evaluateDiscardSubmission("prepare");
+  if (!frozen.ok) {
+    return { ok: false as const, reason: "stale" as const, message: frozen.message };
+  }
+  const currentTarget = target.value!;
+  const targetLabel = currentTarget.kind === "object"
+    ? panel.instance.objectName(currentTarget.objectType, currentTarget.primaryKey) ?? currentTarget.primaryKey
+    : objectType;
+  const created = await panel.instance.requestLocalConfirmation({
+    agentRun: request.agentContext.agentRun,
+    operationLabel: t("platform.discard"),
+    targetLabel,
+    impactSummary: t("platform.formDiscardConfirm"),
+  });
+  const preCheck = verifySubmissionUnchanged(frozen, evaluateDiscardSubmission, "auto-dispatch");
+  if (!preCheck.ok) {
+    return { ok: false as const, reason: "stale" as const, message: preCheck.message };
+  }
+  const confirmation = createDeferredConfirmation({
+    intentId: created.intentId,
+    questionId: created.questionId,
+    operationId: frozen.operationId,
+    label: created.label,
+    isStillValid: () => verifySubmissionUnchanged(frozen, evaluateDiscardSubmission, "confirm"),
+    cancel: async () => {},
+    async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
+      discard();
+      return {
+        ok: true,
+        intentId: created.intentId,
+        outcome: { discarded: true },
+        summary: t("platform.discard"),
+      };
+    },
+  });
+  return { ok: true as const, confirmation };
+}
+
 const unregisterDiscard = panel.instance.registerActionHandler(
   panel.instance.operationIdOf(slot.slot, "discard"),
-  async () => {
-    if (!mounted || unmounted || !opened.value || loading.value || saving.value) {
-      return { ok: false, reason: "action_not_ready", message: "The form is not ready to discard." };
-    }
-    discard();
-    return { ok: true, outcome: { discarded: true } };
-  },
+  (request) => handleDiscardAction("discard", request),
 );
 const unregisterReset = panel.instance.registerActionHandler(
   panel.instance.operationIdOf(slot.slot, "reset"),
-  async () => {
-    if (!mounted || unmounted || !opened.value || loading.value || saving.value) {
-      return { ok: false, reason: "action_not_ready", message: "The form is not ready to reset." };
-    }
-    discard();
-    return { ok: true, outcome: { discarded: true } };
-  },
+  (request) => handleDiscardAction("reset", request),
 );
 const saveOperationName = computed<string | null>(() => {
   if (admittedSave.value) return admittedSave.value.name;
@@ -532,8 +619,11 @@ watch(saveOperationName, (name) => {
   if (!name) return;
   unregisterSave = panel.instance.registerActionHandler(
     panel.instance.operationIdOf(slot.slot, name),
-    async ({ agentContext }) => {
-      if (!mounted || unmounted || !target.value || !opened.value || loading.value || asking.value) {
+    async ({ expectedTarget, agentContext }) => {
+      if (expectedTarget !== undefined && !matchesExpectedTarget(target.value, expectedTarget)) {
+        return { ok: false, reason: "stale", message: "The form switched to a different target object or draft." };
+      }
+      if (!mounted || unmounted || panel.instance.isDisposed() || !target.value || !opened.value || loading.value || asking.value) {
         return { ok: false, reason: "action_not_ready", message: "The form is not ready to save." };
       }
       if (failure.value) {
@@ -1054,6 +1144,13 @@ useProjectionForm({
     },
   },
   async fill(rawValues, options) {
+    if (options?.expectedTarget !== undefined && !matchesExpectedTarget(target.value, options.expectedTarget)) {
+      return {
+        ok: false,
+        reason: "stale",
+        message: "The form switched to a different target object or draft.",
+      };
+    }
     if (!mounted || unmounted || !target.value || !opened.value || loading.value || saving.value || failure.value) {
       return {
         ok: false,
@@ -1063,6 +1160,13 @@ useProjectionForm({
     }
     if (asking.value || askNext !== null) {
       await waitForOwnerAsk();
+      if (options?.expectedTarget !== undefined && !matchesExpectedTarget(target.value, options.expectedTarget)) {
+        return {
+          ok: false,
+          reason: "stale",
+          message: "The form switched to a different target object or draft.",
+        };
+      }
       const postFailure = failure.value as { reason: Error; retry: () => void } | null;
       if (!mounted || unmounted || !target.value || !opened.value || loading.value || saving.value || postFailure) {
         return {
@@ -1386,12 +1490,13 @@ function saveInput(payloadValues: PanelFormValues) {
   };
 }
 
-function saveContext(agentContext?: PanelAgentActionContext) {
+function saveContext(agentContext?: PanelAgentActionContext, evaluateSubmission?: SubmissionEvaluator) {
   return {
     fixedFieldPaths: Object.keys(fixedValues.value),
     changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
     baselineValues: opened.value!.values,
     ...(agentContext ? { agentContext } : {}),
+    ...(evaluateSubmission ? { evaluateSubmission } : {}),
     formatUnwiredFieldRefusal: (paths: readonly string[]) => ({
       message: te("platform.formActionUnwiredFields")
         ? t("platform.formActionUnwiredFields", { fields: paths.join(", ") })
@@ -1435,9 +1540,7 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
   if (loading.value || asking.value) throw new Error(t("common.loading"));
   if (Object.keys(activeInvalid.value).length) throw new Error(t("platform.formFixInvalid"));
   const capturedTargetKey = targetKey(into);
-  const capturedEdits = edits;
   const capturedOpened = ownerOpened.value;
-  const capturedDirty = dirty.value;
   const capturedLabel = formObjectLabel.value;
   const descriptorKind = override?.descriptor.kind ?? admittedSave.value?.descriptor.kind ?? "form.save";
   const saveActionLabel = override?.descriptor.label ?? admittedSave.value?.descriptor.label
@@ -1452,45 +1555,84 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
     }
     notifyStaleSaveRefusal(saveActionLabel, capturedLabel, refusalReason);
   };
+  const evaluateSaveSubmission: SubmissionEvaluator = (phase: SubmissionCheckPhase) => {
+    if (unmounted || !mounted || panel.instance.isDisposed()) {
+      return { ok: false, message: "The form was closed or unmounted." };
+    }
+    if (!target.value || !opened.value) {
+      return { ok: false, message: "The form no longer has an active target." };
+    }
+    if (failure.value) {
+      return { ok: false, message: failure.value.reason.message };
+    }
+    if (loading.value || asking.value) {
+      return { ok: false, message: "The form is currently busy loading." };
+    }
+    if (phase === "confirm" && saving.value) {
+      return { ok: false, message: "The form is currently saving." };
+    }
+    if (Object.keys(activeInvalid.value).length > 0) {
+      return { ok: false, message: t("platform.formFixInvalid") };
+    }
+    if (override) {
+      const originCheck = override.evaluateOrigin?.();
+      if (originCheck && !originCheck.ok) return originCheck;
+    } else if (!admittedSave.value) {
+      return { ok: false, message: "The form save operation is no longer available." };
+    }
+    if (!isCreate.value && !canSettle.value) {
+      return { ok: false, message: "The form no longer has unsaved changes to save." };
+    }
+    const liveOperationId = override?.operationId ?? panel.instance.operationIdOf(slot.slot, admittedSave.value!.name);
+    const liveDescriptor = override?.descriptor ?? admittedSave.value!.descriptor;
+    const liveCallTarget = liveDescriptor.target.source === "none" ? null : target.value;
+    const livePayloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
+    const liveMemberInputs = override
+      ? (override.readMemberInputs ? override.readMemberInputs() : override.memberInputs)
+      : member.inputs.value;
+    return {
+      ok: true,
+      instanceId: panel.instance.instanceId,
+      operationId: liveOperationId,
+      target: { formTarget: target.value, callTarget: liveCallTarget },
+      payload: {
+        values: livePayloadValues,
+        fixedValues: fixedValues.value,
+        submittedFields: [...submitted.value].sort(),
+        revision: opened.value.revision ?? null,
+        dirty: dirty.value,
+        baseline: ownerOpened.value?.values ?? null,
+        memberInputs: liveMemberInputs ?? null,
+      },
+    };
+  };
   saving.value = true;
   refusal.value = null;
   errors.value = {};
   const payloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
   const finishSave = settleSave(into, payloadValues);
   try {
-    const saved = await forms.save(into, saveInput(payloadValues), override, saveContext(agentContext ?? override?.agentContext));
+    const saved = await forms.save(
+      into,
+      saveInput(payloadValues),
+      override,
+      saveContext(agentContext ?? override?.agentContext, evaluateSaveSubmission),
+    );
     await finishSave(saved);
     return saved;
   } catch (reason) {
     if (reason instanceof PanelOperationDeferred) {
       const deferred = reason;
       const { preparation } = deferred;
-      const isStillValid = () => {
-        if (unmounted) return { ok: false as const, reason: "stale", message: "The form was closed or unmounted." };
-        if (targetKey(target.value) !== capturedTargetKey)
-          return { ok: false as const, reason: "stale", message: "The form switched to a different target." };
-        if (ownerOpened.value !== capturedOpened)
-          return { ok: false as const, reason: "stale", message: "The form was already saved or reloaded." };
-        if (edits !== capturedEdits)
-          return { ok: false as const, reason: "stale", message: "The form contents changed after confirmation was requested." };
-        if (dirty.value !== capturedDirty)
-          return { ok: false as const, reason: "stale", message: "The form unsaved state changed." };
-        if (saving.value || loading.value || asking.value)
-          return { ok: false as const, reason: "stale", message: "The form is currently busy." };
-        return { ok: true as const };
-      };
-      const confirmation: PendingPageActionConfirmation = {
+      const confirmation = createDeferredConfirmation({
         intentId: preparation.intentId,
         questionId: preparation.questionId!,
         operationId: preparation.operationId,
         label: preparation.label,
-        isStillValid,
-        async dispatch(): Promise<PageActionConfirmedDispatchResult> {
-          const check = isStillValid();
-          if (!check.ok) {
-            await deferred.cancelNow({ code: "FORM_CONFIRMATION_STALE", message: check.message }).catch(() => undefined);
-            return { ok: false, intentId: preparation.intentId, reason: "stale", message: check.message };
-          }
+        staleCode: "FORM_CONFIRMATION_STALE",
+        isStillValid: deferred.isStillValid,
+        cancel: deferred.cancelNow,
+        async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
           saving.value = true;
           refusal.value = null;
           errors.value = {};
@@ -1522,11 +1664,10 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
             saving.value = false;
           }
         },
-        cancel: deferred.cancelNow,
-      };
+      });
       throw new PanelConfirmationDeferred(confirmation);
     }
-    if (reason instanceof PanelConfirmationDeferred) throw reason;
+    if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
     handleSaveRefusal(reason);
     throw reason;
   } finally {

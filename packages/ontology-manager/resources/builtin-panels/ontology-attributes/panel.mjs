@@ -60,6 +60,8 @@ await mountPanel({
     });
     const isPrimaryKeyOutput = usePanelOutput("detail", "isPrimaryKey");
     const isPrimaryKey = computed(() => isPrimaryKeyOutput.value === true);
+    // Fail closed: allow setPrimaryKey only when detail explicitly reports isPrimaryKey === false.
+    const setPrimaryKeyDisabled = computed(() => isPrimaryKeyOutput.value !== false);
 
     const formDraft = usePanelFormDraft("form", {
       when: () => Boolean(selectedKey.value) && detailStatus.value === "ready",
@@ -136,6 +138,7 @@ await mountPanel({
       selectedKey,
       detailStatus,
       isPrimaryKey,
+      setPrimaryKeyDisabled,
       search,
       countText,
       creating,

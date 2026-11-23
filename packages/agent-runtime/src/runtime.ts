@@ -122,11 +122,23 @@ function presentationTool(runId: string, callback: RuntimePresentationCallback):
   };
 }
 
+const expectedPageTargetType = Type.Union([
+  Type.Object({
+    kind: Type.Literal("object"),
+    objectType: Type.String(),
+    primaryKey: Type.String(),
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal("draft"),
+    objectType: Type.String(),
+  }, { additionalProperties: false }),
+]);
+
 function observeDisplayTool(runId: string, callback: RuntimePresentationCallback): AgentTool {
   return {
     name: "observe_display",
     label: "Observe display",
-    description: "Read the latest live state of the page or artifact currently open beside the conversation — including its address, selection, highlights, all declared public state values (tabs, filters, view mode, etc.), and the current live values and unsaved status of any open forms (reflecting any edits the user made mid-round). Read-only: does not navigate, reload, change layout, or trigger writes.",
+    description: "Read the latest live state of the page or artifact currently open beside the conversation — including its `pageInstanceId`, nested `memberInstances`, list `checkedKeys`, address, selection, highlights, all declared public state values (tabs, filters, view mode, etc.), and the current live values and unsaved status of any open forms (reflecting any edits the user made mid-round). Always pass the observed `pageInstanceId` (and `memberInstances` / target / `checkedKeys`) to subsequent `fill_form` and `page_action` calls so stale requests are rejected instead of operating on a changed page or object. Read-only: does not navigate, reload, change layout, or trigger writes.",
     parameters: Type.Object({}, { additionalProperties: false }),
     replay: "never",
     async execute(toolCallId, _input, signal) {
@@ -152,12 +164,15 @@ function fillFormTool(runId: string, callback: RuntimePresentationCallback): Age
   return {
     name: "fill_form",
     label: "Fill form",
-    description: "Fill explicit fields into a live form currently displayed on the page beside the conversation, using the form's own editing entry so changed fields are highlighted, owner-driven dynamic updates run, and the form remains unsaved until saved. Does not navigate or save; open the target page/tab/dialog with `present` first if the form is not mounted yet. Keys in `values` are JSON Pointer field paths (e.g. \"/name\") or top-level field names (e.g. \"name\"). When the form already has unsaved edits, refuses without overwriting (not_filled / blocked_unsaved) — ask the user first and pass overwriteUnsaved: true only after explicit user confirmation.",
+    description: "Fill explicit fields into a live form currently displayed on the page beside the conversation, using the form's own editing entry so changed fields are highlighted, owner-driven dynamic updates run, and the form remains unsaved until saved. Does not navigate or save; open the target page/tab/dialog with `present` first if the form is not mounted yet. Always pass `expectedPageInstanceId` (and `expectedTarget` / `expectedMemberInstanceId` when known) from your latest `observe_display` or `present` receipt: if the page remounted, switched target, or replaced the nested member, the page refuses with `stale` and returns the latest `current` snapshot. Keys in `values` are JSON Pointer field paths (e.g. \"/name\") or top-level field names (e.g. \"name\"). When the form already has unsaved edits, refuses without overwriting (not_filled / blocked_unsaved) — ask the user first and pass overwriteUnsaved: true only after explicit user confirmation.",
     parameters: Type.Object({
       member: Type.Optional(Type.String()),
       memberPath: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
       values: Type.Record(Type.String(), Type.Unknown()),
       overwriteUnsaved: Type.Optional(Type.Boolean()),
+      expectedPageInstanceId: Type.Optional(Type.String()),
+      expectedMemberInstanceId: Type.Optional(Type.String()),
+      expectedTarget: Type.Optional(expectedPageTargetType),
     }, { additionalProperties: false }),
     replay: "never",
     async execute(toolCallId, input, signal) {
@@ -183,12 +198,16 @@ function pageActionTool(runId: string, callback: RuntimePresentationCallback): A
   return {
     name: "page_action",
     label: "Page action",
-    description: "Execute a declared operation or local page action on the page currently displayed beside the conversation, through the exact same UI entry a user clicks (for example saving a live form with its current contents, clicking a bound action button, running a list row/batch action, refreshing data with \"page.refresh\", or discarding form edits with \"<form>.discard\"). Never pass form field values here — fill the form with `fill_form` first, then invoke its save operation. For business writes in default mode, this prepares the operation and asks the user to confirm in the conversation (`awaiting_confirmation`); in full-auto sessions it executes immediately (`executed`). For list row actions, pass `rowKey` with the row's primary key. If receipt is missing (`unknown`), check the returned `intentId` instead of retrying.",
+    description: "Execute a declared operation or local page action on the page currently displayed beside the conversation, through the exact same UI entry a user clicks (for example saving a live form with its current contents, clicking a bound action button, running a list row/batch action, refreshing data with \"page.refresh\", or discarding form edits with \"<form>.discard\"). Never pass form field values here — fill the form with `fill_form` first, then invoke its save operation. Always pass `expectedPageInstanceId` (and `expectedTarget`, `expectedMemberInstanceId`, and `expectedCheckedKeys` for batch operations) from your latest `observe_display` or `present` receipt: if the page, nested member, target object, or checked rows changed, the page refuses with `stale` and returns the latest `current` snapshot. For business writes in default mode (and discarding dirty form edits), this asks the user to confirm in the conversation (`awaiting_confirmation`); in full-auto sessions writes execute immediately (`executed`) after verifying page state is unchanged. For list row actions, pass `rowKey` using `<className>:<primaryKey>` (required for mixed-type lists; plain `<primaryKey>` is allowed on single-type lists). If receipt is missing (`unknown`), check the returned `intentId` instead of retrying.",
     parameters: Type.Object({
       operation: Type.String(),
       memberPath: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
       rowKey: Type.Optional(Type.String()),
       input: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+      expectedPageInstanceId: Type.Optional(Type.String()),
+      expectedMemberInstanceId: Type.Optional(Type.String()),
+      expectedTarget: Type.Optional(expectedPageTargetType),
+      expectedCheckedKeys: Type.Optional(Type.Array(Type.String())),
     }, { additionalProperties: false }),
     replay: "never",
     async execute(toolCallId, input, signal) {

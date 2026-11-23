@@ -171,7 +171,19 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       invoke: (id, input) => instance.invoke(id, input),
       fillForm: (request) => instance.fillForm(request),
       executeAction: (request) => instance.executeAction(request),
-      dispose: () => scope.stop(),
+      snapshotMeta() {
+        const memberInstances = instance.memberInstances();
+        const checkedKeys = instance.checkedKeys();
+        return {
+          ...(Object.keys(memberInstances).length ? { memberInstances } : {}),
+          ...(Object.keys(checkedKeys).length ? { checkedKeys } : {}),
+        };
+      },
+      isLoading: () => instance.isLoading(),
+      dispose() {
+        instance.markDisposed();
+        scope.stop();
+      },
     };
   })!;
 }

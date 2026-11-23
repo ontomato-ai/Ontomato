@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PresentationFrame } from "@ontomato/contracts/agent-presentation";
+import type { PageActionOutcome, PresentationFrame } from "@ontomato/contracts/agent-presentation";
 import { pageContextLine, writtenText } from "../page-context";
 import { useConversationDisplay, type DisplayPage, type DisplayView } from "../conversation-display";
 
@@ -15,6 +15,7 @@ function frame(target: PresentationFrame["target"]): PresentationFrame {
 function setup(options: {
   admit?: Parameters<typeof useConversationDisplay>[0]["admit"];
   initial?: { page: DisplayPage; view: DisplayView };
+  readinessTimeoutMs?: number;
 } = {}) {
   const serialized: { page: DisplayPage | null; view: DisplayView; history: string }[] = [];
   const pages: Record<string, string> = {
@@ -42,6 +43,7 @@ function setup(options: {
     }),
     leave: { leaves: () => false, confirm: async () => true },
     ...(options.initial ? { initial: options.initial } : {}),
+    ...(options.readinessTimeoutMs !== undefined ? { readinessTimeoutMs: options.readinessTimeoutMs } : {}),
   });
   display.placed(() => "side");
   return { display, serialized };
@@ -333,5 +335,204 @@ describe("live agent page control (requirement-64995244)", () => {
     expect(cancel).toHaveBeenCalledWith(expect.objectContaining({ code: "FORM_CONFIRMATION_STALE" }));
     expect(display.takePendingActionConfirmation("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")).toBeNull();
     unregister();
+  });
+
+  it("includes pageInstanceId, memberInstances, and checkedKeys in snapshots and rejects stale expectedPageInstanceId on remount or navigation (Item 1.1)", async () => {
+    const { display } = setup();
+    await display.present(frame({ kind: "page", address: "/actions" }));
+    const fillForm = vi.fn(async () => ({ ok: true as const, member: "form", filledFields: ["/name"] }));
+    const executeAction = vi.fn(async () => ({ ok: true as const, kind: "executed" as const, operation: "form.save" }));
+    const unregister1 = display.registerPageController("/actions", {
+      applyState() {},
+      fillForm,
+      executeAction,
+      snapshotMeta: () => ({
+        memberInstances: { detail: "nested-1" },
+        checkedKeys: { checked: ["platform:Action:act-1", "platform:Action:act-2"] },
+      }),
+    });
+
+    const obs1 = await display.present(frame({ kind: "observe" }));
+    expect(obs1).toMatchObject({
+      status: "observed",
+      current: {
+        known: true,
+        target: {
+          kind: "page",
+          url: "/actions",
+          memberInstances: { detail: "nested-1" },
+          checkedKeys: { checked: ["platform:Action:act-1", "platform:Action:act-2"] },
+        },
+      },
+    });
+    const firstPageInstanceId =
+      obs1.current.known && obs1.current.target?.kind === "page" ? obs1.current.target.pageInstanceId : undefined;
+    expect(firstPageInstanceId).toBeTruthy();
+
+    // Matching expectedPageInstanceId succeeds and forwards nested/target/checked expectations.
+    const okFill = await display.present(frame({
+      kind: "fill_form",
+      member: "form",
+      values: { "/name": "OK" },
+      expectedPageInstanceId: firstPageInstanceId,
+      expectedMemberInstanceId: "nested-1",
+      expectedTarget: { kind: "object", objectType: "platform:Action", primaryKey: "act-1" },
+    }));
+    expect(okFill).toMatchObject({ status: "filled", member: "form" });
+    expect(fillForm).toHaveBeenLastCalledWith({
+      member: "form",
+      values: { "/name": "OK" },
+      expectedPageInstanceId: firstPageInstanceId,
+      expectedMemberInstanceId: "nested-1",
+      expectedTarget: { kind: "object", objectType: "platform:Action", primaryKey: "act-1" },
+    });
+
+    // Remounting the page controller at the same path rotates pageInstanceId.
+    unregister1();
+    const unregister2 = display.registerPageController("/actions", {
+      applyState() {},
+      fillForm,
+      executeAction,
+    });
+    const obs2 = await display.present(frame({ kind: "observe" }));
+    const secondPageInstanceId =
+      obs2.current.known && obs2.current.target?.kind === "page" ? obs2.current.target.pageInstanceId : undefined;
+    expect(secondPageInstanceId).toBeTruthy();
+    expect(secondPageInstanceId).not.toBe(firstPageInstanceId);
+
+    // Stale expectedPageInstanceId is immediately rejected with the latest current snapshot without touching the controller.
+    fillForm.mockClear();
+    executeAction.mockClear();
+    const staleFill = await display.present(frame({
+      kind: "fill_form",
+      member: "form",
+      values: { "/name": "Wrong" },
+      expectedPageInstanceId: firstPageInstanceId,
+    }));
+    expect(staleFill).toMatchObject({
+      status: "not_filled",
+      reason: "stale",
+      current: { known: true, target: { kind: "page", pageInstanceId: secondPageInstanceId } },
+    });
+    expect(fillForm).not.toHaveBeenCalled();
+
+    const staleAction = await display.present(frame({
+      kind: "page_action",
+      operation: "form.save",
+      expectedPageInstanceId: firstPageInstanceId,
+    }));
+    expect(staleAction).toMatchObject({
+      status: "not_executed",
+      reason: "stale",
+      current: { known: true, target: { kind: "page", pageInstanceId: secondPageInstanceId } },
+    });
+    expect(executeAction).not.toHaveBeenCalled();
+    unregister2();
+  });
+
+  it("waits for an in-flight page_action preparation before answering a confirmation question (Item 3.5 frontend)", async () => {
+    const { display } = setup();
+    await display.present(frame({ kind: "page", address: "/actions" }));
+
+    let resolvePrepare!: (value: PageActionOutcome) => void;
+    const questionId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const intentId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const dispatch = vi.fn(async () => ({ ok: true as const, intentId, outcome: { kind: "success" }, summary: "Executed" }));
+    const cancel = vi.fn(async () => {});
+
+    const unregister = display.registerPageController("/actions", {
+      applyState() {},
+      executeAction: () => new Promise<PageActionOutcome>((resolve) => { resolvePrepare = resolve; }),
+    });
+
+    // Start page_action preparation; SSE question arrives and user clicks Approve BEFORE prepare returns.
+    const actionPromise = display.present(frame({ kind: "page_action", operation: "form.save" }));
+    const waiter = display.waitPendingActionConfirmation(questionId);
+    await vi.waitFor(() => expect(resolvePrepare).toBeTypeOf("function"));
+
+    // Prepare HTTP response now finishes and registers the confirmation closure.
+    resolvePrepare({
+      ok: true,
+      kind: "awaiting_confirmation",
+      operation: "form.save",
+      intentId,
+      questionId,
+      label: "Save",
+      confirmation: {
+        intentId,
+        questionId,
+        operationId: "form.save",
+        label: "Save",
+        isStillValid: () => ({ ok: true }),
+        dispatch,
+        cancel,
+      },
+    });
+
+    const [bound, actionReceipt] = await Promise.all([waiter, actionPromise]);
+    expect(actionReceipt).toMatchObject({ status: "awaiting_confirmation", intentId, questionId });
+    expect(bound).not.toBeNull();
+    expect(bound!.confirmation.intentId).toBe(intentId);
+    expect(await bound!.confirmation.dispatch()).toEqual({ ok: true, intentId, outcome: { kind: "success" }, summary: "Executed" });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    unregister();
+  });
+
+  it("waits within timeout for loading page/form/action to become ready in the same round and stops on error or session switch (Item 4)", async () => {
+    const { display } = setup({ readinessTimeoutMs: 400 });
+    await display.present(frame({ kind: "page", address: "/actions" }));
+
+    // 1. Page is still loading and controller has not registered yet -> fill_form waits and succeeds once ready.
+    display.loaded({ status: "loading" });
+    let fillAttempts = 0;
+    const fillPromise = display.present(frame({
+      kind: "fill_form",
+      member: "form",
+      values: { "/name": "Ready soon" },
+    }));
+    setTimeout(() => {
+      display.registerPageController("/actions", {
+        applyState() {},
+        fillForm: async () => {
+          fillAttempts += 1;
+          if (fillAttempts === 1) return { ok: false, reason: "form_not_ready", message: "Still loading form" };
+          return { ok: true, member: "form", filledFields: ["/name"] };
+        },
+        executeAction: async () => ({ ok: false, reason: "action_not_ready", operation: "form.save", message: "Still loading" }),
+      });
+      display.loaded({ status: "ready" });
+    }, 30);
+
+    const filled = await fillPromise;
+    expect(filled).toMatchObject({ status: "filled", member: "form", filledFields: ["/name"] });
+    expect(fillAttempts).toBe(2);
+
+    // 2. If session switches away during readiness wait -> aborts immediately with not_viewing_session.
+    let activeSession = true;
+    const switchedPromise = display.present(
+      frame({ kind: "page_action", operation: "form.save" }),
+      () => (activeSession ? null : "not_viewing_session"),
+    );
+    setTimeout(() => { activeSession = false; }, 20);
+    const switched = await switchedPromise;
+    expect(switched).toEqual({
+      status: "not_executed",
+      reason: "not_viewing_session",
+      operation: "form.save",
+      current: { known: false, reason: "not_viewing_session" },
+    });
+
+    // 3. If permanently action_not_ready -> stops at readinessTimeoutMs and reports honest action_not_ready.
+    const timedOut = await display.present(frame({ kind: "page_action", operation: "form.save" }));
+    expect(timedOut).toMatchObject({ status: "not_executed", reason: "action_not_ready", operation: "form.save" });
+
+    // 4. If page load enters error state while waiting -> stops immediately without waiting for full timeout.
+    display.loaded({ status: "error", error: { code: "PANEL_ERROR", message: "Load failed" } });
+    const errored = await display.present(frame({ kind: "page_action", operation: "form.save" }));
+    expect(errored).toMatchObject({
+      status: "not_executed",
+      reason: "action_not_ready",
+      error: { code: "PANEL_ERROR", message: "Load failed" },
+    });
   });
 });

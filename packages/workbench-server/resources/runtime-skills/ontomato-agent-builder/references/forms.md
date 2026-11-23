@@ -1,6 +1,6 @@
 # Form: `AssistantAgentInput`
 
-The page's save request, and the `form` inside a draft.
+Fields in an agent definition.
 
 ```json
 {
@@ -25,14 +25,14 @@ The page's save request, and the `form` inside a draft.
 | `icon` | string or `null` | Icon key. |
 | `enabled` | boolean | Available in conversations. |
 | `systemPrompt` | string | The agent's own prompt. |
-| `modelSelection` | `{"modelId": string\|null}` | A `ref` from `models`; `null` follows the domain default. |
+| `modelSelection` | `{"modelId": string\|null}` | A `ref` from `models`; `{"modelId":null}` follows the domain default. |
 | `skills` | array of `{namespace, name}` | The whole selection: copy entries from `skills` unchanged, or send `[]` to clear it. Omit it on update to keep the agent's stored skills. |
 | `classNames` | string array | Ontology classes it may query; empty means unrestricted. |
 | `enabledMcpServiceIds` | UUID array | External MCP services. Keep the current IDs unless the user selects services on the page. |
 | `sortOrder` | integer | Order in the list. Omit it to keep the stored order on update or use 0 on creation. |
 | `executionUserId` | string or `null` | Default execution identity for automated/unattended runs (`null` by default). Interactive conversations with a logged-in user always inherit that user's permissions. Omitted on update keeps the stored value. |
 
-A save is the whole definition. For an update, `get` it, edit the form in `work/`, keep every other field as it was, and remove `id`. `skills` is the one field an update may leave out: omitted, the owner keeps the agent's stored skills; named, `[]` included, it replaces the whole selection. `name`, `description`, `icon`, `enabled` and `systemPrompt` are required, and leaving out `classNames`, `enabledMcpServiceIds` or `modelSelection` takes its default (`[]`, `[]`, the domain model) instead of the stored value. The selected model and every selected skill must be in the catalogs.
+A direct CLI update sends the definition. Use `get`, edit the input in `work/`, keep every other field as it was, and remove `id`. Omit `skills` to preserve the stored selection. An explicit array, including `[]`, replaces it. `name`, `description`, `icon`, `enabled` and `systemPrompt` are required. Omitted `classNames`, `enabledMcpServiceIds` and `modelSelection` take their defaults (`[]`, `[]`, the domain model). The selected model and every selected skill must be in the catalogs.
 
 To keep the agent's skills, leave `skills` out of the form; never read the agent and send the skills it shows back. An agent may hold protected skills this caller cannot see, and `get`, the page and the catalogs show only the skills this caller may see. If the agent holds such a skill, an update that names `skills` is refused as a whole, and the same request's other fields are not written either; the refusal does not name the skill. That change needs someone who can see the complete selection. If the request is refused, report it in the owner's own words and do not try the array `get` showed instead.
 
@@ -40,11 +40,28 @@ To keep the agent's skills, leave `skills` out of the form; never read the agent
 
 ## Live page editing inside the platform
 
-Inside the platform (`ONTOMATO_SKILL_SCENARIO=platform`), open `/agents/settings` (or `/ontology/agents`) with `present`, switch to create mode or select the target agent, call `fill_form` with the changed field paths (leaving `skills` untouched unless changing skills), and call `page_action` to save when requested (or let the user review and save on the page).
+With live page tools, use `present({ target: "/agents/settings/new" })` to create or
+`present({ target: "/agents/settings/<id>" })` to edit. The same paths work under
+`/ontology/agents`. Call `fill_form({ member: "form", values })` with just the fields being
+set or changed. Include `skills` only for a requested selection change. Leave the form visible
+for review. When the user asks to save, call `page_action({ operation: "form.save" })`.
+For a requested deletion, open the existing agent and call `page_action({ operation: "remove.delete" })`.
+Writes default to user confirmation in the conversation.
+
+If you need to validate the complete definition before handing over the form, send
+`POST $ONTOMATO_WORKBENCH_URL/api/assistant/agent-definitions/validate` with
+`{target:{objectType:"platform:AgentDefinition"},form}`. Add `id` to `target` for an edit.
+`form` is the full definition input, with `skills` omitted on edit to preserve the stored selection.
+Send JSON with `tk: $ONTOMATO_TK` or `X-API-Key: $ONTOMATO_API_KEY` at the service root.
+At the run callback base ending in `/workbench`, send
+`X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and
+`X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. HTTP 204 means the owner accepted the definition for
+validation. The page still owns saving the live form.
 
 ## Direct writes
 
-Outside the platform the same file can be written directly:
+Outside the platform, set `ONTOMATO_URL` to the Workbench service root and set one of
+`ONTOMATO_TK` (`tk` header) or `ONTOMATO_API_KEY` (`X-API-Key` header).
 
 ```sh
 node scripts/page.mjs create @work/agent.json        # POST /api/assistant/agent-definitions
@@ -52,6 +69,8 @@ node scripts/page.mjs update <id> @work/agent.json   # PUT  /api/assistant/agent
 node scripts/page.mjs delete <id>                    # DELETE /api/assistant/agent-definitions/<id>
 ```
 
-`create` sends an idempotency key of its own. `update` sends the file exactly as given and does not read the agent first, so the file must be the whole definition; only `skills` may be left out, to keep the stored ones. `delete` takes an ID. All three print the returned definition, or `ok` for a delete.
+`create` sends an idempotency key of its own. `update` sends the complete definition input from
+the file as given. `delete` takes an ID. The commands print the returned definition or `ok` for a delete.
 
-Inside the platform (`ONTOMATO_SKILL_SCENARIO=platform`) these three commands refuse before any request is sent; use `present`, `fill_form`, and `page_action` instead.
+Platform background and delegated runs cannot write agent definitions without page tools.
+Return the agent ID and proposed changes or the requested deletion as structured content.

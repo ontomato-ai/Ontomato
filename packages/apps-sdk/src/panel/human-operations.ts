@@ -30,6 +30,21 @@ export interface PanelReadCall {
   input: ReadOperationInput | Readonly<Record<string, unknown>>;
 }
 
+/** Request body for creating a conversation confirmation question for a local UI action (e.g. discarding dirty edits). */
+export interface PanelLocalConfirmationRequest {
+  readonly agentRun: PanelAgentRunRef;
+  readonly operationLabel: string;
+  readonly targetLabel: string;
+  readonly impactSummary?: string;
+}
+
+/** Response from creating a conversation confirmation question for a local UI action. */
+export interface PanelLocalConfirmationResponse {
+  readonly intentId: string;
+  readonly questionId: string;
+  readonly label: string;
+}
+
 export interface PanelHumanOperations {
   /** The owner's description of one operation of this panel: its effect, schemas, target, batch and confirmation. */
   describe(operationId: string, memberPath?: PanelMemberPath): Promise<PanelOperationDescriptor>;
@@ -49,6 +64,8 @@ export interface PanelHumanOperations {
   ): Promise<PanelHumanOperationPreparation>;
   /** Marks an unexecuted prepared intent as cancelled/stale so it can never be dispatched later. */
   cancel?(intentId: string, reason: { code: string; message: string }): Promise<void>;
+  /** Posts a conversation confirmation question for a destructive local UI action (such as discarding unsaved form edits). */
+  requestLocalConfirmation?(input: PanelLocalConfirmationRequest): Promise<PanelLocalConfirmationResponse>;
 }
 
 /** Lifecycle hooks reported by the host while confirming and dispatching a prepared write. */
@@ -139,6 +156,9 @@ export function panelHumanOperations(use: PanelOperationUse | null, requests: Pl
     },
     async cancel(intentId, reason) {
       await post(`/panel-operations/intents/${encodeURIComponent(intentId)}/cancel`, reason);
+    },
+    async requestLocalConfirmation(input) {
+      return (await post("/panel-operations/local-confirmations", input)) as PanelLocalConfirmationResponse;
     },
   };
 }

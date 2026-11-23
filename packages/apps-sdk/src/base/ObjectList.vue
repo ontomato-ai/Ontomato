@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Comment, Fragment, Text, computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, shallowRef, useSlots, watch, type Slot, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
-import type { PageActionConfirmedDispatchResult, PendingPageActionConfirmation } from "@ontomato/contracts/agent-presentation";
+import type { PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
@@ -30,6 +30,12 @@ import {
   type PanelAgentActionContext,
   type PanelWriteResult,
 } from "../panel/instance";
+import {
+  createDeferredConfirmation,
+  matchesExpectedTarget,
+  PanelSubmissionStaleError,
+  type SubmissionEvaluator,
+} from "../panel/operation-binding";
 import { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam } from "../panel/member";
 import { admittedOperations, missingOperationDescriptorResult } from "../panel/member-operations";
 import type {
@@ -2025,6 +2031,47 @@ function rowActionButtonState(
   return { ok: true };
 }
 
+let listUnmounted = false;
+onBeforeUnmount(() => {
+  listUnmounted = true;
+});
+
+/**
+ * Resolves a loaded row by composite `<className>:<primaryKey>` key first (exact identity for mixed-type lists),
+ * falling back to plain `primaryKey` only when unambiguous across loaded rows.
+ */
+function findLoadedRowByKey(
+  rowKey: string,
+): { readonly ok: true; readonly row: PlatformObjectRecord } | { readonly ok: false; readonly reason: "action_not_found" | "input_required"; readonly message: string } {
+  const fallbackClassName = activeType.value ?? rowObjectType;
+  const exactMatches = rows.value.filter((item) => panelRowOperationKey(item, fallbackClassName) === rowKey);
+  if (exactMatches.length === 1) return { ok: true, row: exactMatches[0]! };
+  if (exactMatches.length > 1) {
+    return {
+      ok: false,
+      reason: "input_required",
+      message: `Row key '${rowKey}' matched multiple loaded rows.`,
+    };
+  }
+  const plainMatches = rows.value.filter((item) => item.primaryKey === rowKey);
+  if (plainMatches.length === 0) {
+    return {
+      ok: false,
+      reason: "action_not_found",
+      message: `Row '${rowKey}' is not currently loaded in this list.`,
+    };
+  }
+  if (plainMatches.length > 1) {
+    const candidates = plainMatches.map((item) => panelRowOperationKey(item, fallbackClassName)).join(", ");
+    return {
+      ok: false,
+      reason: "input_required",
+      message: `Row key '${rowKey}' is ambiguous across multiple object types (${candidates}); specify the composite '<className>:<primaryKey>' key.`,
+    };
+  }
+  return { ok: true, row: plainMatches[0]! };
+}
+
 async function executeRowOperation(
   row: PlatformObjectRecord,
   operationName: string,
@@ -2040,9 +2087,55 @@ async function executeRowOperation(
   const target = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
   if (target === undefined) return "skipped";
   const operationId = panel.instance.operationIdOf(slot.slot, operationName);
+  const capturedCompositeKey = panelRowOperationKey(row, fallbackClassName);
   const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
     ? wrapActionOperationInput(descriptor.inputSchema, boundInput, providedInput)
     : { ...providedInput, ...boundInput };
+
+  const evaluateRowSubmission: SubmissionEvaluator = (phase) => {
+    if (listUnmounted || panel.instance.isDisposed()) {
+      return { ok: false, message: "The list was closed or unmounted." };
+    }
+    if (phase === "confirm" && rowOpRunning.value) {
+      return { ok: false, message: "Another row operation is currently running." };
+    }
+    const liveFallback = activeType.value ?? rowObjectType;
+    const liveRow = rows.value.find((item) => panelRowOperationKey(item, liveFallback) === capturedCompositeKey);
+    if (!liveRow) {
+      return { ok: false, message: `Row '${capturedCompositeKey}' is no longer displayed.` };
+    }
+    const liveBinding = member.projection.operations?.[operationName];
+    const liveDescriptor = admittedOpMap.value[operationName];
+    if (!liveBinding || !liveDescriptor) {
+      return { ok: false, message: `Operation '${operationName}' is no longer available on this list.` };
+    }
+    const liveButton = rowActionButtonState(liveRow, operationName);
+    if (!liveButton.ok) {
+      return { ok: false, message: liveButton.message };
+    }
+    const liveRowOp = rowOperationsFor(liveRow)[operationName];
+    if (!liveRowOp?.available) {
+      return {
+        ok: false,
+        message: liveRowOp?.unavailable?.reason ?? `Operation '${operationName}' is no longer available on row '${capturedCompositeKey}'.`,
+      };
+    }
+    const liveTarget = resolveRowOperationTarget(liveBinding, liveRow, liveFallback, member.inputs.value);
+    if (liveTarget === undefined) {
+      return { ok: false, message: `Operation '${operationName}' no longer resolves a valid target for row '${capturedCompositeKey}'.` };
+    }
+    const liveBoundInput = resolveRowOperationParams(liveBinding, liveRow, member.inputs.value);
+    const liveInput: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(liveDescriptor.inputSchema)
+      ? wrapActionOperationInput(liveDescriptor.inputSchema, liveBoundInput, providedInput)
+      : { ...providedInput, ...liveBoundInput };
+    return {
+      ok: true,
+      instanceId: panel.instance.instanceId,
+      operationId: panel.instance.operationIdOf(slot.slot, operationName),
+      target: liveTarget,
+      payload: { rowKey: capturedCompositeKey, input: liveInput },
+    };
+  };
 
   rowOpRunning.value = true;
   rowOpFailure.value = null;
@@ -2067,41 +2160,25 @@ async function executeRowOperation(
     let answer: PanelWriteResult;
     try {
       answer = agentContext
-        ? await panel.instance.writeOperation(operationId, { call: { target, input } }, { agentContext })
+        ? await panel.instance.writeOperation(
+            operationId,
+            { call: { target, input } },
+            { agentContext, evaluateSubmission: evaluateRowSubmission },
+          )
         : await panel.instance.writeOperation(operationId, { call: { target, input } });
     } catch (reason) {
       if (reason instanceof PanelOperationDeferred) {
         const deferred = reason;
         const { preparation } = deferred;
-        const capturedRowKey = row.primaryKey;
-        const isStillValid = () => {
-          const liveRow = rows.value.find((item) => item.primaryKey === capturedRowKey);
-          if (!liveRow) return { ok: false as const, reason: "stale", message: `Row '${capturedRowKey}' is no longer displayed.` };
-          const liveButton = rowActionButtonState(liveRow, operationName);
-          if (!liveButton.ok) return { ok: false as const, reason: "stale", message: liveButton.message };
-          const liveRowOp = rowOperationsFor(liveRow)[operationName];
-          if (!liveRowOp?.available) {
-            return {
-              ok: false as const,
-              reason: "stale",
-              message: liveRowOp?.unavailable?.reason ?? `Operation '${operationName}' is no longer available on row '${capturedRowKey}'.`,
-            };
-          }
-          if (rowOpRunning.value) return { ok: false as const, reason: "stale", message: "Another row operation is currently running." };
-          return { ok: true as const };
-        };
-        const confirmation: PendingPageActionConfirmation = {
+        const confirmation = createDeferredConfirmation({
           intentId: preparation.intentId,
           questionId: preparation.questionId!,
           operationId: preparation.operationId,
           label: preparation.label,
-          isStillValid,
-          async dispatch(): Promise<PageActionConfirmedDispatchResult> {
-            const check = isStillValid();
-            if (!check.ok) {
-              await deferred.cancelNow({ code: "ROW_ACTION_CONFIRMATION_STALE", message: check.message }).catch(() => undefined);
-              return { ok: false, intentId: preparation.intentId, reason: "stale", message: check.message };
-            }
+          staleCode: "ROW_ACTION_CONFIRMATION_STALE",
+          isStillValid: deferred.isStillValid,
+          cancel: deferred.cancelNow,
+          async dispatchVerified(): Promise<PageActionConfirmedDispatchResult> {
             rowOpRunning.value = true;
             rowOpFailure.value = null;
             rowOpReceipt.value = null;
@@ -2132,8 +2209,7 @@ async function executeRowOperation(
               rowOpRunning.value = false;
             }
           },
-          cancel: deferred.cancelNow,
-        };
+        });
         throw new PanelConfirmationDeferred(confirmation);
       }
       throw reason;
@@ -2142,7 +2218,7 @@ async function executeRowOperation(
     applyRowAnswer(answer);
     return "executed";
   } catch (reason) {
-    if (reason instanceof PanelConfirmationDeferred) throw reason;
+    if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
     rowOpFailure.value = reason instanceof Error ? reason : new Error(String(reason));
     return "executed";
   } finally {
@@ -2229,13 +2305,34 @@ watch(
     unregisterRowActionHandlers = operationNames.map((operationName) =>
       panel.instance.registerActionHandler(
         panel.instance.operationIdOf(slot.slot, operationName),
-        async ({ rowKey, input, agentContext }) => {
+        async ({ rowKey, input, expectedTarget, agentContext }) => {
           if (!rowKey) {
             return { ok: false, reason: "input_required", message: `Row action '${operationName}' requires rowKey.` };
           }
-          const row = rows.value.find((item) => item.primaryKey === rowKey);
-          if (!row) {
-            return { ok: false, reason: "action_not_found", message: `Row '${rowKey}' is not currently loaded in this list.` };
+          const matched = findLoadedRowByKey(rowKey);
+          if (!matched.ok) {
+            return { ok: false, reason: matched.reason, message: matched.message };
+          }
+          const { row } = matched;
+          const binding = member.projection.operations?.[operationName];
+          if (!binding) {
+            return { ok: false, reason: "action_not_found", message: `Row operation '${operationName}' is not declared on this list.` };
+          }
+          if (expectedTarget !== undefined) {
+            const fallbackClassName = activeType.value ?? rowObjectType;
+            const resolvedTarget = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
+            const effectiveTarget = resolvedTarget ?? {
+              kind: "object" as const,
+              objectType: rowSelectionValue(row).className,
+              primaryKey: rowSelectionValue(row).primaryKey,
+            };
+            if (!matchesExpectedTarget(effectiveTarget, expectedTarget)) {
+              return {
+                ok: false,
+                reason: "stale",
+                message: `Row operation '${operationName}' target no longer matches the expected target.`,
+              };
+            }
           }
           if (rowOpRunning.value) {
             return {
@@ -2243,10 +2340,6 @@ watch(
               reason: "action_unavailable",
               message: `List is busy executing another row operation; cannot run '${operationName}' on row '${rowKey}'.`,
             };
-          }
-          const binding = member.projection.operations?.[operationName];
-          if (!binding) {
-            return { ok: false, reason: "action_not_found", message: `Row operation '${operationName}' is not declared on this list.` };
           }
           const descriptor = admittedOpMap.value[operationName];
           if (!descriptor) {

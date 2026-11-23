@@ -239,11 +239,13 @@ provide(shellContextKey, {
     return {
       ...base,
       async answer(requestId, answer, selectedOption) {
-        const bound = display.takePendingActionConfirmation(requestId);
+        const bound = await display.waitPendingActionConfirmation(requestId);
         if (bound) {
           if (selectedOption === 1) {
             const sameSession = bound.sessionId === conversation.state.sessionId;
-            const samePage = display.page.value?.instance === bound.pageInstance;
+            const samePage =
+              display.page.value?.instance === bound.pageInstance
+              && display.pageInstanceId.value === bound.pageInstanceId;
             if (!sameSession || !samePage) {
               const reason = "The page or conversation changed after confirmation was requested.";
               await bound.confirmation.cancel({ code: "FORM_CONFIRMATION_STALE", message: reason }).catch(() => undefined);

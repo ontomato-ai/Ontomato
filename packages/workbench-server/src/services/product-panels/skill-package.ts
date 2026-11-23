@@ -296,6 +296,11 @@ function describeSkill({ name, description, content, state, projections, operati
       "Declared public state covers every state field that decides which business content the user sees (tabs, filters, selections, view modes). The user message's page context line, `present` receipts, and `observe_display` receipts carry the current values of all declared public state fields, the current live contents and unsaved status of open forms (`forms`, including unsaved user edits), together with selected object references (each carrying object type and ID) and highlights. Use those values directly without asking the user to repeat which tab, filter, view mode, item, or form input is open. When `observe_display` is available, you can call it mid-round at any time to re-read the latest live page state and form contents (including edits the user made during the round).",
     ].join("\n"),
     reads,
+    ...(hasPlacedMembers ? [[
+      "### Address a nested panel",
+      'A snapshot from `observe_display` can identify a mounted child with a `memberPath` such as `[{member:"preview",selection:{stateValue:"order-preview",target:{panelId:"order-preview"}}},{member:"details"}]`. For `/nested`, keep these object segments, including their selection and item key when present. For `/read`, keep the same segments and append the named data projection, for example `{member:"summary"}`.',
+      'For `fill_form` and `page_action`, take each segment\'s `member` string in order. In the example use `fill_form({ member: "form", memberPath: ["preview", "details"], values: { "/name": "Updated name" } })`, then, if asked to save, `page_action({ operation: "form.save", memberPath: ["preview", "details"] })`. Here `form` is the local form member in the child. Omit `memberPath` for tools acting in the root panel.',
+    ].join("\n")] : []),
     [
       "### Open the panel and update live state",
       "When this run has the `present` tool, call `present({ target, state })` immediately in this round to navigate to the panel or update its live state — do not merely put a link in your reply and wait for the user to click.",
@@ -317,10 +322,17 @@ function describeSkill({ name, description, content, state, projections, operati
         "For a row-scoped operation declared on a list projection, pass `rowKey` set to the loaded row's primary key (`page_action({ operation: \"<listMember>.<opName>\", rowKey, input? })`). The list verifies per-row availability and bound parameters directly on that mounted row.",
       ] : []),
       ...(hasPlacedMembers ? [
-        "For an operation in a mounted nested panel, pass its `memberPath` keys (or dot-joined `operation` ID such as `preview.approve.approve`) to `page_action`. To inspect a nested panel's declared operations, send a `/read` request with `operations: true` in place of `dataName`.",
+        "To inspect a nested panel's declared operations, send a `/read` request with `operations: true` in place of `dataName`.",
       ] : []),
       "Form save (`form.save` or a form-saving Action) submits the live form currently displayed on the page — never pass form field values in `page_action`. Fill the form with `fill_form` first, then call `page_action({ operation: \"<formSaveOperationId>\" })`. In default confirmation mode, `page_action` prepares the intent, shows the confirmation prompt in the conversation, and returns `awaiting_confirmation` with `intentId` and `questionId` while the form stays unsaved and editable. Do not wait or poll; finish the round or continue independent work. When the user confirms in the conversation, the page verifies that the instance, target, and form contents have not changed before dispatching (any edit, manual save, navigation, or reload invalidates that confirmation). In full-auto sessions, `page_action` executes immediately and returns `executed`.",
-      "A dispatched result is final for that intent, including failure/unknown; never retry a write call under a new tool call when receipt is missing (`unknown`). Read the intent at `/api/panel-operation-intents/<intentId>` through `ONTOMATO_WORKBENCH_URL` when needed; this read does not execute it.",
+    ].join("\n"),
+    [
+      "### Recover a missing operation receipt",
+      "If a receipt is missing (`unknown`) and you have its `intentId`, send `GET ${ONTOMATO_WORKBENCH_URL%/}/api/panel-operation-intents/<intentId>` with no query parameters. In particular omit `applicationId` and `useId`, which select the confirmation preparation response and can return 409 after dispatch.",
+      "When `ONTOMATO_WORKBENCH_URL` is the service root, send `tk: $ONTOMATO_TK` or `X-API-Key: $ONTOMATO_API_KEY`, whichever the runtime supplied. When it is the run callback base (`…/api/assistant/executions/<runId>/workbench`), send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`.",
+      "Read `outcome.kind`: `success` carries `data` and may include `affected` objects, `refusal` or `failure` carries `code` and `message`, `unknown` has no authoritative result, and `batch` carries each target's outcome in `items`.",
+      "With `outcome: null`, `invalidated.code` and `invalidated.message` explain cancellation or staleness. `kind: \"confirmation-expired\"` means the confirmation expired. Otherwise `dispatched: false` means the intent has yet to be dispatched (`source.questionId` identifies the conversation confirmation when present). `dispatched: true` with a null outcome means dispatch was claimed and its result is still unrecorded.",
+      "This lookup is read-only. Without an `intentId`, report that you cannot look up the result by ID. Do not poll for confirmation, dispatch the intent yourself, or repeat the write to recover the receipt.",
     ].join("\n"),
     ...(recipes === undefined ? [] : [`### Recipes\n\n${recipes}`]),
   ].filter(Boolean).join("\n\n");
@@ -364,7 +376,6 @@ function describeReads(reads: readonly { member: string; dataName: string; read:
     "A ready result carries the current owner data in `value`. If the result is forbidden, check the current entry and member path. For an error, use its message to correct the request.",
     ...(hasPlacedMembers ? [
       "A selection's `memberPath` identifies the child panel that supplied it. To inspect the mounted child's declared state and members, POST `{source,memberPath}` to `$ONTOMATO_PANEL_OPERATIONS_URL/nested` with the same callback headers.",
-      "Append the child projection's member to that path. Keep the actual selection on each segment that has one. For example, if previewSegment has member preview and its selection, read the child detail projection with `memberPath: [previewSegment,{member:\"detail\"}]` and `dataName: \"record\"`.",
     ] : []),
     ...reads.map(({ member, dataName, read, result }) =>
       `- Member \`${member}\`, dataName \`${dataName}\` — ${read} returns \`${result}\`.`),

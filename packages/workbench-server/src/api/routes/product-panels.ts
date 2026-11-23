@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   cancelPanelOperationIntentRequestSchema, createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
   inspectPanelOperationImpactRequestSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
@@ -52,7 +53,21 @@ import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame
 import { authorizeDefinitionStream, requirePanelDefinitions, snapshotPanelDefinitions } from "../../services/product-panels/definition-stream";
 import type { createChartProjectionService } from "../../services/product-panels/chart-sources";
 import { panelSkillProvider } from "../../services/product-panels/skill-provider";
+import { panelConfirmation } from "../../services/product-panels/confirmation";
+import { runForOwner } from "../../services/assistant/execution";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { readRegisteredPanelPageSkillContext } from "../../services/skills/view";
+
+const localPanelConfirmationRequestSchema = z.object({
+  agentRun: z.object({
+    sessionId: z.string().uuid(),
+    runId: z.string().uuid(),
+    toolCallId: z.string().min(1),
+  }).strict(),
+  operationLabel: z.string().min(1),
+  targetLabel: z.string().min(1),
+  impactSummary: z.string().min(1).optional(),
+}).strict();
 
 type FrameRead = Extract<ProductPanelReadQuery, { source: "frame" }>;
 
@@ -366,6 +381,33 @@ panelOperationsRouter.post("/panel-operations/questions/:questionId/cancel-if-pe
   const questionId = z.string().uuid().parse(req.params.questionId);
   const reason = cancelPanelOperationIntentRequestSchema.parse(req.body);
   res.json(await cancelPendingAgentPageQuestion(owner, questionId, reason));
+}));
+panelOperationsRouter.post("/panel-operations/local-confirmations", wrap(async (req, res) => {
+  const { owner, credentials } = context(req);
+  const input = localPanelConfirmationRequestSchema.parse(req.body);
+  const run = await runForOwner(owner, input.agentRun.runId);
+  if (!run.channel || run.status !== "running") throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+  if (run.sessionId !== input.agentRun.sessionId) throw new HttpError(403, "Run session mismatch", "FORBIDDEN");
+  if (!run.channel.userRecipient?.session) {
+    throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
+  }
+  if (run.channel.authority.executionKind !== "live") {
+    throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
+  }
+  const questionId = randomUUID();
+  const intentId = randomUUID();
+  const questionPrompt = await panelConfirmation(credentials, {
+    operation: input.operationLabel,
+    target: input.targetLabel,
+    ...(input.impactSummary ? { impactSummary: input.impactSummary } : {}),
+    executionUserId: null,
+    initiatorName: (req as AuthenticatedRequest).userName ?? owner.userId,
+  });
+  await new RuntimeClient(owner.domainId, undefined, owner.userId).request("/v1/channel/user-questions", "POST", {
+    source: { session: { providerId: run.channel.agent.providerId, sessionId: run.sessionId }, runId: input.agentRun.runId },
+    ...questionPrompt,
+  }, questionId);
+  res.json({ intentId, questionId, label: input.operationLabel });
 }));
 panelOperationsRouter.get("/panel-operation-settings/:providerId/:sessionId",wrap(async(req,res)=>{
   const c=context(req),root=agentSessionRefSchema.parse(req.params);

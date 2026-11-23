@@ -136,6 +136,9 @@ export async function requestPresentation(
         ...(input.memberPath === undefined ? {} : { memberPath: input.memberPath }),
         values: input.values,
         ...(input.overwriteUnsaved ? { overwriteUnsaved: true } : {}),
+        ...(input.expectedPageInstanceId === undefined ? {} : { expectedPageInstanceId: input.expectedPageInstanceId }),
+        ...(input.expectedMemberInstanceId === undefined ? {} : { expectedMemberInstanceId: input.expectedMemberInstanceId }),
+        ...(input.expectedTarget === undefined ? {} : { expectedTarget: input.expectedTarget }),
       };
     } else if ("mode" in input && input.mode === "page_action") {
       await service.ownRun(sessionId, runId, owner);
@@ -145,6 +148,10 @@ export async function requestPresentation(
         ...(input.memberPath === undefined ? {} : { memberPath: input.memberPath }),
         ...(input.rowKey === undefined ? {} : { rowKey: input.rowKey }),
         ...(input.input === undefined ? {} : { input: input.input }),
+        ...(input.expectedPageInstanceId === undefined ? {} : { expectedPageInstanceId: input.expectedPageInstanceId }),
+        ...(input.expectedMemberInstanceId === undefined ? {} : { expectedMemberInstanceId: input.expectedMemberInstanceId }),
+        ...(input.expectedTarget === undefined ? {} : { expectedTarget: input.expectedTarget }),
+        ...(input.expectedCheckedKeys === undefined ? {} : { expectedCheckedKeys: input.expectedCheckedKeys }),
       };
     } else if (input.target.startsWith("outputs/")) {
       const { artifact } = await service.resolve(sessionId, runId, input.target, owner);

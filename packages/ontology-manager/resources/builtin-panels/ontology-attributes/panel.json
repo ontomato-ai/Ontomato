@@ -251,7 +251,6 @@
         "attr.editing": "基本信息",
         "attr.ownerSection": "所属对象类型",
         "attr.ownerHint": "点击上方卡片可查看或维护所属对象类型；主键需通过页头“设为主键”操作变更。",
-        "attr.setPrimaryKey": "设为主键",
         "attr.alreadyPrimaryKey": "已是主键",
         "attr.delete": "删除",
         "attr.command.create": "新建属性"
@@ -282,7 +281,6 @@
         "attr.editing": "Basic information",
         "attr.ownerSection": "Owning object type",
         "attr.ownerHint": "Click the card above to inspect or maintain the owning object type. Use the header action to change the primary key.",
-        "attr.setPrimaryKey": "Set as primary key",
         "attr.alreadyPrimaryKey": "Already the primary key",
         "attr.delete": "Delete",
         "attr.command.create": "New attribute"
