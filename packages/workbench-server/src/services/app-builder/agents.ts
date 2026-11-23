@@ -12,7 +12,6 @@ export const builderAgentCreateSchema = z.object({name:builderAgentName,modelSel
 const builderModelRecord = z.object({id:z.string().uuid(),name:z.string(),modelSelection:modelSelectionSchema});
 
 export async function listBuilderAgents(owner:AssistantOwner){
-  await assistantStore.appBuilder(owner.domainId);
   return builderModelRecord.array().parse((await getPostgresPool().query(`SELECT id,name,model_selection AS "modelSelection" FROM ${t('assistant_agents')} WHERE domain_id=$1 AND (kind='app-builder' OR kind LIKE 'app-builder:%') ORDER BY sort_order,name,id`,[owner.domainId])).rows);
 }
 async function requireBuilderAgent(owner: AssistantOwner, id: string) {

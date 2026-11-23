@@ -1,15 +1,15 @@
+import { APP_BUILDER_KIND } from "../app-builder/definition";
+import { isPresetAgentKind, type PresetAgentKind } from "./preset-definitions";
 import { getPromptTemplate } from "../../core/prompts/loader";
 import { resolveLocale } from "../../i18n";
 import { promptSources } from "../../content/layout";
 import fs from "node:fs";
 import path from "node:path";
 
-export type DefaultAgentKind = "regular" | "analysis" | "app-builder" | "knowledge-governance";
-
-const DEFAULT_KINDS = new Set<string>(["regular", "analysis", "app-builder", "knowledge-governance"]);
+export type DefaultAgentKind = PresetAgentKind | typeof APP_BUILDER_KIND;
 
 export function isDefaultAgentKind(kind: string): kind is DefaultAgentKind {
-  return DEFAULT_KINDS.has(kind);
+  return isPresetAgentKind(kind) || kind === APP_BUILDER_KIND;
 }
 
 /** The current default template for a built-in agent, or null for a user-defined agent. */

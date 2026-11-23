@@ -12,7 +12,7 @@ vi.mock("../../../config/query-settings",()=>({getQueryTimeoutMs:()=>900_000}));
 vi.mock("../../../config/data-query-api", () => ({ getApiConfig: () => ({ baseUrl: "http://ontology" }) }));
 vi.mock("../../../utils/backend-client", () => ({ backendPost: mocks.post, buildBackendHeaders: () => ({ tk: "current-user" }) }));
 import { governanceRunStatus, openGovernanceWindow, closeGovernanceWindow } from "../../../services/assistant/governance";
-import { assistantInternalRouter, governanceWindowsRouter } from "../governance";
+import { governanceStatusRouter, governanceWindowsRouter } from "../governance";
 import { callbackCredential, unwrapCallbackCredential } from "../../../services/agent-runtime/callback-credential";
 const sessionId="11111111-1111-4111-8111-111111111111", runId="22222222-2222-4222-8222-222222222222", recordId="33333333-3333-4333-8333-333333333333";
 const owner={domainId:"domain",userId:"user"};
@@ -60,7 +60,7 @@ it("returns only the lightweight fact for the owned run", async () => {
 async function listen() {
   const app=express();app.use(express.json());app.use(unwrapCallbackCredential);
   app.use((req,_res,next)=>{Object.assign(req,{domainId:"domain",userId:"user",token:"current-user"});next();});
-  app.use("/api/assistant/sessions",governanceWindowsRouter);app.use("/internal/assistant",assistantInternalRouter);
+  app.use("/api/assistant/sessions",governanceWindowsRouter);app.use("/internal/assistant",governanceStatusRouter);
   app.use((error: {status?:number},_req:express.Request,res:express.Response,_next:express.NextFunction)=>{res.sendStatus(error.status??500);});
   server=app.listen(0,"127.0.0.1");await once(server,"listening");
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

@@ -28,6 +28,8 @@ import {
   GOVERNANCE_SKILL,
   GOVERNANCE_SKILLS,
 } from "../../services/assistant/governance-definition";
+import { initializeDomainPresetAgents, initializeExistingDomainPresetAgents } from "../../services/assistant/preset-initialization";
+import { assistantStore } from "../../services/assistant/store";
 import { panelSkillRef } from "../../services/product-panels/skill-identity";
 import { errorHandler } from "../middleware/error-handler";
 
@@ -57,6 +59,15 @@ let server: Server | undefined;
 let contentRoot: string;
 
 const panelSourcesByDomain = new Map<string, PanelSkillSource[]>();
+const startupDomain = "domain-enumerated-by-java";
+const presetKinds = ["regular", "analysis", GOVERNANCE_KIND].sort();
+
+function initializeViaService(domainId: string, token?: string) {
+  return fetch(`${state.base}/internal/assistant/domains/${domainId}/initialize-presets`, {
+    method: "POST",
+    headers: token ? { "X-Ontomato-Query-Service-Token": token } : {},
+  });
+}
 
 async function api(domainId: string, method: string, route: string, body?: unknown) {
   return fetch(`${state.base}/api/${route}`, {
@@ -107,6 +118,39 @@ async function upgradeRecordCount(domainId: string) {
   return result.rowCount ?? 0;
 }
 
+async function expectReadOnlyAgentLists(domainId: string) {
+  const owner = { domainId, userId: "admin" };
+  const readAgents = () => state.pool!.query(
+    `SELECT * FROM "${state.schema}".assistant_agents WHERE domain_id=$1 ORDER BY id`, [domainId],
+  );
+  const { rows } = await readAgents();
+  const definitionIds = rows.filter(row => row.kind !== "app-builder").map(row => row.id).sort();
+  const upgrades = await upgradeRecordCount(domainId);
+
+  expect((await assistantStore.agents(domainId)).map(agent => agent.id).sort()).toEqual(definitionIds);
+  expect((await assistantStore.channelAgents(domainId)).map(agent => agent.id).sort()).toEqual(rows.map(row => row.id));
+  expect(await assistantStore.countAgentDefinitions(domainId)).toBe(definitionIds.length);
+  const { listAgentDefinitions } = await import("../../services/assistant/definitions");
+  const definitions = await listAgentDefinitions(owner, { token: domainId, locale: "en" });
+  expect(definitions.agents.map(agent => agent.id).sort()).toEqual(definitionIds);
+  for (const route of ["assistant/agents", "assistant/agent-definitions"]) {
+    const response = await api(domainId, "GET", route);
+    expect(response.status, await response.clone().text()).toBe(200);
+    const result = await response.json() as { agents: { id: string }[] };
+    expect(result.agents.map(agent => agent.id).sort()).toEqual(definitionIds);
+  }
+
+  expect((await readAgents()).rows).toEqual(rows);
+  expect(await upgradeRecordCount(domainId)).toBe(upgrades);
+}
+
+async function governanceEffectiveSkills(domainId: string, agentId: string) {
+  const response = await api(domainId, "GET", "assistant/agents");
+  expect(response.status, await response.clone().text()).toBe(200);
+  const { agents } = await response.json() as { agents: { id: string; effectiveSkills: unknown[] }[] };
+  return agents.find(agent => agent.id === agentId)!.effectiveSkills;
+}
+
 beforeAll(async () => {
   configureI18n({
     defaultLocale: "en",
@@ -143,7 +187,7 @@ beforeAll(async () => {
 
   const { registerPanelSkillProvider } = await import("../../services/product-panels/skill-provider");
   const { productPanelsRouter, productProjectionsRouter } = await import("../routes/product-panels");
-  const { default: assistantRouter } = await import("../routes/assistant");
+  const { default: assistantRouter, assistantInternalRouter } = await import("../routes/assistant");
   registerPanelSkillProvider();
 
   const app = express();
@@ -156,6 +200,10 @@ beforeAll(async () => {
   });
   app.post("/product-governance/check", (_req, res) => {
     res.json({ allowed: true });
+  });
+  app.get("/internal/domains/ids", (req, res) => {
+    expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
+    res.json([startupDomain]);
   });
   app.get("/platform/applications/panel-skill-sources", (req, res) => {
     expect(req.header("X-Ontomato-Query-Service-Token")).toBe("fixture-service");
@@ -187,6 +235,7 @@ beforeAll(async () => {
   app.use("/api/product-panels", productPanelsRouter);
   app.use("/api/product-projections", productProjectionsRouter);
   app.use("/api/assistant", assistantRouter);
+  app.use("/internal/assistant", assistantInternalRouter);
   app.use(errorHandler);
 
   server = app.listen(0, "127.0.0.1");
@@ -203,7 +252,7 @@ afterAll(async () => {
   if (contentRoot) await rm(contentRoot, { recursive: true, force: true });
 });
 
-it("skips and leaves upgrade unrecorded when the builtin panel is unregistered or invisible, then backfills once visible", async () => {
+it("upgrades existing domains at startup once the registered governance panel is exposed", async () => {
   const domainId = "domain-deferred";
   const panelRef = panelSkillRef(domainId, GOVERNANCE_PANEL_ID);
   const existingId = randomUUID();
@@ -213,66 +262,48 @@ it("skips and leaves upgrade unrecorded when the builtin panel is unregistered o
     [existingId, domainId, GOVERNANCE_KIND, JSON.stringify(GOVERNANCE_SKILLS)],
   );
 
-  // Panel not registered yet: does not add and does not mark upgraded.
-  const beforeReg = await api(domainId, "GET", "assistant/agents");
-  expect(beforeReg.status).toBe(200);
-  expect((await storedGovernanceRow(domainId))!.skills).toEqual(GOVERNANCE_SKILLS);
+  await initializeDomainPresetAgents(domainId);
+  expect((await assistantStore.agents(domainId)).map(agent => agent.kind).sort()).toEqual(presetKinds);
+  expect(await storedGovernanceRow(domainId)).toEqual({ id: existingId, skills: GOVERNANCE_SKILLS });
   expect(await upgradeRecordCount(domainId)).toBe(0);
 
-  // Builtin panel registered in PG, but not yet visible via page-skills / panel-skill-sources: still skipped and unrecorded.
   await seedBuiltinBusinessKnowledgePanel();
-  const invisibleRead = await api(domainId, "GET", "assistant/agent-definitions");
-  expect(invisibleRead.status).toBe(200);
-  expect((await storedGovernanceRow(domainId))!.skills).toEqual(GOVERNANCE_SKILLS);
+  await initializeDomainPresetAgents(domainId);
   expect(await upgradeRecordCount(domainId)).toBe(0);
 
-  // Expose the panel entry so its page skill becomes visible to the domain.
   exposeBusinessKnowledgeEntry(domainId);
+  await expectReadOnlyAgentLists(domainId);
 
-  const afterVisible = await api(domainId, "GET", "assistant/agents");
-  expect(afterVisible.status).toBe(200);
-  const agents = (await afterVisible.json()).agents as { id: string; effectiveSkills: unknown[] }[];
-  expect(agents.find((item) => item.id === existingId)!.effectiveSkills).toContainEqual(panelRef);
-  expect((await storedGovernanceRow(domainId))!.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
+  // The existing domain is known only to PG, and the other domain exists only in Java.
+  await initializeExistingDomainPresetAgents();
+  expect((await assistantStore.agents(startupDomain)).map(agent => agent.kind).sort()).toEqual(presetKinds);
+  expect(await storedGovernanceRow(domainId)).toEqual({ id: existingId, skills: [...GOVERNANCE_SKILLS, panelRef] });
   expect(await upgradeRecordCount(domainId)).toBe(1);
-
-  // Subsequent read does not duplicate.
-  const repeatDefs = await api(domainId, "GET", "assistant/agent-definitions");
-  expect(repeatDefs.status).toBe(200);
-  const defs = (await repeatDefs.json()).agents as { id: string; skills: unknown[] }[];
-  expect(defs.find((item) => item.id === existingId)!.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
 });
 
-it("adds the visible builtin panel skill once on a new domain, preserves preset skills, and never re-adds after admin removal", async () => {
+it("only creates agents through the service-token initialization endpoint and never re-adds an admin-removed skill", async () => {
   const domainId = "domain-visible-new";
   const panelRef = panelSkillRef(domainId, GOVERNANCE_PANEL_ID);
+  await seedBuiltinBusinessKnowledgePanel();
   exposeBusinessKnowledgeEntry(domainId);
 
-  const firstList = await api(domainId, "GET", "assistant/agents");
-  expect(firstList.status, await firstList.clone().text()).toBe(200);
-  const firstAgents = (await firstList.json()).agents as { id: string; effectiveSkills: unknown[] }[];
+  expect((await initializeViaService(domainId)).status).toBe(403);
+  expect(await assistantStore.agents(domainId)).toEqual([]);
+  await expectReadOnlyAgentLists(domainId);
 
-  const definitionsRes = await api(domainId, "GET", "assistant/agent-definitions");
-  expect(definitionsRes.status).toBe(200);
-  const definitions = (await definitionsRes.json()).agents as { id: string; skills: unknown[] }[];
-
-  const storedAfterFirst = await storedGovernanceRow(domainId);
-  expect(storedAfterFirst).not.toBeNull();
-  expect(storedAfterFirst!.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
+  const initialize = () => initializeViaService(domainId, "fixture-service");
+  expect((await initialize()).status).toBe(204);
+  const presets = await assistantStore.channelAgents(domainId);
+  expect(presets.map(agent => agent.kind).sort()).toEqual([...presetKinds, "app-builder"].sort());
+  const stored = (await storedGovernanceRow(domainId))!;
+  expect(stored.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
+  expect(await governanceEffectiveSkills(domainId, stored.id)).toContainEqual(panelRef);
   expect(await upgradeRecordCount(domainId)).toBe(1);
+  expect((await initialize()).status).toBe(204);
+  expect(await assistantStore.channelAgents(domainId)).toEqual(presets);
+  await expectReadOnlyAgentLists(domainId);
 
-  const governanceDef = definitions.find((item) => item.id === storedAfterFirst!.id)!;
-  expect(governanceDef.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
-  const governanceAgent = firstAgents.find((item) => item.id === storedAfterFirst!.id)!;
-  expect(governanceAgent.effectiveSkills).toContainEqual(panelRef);
-
-  // Reading again does not duplicate the panel skill.
-  expect((await api(domainId, "GET", "assistant/agents")).status).toBe(200);
-  expect((await api(domainId, "GET", "assistant/agent-definitions")).status).toBe(200);
-  expect((await storedGovernanceRow(domainId))!.skills).toEqual([...GOVERNANCE_SKILLS, panelRef]);
-
-  // Admin removes the panel skill; subsequent reads do not add it back.
-  const updated = await api(domainId, "PUT", `assistant/agent-definitions/${storedAfterFirst!.id}`, {
+  const updated = await api(domainId, "PUT", `assistant/agent-definitions/${stored.id}`, {
     name: "Knowledge governance",
     description: "Review business knowledge with traceable evidence",
     icon: null,
@@ -281,11 +312,9 @@ it("adds the visible builtin panel skill once on a new domain, preserves preset 
     skills: [GOVERNANCE_SKILL],
   });
   expect(updated.status, await updated.clone().text()).toBe(200);
-  expect((await updated.json()).skills).toEqual([GOVERNANCE_SKILL]);
 
-  const afterAdminDelete = await api(domainId, "GET", "assistant/agents");
-  expect(afterAdminDelete.status).toBe(200);
-  const afterAgents = (await afterAdminDelete.json()).agents as { id: string; effectiveSkills: unknown[] }[];
-  expect(afterAgents.find((item) => item.id === storedAfterFirst!.id)!.effectiveSkills).not.toContainEqual(panelRef);
-  expect((await storedGovernanceRow(domainId))!.skills).toEqual([GOVERNANCE_SKILL]);
+  expect((await initialize()).status).toBe(204);
+  expect(await storedGovernanceRow(domainId)).toEqual({ id: stored.id, skills: [GOVERNANCE_SKILL] });
+  expect(await governanceEffectiveSkills(domainId, stored.id)).not.toContainEqual(panelRef);
+  expect(await upgradeRecordCount(domainId)).toBe(1);
 });

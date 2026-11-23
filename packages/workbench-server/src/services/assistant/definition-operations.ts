@@ -9,7 +9,7 @@ import { tForLocale } from "../../i18n";
 import { HttpError } from "../../utils/errors";
 import { assertPermission } from "../../identity/installed";
 import {
-  agentDefinitionPermissions, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, saveAgentDefinitionSnapshot,
+  agentDefinitionDeletionRestriction, agentDefinitionPermissions, createAgentDefinitionSnapshot, projectAgentDefinitionSkills, saveAgentDefinitionSnapshot,
 } from "./definitions";
 import type { AssistantSkillView } from "./skills";
 import type { PanelImpactInspector, PanelOperationHost, PanelOperationTarget, PanelRecordTarget, PanelServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
@@ -129,6 +129,9 @@ export const agentDefinitionOperations = [
     targetLabel: definitionLabel,
     done: (host, name) => tForLocale(host.locale, "panels.agentDefinition.deleted", { name }),
     inspectImpact: deleteImpact,
+    unavailable(host: PanelOperationHost, target: PanelRecordTarget) {
+      return agentDefinitionDeletionRestriction(target.primaryKey, host.initiator.owner, host.locale);
+    },
     async execute(host: PanelOperationHost, target: PanelRecordTarget): Promise<SinglePanelOperationOutcome> {
       const response = await host.requestWorkbench(agentDefinitionSave(target).path, { method: "DELETE" });
       return response.ok
@@ -136,4 +139,4 @@ export const agentDefinitionOperations = [
         : unsuccessfulWrite(response);
     },
   },
-] satisfies readonly PanelServerOperation[];
+] as const satisfies readonly PanelServerOperation[];
