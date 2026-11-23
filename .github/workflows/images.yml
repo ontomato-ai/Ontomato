@@ -177,12 +177,13 @@ jobs:
           echo "COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml" >> .env
           docker compose pull
           python3 prepare-env.py .env --sandbox-preflight
-          runtime_image="$(docker compose config --images agent-runtime)"
+          runtime_image="$(docker compose config --format json | jq -er '.services["agent-runtime"].image')"
           if diagnostic="$(docker run --rm --pull=never --network=none "$runtime_image" 2>&1)"; then
             echo 'agent-runtime started without sandbox capabilities'
             exit 1
           fi
-          printf '%s\n' "$diagnostic" | grep -F 'Docker capability/seccomp: missing effective CAP_SYS_ADMIN'
+          printf '%s\n' "$diagnostic"
+          grep -Fq 'Docker capability/seccomp: missing effective CAP_SYS_ADMIN' <<< "$diagnostic"
           docker compose up -d --wait --wait-timeout 300
           docker compose logs --no-log-prefix agent-runtime | grep -F 'private channel: fd 3 exchanged data in both directions'
           for path in / /ontology-manager/ /api/data-query/health; do
