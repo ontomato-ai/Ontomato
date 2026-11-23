@@ -407,7 +407,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
   const { registerBuiltinProducts } = await import("../../services/product-panels/builtin-products");
   const bundle = path.join(contentRoot, "ontology-catalogues");
   const catalogues = ["projections", "panels", "applications"];
-  const shipped = [...catalogues, "agent-settings"];
+  const shipped = [...catalogues, "application-detail", "agent-settings"];
   await mkdir(bundle);
   await writeFile(path.join(bundle, "index.json"), JSON.stringify(shipped));
   const sources = new URL("../../../../ontology-manager/resources/builtin-panels/", import.meta.url);
@@ -469,18 +469,30 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     expect(definitions.get(catalogue)?.preview?.target).toEqual({ fromState: "selected", candidates: { rule: "usable" } });
   }
   const application = definitions.get("applications")!;
-  const readForm = async (member: string) => {
-    const target = application[member]!.target;
+  const detailResponse = await request("GET", "product-panels/builtin-product-ontology-application-detail");
+  expect(detailResponse.status).toBe(200);
+  const { panel: applicationDetail } = productPanelResponseSchema.parse(await detailResponse.json());
+  expect(applicationDetail).toMatchObject({ visibility: "platform", ownerId: null, editable: false });
+  expect(applicationDetail.manifest.state.selected).toMatchObject({
+    type: { kind: "object", objectType: "platform:Application" }, deepLink: true,
+  });
+  const readForm = async (members: PanelManifest["members"], member: string) => {
+    const target = members[member]!.target;
     if (!("projectionId" in target)) throw new Error(`Expected a projection in slot '${member}'`);
     const response = await request("GET", `product-projections/${target.projectionId}`);
     expect(response.status).toBe(200);
     return productProjectionResponseSchema.parse(await response.json()).projection.data;
   };
-  expect(await readForm("save")).toMatchObject({
+  expect(await readForm(application, "createForm")).toMatchObject({
     createForm: { read: "createForm" },
+  });
+  expect(await readForm(applicationDetail.manifest.members, "save")).toMatchObject({
     form: { read: "form", params: { section: { literal: "identity" } } },
   });
-  expect(await readForm("entriesForm")).toMatchObject({
+  expect(await readForm(applicationDetail.manifest.members, "entryForm")).toMatchObject({
+    form: { read: "form", params: { section: { literal: "entry" } } },
+  });
+  expect(await readForm(applicationDetail.manifest.members, "entriesForm")).toMatchObject({
     form: { read: "form", params: { section: { literal: "entries" } } },
   });
 });

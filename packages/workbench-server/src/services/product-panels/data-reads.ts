@@ -334,12 +334,16 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [PRODUCT_PANEL]: {
       ...catalogueReads(panelCatalogue),
       members: selection => panelCatalogue.members(selection.primaryKey!),
+      memberRows: selection => panelCatalogue.memberRows(selection.primaryKey!),
     },
     [APPLICATION]: {
       query: (_selection, params) => applications.query(params),
       record: selection => applications.record(selection.primaryKey!),
       entries: selection => applications.entries(selection.primaryKey!),
+      entryRows: selection => applications.entryRows(selection.primaryKey!),
+      usedPanels: selection => applications.usedPanels(selection.primaryKey!),
       grants: selection => applications.grants(selection.primaryKey!),
+      grantRows: selection => applications.grantRows(selection.primaryKey!),
       form: (selection, params) => applications.form(selection.primaryKey!, {
         ...formParams(params),
         section: panelReadParameterSchemas.applicationFormSection.parse(params.section),

@@ -2,7 +2,8 @@ import { productPanelCatalogQuerySchema } from "@ontomato/contracts/product-cata
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "@ontomato/contracts/agent-runtime-values";
-import { directProjectionPortsSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
+import { directProjectionPortsSchema, type PanelFormDescription, type PanelFormField, type PanelRecord } from "@ontomato/contracts/panel-projection";
+import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import {
   METRIC_CHART_COMPONENT, productCatalogQuerySchema,
   productPanelInputSchema, productVisibilitySchema, registerProductPanelRequestSchema, type ProductVisibility,
@@ -150,6 +151,68 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
     record,
     async members(primaryKey: string) {
       return (await record(primaryKey)).manifest.members;
+    },
+    async memberRows(primaryKey: string): Promise<PanelRecord[]> {
+      const panel = await record(primaryKey);
+      const word = (key: string) => tForLocale(viewer.locale, `panels.productCatalog.application.${key}`);
+      let projectionNames = new Map<string, string>();
+      let panelNames = new Map<string, string>();
+      try {
+        const [projections, panels] = await Promise.all([
+          listCurrentProducts(owner, viewer, "projection", { q: "", scope: "all", sort: "name", limit: 100 }),
+          listCurrentProducts(owner, viewer, "panel", { q: "", scope: "all", sort: "name", limit: 100 }),
+        ]);
+        projectionNames = new Map(projections.items.map(item => [item.id, item.name || item.id]));
+        panelNames = new Map(panels.items.map(item => [item.id, item.name || item.id]));
+      } catch {
+        // Keep IDs as labels when auxiliary lookup is unavailable.
+      }
+      const rows: PanelRecord[] = [];
+      for (const [slotName, member] of Object.entries(panel.manifest.members)) {
+        const target = member.target;
+        if ("projectionId" in target) {
+          const id = target.projectionId;
+          const label = projectionNames.get(id) ?? id;
+          rows.push({
+            primaryKey: id,
+            className: PRODUCT_PROJECTION,
+            label,
+            ...(label !== id && { subtitle: id }),
+            fields: {
+              slot: slotName,
+              kindLabel: word("memberKindProjection"),
+              target: { kind: "reference", className: PRODUCT_PROJECTION, primaryKey: id, label },
+            },
+            fieldLabels: {
+              slot: word("memberSlot"),
+              kindLabel: word("memberKind"),
+              target: word("memberTarget"),
+            },
+            tones: { kindLabel: "default" },
+          });
+        } else if ("panelId" in target) {
+          const id = target.panelId;
+          const label = panelNames.get(id) ?? id;
+          rows.push({
+            primaryKey: id,
+            className: PRODUCT_PANEL,
+            label,
+            ...(label !== id && { subtitle: id }),
+            fields: {
+              slot: slotName,
+              kindLabel: word("memberKindPanel"),
+              target: { kind: "reference", className: PRODUCT_PANEL, primaryKey: id, label },
+            },
+            fieldLabels: {
+              slot: word("memberSlot"),
+              kindLabel: word("memberKind"),
+              target: word("memberTarget"),
+            },
+            tones: { kindLabel: "info" },
+          });
+        }
+      }
+      return rows;
     },
     usedBy(primaryKey: string) {
       return currentProductUsedBy(owner, viewer, "panel", primaryKey);

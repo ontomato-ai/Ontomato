@@ -6,7 +6,7 @@ import {
 } from "@ontomato/contracts/application-catalogue";
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord } from "@ontomato/contracts/panel-projection";
-import { APPLICATION, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { allowsStandalone, applicationRootPath } from "@ontomato/contracts/platform-identity";
 import { applicationPanelUseSchema } from "@ontomato/contracts/product-panels";
 import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
@@ -17,6 +17,7 @@ import { backendDelete, backendGet, backendPost, backendPut, buildBackendHeaders
 import { HttpError } from "../../utils/errors";
 import { readProductGrantRecords, type ProductOwner } from "../product-governance/grants";
 import { listDefaultAgentOptions } from "../assistant/default-agents";
+import { listCurrentProducts } from "./catalog";
 
 const applicationPath = "/platform/applications";
 const cataloguePath = `${applicationPath}/catalogue`;
@@ -55,9 +56,23 @@ export function applicationStandaloneLink(
   return `#${routePath}?${query}`;
 }
 
+function summarizeThemeOverrides(theme: ApplicationCatalogueDetail["theme"] | undefined): string | undefined {
+  if (!theme) return undefined;
+  const parts: string[] = [];
+  for (const [mode, bucket] of [["light", theme.light], ["dark", theme.dark]] as const) {
+    const entries = Object.entries(bucket ?? {});
+    if (entries.length > 0) {
+      parts.push(`${mode}: ${entries.map(([key, value]) => `${key}=${value}`).join(", ")}`);
+    }
+  }
+  return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
 /** Project the Java owner's catalogue row or detail onto the generic record shown by panel components. */
 export function toApplicationPanelRecord(
-  row: ApplicationCatalogueRow | ApplicationCatalogueDetail, locale?: string,
+  row: ApplicationCatalogueRow | ApplicationCatalogueDetail,
+  locale?: string,
+  extra?: { domainShared?: boolean; framePanelLabel?: string },
 ): PanelRecord {
   const language = resolveLocale(locale);
   const word = (key: string) => tForLocale(language, `panels.productCatalog.application.${key}`);
@@ -80,6 +95,7 @@ export function toApplicationPanelRecord(
     maintenance: word(row.canMaintain ? "maintainable" : "readOnly"),
     owner: row.ownerName ?? (row.source === "builtin" ? word("platformOwner") : ""),
     ...(row.updatedAt !== undefined && { updatedAt: row.updatedAt }),
+    ...(extra?.domainShared !== undefined && { domainShared: extra.domainShared }),
   };
   const fieldLabels: NonNullable<PanelRecord["fieldLabels"]> = {
     id: word("id"),
@@ -96,6 +112,7 @@ export function toApplicationPanelRecord(
   if ("entry" in row) {
     const { path, home, renderer } = row.entry;
     fields.path = path;
+    fields.openPath = home ?? path;
     fieldLabels.path = word("path");
     if (home !== undefined) {
       fields.home = home;
@@ -106,13 +123,23 @@ export function toApplicationPanelRecord(
       fieldLabels.renderer = word("renderer");
     }
     if (row.framePanelId !== undefined) {
-      fields.framePanel = { kind: "reference", className: PRODUCT_PANEL, primaryKey: row.framePanelId, label: row.framePanelId };
+      fields.framePanel = {
+        kind: "reference",
+        className: PRODUCT_PANEL,
+        primaryKey: row.framePanelId,
+        label: extra?.framePanelLabel || row.framePanelId,
+      };
       fieldLabels.framePanel = word("framePanel");
     }
     const externalLink = applicationStandaloneLink(row);
     if (externalLink !== undefined) {
       fields.externalLink = externalLink;
       fieldLabels.externalLink = word("externalLink");
+    }
+    const themeSummary = summarizeThemeOverrides(row.theme);
+    if (themeSummary !== undefined) {
+      fields.themeSummary = themeSummary;
+      fieldLabels.themeSummary = word("themeOverrides");
     }
   }
   return {
@@ -202,8 +229,37 @@ async function withDefaultAgentChoices(description: PanelFormDescription, choice
 export function createApplicationReadAdapter(owner: ProductOwner, viewer: AssistantCredentials) {
   const client = applicationCatalogueClient(viewer);
   const { query, record } = client;
+  const language = resolveLocale(viewer.locale);
+  const word = (key: string) => tForLocale(language, `panels.productCatalog.application.${key}`);
   const form = async (input: ApplicationCatalogueFormRequest) =>
     withDefaultAgentChoices(await client.form(input), () => defaultAgentChoices(owner.domainId, viewer.locale));
+
+  async function panelNameMap(): Promise<Map<string, string>> {
+    try {
+      const listed = await listCurrentProducts(owner, viewer, "panel", { q: "", scope: "all", sort: "name", limit: 100 });
+      return new Map(listed.items.map(item => [item.id, item.name || item.id]));
+    } catch {
+      return new Map();
+    }
+  }
+
+  async function agentLabelMap(): Promise<Map<string, string>> {
+    try {
+      const options = await listDefaultAgentOptions(owner.domainId, viewer.locale);
+      const map = new Map<string, string>();
+      for (const option of options) {
+        const value = option.value;
+        if (value && typeof value === "object") {
+          if ("id" in value && typeof value.id === "string") map.set(`id:${value.id}`, option.label);
+          if ("agentKind" in value && typeof value.agentKind === "string") map.set(`preset:${value.agentKind}`, option.label);
+        }
+      }
+      return map;
+    } catch {
+      return new Map();
+    }
+  }
+
   return {
     async query(params: Record<string, unknown>) {
       const { rows, total, nextCursor } = await query(params);
@@ -214,13 +270,61 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
       };
     },
     async record(primaryKey: string) {
-      return toApplicationPanelRecord(await record(primaryKey), viewer.locale);
+      const detail = await record(primaryKey);
+      let domainShared: boolean | undefined;
+      if (detail.canGrant) {
+        try {
+          const { grants } = await readProductGrantRecords(primaryKey, viewer);
+          domainShared = grants.some(grant => grant.principalKind === "domain" && grant.verb === "use");
+        } catch {
+          domainShared = false;
+        }
+      }
+      const framePanelLabel = detail.framePanelId ? (await panelNameMap()).get(detail.framePanelId) : undefined;
+      return toApplicationPanelRecord(detail, viewer.locale, { domainShared, framePanelLabel });
     },
     async grants(primaryKey: string) {
       if (!(await record(primaryKey)).canGrant)
         throw new HttpError(403, "Application edit Grant required", "PRODUCT_FORBIDDEN");
       const { grants } = await readProductGrantRecords(primaryKey, viewer);
       return { grants, shared: grants.some(grant => grant.principalKind === "domain" && grant.verb === "use") };
+    },
+    async grantRows(primaryKey: string): Promise<PanelRecord[]> {
+      if (!(await record(primaryKey)).canGrant)
+        throw new HttpError(403, "Application edit Grant required", "PRODUCT_FORBIDDEN");
+      const { grants } = await readProductGrantRecords(primaryKey, viewer);
+      const kindLabel = (kind: string) =>
+        kind === "domain" ? word("grantDomain") : kind === "role" ? word("grantRole") : word("grantPrincipal");
+      const verbLabel = (verb: string) => (verb === "edit" ? word("grantEdit") : word("grantUse"));
+      return grants.map((grant): PanelRecord => {
+        const isDomain = grant.principalKind === "domain";
+        const displayName = isDomain ? word("grantDomain") : (grant.principalName || grant.principalId);
+        const subtitle = !isDomain && grant.principalName && grant.principalName !== grant.principalId
+          ? grant.principalId
+          : undefined;
+        return {
+          primaryKey: `${grant.principalKind}:${grant.principalId}:${grant.verb}`,
+          className: APPLICATION,
+          label: displayName,
+          ...(subtitle && { subtitle }),
+          fields: {
+            principalKind: grant.principalKind,
+            principalKindLabel: kindLabel(grant.principalKind),
+            principalId: grant.principalId,
+            verb: grant.verb,
+            verbLabel: verbLabel(grant.verb),
+            revocable: !isDomain,
+          },
+          fieldLabels: {
+            principalKindLabel: word("grantKind"),
+            verbLabel: word("grantVerb"),
+          },
+          tones: {
+            principalKindLabel: isDomain ? "success" : "info",
+            verbLabel: grant.verb === "edit" ? "warning" : "default",
+          },
+        };
+      });
     },
     async form(primaryKey: string, { section, entryId, values, changedField = null }: EditFormParams) {
       const target = { kind: "object", objectType: APPLICATION, primaryKey } as const;
@@ -254,6 +358,70 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
         ...(framePanelId !== undefined && { framePanelId }),
         ...(theme !== undefined && { theme }),
       };
+    },
+    async entryRows(primaryKey: string): Promise<PanelRecord[]> {
+      const detail = await record(primaryKey);
+      const [panels, agents] = await Promise.all([panelNameMap(), agentLabelMap()]);
+      const groupName = (key?: string) => {
+        if (!key) return "—";
+        const found = detail.groups.find(group => group.key === key);
+        if (!found) return key;
+        return panelRecordFieldText({ kind: "localized", values: found.names }, language, "en") || key;
+      };
+      const accessLabel = (access: ApplicationCatalogueDetail["panelUses"][number]["access"]) => {
+        if (!access) return "—";
+        if ("kind" in access && access.kind === "domain-member") return word("accessDomainMember");
+        return "permissionCode" in access ? access.permissionCode || "—" : "—";
+      };
+      const agentLabel = (agent: ApplicationCatalogueDetail["panelUses"][number]["defaultAgent"]) => {
+        if (!agent) return word("defaultAgentFallback");
+        if (agent.kind === "id") return agents.get(`id:${agent.id}`) ?? agent.id;
+        if (agent.kind === "preset") return agents.get(`preset:${agent.agentKind}`) ?? agent.agentKind;
+        return word("defaultAgentFallback");
+      };
+      return detail.panelUses.map((use): PanelRecord => {
+        const displayName = use.names
+          ? panelRecordFieldText({ kind: "localized", values: use.names }, language, "en") || use.id
+          : use.id;
+        const panelLabel = panels.get(use.panelId) ?? use.panelId;
+        return {
+          primaryKey: use.id,
+          className: APPLICATION_PANEL_USE,
+          label: displayName,
+          fields: {
+            path: use.path,
+            panelId: use.panelId,
+            panel: { kind: "reference", className: PRODUCT_PANEL, primaryKey: use.panelId, label: panelLabel },
+            group: groupName(use.groupKey),
+            access: accessLabel(use.access),
+            defaultAgent: agentLabel(use.defaultAgent),
+            canEdit: detail.canEditEntries,
+          },
+          fieldLabels: {
+            path: word("entryPath"),
+            panel: word("entryPanel"),
+            group: word("entryGroup"),
+            access: word("entryAccess"),
+            defaultAgent: word("entryAgent"),
+          },
+        };
+      });
+    },
+    async usedPanels(primaryKey: string): Promise<PanelRecord[]> {
+      const detail = await record(primaryKey);
+      const panels = await panelNameMap();
+      const ids = [...new Set(detail.panelUses.map(use => use.panelId).filter(Boolean))];
+      return ids.map((panelId): PanelRecord => {
+        const label = panels.get(panelId) ?? panelId;
+        return {
+          primaryKey: panelId,
+          className: PRODUCT_PANEL,
+          label,
+          ...(label !== panelId && { subtitle: panelId }),
+          fields: { id: panelId },
+          fieldLabels: { id: word("entryPanel") },
+        };
+      });
     },
   };
 }
