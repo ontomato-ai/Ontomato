@@ -90,6 +90,12 @@ export interface HarnessOpenRequest {
   readonly domainId: string;
   /** Native session to resume; null for a new one. A missing native session is an error, never a new one. */
   readonly engineRef: string | null;
+  /**
+   * The model context of a session that ran before engines kept their own state, given once: when `engineRef`
+   * is null and the session already has history. The engine writes it into its new native session before
+   * `open` returns; the runtime stores the returned `engineRef` only after that. Null for every other open.
+   */
+  readonly previousContext: readonly RuntimeMessage[] | null;
   /** Where the engine program runs. Paths in `directories` and `model.baseUrl` are as seen inside it. */
   readonly sandbox: HarnessSandbox;
   readonly directories: HarnessDirectories;
