@@ -405,11 +405,12 @@ it("finds the shortest directed path from pathFrom to pathTo, highlights it with
       pathTo: { className: OBJECT_TYPE, primaryKey: "person" } as never,
     });
     await vi.waitFor(() => expect(element.querySelector<HTMLElement>("[data-graph-path-banner]")?.dataset.graphPathStatus).toBe("not-found"));
-    expect(element.querySelector("[data-graph-path-banner]")?.textContent).toContain("No directed path from Organization to Person");
+    expect(element.querySelector("[data-graph-path-banner]")?.textContent).toContain("No path found in the visible graph from Organization to Person");
+    expect(instance.outputs.graph?.pathMessage).toBe("No path found in the visible graph from Organization to Person");
     expect(canvas.nodes.map(({ tone }) => tone ?? "default")).toEqual(["default", "default", "default", "default", "default"]);
     expect(instance.pageContext.value.highlights).toEqual([{
       kind: "path",
-      summary: "No directed path from Organization to Person",
+      summary: "No path found in the visible graph from Organization to Person",
       from: { kind: OBJECT_TYPE, id: "org", label: "Organization" },
       to: { kind: OBJECT_TYPE, id: "person", label: "Person" },
       found: false,

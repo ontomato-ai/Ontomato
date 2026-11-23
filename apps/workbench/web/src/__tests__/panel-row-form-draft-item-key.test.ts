@@ -256,7 +256,7 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
           "row-detail": (slotProps) => [h(PanelMember, {
             instance: inst,
             member: "rowForm",
-            inputs: { entryId: (slotProps.row as { primaryKey: string }).primaryKey },
+            inputs: { entryId: (slotProps.ref as { primaryKey: string }).primaryKey },
           })],
         },
       }),
@@ -403,7 +403,7 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
           "row-detail": (slotProps) => [h(PanelMember, {
             instance: inst,
             member: "rowForm",
-            inputs: { entryId: (slotProps.row as { primaryKey: string }).primaryKey },
+            inputs: { entryId: (slotProps.ref as { primaryKey: string }).primaryKey },
           })],
         },
       }),
