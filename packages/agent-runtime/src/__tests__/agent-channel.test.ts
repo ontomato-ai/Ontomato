@@ -803,3 +803,141 @@ it("enforces run-scoped channel command authentication, rejection order, build-t
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+it("seals an active background run and queues a fresh human run instead of steering human input into default execution identity", async () => {
+  const bgRunId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const humanRunId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const { runtime, port, prepares, intents } = presentationAdmission(bgRunId);
+  const bgIntent: AgentRunIntent = {
+    id: bgRunId,
+    session: source.session,
+    channel: { ...context, root: { session: source.session, runId: bgRunId }, userRecipient: null },
+    inputId,
+    language: "en",
+    status: "running",
+    createdAt: new Date(0).toISOString(),
+    error: null,
+    cancelled: false,
+    executionUserId: "default-service-user",
+  };
+  intents.set(bgRunId, bgIntent);
+  runtime.acceptsInput = vi.fn().mockReturnValue(true);
+  const inputReceived = vi.fn(async () => {});
+  Object.assign(runtime, { inputReceived });
+
+  const humanRunChannel: AgentRunContext = {
+    ...humanChannel,
+    root: { session: source.session, runId: humanRunId },
+  };
+  const result = await port.request(
+    scope,
+    sessionId,
+    humanRunId,
+    humanRunChannel,
+    userInput,
+    "en",
+    undefined,
+    initiatingCredential,
+    undefined,
+    browserBinding,
+  );
+
+  // Must NOT steer into the running background run
+  expect(result.delivery).toMatchObject({ delivery: "run", runId: humanRunId, status: "starting" });
+  expect(runtime.seal).toHaveBeenCalledWith(scope, bgRunId);
+  expect(inputReceived).not.toHaveBeenCalled();
+  expect(prepares).toHaveLength(0);
+
+  // When the closing background run checks pending inputs, it passes its own run.id so it cannot steal humanRunId's message
+  const pendingSpy = vi.mocked(port.facts.pending);
+  pendingSpy.mockClear();
+  pendingSpy.mockResolvedValueOnce([]);
+  await port.steering(scope, { ...run, id: bgRunId, channel: bgIntent.channel, executionUserId: "default-service-user" } as RuntimeRun);
+  expect(pendingSpy).toHaveBeenCalledWith(scope, sessionId, "steer", bgRunId);
+
+  // When the background run finishes (even if cancelled), nextLocked launches the queued human run with userRecipient + browserBinding
+  vi.mocked(port.facts.preparing).mockResolvedValue(humanRunId);
+  const next = await port.nextLocked(scope, { ...run, id: bgRunId, channel: bgIntent.channel, stopReason: "aborted", errorMessage: null } as RuntimeRun);
+  expect(next?.id).toBe(humanRunId);
+  expect(next?.channel.userRecipient).toEqual(humanRunChannel.userRecipient);
+
+  await port.prepare(next!);
+  expect(prepares).toHaveLength(1);
+  expect(prepares[0]).toMatchObject({
+    runId: humanRunId,
+    userRecipient: humanRunChannel.userRecipient,
+    presentationBinding: browserBinding,
+  });
+});
+
+it("refuses a human message with SESSION_BUSY while a background run is still starting", async () => {
+  const bgRunId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const humanRunId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const { port, intents } = presentationAdmission(null);
+  intents.set(bgRunId, {
+    id: bgRunId,
+    session: source.session,
+    channel: { ...context, root: { session: source.session, runId: bgRunId }, userRecipient: null },
+    inputId,
+    language: "en",
+    status: "starting",
+    createdAt: new Date(0).toISOString(),
+    error: null,
+    cancelled: false,
+    executionUserId: "default-service-user",
+  });
+  vi.mocked(port.facts.preparing).mockResolvedValue(bgRunId);
+  const receiveSpy = vi.mocked(port.facts.receive);
+
+  await expect(
+    port.request(
+      scope,
+      sessionId,
+      humanRunId,
+      { ...humanChannel, root: { session: source.session, runId: humanRunId } },
+      userInput,
+      "en",
+      undefined,
+      initiatingCredential,
+      undefined,
+      browserBinding,
+    ),
+  ).rejects.toMatchObject({ status: 409, code: "SESSION_BUSY" });
+  expect(receiveSpy).not.toHaveBeenCalled();
+});
+
+it("continues steering a human message into an already running human run", async () => {
+  const activeHumanId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const followUpId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+  const { runtime, port, intents } = presentationAdmission(activeHumanId);
+  intents.set(activeHumanId, {
+    id: activeHumanId,
+    session: source.session,
+    channel: { ...humanChannel, root: { session: source.session, runId: activeHumanId } },
+    inputId,
+    language: "en",
+    status: "running",
+    createdAt: new Date(0).toISOString(),
+    error: null,
+    cancelled: false,
+    executionUserId: null,
+  });
+  runtime.acceptsInput = vi.fn().mockReturnValue(true);
+  const inputReceived = vi.fn(async () => {});
+  Object.assign(runtime, { inputReceived });
+
+  const result = await port.request(
+    scope,
+    sessionId,
+    followUpId,
+    { ...humanChannel, root: { session: source.session, runId: followUpId } },
+    userInput,
+    "en",
+    undefined,
+    initiatingCredential,
+  );
+  expect(result.delivery).toMatchObject({ delivery: "steer", runId: activeHumanId, status: "running" });
+  expect(runtime.seal).not.toHaveBeenCalled();
+  expect(inputReceived).toHaveBeenCalledTimes(1);
+});
+
