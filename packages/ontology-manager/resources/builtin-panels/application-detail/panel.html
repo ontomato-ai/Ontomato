@@ -1,0 +1,789 @@
+<!-- Application detail panel: single-row SDK PageHeader + ObjectHeader + standalone/externalLink summary + entries/assets/grants. -->
+<style>
+  [v-cloak] { display: none; }
+  .apps-detail {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: apps-detail / inline-size;
+  }
+
+  .apps-inline-icon {
+    margin-inline-start: 4px;
+    flex-shrink: 0;
+  }
+
+  .apps-detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 64px);
+    min-width: 0;
+  }
+
+  /* Missing / Loading / Forbidden state */
+  .apps-state-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-4xl) var(--page-gutter);
+    text-align: center;
+  }
+  .apps-state-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+  }
+
+  /* Tabs */
+  .apps-tabs {
+    margin-bottom: calc(var(--spacing-sm) * -1);
+  }
+
+  /* Two-column basics layout matching two-entry-catalog-detail */
+  .apps-basics-grid {
+    display: grid;
+    grid-template-columns: minmax(400px, 1.15fr) minmax(320px, 0.85fr);
+    gap: var(--page-content-gap);
+    align-items: start;
+  }
+
+  /* Consistent bordered section cards */
+  .apps-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .apps-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .apps-card-title {
+    margin: 0;
+    font-size: var(--text-base, var(--text-sm));
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .apps-muted {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .apps-mono {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    word-break: break-all;
+  }
+
+  /* Identity edit form container */
+  .apps-form-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .apps-form-wrap :deep(.sdk-owner-form),
+  .apps-form-wrap :deep(.sdk-owner-form-inner) {
+    height: auto;
+  }
+  .apps-form-wrap :deep(.sdk-owner-form-body) {
+    overflow: visible;
+  }
+
+  /* Table wrap matching ObjectList appearance */
+  .apps-table-card {
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--sdk-bg-color);
+  }
+  .apps-table-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .apps-table-bar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+  .apps-panel-cell {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .apps-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--brand-link);
+    font: inherit;
+    font-size: var(--text-xs);
+    cursor: pointer;
+    text-align: left;
+  }
+  .apps-link-btn:hover {
+    text-decoration: underline;
+  }
+  .apps-link-sep {
+    color: var(--sdk-border-color, var(--ui-border));
+    user-select: none;
+  }
+  .apps-empty-box {
+    padding: var(--spacing-2xl) var(--spacing-md);
+    text-align: center;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+  }
+  .apps-row-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+
+  /* Frame & Theme breakdown */
+  .apps-kv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--spacing-md);
+    margin: 0;
+  }
+  .apps-kv {
+    min-width: 0;
+  }
+  .apps-kv dt {
+    margin: 0 0 4px;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .apps-kv dd {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-primary);
+    word-break: break-word;
+  }
+  .apps-theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--spacing-md);
+  }
+  .apps-theme-list {
+    margin: var(--spacing-xs) 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .apps-theme-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: 4px 8px;
+    border-radius: var(--radius-xs);
+    background: var(--sdk-fill-color-light, var(--ui-fill-tertiary));
+    font-size: var(--text-xs);
+  }
+  .apps-theme-val {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--sdk-text-color-regular);
+  }
+  .apps-color-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    flex: 0 0 auto;
+  }
+
+  /* Panels & Projections split */
+  .apps-assets-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+    gap: var(--spacing-lg);
+    align-items: start;
+  }
+  .apps-panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .apps-panel-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--sdk-text-color-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast);
+  }
+  .apps-panel-item:hover {
+    background: var(--sdk-fill-color-light, var(--ui-fill-tertiary));
+  }
+  .apps-panel-item.active {
+    background: var(--ui-fill-secondary, var(--sdk-fill-color));
+    border-color: var(--sdk-border-color, var(--ui-border));
+  }
+  .apps-panel-item-name {
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+  }
+  .apps-panel-item-id {
+    color: var(--sdk-text-color-secondary);
+  }
+  .apps-member-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .apps-member-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--ui-divider);
+    border-radius: var(--radius-sm);
+  }
+
+  /* Grants sharing card & principal cell */
+  .apps-share-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  .apps-share-left {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
+  .apps-share-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .apps-principal-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .apps-principal-name {
+    font-weight: var(--font-medium);
+    color: var(--sdk-text-color-primary);
+  }
+  .apps-principal-id {
+    color: var(--sdk-text-color-secondary);
+  }
+  .apps-option-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .apps-error {
+    margin: var(--spacing-xs) 0 0;
+    color: var(--sdk-color-danger-text);
+    font-size: var(--text-xs);
+  }
+  .apps-dialog-form :deep(.sdk-owner-form),
+  .apps-dialog-form :deep(.sdk-owner-form-inner) {
+    height: auto;
+  }
+  .apps-dialog-form :deep(.sdk-owner-form-body) {
+    overflow: visible;
+  }
+
+  @container apps-detail (max-width: 900px) {
+    .apps-basics-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @container apps-detail (max-width: 760px) {
+    .apps-assets-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
+
+<div id="app" v-cloak>
+  <section class="apps-detail">
+    <page-header
+      :back-label="t('action.back')"
+      :title="record.status === 'ready' ? undefined : (selectedKey || t('panel.name'))"
+      :draft="identityDraft"
+      @back="goBack"
+    >
+      <template v-if="record.status === 'ready'" #title>
+        <projection slot="headerTitle"></projection>
+      </template>
+      <template v-if="record.status === 'ready'" #actions>
+        <sdk-button v-if="appPath" @click="openApplication">
+          <span>{{ t('action.openApp') }}</span>
+          <svg class="apps-inline-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 11 11 5" />
+            <path d="M6 5h5v5" />
+          </svg>
+        </sdk-button>
+        <projection v-if="canMaintain" slot="deleteApp" @done="onDeleteDone"></projection>
+      </template>
+    </page-header>
+
+    <!-- Missing / Loading / Forbidden states -->
+    <div v-if="!selectedKey" class="apps-state-box" role="alert">
+      <sdk-empty :description="t('detail.notFound')"></sdk-empty>
+      <div class="apps-state-actions">
+        <sdk-button type="primary" @click="goBack">{{ t('action.back') }}</sdk-button>
+      </div>
+    </div>
+    <div v-else-if="record.status === 'loading'" class="apps-state-box" role="status">
+      <p class="apps-muted">{{ t('detail.loading') }}</p>
+    </div>
+    <div v-else-if="record.status === 'forbidden'" class="apps-state-box" role="alert">
+      <sdk-empty :description="t('detail.forbidden')"></sdk-empty>
+      <div class="apps-state-actions">
+        <sdk-button @click="goBack">{{ t('action.back') }}</sdk-button>
+      </div>
+    </div>
+    <div v-else-if="record.status !== 'ready' || !app" class="apps-state-box" role="alert">
+      <sdk-empty :description="recordErrorText"></sdk-empty>
+      <div class="apps-state-actions">
+        <sdk-button @click="retryRecord">{{ t('action.retry') }}</sdk-button>
+        <sdk-button type="primary" @click="goBack">{{ t('action.back') }}</sdk-button>
+      </div>
+    </div>
+
+    <!-- Detail ready -->
+    <div v-else class="apps-detail-body">
+      <sdk-tabs v-model="tabModel" class="apps-tabs">
+        <sdk-tab-pane name="identity" :label="t('tab.identity')"></sdk-tab-pane>
+        <sdk-tab-pane name="entries" :label="t('tab.entries')"></sdk-tab-pane>
+        <sdk-tab-pane name="assets" :label="t('tab.assets')"></sdk-tab-pane>
+        <sdk-tab-pane v-if="canGrant" name="grants" :label="t('tab.grants')"></sdk-tab-pane>
+      </sdk-tabs>
+
+      <!-- Tab 1: Basics (Identity form + standalone toggle + copyable externalLink summary) -->
+      <template v-if="tabModel === 'identity'">
+        <div v-if="canMaintain" class="apps-basics-grid">
+          <section class="apps-card">
+            <h2 class="apps-card-title">{{ t('detail.identityTitle') }}</h2>
+            <div class="apps-form-wrap">
+              <projection slot="save" @saved="onSaved"></projection>
+            </div>
+          </section>
+          <section class="apps-card">
+            <h2 class="apps-card-title">{{ t('detail.runtimeTitle') }}</h2>
+            <projection slot="runtimeSummary" @navigate="onNavigateReference"></projection>
+          </section>
+        </div>
+        <section v-else class="apps-card">
+          <h2 class="apps-card-title">{{ t('detail.readonlyTitle') }}</h2>
+          <projection slot="summary" @navigate="onNavigateReference"></projection>
+        </section>
+      </template>
+
+      <!-- Tab 2: Entries -->
+      <template v-else-if="tabModel === 'entries'">
+        <div class="apps-table-bar">
+          <span class="apps-muted">{{ t('entries.count', { count: entryRows.length }) }}</span>
+          <div v-if="canEditEntries" class="apps-table-bar-actions">
+            <sdk-button v-if="!entriesBulkMode" size="small" type="primary" @click="openAddEntry">
+              {{ t('entries.add') }}
+            </sdk-button>
+            <sdk-button size="small" @click="toggleEntriesView">
+              {{ entriesBulkMode ? t('entries.backToList') : t('entries.bulkEdit') }}
+            </sdk-button>
+          </div>
+        </div>
+
+        <section v-if="entriesBulkMode && canEditEntries" class="apps-card">
+          <div class="apps-form-wrap">
+            <projection slot="entriesForm" @saved="onEntriesFormSaved"></projection>
+          </div>
+        </section>
+
+        <template v-else>
+          <div class="apps-table-card">
+            <div v-if="entries.status === 'forbidden'" class="apps-empty-box">{{ t('entries.forbidden') }}</div>
+            <sdk-table
+              v-else
+              v-sdk-loading="entries.status === 'loading'"
+              :data="entryRows"
+              row-key="id"
+              style="width: 100%"
+            >
+              <template #empty>
+                <div class="apps-empty-box">
+                  {{ canMaintain && !canEditEntries ? t('entries.emptyNotPanelApp') : t('entries.empty') }}
+                </div>
+              </template>
+              <sdk-table-column :label="t('entries.colName')" min-width="150">
+                <template #default="{ row }">
+                  <strong>{{ localizedText(row.names) || row.id }}</strong>
+                </template>
+              </sdk-table-column>
+              <sdk-table-column :label="t('entries.colPath')" min-width="180">
+                <template #default="{ row }">
+                  <span class="apps-mono">{{ row.path }}</span>
+                </template>
+              </sdk-table-column>
+              <sdk-table-column :label="t('entries.colPanel')" min-width="220">
+                <template #default="{ row }">
+                  <div class="apps-panel-cell">
+                    <button
+                      type="button"
+                      class="apps-link-btn"
+                      :title="t('entries.inspectPanel')"
+                      @click="inspectPanelAndOpenTab(row.panelId)"
+                    >
+                      {{ panelDisplayName(row.panelId) }}
+                    </button>
+                    <span class="apps-link-sep" aria-hidden="true">|</span>
+                    <button
+                      type="button"
+                      class="apps-link-btn"
+                      @click="openPanelCatalogue(row.panelId)"
+                    >
+                      {{ t('entries.panelCatalogue') }} &#8599;
+                    </button>
+                  </div>
+                </template>
+              </sdk-table-column>
+              <sdk-table-column :label="t('entries.colGroup')" width="110">
+                <template #default="{ row }">{{ groupLabel(row.groupKey) }}</template>
+              </sdk-table-column>
+              <sdk-table-column :label="t('entries.colAccess')" width="130">
+                <template #default="{ row }">{{ accessText(row.access) }}</template>
+              </sdk-table-column>
+              <sdk-table-column :label="t('entries.colAgent')" width="130">
+                <template #default="{ row }">{{ agentText(row.defaultAgent) }}</template>
+              </sdk-table-column>
+              <sdk-table-column v-if="canEditEntries" :label="t('entries.colActions')" width="120" align="right">
+                <template #default="{ row }">
+                  <div class="apps-row-actions">
+                    <sdk-button text size="small" type="primary" @click="openEditEntry(row)">{{ t('action.edit') }}</sdk-button>
+                    <sdk-button text size="small" type="danger" :disabled="busy" @click="confirmRemoveEntry(row)">{{ t('action.delete') }}</sdk-button>
+                  </div>
+                </template>
+              </sdk-table-column>
+            </sdk-table>
+          </div>
+
+          <section v-if="entryData && (entryData.framePanelId || hasThemeOverrides)" class="apps-card">
+            <h2 class="apps-card-title">{{ t('entries.frameAndTheme') }}</h2>
+            <dl class="apps-kv-grid">
+              <div v-if="entryData.framePanelId" class="apps-kv">
+                <dt>{{ t('entries.framePanel') }}</dt>
+                <dd>
+                  <button type="button" class="apps-link-btn" @click="openPanelCatalogue(entryData.framePanelId)">
+                    <span>{{ panelDisplayName(entryData.framePanelId) }}</span>
+                    <span class="apps-mono">({{ entryData.framePanelId }})</span>
+                    <span>&#8599;</span>
+                  </button>
+                </dd>
+              </div>
+              <div class="apps-kv">
+                <dt>{{ t('entries.themeOverrides') }}</dt>
+                <dd v-if="!hasThemeOverrides" class="apps-muted">{{ t('entries.noTheme') }}</dd>
+                <dd v-else>
+                  <div class="apps-theme-grid">
+                    <div v-if="themeEntries.light.length">
+                      <span class="apps-muted">{{ t('entries.themeLight') }} ({{ themeEntries.light.length }})</span>
+                      <ul class="apps-theme-list">
+                        <li v-for="item in themeEntries.light" :key="`light-${item.key}`">
+                          <span class="apps-mono">{{ item.key }}</span>
+                          <span class="apps-theme-val apps-mono">
+                            <span v-if="looksLikeColor(item.value)" class="apps-color-dot" :style="{ background: item.value }"></span>
+                            {{ item.value }}
+                          </span>
+                        </li>
+                      </ul>
+                    </div>
+                    <div v-if="themeEntries.dark.length">
+                      <span class="apps-muted">{{ t('entries.themeDark') }} ({{ themeEntries.dark.length }})</span>
+                      <ul class="apps-theme-list">
+                        <li v-for="item in themeEntries.dark" :key="`dark-${item.key}`">
+                          <span class="apps-mono">{{ item.key }}</span>
+                          <span class="apps-theme-val apps-mono">
+                            <span v-if="looksLikeColor(item.value)" class="apps-color-dot" :style="{ background: item.value }"></span>
+                            {{ item.value }}
+                          </span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </dd>
+              </div>
+            </dl>
+          </section>
+        </template>
+      </template>
+
+      <!-- Tab 3: Panels & Projections -->
+      <template v-else-if="tabModel === 'assets'">
+        <div v-if="usedPanels.length === 0" class="apps-card">
+          <p class="apps-muted">{{ t('assets.noPanels') }}</p>
+        </div>
+        <div v-else class="apps-assets-grid">
+          <section class="apps-card">
+            <h2 class="apps-card-title">{{ t('assets.usedPanels', { count: usedPanels.length }) }}</h2>
+            <div class="apps-panel-list">
+              <button
+                v-for="panelId in usedPanels"
+                :key="panelId"
+                type="button"
+                class="apps-panel-item"
+                :class="{ active: inspectedPanelId === panelId }"
+                @click="inspectPanel(panelId)"
+              >
+                <span class="apps-panel-item-name">{{ panelDisplayName(panelId) }}</span>
+                <span v-if="panelDisplayName(panelId) !== panelId" class="apps-panel-item-id apps-mono">{{ panelId }}</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="apps-card">
+            <div class="apps-card-head">
+              <h2 class="apps-card-title">
+                {{ inspectedPanelId ? panelDisplayName(inspectedPanelId) : t('assets.panelMembers') }}
+              </h2>
+              <button
+                v-if="inspectedPanelId"
+                type="button"
+                class="apps-link-btn"
+                @click="openPanelCatalogue(inspectedPanelId)"
+              >
+                {{ t('assets.openPanel') }} &#8599;
+              </button>
+            </div>
+            <p v-if="!inspectedPanelId" class="apps-muted">{{ t('assets.selectPanel') }}</p>
+            <p v-else-if="panelInfo.status === 'loading' || panelMembers.status === 'loading'" class="apps-muted">{{ t('assets.loadingPanel') }}</p>
+            <p v-else-if="inspectedMembers.length === 0" class="apps-muted">{{ t('assets.noMembers') }}</p>
+            <ul v-else class="apps-member-list">
+              <li v-for="member in inspectedMembers" :key="`${member.className}-${member.primaryKey}`" class="apps-member-row">
+                <div>
+                  <strong>{{ member.label || member.primaryKey }}</strong>
+                  <div v-if="member.label && member.label !== member.primaryKey" class="apps-muted apps-mono">{{ member.primaryKey }}</div>
+                </div>
+                <button type="button" class="apps-link-btn" @click="openMemberCatalogue(member)">
+                  {{ t('assets.openProjection') }} &#8599;
+                </button>
+              </li>
+            </ul>
+          </section>
+        </div>
+      </template>
+
+      <!-- Tab 4: Permissions & Sharing -->
+      <template v-else-if="tabModel === 'grants' && canGrant">
+        <div class="apps-share-bar">
+          <div class="apps-share-left">
+            <sdk-switch
+              :model-value="isDomainShared"
+              :loading="busy"
+              :disabled="grants.status !== 'ready'"
+              @update:model-value="toggleDomainShare"
+            ></sdk-switch>
+            <div class="apps-share-text">
+              <strong class="apps-card-title">{{ t('grants.shareTitle') }}</strong>
+              <span class="apps-muted">{{ isDomainShared ? t('grants.sharedDesc') : t('grants.privateDesc') }}</span>
+            </div>
+          </div>
+          <sdk-button type="primary" size="small" @click="openGrantDialog">{{ t('grants.add') }}</sdk-button>
+        </div>
+
+        <div class="apps-table-card">
+          <div v-if="grants.status === 'forbidden'" class="apps-empty-box">{{ t('grants.forbidden') }}</div>
+          <sdk-table
+            v-else
+            v-sdk-loading="grants.status === 'loading'"
+            :data="grantRows"
+            style="width: 100%"
+          >
+            <template #empty>
+              <div class="apps-empty-box">{{ t('grants.none') }}</div>
+            </template>
+            <sdk-table-column :label="t('grants.kind')" width="130">
+              <template #default="{ row }">
+                <sdk-tag size="small" :type="row.principalKind === 'domain' ? 'success' : 'info'">
+                  {{ grantKindLabel(row.principalKind) }}
+                </sdk-tag>
+              </template>
+            </sdk-table-column>
+            <sdk-table-column :label="t('grants.principalCol')" min-width="220">
+              <template #default="{ row }">
+                <div class="apps-principal-cell">
+                  <span class="apps-principal-name">
+                    {{ row.principalKind === 'domain' ? t('grants.domain') : (row.principalName || row.principalId) }}
+                  </span>
+                  <span
+                    v-if="row.principalKind !== 'domain' && row.principalName && row.principalName !== row.principalId"
+                    class="apps-principal-id apps-mono"
+                  >
+                    {{ row.principalId }}
+                  </span>
+                </div>
+              </template>
+            </sdk-table-column>
+            <sdk-table-column :label="t('grants.verb')" width="120">
+              <template #default="{ row }">
+                <sdk-tag size="small" :type="row.verb === 'edit' ? 'warning' : ''">
+                  {{ row.verb === 'edit' ? t('grants.edit') : t('grants.use') }}
+                </sdk-tag>
+              </template>
+            </sdk-table-column>
+            <sdk-table-column :label="t('grants.actions')" width="100" align="right">
+              <template #default="{ row }">
+                <sdk-button
+                  v-if="row.principalKind !== 'domain'"
+                  text
+                  size="small"
+                  type="danger"
+                  :disabled="busy"
+                  @click="revokeExistingGrant(row)"
+                >
+                  {{ t('grants.revoke') }}
+                </sdk-button>
+              </template>
+            </sdk-table-column>
+          </sdk-table>
+        </div>
+      </template>
+    </div>
+
+    <!-- Single-entry official ObjectForm dialog -->
+    <sdk-dialog
+      v-model="entryDialogOpen"
+      :title="editingEntryId === '__new__' ? t('entries.addTitle') : t('entries.editTitle')"
+      width="640px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="apps-dialog-form">
+        <projection
+          v-if="entryDialogOpen && editingEntryId"
+          slot="entryForm"
+          @saved="onEntryFormSaved"
+          @discarded="closeEntryDialog"
+          @cancel="closeEntryDialog"
+        ></projection>
+      </div>
+    </sdk-dialog>
+
+    <!-- Add Grant dialog with searchable member/role selector -->
+    <sdk-dialog
+      v-model="grantDialogOpen"
+      :title="t('grants.dialogTitle')"
+      width="480px"
+      append-to-body
+      destroy-on-close
+    >
+      <sdk-form label-position="top">
+        <sdk-form-item :label="t('grants.kind')">
+          <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
+        </sdk-form-item>
+        <sdk-form-item :label="grantPrincipalKindModel === 'role' ? t('grants.role') : t('grants.principal')">
+          <sdk-select
+            v-model="grantDraft.principalId"
+            filterable
+            remote
+            reserve-keyword
+            allow-create
+            default-first-option
+            :remote-method="onPrincipalSearch"
+            :loading="principalOptionsLoading"
+            :placeholder="grantPrincipalKindModel === 'role' ? t('grants.selectRole') : t('grants.selectMember')"
+            style="width: 100%"
+          >
+            <sdk-option
+              v-for="item in activePrincipalOptions"
+              :key="item.value"
+              :value="item.value"
+              :label="item.label"
+            >
+              <div class="apps-option-row">
+                <span>{{ item.label }}</span>
+                <span v-if="item.label !== item.value" class="apps-muted apps-mono">{{ item.value }}</span>
+              </div>
+            </sdk-option>
+          </sdk-select>
+        </sdk-form-item>
+        <sdk-form-item :label="t('grants.verb')">
+          <sdk-select v-model="grantDraft.verb" style="width: 100%">
+            <sdk-option value="use" :label="t('grants.use')"></sdk-option>
+            <sdk-option value="edit" :label="t('grants.edit')"></sdk-option>
+          </sdk-select>
+        </sdk-form-item>
+      </sdk-form>
+      <p v-if="grantError" class="apps-error" role="alert">{{ grantError }}</p>
+      <template #footer>
+        <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
+        <sdk-button type="primary" :loading="busy" @click="submitGrant">{{ t('grants.submit') }}</sdk-button>
+      </template>
+    </sdk-dialog>
+
+    <!-- Confirm delete entry dialog -->
+    <sdk-dialog
+      v-model="deleteEntryTarget.open"
+      :title="t('action.delete')"
+      width="420px"
+      append-to-body
+    >
+      <p style="margin: 0;">{{ t('entries.deleteConfirm', { name: deleteEntryTarget.name }) }}</p>
+      <template #footer>
+        <sdk-button @click="deleteEntryTarget.open = false">{{ t('action.cancel') }}</sdk-button>
+        <sdk-button type="danger" :loading="busy" @click="executeRemoveEntry">{{ t('action.delete') }}</sdk-button>
+      </template>
+    </sdk-dialog>
+
+    <!-- Hidden PanelData slots kept mounted so panel reads & operations stay registered -->
+    <div hidden>
+      <projection slot="record"></projection>
+      <projection slot="entriesRead"></projection>
+      <projection slot="grantsRead"></projection>
+      <projection slot="deleteEntry"></projection>
+      <projection slot="grant"></projection>
+      <projection slot="share"></projection>
+      <projection slot="panelCatalogue"></projection>
+      <projection slot="panelInfo"></projection>
+      <projection slot="userOptions"></projection>
+      <projection slot="roleOptions"></projection>
+    </div>
+  </section>
+</div>

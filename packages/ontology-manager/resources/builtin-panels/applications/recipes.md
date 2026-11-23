@@ -1,18 +1,19 @@
 # Applications catalogue — agent recipes
 
-This page manages platform and domain applications (`platform:Application`).
+This page lists platform and domain applications (`platform:Application`) at `/ontology/applications`.
+
+## Public states
+
+- `search`: keyword filter for the application catalogue.
+- `scope`: `"visible"` (all visible applications) or `"maintainable"` (applications the current user can maintain).
+- `sort`: `"id"` (default product order), `"name"`, or `"updated"`.
+- `creating`: `true` opens the centered create-application dialog (`createForm`).
 
 ## Common flows
 
-1. **Create an application**:
-   - Draft `platform:Application.save` with a `draft` target (`createForm`), filling `/declaration/names`, `/declaration/descriptions`, `/declaration/icon`, and `/shared` (initial domain sharing).
-2. **Edit application identity**:
-   - Draft `platform:Application.save` targeting the application ID (`section: "identity"`), updating `/names`, `/descriptions`, or `/icon`.
-3. **Add or edit a single entry**:
-   - Draft `platform:Application.save` on `entryForm` (`section: "entry"`, `entryId`), updating `/id`, `/pageKey`, `/path`, `/panelId`, `/names`, `/descriptions`, `/groupKey`, `/access`, `/defaultAgent`, or `/inputs`.
-4. **Reorder or bulk edit entries**:
-   - Draft `platform:Application.save` on `entriesForm` (`section: "entries"`), updating `/entry/path` or `/panelUses`.
-5. **Manage grants and domain sharing**:
-   - Call `applications.grant` (`principalKind: "principal" | "role"`, `principalId`, `verb: "use" | "edit"`, `remove`) or `applications.share` (`shared: boolean`).
-6. **Delete a domain application**:
-   - Call `applications.delete` targeting the application ID (requires confirmation; built-in applications cannot be deleted).
+1. **Inspect or maintain an application**:
+   - Click a row or navigate to `/ontology/applications/detail?state={"selected":{"className":"platform:Application","primaryKey":"<app-id>"}}`.
+   - Identity editing (including `allowStandalone`), runtime summary (including copyable `externalLink`), entry maintenance, panels & projections inspection, grants & sharing, and deletion all live on `/ontology/applications/detail`.
+2. **Create an application**:
+   - Set `creating: true` (or click "New application") and draft `platform:Application.save` targeting `createForm`.
+   - Leave the draft for the reader to review and submit; upon saving, the page navigates to the new application's detail entry.
