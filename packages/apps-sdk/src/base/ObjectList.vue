@@ -24,9 +24,10 @@ import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
 import { paramValues } from "../panel/direct";
 import {
+  classifyDispatchResponseForAction,
+  classifyDispatchResponseForConfirmation,
   PanelConfirmationDeferred,
   PanelOperationDeferred,
-  summarizeDispatchResponse,
   type PanelAgentActionContext,
   type PanelWriteResult,
 } from "../panel/instance";
@@ -2188,15 +2189,7 @@ async function executeRowOperation(
                 return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "Operation was cancelled." };
               }
               applyRowAnswer({ ...confirmed, named: deferred.named });
-              if (confirmed.response.kind === "not-dispatched") {
-                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
-              }
-              return {
-                ok: true,
-                intentId: preparation.intentId,
-                outcome: confirmed.response.outcome,
-                summary: summarizeDispatchResponse(confirmed.response),
-              };
+              return classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
             } catch (dispatchReason) {
               rowOpFailure.value = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
               return {
@@ -2374,6 +2367,10 @@ watch(
             };
           }
           const status = await executeRowOperation(row, operationName, descriptor, boundInput, filteredExtra, agentContext);
+          const dispatchedResponse = rowOpReceipt.value ?? agentContext?.completed?.response;
+          if (dispatchedResponse) {
+            return classifyDispatchResponseForAction(dispatchedResponse);
+          }
           if (rowOpFailure.value) {
             return { ok: false, reason: "failed", message: rowOpFailure.value.message };
           }
@@ -2390,7 +2387,7 @@ watch(
           if (rowOpRead.value) {
             return { ok: true, outcome: rowOpRead.value };
           }
-          return { ok: true, outcome: rowOpOutcome.value ?? rowOpReceipt.value ?? undefined };
+          return { ok: true, outcome: rowOpOutcome.value ?? undefined };
         },
         { scope: "row" },
       ),

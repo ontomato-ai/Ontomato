@@ -280,6 +280,22 @@ test("fill_form and page_action requests, frames, and receipts validate on the s
   };
   assert.deepEqual(presentationResultSchema.parse(missingWithIntent), missingWithIntent);
 
+  const outcomeUnknownReceipt = {
+    connectionId: id,
+    toolCallId: "act-unknown",
+    result: {
+      status: "unknown",
+      reason: "outcome_unknown",
+      operation: "batch.updateStatus",
+      intentId: id,
+      outcome: { kind: "unknown", message: "Owner connection closed before answer." },
+      current: selected,
+      error: { code: "ACTION_OUTCOME_UNKNOWN", message: "Owner connection closed before answer." },
+    },
+  };
+  assert.deepEqual(presentationReceiptSchema.parse(outcomeUnknownReceipt), outcomeUnknownReceipt);
+  assert.deepEqual(presentationResultSchema.parse(outcomeUnknownReceipt.result), outcomeUnknownReceipt.result);
+
   const boundFillInput = {
     mode: "fill_form",
     member: "form",

@@ -325,6 +325,15 @@ export type PageActionOutcome =
     }
   | {
       readonly ok: false;
+      readonly kind: "unknown";
+      readonly reason: "outcome_unknown";
+      readonly operation: string;
+      readonly intentId?: string;
+      readonly outcome?: unknown;
+      readonly message?: string;
+    }
+  | {
+      readonly ok: false;
       readonly reason:
         | "action_not_found"
         | "action_unavailable"
@@ -379,6 +388,15 @@ const pageActionNotExecutedResultSchema = z.object({
   current: displaySnapshotSchema,
   error: displayErrorSchema.optional(),
 }).strict();
+const pageActionUnknownResultSchema = z.object({
+  status: z.literal("unknown"),
+  reason: z.literal("outcome_unknown"),
+  operation: runtimeKeySchema,
+  intentId: runtimeIdSchema.optional(),
+  outcome: z.unknown().optional(),
+  current: displaySnapshotSchema,
+  error: displayErrorSchema.optional(),
+}).strict();
 const unknownResultSchema = z.object({
   status: z.literal("unknown"),
   reason: z.literal("receipt_missing"),
@@ -396,6 +414,7 @@ const observedResultSchema = z.discriminatedUnion("status", [
   pageActionExecutedResultSchema,
   pageActionAwaitingConfirmationResultSchema,
   pageActionNotExecutedResultSchema,
+  pageActionUnknownResultSchema,
 ]).refine(
   (result) => result.status !== "opened" || (result.reason === "load_error") === (result.current.load.status === "error"),
   { path: ["reason"], message: "An opened result reports load_error exactly when the selected target failed to load" },
