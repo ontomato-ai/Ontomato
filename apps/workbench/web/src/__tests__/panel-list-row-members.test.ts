@@ -455,4 +455,142 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     await vi.waitFor(() => expect(instance.outputs.topForm?.dirty).toBe(true));
     expect(instance.outputs.topForm?.draft).toEqual({ name: "Orders v2" });
   });
+
+  it("renders table showChevron without selected state, emits choose, and keeps filteredCount null while loading", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const chosen: unknown[] = [];
+
+    const projections: Record<string, DirectProjection> = {
+      "proj-catalog": {
+        ...meta,
+        id: "proj-catalog",
+        name: "Catalog",
+        componentId: "@ontomato/sdk:ObjectList",
+        data: {
+          rows: {
+            source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+            read: "list",
+            params: {},
+          },
+        },
+        inputs: { search: { kind: "scalar", type: "string" } },
+        outputs: { search: { kind: "scalar", type: "string" } },
+        config: {
+          layout: "table",
+          showChevron: true,
+          searchable: false,
+          columns: [{ key: "label", labelKey: "col.name" }],
+        },
+      },
+    };
+
+    const manifest = definePanel({
+      state: { search: { type: { kind: "scalar", type: "string" } } },
+      members: {
+        catalog: {
+          target: { projectionId: "proj-catalog" },
+          inputs: { search: { state: "search" } },
+          outputs: { search: { state: "search" } },
+        },
+      },
+    });
+
+    const { element, instance } = mountPanel({
+      manifest,
+      projections,
+      members: ["catalog"],
+      messages: { en: { "col.name": "Name" } },
+      listeners: { catalog: { onChoose: (refValue: unknown) => chosen.push(refValue) } },
+      answer: async () => {
+        await held;
+        return ready([
+          { primaryKey: "app-1", label: "Orders", fields: {} },
+          { primaryKey: "app-2", label: "Billing", fields: {} },
+        ]);
+      },
+    });
+
+    // While loading, filteredCount and total stay null rather than flashing 0.
+    await vi.waitFor(() => expect(element.querySelector(".sdk-object-list")).not.toBeNull());
+    expect(instance.outputs.catalog?.filteredCount ?? null).toBeNull();
+    expect(instance.outputs.catalog?.total ?? null).toBeNull();
+
+    release();
+    await vi.waitFor(() => expect(instance.outputs.catalog?.filteredCount).toBe(2));
+    expect(instance.outputs.catalog?.total).toBe(2);
+    expect(element.querySelectorAll(".sdk-object-list-row-chevron")).toHaveLength(2);
+
+    // Clicking a row emits choose even though no `selected` state is bound.
+    element.querySelector<HTMLTableRowElement>('tr[data-row-item="true"]')!.click();
+    expect(chosen).toEqual([{ className: SCHEDULED_TASK, primaryKey: "app-1" }]);
+
+    // Narrowing to zero matches updates filteredCount to 0.
+    instance.state.set("search", "nonexistent");
+    await vi.waitFor(() => expect(instance.outputs.catalog?.filteredCount).toBe(0));
+  });
+
+  it("publishes ObjectHeader status alongside label across loading, ready, empty, and forbidden states", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+
+    const projections: Record<string, DirectProjection> = {
+      "proj-header": {
+        ...meta,
+        id: "proj-header",
+        name: "Header",
+        componentId: "@ontomato/sdk:ObjectHeader",
+        data: {
+          record: {
+            source: { object: { input: "target" } },
+            read: "record",
+            params: {},
+          },
+        },
+        inputs: { target: { kind: "object", objectType: APPLICATION } },
+        outputs: {},
+        config: { subtitle: "" },
+      },
+    };
+
+    const manifest = definePanel({
+      state: { selected: { type: { kind: "object", objectType: APPLICATION } } },
+      members: {
+        header: {
+          target: { projectionId: "proj-header" },
+          inputs: { target: { state: "selected" } },
+        },
+      },
+    });
+
+    const { instance } = mountPanel({
+      manifest,
+      projections,
+      members: ["header"],
+      initial: { selected: { className: APPLICATION, primaryKey: "app-1" } },
+      answer: async (req) => {
+        const key = (req.inputs.target as { primaryKey: string } | null)?.primaryKey;
+        if (key === "app-1") {
+          await held;
+          return ready({ primaryKey: "app-1", label: "Orders App", fields: {} });
+        }
+        if (key === "forbidden") return { status: "forbidden" };
+        return { status: "empty" };
+      },
+    });
+
+    await vi.waitFor(() => expect(instance.outputs.header?.status).toBe("loading"));
+    expect(instance.outputs.header?.label ?? null).toBeNull();
+
+    release();
+    await vi.waitFor(() => expect(instance.outputs.header?.status).toBe("ready"));
+    expect(instance.outputs.header?.label).toBe("Orders App");
+
+    instance.state.set("selected", { className: APPLICATION, primaryKey: "missing" });
+    await vi.waitFor(() => expect(instance.outputs.header?.status).toBe("empty"));
+    expect(instance.outputs.header?.label ?? null).toBeNull();
+
+    instance.state.set("selected", { className: APPLICATION, primaryKey: "forbidden" });
+    await vi.waitFor(() => expect(instance.outputs.header?.status).toBe("forbidden"));
+  });
 });

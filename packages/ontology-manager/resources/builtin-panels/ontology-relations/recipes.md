@@ -1,13 +1,12 @@
 # 关系类型目录页的常见做法
 
-这一页是关系类型的整宽表格目录，提供搜索和新建关系类型弹窗；点一行跳到关系类型详情入口 `/ontology/relations/detail`。
+这一页是关系类型的整宽表格目录，由官方 `ObjectList` 投影呈现，提供搜索和新建关系类型弹窗；点一行跳到关系类型详情入口 `/ontology/relations/detail`。
 
 ## 看页面现在是什么
 
-- 状态 `search` 是目录的搜索词，匹配关系名、描述和两端对象。
+- 状态 `search` 是目录的搜索词，由 `catalogue`（`ObjectList`）直接匹配关系名、描述和两端对象名称。
 - 状态 `creating` 为 `true` 时，打开居中「新建关系类型」弹窗；页头的「新建关系类型」按钮打开的就是这个状态。
-- `catalogue` 成员的 `rows` 是目录的全部关系类型；每行的 `primaryKey` 是关系名，`label` 是描述（没有描述时是关系名），`fields` 有 `fromclass`、`toclass`、`desc`、`fromField`、`toField`。
-- `types` 成员的 `rows` 是本体的类，用来把 `fromclass` / `toclass` 显示成类的中文名。
+- `catalogue` 成员的 `rows` 是目录的全部关系类型；每行的 `primaryKey` 是关系名，`label` 是描述（没有描述时是关系名），`fields` 有 `fromclass`、`toclass`、`fromclassLabel`、`toclassLabel`、`fromObject`、`toObject`、`desc`、`fromField`、`toField`。
 
 ## 新建关系类型：起草，由人保存
 

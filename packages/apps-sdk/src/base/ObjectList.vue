@@ -533,7 +533,7 @@ const actionColumnStyle = computed<Record<string, string | undefined>>(() => ({
   textAlign: props.rowActions?.align ?? "right",
 }));
 const showRowChevron = computed(
-  () => Boolean(props.showChevron) && isTable.value && canSelect && !hasRowDetailSlot.value && !hasActionColumn.value,
+  () => Boolean(props.showChevron) && isTable.value && !hasRowDetailSlot.value && !hasActionColumn.value,
 );
 const showListChevron = computed(
   () => Boolean(props.showChevron) && !isTable.value && !isCards.value && !hasActionColumn.value,
@@ -2031,8 +2031,8 @@ const selectedRowLabel = computed<string | null>(() => {
 });
 
 useMemberOutput("status", () => datumState.value.status);
-useMemberOutput("total", () => (datumState.value.status === "ready" ? parsedData.value.total : 0));
-useMemberOutput("filteredCount", () => (datumState.value.status === "ready" ? rows.value.length : 0));
+useMemberOutput("total", () => (datumState.value.status === "ready" ? parsedData.value.total : datumState.value.status === "empty" ? 0 : null));
+useMemberOutput("filteredCount", () => (datumState.value.status === "ready" ? rows.value.length : datumState.value.status === "empty" ? 0 : null));
 useMemberOutput("checkedCount", () => checkedRefs.value.length);
 useMemberOutput("selectedLabel", () => selectedRowLabel.value);
 useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.value);

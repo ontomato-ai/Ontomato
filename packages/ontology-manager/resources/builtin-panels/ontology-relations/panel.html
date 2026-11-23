@@ -35,84 +35,29 @@
     color: var(--sdk-text-color-secondary);
     font-size: var(--text-sm);
   }
-  .relations-table {
-    overflow: auto;
+  .relations-table-host {
     margin-top: var(--spacing-lg);
-    border: 1px solid var(--sdk-border-color, var(--ui-border));
-    border-radius: var(--radius-md);
-    background: var(--sdk-bg-color);
-  }
-  .relations-row {
-    display: grid;
-    grid-template-columns: minmax(220px, 1.35fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(180px, 1.6fr) 20px;
-    align-items: center;
-    column-gap: var(--spacing-md);
-    width: 100%;
-    box-sizing: border-box;
-    text-align: left;
-    font: inherit;
-  }
-  .relations-row.head {
-    min-height: var(--table-head-height, 36px);
-    padding: 0 var(--spacing-md);
-    border-bottom: 1px solid var(--sdk-border-color, var(--ui-border));
-    background: var(--sdk-fill-color, var(--ui-fill-tertiary));
-    color: var(--sdk-text-color-secondary);
-    font-size: var(--text-xs);
-    font-weight: var(--font-semibold);
-    letter-spacing: 0.02em;
-  }
-  button.relations-row {
-    min-height: var(--list-row-height, 44px);
-    padding: 8px var(--spacing-md);
-    border: 0;
-    border-bottom: 1px solid var(--sdk-border-color-light, var(--ui-divider));
-    background: var(--sdk-bg-color);
-    color: var(--sdk-text-color-regular);
-    font-size: var(--text-sm);
-    cursor: pointer;
-    transition: background-color var(--transition-fast);
-  }
-  button.relations-row:last-child {
-    border-bottom: 0;
-  }
-  button.relations-row:hover {
-    background: var(--sdk-fill-color-light, var(--ui-fill-tertiary));
-  }
-  .relations-name {
-    display: flex;
     min-width: 0;
-    align-items: center;
   }
-  .relations-name strong {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .relations-table-host .sdk-object-list {
+    height: auto;
+    gap: 0;
+  }
+  .relations-table-host .sdk-object-list-table td {
+    height: var(--list-row-height, 44px);
+  }
+  .relations-table-host .sdk-object-list-table td:first-child .sdk-object-list-cell-main {
     color: var(--sdk-text-color-primary);
-    font-size: var(--text-sm);
     font-weight: var(--font-semibold);
   }
-  .relations-ellipsis {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .relations-table-host .sdk-object-list-table td:nth-child(2) .sdk-object-list-cell-main,
+  .relations-table-host .sdk-object-list-table td:nth-child(3) .sdk-object-list-cell-main,
+  .relations-table-host .sdk-object-list-table td:nth-child(4) .sdk-object-list-cell-main {
     color: var(--sdk-text-color-secondary);
+    font-weight: var(--font-regular);
   }
-  .relations-chevron {
-    color: var(--sdk-text-color-placeholder);
-    justify-self: end;
-  }
-  .relations-note {
-    margin: 0;
-    padding: var(--spacing-lg);
-    color: var(--sdk-text-color-secondary);
-    font-size: var(--text-sm);
-    text-align: center;
-  }
-  .relations-failure {
-    color: var(--sdk-color-danger-text);
+  .relations-table-host .sdk-object-list-footer {
+    display: none;
   }
   .relations-create-body .sdk-owner-form,
   .relations-create-body .sdk-owner-form-inner {
@@ -127,15 +72,6 @@
     padding-block: var(--spacing-xs) 0;
   }
 
-  @container relations-page (max-width: 900px) {
-    .relations-row {
-      grid-template-columns: minmax(150px, 1.3fr) minmax(100px, 1fr) 20px;
-    }
-    .relations-row > :nth-child(2),
-    .relations-row > :nth-child(4) {
-      display: none;
-    }
-  }
   @container relations-page (max-width: 560px) {
     .relations-toolbar {
       flex-direction: column;
@@ -168,29 +104,12 @@
         </sdk-input>
         <span v-if="countText" class="relations-count">{{ countText }}</span>
       </div>
-      <div class="relations-table">
-        <div class="relations-row head">
-          <span>关系类型</span>
-          <span>来源对象</span>
-          <span>目标对象</span>
-          <span>说明</span>
-          <span></span>
-        </div>
-        <p v-if="catalogue.status === 'loading'" class="relations-note" role="status">正在读取关系类型…</p>
-        <p v-else-if="catalogue.status === 'forbidden'" class="relations-note relations-failure">当前账号无权读取关系类型。</p>
-        <sdk-alert v-else-if="catalogue.status === 'error'" type="error" :title="catalogue.message" :closable="false"></sdk-alert>
-        <template v-else>
-          <button v-for="row in rows" :key="row.primaryKey" type="button" class="relations-row" @click="open(row)">
-            <span class="relations-name">
-              <strong>{{ row.label || row.primaryKey }}</strong>
-            </span>
-            <span>{{ typeLabel(row.fields.fromclass) }}</span>
-            <span>{{ typeLabel(row.fields.toclass) }}</span>
-            <span class="relations-ellipsis">{{ row.fields.desc || "-" }}</span>
-            <svg class="relations-chevron" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
-          </button>
-          <sdk-empty v-if="rows.length === 0" description="未找到关系类型"></sdk-empty>
-        </template>
+      <div class="relations-table-host">
+        <projection slot="catalogue" @choose="open">
+          <template #empty>
+            <sdk-empty description="未找到关系类型"></sdk-empty>
+          </template>
+        </projection>
       </div>
     </div>
 

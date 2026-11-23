@@ -1,5 +1,5 @@
 import { computed, nextTick, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData, usePanelFormDraft } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelContext, usePanelFormDraft, usePanelOutput } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:Relationship";
 const CATALOG_PATH = "/ontology/relations";
@@ -10,17 +10,14 @@ await mountPanel({
     const selected = computed(() => instance.state.values.value.selected);
     const selectedKey = computed(() => (selected.value ? selected.value.primaryKey : ""));
 
-    const detail = usePanelData("detail", "record");
-    const types = usePanelData("types", "rows");
-
-    const typeLabels = computed(() => {
-      const rows = types.value.status === "ready" ? types.value.value : [];
-      return Object.fromEntries(rows.map((row) => [row.primaryKey, row.label || row.primaryKey]));
+    const headerStatus = usePanelOutput("headerTitle", "status");
+    const recordStatus = computed(() => {
+      if (!selectedKey.value) return "empty";
+      return headerStatus.value ?? "loading";
     });
-    const typeLabel = (className) => (!className ? "" : typeLabels.value[className] ?? className);
 
     const detailDraft = usePanelFormDraft("form", {
-      when: () => Boolean(selectedKey.value) && detail.value.status === "ready",
+      when: () => Boolean(selectedKey.value) && recordStatus.value === "ready",
     });
 
     // Route back to the catalog entry so the platform's unified unsaved-changes leave guard intercepts dirty edits.
@@ -36,10 +33,12 @@ await mountPanel({
       void navigate(CATALOG_PATH).catch(() => undefined);
     }
 
-    // Open the object types page with the endpoint class selected.
-    function openType(className) {
-      if (!className) return;
-      const state = JSON.stringify({ selected: { className: "platform:ObjectType", primaryKey: className } });
+    // Open the object types page with the endpoint class emitted by ObjectRefCard.
+    function openObjectType(reference) {
+      if (!reference?.primaryKey) return;
+      const state = JSON.stringify({
+        selected: { className: reference.className || "platform:ObjectType", primaryKey: reference.primaryKey },
+      });
       void navigate(`/ontology/objects?${new globalThis.URLSearchParams({ state })}`).catch(() => undefined);
     }
 
@@ -51,7 +50,7 @@ await mountPanel({
     }, { immediate: true });
 
     return {
-      detail, types, selectedKey, detailDraft, typeLabel, goBack, onRemoveDone, openType,
+      selectedKey, recordStatus, detailDraft, goBack, onRemoveDone, openObjectType,
     };
   },
 });

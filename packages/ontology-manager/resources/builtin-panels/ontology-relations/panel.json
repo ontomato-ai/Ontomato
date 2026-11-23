@@ -18,20 +18,45 @@
     },
     "members": {
       "catalogue": {
-        "component": "PanelData",
+        "component": "ObjectList",
         "type": "platform:Relationship",
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-2a6a25e8-ec04-41aa-8146-e49741e7d530"
-      },
-      "types": {
-        "component": "PanelData",
-        "type": "platform:ObjectType",
-        "data": {
-          "rows": "list"
+        "state": {
+          "search": "search"
         },
-        "id": "builtin-product-f0bcb58b-8ef7-4f65-b818-336c72ac6db7"
+        "config": {
+          "layout": "table",
+          "showChevron": true,
+          "searchable": false,
+          "emptyText": "list.empty",
+          "noMatchText": "list.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "col.relation",
+              "minWidth": 180
+            },
+            {
+              "key": "fromclassLabel",
+              "labelKey": "col.from",
+              "minWidth": 120
+            },
+            {
+              "key": "toclassLabel",
+              "labelKey": "col.to",
+              "minWidth": 120
+            },
+            {
+              "key": "desc",
+              "labelKey": "col.desc",
+              "emptyKey": "col.emptyDash",
+              "minWidth": 160
+            }
+          ]
+        },
+        "id": "builtin-product-2a6a25e8-ec04-41aa-8146-e49741e7d530"
       },
       "form": {
         "component": "ObjectForm",
@@ -44,6 +69,26 @@
           "actions": "create-only"
         },
         "id": "builtin-product-6063073e-28b1-4a47-bcff-64b305b1a600"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "list.empty": "No relationship types found",
+        "col.relation": "Relationship type",
+        "col.from": "Source object",
+        "col.to": "Target object",
+        "col.desc": "Description",
+        "col.emptyDash": "-"
+      },
+      "zh-CN": {
+        "list.empty": "未找到关系类型",
+        "col.relation": "关系类型",
+        "col.from": "来源对象",
+        "col.to": "目标对象",
+        "col.desc": "说明",
+        "col.emptyDash": "-"
       }
     }
   }
