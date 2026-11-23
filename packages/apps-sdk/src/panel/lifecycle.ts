@@ -1,6 +1,7 @@
 import { watch, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
+import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
 import { normalizeExternalPanelState, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity, type PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
@@ -36,6 +37,8 @@ export interface PanelRunReports {
   draftOpened(): void;
   /** The panel cannot run, and why; the host shows it where the panel would have been. */
   failed(reason: unknown): void;
+  /** The user manually edited an unsaved form, invalidating pending agent form.save confirmations. */
+  formEdited?(target: PanelFormEditedTarget): void;
 }
 
 export interface PanelRunOptions {
@@ -60,7 +63,7 @@ export interface PanelRun {
   /** Reads the draft the first address names, once the panel is drawn. */
   start(): Promise<void>;
   activity(active: boolean): void;
-  address(next: string): void;
+  address(next: string, options?: { overwriteUnsavedDraft?: boolean }): void;
   projectionsChanged(revisions: readonly (Pick<DefinitionRevision, "id"> & { revision?: number })[]): void;
   objectChanged(target: PanelObjectIdentity | null): void;
 }
@@ -68,10 +71,10 @@ export interface PanelRun {
 export function runPanel(options: PanelRunOptions): PanelRun {
   const { instance, address, isDirty, reports } = options;
   let currentDraft = "";
-  async function followDraft() {
+  async function followDraft(force = false) {
     const link = pageDraftLinkOf(address.value);
     const key = link ? JSON.stringify(link) : "";
-    if (key === currentDraft) return;
+    if (!force && key === currentDraft) return;
     currentDraft = key;
     if (!link) return;
     // A draft that cannot be used is that draft's problem: the panel goes on without it.
@@ -96,20 +99,26 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     }
     return patch;
   }
-  async function followAddress(next: string) {
+  async function followAddress(next: string, addressOptions?: { overwriteUnsavedDraft?: boolean }) {
+    const hasDraft = pageDraftLinkOf(next) !== null;
     const patch = addressStatePatch(next);
     if (patch !== null) instance.state.setState(patch);
+    if (addressOptions?.overwriteUnsavedDraft && hasDraft) {
+      instance.forms.discardAll();
+    }
     address.value = next;
     options.onAddressPending?.(false);
-    await followDraft();
+    await followDraft(Boolean(addressOptions?.overwriteUnsavedDraft));
   }
-  const followAddressNow = (next: string) => void followAddress(next).catch(reports.failed);
+  const followAddressNow = (next: string, addressOptions?: { overwriteUnsavedDraft?: boolean }) =>
+    void followAddress(next, addressOptions).catch(reports.failed);
 
   // The page context follows the state, the address and the names of the objects read since: a name that arrives after
   // its selection reaches the host as a context of its own.
   watch(() => instance.pageContext.value, (context) => reports.context(context as PageContext), { deep: true, immediate: true });
   watch([() => instance.state.values.value, address], () => reports.state(instance.deepLink(), address.value), { deep: true, immediate: true });
   instance.onDraftSettled(reports.draftSettled);
+  if (reports.formEdited) instance.onFormEdited(reports.formEdited);
   watch(() => instance.operations.value, (operations) => {
     // The description carries data only; a call is run by the instance itself.
     reports.operations(operations.map(({ invoke: _invoke, ...operation }) => panelOperationSchema.parse(operation)));
@@ -121,11 +130,11 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     waiting.clear();
   };
   let active = true;
-  let heldAddress: string | null = null;
+  let heldAddress: { next: string; options?: { overwriteUnsavedDraft?: boolean } } | null = null;
   let heldAll = false;
   const heldObjects = new Map<string, PanelObjectIdentity>();
   const resume = () => {
-    if (heldAddress !== null) followAddressNow(heldAddress);
+    if (heldAddress !== null) followAddressNow(heldAddress.next, heldAddress.options);
     else options.onAddressPending?.(false);
     if (!isDirty()) refreshProjections();
     if (heldAll) options.refreshObject(null);
@@ -145,10 +154,10 @@ export function runPanel(options: PanelRunOptions): PanelRun {
       active = next;
       if (active) resume();
     },
-    address(next) {
-      if (active) followAddressNow(next);
+    address(next, addressOptions) {
+      if (active) followAddressNow(next, addressOptions);
       else {
-        heldAddress = next;
+        heldAddress = { next, options: addressOptions };
         const patch = addressStatePatch(next);
         options.onAddressPending?.(patch !== null && Object.keys(patch).length > 0);
       }

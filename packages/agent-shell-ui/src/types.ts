@@ -2,6 +2,7 @@ import type { Component } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunStatus } from "@ontomato/contracts/agent-runtime-values";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
+import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 
 export type ArtifactPresentation = "inline" | "panel";
 
@@ -140,6 +141,8 @@ export interface ShellPanelOperationsPort {
   read(sessionId: string): Promise<boolean | null>;
   /** Resolves to the value the host now holds. */
   write(sessionId: string, confirmBeforeExecute: boolean): Promise<boolean>;
+  /** Notifies the server that the user manually edited an unsaved form, invalidating pending agent save confirmations. */
+  notifyFormEdited?(sessionId: string, target: PanelFormEditedTarget): Promise<void>;
 }
 
 /**
@@ -218,6 +221,10 @@ export interface ShellLabels {
   selectionContext: (selection: string) => string;
   /** The same line names what a component highlighted (search matches or a directed path). */
   highlightContext?: (highlight: string) => string;
+  /** The same line names the current values of the panel's declared public state. */
+  stateContext?: (state: string) => string;
+  /** The same line names the current live contents of open forms on the page. */
+  formsContext?: (forms: string) => string;
   /** The line a message ends with while a file is open beside the conversation: its title and its workspace path. */
   fileContext: (file: { label: string; path: string }) => string;
   /** The line a message ends with once the page or file its conversation was last told about is no longer shown. */

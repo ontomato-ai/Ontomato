@@ -199,6 +199,8 @@ const intentFactsSchema = commonIntentFactsSchema.extend({
   confirmation: z.enum(["required", "automatic"]),
   questionId: runtimeIdSchema.nullable(),
   answer: agentQuestionAnswerReceiptSchema.omit({ text: true }).nullable(),
+  /** Set when an unexecuted form.save confirmation is invalidated by newer form edits before dispatch. */
+  invalidated: z.object({ code: key, message: z.string() }).strict().optional(),
 });
 
 const currentOperationFields = {
@@ -240,6 +242,20 @@ const legacyStoredIntentSchema = intentFactsSchema.extend({
 });
 
 export const PANEL_CONFIRMATION_EXPIRED = "PANEL_CONFIRMATION_EXPIRED";
+export const PANEL_FORM_CONFIRMATION_STALE = "FORM_CONFIRMATION_STALE";
+
+/** Human browser notification that an unsaved form was edited, invalidating any pending form.save confirmation for it. */
+export const panelFormEditedTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("object"), objectType: key, primaryKey: z.string().min(1).max(1000) }).strict(),
+  z.object({ kind: z.literal("draft"), objectType: key }).strict(),
+]);
+export type PanelFormEditedTarget = z.infer<typeof panelFormEditedTargetSchema>;
+
+export const panelFormEditedNotificationSchema = z.object({
+  rootSession: agentSessionRefSchema.optional(),
+  target: panelFormEditedTargetSchema,
+}).strict();
+export type PanelFormEditedNotification = z.infer<typeof panelFormEditedNotificationSchema>;
 
 /** At the persisted-data boundary, old records can report historical facts but cannot become current intents. */
 export function readStoredPanelOperationIntent(value: unknown) {

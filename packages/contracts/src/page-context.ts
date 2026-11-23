@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { runtimeJsonObjectSchema } from "./agent-runtime-values";
 import { panelChildObjectIdentitySchema, panelMemberPathSchema } from "./panel-manifest";
 import { platformHasChildCollection } from "./platform-object-types";
 
@@ -94,6 +95,41 @@ export const pageHighlightSchema = z.discriminatedUnion("kind", [
 ]);
 export type PageHighlight = z.infer<typeof pageHighlightSchema>;
 
+const pageFormTargetSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("object"),
+      objectType: z.string().min(1).max(200),
+      primaryKey: z.string().min(1).max(1000),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("draft"),
+      objectType: z.string().min(1).max(200),
+    })
+    .strict(),
+]);
+
+/** Live snapshot of a mounted form on the page, including any unsaved edits from the user or an active draft. */
+export const pageFormSnapshotSchema = z
+  .object({
+    /** Member slot key of the form in its panel. */
+    member: z.string().min(1).max(200),
+    /** Placed child panel path when the form belongs to a nested panel. */
+    memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
+    /** The object or create-draft this form is currently editing. */
+    target: pageFormTargetSchema.optional(),
+    /** Whether the form holds unsaved edits relative to its opened baseline. */
+    dirty: z.boolean(),
+    /** Field paths currently modified relative to the opened baseline. */
+    dirtyFields: z.array(z.string().min(1).max(500)).max(200).readonly().optional(),
+    /** Current live field values in the form, including unsaved user edits. */
+    values: runtimeJsonObjectSchema,
+  })
+  .strict();
+export type PageFormSnapshot = z.infer<typeof pageFormSnapshotSchema>;
+
 export const pageContextSchema = z
   .object({
     /**
@@ -115,6 +151,10 @@ export const pageContextSchema = z
     selection: z.array(pageSelectionSchema).max(100).readonly(),
     /** What components on the page highlight (such as search hits or a directed path), separate from selection. */
     highlights: z.array(pageHighlightSchema).max(20).readonly().optional(),
+    /** Current values of the panel's declared public state (tabs, filters, view modes, selections, etc.). */
+    state: runtimeJsonObjectSchema.optional(),
+    /** Current live values and unsaved state of mounted forms on the page (including unsaved user edits). */
+    forms: z.array(pageFormSnapshotSchema).max(20).readonly().optional(),
   })
   .strict();
 export type PageContext = z.infer<typeof pageContextSchema>;
@@ -163,6 +203,10 @@ export interface PageLinePrompts {
   selection: (label: string) => string;
   /** Optional wrapper for highlighted graph/component results (search hits or a directed path). */
   highlight?: (label: string) => string;
+  /** Optional wrapper for the panel's declared public state snapshot. */
+  state?: (state: string) => string;
+  /** Optional wrapper for the panel's mounted form contents snapshot. */
+  forms?: (forms: string) => string;
 }
 
 /** A run of escaped bytes beyond ASCII: the UTF-8 of characters a reader reads, such as a board's Chinese name. */
@@ -201,7 +245,21 @@ export function pageContextLine(page: PageContext, prompts: PageLinePrompts, car
     ...(carriesPage ? [pagePart(page, prompts)] : []),
     ...page.selection.map((item) => prompts.selection(selectionPart(item))),
     ...(page.highlights ?? []).flatMap((item) => highlightParts(item, prompts.highlight)),
+    ...(page.state && Object.keys(page.state).length > 0 ? [statePart(page.state, prompts.state)] : []),
+    ...(page.forms && page.forms.length > 0 ? [formsPart(page.forms, prompts.forms)] : []),
   ].join(PART_SEPARATOR);
+}
+
+/** The panel's current declared public state as the trailing context line reports it. */
+function statePart(state: Record<string, unknown>, format: PageLinePrompts["state"]): string {
+  const serialized = JSON.stringify(state);
+  return format ? format(serialized) : `State: ${serialized}`;
+}
+
+/** The panel's currently open form contents (including unsaved user edits) as the trailing context line reports them. */
+function formsPart(forms: readonly PageFormSnapshot[], format: PageLinePrompts["forms"]): string {
+  const serialized = JSON.stringify(forms);
+  return format ? format(serialized) : `Form: ${serialized}`;
 }
 
 /**
@@ -324,7 +382,9 @@ export function writtenText(text: string, prompts: PageLinePrompts & { file: Fil
   const line = text.slice(at + 2);
   const told = line === prompts.closed || fileLinePath(line, prompts.file) !== null || pageLineAddress(line, prompts) !== null
     || selectionLine(line, prompts.selection)
-    || (prompts.highlight !== undefined && selectionLine(line, prompts.highlight));
+    || (prompts.highlight !== undefined && selectionLine(line, prompts.highlight))
+    || (prompts.state !== undefined ? selectionLine(line, prompts.state) : line.startsWith("State: "))
+    || (prompts.forms !== undefined ? selectionLine(line, prompts.forms) : line.startsWith("Form: "));
   return told ? text.slice(0, at) : text;
 }
 

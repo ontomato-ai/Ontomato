@@ -97,10 +97,11 @@ function presentationTool(runId: string, callback: RuntimePresentationCallback):
   return {
     name: "present",
     label: "Present",
-    description: "Show an outputs/ artifact or a registered site-relative page in the user's current conversation display. Optional state applies only to a page and must not duplicate the state query. The result reports what the view actually showed at the time of the receipt. An opened target may still be loading or showing an error. This display is temporary and is not saved in the page address or restored on refresh or when reopening the conversation. The user can open it again from a card or link.",
+    description: "Show an outputs/ artifact or navigate/update a registered site-relative page in the user's current conversation display right in this round. For a page, this performs a real navigation written to the browser address (preserved on refresh) without changing the user's side-by-side or full-page layout (opens side-by-side if no page is open). Optional state applies to any declared public state field of the page in place (not only deepLink fields) without reloading or triggering business writes, and must not duplicate a state query parameter. To fill a form with a draft immediately, pass the page address with draft query parameters; if the form has unsaved user edits, the tool refuses without overwriting (not_opened / blocked_unsaved) — ask the user first and pass overwriteUnsavedDraft: true only after explicit user confirmation. The result reports what the view actually shows at receipt time, including the panel's declared public state values and current live form contents (including unsaved user edits). For an outputs/ artifact card, the display remains temporary and is not saved in the page address.",
     parameters: Type.Object({
       target: Type.String(),
       state: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+      overwriteUnsavedDraft: Type.Optional(Type.Boolean()),
     }, { additionalProperties: false }),
     replay: "never",
     async execute(toolCallId, input, signal) {
@@ -113,6 +114,32 @@ function presentationTool(runId: string, callback: RuntimePresentationCallback):
           "X-Ontomato-Run-Id": runId,
         },
         body: JSON.stringify({ toolCallId, input }),
+        signal,
+      });
+      const body: unknown = await response.json();
+      const result = response.ok ? presentationResultSchema.parse(body) : body;
+      return { content: [{ type: "text", text: JSON.stringify(result) }], details: {}, isError: !response.ok };
+    },
+  };
+}
+
+function observeDisplayTool(runId: string, callback: RuntimePresentationCallback): AgentTool {
+  return {
+    name: "observe_display",
+    label: "Observe display",
+    description: "Read the latest live state of the page or artifact currently open beside the conversation — including its address, selection, highlights, all declared public state values (tabs, filters, view mode, etc.), and the current live values and unsaved status of any open forms (reflecting any edits the user made mid-round). Read-only: does not navigate, reload, change layout, or trigger writes.",
+    parameters: Type.Object({}, { additionalProperties: false }),
+    replay: "never",
+    async execute(toolCallId, _input, signal) {
+      const response = await fetch(callback.url, {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ontomato-Callback-Credential": callback.credential,
+          "X-Ontomato-Run-Id": runId,
+        },
+        body: JSON.stringify({ toolCallId, input: { mode: "observe" } }),
         signal,
       });
       const body: unknown = await response.json();
@@ -689,7 +716,10 @@ export class AgentRuntime {
       tools.push(...mcp.tools);
       tools.push(...productTools(request,run.id));
       if (run.channel) tools.push(this.channel.tool(scope, run));
-      if (presentationCallback) tools.push(presentationTool(run.id, presentationCallback));
+      if (presentationCallback) {
+        tools.push(presentationTool(run.id, presentationCallback));
+        tools.push(observeDisplayTool(run.id, presentationCallback));
+      }
       if (new Set(tools.map((t) => t.name)).size !== tools.length)
         throw new Error("Exposed tool names must be unique");
       const model = piModel(config);

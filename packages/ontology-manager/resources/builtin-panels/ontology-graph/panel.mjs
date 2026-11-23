@@ -25,7 +25,10 @@ await mountPanel({
       { value: "objects", label: "对象类型" },
       { value: "relations", label: "关系类型" },
     ];
-    const filter = ref("all");
+    const filter = computed({
+      get: () => (typeof instance.state.values.value.filter === "string" && instance.state.values.value.filter ? instance.state.values.value.filter : "all"),
+      set: (value) => instance.state.set("filter", value || "all"),
+    });
     const pathFrom = ref("");
     const pathTo = ref("");
     const toast = ref(null);

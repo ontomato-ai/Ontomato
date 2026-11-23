@@ -56,7 +56,10 @@ const PanelsDirectory = {
     const sort = computed(() => (typeof state.values.value.sort === "string" && state.values.value.sort ? state.values.value.sort : "updated"));
 
     const creating = computed(() => state.values.value.creating === true);
-    const detailMode = ref("view");
+    const detailMode = computed({
+      get: () => (typeof state.values.value.detailMode === "string" && state.values.value.detailMode ? state.values.value.detailMode : "view"),
+      set: (value) => state.set("detailMode", value || "view"),
+    });
     const mode = computed({
       get: () => creating.value ? "create" : detailMode.value,
       set(next) {
@@ -66,12 +69,18 @@ const PanelsDirectory = {
       },
     });
     const showDetail = computed(() => selected.value !== null || mode.value !== "view");
-    const tab = ref("overview");
+    const tab = computed({
+      get: () => (typeof state.values.value.tab === "string" && state.values.value.tab ? state.values.value.tab : "overview"),
+      set: (value) => state.set("tab", value || "overview"),
+    });
     const busy = ref(false);
     const failure = ref("");
     const message = ref("");
     const receipt = ref("");
-    const templateFilter = ref("all");
+    const templateFilter = computed({
+      get: () => (typeof state.values.value.templateFilter === "string" && state.values.value.templateFilter ? state.values.value.templateFilter : "all"),
+      set: (value) => state.set("templateFilter", value || "all"),
+    });
     const searchText = ref(search.value);
     const hasFilters = computed(() => Boolean(searchText.value.trim()) || scope.value !== "all" || templateFilter.value !== "all");
     const deleteArmed = ref(false);

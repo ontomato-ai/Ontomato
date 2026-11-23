@@ -44,7 +44,7 @@ export { draftTarget, type PageDraftObjectRef, type PageDraftTarget } from "@ont
 export type { PanelOperationBinding } from "../panel/types";
 export type { PanelProjectionRegistration, ProjectionPorts } from "../panel/ports";
 export type { MemberOperations, MemberOperationsState } from "../panel/member-operations";
-export { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam, useMemberRead } from "../panel/member";
+export { useMember, useMemberOperations, useMemberOutput, useMemberParam } from "../panel/member";
 export { usePanelData } from "../panel/panel-data";
 export { usePanelOutput, usePanelOutputs } from "../panel/panel-output";
 export { useFormFieldSlot, useListRowSlot, type FormFieldSlotContext, type ListRowSlotContext, type ListRowSlotOperation } from "../panel/slot-context";

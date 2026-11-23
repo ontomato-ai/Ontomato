@@ -72,6 +72,11 @@ describe("a panel's instance", () => {
       url: "/a/schedules",
       label: "Scheduled tasks",
       selection: [{ kind: SCHEDULED_TASK, id: "task-1", label: `${SCHEDULED_TASK} task-1` }],
+      state: {
+        selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" },
+        application: null,
+        search: null,
+      },
     });
   });
 

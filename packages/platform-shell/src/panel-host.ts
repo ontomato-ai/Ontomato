@@ -18,10 +18,17 @@ import {
   type PanelHostMessage,
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
-import { normalizeExternalPanelState, type PanelObjectIdentity, type PanelOperation, type PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
+import {
+  matchesDirectPanelValue,
+  normalizeExternalPanelState,
+  panelStateValueSchema,
+  type PanelObjectIdentity,
+  type PanelOperation,
+  type PanelThemeOverrides,
+} from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
-import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
+import type { PanelFormEditedTarget, PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
 import type { PanelBackHandlerRegistration } from "./panel-back";
 
@@ -143,6 +150,8 @@ export interface DirectPanelRun {
   draftOpened(): void;
   /** The panel cannot run, and why. */
   failed(reason: unknown): void;
+  /** The user manually edited an unsaved form, invalidating pending agent form.save confirmations. */
+  formEdited?(target: PanelFormEditedTarget): void;
   /**
    * The placement's theme, for a panel another panel places: the host lays it over the placed panel's own theme on the
    * placed panel's element, so this placement's values win over the panel's.
@@ -179,7 +188,9 @@ export interface DirectPanelRun {
 /** A started panel instance, as its host drives it. */
 export interface DirectPanelMount {
   /** The address changed outside the instance (the reader went back, a link was followed): its state follows. */
-  address(url: string): void;
+  address(url: string, options?: { overwriteUnsavedDraft?: boolean }): void;
+  /** Updates any declared public state fields in place (including non-deepLink fields), without reload or writes. */
+  setState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Objects it may show changed: it reads again what it shows of them. */
   refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
   /** Projections it places have newer definitions or changed access: it reads them again. */
@@ -251,6 +262,10 @@ export interface PanelInstanceView {
   refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
   /** A person clicked one of those operations: the instance runs it, and the promise settles with its answer. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
+  /** Applies a live patch to any declared public state fields in place (no reload, no business writes). */
+  applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
+  /** Delivers an updated address (e.g. a draft link with explicit overwrite confirmation) to the running instance. */
+  applyAddress(url: string, options?: { overwriteUnsavedDraft?: boolean }): void;
   /** The frame's content window, once it exists. */
   frame(window: Window | null): void;
 }
@@ -323,6 +338,12 @@ export interface PanelInstanceOptions {
   address: () => string;
   /** The current external address's requested state, including updates on the same page. */
   initial: () => Record<string, unknown>;
+  /** Optional initial live state patch (covering all declared public state, not only deepLink) for a newly opened panel. */
+  liveState?: () => Readonly<Record<string, RuntimeJsonValue>> | null;
+  /** Entry-wired state field names that cannot be overridden by live state patches. */
+  wired?: () => readonly string[];
+  /** Notified when the user manually edits an unsaved form inside this panel. */
+  formEdited?: (target: PanelFormEditedTarget) => void;
   /**
    * Whether the reader is on this instance's page. A page kept while the reader is on another of its application's pages
    * holds no stream and its frame may ask for nothing; shown again, it is checked before its frame may. Absent means
@@ -391,7 +412,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** Whether the instance runs: its frame reported its first state, or its direct instance started. */
   let frameReady = false;
   let frameAddress = "";
-  let pendingDirectAddress: string | null = null;
+  let adoptedExternalAddress = "";
+  let pendingDirectAddress: { url: string; options?: { overwriteUnsavedDraft?: boolean } } | null = null;
+  let pendingLiveState: Readonly<Record<string, RuntimeJsonValue>> | null = null;
   let registration: PanelFrameRegistration | undefined;
   /** Whether the frame may ask the platform for anything: not while its page is kept out of view, nor until it is checked. */
   let bridgeOpen = true;
@@ -499,16 +522,46 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
+  function validatePublicStatePatch(
+    panel: HostedPanelSource["panel"],
+    patch: Readonly<Record<string, RuntimeJsonValue>>,
+  ): Record<string, RuntimeJsonValue> {
+    const wired = new Set(options.wired?.() ?? []);
+    const validated: Record<string, RuntimeJsonValue> = {};
+    for (const [name, value] of Object.entries(patch)) {
+      if (wired.has(name)) {
+        throw new Error(`Panel state '${name}' is fixed by the entry and cannot be changed`);
+      }
+      const field = panel.manifest.state[name];
+      if (!field) throw new Error(`Panel state has no declared public field '${name}'`);
+      const parsed = panelStateValueSchema.parse(value);
+      if (!matchesDirectPanelValue(field.type, parsed)) {
+        throw new TypeError(`Panel state '${name}' holds no ${JSON.stringify(field.type)} value`);
+      }
+      validated[name] = parsed as RuntimeJsonValue;
+    }
+    return validated;
+  }
+
   /**
    * Starts a panel in this document: its HTML split into the template its `#app` holds, the element it mounts into
    * (carrying `#app`'s own attributes) and its CSS, scoped to this instance.
    * A source adopted while the module ran replaces it: the mount that comes back late is let go.
    */
   async function adoptCoded(next: HostedPanelSource, requested: PanelHostState, requestedAddress: string) {
-    if (!replaceDirect(next, requested, requestedAddress)) return;
+    const initialLive = pendingLiveState ?? options.liveState?.() ?? null;
+    pendingLiveState = null;
+    const livePatch = initialLive ? validatePublicStatePatch(next.panel, initialLive) : null;
+    const mergedInitial: PanelHostState = livePatch ? { ...requested, ...livePatch } : requested;
+    const deepLinkInitial: PanelHostState = Object.fromEntries(
+      Object.entries(mergedInitial).filter(([name]) => next.panel.manifest.state[name]?.deepLink),
+    );
+    const effectiveAddress = livePatch ? panelAddress(pageAddress(), deepLinkInitial) : requestedAddress;
+    adoptedExternalAddress = requestedAddress;
+    if (!replaceDirect(next, deepLinkInitial, effectiveAddress)) return;
     const { element, template, css } = codedPanelTarget(next.panel.content.html);
     adoptStyle(css);
-    const mount = await port.coded(next, directRun(next, requested), { element, template });
+    const mount = await port.coded(next, directRun(next, mergedInitial), { element, template });
     if (!active || source.value !== next) {
       mount.dispose();
       return;
@@ -518,7 +571,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     if (pendingDirectAddress !== null) {
       const nextAddress = pendingDirectAddress;
       pendingDirectAddress = null;
-      mount.address(nextAddress);
+      mount.address(nextAddress.url, nextAddress.options);
     }
   }
 
@@ -574,6 +627,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       },
       draftOpened: () => (draftOpening.value = false),
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
+      ...(options.formEdited ? { formEdited: options.formEdited } : {}),
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
       ...(options.frameState ? { frameState: options.frameState } : {}),
       ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
@@ -610,9 +664,12 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         pendingObjectRefresh = false;
         refresh(null);
       }
-      if (syncAddress()) return;
+      if (source.value && panelAddress(pageAddress(), requestedState(source.value.panel)) !== adoptedExternalAddress && syncAddress()) return;
     }
-    reportState(next);
+    const deepLinkOnly = source.value
+      ? Object.fromEntries(Object.entries(next).filter(([name]) => source.value!.panel.manifest.state[name]?.deepLink))
+      : next;
+    reportState(deepLinkOnly);
   }
 
   /** The instance's deep-linkable state changed: the address carries it. */
@@ -883,18 +940,34 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */
-  function tellAddress(next: string) {
+  function tellAddress(next: string, addressOptions?: { overwriteUnsavedDraft?: boolean }) {
     // What was said about a draft belongs to that draft: an address that no longer names it takes the line away, and an
     // address naming another draft opens that one first.
-    if (JSON.stringify(draftLinkOf(next)) !== JSON.stringify(draftLinkOf(address.value))) {
+    if (
+      addressOptions?.overwriteUnsavedDraft
+      || JSON.stringify(draftLinkOf(next)) !== JSON.stringify(draftLinkOf(address.value))
+    ) {
       draftRefusal.value = "";
       draftOpening.value = direct.value !== null && draftLinkOf(next) !== null;
     }
     frameAddress = next;
     address.value = next;
-    if (direct.value) direct.value.mount.address(next);
+    if (direct.value) direct.value.mount.address(next, addressOptions);
     else if (document.value) post({ kind: "address", address: next });
-    else pendingDirectAddress = next;
+    else pendingDirectAddress = { url: next, options: addressOptions };
+  }
+
+  function applyState(patch: Readonly<Record<string, RuntimeJsonValue>>) {
+    if (!Object.keys(patch).length) return;
+    if (!source.value || !direct.value) {
+      pendingLiveState = { ...(pendingLiveState ?? {}), ...patch };
+      return;
+    }
+    const validated = validatePublicStatePatch(source.value.panel, patch);
+    if (!direct.value.mount.setState) {
+      throw new Error("This panel mount does not support live state updates");
+    }
+    direct.value.mount.setState(validated);
   }
 
   function reportFrameFailure(failure: NonNullable<DisplayLoad["error"]>) {
@@ -959,6 +1032,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       if (linked) settleDraft(linked);
     },
     admitted,
+    applyState,
+    applyAddress: tellAddress,
     invoke(id, input) {
       if (direct.value) return direct.value.mount.invoke(id, input);
       if (!frame) return Promise.reject(new Error(options.labels.notStarted));

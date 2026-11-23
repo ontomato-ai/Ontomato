@@ -31,8 +31,11 @@ await mountPanel({
     const opRenew = usePanelOperation("renew", "renewCredential");
     const renewalProblem = ref("");
 
-    // Page-local state.
-    const search = ref("");
+    // Public search filter backed by declared panel state.
+    const search = computed({
+      get: () => (typeof values.value.search === "string" ? values.value.search : ""),
+      set: (value) => instance.state.set("search", value ?? ""),
+    });
     const schedulePage = ref(null);
     const editPane = ref(null);
     // Draft links use the page state to open the owner's form before it checks the draft.

@@ -1,14 +1,15 @@
 import type { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { draftTarget, pageDraftSchema } from "@ontomato/contracts/page-draft";
+import { draftTarget } from "@ontomato/contracts/page-draft";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "@ontomato/contracts/agent-user-questions";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import {
-  PANEL_CONFIRMATION_EXPIRED, isPanelHumanOperationIntent, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
+  PANEL_CONFIRMATION_EXPIRED, PANEL_FORM_CONFIRMATION_STALE, isPanelHumanOperationIntent, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
   type inspectPanelOperationImpactRequestSchema,
   type CreatePanelHumanOperationIntentRequest, type CreatePanelOperationIntentRequest, type PanelAgentOperationIntent,
+  type PanelFormEditedNotification,
   type PanelHumanOperationConfirmation, type PanelHumanOperationDispatchResponse, type PanelHumanOperationIntent,
   type PanelHumanOperationPreparation,
   type PanelOperationIntent, type PanelOperateResponse, type PanelOperationRef, type ReadPanelOperationRequest,
@@ -510,7 +511,7 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
       panelId:current.rootPanelId,projectionId:current.projection.id,binding:current.projection.binding,
       operation:current.operation,...invocationOf(concrete),initiator:owner,executionUserId:executor.executionUserId,
       confirmation:settings.confirmBeforeExecute?"required":"automatic",
-      questionId:settings.confirmBeforeExecute && current.operation.kind !== "form.save" ? randomUUID() : null,
+      questionId:settings.confirmBeforeExecute ? randomUUID() : null,
       answer:null,dispatched:false,outcome:null,
     }));
   }
@@ -519,20 +520,15 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   // A concurrent submission must resolve to the same immutable invocation before any question or write.
   matchingInvocation(intent, input, source.session, executor.executionUserId, concrete);
   if (record.kind === "historical" || intent.dispatched) return replay(record, owner, credentials);
+  if (intent.invalidated) return { kind: "not-dispatched", intentId: intent.intentId, code: intent.invalidated.code, message: intent.invalidated.message };
   if (record.intent.operation.action) requireFrozenOperation(record.intent, current);
   if (intent.confirmation === "automatic") return dispatchPanel(owner,credentials,runId,intent.intentId);
   const handler = "calls" in prepared ? prepared.owner : current.handler;
-  if (handler.kind === "form.save" && "call" in prepared && prepared.target) return {kind:"draft",intentId:intent.intentId,
-    draft:pageDraftSchema.parse({
-      pageKey: current.use.pageKey, operation: handler.draftOperation(prepared.target),
-      target: { objectType: handler.targetType, ...(prepared.target.kind === "object" && { id: prepared.target.primaryKey }) },
-      form: handler.draftInput(prepared.call.input, prepared.target),
-    })};
   const host = operationHost({ owner, credentials });
   const impact = handler.inspectImpact && await ownerImpact(handler.inspectImpact, host, prepared);
   const target = impact
     ? namedTargets(impact.objects.map(object => object.label), impact.total, credentials.locale)
-    : await confirmationTarget(handler as Extract<PanelWriteServerOperation, { kind: "action" }>, host, prepared, intent.operation.label);
+    : await confirmationTarget(handler, host, prepared, intent.operation.label);
   const confirmation = await panelConfirmation(credentials, {
     operation: intent.operation.label, target, impactSummary: impact?.summary,
     executionUserId: intent.executionUserId, initiatorName,
@@ -542,9 +538,22 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   },intent.questionId!));
   return {kind:"confirmation-required",intentId:intent.intentId,question};
 }
-async function confirmationTarget(handler: Extract<PanelWriteServerOperation, { kind: "action" }>,
+async function confirmationTarget(handler: PanelWriteServerOperation,
   host: PanelOperationHost, invocation: CheckedInvocation, operationLabel: string,
 ) {
+  if (handler.kind === "form.save") {
+    if ("call" in invocation) {
+      const values = invocation.call.input.values;
+      const recordName = values && typeof values === "object" && !Array.isArray(values)
+        ? ["name", "displayName", "showName", "title", "label"]
+          .map(key => (values as Record<string, unknown>)[key])
+          .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+        : undefined;
+      if (recordName) return recordName.trim();
+      if (invocation.target?.kind === "object") return `${invocation.target.objectType} (${invocation.target.primaryKey})`;
+    }
+    return operationLabel;
+  }
   // An action without a target is named by the operation itself.
   if (!handler.targetLabel) return operationLabel;
   if ("call" in invocation) return handler.targetLabel(host, invocation.target as PanelRecordTarget);
@@ -560,6 +569,9 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   sourceMatches(record.intent,{providerId:run.channel!.agent.providerId,sessionId:run.sessionId});
   if (record.kind === "historical" || record.intent.dispatched) return replay(record, owner, credentials);
   let intent = record.intent;
+  if (intent.invalidated) {
+    return { kind: "not-dispatched", intentId: id, code: intent.invalidated.code, message: intent.invalidated.message };
+  }
   const executor = await credentialsForRun(owner,runId,credentials,intent.source.session.sessionId);
   if (executor.executionUserId !== intent.executionUserId) throw new HttpError(409,"Executor changed; create a new intent","INTENT_CHANGED");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
@@ -629,7 +641,36 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
     outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
   }
   await store.outcome(owner,id,outcome);
+  if (handler.kind === "form.save" && outcome.kind === "success" && "call" in prepared && prepared.target) {
+    await store.invalidatePendingFormSaves?.(
+      owner,
+      {
+        targetType: handler.targetType,
+        primaryKey: prepared.target.kind === "object" ? prepared.target.primaryKey : null,
+      },
+      {
+        code: PANEL_FORM_CONFIRMATION_STALE,
+        message: "The form was already saved after confirmation was requested. This confirmation is no longer valid; re-read the form and request a new confirmation if further changes are needed.",
+      },
+    );
+  }
   return { outcome };
+}
+/** Invalidates pending agent form.save confirmations when the initiating user edits that form in the browser. */
+export async function invalidateFormConfirmations(owner: AssistantOwner, notification: PanelFormEditedNotification) {
+  const invalidated = await store.invalidatePendingFormSaves(
+    owner,
+    {
+      rootSession: notification.rootSession,
+      targetType: notification.target.objectType,
+      primaryKey: notification.target.kind === "object" ? notification.target.primaryKey : null,
+    },
+    {
+      code: PANEL_FORM_CONFIRMATION_STALE,
+      message: "The form content changed after confirmation was requested. This confirmation is no longer valid; let the user save on the page or re-read the form and request a new confirmation.",
+    },
+  );
+  return { invalidated };
 }
 /** The checked target was parsed by this handler's own target schema, so it is the one its `execute` takes. */
 function executeOwner(handler: PanelWriteServerOperation, host: PanelOperationHost, target: PanelOperationTarget | null,

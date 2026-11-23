@@ -6,10 +6,10 @@ import { useI18n } from "vue-i18n";
 import { isNavigationFailure, NavigationFailureType, useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 import {
   AgentShell, useAgentNav, useConversationDisplay, useSessionRunFeed,
-  type DisplayHistory, type DisplayPage, type DisplayView, type PageContext, type PageSelection,
+  type DisplayHistory, type DisplayPage, type DisplayPageController, type DisplayView, type PageContext, type PageSelection,
   type ShellBottomEntry, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import { useLeaveConfirmation, usePageAccess, usePilotPage } from "@ontomato/platform-shell";
+import { useLeaveConfirmation, usePageAccess, usePageAdmission, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
@@ -105,16 +105,20 @@ async function serialize(page: DisplayPage | null, view: DisplayView, history: D
 
 /** Leaving a native page's draft asks first, by the platform's own question; a panel answers for itself. */
 const leave = useLeaveConfirmation();
+const admitPage = usePageAdmission();
 const display = useConversationDisplay({
   features: () => workbench.value.features,
   resolve: resolvePage,
+  ...(admitPage ? { admit: admitPage } : {}),
   serialize,
-  // The shell's name and address for the page from the moment it opens; selection and highlights are the page's report.
+  // The shell's name and address for the page from the moment it opens; selection, highlights, public state and open forms are the page's report.
   context: (page, reported) => ({
     url: page.address,
     label: pageLabel(page.featureId, reported),
     selection: selectionIn(page, reported),
     ...(reported?.highlights?.length ? { highlights: reported.highlights } : {}),
+    ...(reported?.state && Object.keys(reported.state).length ? { state: reported.state } : {}),
+    ...(reported?.forms?.length ? { forms: reported.forms } : {}),
   }),
   leave: { leaves: (address) => leave.leaves(address?.split("?")[0] ?? ""), confirm: () => leave.confirm() },
 });
@@ -451,11 +455,14 @@ function appearanceSaved(value: WorkbenchAppearance) {
         :key="display.page.value!.instance"
         v-bind="pilotPage.props"
         :object-refresh="display.objectRefresh.value"
+        :live-state="display.liveState.value"
+        :register-page-controller="(controller: DisplayPageController) => display.registerPageController(display.page.value!.instance, controller)"
         @context="display.context"
         @display-address="display.address"
         @display-loaded="display.loaded"
         @display-dirty="display.dirty"
         @display-skill="display.skill"
+        @form-edited="display.formEdited"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

@@ -3,15 +3,20 @@ import { computed, inject, useSlots } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import type { PanelFieldTone, PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
+import { appIcon, hasAppIcon } from "@ontomato/platform-shell";
 import { panelContextKey } from "../panel/context";
 import { panelMemberKey } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import {
   asTone,
+  exactValueMapKey,
   extractMetricCell,
   extractMetricRow,
+  resolveValueMapEntry,
   useOptionalMemberDatum,
   type DisplayDataStateKind,
+  type TypedFieldFormat,
+  type TypedValueMap,
 } from "./display-value";
 import { resolveLocalizedText } from "./localized-text";
 import { displayFieldText, rawRecordField } from "./record-field";
@@ -29,8 +34,14 @@ const props = withDefaults(
   defineProps<{
     /** Semantic banner tone (`"info"`, `"success"`, `"warning"`, `"danger"`). Defaults to `"info"`. */
     tone?: BannerTone;
-    /** Optional field key on a bound `record` whose value or `record.tones[toneField]` determines the banner tone. */
+    /** Optional field/column key on a bound `record` or metric `result` whose value (via `toneMap`/`valueMap` or `record.tones`) determines the banner tone. */
     toneField?: string;
+    /** Optional exact raw-value to banner tone map (`{ [rawValue]: "info" | "success" | "warning" | "danger" }`). Pure exact match; no threshold expressions. */
+    toneMap?: Readonly<Record<string, BannerTone>>;
+    /** Optional exact raw-value to display label/tone/icon mapping applied to `toneField` / `field` (pure exact match; no threshold expressions). */
+    valueMap?: TypedValueMap;
+    /** Optional platform icon name overriding the default semantic status icon. */
+    icon?: string;
     /** Optional fallback heading text. */
     title?: string;
     /** Panel message key (resolved via `panel.t`) or platform i18n key for the heading. */
@@ -51,6 +62,8 @@ const props = withDefaults(
     templateKey?: string;
     /** Locale-keyed templates formatted against the bound `record` or metric `result` row. */
     templates?: Readonly<Record<string, string>>;
+    /** Optional per-placeholder formatting overrides (including `valueMap`) passed to `RecordTemplate`. */
+    fieldFormats?: Readonly<Record<string, TypedFieldFormat>>;
     /** Zero-based row index when reading from a bound metric `result` (`metricOutput`) table. Defaults to `0`. */
     rowIndex?: number;
     /** Tighter padding for dense sidebars and narrow detail cards. Defaults to `false`. */
@@ -63,6 +76,9 @@ const props = withDefaults(
   {
     tone: "info",
     toneField: undefined,
+    toneMap: undefined,
+    valueMap: undefined,
+    icon: undefined,
     title: undefined,
     titleKey: undefined,
     titles: undefined,
@@ -73,6 +89,7 @@ const props = withDefaults(
     template: undefined,
     templateKey: undefined,
     templates: undefined,
+    fieldFormats: undefined,
     rowIndex: 0,
     compact: false,
     hideIcon: false,
@@ -108,28 +125,36 @@ interface ResolvedBound {
   readonly state: DisplayDataStateKind;
   readonly record: PlatformObjectRecord | null;
   readonly metricRow: Readonly<Record<string, unknown>> | null;
+  readonly rawFieldValue: unknown;
+  readonly rawToneFieldValue: unknown;
   readonly fieldText: string;
   readonly notice?: string;
 }
 
 const resolvedBound = computed<ResolvedBound>(() => {
   if (!boundDatum) {
-    return { state: "standalone", record: null, metricRow: null, fieldText: "" };
+    return { state: "standalone", record: null, metricRow: null, rawFieldValue: undefined, rawToneFieldValue: undefined, fieldText: "" };
   }
   const current = boundDatum.state.value;
-  if (current.status === "loading") return { state: "loading", record: null, metricRow: null, fieldText: "" };
-  if (current.status === "empty") return { state: "empty", record: null, metricRow: null, fieldText: "" };
+  if (current.status === "loading") {
+    return { state: "loading", record: null, metricRow: null, rawFieldValue: undefined, rawToneFieldValue: undefined, fieldText: "" };
+  }
+  if (current.status === "empty") {
+    return { state: "empty", record: null, metricRow: null, rawFieldValue: undefined, rawToneFieldValue: undefined, fieldText: "" };
+  }
   if (current.status === "forbidden") {
-    return { state: "forbidden", record: null, metricRow: null, fieldText: "", notice: translate("platform.dataForbidden") };
+    return { state: "forbidden", record: null, metricRow: null, rawFieldValue: undefined, rawToneFieldValue: undefined, fieldText: "", notice: translate("platform.dataForbidden") };
   }
   if (current.status === "awaiting") {
-    return { state: "awaiting", record: null, metricRow: null, fieldText: "", notice: translate("platform.dataAwaiting") };
+    return { state: "awaiting", record: null, metricRow: null, rawFieldValue: undefined, rawToneFieldValue: undefined, fieldText: "", notice: translate("platform.dataAwaiting") };
   }
   if (current.status === "error") {
     return {
       state: "error",
       record: null,
       metricRow: null,
+      rawFieldValue: undefined,
+      rawToneFieldValue: undefined,
       fieldText: "",
       notice: current.message || translate("platform.dataUnreachable"),
     };
@@ -137,16 +162,27 @@ const resolvedBound = computed<ResolvedBound>(() => {
   if (boundDatum.name === "result") {
     const output = current.value as unknown as DashboardMetricOutput;
     const row = extractMetricRow(output, props.rowIndex);
-    if (!row) return { state: "empty", record: null, metricRow: null, fieldText: "" };
+    if (!row) {
+      return { state: "empty", record: null, metricRow: null, rawFieldValue: undefined, rawToneFieldValue: undefined, fieldText: "" };
+    }
     const cell = extractMetricCell(output, props.field, props.rowIndex);
+    const toneCell = props.toneField ? extractMetricCell(output, props.toneField, props.rowIndex) : null;
     const fieldText = cell.value === undefined || cell.value === null ? "" : String(cell.value);
-    return { state: "ready", record: null, metricRow: row, fieldText };
+    return {
+      state: "ready",
+      record: null,
+      metricRow: row,
+      rawFieldValue: cell.value,
+      rawToneFieldValue: toneCell ? toneCell.value : undefined,
+      fieldText,
+    };
   }
   const record = current.value as unknown as PlatformObjectRecord;
   const fieldKey = props.field;
   const raw = fieldKey ? rawRecordField(record, fieldKey) : undefined;
+  const rawTone = props.toneField ? rawRecordField(record, props.toneField) : undefined;
   const fieldText = raw !== undefined ? displayFieldText(raw as PanelRecordFieldValue, locale.value, translate) : "";
-  return { state: "ready", record, metricRow: null, fieldText };
+  return { state: "ready", record, metricRow: null, rawFieldValue: raw, rawToneFieldValue: rawTone, fieldText };
 });
 
 function toBannerTone(tone: PanelFieldTone | undefined): BannerTone | undefined {
@@ -154,16 +190,54 @@ function toBannerTone(tone: PanelFieldTone | undefined): BannerTone | undefined 
   return undefined;
 }
 
+const mappedFieldEntry = computed(() =>
+  resolveValueMapEntry(resolvedBound.value.rawFieldValue, props.valueMap, {
+    locale: locale.value,
+    panelText: panel?.t,
+    t: translate,
+    te: hasTranslation,
+  }),
+);
+
+const mappedToneEntry = computed(() => {
+  if (props.toneField) {
+    return resolveValueMapEntry(resolvedBound.value.rawToneFieldValue, props.valueMap, {
+      locale: locale.value,
+      panelText: panel?.t,
+      t: translate,
+      te: hasTranslation,
+    });
+  }
+  return mappedFieldEntry.value;
+});
+
 const effectiveTone = computed<BannerTone>(() => {
+  const toneSource = props.toneField ? resolvedBound.value.rawToneFieldValue : resolvedBound.value.rawFieldValue;
+  if (props.toneMap) {
+    const key = exactValueMapKey(toneSource);
+    if (key !== null && Object.hasOwn(props.toneMap, key)) {
+      const mapped = toBannerTone(props.toneMap[key]);
+      if (mapped) return mapped;
+    }
+  }
+  const fromValueMap = toBannerTone(mappedToneEntry.value?.tone);
+  if (fromValueMap) return fromValueMap;
   const rec = resolvedBound.value.record;
   if (rec && props.toneField) {
     const fromTones = toBannerTone(asTone(rec.tones?.[props.toneField]));
     if (fromTones) return fromTones;
-    const raw = rawRecordField(rec, props.toneField);
-    const fromValue = toBannerTone(asTone(raw));
+  }
+  if (props.toneField) {
+    const fromValue = toBannerTone(asTone(resolvedBound.value.rawToneFieldValue));
     if (fromValue) return fromValue;
   }
   return props.tone;
+});
+
+const customIconName = computed<string | undefined>(() => {
+  const explicit = props.icon?.trim();
+  if (explicit && hasAppIcon(explicit)) return explicit;
+  return mappedToneEntry.value?.icon ?? mappedFieldEntry.value?.icon;
 });
 
 const resolvedTitle = computed(() =>
@@ -194,10 +268,10 @@ const hasTemplate = computed(() => Boolean(props.template || props.templateKey |
 
 const bodyText = computed(() => {
   if (boundDatum && props.field) {
-    return resolvedBound.value.fieldText;
+    return mappedFieldEntry.value?.label ?? resolvedBound.value.fieldText;
   }
   if (boundDatum && !hasTemplate.value && !resolvedStaticText.value && !slots.default && boundDatum.name === "result") {
-    return resolvedBound.value.fieldText;
+    return mappedFieldEntry.value?.label ?? resolvedBound.value.fieldText;
   }
   return resolvedStaticText.value;
 });
@@ -226,8 +300,9 @@ const ariaRole = computed(() => (effectiveTone.value === "warning" || effectiveT
     :role="ariaRole"
     :aria-busy="resolvedBound.state === 'loading' ? 'true' : undefined"
   >
-    <span v-if="!hideIcon" class="sdk-info-banner-icon" aria-hidden="true">
-      <svg v-if="effectiveTone === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <span v-if="!hideIcon" class="sdk-info-banner-icon" :data-icon="customIconName" aria-hidden="true">
+      <component :is="appIcon(customIconName)" v-if="customIconName" :size="16" :stroke-width="2" />
+      <svg v-else-if="effectiveTone === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10" />
         <path d="m9 12 2 2 4-4" />
       </svg>
@@ -259,6 +334,7 @@ const ariaRole = computed(() => (effectiveTone.value === "warning" || effectiveT
             :template="template"
             :template-key="templateKey"
             :templates="templates"
+            :field-formats="fieldFormats"
             :record="resolvedBound.record"
             :values="resolvedBound.metricRow"
             :row-index="rowIndex"

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
+import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
 import { X as CloseIcon } from "lucide-vue-next";
@@ -32,6 +34,8 @@ const props = withDefaults(defineProps<{
   address: string;
   /** The deep-linkable state the page address currently requests. */
   initial?: Record<string, unknown>;
+  /** Pending live state patch (including non-deepLink declared public state) for a newly mounted panel. */
+  liveState?: Readonly<Record<string, RuntimeJsonValue>> | null;
   /** The title drawn above the frame; absent when the frame is the whole surface. */
   title?: string;
   /** What the host says to the reader, in the platform's language. */
@@ -78,6 +82,7 @@ const props = withDefaults(defineProps<{
   leaveDraft: undefined,
   historyBack: true,
   confirmLeave: undefined,
+  liveState: null,
 });
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
@@ -86,6 +91,8 @@ const emit = defineEmits<{
   "display-address": [input: DisplayPageAddressInput];
   "display-loaded": [load: DisplayLoad];
   "display-dirty": [dirty: boolean];
+  /** The reader manually edited an unsaved form inside this panel. */
+  "form-edited": [target: PanelFormEditedTarget];
   /** Shown again, the page passed its checks: its frame may ask again and its objects are being read again. */
   reopened: [];
   /** Shown again, the page is no longer its application's: its use relation was withdrawn or bound elsewhere. */
@@ -142,6 +149,9 @@ const view = usePanelInstance(props.port, {
   },
   address: () => props.address,
   initial: () => props.initial ?? {},
+  liveState: () => props.liveState ?? null,
+  wired: () => props.wired,
+  formEdited: (target) => emit("form-edited", target),
   shown: () => props.shown,
   reopened: () => emit("reopened"),
   withdrawn: () => emit("withdrawn"),

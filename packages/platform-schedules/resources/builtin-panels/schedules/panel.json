@@ -42,6 +42,14 @@
         },
         "deepLink": true,
         "external": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": false,
+        "default": ""
       }
     },
     "members": {

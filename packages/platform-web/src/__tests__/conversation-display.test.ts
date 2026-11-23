@@ -290,25 +290,27 @@ describe("what an agent presents", () => {
     expect(router.currentRoute.value.query.page).toBeUndefined();
   });
 
-  it("replaces the reader's page without writing the presented one, so a reload neither shows it nor the page it replaced", async () => {
+  it("writes a presented page into the address as a real navigation so a reload restores it, while keeping layout unchanged", async () => {
     const wrapper = await started();
     await openLink(wrapper, "/first");
     expect(router.currentRoute.value.query.page).toBe("/first");
+    expect(displayOf(wrapper).view.value).toBe("side");
 
     const answer = await present({ kind: "page", address: "/second" });
     expect(answer.receipt.result).toMatchObject({ status: "opened", current: { target: { kind: "page", url: "/second" } } });
     expect(wrapper.find(".reporting-page .shown").text()).toBe("/second");
-    expect(router.currentRoute.value.query.page).toBeUndefined();
+    expect(displayOf(wrapper).view.value).toBe("side");
+    expect(router.currentRoute.value.query.page).toBe("/second");
 
-    // The presented page's own state moves its display, not the address.
+    // The presented page's own state updates the address in place too.
     await wrapper.find(".reporting-page .state").trigger("click");
     await flushPromises();
     expect(displayOf(wrapper).page.value?.address).toBe("/second?selected=row-2");
-    expect(router.currentRoute.value.query.page).toBeUndefined();
+    expect(router.currentRoute.value.query.page).toBe("/second?selected=row-2");
 
     wrappers.splice(0).forEach((shown) => shown.unmount());
     const reloaded = await workbench();
-    expect(displayOf(reloaded).target.value).toBeNull();
+    expect(displayOf(reloaded).page.value?.address).toBe("/second?selected=row-2");
   });
 
   it("keeps the page and the address over unsaved changes, without asking the reader", async () => {

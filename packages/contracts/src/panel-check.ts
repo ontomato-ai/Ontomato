@@ -12,7 +12,7 @@ export {
   panelPortAccepts, panelTemplatePlacedMemberKeys,
 } from "./panel-manifest";
 export {
-  checkAuthoringScript, checkAuthoringStyles, checkAuthoringTemplate, checkAuthoringTheme,
+  checkAuthoringDirectApiCalls, checkAuthoringScript, checkAuthoringStyles, checkAuthoringTemplate, checkAuthoringTheme,
   componentModuleImports, componentOfficialSpecifiers, isComponentOfficialSpecifier, panelModuleImports,
 } from "./panel-module";
 export {

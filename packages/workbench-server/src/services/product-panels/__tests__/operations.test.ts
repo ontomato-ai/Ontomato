@@ -56,7 +56,7 @@ vi.mock("../current",()=>({
   },
 }));
 import {
-  operatePanel as realOperatePanel, dispatchPanel, dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings,
+  operatePanel as realOperatePanel, dispatchPanel, dispatchHumanPanelOperation, inspectPanelOperationImpact, invalidateFormConfirmations, ownPanelSettings,
   prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
 } from "../operations";
 import { panelOperationStore } from "../operation-store";
@@ -128,6 +128,24 @@ beforeEach(()=>{
    if(sql.startsWith("SELECT confirm_before"))return {rows:automatic?[{confirm_before_execute:false}]:[]};
    if(sql.startsWith("SELECT intent"))return {rows:intents.has(id)?[{intent:structuredClone(intents.get(id)),owner_id:owner.userId}]:[]};
    if(sql.startsWith("INSERT INTO panel_operation_intents")){if(!intents.has(String(args[1])))intents.set(String(args[1]),structuredClone(args[4] as PanelOperationIntent));return {rows:[]};}
+   if(sql.includes("jsonb_set(intent,'{invalidated}'")){
+     const reason=JSON.parse(String(args[2]));
+     const targetType=String(args[3]);
+     const primaryKey=sql.includes("primaryKey")?String(args[4]):null;
+     const providerIdx=sql.includes("providerId")?(primaryKey?5:4):-1;
+     let count=0;
+     for(const [k,v] of intents.entries()){
+       if(v.dispatched||isPanelHumanOperationIntent(v)||v.operation.kind!=="form.save"||v.invalidated)continue;
+       if(!("call" in v))continue;
+       const matchesTarget=primaryKey
+         ?(v.call.target?.kind==="object"&&v.call.target.objectType===targetType&&v.call.target.primaryKey===primaryKey)
+         :(v.call.target?.kind==="draft"&&v.binding?.id===targetType);
+       if(!matchesTarget)continue;
+       if(providerIdx>=0&&(v.rootSession.providerId!==String(args[providerIdx])||v.rootSession.sessionId!==String(args[providerIdx+1])))continue;
+       intents.set(k,{...v,invalidated:reason});count++;
+     }
+     return {rowCount:count};
+   }
    if(sql.includes("AND intent->>'dispatched'='false'")){const value=intents.get(id)!;if(value.dispatched)return {rowCount:0};intents.set(id,structuredClone(args[3] as PanelOperationIntent));return {rowCount:1};}
    if(sql.includes("jsonb_set")){intents.get(id)!.outcome=JSON.parse(String(args[3]));return {rowCount:1};}
    throw new Error(sql);
@@ -193,9 +211,70 @@ it("requires the actual initiating user, not another human receipt",async()=>{
  await operatePanel(owner,credentials,current.id,action());answer();mocks.restore.mockResolvedValue({owner:{...owner,userId:"other"}});
  expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"NOT_APPROVED"});expect(ownerWrites()).toHaveLength(0);
 });
-it("default form save is an unsaved draft that dispatch cannot redeem",async()=>{
- expect(await operatePanel(owner,credentials,current.id,save())).toMatchObject({kind:"draft",draft:{operation:"platform:ScheduledTask.save",target:{objectType:"platform:ScheduledTask",id:uuid(9)},form:{title:"draft"}}});
- expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({code:"DRAFT_REQUIRES_SAVE"});expect(ownerWrites()).toHaveLength(0);expect(mocks.request).not.toHaveBeenCalled();
+it("default form save requests human confirmation and executes only after approval",async()=>{
+ const response=await operatePanel(owner,credentials,current.id,save());
+ expect(response).toMatchObject({kind:"confirmation-required",intentId:uuid(5)});
+ expect(ownerWrites()).toHaveLength(0);
+ expect(mocks.request).toHaveBeenCalledWith("/v1/channel/user-questions","POST",expect.objectContaining({
+   message:expect.stringContaining("draft"),
+ }),expect.any(String));
+ expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({kind:"not-dispatched",code:"CONFIRMATION_REQUIRED"});
+ expect(ownerWrites()).toHaveLength(0);
+ answer();
+ vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   if(init.method==="PUT")return Response.json({...task,revision:5});
+   if(url.endsWith("/form"))return Response.json(rawExamples.forms.find(form=>form.name==="governance-ready")!.response);
+   return Response.json(task);
+ }));
+ expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
+ expect(vi.mocked(fetch).mock.calls.filter(([,init])=>init?.method==="PUT")).toHaveLength(1);
+});
+
+it("invalidates a pending form.save confirmation when the user edits that form before confirming",async()=>{
+ const response=await operatePanel(owner,credentials,current.id,save());
+ expect(response.kind).toBe("confirmation-required");
+ // Editing an unrelated object does not invalidate this confirmation.
+ expect(await invalidateFormConfirmations(owner,{
+   rootSession:root,
+   target:{kind:"object",objectType:"platform:ScheduledTask",primaryKey:uuid(8)},
+ })).toEqual({invalidated:0});
+ // Editing the same form invalidates the pending confirmation so stale values never overwrite newer edits.
+ expect(await invalidateFormConfirmations(owner,{
+   rootSession:root,
+   target:{kind:"object",objectType:"platform:ScheduledTask",primaryKey:uuid(9)},
+ })).toEqual({invalidated:1});
+ answer();
+ expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({
+   kind:"not-dispatched",
+   code:"FORM_CONFIRMATION_STALE",
+ });
+ expect(ownerWrites()).toHaveLength(0);
+ expect(await operatePanel(owner,credentials,current.id,save())).toMatchObject({
+   kind:"not-dispatched",
+   code:"FORM_CONFIRMATION_STALE",
+ });
+});
+
+it("invalidates a pending agent form.save confirmation when the user saves that form directly on the page",async()=>{
+ const response=await operatePanel(owner,credentials,current.id,save());
+ expect(response.kind).toBe("confirmation-required");
+ vi.stubGlobal("fetch",vi.fn(async(url:string,init:NonNullable<Parameters<typeof fetch>[1]>)=>{
+   if(init.method==="PUT")return Response.json({...task,revision:5});
+   if(url.endsWith("/form"))return Response.json(rawExamples.forms.find(form=>form.name==="governance-ready")!.response);
+   return Response.json(task);
+ }));
+ const humanPrep=await prepareHumanPanelOperation(owner,credentials,{
+   applicationId:"A",useId:"tasks",operationId:"form.save",
+   call:{target:{kind:"object",objectType:"platform:ScheduledTask",primaryKey:uuid(9)},input:{values:task.content,revision:4}},
+ });
+ const humanDispatched=await dispatchHumanPanelOperation(owner,credentials,humanPrep.intentId);
+ expect(humanDispatched).toMatchObject({kind:"dispatched",outcome:{kind:"success"}});
+ answer();
+ expect(await dispatchPanel(owner,credentials,current.id,uuid(5))).toMatchObject({
+   kind:"not-dispatched",
+   code:"FORM_CONFIRMATION_STALE",
+ });
+ expect(vi.mocked(fetch).mock.calls.filter(([,init])=>init?.method==="PUT")).toHaveLength(1);
 });
 it.each(["save","runNow"])("automatic %s calls the same owner client, preserving the form revision",async operation=>{
  automatic=true;

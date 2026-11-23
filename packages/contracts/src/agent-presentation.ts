@@ -25,17 +25,28 @@ function hasStateQuery(address: string): boolean {
 export const presentRequestSchema = z.object({
   target: z.union([outputPathSchema, pageAddressSchema]),
   state: runtimeJsonObjectSchema.optional(),
+  /** Explicitly allow replacing unsaved edits in the target form after the user confirms. */
+  overwriteUnsavedDraft: z.boolean().optional(),
 }).strict().refine(
   ({ target, state }) => state === undefined ||
     (target.startsWith("/") && !hasStateQuery(target)),
   { path: ["state"], message: "State requires a page address that provides no state query" },
+).refine(
+  ({ target, overwriteUnsavedDraft }) => overwriteUnsavedDraft === undefined || target.startsWith("/"),
+  { path: ["overwriteUnsavedDraft"], message: "overwriteUnsavedDraft applies only to a page address" },
 );
 export type PresentRequest = z.infer<typeof presentRequestSchema>;
 
-/** Private transport from the runtime tool to the host bound to this call. */
+/** Read-only mid-round observation request for the user's current conversation display. */
+export const observeDisplayRequestSchema = z.object({
+  mode: z.literal("observe"),
+}).strict();
+export type ObserveDisplayRequest = z.infer<typeof observeDisplayRequestSchema>;
+
+/** Private transport from the runtime display tools to the host bound to this call. */
 export const presentationCallRequestSchema = z.object({
   toolCallId: runtimeKeySchema,
-  input: presentRequestSchema,
+  input: z.union([presentRequestSchema, observeDisplayRequestSchema]),
 }).strict();
 
 /** Private to admission and the active runtime tool, outside the definition and sandbox environment. */
@@ -106,6 +117,11 @@ const notOpenedResultSchema = z.object({
   current: displaySnapshotSchema,
   error: displayErrorSchema.optional(),
 }).strict();
+const observedDisplayResultSchema = z.object({
+  status: z.literal("observed"),
+  reason: z.enum(["current_display", "view_unavailable", "not_viewing_session"]),
+  current: displaySnapshotSchema,
+}).strict();
 const unknownResultSchema = z.object({
   status: z.literal("unknown"),
   reason: z.literal("receipt_missing"),
@@ -113,7 +129,11 @@ const unknownResultSchema = z.object({
   error: displayErrorSchema.optional(),
 }).strict();
 
-const observedResultSchema = z.discriminatedUnion("status", [openedResultSchema, notOpenedResultSchema]).refine(
+const observedResultSchema = z.discriminatedUnion("status", [
+  openedResultSchema,
+  notOpenedResultSchema,
+  observedDisplayResultSchema,
+]).refine(
   (result) => result.status !== "opened" || (result.reason === "load_error") === (result.current.load.status === "error"),
   { path: ["reason"], message: "An opened result reports load_error exactly when the selected target failed to load" },
 );
@@ -132,7 +152,13 @@ export const presentationFrameSchema = z.object({
   toolCallId: runtimeKeySchema,
   target: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("artifact"), artifact: runtimeArtifactSchema }).strict(),
-    z.object({ kind: z.literal("page"), address: pageAddressSchema, state: runtimeJsonObjectSchema.optional() }).strict(),
+    z.object({
+      kind: z.literal("page"),
+      address: pageAddressSchema,
+      state: runtimeJsonObjectSchema.optional(),
+      overwriteUnsavedDraft: z.boolean().optional(),
+    }).strict(),
+    z.object({ kind: z.literal("observe") }).strict(),
   ]),
 }).strict();
 export type PresentationFrame = z.infer<typeof presentationFrameSchema>;
