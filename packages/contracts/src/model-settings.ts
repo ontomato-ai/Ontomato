@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { runtimeHttpUrlSchema, runtimeJsonObjectSchema } from "./agent-runtime-values";
+import { runtimeHttpUrlSchema } from "./agent-runtime-values";
 
 export const SECRET_MASK_PREFIX = "******";
 export function isMaskedSecret(value: string | null | undefined): boolean {
@@ -9,141 +9,149 @@ export function maskModelKey(value: string): string {
   return value ? SECRET_MASK_PREFIX + (value.length > 8 ? value.slice(-4) : "") : value;
 }
 
-export const modelProviderIdSchema = z.string().min(1).regex(/^[^/\s]+$/);
-export const modelIdSchema = z.string().trim().min(1);
-/** Split only at the first slash: provider model IDs may themselves contain slashes. */
-export const modelReferenceSchema = z.string().trim().refine(value => {
-  const slash = value.indexOf("/");
-  return slash > 0 && modelProviderIdSchema.safeParse(value.slice(0, slash)).success
-    && modelIdSchema.safeParse(value.slice(slash + 1)).success
-    && value.slice(slash + 1) === value.slice(slash + 1).trim();
-}, "Expected provider/model-id");
-export type ModelReference = z.output<typeof modelReferenceSchema>;
+/** A connection's name is the key models reference it by; it never contains a slash. */
+export const modelConnectionNameSchema = z.string().min(1).regex(/^[^/\s]+$/);
+/** A model's public name: what callers name in requests, unique in the domain, and the only name stored elsewhere. */
+export const modelNameSchema = z.string().trim().min(1);
 
-/** Custom APIs supported with a base URL and a literal API key. */
-export const modelApiSchema = z.enum([
-  "openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai",
+/**
+ * LiteLLM provider prefixes the platform offers. Each decides how LiteLLM reaches the upstream: its own native API, a
+ * conversion from Chat (for upstreams that only speak Chat), or the Anthropic and Gemini APIs of migrated settings.
+ */
+export const modelProviderSchema = z.enum([
+  "openai", "azure", "bigmodel", "volcengine", "deepseek", "dashscope", "moonshot",
+  "custom_openai", "anthropic", "gemini",
 ]);
-export type ModelApi = z.output<typeof modelApiSchema>;
+export type ModelProvider = z.output<typeof modelProviderSchema>;
 export const modelTypeSchema = z.enum(["chat", "embedding"]);
+export type ModelType = z.output<typeof modelTypeSchema>;
 
-/** pi's values for chat model fields that are left out of an entry. */
-export const PI_CHAT_MODEL_DEFAULTS = { contextWindow: 128000, maxTokens: 16384 } as const;
+/** A chat model's context length when the connection's owner leaves it out; it is not the upstream's limit. */
+export const DEFAULT_CHAT_CONTEXT_WINDOW = 262144;
+/** What a model waits for its upstream when its owner configures no timeout. */
+export const DEFAULT_MODEL_TIMEOUT_SECONDS = 300;
+export const DEFAULT_MODEL_MAX_RETRIES = 2;
 
-const modelFields = {
-  id: modelIdSchema,
-  name: z.string().trim().min(1).optional(),
-  reasoning: z.boolean().optional(),
-  input: z.array(z.enum(["text", "image"])).nonempty().optional(),
-  contextWindow: z.number().int().positive().optional(),
-  maxTokens: z.number().int().positive().optional(),
-  samplingParams: runtimeJsonObjectSchema.optional(),
-};
-export const modelEntrySchema = z.discriminatedUnion("type", [
-  z.object({ ...modelFields, type: z.literal("chat") }).strict(),
-  z.object({ ...modelFields, type: z.literal("embedding"), dimensions: z.number().int().positive() }).strict(),
-]);
-export type ModelEntry = z.output<typeof modelEntrySchema>;
-export type ModelEntryInput = z.input<typeof modelEntrySchema>;
+/** Anthropic serves no embeddings API; every other provider prefix here does. */
+export function supportsEmbeddings(provider: ModelProvider): boolean {
+  return provider !== "anthropic";
+}
 
-/** Configuration values are literals, never pi environment interpolation or commands. */
+/** Configuration values are literals, never environment interpolation or commands. */
 const literalValueSchema = z.string().refine(value =>
   !/^[!$]/.test(value.trimStart()) && !/\$(?:\{|[A-Za-z_])/.test(value),
 "Environment interpolation and commands are not supported");
 export const modelApiKeyWriteSchema = literalValueSchema
   .refine(value => value.trim().length > 0, "An API key is required")
   .refine(value => !value.trimStart().startsWith("enc:v1:"), "Enter an API key, not ciphertext");
-const providerFields = {
-  name: z.string().trim().min(1).optional(),
-  baseUrl: runtimeHttpUrlSchema,
-  api: modelApiSchema,
-  headers: z.record(literalValueSchema).optional(),
-};
-/** Draft credentials can retain a saved key only under the same domain and provider ID. */
-export const modelProviderConnectionSchema = z.object({
-  ...providerFields, apiKey: modelApiKeyWriteSchema,
-}).strict();
-export function supportsEmbeddings(api: ModelApi): boolean {
-  return api === "openai-completions" || api === "openai-responses";
-}
-const uniqueModels = (provider: { api: ModelApi; models: ModelEntry[] }, ctx: z.RefinementCtx) => {
-  const seen = new Set<string>();
-  provider.models.forEach((model, index) => {
-    if (seen.has(model.id)) ctx.addIssue({ code: z.ZodIssueCode.custom,
-      path: ["models", index, "id"], message: "Model IDs must be unique within a provider" });
-    seen.add(model.id);
-    if (model.type === "embedding" && !supportsEmbeddings(provider.api))
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["models", index, "type"],
-        message: "Embedding models require an OpenAI-compatible provider" });
-  });
-};
-export const modelProviderWriteSchema = modelProviderConnectionSchema.extend({
-  models: z.array(modelEntrySchema),
-}).superRefine(uniqueModels);
-export const modelProviderSchema = z.object({
-  ...providerFields,
-  apiKey: z.string().refine(isMaskedSecret, "Model reads must contain masked keys"),
-  models: z.array(modelEntrySchema),
-}).strict().superRefine(uniqueModels);
-export type ModelProviderWrite = z.input<typeof modelProviderWriteSchema>;
-export type ModelProvider = z.output<typeof modelProviderSchema>;
 
-/** Provider-level settings from pi settings.json, shared by all calls in one domain. */
-export const modelRetrySchema = z.object({
-  provider: z.object({
-    timeoutMs: z.number().int().positive(),
-    maxRetries: z.number().int().nonnegative(),
-    maxRetryDelayMs: z.number().int().nonnegative(),
-  }).strict(),
-}).strict();
-export type ModelRetry = z.output<typeof modelRetrySchema>;
-const defaults = {
-  defaultModelId: modelReferenceSchema.nullable(),
-  embeddingModelId: modelReferenceSchema.nullable(),
+/**
+ * A named connection: everything that belongs to the upstream service, stored once and shared by its models. The key
+ * never leaves the runtime in clear text and is written as a masked value on reads.
+ */
+const connectionFields = {
+  provider: modelProviderSchema,
+  apiBase: runtimeHttpUrlSchema.optional(),
+  extraHeaders: z.record(literalValueSchema).optional(),
 };
-export const modelSettingsConfigurationSchema = z.object({
-  providers: z.record(modelProviderIdSchema, modelProviderWriteSchema),
-  ...defaults,
-  retry: modelRetrySchema,
+export const modelConnectionWriteSchema = z.object({ ...connectionFields, apiKey: modelApiKeyWriteSchema }).strict();
+export const modelConnectionSchema = z.object({
+  ...connectionFields,
+  apiKey: z.string().refine(isMaskedSecret, "Model reads must contain masked keys"),
 }).strict();
-/** Provider IDs that prefix unavailable legacy model references; no configured provider may use them. */
-/** Prefix of migrated references whose model no longer exists; no provider may take it, so they stay unavailable. */
-export const UNCONFIGURED_MODEL_PROVIDER_ID = "legacy";
-export const RESERVED_MODEL_PROVIDER_IDS: readonly string[] = [UNCONFIGURED_MODEL_PROVIDER_ID];
-export const modelSettingsWriteSchema = modelSettingsConfigurationSchema.superRefine((settings, ctx) => {
-  for (const id of Object.keys(settings.providers)) {
-    if (RESERVED_MODEL_PROVIDER_IDS.includes(id)) ctx.addIssue({ code: z.ZodIssueCode.custom,
-      path: ["providers", id], message: "Provider ID is reserved for unavailable legacy model references" });
+export type ModelConnectionWrite = z.input<typeof modelConnectionWriteSchema>;
+export type ModelConnection = z.output<typeof modelConnectionSchema>;
+
+const modelFields = {
+  /** The connection this model calls through; the key is the connection it references. */
+  connection: modelConnectionNameSchema,
+  /** The upstream's own model name, sent after the provider prefix. */
+  model: z.string().trim().min(1),
+  contextWindow: z.number().int().positive().optional(),
+  /** Unset sends no output limit, leaving the upstream's own default. */
+  maxOutputTokens: z.number().int().positive().optional(),
+  timeoutSeconds: z.number().int().positive().optional(),
+  maxRetries: z.number().int().nonnegative().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  topP: z.number().min(0).max(1).optional(),
+  supportsVision: z.boolean().optional(),
+  supportsReasoning: z.boolean().optional(),
+};
+export const modelEntrySchema = z.discriminatedUnion("type", [
+  z.object({ ...modelFields, type: z.literal("chat") }).strict(),
+  z.object({ ...modelFields, type: z.literal("embedding"), dimensions: z.number().int().positive() }).strict(),
+]);
+export type ModelEntry = z.output<typeof modelEntrySchema>;
+export type ModelEntryChat = Extract<ModelEntry, { type: "chat" }>;
+export type ModelEntryEmbedding = Extract<ModelEntry, { type: "embedding" }>;
+
+const defaults = {
+  defaultModel: modelNameSchema.nullable(),
+  embeddingModel: modelNameSchema.nullable(),
+};
+
+function checkModels(settings: {
+  connections: Record<string, { provider: ModelProvider }>;
+  models: Record<string, ModelEntry>;
+  defaultModel: string | null;
+  embeddingModel: string | null;
+}, ctx: z.RefinementCtx) {
+  for (const [name, model] of Object.entries(settings.models)) {
+    const connection = settings.connections[model.connection];
+    if (!connection) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["models", name, "connection"],
+        message: "A model must reference a configured connection" });
+      continue;
+    }
+    if (model.type === "embedding" && !supportsEmbeddings(connection.provider))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["models", name, "type"],
+        message: "This provider serves no embeddings" });
   }
-  for (const [field, type] of [["defaultModelId", "chat"], ["embeddingModelId", "embedding"]] as const) {
-    const ref = settings[field];
-    if (ref === null) continue;
-    const slash = ref.indexOf("/");
-    const model = settings.providers[ref.slice(0, slash)]?.models.find(item => item.id === ref.slice(slash + 1));
-    if (!model || model.type !== type) ctx.addIssue({ code: z.ZodIssueCode.custom,
-      path: [field], message: `Selection must reference a configured ${type} model` });
+  for (const [field, type] of [["defaultModel", "chat"], ["embeddingModel", "embedding"]] as const) {
+    const name = settings[field];
+    if (name === null) continue;
+    const model = settings.models[name];
+    if (!model || model.type !== type)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field],
+        message: `Selection must reference a configured ${type} model` });
   }
-});
-export type ModelSettingsWrite = z.input<typeof modelSettingsWriteSchema>;
-export const modelSettingsSchema = z.object({
-  providers: z.record(modelProviderIdSchema, modelProviderSchema),
+}
+
+export const modelSettingsWriteSchema = z.object({
+  connections: z.record(modelConnectionNameSchema, modelConnectionWriteSchema),
+  models: z.record(modelNameSchema, modelEntrySchema),
   ...defaults,
-  retry: modelRetrySchema,
+}).strict().superRefine(checkModels);
+export type ModelSettingsWrite = z.input<typeof modelSettingsWriteSchema>;
+export const modelSettingsConfigurationSchema = z.object({
+  connections: z.record(modelConnectionNameSchema, modelConnectionWriteSchema),
+  models: z.record(modelNameSchema, modelEntrySchema),
+  ...defaults,
+}).strict();
+export const modelSettingsSchema = z.object({
+  connections: z.record(modelConnectionNameSchema, modelConnectionSchema),
+  models: z.record(modelNameSchema, modelEntrySchema),
+  ...defaults,
 }).strict();
 export type ModelSettingsData = z.output<typeof modelSettingsSchema>;
 
+export type ModelSettingsConfiguration = z.output<typeof modelSettingsConfigurationSchema>;
+
 /** Null follows the domain chat default; an explicit missing reference never falls back. */
 export const modelSelectionSchema = z.object({
-  modelId: modelReferenceSchema.nullish().transform(value => value ?? null),
+  modelId: modelNameSchema.nullish().transform(value => value ?? null),
 }).strict();
 export type ModelSelection = z.output<typeof modelSelectionSchema>;
-const optionFields = { ref: modelReferenceSchema, name: z.string().min(1) };
+
+const optionFields = { name: modelNameSchema };
 export const modelOptionSchema = z.discriminatedUnion("type", [
   z.object({ ...optionFields, type: z.literal("chat") }).strict(),
   z.object({ ...optionFields, type: z.literal("embedding"), dimensions: z.number().int().positive() }).strict(),
 ]);
 export type ModelOption = z.output<typeof modelOptionSchema>;
-export const modelOptionsSchema = z.object({ models: z.array(modelOptionSchema), ...defaults }).strict();
+export const modelOptionsSchema = z.object({
+  models: z.array(modelOptionSchema), defaultModel: modelNameSchema.nullable(), embeddingModel: modelNameSchema.nullable(),
+}).strict();
 export type ModelOptions = z.output<typeof modelOptionsSchema>;
 
 /** The ontology host owns its agent catalog and selections, outside runtime model settings. */

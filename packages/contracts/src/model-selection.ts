@@ -8,8 +8,8 @@ import type { ModelOption } from "./model-settings";
  * explicitly until someone chooses again.
  */
 
-/** Options use the full provider/model-id reference; display names may repeat. */
-export type ModelChoice = Pick<ModelOption, "ref" | "name" | "type">;
+/** A public model name, unique in the domain. */
+export type ModelChoice = Pick<ModelOption, "name" | "type">;
 
 /** Texts of the options, supplied by the host in its own language. */
 export interface ModelSelectionLabels {
@@ -38,11 +38,6 @@ export interface ModelSelectionView {
 
 const NULL_CHOICE = "";
 
-/** A model's name for people: the display name, followed by the ID when they differ. */
-export function modelLabel(model: ModelChoice): string {
-  return model.name === model.ref ? model.ref : `${model.name} (${model.ref})`;
-}
-
 /** The options and state of a selection; `models` is null while the domain's models are not known. */
 export function modelSelectionView(
   modelId: string | null,
@@ -51,12 +46,12 @@ export function modelSelectionView(
 ): ModelSelectionView {
   const choices = models === null ? null : models.filter(model => model.type === "chat");
   const missingId =
-    modelId !== null && choices !== null && !choices.some((model) => model.ref === modelId) ? modelId : null;
+    modelId !== null && choices !== null && !choices.some((model) => model.name === modelId) ? modelId : null;
   return {
     value: modelId ?? NULL_CHOICE,
     options: [
       { value: NULL_CHOICE, label: labels.nullChoice, disabled: false },
-      ...(choices ?? []).map((model) => ({ value: model.ref, label: modelLabel(model), disabled: false })),
+      ...(choices ?? []).map((model) => ({ value: model.name, label: model.name, disabled: false })),
       ...(missingId === null ? [] : [{ value: missingId, label: labels.unavailable(missingId), disabled: true }]),
     ],
     missingId,
