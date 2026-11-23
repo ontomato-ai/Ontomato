@@ -26,8 +26,7 @@
         "type": {
           "kind": "scalar",
           "type": "string"
-        },
-        "deepLink": true
+        }
       },
       "newTask": {
         "type": {

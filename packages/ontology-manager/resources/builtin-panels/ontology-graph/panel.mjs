@@ -1,5 +1,5 @@
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
-import { mountPanel, usePanelBack, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelBack, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 /*
  * The ontology graph: composes official projections for counts (`ObjectCount`), resource lists (`ObjectList`),
@@ -241,7 +241,10 @@ await mountPanel({
           ? { focus: "relation", id: requestedRelationKey.value }
           : null;
       if (!target) return;
-      const address = `/ontology/visual-modeling?focus=${target.focus}&id=${encodeURIComponent(target.id)}&back=playground`;
+      const address = panelAddress(
+        "/ontology/visual-modeling",
+        target.focus === "relation" ? { selectedEdge: target.id } : { selectedNode: target.id },
+      );
       try {
         await instance.navigate(address);
       } catch (reason) {

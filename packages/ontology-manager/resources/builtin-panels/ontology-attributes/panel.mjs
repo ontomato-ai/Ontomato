@@ -1,5 +1,5 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
@@ -68,8 +68,7 @@ await mountPanel({
     const openOwner = row => {
       const owner = ownerOf(row);
       if (!owner) return;
-      const state = JSON.stringify({ selected: { className: "platform:ObjectType", primaryKey: owner } });
-      void context.navigate(`/ontology/objects?${new globalThis.URLSearchParams({ state })}`).catch(() => undefined);
+      void context.navigate(panelAddress("/ontology/objects", { selected: owner })).catch(() => undefined);
     };
 
     // When the selected attribute leaves the owner's list (it was deleted), the page lets go of it.

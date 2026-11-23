@@ -1,7 +1,6 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
+import { mountPanel, panelAddress, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
-const TYPE = "platform:Relationship";
 const DETAIL_PATH = "/ontology/relations/detail";
 
 await mountPanel({
@@ -20,8 +19,7 @@ await mountPanel({
     const setCreating = (value) => instance.state.set("creating", value ? true : null);
 
     function detailAddress(primaryKey) {
-      const state = JSON.stringify({ selected: { className: TYPE, primaryKey } });
-      return `${DETAIL_PATH}?${new globalThis.URLSearchParams({ state })}`;
+      return panelAddress(DETAIL_PATH, { selected: primaryKey });
     }
 
     function open(ref) {

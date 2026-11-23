@@ -44,7 +44,6 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": true,
         "default": "view"
       }
     },

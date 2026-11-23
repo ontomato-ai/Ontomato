@@ -1,6 +1,7 @@
 import { computed, ref, watch } from "vue";
 import {
   mountPanel,
+  panelAddress,
   usePanelBack,
   usePanelContext,
   usePanelData,
@@ -301,8 +302,7 @@ await mountPanel({
       navigate(`/browser/data/${encodeURIComponent(selectedKey.value)}`).catch(() => undefined);
     const openRelation = row => {
       if (!row?.primaryKey) return;
-      const param = JSON.stringify({ selected: { className: "platform:Relationship", primaryKey: row.primaryKey } });
-      void navigate(`/ontology/relations?${new globalThis.URLSearchParams({ state: param })}`).catch(() => undefined);
+      void navigate(panelAddress("/ontology/relations/detail", { selected: row.primaryKey })).catch(() => undefined);
     };
 
     return {
