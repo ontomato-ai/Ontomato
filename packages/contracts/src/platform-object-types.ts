@@ -200,13 +200,32 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [MCP_SERVICE_OPTION]: { ...describeType("mcpServiceOption"), reads: referenceReads },
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
-    reads: { ...modelReads, ...metadataList },
+    reads: {
+      ...modelReads, ...metadataList,
+      record: {
+        ...modelReads.record,
+        outputs: {
+          primaryKeyStatus: { kind: "scalar", type: "string" },
+          primaryKeyName: { kind: "scalar", type: "string" },
+          attributeCount: { kind: "scalar", type: "number" },
+          businessKeyCount: { kind: "scalar", type: "number" },
+          relationshipCount: { kind: "scalar", type: "number" },
+        },
+      },
+    },
     operations: [`${OBJECT_TYPE}.save`, DELETE_OBJECT_TYPE],
   },
   [ATTRIBUTE]: {
     ...describeType("attribute", "fact"),
     reads: {
       ...modelReads, list: modelListByClass,
+      record: {
+        ...modelReads.record,
+        outputs: {
+          isPrimaryKey: { kind: "scalar", type: "boolean" },
+          className: { kind: "scalar", type: "string" },
+        },
+      },
     },
     operations: [`${ATTRIBUTE}.save`, DELETE_ATTRIBUTE, SET_PRIMARY_KEY],
   },
