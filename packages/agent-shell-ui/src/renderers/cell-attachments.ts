@@ -7,7 +7,7 @@ export interface CellAttachment {
 function hasDisallowedUrlChar(url: string): boolean {
   for (let i = 0; i < url.length; i++) {
     const code = url.charCodeAt(i);
-    if (code <= 0x20 || code === 0x5c) return true;
+    if (code < 0x20 || code === 0x7f || code === 0x5c) return true;
   }
   return false;
 }
@@ -24,17 +24,21 @@ export function cellAttachments(text: string): CellAttachment[] {
   const attachments: CellAttachment[] = [];
   for (const item of items) {
     const object = item && typeof item === "object" && !Array.isArray(item) ? item as Record<string, unknown> : null;
-    const url = typeof item === "string" ? item.trim() : typeof object?.path === "string" ? object.path.trim() : "";
+    const url = typeof item === "string" ? item.trim()
+      : typeof object?.path === "string" ? object.path.trim()
+      : typeof object?.url === "string" ? object.url.trim() : "";
     // Relative web paths and HTTP(S) only; never execute a scheme supplied by a data row.
     if (!url || hasDisallowedUrlChar(url) || !/^(?:https?:\/\/|\/(?!\/)|\.\.?\/)/i.test(url)) return [];
     const pathname = url.split(/[?#]/)[0]!;
-    const kind = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(pathname) ? "image"
-      : /\.pdf$/i.test(pathname) ? "pdf" : "file";
+    const caption = [object?.text, object?.name, object?.filename].find((value): value is string => typeof value === "string" && !!value.trim());
+    const mime = typeof object?.mimeType === "string" ? object.mimeType.toLowerCase() : "";
+    const kind = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(pathname) || /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)$/.test(mime) || /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(caption ?? "") ? "image"
+      : /\.pdf$/i.test(pathname) || mime === "application/pdf" || /\.pdf$/i.test(caption ?? "") ? "pdf" : "file";
     // Plain prose/URLs stay text unless their extension identifies supported media.
     if (!object && kind === "file") return [];
     let name = pathname.split("/").at(-1) || url;
     try { name = decodeURIComponent(name); } catch { /* Keep the original file name. */ }
-    attachments.push({ url, kind, caption: typeof object?.text === "string" && object.text.trim() ? object.text : name });
+    attachments.push({ url, kind, caption: caption ?? name });
   }
   return attachments;
 }

@@ -12,6 +12,7 @@ import SubgraphView from "./SubgraphView.vue";
 import SlotOutlet from "../components/SlotOutlet.vue";
 import DatasetSelectionButton from "../components/DatasetSelectionButton.vue";
 import AttachmentCell from "./AttachmentCell.vue";
+import { cellAttachments } from "./cell-attachments";
 
 /**
  * .csv and .json datasets in the shared table, a page at a time, which the reader can sort and filter without changing
@@ -92,6 +93,7 @@ const parsed = computed<Parsed>(() => {
   }
 });
 const table = computed(() => parsed.value.table);
+const rowGalleries = computed(() => table.value?.rows.map(row => row.flatMap(cellAttachments).filter(item => item.kind === "image")) ?? []);
 function displayDate(text: string | undefined): string | null {
   if (!parsed.value.dataset || !text) return null;
   const match = /^(\d{4}-\d{2}-\d{2})T((?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d)(\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/.exec(text);
@@ -141,9 +143,9 @@ watch(() => props.artifact.id, () => {
         :arrange="arrange"
         @update:selected="selected = $event"
       >
-        <template #cell="{ text: cellText }">
+        <template #cell="{ text: cellText, rowIndex }">
           <span v-if="displayDate(cellText)" :title="cellText">{{ displayDate(cellText) }}</span>
-          <AttachmentCell v-else :text="cellText ?? ''" />
+          <AttachmentCell v-else :text="cellText ?? ''" :gallery="rowGalleries[rowIndex]" />
         </template>
       </TablePreview>
       <section v-if="parsed.graph" class="lineage" :aria-label="labels.datasetLineage">

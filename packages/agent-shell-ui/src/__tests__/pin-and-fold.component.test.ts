@@ -123,6 +123,9 @@ it("keeps a running reply's steps on one folded line until the reader opens them
   app = createApp({ render: () => h(ShellResponse, { item: item.value, sessionId: "s" }) });
   provide(app);
   app.mount(root);
+  expect(root.querySelector(".process-body")).toBeNull();
+  root.querySelector<HTMLButtonElement>("button.process-toggle")!.click();
+  await nextTick();
   const line = root.querySelector<HTMLButtonElement>(".process-summary")!;
   expect(line.textContent).toContain("Thinking");
   expect(root.querySelector(".steps")).toBeNull();
@@ -130,4 +133,8 @@ it("keeps a running reply's steps on one folded line until the reader opens them
   line.click();
   await nextTick();
   expect(root.querySelector(".steps")?.textContent).toContain("Reading the question");
+  item.value = { ...item.value, running: false, finishedAt: 1000 };
+  await nextTick();
+  expect(root.querySelector(".steps")?.textContent).toContain("Reading the question");
+  expect(root.querySelector("button.process-toggle")?.getAttribute("aria-expanded")).toBe("true");
 });

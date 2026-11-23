@@ -45,6 +45,8 @@ function move(event: KeyboardEvent) {
 .page-tabs-bar {
   display: flex;
   flex: 0 0 auto;
+  min-inline-size: 0;
+  max-inline-size: 100%;
   gap: var(--spacing-lg);
   border-bottom: 1px solid var(--el-border-color);
   overflow-x: auto;
@@ -63,6 +65,7 @@ function move(event: KeyboardEvent) {
   font: inherit;
   font-size: var(--text-sm);
   cursor: pointer;
+  white-space: nowrap;
 }
 .page-tab>svg{flex-shrink:0}
 .page-tab:hover { color: var(--el-text-color-primary); }
