@@ -1,143 +1,223 @@
 <style>
-  .attrs { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px); container-type: inline-size; }
-  .attrs-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .attrs-toolbar .attrs-search { width: 260px; max-width: 100%; }
-  .attrs-toolbar .attrs-owner { width: 220px; max-width: 100%; }
-  .attrs-search-icon { color: var(--sdk-text-color-placeholder); }
-  .attrs-count { color: var(--sdk-text-color-secondary); font-size: var(--text-sm); }
-  .attrs-table { overflow: auto; border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--sdk-bg-color); }
-  .attrs-group { border-bottom: 1px solid var(--ui-divider); }
-  .attrs-group:last-child { border-bottom: 0; }
-  .attrs-row { display: grid; grid-template-columns: minmax(10.5rem, 1.35fr) minmax(7.5rem, 1fr) minmax(5.5rem, 0.75fr) 4.5rem 4.5rem 1.25rem;
-    column-gap: var(--spacing-md); align-items: center; padding: var(--spacing-sm) var(--spacing-md);
-    border-bottom: 1px solid var(--ui-divider); font-size: var(--text-sm); color: var(--sdk-text-color-regular); }
-  .attrs-group > .attrs-row { border-bottom: 0; }
-  .attrs-row.head { background: var(--ui-fill-tertiary); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); font-weight: var(--font-semibold); }
-  .attrs-row.item { cursor: pointer; }
-  .attrs-row.item:hover { background: var(--ui-fill-tertiary); }
-  .attrs-row.item.active { background: var(--ui-fill-secondary); }
-  .attrs-chevron { color: var(--sdk-text-color-placeholder); justify-self: end; }
-  .attrs-name strong, .attrs-name small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .attrs-name strong { color: var(--sdk-text-color-primary); font-weight: var(--font-semibold); }
-  .attrs-name small { margin-top: var(--spacing-xs); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
-  .attrs-link { justify-self: start; max-width: 100%; overflow: hidden; padding: 0; border: 0; background: transparent;
-    color: var(--brand-link); font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-  .attrs-link:hover { text-decoration: underline; }
-  .attrs-state { padding: var(--spacing-lg); color: var(--sdk-text-color-secondary); font-size: var(--text-sm); margin: 0; }
-  .attrs-inline-editor { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg);
-    border-top: 1px solid var(--ui-divider); background: var(--sdk-fill-color-lighter, var(--ui-fill-tertiary)); }
-  .attrs-fallback-card { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md);
-    border: 1px solid var(--ui-border); border-radius: var(--radius-md); background: var(--sdk-bg-color); }
-  .attrs-editor-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
-  .attrs-editor-head h3 { margin: 0; font-size: var(--text-base); color: var(--sdk-text-color-primary); }
-  .attrs-editor-head small { display: block; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
-  .attrs-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .attrs-spacer { flex: 1; }
-  @container (max-width: 44rem) {
-    .attrs-row { grid-template-columns: minmax(9rem, 1.4fr) minmax(6rem, 1fr) minmax(5rem, 0.8fr) 1.25rem; }
-    .attrs-row > :nth-child(4), .attrs-row > :nth-child(5) { display: none; }
+  .attrs-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    container: attrs-page / inline-size;
   }
-  @container (max-width: 35rem) {
-    .attrs-toolbar { flex-direction: column; align-items: stretch; }
-    .attrs-toolbar .attrs-search, .attrs-toolbar .attrs-owner { width: 100%; }
-    .attrs-row { grid-template-columns: minmax(8rem, 1fr) minmax(5rem, 0.8fr) 1.25rem; }
-    .attrs-row > :nth-child(2) { display: none; }
+  .attrs-btn-icon {
+    margin-inline-end: 6px;
+    flex-shrink: 0;
+  }
+  .attrs-catalog {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: var(--spacing-lg) var(--page-gutter) var(--page-content-gap);
+  }
+  .attrs-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    min-height: 40px;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .attrs-toolbar .attrs-search {
+    width: 260px;
+    max-width: 100%;
+  }
+  .attrs-toolbar .attrs-owner {
+    width: 220px;
+    max-width: 100%;
+  }
+  .attrs-search-icon {
+    color: var(--sdk-text-color-placeholder);
+  }
+  .attrs-count {
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+  }
+  .attrs-table-host {
+    margin-top: var(--spacing-lg);
+    min-width: 0;
+  }
+  .attrs-table-host .sdk-object-list {
+    height: auto;
+    gap: 0;
+  }
+  .attrs-table-host .sdk-object-list-table td:first-child .sdk-object-list-cell-main {
+    color: var(--sdk-text-color-primary);
+    font-weight: var(--font-semibold);
+  }
+  .attrs-detail {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+  }
+  .attrs-detail-body {
+    display: grid;
+    grid-template-columns: minmax(320px, 1.25fr) minmax(260px, 0.75fr);
+    gap: var(--page-content-gap);
+    padding: var(--page-content-gap) var(--page-gutter);
+    align-items: start;
+  }
+  .attrs-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+  .attrs-card h2 {
+    margin: 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+  }
+  .attrs-form-wrap,
+  .attrs-owner-card {
+    margin-top: var(--spacing-lg);
+  }
+  .attrs-owner-note {
+    margin-top: var(--spacing-md);
+  }
+  .attrs-form-wrap .sdk-owner-form,
+  .attrs-form-wrap .sdk-owner-form-inner,
+  .attrs-create-body .sdk-owner-form,
+  .attrs-create-body .sdk-owner-form-inner {
+    height: auto;
+  }
+  .attrs-form-wrap .sdk-owner-form-body,
+  .attrs-create-body .sdk-owner-form-body {
+    overflow: visible;
+  }
+  .attrs-create-body .sdk-owner-form-actions {
+    border-top: 0;
+    margin-block-start: var(--spacing-sm);
+    padding-block: var(--spacing-xs) 0;
+  }
+  .attrs-note {
+    margin: 0;
+    padding: var(--spacing-lg);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+  .attrs-failure {
+    color: var(--sdk-color-danger-text);
+  }
+  .attrs-missing {
+    padding: var(--spacing-2xl) var(--page-gutter);
+  }
+
+  @container attrs-page (max-width: 850px) {
+    .attrs-detail-body {
+      grid-template-columns: minmax(0, 1fr);
+      padding-block: var(--spacing-md) var(--page-content-gap);
+    }
+  }
+  @container attrs-page (max-width: 560px) {
+    .attrs-toolbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .attrs-toolbar .attrs-search,
+    .attrs-toolbar .attrs-owner {
+      width: 100%;
+    }
   }
 </style>
 <div id="app">
-  <page-header :title="t('panel.name')" description="按对象类型查看、筛选和维护属性">
-    <template #actions>
-      <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-      </sdk-button>
-      <sdk-button type="primary" :disabled="creating" @click="startCreate">{{ t("attr.command.create") }}</sdk-button>
-    </template>
-  </page-header>
-  <section class="attrs">
-    <div class="attrs-toolbar">
-      <sdk-input class="attrs-search" :model-value="search" :placeholder="t('attr.search')" clearable
-        @update:model-value="setSearch">
-        <template #prefix>
-          <svg class="attrs-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+  <section class="attrs-page">
+    <template v-if="!selectedKey">
+      <page-header :title="t('panel.name')" :description="t('attr.description')">
+        <template #actions>
+          <sdk-button text :aria-label="t('attr.refresh')" :title="t('attr.refresh')" @click="refresh">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+          </sdk-button>
+          <sdk-button type="primary" :disabled="creating" @click="startCreate">
+            <svg class="attrs-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            <span>{{ t("attr.command.create") }}</span>
+          </sdk-button>
         </template>
-      </sdk-input>
-      <sdk-select class="attrs-owner" :model-value="className" :placeholder="t('attr.allTypes')" clearable filterable
-        @update:model-value="setClassName">
-        <sdk-option v-for="type in types" :key="type.primaryKey" :value="type.primaryKey"
-          :label="`${type.label} (${type.primaryKey})`"></sdk-option>
-      </sdk-select>
-      <span v-if="countText !== null" class="attrs-count">{{ t("attr.count", { count: countText }) }}</span>
-    </div>
-
-    <!-- Fallback editor when an attribute is selected (e.g. via deep link / draft) before the list loads or while filtered out. -->
-    <section v-if="selected && !creating && !selectedVisible" class="attrs-fallback-card">
-      <div class="attrs-editor-head">
-        <div>
-          <h3>{{ detail.status === 'ready' ? detail.value.label : t("attr.editing") }}</h3>
-          <small v-if="detail.status === 'ready'">{{ detail.value.subtitle }}</small>
-        </div>
-        <sdk-button text @click="closeEditor">{{ t("attr.close") }}</sdk-button>
-      </div>
-      <div class="attrs-actions" :key="selectedKey">
-        <projection slot="setPrimaryKey" v-show="!isPrimaryKey"></projection>
-        <sdk-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
-          <span><sdk-button disabled>{{ t("attr.setPrimaryKey") }}</sdk-button></span>
-        </sdk-tooltip>
-        <projection slot="remove"></projection>
-      </div>
-      <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
-    </section>
-
-    <div class="attrs-table">
-      <div class="attrs-row head">
-        <span>{{ t("attr.colAttribute") }}</span>
-        <span>{{ t("attr.colOwner") }}</span>
-        <span>{{ t("attr.colType") }}</span>
-        <span>{{ t("attr.colBizKey") }}</span>
-        <span>{{ t("attr.colPrimaryKey") }}</span>
-        <span></span>
-      </div>
-      <p v-if="rowsData.status === 'loading'" class="attrs-state" role="status">{{ t("attr.loading") }}</p>
-      <p v-else-if="rowsData.status === 'forbidden'" class="attrs-state">{{ t("attr.forbidden") }}</p>
-      <sdk-alert v-else-if="rowsData.status === 'error'" type="error" :title="rowsData.message" :closable="false"></sdk-alert>
-      <template v-else>
-        <div v-for="row in visibleRows" :key="row.primaryKey" class="attrs-group">
-          <div class="attrs-row item" :class="{ active: isSelected(row) }"
-            role="button" tabindex="0" :aria-expanded="isSelected(row)"
-            @click="selectRow(row)" @keydown.enter.prevent="selectRow(row)" @keydown.space.prevent="selectRow(row)">
-            <span class="attrs-name">
-              <strong>{{ row.label }}</strong>
-              <small>{{ row.fields.name }}</small>
-            </span>
-            <button type="button" class="attrs-link" @click.stop="openOwner(row)">{{ ownerLabel(row) }}</button>
-            <span>{{ row.fields.type }}</span>
-            <span>{{ yes(row.fields.businessKey) ? t("attr.yes") : "-" }}</span>
-            <span>{{ yes(row.fields.primaryKey) ? t("attr.yes") : "-" }}</span>
-            <svg class="attrs-chevron" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path v-if="isSelected(row)" d="M3.5 10 8 5.5 12.5 10"/>
-              <path v-else d="M3.5 6 8 10.5 12.5 6"/>
-            </svg>
+      </page-header>
+      <div class="attrs-catalog">
+        <div class="attrs-toolbar">
+          <sdk-input
+            class="attrs-search"
+            v-model="search"
+            :placeholder="t('attr.search')"
+            :aria-label="t('attr.search')"
+            clearable
+          >
+            <template #prefix>
+              <svg class="attrs-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+            </template>
+          </sdk-input>
+          <div class="attrs-owner">
+            <projection slot="ownerPicker"></projection>
           </div>
-          <div v-if="isSelected(row) && !creating" class="attrs-inline-editor">
-            <div class="attrs-actions" :key="selectedKey">
-              <projection slot="setPrimaryKey" v-show="!isPrimaryKey"></projection>
-              <sdk-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
-                <span><sdk-button disabled>{{ t("attr.setPrimaryKey") }}</sdk-button></span>
-              </sdk-tooltip>
-              <projection slot="remove"></projection>
-              <span class="attrs-spacer"></span>
-              <sdk-button size="small" text @click="closeEditor">{{ t("attr.close") }}</sdk-button>
-            </div>
+          <span v-if="countText" class="attrs-count">{{ countText }}</span>
+        </div>
+        <div class="attrs-table-host">
+          <projection
+            slot="attributes"
+            @choose="onChoose"
+            @navigate="openOwner"
+            @clear-filters="clearFilters"
+          ></projection>
+        </div>
+      </div>
+    </template>
+
+    <div v-else class="attrs-detail">
+      <page-header :back-label="t('attr.back')" :draft="formDraft" @back="back">
+        <template #title>
+          <span v-show="detailStatus === 'ready'">
+            <projection slot="detail"></projection>
+          </span>
+          <h1 v-if="detailStatus !== 'ready'">{{ selectedKey }}</h1>
+        </template>
+        <template v-if="detailStatus === 'ready'" #actions>
+          <projection slot="setPrimaryKey" v-show="!isPrimaryKey"></projection>
+          <sdk-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
+            <span><sdk-button disabled>{{ t("attr.setPrimaryKey") }}</sdk-button></span>
+          </sdk-tooltip>
+          <projection slot="remove" @done="onRemoveDone"></projection>
+        </template>
+      </page-header>
+
+      <p v-if="detailStatus === 'loading'" class="attrs-note" role="status">{{ t("attr.loading") }}</p>
+      <p v-else-if="detailStatus === 'forbidden'" class="attrs-note attrs-failure">{{ t("attr.forbidden") }}</p>
+      <div v-else-if="detailStatus !== 'ready'" class="attrs-missing">
+        <sdk-empty :description="t('attr.notFound')"></sdk-empty>
+      </div>
+      <div v-else class="attrs-detail-body">
+        <section class="attrs-card">
+          <h2>{{ t("attr.editing") }}</h2>
+          <div class="attrs-form-wrap">
             <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
           </div>
-        </div>
-        <sdk-empty v-if="visibleRows.length === 0" :description="t('attr.empty')"></sdk-empty>
-      </template>
+        </section>
+        <section class="attrs-card">
+          <h2>{{ t("attr.ownerSection") }}</h2>
+          <div class="attrs-owner-card">
+            <projection slot="ownerCard" @navigate="openOwner"></projection>
+          </div>
+          <info-banner class="attrs-owner-note" tone="info" :text="t('attr.ownerHint')"></info-banner>
+        </section>
+      </div>
     </div>
 
-    <!-- Create attribute dialog (mutually exclusive with inline editing since creating clears selected). -->
-    <sdk-dialog v-model="createDialog" :title="t('attr.creating')" width="520px" append-to-body destroy-on-close>
-      <projection v-if="createDialog" slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
+    <!-- Create attribute dialog (mutually exclusive with detail editing since creating clears selected). -->
+    <sdk-dialog v-model="createDialog" :title="t('attr.creating')" width="540px" append-to-body destroy-on-close>
+      <div class="attrs-create-body">
+        <projection v-if="createDialog" slot="form" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"></projection>
+      </div>
     </sdk-dialog>
   </section>
 </div>
