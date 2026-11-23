@@ -65,15 +65,22 @@ export interface DisplayStateUpdate {
 
 /** In-place controls exposed by a currently mounted panel page to its display controller. */
 export interface DisplayPageController {
+  /** Validates a public state patch against the currently mounted page before any URL or state mutation. */
+  validateState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Returns true when navigating within the same mounted page instance would discard unsaved changes. */
   blocksNavigation?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
-  /** Live binding metadata (nested panel instance IDs and list checked keys) included in display snapshots. */
+  /** Live binding metadata (mount/panel/member/entry instance IDs, checked keys, dashboard board/card IDs) for display snapshots. */
   snapshotMeta?(): {
+    readonly mountId?: string;
+    readonly panelInstanceId?: string;
     readonly memberInstances?: Readonly<Record<string, string>>;
+    readonly entryInstances?: Readonly<Record<string, string>>;
     readonly checkedKeys?: Readonly<Record<string, readonly string[]>>;
+    readonly dashboardId?: string;
+    readonly cardId?: string;
   };
   /** True while the page route, panel host, or declared members are still loading asynchronously. */
   isLoading?(): boolean;
@@ -253,6 +260,14 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     const observedAt = new Date().toISOString();
     return shown.value.target ? selected(observedAt) : { known: true, observedAt, target: null };
   }
+  function effectivePageInstanceId(instance?: string): string | null {
+    const base = pageInstanceId.value;
+    if (!base) return null;
+    const targetInstance = instance ?? (shown.value.target?.kind === "page" ? shown.value.target.instance : undefined);
+    const mountId = targetInstance ? controllers.get(targetInstance)?.snapshotMeta?.()?.mountId : undefined;
+    return mountId ? `${base}:${mountId}` : base;
+  }
+
   function selected(observedAt = new Date().toISOString()): Selected {
     const current = shown.value.target!;
     const full = current.kind === "page" && (shown.value.view === "full" || !feature.value?.withConversation);
@@ -262,12 +277,19 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       return { known: true, observedAt, placement: where, target: { kind: "artifact", runId, path, title: current.open.title }, load: load.value };
     }
     const meta = controllers.get(current.instance)?.snapshotMeta?.();
+    const currentPageInstanceId = effectivePageInstanceId(current.instance);
+    const panelInstanceId = meta?.panelInstanceId;
     const memberInstances = meta?.memberInstances && Object.keys(meta.memberInstances).length
       ? { ...meta.memberInstances }
+      : undefined;
+    const entryInstances = meta?.entryInstances && Object.keys(meta.entryInstances).length
+      ? { ...meta.entryInstances }
       : undefined;
     const checkedKeys = meta?.checkedKeys && Object.keys(meta.checkedKeys).length
       ? Object.fromEntries(Object.entries(meta.checkedKeys).map(([k, v]) => [k, [...v]]))
       : undefined;
+    const dashboardId = meta?.dashboardId;
+    const cardId = meta?.cardId;
     return {
       known: true,
       observedAt,
@@ -275,9 +297,13 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       target: {
         kind: "page",
         ...pageContext.value!,
-        ...(pageInstanceId.value ? { pageInstanceId: pageInstanceId.value } : {}),
+        ...(currentPageInstanceId ? { pageInstanceId: currentPageInstanceId } : {}),
+        ...(panelInstanceId ? { panelInstanceId } : {}),
         ...(memberInstances ? { memberInstances } : {}),
+        ...(entryInstances ? { entryInstances } : {}),
         ...(checkedKeys ? { checkedKeys } : {}),
+        ...(dashboardId ? { dashboardId } : {}),
+        ...(cardId ? { cardId } : {}),
       },
       load: load.value,
     };
@@ -356,7 +382,12 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       const inactive = verifyActive?.() ?? null;
       if (inactive) return { ok: false, kind: "inactive", reason: inactive };
       const currentTarget = shown.value.target;
-      if (!currentTarget || currentTarget.kind !== "page" || currentTarget.instance !== targetInstance || pageInstanceId.value !== startPageInstanceId) {
+      if (
+        !currentTarget
+        || currentTarget.kind !== "page"
+        || currentTarget.instance !== targetInstance
+        || effectivePageInstanceId(targetInstance) !== startPageInstanceId
+      ) {
         return { ok: false, kind: "stale" };
       }
       if (load.value.status === "error") {
@@ -420,7 +451,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   return {
     target,
     page,
-    pageInstanceId: computed(() => pageInstanceId.value),
+    pageInstanceId: computed(() => effectivePageInstanceId()),
     feature,
     view: computed(() => shown.value.view),
     restorable: computed(() => shown.value.restorable),
@@ -628,7 +659,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               error: { code: "NO_PAGE_SHOWN", message: "No page is currently open beside the conversation." },
             };
           }
-          const startPageInstanceId = pageInstanceId.value;
+          const startPageInstanceId = effectivePageInstanceId(currentTarget.instance);
           if (
             frame.target.expectedPageInstanceId !== undefined
             && frame.target.expectedPageInstanceId !== startPageInstanceId
@@ -683,9 +714,13 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
             ...(frame.target.rowKey === undefined ? {} : { rowKey: frame.target.rowKey }),
             ...(frame.target.input === undefined ? {} : { input: frame.target.input }),
             ...(frame.target.expectedPageInstanceId === undefined ? {} : { expectedPageInstanceId: frame.target.expectedPageInstanceId }),
+            ...(frame.target.expectedPanelInstanceId === undefined ? {} : { expectedPanelInstanceId: frame.target.expectedPanelInstanceId }),
             ...(frame.target.expectedMemberInstanceId === undefined ? {} : { expectedMemberInstanceId: frame.target.expectedMemberInstanceId }),
+            ...(frame.target.expectedEntryInstanceId === undefined ? {} : { expectedEntryInstanceId: frame.target.expectedEntryInstanceId }),
             ...(frame.target.expectedTarget === undefined ? {} : { expectedTarget: frame.target.expectedTarget }),
             ...(frame.target.expectedCheckedKeys === undefined ? {} : { expectedCheckedKeys: frame.target.expectedCheckedKeys }),
+            ...(frame.target.expectedDashboardId === undefined ? {} : { expectedDashboardId: frame.target.expectedDashboardId }),
+            ...(frame.target.expectedCardId === undefined ? {} : { expectedCardId: frame.target.expectedCardId }),
             agentRun: { sessionId: frame.sessionId, runId: frame.runId, toolCallId: frame.toolCallId },
           };
           let outcome = await controller.executeAction(actionRequest);
@@ -701,7 +736,12 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               return { status: "not_executed", reason: retryInactive, operation: frame.target.operation, current: { known: false, reason: retryInactive } };
             }
             const nowTarget = shown.value.target;
-            if (!nowTarget || nowTarget.kind !== "page" || nowTarget.instance !== currentTarget.instance || pageInstanceId.value !== startPageInstanceId) {
+            if (
+              !nowTarget
+              || nowTarget.kind !== "page"
+              || nowTarget.instance !== currentTarget.instance
+              || effectivePageInstanceId(currentTarget.instance) !== startPageInstanceId
+            ) {
               return {
                 status: "not_executed",
                 reason: "stale",
@@ -724,7 +764,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
           const stillSamePage =
             shown.value.target?.kind === "page"
             && shown.value.target.instance === currentTarget.instance
-            && pageInstanceId.value === startPageInstanceId;
+            && effectivePageInstanceId(currentTarget.instance) === startPageInstanceId;
           if (outcome.ok && outcome.kind === "awaiting_confirmation") {
             if (!stillSamePage) {
               await outcome.confirmation.cancel({
@@ -773,6 +813,18 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               current: snapshot(),
             };
           }
+          if ("kind" in outcome && outcome.kind === "partially_executed") {
+            return {
+              status: "partially_executed",
+              reason: "partial_completion",
+              operation: outcome.operation,
+              ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
+              ...(outcome.savedFields?.length ? { savedFields: [...outcome.savedFields] } : {}),
+              outcome: outcome.outcome,
+              current: snapshot(),
+              error: { code: outcome.code, message: outcome.message },
+            };
+          }
           if ("kind" in outcome && outcome.kind === "unknown") {
             return {
               status: "unknown",
@@ -793,7 +845,9 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
             ...(outcome.operation ? { operation: outcome.operation } : { operation: frame.target.operation }),
             ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
             current: snapshot(),
-            ...(outcome.message ? { error: { code: outcome.reason.toUpperCase(), message: outcome.message } } : {}),
+            ...(outcome.message || outcome.code
+              ? { error: { code: outcome.code ?? outcome.reason.toUpperCase(), message: outcome.message ?? outcome.reason } }
+              : {}),
           };
         }
         if (frame.target.kind === "fill_form") {
@@ -806,7 +860,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               error: { code: "NO_PAGE_SHOWN", message: "No page is currently open beside the conversation." },
             };
           }
-          const startPageInstanceId = pageInstanceId.value;
+          const startPageInstanceId = effectivePageInstanceId(currentTarget.instance);
           if (
             frame.target.expectedPageInstanceId !== undefined
             && frame.target.expectedPageInstanceId !== startPageInstanceId
@@ -859,8 +913,12 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
             values: frame.target.values,
             ...(frame.target.overwriteUnsaved ? { overwriteUnsaved: true } : {}),
             ...(frame.target.expectedPageInstanceId === undefined ? {} : { expectedPageInstanceId: frame.target.expectedPageInstanceId }),
+            ...(frame.target.expectedPanelInstanceId === undefined ? {} : { expectedPanelInstanceId: frame.target.expectedPanelInstanceId }),
             ...(frame.target.expectedMemberInstanceId === undefined ? {} : { expectedMemberInstanceId: frame.target.expectedMemberInstanceId }),
+            ...(frame.target.expectedFormInstanceId === undefined ? {} : { expectedFormInstanceId: frame.target.expectedFormInstanceId }),
             ...(frame.target.expectedTarget === undefined ? {} : { expectedTarget: frame.target.expectedTarget }),
+            ...(frame.target.expectedDashboardId === undefined ? {} : { expectedDashboardId: frame.target.expectedDashboardId }),
+            ...(frame.target.expectedCardId === undefined ? {} : { expectedCardId: frame.target.expectedCardId }),
           };
           let outcome = await controller.fillForm(fillRequest);
           while (
@@ -875,7 +933,12 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               return { status: "not_filled", reason: retryInactive, current: { known: false, reason: retryInactive } };
             }
             const nowTarget = shown.value.target;
-            if (!nowTarget || nowTarget.kind !== "page" || nowTarget.instance !== currentTarget.instance || pageInstanceId.value !== startPageInstanceId) {
+            if (
+              !nowTarget
+              || nowTarget.kind !== "page"
+              || nowTarget.instance !== currentTarget.instance
+              || effectivePageInstanceId(currentTarget.instance) !== startPageInstanceId
+            ) {
               return {
                 status: "not_filled",
                 reason: "stale",
@@ -898,7 +961,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
           const stillSamePage =
             shown.value.target?.kind === "page"
             && shown.value.target.instance === currentTarget.instance
-            && pageInstanceId.value === startPageInstanceId;
+            && effectivePageInstanceId(currentTarget.instance) === startPageInstanceId;
           if (outcome.ok && stillSamePage) {
             const shownNow = selected();
             return {
@@ -986,10 +1049,23 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
           }
           const hasStatePatch = rawState !== undefined && Object.keys(rawState).length > 0;
           const basePathOf = (value: string) => value.split(/[?#]/, 1)[0]!;
+          const sameBasePath = basePathOf(resolved.address) === basePathOf(currentPage.address);
           const addressSpecifiesParamsOrPathChange =
             resolved.address.includes("?")
             || resolved.address.includes("#")
-            || basePathOf(resolved.address) !== basePathOf(currentPage.address);
+            || !sameBasePath;
+          // Validate the live state patch BEFORE mutating the browser address or selection so an invalid state field
+          // or value type leaves the current URL and selection completely untouched.
+          if (hasStatePatch && controller?.validateState && sameBasePath) {
+            try {
+              controller.validateState(rawState);
+            } catch (error) {
+              return notOpened("unsupported_target", {
+                code: "invalid_state",
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
           // When navigating with no state patch or with explicit query/path parameters, apply the requested address
           // first so any accompanying state patch overlays cleanly without being clobbered by a bare base path.
           if (

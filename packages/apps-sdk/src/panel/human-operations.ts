@@ -41,8 +41,16 @@ export interface PanelLocalConfirmationRequest {
 /** Response from creating a conversation confirmation question for a local UI action. */
 export interface PanelLocalConfirmationResponse {
   readonly intentId: string;
-  readonly questionId: string;
+  readonly questionId: string | null;
   readonly label: string;
+  readonly autoMode?: boolean;
+}
+
+/** Result of atomically claiming a pending local confirmation question before executing the local UI action. */
+export interface PanelLocalConfirmationClaimResponse {
+  readonly ok: boolean;
+  readonly intentId?: string;
+  readonly message?: string;
 }
 
 export interface PanelHumanOperations {
@@ -66,6 +74,10 @@ export interface PanelHumanOperations {
   cancel?(intentId: string, reason: { code: string; message: string }): Promise<void>;
   /** Posts a conversation confirmation question for a destructive local UI action (such as discarding unsaved form edits). */
   requestLocalConfirmation?(input: PanelLocalConfirmationRequest): Promise<PanelLocalConfirmationResponse>;
+  /** Atomically claims a pending local confirmation question before running the local UI action. */
+  claimLocalConfirmation?(questionId: string): Promise<PanelLocalConfirmationClaimResponse>;
+  /** Cancels a pending local confirmation question when the form changes, closes, or the user declines. */
+  cancelLocalConfirmation?(questionId: string, reason: { code: string; message: string }): Promise<void>;
 }
 
 /** Lifecycle hooks reported by the host while confirming and dispatching a prepared write. */
@@ -74,6 +86,8 @@ export interface ConfirmPanelOperationHooks {
   onConfirmed?: () => void;
   /** Skip the platform's modal confirmation dialog (used for full-auto or already-confirmed chat actions). */
   skipDialog?: boolean;
+  /** Final verification invoked right before sending POST /dispatch so no async gap can slip past staleness checks. */
+  beforeDispatch?: () => Promise<void> | void;
 }
 
 /** What the host does with a prepared write: confirms it where it must and dispatches it once, or the reader cancels. */
@@ -159,6 +173,12 @@ export function panelHumanOperations(use: PanelOperationUse | null, requests: Pl
     },
     async requestLocalConfirmation(input) {
       return (await post("/panel-operations/local-confirmations", input)) as PanelLocalConfirmationResponse;
+    },
+    async claimLocalConfirmation(questionId) {
+      return (await post(`/panel-operations/local-confirmations/${encodeURIComponent(questionId)}/claim`, {})) as PanelLocalConfirmationClaimResponse;
+    },
+    async cancelLocalConfirmation(questionId, reason) {
+      await post(`/panel-operations/questions/${encodeURIComponent(questionId)}/cancel-if-pending`, reason);
     },
   };
 }

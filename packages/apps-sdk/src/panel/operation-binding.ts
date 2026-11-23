@@ -143,7 +143,7 @@ export function createDeferredConfirmation(input: {
 
 /** Checks whether a live operation/form target matches the agent's observed `expectedTarget`. */
 export function matchesExpectedTarget(
-  actual: PanelOperationCall["target"] | PanelFormTarget | null | undefined,
+  actual: PanelOperationCall["target"] | PanelFormTarget | { readonly kind: "draft"; readonly objectType: string } | null | undefined,
   expected: ExpectedPageTarget,
 ): boolean {
   if (!actual) return false;
@@ -155,7 +155,9 @@ export function matchesExpectedTarget(
     );
   }
   if (actual.kind !== "draft") return false;
-  return "objectType" in actual ? actual.objectType === expected.objectType : true;
+  return "objectType" in actual && typeof actual.objectType === "string"
+    ? actual.objectType === expected.objectType
+    : false;
 }
 
 /**

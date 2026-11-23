@@ -3,15 +3,16 @@ import type { AgentPrepareRequest, AgentRunContext } from "@ontomato/contracts/a
 import type { AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
-  FillFormRequest, ObserveDisplayRequest, PageActionRequest, PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
+  DisplaySnapshot, ExpectedPageTarget, FillFormRequest, ObserveDisplayRequest, PageActionRequest,
+  PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
   PresentRequest, RuntimePresentationCallback,
 } from "@ontomato/contracts/agent-presentation";
+import { classifyPanelOperationOutcome } from "@ontomato/contracts/panel-agent";
 import { environment } from "../../config/environment";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import { callbackCredential } from "../agent-runtime/callback-credential";
 import { panelOperationStore } from "../product-panels/operation-store";
-import type { SinglePanelOperationOutcome } from "../product-panels/server-operations";
 import type { AgentHostOwner, AgentHostService, AgentPresentationHost } from "./types";
 import type { AgentVisibilityReader } from "./visibility";
 
@@ -38,10 +39,15 @@ interface AuthorizedRunView {
 const views = new Map<string, Connection>();
 const pendingCalls = new Map<string, Pending>();
 const runViews = new Map<string, AuthorizedRunView>();
+type SelectedDisplaySnapshot = Extract<DisplaySnapshot, { known: true; placement: string }>;
+type ObservedPageTarget = Extract<SelectedDisplaySnapshot["target"], { kind: "page" }>;
+const lastPageSnapshots = new Map<string, ObservedPageTarget>();
+const MAX_TRACKED_RUN_SNAPSHOTS = 1000;
 const viewKey = (host: AgentPresentationHost, owner: AgentHostOwner, viewId: string) =>
   JSON.stringify([host, owner.domainId, owner.userId, viewId]);
 const runViewKey = (host: AgentPresentationHost, owner: AgentHostOwner, runId: string) =>
   JSON.stringify([host, owner.domainId, owner.userId, runId]);
+const runSnapshotKey = runViewKey;
 const hostPaths: Record<AgentPresentationHost, string> = {
   workbench: "/api/assistant",
   observe: "/api/observe/agent",
@@ -106,13 +112,158 @@ export function hasActivePresentationForRun(
   return false;
 }
 
-/** Releases the run-to-view binding once a run settles or cancels. */
+/** Releases the run-to-view binding and cached page snapshot once a run settles or cancels. */
 export function releasePresentationRun(
   host: AgentPresentationHost,
   owner: AgentHostOwner,
   runId: string,
 ): void {
-  runViews.delete(runViewKey(host, owner, runId));
+  const key = runViewKey(host, owner, runId);
+  runViews.delete(key);
+  lastPageSnapshots.delete(key);
+}
+
+function recordDeliveredSnapshot(key: string, result: PresentationResult): void {
+  const current = result.current;
+  if (!current.known) return;
+  if (current.target?.kind === "page") {
+    lastPageSnapshots.delete(key);
+    lastPageSnapshots.set(key, current.target);
+    while (lastPageSnapshots.size > MAX_TRACKED_RUN_SNAPSHOTS) {
+      const oldest = lastPageSnapshots.keys().next().value;
+      if (oldest === undefined) break;
+      lastPageSnapshots.delete(oldest);
+    }
+    return;
+  }
+  lastPageSnapshots.delete(key);
+}
+
+function formMemberPathKeys(
+  memberPath: NonNullable<ObservedPageTarget["forms"]>[number]["memberPath"],
+): string[] | undefined {
+  return memberPath?.length ? memberPath.map((segment) => segment.member) : undefined;
+}
+
+function findMatchingForm(
+  page: ObservedPageTarget,
+  member: string | undefined,
+  memberPath: readonly string[] | undefined,
+) {
+  const forms = page.forms ?? [];
+  const pathKey = memberPath?.length ? memberPath.join(".") : undefined;
+  const matches = forms.filter((form) => {
+    const formPathKey = formMemberPathKeys(form.memberPath)?.join(".") ?? "";
+    if (pathKey !== undefined && formPathKey !== pathKey) return false;
+    if (member !== undefined && form.member !== member) return false;
+    return true;
+  });
+  return matches.length === 1 ? matches[0]! : null;
+}
+
+function resolveMemberInstanceId(
+  page: ObservedPageTarget,
+  memberPath: readonly string[] | undefined,
+  dottedCandidate?: string,
+): string | undefined {
+  const members = page.memberInstances;
+  if (!members) return undefined;
+  if (memberPath?.length) return members[memberPath.join(".")];
+  if (!dottedCandidate) return undefined;
+  const parts = dottedCandidate.split(".");
+  for (let len = parts.length - 1; len >= 1; len -= 1) {
+    const prefix = parts.slice(0, len).join(".");
+    if (prefix in members) return members[prefix];
+  }
+  return undefined;
+}
+
+function buildFillFormBasis(page: ObservedPageTarget, input: FillFormRequest): {
+  expectedPageInstanceId?: string;
+  expectedPanelInstanceId?: string;
+  expectedMemberInstanceId?: string;
+  expectedFormInstanceId?: string;
+  expectedTarget?: ExpectedPageTarget;
+  expectedDashboardId?: string;
+  expectedCardId?: string;
+} {
+  const matchedForm = findMatchingForm(page, input.member, input.memberPath);
+  const expectedMemberInstanceId = resolveMemberInstanceId(
+    page,
+    input.memberPath ?? formMemberPathKeys(matchedForm?.memberPath),
+  );
+  const expectedFormInstanceId = matchedForm?.formInstanceId;
+  const expectedTarget = matchedForm?.target;
+  return {
+    ...(page.pageInstanceId ? { expectedPageInstanceId: page.pageInstanceId } : {}),
+    ...(page.panelInstanceId ? { expectedPanelInstanceId: page.panelInstanceId } : {}),
+    ...(expectedMemberInstanceId ? { expectedMemberInstanceId } : {}),
+    ...(expectedFormInstanceId ? { expectedFormInstanceId } : {}),
+    ...(expectedTarget ? { expectedTarget } : {}),
+    ...(page.dashboardId ? { expectedDashboardId: page.dashboardId } : {}),
+    ...(page.cardId ? { expectedCardId: page.cardId } : {}),
+  };
+}
+
+function buildPageActionBasis(page: ObservedPageTarget, input: PageActionRequest): {
+  expectedPageInstanceId?: string;
+  expectedPanelInstanceId?: string;
+  expectedMemberInstanceId?: string;
+  expectedEntryInstanceId?: string;
+  expectedTarget?: ExpectedPageTarget;
+  expectedCheckedKeys?: string[];
+  expectedDashboardId?: string;
+  expectedCardId?: string;
+} {
+  const prefix = input.memberPath?.length ? `${input.memberPath.join(".")}.` : "";
+  const fullOp = prefix && !input.operation.startsWith(prefix)
+    ? `${prefix}${input.operation}`
+    : input.operation;
+  const expectedMemberInstanceId = resolveMemberInstanceId(page, input.memberPath, fullOp);
+
+  let expectedEntryInstanceId: string | undefined;
+  let expectedTarget: ExpectedPageTarget | undefined;
+  let isFormAction = false;
+
+  if (input.rowKey !== undefined) {
+    expectedEntryInstanceId = page.entryInstances?.[`row:${fullOp}`] ?? page.entryInstances?.[fullOp];
+  } else {
+    expectedEntryInstanceId = page.entryInstances?.[fullOp];
+    const formSuffixMatch = /^(?:(.+)\.)?(save|discard)$/.exec(input.operation);
+    if (formSuffixMatch) {
+      const formMember = formSuffixMatch[1] === "form" ? undefined : formSuffixMatch[1];
+      const matchedForm = findMatchingForm(page, formMember, input.memberPath);
+      if (matchedForm) {
+        isFormAction = true;
+        expectedTarget = matchedForm.target;
+        if (!expectedEntryInstanceId) {
+          const formPath = formMemberPathKeys(matchedForm.memberPath);
+          const formPrefix = formPath?.length ? `${formPath.join(".")}.` : "";
+          const actionKey = `${formPrefix}${matchedForm.member}.${formSuffixMatch[2]}`;
+          expectedEntryInstanceId = page.entryInstances?.[actionKey] ?? matchedForm.formInstanceId;
+        }
+      }
+    }
+  }
+
+  let expectedCheckedKeys: string[] | undefined;
+  if (input.rowKey === undefined && !isFormAction && page.checkedKeys) {
+    const keys = Object.keys(page.checkedKeys);
+    if (keys.length === 1) {
+      expectedCheckedKeys = [...page.checkedKeys[keys[0]!]!];
+    }
+  }
+
+  return {
+    ...(page.pageInstanceId ? { expectedPageInstanceId: page.pageInstanceId } : {}),
+    ...(page.panelInstanceId ? { expectedPanelInstanceId: page.panelInstanceId } : {}),
+    ...(expectedMemberInstanceId ? { expectedMemberInstanceId } : {}),
+    ...(expectedEntryInstanceId ? { expectedEntryInstanceId } : {}),
+    ...(expectedTarget ? { expectedTarget } : {}),
+    ...(expectedCheckedKeys ? { expectedCheckedKeys } : {}),
+    ...(page.dashboardId ? { expectedDashboardId: page.dashboardId } : {}),
+    ...(page.cardId ? { expectedCardId: page.cardId } : {}),
+  };
 }
 
 export const PRESENTATION_CALL_PATH = "/sessions/:sessionId/runs/:runId/presentation-call/:viewId";
@@ -176,13 +327,6 @@ const receiptMissing: Extract<PresentationResult, { status: "unknown" }> = {
   status: "unknown", reason: "receipt_missing", current: { known: false, reason: "receipt_missing" },
 };
 
-function hasRecordedPanelWrites(outcome: SinglePanelOperationOutcome): boolean {
-  if (outcome.kind === "success") return true;
-  if (outcome.kind === "unknown") return false;
-  return Object.keys(outcome.savedFields ?? {}).length > 0
-    || Boolean(outcome.affected?.objects.length || outcome.affected?.removed?.length || outcome.affected?.objectTypes.length);
-}
-
 const callKey = (connectionId: string, runId: string, toolCallId: string) =>
   JSON.stringify([connectionId, runId, toolCallId]);
 
@@ -193,6 +337,7 @@ export async function requestPresentation(
 ): Promise<PresentationResult> {
   const { viewId, sessionId, runId, toolCallId, input } = call;
   const route = viewKey(host, owner, viewId);
+  const snapshotKey = runSnapshotKey(host, owner, runId);
   const connection = views.get(route);
   const isObserve = "mode" in input && input.mode === "observe";
   const isFillForm = "mode" in input && input.mode === "fill_form";
@@ -215,28 +360,50 @@ export async function requestPresentation(
       target = { kind: "observe" };
     } else if ("mode" in input && input.mode === "fill_form") {
       await service.ownRun(sessionId, runId, owner);
+      const lastSnapshot = lastPageSnapshots.get(snapshotKey);
+      if (!lastSnapshot) {
+        return {
+          status: "not_filled",
+          reason: "stale",
+          ...(input.member === undefined ? {} : { member: input.member }),
+          ...(input.memberPath === undefined ? {} : { memberPath: input.memberPath }),
+          current: { known: false, reason: "no_prior_observation" },
+          error: {
+            code: "STALE",
+            message: "No page snapshot has been observed in this run yet. Call observe_display or present first so the platform can bind this edit to the displayed page.",
+          },
+        };
+      }
       target = {
         kind: "fill_form",
         ...(input.member === undefined ? {} : { member: input.member }),
         ...(input.memberPath === undefined ? {} : { memberPath: input.memberPath }),
         values: input.values,
         ...(input.overwriteUnsaved ? { overwriteUnsaved: true } : {}),
-        ...(input.expectedPageInstanceId === undefined ? {} : { expectedPageInstanceId: input.expectedPageInstanceId }),
-        ...(input.expectedMemberInstanceId === undefined ? {} : { expectedMemberInstanceId: input.expectedMemberInstanceId }),
-        ...(input.expectedTarget === undefined ? {} : { expectedTarget: input.expectedTarget }),
+        ...buildFillFormBasis(lastSnapshot, input),
       };
     } else if ("mode" in input && input.mode === "page_action") {
       await service.ownRun(sessionId, runId, owner);
+      const lastSnapshot = lastPageSnapshots.get(snapshotKey);
+      if (!lastSnapshot) {
+        return {
+          status: "not_executed",
+          reason: "stale",
+          operation: input.operation,
+          current: { known: false, reason: "no_prior_observation" },
+          error: {
+            code: "STALE",
+            message: "No page snapshot has been observed in this run yet. Call observe_display or present first so the platform can bind this action to the displayed page.",
+          },
+        };
+      }
       target = {
         kind: "page_action",
         operation: input.operation,
         ...(input.memberPath === undefined ? {} : { memberPath: input.memberPath }),
         ...(input.rowKey === undefined ? {} : { rowKey: input.rowKey }),
         ...(input.input === undefined ? {} : { input: input.input }),
-        ...(input.expectedPageInstanceId === undefined ? {} : { expectedPageInstanceId: input.expectedPageInstanceId }),
-        ...(input.expectedMemberInstanceId === undefined ? {} : { expectedMemberInstanceId: input.expectedMemberInstanceId }),
-        ...(input.expectedTarget === undefined ? {} : { expectedTarget: input.expectedTarget }),
-        ...(input.expectedCheckedKeys === undefined ? {} : { expectedCheckedKeys: input.expectedCheckedKeys }),
+        ...buildPageActionBasis(lastSnapshot, input),
       };
     } else if (input.target.startsWith("outputs/")) {
       const { artifact } = await service.resolve(sessionId, runId, input.target, owner);
@@ -264,6 +431,7 @@ export async function requestPresentation(
     const finish = (result: PresentationResult) => {
       pendingCalls.delete(key);
       deadline.removeEventListener("abort", abandon);
+      recordDeliveredSnapshot(snapshotKey, result);
       resolve(result);
     };
     const abandon = () => {
@@ -277,76 +445,47 @@ export async function requestPresentation(
           const { intent } = stored;
           if (intent.source.kind === "agent-page") {
             if (intent.dispatched) {
-              const { outcome } = intent;
-              if (outcome === null) {
+              const classified = classifyPanelOperationOutcome(intent.outcome, intent.intentId);
+              if (classified.kind === "unknown") {
                 finish({
                   status: "unknown",
                   reason: "receipt_missing",
                   intentId: intent.intentId,
                   current: { known: false, reason: "receipt_missing" },
-                  error: {
-                    code: "ACTION_OUTCOME_UNKNOWN",
-                    message: `Operation was dispatched, but its outcome is not yet recorded. Check /api/panel-operation-intents/${intent.intentId} without retrying.`,
-                  },
+                  error: { code: classified.code, message: classified.message },
                 });
                 return;
               }
-              if (outcome.kind === "unknown") {
-                finish({
-                  status: "unknown",
-                  reason: "receipt_missing",
-                  intentId: intent.intentId,
-                  current: { known: false, reason: "receipt_missing" },
-                  error: { code: "ACTION_OUTCOME_UNKNOWN", message: outcome.message },
-                });
-                return;
-              }
-              if ((outcome.kind === "refusal" || outcome.kind === "failure") && !hasRecordedPanelWrites(outcome)) {
+              if (classified.kind === "failed") {
                 finish({
                   status: "not_executed",
                   reason: "failed",
                   operation: intent.operation.id,
                   intentId: intent.intentId,
                   current: { known: false, reason: "receipt_missing" },
-                  error: { code: outcome.code, message: outcome.message },
+                  error: { code: classified.code, message: classified.message },
                 });
                 return;
               }
-              if (outcome.kind === "batch") {
-                if (outcome.items.some(item => item.outcome.kind === "unknown")) {
-                  finish({
-                    status: "unknown",
-                    reason: "receipt_missing",
-                    intentId: intent.intentId,
-                    current: { known: false, reason: "receipt_missing" },
-                    error: {
-                      code: "ACTION_OUTCOME_UNKNOWN",
-                      message: `Batch operation was dispatched with an unknown item outcome. Check /api/panel-operation-intents/${intent.intentId} without retrying.`,
-                    },
-                  });
-                  return;
-                }
-                const firstProblem = outcome.items.map(item => item.outcome).find(
-                  item => item.kind === "refusal" || item.kind === "failure",
-                );
-                if (firstProblem && !outcome.items.some(item => hasRecordedPanelWrites(item.outcome))) {
-                  finish({
-                    status: "not_executed",
-                    reason: "failed",
-                    operation: intent.operation.id,
-                    intentId: intent.intentId,
-                    current: { known: false, reason: "receipt_missing" },
-                    error: { code: firstProblem.code, message: firstProblem.message },
-                  });
-                  return;
-                }
+              if (classified.kind === "partial") {
+                finish({
+                  status: "partially_executed",
+                  reason: "partial_completion",
+                  operation: intent.operation.id,
+                  intentId: intent.intentId,
+                  ...(classified.savedFields?.length ? { savedFields: [...classified.savedFields] } : {}),
+                  outcome: classified.outcome,
+                  current: { known: false, reason: "receipt_missing" },
+                  error: { code: classified.code, message: classified.message },
+                });
+                return;
               }
               finish({
                 status: "executed",
                 reason: "action_completed",
                 operation: intent.operation.id,
                 intentId: intent.intentId,
-                outcome,
+                outcome: classified.outcome,
                 current: { known: false, reason: "receipt_missing" },
               });
               return;

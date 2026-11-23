@@ -262,6 +262,7 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
         intentId: `8f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d0${localConfirmSeq}`,
         questionId: `9f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d0${localConfirmSeq}`,
         label: body?.operationLabel ?? "Discard",
+        autoMode: false,
       });
     }
     if (request.method === "POST" && path === "/api/panel-operations/intents") {
@@ -301,6 +302,22 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
         intentId: intentDispatch[1],
         outcome: deleteOutcome,
       });
+    }
+    if (/^\/api\/panel-operations\/local-confirmations\/[^/]+\/claim$/.test(path)) {
+      return Response.json({ ok: true });
+    }
+    if (/^\/api\/panel-operations\/questions\/[^/]+\/cancel-if-pending$/.test(path)) {
+      return Response.json({ cancelled: true });
+    }
+    if (path === "/api/panel-operations/read") {
+      const body = request.body as { operationId?: string };
+      if (body.operationId === "definition.test") {
+        return Response.json({ kind: "markdown", markdown: "# Metric Preview\n\nTotal: 42" });
+      }
+      if (body.operationId === "definition.testExecute") {
+        return Response.json({ kind: "json", value: { result: [{ total: 42 }], truncated: false } });
+      }
+      return Response.json({ kind: "json", value: {} });
     }
     if (path === `/api/product-panels/${metricViewsPanel.id}`) return panelAnswer(metricViewsPanel, request);
     if (path === `/api/product-panels/${metricViewsPanel.id}/snapshot`) {
@@ -563,6 +580,32 @@ describe("metric-views builtin panel detail mount lifecycle", () => {
         (b) => b.textContent?.trim() === "Close",
       );
       closeBtn?.click();
+
+      // Agent page_action can directly trigger definition.test and definition.testExecute via unified usePanelOperation.
+      const mdResult = await harness.controller()!.executeAction!({
+        operation: "definition.test",
+        input: { parameters: {} },
+        agentRun: AGENT_RUN,
+      });
+      expect(mdResult).toMatchObject({ ok: true, kind: "executed", operation: "definition.test" });
+      await waitFor(
+        () => document.body.textContent?.includes("Total: 42") === true,
+        "definition.test populates markdown preview in the panel",
+      );
+      const jsonResult = await harness.controller()!.executeAction!({
+        operation: "definition.testExecute",
+        input: { parameters: {} },
+        agentRun: AGENT_RUN,
+      });
+      expect(jsonResult).toMatchObject({ ok: true, kind: "executed", operation: "definition.testExecute" });
+      await waitFor(
+        () => document.body.textContent?.includes("\"total\": 42") === true,
+        "definition.testExecute populates JSON preview in the panel",
+      );
+      const closeAfterAgent = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
+        (b) => b.textContent?.trim() === "Close",
+      );
+      closeAfterAgent?.click();
 
       // Live fillForm works while detail is open, then discard before clicking Back.
       const filled = await harness.controller()!.fillForm!({ member: "definition", values: { "/name": "Revenue Revised" } });

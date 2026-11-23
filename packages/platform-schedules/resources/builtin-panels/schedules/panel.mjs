@@ -1,5 +1,5 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { appIcon, mountPanel, usePanelContext, usePanelData, usePanelOperation, usePanelOperationAction } from "@ontomato/sdk/panel";
+import { appIcon, mountPanel, usePanelContext, usePanelData, usePanelOperation } from "@ontomato/sdk/panel";
 
 const TASK = "platform:ScheduledTask";
 const DAY = 86_400_000;
@@ -25,7 +25,7 @@ await mountPanel({
     const cursor = ref(null);
     const runsData = usePanelData("history", "runs", () => (cursor.value ? { cursor: cursor.value } : {}));
     const focusData = usePanelData("focus", "run");
-    const opRenew = usePanelOperation("renew", "renewCredential");
+    const opRenew = usePanelOperation("renew", "renewCredential", { entry: false });
     const renewalProblem = ref("");
 
     // Public search filter backed by declared panel state.
@@ -332,7 +332,7 @@ await mountPanel({
         || (self !== "delete" && opDelete.running.value)
       ),
     );
-    const opEnable = usePanelOperationAction("opEnable", "setEnabled", {
+    const opEnable = usePanelOperation("opEnable", "setEnabled", {
       available: canOperateSelected,
       busy: () => isSelectedBusy("enable"),
       onSettled(receipt, context) {
@@ -345,7 +345,7 @@ await mountPanel({
       },
       onError: notifyActionError,
     });
-    const opRunNow = usePanelOperationAction("opRunNow", "runNow", {
+    const opRunNow = usePanelOperation("opRunNow", "runNow", {
       available: canOperateSelected,
       busy: () => isSelectedBusy("runNow"),
       onSettled(receipt, context) {
@@ -375,7 +375,7 @@ await mountPanel({
       onError: notifyActionError,
     });
     // The platform asks the reader to confirm a delete, with the owner's impact (the task and its run records).
-    const opDelete = usePanelOperationAction("opDelete", "delete", {
+    const opDelete = usePanelOperation("opDelete", "delete", {
       available: canOperateSelected,
       busy: () => isSelectedBusy("delete"),
       onSettled(receipt) {

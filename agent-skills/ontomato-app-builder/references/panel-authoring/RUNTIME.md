@@ -325,8 +325,66 @@ show `message` as it is.
 
 ### usePanelOperation
 
+Binds a declared member operation (`operations.<name>`) to the calling component's synchronous `setup()`.
+
+By default (`options.entry !== false`), this also registers the calling component as a mounted page action entry so
+human clicks and agent `page_action` calls share the exact same availability guards, input filtering, preparation,
+4-tuple confirmation verification, dispatch, and `onSettled` callback, unregistering automatically on unmount.
+Pass `{ entry: false }` for non-UI background flows (such as credential renewal on mount).
+
 ```ts
-function usePanelOperation(member: string, name: string): PanelOperationHandle
+function usePanelOperation(member: string, name: string, options?: UsePanelOperationOptions): PanelOperationHandle
+```
+
+### UsePanelOperationOptions
+
+Options for `usePanelOperation(member, name, options?)`.
+
+```ts
+interface UsePanelOperationOptions {
+  /**
+   * Whether this handle represents a mounted page UI entry reachable by `page_action` (default `true`).
+   * Pass `false` only for non-UI automated flows (for example automatic credential renewal on mount).
+   */
+  entry?: boolean;
+  /**
+   * Whether the UI entry is currently visible and available for the user.
+   * Return `false` or `{ ok: false, message }` to refuse agent invocation and invalidate pending confirmations.
+   */
+  available?: MaybeRefOrGetter<boolean | PanelOperationAvailability>;
+  /**
+   * Whether the UI entry is currently disabled. A non-empty string disables the entry with that reason.
+   */
+  disabled?: MaybeRefOrGetter<boolean | string>;
+  /**
+   * Additional external busy guard (combined with this handle's own `running` state).
+   */
+  busy?: MaybeRefOrGetter<boolean>;
+  /**
+   * Optional synchronous input normalizer shared by human clicks and agent calls.
+   * For agent calls, `provided` has already been filtered to unbound interactive schema fields.
+   * Bound projection parameters always take precedence over the returned values.
+   */
+  prepareInput?: (
+    provided: Readonly<Record<string, RuntimeJsonValue>>,
+  ) => Readonly<Record<string, RuntimeJsonValue>>;
+  /**
+   * Panel-owned settlement callback (notifications, navigation, state updates, etc.) run on the exact same path
+   * for human clicks, full-auto agent calls, and user-approved conversation confirmations.
+   */
+  onSettled?: (
+    receipt: PanelWriteResult | PanelReadOperationResult,
+    context: PanelOperationContext,
+  ) => void | Promise<void>;
+  /**
+   * Optional error callback invoked when execution fails before dispatch (e.g. prepare failure).
+   * Not invoked for deferred confirmation or stale-submission errors.
+   */
+  onError?: (
+    error: Error,
+    context: { readonly operationId: string; readonly input: Readonly<Record<string, RuntimeJsonValue>> },
+  ) => void;
+}
 ```
 
 ### PanelOperationHandle
@@ -337,7 +395,13 @@ One member's operation, as the page's code holds it.
 interface PanelOperationHandle {
   /** The owner's description while it admits the operation now — its label, kind and target — else null. */
   readonly operation: ComputedRef<PanelOperationBinding | null>;
-  /** Runs it with the page's own input; a read answers what it read (or the file the reader saved). */
+  /** Live member operations read state (`loading`, `ready`, `forbidden`, `error`, `empty`). */
+  readonly state: ComputedRef<MemberOperationsState>;
+  /** True while this operation is preparing, awaiting confirmation, or dispatching. */
+  readonly running: ComputedRef<boolean>;
+  /** True only while the operation is actively dispatching on the server. */
+  readonly dispatching: ComputedRef<boolean>;
+  /** Runs the operation with the page's own input; a read answers what it read (or the file saved), a write answers its receipt. */
   run(input?: Readonly<Record<string, unknown>>): Promise<unknown>;
 }
 ```
@@ -346,7 +410,8 @@ interface PanelOperationHandle {
 
 The member declaration's `operation` is the owner's full ID. Invoke using the member-qualified ID from the page
 skill's Declared operations. For a member `opRunNow` declaring `schedules.runNow`, pass `opRunNow.runNow`
-as `operation` to `page_action`. In Vue, the same binding is `usePanelOperation("opRunNow", "runNow")`.
+as `operation` to `page_action`. In Vue, the same binding is `usePanelOperation("opRunNow", "runNow", options?)`,
+which registers a mounted page action entry automatically (pass `{ entry: false }` only for non-UI background flows).
 
 In Vue, call the hook’s `run(input)`. The SDK obtains the target from the binding and the host
 handles confirmation and requests. For an action write, the hook resolves to a receipt. Read these fields before

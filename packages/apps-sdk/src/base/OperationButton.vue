@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
@@ -196,6 +197,23 @@ function onTriggerClick() {
   trigger(props.operation, descriptor.value);
 }
 
+const entryInstanceId = ref(randomId());
+const entryBindingSignature = computed(() => {
+  const declaredDraftSlot = panel.manifest.members[slot.slot]?.operationDrafts?.[props.operation]?.slot;
+  const draftFormId = declaredDraftSlot
+    ? (panel.instance.forms.snapshot(declaredDraftSlot)?.formInstanceId ?? null)
+    : null;
+  return JSON.stringify({
+    target: targetInfo.value.target,
+    checked: targetInfo.value.checkedTargets,
+    inputs: member.inputs.value,
+    draftFormId,
+  });
+});
+watch(entryBindingSignature, (next, prev) => {
+  if (next !== prev) entryInstanceId.value = randomId();
+});
+
 const unregisterAction = panel.instance.registerActionHandler(
   panel.instance.operationIdOf(slot.slot, props.operation),
   async ({ input, expectedTarget, expectedCheckedKeys, agentContext }) => {
@@ -268,6 +286,7 @@ const unregisterAction = panel.instance.registerActionHandler(
     }
     return { ok: true, outcome: outcome.value ?? undefined };
   },
+  { entryInstanceId: () => entryInstanceId.value },
 );
 onBeforeUnmount(unregisterAction);
 </script>

@@ -1010,4 +1010,60 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
 
     wrapper.unmount();
   });
+
+  it("reports dashboardId and cardId in snapshotMeta and rejects stale board/card basis on fillForm & executeAction (II.7)", async () => {
+    const { wrapper, controller } = await mountDashboardHome();
+
+    const meta = controller.snapshotMeta?.();
+    expect(meta).toMatchObject({
+      dashboardId: "d1",
+      cardId: "c1",
+    });
+
+    // Stale dashboardId blocks fillForm on both board and card.parameters without mutating preview or parameters.
+    const staleBoardFill = await controller.fillForm!({
+      member: "board",
+      values: { operation: "dashboard.rename", dashboardName: "Wrong Board" },
+      expectedDashboardId: "d2",
+    });
+    expect(staleBoardFill).toMatchObject({ ok: false, reason: "stale" });
+    expect(wrapper.find(".board-preview-bar").exists()).toBe(false);
+
+    // Stale cardId blocks card.parameters fillForm & save.
+    const staleCardFill = await controller.fillForm!({
+      member: "card.parameters",
+      values: { year: "2020" },
+      expectedDashboardId: "d1",
+      expectedCardId: "c2",
+    });
+    expect(staleCardFill).toMatchObject({ ok: false, reason: "stale" });
+
+    // Matching dashboardId + cardId succeeds.
+    const matchingFill = await controller.fillForm!({
+      member: "card.parameters",
+      values: { year: "2025" },
+      expectedDashboardId: "d1",
+      expectedCardId: "c1",
+    });
+    expect(matchingFill).toEqual({ ok: true, member: "card.parameters", filledFields: ["year"] });
+
+    // Stale dashboardId or cardId blocks executeAction too.
+    const staleBoardAction = await controller.executeAction!({
+      operation: "card.parameters.save",
+      agentRun,
+      expectedDashboardId: "d2",
+    });
+    expect(staleBoardAction).toMatchObject({ ok: false, reason: "stale" });
+
+    const staleCardAction = await controller.executeAction!({
+      operation: "card.parameters.save",
+      agentRun,
+      expectedDashboardId: "d1",
+      expectedCardId: "c2",
+    });
+    expect(staleCardAction).toMatchObject({ ok: false, reason: "stale" });
+    expect(api.savedParams).toEqual([]);
+
+    wrapper.unmount();
+  });
 });

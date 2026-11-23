@@ -118,6 +118,8 @@ export const pageFormSnapshotSchema = z
     member: z.string().min(1).max(200),
     /** Placed child panel path when the form belongs to a nested panel. */
     memberPath: z.lazy(() => panelMemberPathSchema.nonempty()).optional(),
+    /** Unique mounted instance ID for this form; rotates when target, parent inputs, fixed fields, or panel definition change. */
+    formInstanceId: z.string().min(1).max(200).optional(),
     /** The object or create-draft this form is currently editing. */
     target: pageFormTargetSchema.optional(),
     /** Whether the form holds unsaved edits relative to its opened baseline. */

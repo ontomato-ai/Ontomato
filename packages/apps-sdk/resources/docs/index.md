@@ -130,9 +130,13 @@ target is empty), `ready` with `value`, `empty`, `forbidden`, or `error` with `m
 automatically when bound panel state changes, when `runtimeParams` change, or when an operation reports affected objects
 or types.
 
-`usePanelOperation(member, name)` returns `{ operation, run }`. `operation` is the owner's description while currently
-admitted (otherwise `null`), and `run(input?)` runs the operation through the platform's confirmation and permission
-flow.
+`usePanelOperation(member, name, options?)` returns `{ operation, state, running, dispatching, run }`. `operation` is the
+owner's description while currently admitted (otherwise `null`), and `run(input?)` runs the operation through the
+platform's confirmation and permission flow. By default (`options.entry !== false`), calling `usePanelOperation` in a
+component's synchronous `setup()` registers a mounted page action entry so custom buttons, switches, or menu items share
+availability (`available`, `disabled`, `busy`), input normalization (`prepareInput`), confirmation verification, and
+settlement (`onSettled`, `onError`) between human clicks and agent `page_action` calls. Pass `{ entry: false }` only
+for non-UI automated background flows (such as credential renewal on mount).
 
 To navigate to another registered entry (such as a separate detail entry built with `panelAddress("/path", { selected: id })` or `/agents/chat?agentId=…`),
 call `usePanelContext().navigate(address)`. To show transient feedback ("Saved", "Exported", or an error), call
