@@ -68,19 +68,27 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   // PostgreSQL provides the exact timestamp key, including sub-millisecond precision.
   const cursorKey = updated ? "to_jsonb(updated_at)#>>'{}'" : order;
   const kindColumn = kind === "projection" ? `,definition->>'componentId' AS "componentId"` : `,definition,definition->'template' AS template`;
-  const { rows } = await getPostgresPool().query<SummaryRow>(
-    `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
-       definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${kindColumn}
-     FROM ${currentProductRows(kind)} AS definitions
-     WHERE (domain_id IS NULL OR (domain_id=$1 AND (id=ANY($2::text[]) OR ($10::boolean AND owner_id=$4))))
-       AND ($9::boolean IS NULL OR COALESCE(definition->'template', 'false'::jsonb) = to_jsonb($9::boolean))
+  const whereFilter = `WHERE (domain_id IS NULL OR (domain_id=$1 AND (id=ANY($2::text[]) OR ($7::boolean AND owner_id=$4))))
+       AND ($6::boolean IS NULL OR COALESCE(definition->'template', 'false'::jsonb) = to_jsonb($6::boolean))
        AND ($3='all' OR COALESCE(owner_id=$4,false)=($3='mine'))
-       AND (strpos(lower(definition->>'name'),lower($5))>0 OR strpos(lower(definition->>'description'),lower($5))>0)
-       AND ($6::${keyType} IS NULL OR (${order},id) ${updated ? "<" : ">"} ($6::${keyType},$7::text))
-     ORDER BY ${order} ${direction},id ${direction} LIMIT $8`,
-    [owner.domainId, visible, input.scope, owner.userId, input.q, cursor?.key ?? null, cursor?.id ?? null, input.limit + 1,
-      panelCatalog ? input.template ?? null : null, panelCatalog],
-  );
+       AND (strpos(lower(definition->>'name'),lower($5))>0 OR strpos(lower(definition->>'description'),lower($5))>0)`;
+  const filterValues = [owner.domainId, visible, input.scope, owner.userId, input.q, panelCatalog ? input.template ?? null : null, panelCatalog];
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    getPostgresPool().query<SummaryRow>(
+      `SELECT id,owner_id AS "ownerId",definition->>'name' AS name,definition->>'description' AS description,
+         definition->>'visibility' AS visibility,revision,updated_at AS "updatedAt",${cursorKey} AS "sortKey"${kindColumn}
+       FROM ${currentProductRows(kind)} AS definitions
+       ${whereFilter}
+         AND ($8::${keyType} IS NULL OR (${order},id) ${updated ? "<" : ">"} ($8::${keyType},$9::text))
+       ORDER BY ${order} ${direction},id ${direction} LIMIT $10`,
+      [...filterValues, cursor?.key ?? null, cursor?.id ?? null, input.limit + 1],
+    ),
+    getPostgresPool().query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total FROM ${currentProductRows(kind)} AS definitions ${whereFilter}`,
+      filterValues,
+    ),
+  ]);
+  const total = countRows[0]?.total ?? 0;
   const edited = new Set(editable);
   const unavailableItems: { id: string; reason: string; revision?: number }[] = [];
   const items = rows.slice(0, input.limit).flatMap(({ sortKey: _sortKey, definition, updatedAt, template, ...row }) => {
@@ -100,7 +108,7 @@ export async function listCurrentProducts(owner: ProductOwner, credentials: Assi
   const last = rows[input.limit - 1];
   const nextCursor = rows.length > input.limit
     ? Buffer.from(JSON.stringify({ sort: input.sort, key: last.sortKey, id: last.id })).toString("base64url") : null;
-  return { items, nextCursor, ...(unavailableItems.length > 0 && { unavailableItems }) };
+  return { items, nextCursor, total, ...(unavailableItems.length > 0 && { unavailableItems }) };
 }
 
 export async function currentProductUsedBy(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string) {

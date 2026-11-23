@@ -35,6 +35,12 @@ export async function stageBuiltinPanels({ directory, members, applications, che
   }
 
   for (const application of applications) {
+    if (application.framePanelId !== undefined) {
+      const label = `Built-in application ${application.id}, frame panel ${application.framePanelId}`;
+      const result = checks.builtinProductIdSchema.safeParse(application.framePanelId);
+      if (!result.success) throw new Error(`${label}: ${result.error.message}`);
+      if (!panels.has(application.framePanelId)) throw new Error(`${label}: panel is missing from the release`);
+    }
     for (const use of application.declaration?.panelUses ?? []) {
       const label = `Built-in application ${application.id}, entry ${use.id} (${use.path}), panel ${use.panelId}`;
       const result = checks.builtinApplicationPanelUseSchema.safeParse(use);

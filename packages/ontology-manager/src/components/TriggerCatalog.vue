@@ -17,7 +17,7 @@ import { CalendarClock, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-v
 import ManagerIconButton from "./ManagerIconButton.vue";
 import { PlatformPageHeader } from "@ontomato/platform-shell";
 import type { SmartAsset, TriggerRecord, WorkflowRecord } from "../api";
-import { useManagerClient, useOntologyText } from "../context";
+import { useManagerClient, useManagerCounts, useOntologyText } from "../context";
 import { useManagerFeedback } from "../feedback";
 import type { MessageKey } from "../i18n";
 
@@ -31,6 +31,7 @@ import type { MessageKey } from "../i18n";
  */
 const { ot } = useOntologyText();
 const { message, confirm } = useManagerFeedback();
+const managerCounts = useManagerCounts();
 const {
   loadTriggers,
   saveTrigger,
@@ -110,6 +111,7 @@ async function refresh() {
   loading.value = true;
   try {
     triggers.value = await loadTriggers();
+    managerCounts.set("triggers", triggers.value.length);
   } catch (error) {
     triggers.value = [];
     message.error((error as Error).message);

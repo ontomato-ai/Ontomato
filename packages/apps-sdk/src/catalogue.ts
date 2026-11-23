@@ -463,6 +463,15 @@ export const components: readonly ComponentMetadata[] = [
       "Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text or a projection-bound component in `#title`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
   }),
   defineComponentMeta({
+    componentId: "AppMenu",
+    module: "@ontomato/sdk/base",
+    exportName: "AppMenu",
+    role: "control",
+    meaning:
+      "Official application navigation menu column shared by the platform shell and application frame panels. Inside an application frame panel, `<app-menu>` automatically renders the admitted entries from `usePanelContext().entryMenu`, highlights `usePanelContext().currentEntry.path`, adapts to a compact selector on narrow screens, and navigates via `usePanelContext().navigate(id)` unless a custom `@select` handler is provided. Supply `:counts` (from declared `PanelData` owner reads) and `:icons` (curated platform icon keys) to attach live directory badges and row icons, or supply explicit `:groups` and `:active-id` for custom menus.",
+    effects: "Navigates within the platform through the panel host when the reader selects a menu entry; reads no business data itself.",
+  }),
+  defineComponentMeta({
     componentId: "PathTree",
     module: "@ontomato/sdk/base",
     exportName: "PathTree",
