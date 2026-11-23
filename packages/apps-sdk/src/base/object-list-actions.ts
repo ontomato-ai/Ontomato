@@ -7,6 +7,7 @@ import {
 import type { MemberInputs } from "../panel/direct";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { stateObject, type PanelFieldValue } from "../panel/state";
+import type { OperationInputField } from "./operation-input-schema";
 import type { ObjectListRowActionCondition } from "./object-list-types";
 import { isRecordReference, rawRecordField } from "./record-field";
 
@@ -122,6 +123,37 @@ export function resolveRowOperationParams(
     }
   }
   return resolved;
+}
+
+/**
+ * Returns the whitelist of owner-declared editable parameter keys that may be supplied by a caller
+ * (`extraInput` or the operation input dialog), excluding every key declared in `binding.params`.
+ */
+export function allowedRowOperationInputKeys(
+  binding: ProjectionOperationBinding,
+  editableFields: readonly OperationInputField[],
+): Set<string> {
+  const declaredBoundKeys = new Set(Object.keys(binding.params ?? {}));
+  const allowed = new Set<string>();
+  for (const field of editableFields) {
+    if (!declaredBoundKeys.has(field.name)) allowed.add(field.name);
+  }
+  return allowed;
+}
+
+/** Filters caller-supplied or dialog-supplied parameters to the owner-declared editable whitelist. */
+export function filterAllowedRowOperationInput(
+  input: Readonly<Record<string, RuntimeJsonValue>> | undefined,
+  allowedKeys: ReadonlySet<string>,
+): Record<string, RuntimeJsonValue> {
+  if (!input) return {};
+  const filtered: Record<string, RuntimeJsonValue> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (allowedKeys.has(key) && value !== undefined) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
 }
 
 /** Interpolates `{primaryKey}`, `{className}`, `{label}`, or `{fieldKey}` placeholders in a local row action address. */

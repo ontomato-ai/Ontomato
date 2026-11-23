@@ -47,6 +47,8 @@ import {
 } from "./operation-dispatch";
 import type { OperationInputField } from "./operation-input-schema";
 import {
+  allowedRowOperationInputKeys,
+  filterAllowedRowOperationInput,
   formatColumnLength,
   matchesRowActionWhen,
   resolveRowActionAddress,
@@ -1951,9 +1953,12 @@ const rowOpPendingBaseInput = shallowRef<Record<string, RuntimeJsonValue>>({});
 
 const rowOpPendingInputFields = computed<readonly OperationInputField[]>(() => {
   if (!rowOpPendingName.value || !rowOpPendingDescriptor.value) return [];
+  const binding = member.projection.operations?.[rowOpPendingName.value];
+  if (!binding) return [];
   const fields = resolveOperationInputFields(panel, slot, rowOpPendingName.value, rowOpPendingDescriptor.value);
+  const allowedKeys = allowedRowOperationInputKeys(binding, fields);
   const suppliedKeys = new Set(Object.keys(rowOpPendingBaseInput.value));
-  return fields.filter((field) => !suppliedKeys.has(field.name));
+  return fields.filter((field) => allowedKeys.has(field.name) && !suppliedKeys.has(field.name));
 });
 
 const rowOpOutcome = computed<OperationOutcome | null>(() =>
@@ -2018,13 +2023,17 @@ async function runRowOperation(
   const rowOp = rowOperationsFor(row)[operationName];
   if (!rowOp || !rowOp.available) return;
 
-  const baseInput: Record<string, RuntimeJsonValue> = {
-    ...resolveRowOperationParams(binding, row, member.inputs.value),
-    ...(extraInput ?? {}),
-  };
+  const boundInput = resolveRowOperationParams(binding, row, member.inputs.value);
   const allFields = resolveOperationInputFields(panel, slot, operationName, descriptor);
+  const allowedKeys = allowedRowOperationInputKeys(binding, allFields);
+  const filteredExtra = filterAllowedRowOperationInput(extraInput, allowedKeys);
+  // Declared projection bindings always take precedence; caller extraInput may only supply unbound editable fields.
+  const baseInput: Record<string, RuntimeJsonValue> = {
+    ...filteredExtra,
+    ...boundInput,
+  };
   const suppliedKeys = new Set(Object.keys(baseInput));
-  const missingFields = allFields.filter((field) => !suppliedKeys.has(field.name));
+  const missingFields = allFields.filter((field) => allowedKeys.has(field.name) && !suppliedKeys.has(field.name));
   if (missingFields.length > 0) {
     rowOpFailure.value = null;
     rowOpPendingRow.value = row;
@@ -2042,7 +2051,18 @@ async function confirmRowOpInput(providedInput: Record<string, RuntimeJsonValue>
   const operationName = rowOpPendingName.value;
   const descriptor = rowOpPendingDescriptor.value;
   if (!row || !operationName || !descriptor) return;
-  const merged = { ...rowOpPendingBaseInput.value, ...providedInput };
+  const binding = member.projection.operations?.[operationName];
+  if (!binding) return;
+  const allFields = resolveOperationInputFields(panel, slot, operationName, descriptor);
+  const allowedKeys = allowedRowOperationInputKeys(binding, allFields);
+  const filteredProvided = filterAllowedRowOperationInput(providedInput, allowedKeys);
+  const boundInput = resolveRowOperationParams(binding, row, member.inputs.value);
+  // Dialog input can only populate unbound editable fields and never overrides base or bound parameters.
+  const merged: Record<string, RuntimeJsonValue> = {
+    ...filteredProvided,
+    ...rowOpPendingBaseInput.value,
+    ...boundInput,
+  };
   rowOpInputDialogOpen.value = false;
   await executeRowOperation(row, operationName, descriptor, merged);
 }

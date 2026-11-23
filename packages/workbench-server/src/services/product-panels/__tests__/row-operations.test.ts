@@ -4,10 +4,11 @@ import {
   isPanelHumanOperationIntent, type CreatePanelHumanOperationIntentRequest, type CreatePanelOperationIntentRequest,
   type PanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
-import { APPLICATION, BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, BUSINESS_KNOWLEDGE, PRODUCT_PANEL, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
+import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import { components as sdkComponents } from "../../../../../apps-sdk/src/catalogue";
 import { configureI18n } from "../../../i18n";
@@ -36,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   listScheduledTasks: vi.fn(),
   queryKnowledge: vi.fn(),
   readOntologyObjects: vi.fn(),
+  usedPanels: vi.fn(),
   readCatalogue: vi.fn(),
 }));
 
@@ -111,6 +113,15 @@ vi.mock("../../platform-ontology/panel-reads", () => ({
     objects: (params: Record<string, unknown>) => mocks.readOntologyObjects(owner, viewer, params),
   }),
 }));
+vi.mock("../application-catalogue", async importOriginal => {
+  const actual = await importOriginal<typeof import("../application-catalogue")>();
+  return {
+    ...actual,
+    createApplicationReadAdapter: () => ({
+      usedPanels: (primaryKey: string) => mocks.usedPanels(primaryKey),
+    }),
+  };
+});
 vi.mock("../component-catalogue", async importOriginal => {
   const actual = await importOriginal<typeof import("../component-catalogue")>();
   return {
@@ -125,6 +136,7 @@ vi.mock("../component-catalogue", async importOriginal => {
 
 import {
   dispatchHumanPanelOperation, dispatchPanel, operatePanel as realOperatePanel, prepareHumanPanelOperation,
+  readPanelOperation,
 } from "../operations";
 import { readProductPanelData } from "../data-reads";
 
@@ -140,6 +152,9 @@ configureI18n({
         "test.deleteRow": "Delete item",
         "test.revokeGrant": "Revoke grant",
         "test.archive": "Archive item",
+        "test.inspectTask": "Inspect task",
+        "test.deletePanel": "Delete panel",
+        "test.detachPanel": "Detach panel",
       },
     },
   },
@@ -228,7 +243,7 @@ function registerMockOp(map: Record<string, serverOperations.PanelServerOperatio
     return {
       handler,
       declaration: serverOperations.operationDeclaration(handler),
-      targetType: handler.effect === "write" ? handler.targetType : undefined,
+      targetType: handler.targetType,
     };
   });
 }
@@ -737,5 +752,263 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
         input: { scope: "tenant-prod", rowId: "row-1", fixedTag: "server-only" },
       },
     ]);
+  });
+
+  it("blocks bound parameter overrides on read operations and row-targeted primaryKey bindings server-side", async () => {
+    const readOp: serverOperations.PanelReadServerOperation = {
+      effect: "read",
+      kind: "action",
+      batch: false,
+      handlerRef: "schedules.inspectTask",
+      labelKey: "test.inspectTask",
+      binding: { kind: "PlatformOperation", id: "schedules.inspectTask" },
+      target: { source: "input", input: "task" },
+      targetType: SCHEDULED_TASK,
+      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string() }),
+      inputSchema: z.object({ fixedTag: z.string(), env: z.string(), taskId: z.string(), detail: z.string().optional() }).strict(),
+      resultSchema: z.object({ kind: z.literal("json"), value: runtimeJsonObjectSchema }),
+      execute: async (_host, call) => ({ kind: "json", value: call.input }),
+    };
+    registerMockOp({ "schedules.inspectTask": readOp });
+
+    setProduct(makeProjection("list-read-op", {
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        env: { kind: "scalar", type: "string" },
+      },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          read: "list",
+          params: {},
+        },
+      },
+      operations: {
+        inspect: {
+          operation: { kind: "PlatformOperation", id: "schedules.inspectTask" },
+          target: { row: true },
+          params: {
+            fixedTag: { literal: "server-literal" },
+            env: { input: "env" },
+            taskId: { row: "primaryKey" },
+          },
+        },
+      },
+    }));
+
+    setProduct(makePanel("P", {
+      state: {},
+      members: {
+        tasks: {
+          target: { projectionId: "list-read-op" },
+          inputs: { env: { literal: "prod" } },
+        },
+      },
+    }));
+
+    // Tampering with literal param is rejected.
+    await expect(readPanelOperation(owner, credentials, {
+      applicationId: "A",
+      useId: "tasks",
+      operationId: "tasks.inspect",
+      call: {
+        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-7" },
+        input: { fixedTag: "tampered", detail: "full" },
+      },
+    })).rejects.toMatchObject({ code: "OPERATION_PARAM_MISMATCH" });
+
+    // Tampering with pinned input param is rejected.
+    await expect(readPanelOperation(owner, credentials, {
+      applicationId: "A",
+      useId: "tasks",
+      operationId: "tasks.inspect",
+      call: {
+        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-7" },
+        input: { env: "staging", detail: "full" },
+      },
+    })).rejects.toMatchObject({ code: "OPERATION_PARAM_MISMATCH" });
+
+    // Tampering with row primaryKey param under target: { row: true } is rejected.
+    await expect(readPanelOperation(owner, credentials, {
+      applicationId: "A",
+      useId: "tasks",
+      operationId: "tasks.inspect",
+      call: {
+        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-7" },
+        input: { taskId: "task-other", detail: "full" },
+      },
+    })).rejects.toMatchObject({ code: "OPERATION_PARAM_MISMATCH" });
+
+    // Valid call receives all bound params injected server-side alongside editable `detail`.
+    const res = await readPanelOperation(owner, credentials, {
+      applicationId: "A",
+      useId: "tasks",
+      operationId: "tasks.inspect",
+      call: {
+        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-7" },
+        input: { detail: "full" },
+      },
+    });
+    expect(res).toEqual({
+      kind: "json",
+      value: {
+        fixedTag: "server-literal",
+        env: "prod",
+        taskId: "task-7",
+        detail: "full",
+      },
+    });
+  });
+
+  it("aligns server rowOperations keys and row targets with read declaration rowType for cross-type rows without className", async () => {
+    const observedBatchTargets: Array<{ rowKey: string; target: { objectType: string; primaryKey: string } }> = [];
+    const unavailableBatch = vi.fn(async (
+      _host,
+      targets: readonly { target: { objectType: string; primaryKey: string }; rowKey: string }[],
+    ) => {
+      observedBatchTargets.push(...targets);
+      const map = new Map<string, { reason: string }>();
+      for (const entry of targets) {
+        if (entry.target.primaryKey === "panel-builtin") {
+          map.set(entry.rowKey, { reason: "Built-in panel cannot be deleted" });
+        }
+      }
+      return map;
+    });
+    const observedParentTargets: Array<{ objectType: string; primaryKey: string }> = [];
+    const unavailableParent = vi.fn(async (_host, target: { objectType: string; primaryKey: string }) => {
+      observedParentTargets.push(target);
+      return target.primaryKey === "app-1" ? { reason: "Application is locked" } : undefined;
+    });
+
+    const deletePanelOp: serverOperations.PanelWriteServerOperation = {
+      effect: "write",
+      kind: "action",
+      handlerRef: "productPanels.delete",
+      labelKey: "test.deletePanel",
+      binding: { kind: "PlatformOperation", id: "productPanels.delete" },
+      targetType: PRODUCT_PANEL,
+      targetInput: "panel",
+      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(PRODUCT_PANEL), primaryKey: z.string() }),
+      inputSchema: z.object({}).strict(),
+      resultSchema: z.object({ deleted: z.boolean() }).strict(),
+      batch: false,
+      targetLabel: async (_host, target) => `Panel:${target.primaryKey}`,
+      unavailableBatch,
+      execute: async () => ({ kind: "success", data: { deleted: true } }),
+    };
+
+    const detachPanelOp: serverOperations.PanelWriteServerOperation = {
+      effect: "write",
+      kind: "action",
+      handlerRef: "applications.detachPanel",
+      labelKey: "test.detachPanel",
+      binding: { kind: "PlatformOperation", id: "applications.detachPanel" },
+      targetType: APPLICATION,
+      targetInput: "application",
+      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(APPLICATION), primaryKey: z.string() }),
+      inputSchema: z.object({ panelId: z.string() }).strict(),
+      resultSchema: z.object({ detached: z.boolean() }).strict(),
+      batch: false,
+      targetLabel: async (_host, target) => `App:${target.primaryKey}`,
+      unavailable: unavailableParent,
+      execute: async () => ({ kind: "success", data: { detached: true } }),
+    };
+
+    registerMockOp({
+      "productPanels.delete": deletePanelOp,
+      "applications.detachPanel": detachPanelOp,
+    });
+
+    // Cross-type `platform:Application.usedPanels` declares `rowType: platform:ProductPanel`.
+    // First two rows intentionally omit `className`; third row carries an explicit `className`.
+    const rows: PanelRecord[] = [
+      { primaryKey: "panel-custom", label: "Custom Panel", fields: {} },
+      { primaryKey: "panel-builtin", label: "Built-in Panel", fields: {} },
+      { primaryKey: "panel-explicit", className: PRODUCT_PANEL, label: "Explicit Panel", fields: {} },
+    ];
+    mocks.usedPanels.mockResolvedValue(rows);
+
+    setProduct(makeProjection("used-panels-proj", {
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        app: { kind: "object", objectType: APPLICATION },
+      },
+      data: {
+        rows: {
+          source: { object: { input: "app" } },
+          read: "usedPanels",
+          params: {},
+        },
+      },
+      operations: {
+        deletePanel: {
+          operation: { kind: "PlatformOperation", id: "productPanels.delete" },
+          target: { row: true },
+        },
+        detachPanel: {
+          operation: { kind: "PlatformOperation", id: "applications.detachPanel" },
+          target: { input: "app" },
+          params: { panelId: { row: "primaryKey" } },
+        },
+      },
+    }));
+
+    setProduct(makePanel("P", {
+      state: {
+        app: { type: { kind: "object", objectType: APPLICATION }, default: null, personal: false, deepLink: false, external: true },
+      },
+      members: {
+        panels: {
+          target: { projectionId: "used-panels-proj" },
+          inputs: { app: { state: "app" } },
+        },
+      },
+    }));
+
+    const res = await readProductPanelData(owner, credentials, {
+      source: { kind: "registered", applicationId: "A", useId: "tasks" },
+      memberPath: [{ member: "panels" }],
+      dataName: "rows",
+      inputs: { app: { className: APPLICATION, primaryKey: "app-1" } },
+    });
+
+    expect(res.status).toBe("ready");
+    if (res.status !== "ready") throw new Error("expected ready");
+
+    // Row-targeted availability checks receive `objectType: PRODUCT_PANEL` (from `rowType`), not parent `APPLICATION`.
+    expect(observedBatchTargets.map(entry => ({
+      rowKey: entry.rowKey,
+      objectType: entry.target.objectType,
+      primaryKey: entry.target.primaryKey,
+    }))).toEqual([
+      { rowKey: panelRowOperationKey(rows[0]!, PRODUCT_PANEL), objectType: PRODUCT_PANEL, primaryKey: "panel-custom" },
+      { rowKey: panelRowOperationKey(rows[1]!, PRODUCT_PANEL), objectType: PRODUCT_PANEL, primaryKey: "panel-builtin" },
+      { rowKey: panelRowOperationKey(rows[2]!, PRODUCT_PANEL), objectType: PRODUCT_PANEL, primaryKey: "panel-explicit" },
+    ]);
+
+    // Parent-targeted availability check still resolves `objectType: APPLICATION` (deduplicated once).
+    expect(observedParentTargets).toEqual([{ kind: "object", objectType: APPLICATION, primaryKey: "app-1" }]);
+
+    // Server keys match frontend `panelRowOperationKey(row, rowType)` exactly, preserving disabled reasons.
+    const kCustom = panelRowOperationKey(rows[0]!, PRODUCT_PANEL);
+    const kBuiltin = panelRowOperationKey(rows[1]!, PRODUCT_PANEL);
+    const kExplicit = panelRowOperationKey(rows[2]!, PRODUCT_PANEL);
+    expect(res.rowOperations).toEqual({
+      [kCustom]: {
+        deletePanel: { available: true },
+        detachPanel: { available: false, unavailable: { reason: "Application is locked" } },
+      },
+      [kBuiltin]: {
+        deletePanel: { available: false, unavailable: { reason: "Built-in panel cannot be deleted" } },
+        detachPanel: { available: false, unavailable: { reason: "Application is locked" } },
+      },
+      [kExplicit]: {
+        deletePanel: { available: true },
+        detachPanel: { available: false, unavailable: { reason: "Application is locked" } },
+      },
+    });
+    // Must not emit stale parent-type keys.
+    expect(res.rowOperations?.[panelRowOperationKey(rows[1]!, APPLICATION)]).toBeUndefined();
   });
 });
