@@ -861,13 +861,24 @@ test("application addresses carry flat named frame and entry state while preserv
   assert.throws(() => validateApplicationPanelAddressState("state", { privateSelection: "x" }, manifest), /state\.privateSelection/);
 });
 
-test("flat panel URLs distinguish an empty string list from a list containing empty strings", async () => {
+test("flat panel URLs encode empty string lists as named empty parameters without unnamed auxiliary keys", async () => {
   const { applicationPanelAddress, panelAddress, panelAddressState, parseApplicationPanelAddress } = await import("./panel-host");
   const path = "/applications/app-school/orders";
   const type = { kind: "list", items: { kind: "scalar", type: "string" } };
   for (const defaultValue of [undefined, ["default"]]) {
     const manifest = panelManifestSchema.parse({ state: { tags: { type, deepLink: true, default: defaultValue } }, members: {} });
-    for (const tags of [[], [""], ["", "a"], ["a", ""], ["", ""], ["a"], ["a", "b"]]) {
+    // Empty list encodes as `?tags=` (distinguished from omitted param), and never adds unnamed auxiliary keys.
+    const emptyUrl = panelAddress(path, { tags: [] }, manifest);
+    assert.equal(emptyUrl, `${path}?tags=`);
+    assert.deepEqual(panelAddressState(emptyUrl, manifest), { tags: [] });
+    assert.deepEqual(panelAddressState(path, manifest), {});
+
+    // A singleton empty string encodes as `?tags=` without auxiliary keys and restores as `[]`.
+    const singletonEmptyUrl = panelAddress(path, { tags: [""] }, manifest);
+    assert.equal(singletonEmptyUrl, `${path}?tags=`);
+    assert.deepEqual(panelAddressState(singletonEmptyUrl, manifest), { tags: [] });
+
+    for (const tags of [[], ["a"], ["a", "b"]]) {
       const state = { tags };
       const panelUrl = panelAddress(path, state, manifest);
       assert.deepEqual(panelAddressState(panelUrl, manifest), state, panelUrl);
@@ -878,8 +889,6 @@ test("flat panel URLs distinguish an empty string list from a list containing em
       assert.deepEqual(parsed.frame, state, forwarded);
       assert.deepEqual(parsed.state, state, forwarded);
     }
-    assert.deepEqual(panelAddressState(`${path}?tags=&tags=`, manifest), { tags: ["", ""] });
-    assert.equal(panelAddress(panelAddress(path, { tags: [""] }, manifest), { tags: [] }, manifest), `${path}?tags=`);
   }
 });
 

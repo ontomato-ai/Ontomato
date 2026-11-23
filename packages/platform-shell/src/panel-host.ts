@@ -416,6 +416,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let adoptedExternalAddress = "";
   let pendingDirectAddress: { url: string; options?: { overwriteUnsavedDraft?: boolean } } | null = null;
   let pendingLiveState: Readonly<Record<string, RuntimeJsonValue>> | null = null;
+  let appliedExternalEntry: PanelHostState = {};
   let registration: PanelFrameRegistration | undefined;
   /** Whether the frame may ask the platform for anything: not while its page is kept out of view, nor until it is checked. */
   let bridgeOpen = true;
@@ -557,6 +558,12 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const deepLinkInitial: PanelHostState = Object.fromEntries(
       Object.entries(mergedInitial).filter(([name]) => next.panel.manifest.state[name]?.deepLink),
     );
+    const initialExternalEntry: PanelHostState = Object.fromEntries(
+      Object.entries(requested).filter(([name]) => {
+        const field = next.panel.manifest.state[name];
+        return field?.external && !field.deepLink;
+      }),
+    );
     const effectiveAddress = livePatch ? panelAddress(pageAddress(), deepLinkInitial, next.panel.manifest) : requestedAddress;
     adoptedExternalAddress = requestedAddress;
     if (!replaceDirect(next, deepLinkInitial, effectiveAddress)) return;
@@ -569,6 +576,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     mount.activate(bridgeOpen);
     direct.value = { element, mount };
+    appliedExternalEntry = initialExternalEntry;
     if (pendingDirectAddress !== null) {
       const nextAddress = pendingDirectAddress;
       pendingDirectAddress = null;
@@ -580,6 +588,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       const lateValidated = validatePublicStatePatch(next.panel, lateLive);
       mount.setState?.(lateValidated);
     }
+    syncExternalEntryState();
   }
 
   /**
@@ -645,6 +654,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function endDirect() {
     direct.value?.mount.dispose();
     direct.value = null;
+    appliedExternalEntry = {};
     dropStyle?.();
     dropStyle = undefined;
     notice.value = "";
@@ -919,10 +929,30 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   function entryState(panel: HostedPanelSource["panel"], externalOnly = false): PanelHostState {
-    return Object.fromEntries(Object.entries(options.entryInputs?.() ?? {}).filter(([name]) => {
+    return Object.fromEntries(Object.entries(options.entryInputs?.() ?? {}).filter(([name, value]) => {
       const field = panel.manifest.state[name];
-      return field?.external && (!externalOnly || !field.deepLink);
+      return value !== undefined && field?.external && (!externalOnly || !field.deepLink);
     }));
+  }
+
+  function syncExternalEntryState() {
+    if (!source.value || !direct.value) return;
+    const panel = source.value.panel;
+    const next = entryState(panel, true);
+    const patch: Record<string, RuntimeJsonValue> = {};
+    for (const [name, value] of Object.entries(next)) {
+      if (!Object.hasOwn(appliedExternalEntry, name) || JSON.stringify(appliedExternalEntry[name]) !== JSON.stringify(value)) {
+        patch[name] = value as RuntimeJsonValue;
+      }
+    }
+    for (const name of Object.keys(appliedExternalEntry)) {
+      if (!Object.hasOwn(next, name)) {
+        const field = panel.manifest.state[name];
+        if (field) patch[name] = (field.default ?? null) as RuntimeJsonValue;
+      }
+    }
+    appliedExternalEntry = next;
+    if (Object.keys(patch).length) direct.value.mount.setState?.(patch);
   }
 
   function syncAddress(): boolean {
@@ -949,12 +979,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     return true;
   }
   watch([options.address, options.initial, () => JSON.stringify(options.entryInputs?.())], syncAddress);
-  watch(() => JSON.stringify(options.entryInputs?.()), () => {
-    if (source.value && direct.value) {
-      const patch = entryState(source.value.panel, true);
-      if (Object.keys(patch).length) direct.value.mount.setState?.(patch);
-    }
-  });
+  watch(() => JSON.stringify(options.entryInputs?.()), syncExternalEntryState);
 
   /**
    * The reader saved or discarded the draft the address links: the address drops the link and keeps everything else, and
