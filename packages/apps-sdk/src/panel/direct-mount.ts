@@ -153,6 +153,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
         key: `${ref}:${instance.projectionVersion(ref)}`,
       }, slots),
       address: (url) => panelRun.address(url),
+      publicState: instance.publicState,
       setState(patch) {
         const entries = Object.entries(patch);
         if (!entries.length) return;

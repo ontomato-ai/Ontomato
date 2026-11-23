@@ -24,7 +24,7 @@ import {
 } from "./state";
 import type { PanelText } from "./text";
 import { panelOperations } from "./operations";
-import type { PanelProjectionRegistration } from "./ports";
+import { memberInputValue, type PanelProjectionRegistration } from "./ports";
 import { PanelFormAdapters } from "./forms";
 import { handlerFor } from "./handlers";
 import type { PanelOperationBinding } from "./types";
@@ -557,7 +557,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     return { ...confirmed, named };
   }
   const operations = computed<PanelOperationBinding[]>(() => [
-    ...panelOperations(manifest, registrations.value, state, forms, writeOperation,
+    ...panelOperations(instance, registrations.value, forms, writeOperation,
       (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
       (member, name) => ({ id: operationIdOf(member, name), memberPath: publisherPath(member) })),
     // A placed panel's operations are published under their own full paths and run by that panel.
@@ -987,7 +987,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     }
     return result;
   }
-  return {
+  const instance: PanelInstance = {
     instanceId,
     isDisposed: () => disposed,
     markDisposed() {
@@ -1016,8 +1016,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const input = declaration.inputs?.[name];
       const outputBinding = declaration.outputs?.[name];
       if (input && !("state" in input)) {
-        const fixed = "literal" in input ? input.literal : null;
-        return { value: computed(() => fixed), set: () => { throw new Error(`Member '${member}' fixes '${name}'; it cannot be set`); } };
+        return {
+          value: computed(() => memberInputValue(instance, input)),
+          set: () => { throw new Error(`Member '${member}' fixes '${name}'; it cannot be set`); },
+        };
       }
       const bound = input?.state ?? outputBinding?.state;
       if (bound !== undefined) {
@@ -1120,6 +1122,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       return () => operationCompletedListeners.delete(listener);
     },
   };
+  return instance;
 }
 
 /**

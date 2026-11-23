@@ -1,6 +1,6 @@
 import { watch, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { panelAddressState } from "@ontomato/contracts/panel-host";
+import { restoredPanelAddressState } from "@ontomato/contracts/panel-host";
 import { panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity, type PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import type { PanelInstance } from "./instance";
@@ -53,12 +53,9 @@ export interface PanelRun {
 export function runPanel(options: PanelRunOptions): PanelRun {
   const { instance, address, isDirty, reports } = options;
   function addressStatePatch(next: string): Record<string, PanelFieldValue> {
-    const normalized = panelAddressState(next, instance.manifest);
     const resolved: Record<string, PanelFieldValue> = {};
     let changed = false;
-    for (const [name, field] of Object.entries(instance.manifest.state)) {
-      if (!field.deepLink) continue;
-      const desired = Object.hasOwn(normalized, name) ? normalized[name]! : (field.default ?? null);
+    for (const [name, desired] of Object.entries(restoredPanelAddressState(next, instance.manifest))) {
       const value = checkPanelValue(instance.manifest, name, desired);
       const current = instance.state.values.value[name]!;
       if (JSON.stringify(current) !== JSON.stringify(value)) {

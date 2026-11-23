@@ -13,9 +13,10 @@ const stateKey = panelStateRefSchema.shape.state;
 const memberKey = panelManifestSchema.innerType().shape.members.keySchema;
 const readName = directProjectionDataSchema.shape.read;
 const ownerType = panelObjectRefSchema.shape.className;
+const literalParameterSchema = z.object({ literal: runtimeJsonValueSchema }).strict();
 const authoringParameterSchema = z.union([
   panelStateRefSchema,
-  z.object({ literal: runtimeJsonValueSchema }).strict(),
+  literalParameterSchema,
   z.object({ fromSlot: z.literal(true) }).strict(),
 ]);
 const authoringOperationTargetSchema = z.union([
@@ -30,7 +31,8 @@ const fieldPath = formFieldErrorSchema.shape.field;
 const authoringOperationFormFieldsSchema = z.record(z.string().min(1), fieldPath)
   .refine(fields => Object.keys(fields).length > 0, "Expected at least one form field mapping");
 const authoringOperationParamSchema = z.union([
-  panelMemberInputSchema,
+  panelStateRefSchema,
+  literalParameterSchema,
   z.object({ input: stateKey }).strict(),
   z.object({ row: z.enum(["primaryKey", "label"]) }).strict(),
   z.object({ rowField: readName }).strict(),
@@ -87,7 +89,7 @@ const inlineMemberSchema = z.object({
   bindingId: panelReadOperationInputsSchema.shape.bindingId
     .describe("Optional binding ID for a draft read operation, from {state: fieldName} or {formField: {slot, path}}."),
   state: z.record(stateKey, stateKey).optional().describe("Map typed component port names or owner read parameter names to panel state fields."),
-  inputs: z.record(stateKey, authoringInputBindingSchema).optional().describe("Explicit projection input bindings: {state: fieldName}, {literal: value}, or {fromSlot: true} when supplied by an enclosing Vue slot."),
+  inputs: z.record(stateKey, authoringInputBindingSchema).optional().describe("Explicit projection input bindings: {state: fieldName}, {literal: value}, {output: {member, name, path?}}, or {fromSlot: true} when supplied by an enclosing Vue slot."),
   config: runtimeJsonObjectSchema.optional().describe("Component configuration from the released SDK catalogue."),
   agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe('Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}.'),
   prefill: panelConversationEntryFields.shape.prefill.describe("ConversationEntry text placed in the page composer without sending it."),

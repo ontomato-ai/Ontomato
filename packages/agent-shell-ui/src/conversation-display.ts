@@ -16,6 +16,7 @@ import { randomId } from "@ontomato/contracts/random-id";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { panelStateValueSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import { presentationAppliesAddress } from "@ontomato/contracts/panel-host";
 import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { fileName } from "./artifacts";
 import type { OpenArtifact, ShellFeatureDeclaration } from "./types";
@@ -70,6 +71,8 @@ export interface DisplayPageController {
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Returns true when navigating within the same mounted page instance would discard unsaved changes. */
   blocksNavigation?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
+  /** Applies deep-link overrides before a new address reaches the same mounted instance. */
+  presentationAddress?(address: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
   /** Live binding metadata (mount/panel/member/entry instance IDs, checked keys, dashboard board/card IDs) for display snapshots. */
@@ -1050,10 +1053,6 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
           const hasStatePatch = rawState !== undefined && Object.keys(rawState).length > 0;
           const basePathOf = (value: string) => value.split(/[?#]/, 1)[0]!;
           const sameBasePath = basePathOf(resolved.address) === basePathOf(currentPage.address);
-          const addressSpecifiesParamsOrPathChange =
-            resolved.address.includes("?")
-            || resolved.address.includes("#")
-            || !sameBasePath;
           // Validate the live state patch BEFORE mutating the browser address or selection so an invalid state field
           // or value type leaves the current URL and selection completely untouched.
           if (hasStatePatch && controller?.validateState && sameBasePath) {
@@ -1066,16 +1065,17 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               });
             }
           }
-          // When navigating with no state patch or with explicit query/path parameters, apply the requested address
-          // first so any accompanying state patch overlays cleanly without being clobbered by a bare base path.
-          if (
-            (!hasStatePatch || addressSpecifiesParamsOrPathChange)
-            && (resolved.address !== currentPage.address || !current.restorable || current.view !== nextView)
-          ) {
-            const addressTarget: DisplayTarget = { kind: "page", ...resolved };
-            commit({ target: addressTarget, view: nextView, restorable: true });
-            await write(addressTarget, nextView, "replace");
-            if (hasStatePatch) await nextTick();
+          if (presentationAppliesAddress(currentPage.address, resolved.address, hasStatePatch)) {
+            // Apply an explicit address with its live overrides so a mounted component never sees a superseded value.
+            const address = hasStatePatch && sameBasePath
+              ? controller?.presentationAddress?.(resolved.address, rawState) ?? resolved.address
+              : resolved.address;
+            if (address !== currentPage.address || !current.restorable || current.view !== nextView) {
+              const addressTarget: DisplayTarget = { kind: "page", ...resolved, address };
+              commit({ target: addressTarget, view: nextView, restorable: true });
+              await write(addressTarget, nextView, "replace");
+              if (hasStatePatch) await nextTick();
+            }
           }
           if (hasStatePatch) {
             if (controller) {

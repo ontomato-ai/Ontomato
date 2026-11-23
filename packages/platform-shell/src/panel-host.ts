@@ -16,8 +16,11 @@ import type { ApplicationEntryMenu, CurrentApplicationEntry } from "@ontomato/co
 import {
   PANEL_HOST_CHANNEL,
   panelAddress,
+  panelAddressState,
   panelFrameMessageSchema,
   panelMessageOf,
+  presentationAppliesAddress,
+  restoredPanelAddressState,
   type PanelDefinitionMode,
   type PanelHostFrameMessage,
   type PanelHostSource,
@@ -181,6 +184,8 @@ export interface DirectPanelRun {
 export interface DirectPanelMount {
   /** The address changed outside the instance (the reader went back, a link was followed): its state follows. */
   address(url: string): void;
+  /** Reads the instance's live public state, including fields that are absent from the address. */
+  publicState(): Readonly<Record<string, RuntimeJsonValue>>;
   /** Updates any declared public state fields in place (including non-deepLink fields), without reload or writes. */
   setState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Objects it may show changed: it reads again what it shows of them. */
@@ -258,6 +263,10 @@ export interface PanelInstanceView {
   validateState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Applies a live patch to any declared public state fields in place (no reload, no business writes). */
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
+  /** Whether the proposed address and patch would change public state while a form is dirty. */
+  blocksNavigation(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
+  /** Applies deep-link overrides before the address reaches the mounted panel. */
+  presentationAddress(address: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string;
   /** Fills explicit fields on a mounted live form through the form's own editing entry. */
   fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
   /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
@@ -985,6 +994,31 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
   }
 
+  function blocksNavigation(next: Parameters<PanelInstanceView["blocksNavigation"]>[0]): boolean {
+    if (!dirty.value || !source.value) return false;
+    const { manifest } = source.value.panel;
+    const current = direct.value ? direct.value.mount.publicState() : state.value;
+    const wired = new Set(options.wired?.() ?? []);
+    const addressed = next.address !== address.value && presentationAppliesAddress(
+      address.value, next.address, next.state !== undefined && Object.keys(next.state).length > 0,
+    ) ? restoredPanelAddressState(next.address, manifest) : {};
+    const desired = { ...addressed, ...next.state };
+    return Object.entries(desired).some(([name, value]) =>
+      Object.hasOwn(manifest.state, name) && !wired.has(name)
+      && JSON.stringify(current[name]) !== JSON.stringify(value));
+  }
+
+  function presentationAddress(next: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string {
+    if (!source.value) return next;
+    const { manifest } = source.value.panel;
+    const overrides = Object.entries(patch).filter(([name]) => manifest.state[name]?.deepLink);
+    if (overrides.length === 0) return next;
+    const hashAt = next.indexOf("#");
+    const path = hashAt === -1 ? next : next.slice(0, hashAt);
+    const hash = hashAt === -1 ? "" : next.slice(hashAt);
+    return panelAddress(path, { ...panelAddressState(path, manifest), ...Object.fromEntries(overrides) }, manifest) + hash;
+  }
+
   function applyState(patch: Readonly<Record<string, RuntimeJsonValue>>) {
     if (!Object.keys(patch).length) return;
     if (!source.value || !direct.value) {
@@ -1054,6 +1088,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     admitted,
     validateState,
     applyState,
+    blocksNavigation,
+    presentationAddress,
     fillForm(request) {
       if (!direct.value?.mount.fillForm) {
         return Promise.resolve({

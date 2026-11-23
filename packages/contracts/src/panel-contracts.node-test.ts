@@ -40,7 +40,7 @@ import {
 } from "./panel-host";
 import {
   matchesObjectType, objectUnionTypes, ontologyObjectUnionTypeSchema, ontologyParameterTypeSchema,
-  panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelOpenRequestSchema, panelStateFieldSchema,
+  panelChildCollectionQuerySchema, panelChildObjectIdentitySchema, panelManifestSchema, panelMemberInputSchema, panelOpenRequestSchema, panelStateFieldSchema,
   panelOperationSchema, panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
@@ -78,6 +78,31 @@ import { platformTypeTableEntrySchema } from "./platform-type-table";
 const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
 const platformOperation = (id: string) => ({ kind: "PlatformOperation" as const, id });
 const binding = (id: string) => bindingKey({ kind: "PlatformObjectType", id });
+
+test("member inputs reference a sibling's read-only output and optional JSON Pointer", () => {
+  const target = { projectionId: "projection" };
+  const output = { member: "form", name: "draft" };
+  for (const input of [{ output }, { output: { ...output, path: "/function/code" } }]) {
+    assert.deepEqual(panelMemberInputSchema.parse(input), input);
+    assert.equal(panelManifestSchema.safeParse({
+      state: {},
+      members: { form: { target }, reader: { target, inputs: { content: input } } },
+    }).success, true);
+  }
+  for (const path of ["function/code", "/function/~2code", "/function/code~", ""]) {
+    assert.equal(panelMemberInputSchema.safeParse({ output: { ...output, path } }).success, false);
+  }
+  assert.equal(panelMemberInputSchema.safeParse({ output: { ...output, extra: true } }).success, false);
+  assert.equal(panelMemberInputSchema.safeParse({ output, state: "selected" }).success, false);
+  for (const member of ["missing", "reader"]) {
+    const result = panelManifestSchema.safeParse({
+      state: {},
+      members: { form: { target }, reader: { target, inputs: { content: { output: { ...output, member } } } } },
+    });
+    assert.equal(result.success, false);
+    if (!result.success) assert.deepEqual(result.error.issues[0]?.path, ["members", "reader", "inputs", "content", "output", "member"]);
+  }
+});
 
 test("current SDK discovery carries the digest of the build and the component catalogue path", () => {
   const build = { version: "1.1.2", digest: "2f".repeat(32) };
