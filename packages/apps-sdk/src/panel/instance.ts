@@ -375,7 +375,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     // write does, and is read again from there; the receipt itself rereads nothing.
     const path = writeOptions?.memberPath ?? operationPath(operationId);
     const agentScope = activeAgentAction;
-    const preparation = await options.operations.prepare(operationId, invocation, path, agentScope?.agentRun);
+    const preparation = agentScope?.agentRun
+      ? await options.operations.prepare(operationId, invocation, path, agentScope.agentRun)
+      : await options.operations.prepare(operationId, invocation, path);
     const named = namedTargets(preparation.confirmation);
     if (agentScope && preparation.autoMode === false && preparation.questionId) {
       throw new PanelOperationDeferred({
