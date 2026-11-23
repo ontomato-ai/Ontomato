@@ -116,6 +116,9 @@ await mountPanel({
       prevSelected = old ?? null;
       if (value && mode.value === "view") returnTarget.value = value;
     });
+    watch([selected, editing], ([sel, isEditing]) => {
+      if (!sel && !isEditing) detailOpen.value = false;
+    });
 
     const activeDraft = computed(() => {
       const candidate = instance.draft;
