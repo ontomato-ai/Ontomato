@@ -86,7 +86,8 @@ describe("the platform layout", () => {
     const catalog = catalogFixture();
     const product = {
       ...catalog[0]!, id: "app-report", names: { en: "Report" }, kind: "product" as const,
-      category: "business" as const, releaseId: "release-1", entry: { path: "/products/app-report?applicationId=app-report" },
+      category: "business" as const, releaseId: "release-1", allowStandalone: true,
+      entry: { path: "/products/app-report?applicationId=app-report" },
     };
     const panel = {
       ...product, id: "app-panel", names: { en: "Operations panel" }, releaseId: null,
