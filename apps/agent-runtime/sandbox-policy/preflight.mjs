@@ -25,8 +25,7 @@ const skillOutside = join(work, "unselected");
 const servers = [];
 let sandbox;
 let otherSandbox;
-async function endpoint(message) {
-  const host = "127.0.0.1";
+async function endpoint(message, host = "127.0.0.1") {
   const server = createServer((_request, response) => response.end(message)).listen(0, host);
   servers.push(server);
   await once(server, "listening");
@@ -52,7 +51,8 @@ try {
   await writeFile(join(skillOutside, "SKILL.md"), "unselected", { mode: 0o444 });
   const gateway = await endpoint("gateway");
   const callback = await endpoint("callback");
-  const extra = await endpoint("another service");
+  // Listen on all interfaces so the probe tests blocking a service reachable through the container IP.
+  const extra = await endpoint("another service", "0.0.0.0");
   const outerAddress = Object.values(networkInterfaces()).flat().find(info => info.family === "IPv4" && !info.internal)?.address ?? "172.31.255.254";
   const options = { uid: 20001, endpoints: { gateway, callback }, processCount: 512, fileBytes: 33554432 };
   const open = (sessionDirectory, files) => openSessionSandbox({ ...options, sessionDirectory, ...files });

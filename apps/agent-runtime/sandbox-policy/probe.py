@@ -49,8 +49,8 @@ for endpoint in denied:
     host, port = endpoint.rsplit(":", 1)
     try:
         sock = socket.create_connection((host, int(port)), timeout=1)
-    except OSError:
-        pass
+    except OSError as error:
+        print(f"network: blocked {endpoint} ({error})", flush=True)
     else:
         sock.close()
         raise AssertionError(f"unexpected network access: {endpoint}")
