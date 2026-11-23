@@ -19,7 +19,7 @@ async function server(t,reply={success:true,data:{rows:[{value:0},{value:null}],
   await new Promise(resolve=>http.listen(0,"127.0.0.1",resolve));t.after(()=>new Promise(resolve=>http.close(resolve)));
   return {calls,base:`http://127.0.0.1:${http.address().port}`};
 }
-function invoke(dir,base,args){return run(process.execPath,[cli,...args],{cwd:dir,env:{...process.env,ONTOMATO_WORKBENCH_URL:base,ONTOMATO_TK:"fixture-reader",ONTOMATO_API_KEY:"",ONTOMATO_SESSION_ID:sessionId,ONTOMATO_RUN_ID:runId,ONTOMATO_SKILL_SCENARIO:"platform"}});}
+function invoke(dir,base,args,extraEnv={}){return run(process.execPath,[cli,...args],{cwd:dir,env:{...process.env,ONTOMATO_WORKBENCH_URL:base,ONTOMATO_TK:"fixture-reader",ONTOMATO_API_KEY:"",ONTOMATO_EXECUTION_CALLBACK:"",ONTOMATO_SESSION_ID:sessionId,ONTOMATO_RUN_ID:runId,ONTOMATO_SKILL_SCENARIO:"platform",...extraEnv}});}
 
 before(async()=>{await run(process.execPath,[path.join(root,"packages/workbench-server/dashboard-skill/build.mjs")],{cwd:root});});
 test("link addresses the saved dashboard and optionally its selected card",async t=>{
@@ -71,4 +71,20 @@ test("read commands retain current rows and truncation and use the supplied iden
   }
   assert.deepEqual(api.calls.map(call=>call.path),["/api/dashboards","/api/dashboards/board%3A1","/api/dashboards/query-card","/api/dashboards/card-parameter-form"]);
   assert.ok(api.calls.every(call=>call.headers.tk==="fixture-reader"));
+});
+test("background callback credential sends X-Ontomato-Callback-Credential and X-Ontomato-Run-Id",async t=>{
+  const dir=await workspace(t),api=await server(t);
+  const form={id:"board",name:"Scheduled Rename"};
+  await writeFile(path.join(dir,"form.json"),JSON.stringify(form));
+  await invoke(dir,api.base,["read","--dashboard-id","board:1"],{ONTOMATO_TK:"",ONTOMATO_EXECUTION_CALLBACK:"cb-token-123"});
+  await invoke(dir,api.base,["save","--operation","dashboard.rename","--form","form.json"],{ONTOMATO_TK:"",ONTOMATO_EXECUTION_CALLBACK:"cb-token-123"});
+  assert.equal(api.calls.length,2);
+  for(const call of api.calls){
+    assert.equal(call.headers["x-ontomato-callback-credential"],"cb-token-123");
+    assert.equal(call.headers["x-ontomato-run-id"],runId);
+    assert.equal(call.headers.tk,undefined);
+  }
+  assert.equal(api.calls[0].path,"/api/dashboards/board%3A1");
+  assert.equal(api.calls[1].path,"/api/dashboards/modify");
+  assert.deepEqual(api.calls[1].body,form);
 });
