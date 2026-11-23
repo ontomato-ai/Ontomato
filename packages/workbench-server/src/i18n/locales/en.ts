@@ -1,6 +1,8 @@
 import { scheduledTaskPanelMessages, scheduledTaskPanelTextEn } from "@ontomato/platform-schedules/panel-text";
+import { platformOntologyEn } from "./platform-ontology-en";
 
 export const en = {
+  ...platformOntologyEn,
   "panels.simplePages.published": "Published",
   "panels.simplePages.analysisMcpTitle": "Agent service",
   "panels.simplePages.opsMcpTitle": "Operations agent service",
