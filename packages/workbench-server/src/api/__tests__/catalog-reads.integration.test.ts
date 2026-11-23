@@ -303,7 +303,7 @@ async function readCatalogue(dataName: string, inputs: Record<string, unknown> =
 }
 
 it("dispatches catalogue query through the real panel HTTP path to PostgreSQL", async () => {
-  expect(await readCatalogue("listing")).toMatchObject({ items: [{ id: "one" }], nextCursor: expect.any(String) });
+  expect(await readCatalogue("listing")).toMatchObject({ rows: [{ primaryKey: "one" }], nextCursor: expect.any(String) });
 });
 
 it("reports an unreadable panel beside healthy results without losing its stored references", async () => {
@@ -325,7 +325,7 @@ it("reports an unreadable panel beside healthy results without losing its stored
     const next = await fetch(`${base}/api/product-panels?q=directory&sort=name&limit=1&cursor=${first.nextCursor}`);
     expect(await next.json()).toMatchObject({ items: [{ id: "one" }] });
     expect(await readCatalogue("listing")).toMatchObject({
-      items: [], unavailableItems: [{ id, reason: expect.stringContaining("events") }],
+      rows: [], diagnostics: [expect.stringContaining(`${id}:`)],
     });
     const { findPanelUsers } = await import("../../services/product-panels/references");
     expect(await findPanelUsers(owner.domainId, "panel", "one")).toEqual([{ id, name: "A legacy directory" }]);
