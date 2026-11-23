@@ -111,13 +111,14 @@ const display = useConversationDisplay({
   resolve: resolvePage,
   ...(admitPage ? { admit: admitPage } : {}),
   serialize,
-  // The shell's name and address for the page from the moment it opens; selection, highlights and public state are the page's report.
+  // The shell's name and address for the page from the moment it opens; selection, highlights, public state and open forms are the page's report.
   context: (page, reported) => ({
     url: page.address,
     label: pageLabel(page.featureId, reported),
     selection: selectionIn(page, reported),
     ...(reported?.highlights?.length ? { highlights: reported.highlights } : {}),
     ...(reported?.state && Object.keys(reported.state).length ? { state: reported.state } : {}),
+    ...(reported?.forms?.length ? { forms: reported.forms } : {}),
   }),
   leave: { leaves: (address) => leave.leaves(address?.split("?")[0] ?? ""), confirm: () => leave.confirm() },
 });

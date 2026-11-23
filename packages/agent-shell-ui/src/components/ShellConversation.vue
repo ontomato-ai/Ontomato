@@ -42,6 +42,7 @@ const written = (text: string) => writtenText(text, {
   selection: labels.value.selectionContext,
   highlight: labels.value.highlightContext,
   state: labels.value.stateContext,
+  forms: labels.value.formsContext,
   file: labels.value.fileContext,
   closed: labels.value.pageContextClosed,
 });

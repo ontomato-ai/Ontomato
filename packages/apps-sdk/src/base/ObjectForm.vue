@@ -915,6 +915,23 @@ useProjectionForm({
   submit: () => write(),
   dirty: () => dirty.value,
   discard,
+  snapshot() {
+    if (!opened.value) return null;
+    const currentTarget = target.value;
+    const modified = [...dirtyFields.value];
+    return {
+      ...(currentTarget
+        ? {
+            target: currentTarget.kind === "object"
+              ? { kind: "object" as const, objectType: currentTarget.objectType, primaryKey: currentTarget.primaryKey }
+              : { kind: "draft" as const, objectType },
+          }
+        : {}),
+      dirty: dirty.value,
+      ...(modified.length ? { dirtyFields: modified } : {}),
+      values: { ...values.value },
+    };
+  },
 });
 
 function resetDraft(reopenWhenUnfieldedRefusal: boolean) {

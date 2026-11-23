@@ -37,6 +37,7 @@ function setup(options: {
       label: reported?.label || pages[page.instance] || "",
       selection: reported?.selection ?? [],
       ...(reported?.state ? { state: reported.state } : {}),
+      ...(reported?.forms?.length ? { forms: reported.forms } : {}),
     }),
     leave: { leaves: () => false, confirm: async () => true },
     ...(options.initial ? { initial: options.initial } : {}),
@@ -156,6 +157,73 @@ describe("live agent page control (requirement-64995244)", () => {
     });
     expect(applyAddress).toHaveBeenCalledWith(draftAddress, { overwriteUnsavedDraft: true });
     unregister();
+  });
+
+  it("supports mid-round observe_display re-reads capturing latest public state and unsaved form edits without navigating or changing layout", async () => {
+    const { display, serialized } = setup();
+    await display.present(frame({ kind: "page", address: "/actions" }));
+    await display.setView("full");
+    const writesBefore = serialized.length;
+
+    display.context({
+      url: "/actions",
+      label: "Actions",
+      selection: [],
+      state: { activeTab: "definition" },
+      forms: [{
+        member: "actionForm",
+        target: { kind: "object", objectType: "platform:Action", primaryKey: "act-1" },
+        dirty: false,
+        values: { name: "Original" },
+      }],
+    });
+    const firstRead = await display.present(frame({ kind: "observe" }));
+    expect(firstRead).toMatchObject({
+      status: "observed",
+      reason: "current_display",
+      current: {
+        known: true,
+        placement: "full-page",
+        target: {
+          kind: "page",
+          url: "/actions",
+          state: { activeTab: "definition" },
+          forms: [{ member: "actionForm", dirty: false, values: { name: "Original" } }],
+        },
+      },
+    });
+
+    // User switches tab and types unsaved edits into the form mid-round; re-reading returns the freshest snapshot.
+    display.context({
+      url: "/actions",
+      label: "Actions",
+      selection: [],
+      state: { activeTab: "code" },
+      forms: [{
+        member: "actionForm",
+        target: { kind: "object", objectType: "platform:Action", primaryKey: "act-1" },
+        dirty: true,
+        dirtyFields: ["/name"],
+        values: { name: "User Mid-Round Edit" },
+      }],
+    });
+    const secondRead = await display.present(frame({ kind: "observe" }));
+    expect(secondRead).toMatchObject({
+      status: "observed",
+      reason: "current_display",
+      current: {
+        known: true,
+        placement: "full-page",
+        target: {
+          kind: "page",
+          url: "/actions",
+          state: { activeTab: "code" },
+          forms: [{ member: "actionForm", dirty: true, dirtyFields: ["/name"], values: { name: "User Mid-Round Edit" } }],
+        },
+      },
+    });
+    expect(display.view.value).toBe("full");
+    expect(serialized).toHaveLength(writesBefore);
   });
 
   it("carries declared public state on every user message even when the page address did not change", () => {

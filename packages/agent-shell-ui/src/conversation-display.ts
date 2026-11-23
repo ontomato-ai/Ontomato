@@ -423,6 +423,10 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
      */
     present: (frame: PresentationFrame) =>
       inOrder(async (): Promise<DisplayPresentationResult> => {
+        if (frame.target.kind === "observe") {
+          await nextTick();
+          return { status: "observed", reason: "current_display", current: snapshot() };
+        }
         const current = shown.value;
         if (frame.target.kind === "artifact") {
           const { artifact } = frame.target;

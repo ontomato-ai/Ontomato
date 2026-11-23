@@ -135,7 +135,7 @@ beforeEach(()=>{
      const providerIdx=sql.includes("providerId")?(primaryKey?5:4):-1;
      let count=0;
      for(const [k,v] of intents.entries()){
-       if(v.dispatched||"kind" in v.source||v.operation.kind!=="form.save"||v.invalidated)continue;
+       if(v.dispatched||isPanelHumanOperationIntent(v)||v.operation.kind!=="form.save"||v.invalidated)continue;
        if(!("call" in v))continue;
        const matchesTarget=primaryKey
          ?(v.call.target?.kind==="object"&&v.call.target.objectType===targetType&&v.call.target.primaryKey===primaryKey)

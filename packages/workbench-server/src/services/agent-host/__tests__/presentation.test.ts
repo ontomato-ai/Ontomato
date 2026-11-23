@@ -112,3 +112,72 @@ it("forwards overwriteUnsavedDraft in the live page presentation frame", async (
     view.abort();
   }
 });
+
+it("supports read-only observe_display round-trips carrying live public state and form contents", async () => {
+  const view = new AbortController();
+  const binding = { viewId: "66666666-6666-4666-8666-666666666666" };
+  const sent: unknown[] = [];
+  const service = { ownRun: vi.fn(async () => {}), resolve: vi.fn() } as never;
+
+  // Before any view connects, observe returns observed/view_unavailable.
+  const unavailable = await requestPresentation(
+    service,
+    "workbench",
+    owner,
+    { viewId: binding.viewId, sessionId: session.sessionId, runId, toolCallId: "obs-0", input: { mode: "observe" } },
+    new AbortController().signal,
+  );
+  expect(unavailable).toEqual({
+    status: "observed",
+    reason: "view_unavailable",
+    current: { known: false, reason: "view_unavailable" },
+  });
+
+  const connectionId = openPresentationView("workbench", owner, binding.viewId, (frame) => sent.push(frame), view.signal);
+  try {
+    const pending = requestPresentation(
+      service,
+      "workbench",
+      owner,
+      { viewId: binding.viewId, sessionId: session.sessionId, runId, toolCallId: "obs-1", input: { mode: "observe" } },
+      new AbortController().signal,
+    );
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ type: "presentation", toolCallId: "obs-1", target: { kind: "observe" } });
+    receivePresentation("workbench", owner, session.sessionId, runId, {
+      connectionId,
+      toolCallId: "obs-1",
+      result: {
+        status: "observed",
+        reason: "current_display",
+        current: {
+          known: true,
+          observedAt: new Date().toISOString(),
+          placement: "side",
+          target: {
+            kind: "page",
+            url: "/ontology/assets/actions",
+            label: "Actions",
+            selection: [],
+            state: { activeTab: "code" },
+            forms: [{ member: "form", dirty: true, dirtyFields: ["/name"], values: { name: "Draft Name" } }],
+          },
+          load: { status: "ready" },
+        },
+      },
+    });
+    expect(await pending).toMatchObject({
+      status: "observed",
+      reason: "current_display",
+      current: {
+        target: {
+          kind: "page",
+          state: { activeTab: "code" },
+          forms: [{ member: "form", dirty: true, values: { name: "Draft Name" } }],
+        },
+      },
+    });
+  } finally {
+    view.abort();
+  }
+});

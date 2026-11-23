@@ -14,6 +14,8 @@ import {
 import {
   displayPageAddressInputSchema,
   displaySnapshotSchema,
+  observeDisplayRequestSchema,
+  presentationCallRequestSchema,
   presentationFrameSchema,
   presentationReceiptSchema,
   presentationResultSchema,
@@ -49,27 +51,66 @@ test("present accepts only workspace outputs or a site-relative page and rejects
   ]) assert.equal(presentRequestSchema.safeParse(invalid).success, false, JSON.stringify(invalid));
 });
 
-test("pageContext carries declared public state on every message line and writtenText strips standalone state lines", () => {
+test("pageContext carries declared public state and live form contents on every message line and writtenText strips standalone lines", () => {
   const ctx = pageContextSchema.parse({
     url: address,
     label: "Tasks",
     selection: [],
     state: { tab: "history", filter: "active", checked: [{ className: "platform:ScheduledTask", primaryKey: "t-1" }] },
+    forms: [{
+      member: "taskForm",
+      target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "t-1" },
+      dirty: true,
+      dirtyFields: ["/name"],
+      values: { name: "Edited task name" },
+    }],
   });
   const prompts = {
     page: ({ label, url }: { label: string; url: string }) => `Current page: ${label} (${url})`,
     pageAddress: (url: string) => `Current page: ${url}`,
     selection: (label: string) => `Selected: ${label}`,
     state: (value: string) => `State: ${value}`,
+    forms: (value: string) => `Form: ${value}`,
     file: ({ label, path }: { label: string; path: string }) => `Current file: ${label} (${path})`,
     closed: "Current page: closed",
   };
   const firstLine = pageContextLine(ctx, prompts, true);
-  assert.match(firstLine, /^Current page: Tasks \(\/applications\/scheduling\/tasks\)；State: \{"tab":"history"/);
+  assert.match(firstLine, /^Current page: Tasks \(\/applications\/scheduling\/tasks\)；State: \{"tab":"history".*；Form: \[\{"member":"taskForm"/);
   const followUpLine = pageContextLine(ctx, prompts, false);
-  assert.match(followUpLine, /^State: \{"tab":"history"/);
+  assert.match(followUpLine, /^State: \{"tab":"history".*；Form: \[\{"member":"taskForm"/);
   assert.equal(writtenText(`Check this tab\n\n${followUpLine}`, prompts), "Check this tab");
   assert.equal(writtenText(`Check this tab\n\n${firstLine}`, prompts), "Check this tab");
+  const formsOnly = pageContextLine({ url: address, label: "Tasks", selection: [], forms: ctx.forms }, prompts, false);
+  assert.match(formsOnly, /^Form: \[\{"member":"taskForm"/);
+  assert.equal(writtenText(`Check my edits\n\n${formsOnly}`, prompts), "Check my edits");
+});
+
+test("observe display request, live frame and observed result support mid-round re-reads with form contents", () => {
+  assert.deepEqual(observeDisplayRequestSchema.parse({ mode: "observe" }), { mode: "observe" });
+  assert.deepEqual(presentationCallRequestSchema.parse({ toolCallId: "obs-1", input: { mode: "observe" } }), {
+    toolCallId: "obs-1", input: { mode: "observe" },
+  });
+  const frame = { type: "presentation", sessionId: id, runId: id, toolCallId: "obs-1", target: { kind: "observe" } };
+  assert.deepEqual(presentationFrameSchema.parse(frame), frame);
+  const observed = {
+    status: "observed",
+    reason: "current_display",
+    current: {
+      known: true,
+      observedAt: "2026-11-23T10:00:00Z",
+      placement: "side",
+      target: {
+        kind: "page",
+        url: address,
+        label: "Tasks",
+        selection: [],
+        state: { tab: "edit" },
+        forms: [{ member: "taskForm", dirty: true, dirtyFields: ["/title"], values: { title: "Updated" } }],
+      },
+      load: { status: "ready" },
+    },
+  };
+  assert.deepEqual(presentationReceiptSchema.parse({ connectionId: id, toolCallId: "obs-1", result: observed }).result, observed);
 });
 
 test("run requests carry the view identity and ready identifies a particular connection", () => {

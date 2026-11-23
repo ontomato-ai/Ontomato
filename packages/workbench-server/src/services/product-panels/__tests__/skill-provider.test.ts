@@ -446,6 +446,8 @@ it("keeps the package and recipes for a panel independent of its entrance", asyn
     expect(draftSection).toContain("It starts with `outputs/drafts/` and has no leading `/`.");
     expect(draftSection).toContain("URL-encode that value exactly once");
     expect(markdown).toContain("Declared public state covers every state field that decides which business content the user sees");
+    expect(markdown).toContain("current live contents and unsaved status of open forms");
+    expect(markdown).toContain("observe_display");
     expect(markdown).toContain("call `present({ target, state })` immediately in this round");
     expect(markdown).toContain("including fields not marked `deepLink`");
     expect(markdown).toContain("Form save (`form.save`) is a declared operation just like an action");

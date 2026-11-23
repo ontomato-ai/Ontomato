@@ -144,12 +144,20 @@ const conversation = useAgentConversation(
 if (sessionStream) {
   onBeforeUnmount(
     sessionStream.attach({
-      present: async (frame) =>
-        !documentVisible()
+      present: async (frame) => {
+        if (frame.target.kind === "observe") {
+          return !documentVisible()
+            ? { status: "observed", reason: "view_unavailable", current: display.snapshot() }
+            : frame.sessionId === conversation.state.sessionId
+              ? display.present(frame)
+              : { status: "observed", reason: "not_viewing_session", current: display.snapshot() };
+        }
+        return !documentVisible()
           ? { status: "not_opened", reason: "view_unavailable", current: display.snapshot() }
           : frame.sessionId === conversation.state.sessionId
             ? display.present(frame)
-            : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() },
+            : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() };
+      },
       objectChanged: ({ session, target, affected }) => {
         if (session.sessionId === conversation.state.sessionId) display.refreshObjects(affected ? { target, affected } : { target });
       },
@@ -396,6 +404,7 @@ const linePrompts = () => ({
   selection: props.labels.selectionContext,
   highlight: props.labels.highlightContext,
   state: props.labels.stateContext,
+  forms: props.labels.formsContext,
 });
 /**
  * What a reopened conversation already carries, read when the shell first sends in it: its history shows the line each

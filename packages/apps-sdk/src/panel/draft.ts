@@ -1,5 +1,6 @@
 import { shallowReactive, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
 import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { PageDraft, PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import { PanelDraftUnusable } from "./draft-refusal";
@@ -73,6 +74,8 @@ export interface PanelFormAdapter {
   dirty(): boolean;
   /** Drops the reader's changes — a received draft included — and shows the form as its owner holds it. */
   discard(): void;
+  /** Live snapshot of this form's current target, dirty state and values for page visibility; null while still loading. */
+  snapshot?(): Omit<PageFormSnapshot, "member" | "memberPath"> | null;
 }
 
 /** A draft a form took, with the fields it changed by path and the link it was read at. */
@@ -351,6 +354,32 @@ export class PanelFormAdapters {
     const adapter = this.#bySlot.get(slot);
     if (!adapter) return Promise.resolve(false);
     return adapter.handle.reset(options);
+  }
+
+  /** Reactive snapshots of currently mounted forms (in declaration order), including unsaved user edits. */
+  snapshots(): PageFormSnapshot[] {
+    const result: PageFormSnapshot[] = [];
+    for (const slot of this.#orderedSlots(this.#bySlot.keys())) {
+      const adapter = this.#bySlot.get(slot)!;
+      const snap = adapter.snapshot
+        ? adapter.snapshot()
+        : adapter.handle?.values
+          ? {
+              dirty: adapter.dirty(),
+              ...(adapter.handle.dirtyFields.value.size
+                ? { dirtyFields: [...adapter.handle.dirtyFields.value] }
+                : {}),
+              values: adapter.handle.values.value,
+            }
+          : null;
+      if (!snap) continue;
+      const cleanValues: Record<string, RuntimeJsonValue> = {};
+      for (const [k, v] of Object.entries(snap.values)) {
+        if (v !== undefined) cleanValues[k] = v;
+      }
+      result.push({ member: slot, ...snap, values: cleanValues });
+    }
+    return result;
   }
 }
 

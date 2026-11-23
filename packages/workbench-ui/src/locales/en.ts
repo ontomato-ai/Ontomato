@@ -723,6 +723,7 @@ export default {
     "selectionContext": "Selected: {selection}",
     "highlightContext": "Highlighted: {highlight}",
     "stateContext": "State: {state}",
+    "formsContext": "Form: {forms}",
     "fileContext": "Current file: {file} ({path})",
     "pageContextClosed": "Current page: closed",
     "toolInput": "Input",

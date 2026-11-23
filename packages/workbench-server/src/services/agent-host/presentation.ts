@@ -5,7 +5,7 @@ import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
-  PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
+  ObserveDisplayRequest, PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
   PresentRequest, RuntimePresentationCallback,
 } from "@ontomato/contracts/agent-presentation";
 import { environment } from "../../config/environment";
@@ -108,18 +108,26 @@ const callKey = (connectionId: string, runId: string, toolCallId: string) =>
 
 export async function requestPresentation(
   service: AgentHostService, host: AgentPresentationHost, owner: AgentHostOwner,
-  call: PresentationBinding & Pick<PresentationFrame, "sessionId" | "runId" | "toolCallId"> & { input: PresentRequest },
+  call: PresentationBinding & Pick<PresentationFrame, "sessionId" | "runId" | "toolCallId"> & { input: PresentRequest | ObserveDisplayRequest },
   signal: AbortSignal,
 ): Promise<PresentationResult> {
   const { viewId, sessionId, runId, toolCallId, input } = call;
   const route = viewKey(host, owner, viewId);
   const connection = views.get(route);
-  if (!connection) return notOpened("view_unavailable");
+  const isObserve = "mode" in input && input.mode === "observe";
+  if (!connection) {
+    return isObserve
+      ? { status: "observed", reason: "view_unavailable", current: { known: false, reason: "view_unavailable" } }
+      : notOpened("view_unavailable");
+  }
 
   const gone = AbortSignal.any([connection.signal, signal]);
   let target: PresentationFrame["target"];
   try {
-    if (input.target.startsWith("outputs/")) {
+    if ("mode" in input) {
+      await service.ownRun(sessionId, runId, owner);
+      target = { kind: "observe" };
+    } else if (input.target.startsWith("outputs/")) {
       const { artifact } = await service.resolve(sessionId, runId, input.target, owner);
       if (!artifact) return notOpened("not_found");
       target = { kind: "artifact", artifact };
@@ -137,7 +145,11 @@ export async function requestPresentation(
     const reason = error.status === 403 ? "forbidden" : "not_found";
     return notOpened(reason, { code: error.code ?? reason.toUpperCase(), message: error.message });
   }
-  if (gone.aborted || views.get(route) !== connection) return notOpened("view_unavailable");
+  if (gone.aborted || views.get(route) !== connection) {
+    return isObserve
+      ? { status: "observed", reason: "view_unavailable", current: { known: false, reason: "view_unavailable" } }
+      : notOpened("view_unavailable");
+  }
 
   const key = callKey(connection.id, runId, toolCallId);
   const deadline = AbortSignal.any([gone, AbortSignal.timeout(30_000)]);

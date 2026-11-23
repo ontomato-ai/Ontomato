@@ -1,7 +1,7 @@
 import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import { computed, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
-import type { PageContext, PageHighlight } from "@ontomato/contracts/page-context";
+import type { PageContext, PageFormSnapshot, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
   type PanelOperationRowContext, type PanelStateValue,
@@ -294,6 +294,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.highlights ?? []),
     ];
     const currentPublicState = publicState();
+    const reportedForms: PageFormSnapshot[] = [
+      ...forms.snapshots().map((form) => (prefix.length ? { ...form, memberPath: prefix as PublisherPath } : form)),
+      ...[...publishers.values()].flatMap((publisher) => publisher.value.context?.forms ?? []),
+    ];
     return {
       pageKey: options.pageKey,
       url: options.url(),
@@ -306,6 +310,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       ],
       ...(reportedHighlights.length ? { highlights: reportedHighlights } : {}),
       ...(Object.keys(currentPublicState).length ? { state: currentPublicState } : {}),
+      ...(reportedForms.length ? { forms: reportedForms } : {}),
     };
   });
   return {
