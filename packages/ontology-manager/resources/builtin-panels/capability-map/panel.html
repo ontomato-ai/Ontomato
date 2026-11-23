@@ -9,7 +9,8 @@
     container-type: inline-size;
     display: flex;
     flex-direction: column;
-    min-height: 100%;
+    height: 100%;
+    min-height: 0;
     min-width: 0;
   }
   .capmap {
@@ -73,19 +74,26 @@
   }
   .capmap-body {
     display: grid;
+    flex: 1 1 auto;
     grid-template-columns: minmax(0, 1fr) 400px;
     gap: var(--page-content-gap);
-    align-items: start;
+    align-items: stretch;
+    min-height: 0;
   }
   .capmap-main {
     position: relative;
+    display: flex;
+    flex-direction: column;
     min-width: 0;
-    min-height: 560px;
+    min-height: 0;
+    height: 100%;
   }
   .capmap-canvas {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
-    height: clamp(560px, 72dvh, 880px);
+    height: 100%;
+    min-height: 0;
     padding: var(--spacing-md);
     box-sizing: border-box;
     border: 1px solid var(--ui-divider);
@@ -99,16 +107,13 @@
     flex-direction: column;
     min-height: 0;
   }
-  .capmap-canvas.is-behind {
-    position: absolute;
-    inset: 0;
-    visibility: hidden;
-  }
   .capmap-types {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     gap: var(--spacing-sm);
-    height: clamp(560px, 72dvh, 880px);
+    height: 100%;
+    min-height: 0;
     overflow: auto;
     padding: var(--spacing-md);
     box-sizing: border-box;
@@ -121,7 +126,8 @@
     flex-direction: column;
     gap: var(--page-content-gap);
     min-width: 0;
-    max-height: clamp(560px, 72dvh, 880px);
+    min-height: 0;
+    height: 100%;
     overflow-y: auto;
     padding: var(--spacing-md);
     box-sizing: border-box;
@@ -131,6 +137,29 @@
   }
   .capmap-aside > * {
     flex: 0 0 auto;
+  }
+  .capmap-start-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .capmap-start-label {
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    color: var(--sdk-text-color-primary);
+    word-break: break-word;
+  }
+  .capmap-start-detail {
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+    word-break: break-all;
+  }
+  .capmap-kind-filter {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xs);
   }
   .capmap-class-detail {
     display: flex;
@@ -176,22 +205,34 @@
     overflow: auto;
   }
   @container (max-width: 960px) {
+    .capmap-page {
+      overflow-y: auto;
+    }
+    .capmap {
+      flex: 0 0 auto;
+    }
     .capmap-body {
       grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+    }
+    .capmap-main {
+      height: auto;
+    }
+    .capmap-canvas {
+      min-height: 420px;
+      height: 460px;
+    }
+    .capmap-types {
+      height: auto;
+      max-height: 460px;
     }
     .capmap-actions {
       margin-inline-start: 0;
     }
     .capmap-aside {
+      height: auto;
       max-height: none;
-    }
-  }
-  @media (max-width: 1080px) {
-    .capmap-body {
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .capmap-actions {
-      margin-inline-start: 0;
+      overflow-y: visible;
     }
   }
 </style>
@@ -231,33 +272,55 @@
           {{ t('cm.clearSearch') }}
         </sdk-button>
       </div>
-      <sdk-popover
-        v-if="mode === 'type' && view === 'graph'"
-        trigger="click"
-        placement="bottom-start"
-        :width="320"
-      >
-        <template #reference>
+      <div v-if="mode === 'type' && view === 'graph'" class="capmap-kind-filter">
+        <sdk-popover
+          trigger="click"
+          placement="bottom-start"
+          :width="320"
+        >
+          <template #reference>
+            <sdk-button
+              size="small"
+              :type="relationKindsCount > 0 ? 'primary' : 'default'"
+              :plain="relationKindsCount > 0"
+              data-cap-action="relation-kind-filter"
+            >
+              {{ relationKindsCount > 0 ? t('cm.kindFilterActive', { count: relationKindsCount }) : t('cm.kindFilter') }}
+            </sdk-button>
+          </template>
+          <div class="capmap-kind-popover">
+            <div v-if="relationKindsCount > 0" class="capmap-kind-popover-bar">
+              <sdk-button size="small" link data-cap-action="clear-relation-kinds" @click="clearRelationKinds">
+                {{ t('cm.clearFilter') }}
+              </sdk-button>
+            </div>
+            <div class="capmap-kind-popover-list">
+              <projection slot="relationKindFilter"></projection>
+            </div>
+          </div>
+        </sdk-popover>
+        <template v-if="relationKindsCount > 0">
+          <sdk-tag
+            v-for="label in activeRelationKindLabels"
+            :key="label"
+            size="small"
+            type="primary"
+            effect="plain"
+            disable-transitions
+            data-cap-relation-kind-label
+          >
+            {{ label }}
+          </sdk-tag>
           <sdk-button
             size="small"
-            :type="relationKindsCount > 0 ? 'primary' : 'default'"
-            :plain="relationKindsCount > 0"
-            data-cap-action="relation-kind-filter"
+            link
+            data-cap-action="clear-relation-kinds-inline"
+            @click="clearRelationKinds"
           >
-            {{ relationKindsCount > 0 ? t('cm.kindFilterActive', { count: relationKindsCount }) : t('cm.kindFilter') }}
+            {{ t('cm.clearFilter') }}
           </sdk-button>
         </template>
-        <div class="capmap-kind-popover">
-          <div v-if="relationKindsCount > 0" class="capmap-kind-popover-bar">
-            <sdk-button size="small" link data-cap-action="clear-relation-kinds" @click="clearRelationKinds">
-              {{ t('cm.clearFilter') }}
-            </sdk-button>
-          </div>
-          <div class="capmap-kind-popover-list">
-            <projection slot="relationKindFilter"></projection>
-          </div>
-        </div>
-      </sdk-popover>
+      </div>
       <div v-if="mode === 'instance'" class="capmap-actions">
         <sdk-button
           size="small"
@@ -279,7 +342,7 @@
 
     <div class="capmap-body">
       <section class="capmap-main">
-        <div class="capmap-canvas" :class="{ 'is-behind': mode === 'type' && view === 'list' }">
+        <div v-if="mode === 'instance' || view === 'graph'" class="capmap-canvas">
           <projection slot="graph"></projection>
         </div>
 
@@ -346,7 +409,11 @@
 
         <template v-else>
           <section-group :title="t('cm.startTitle')">
-            <p class="capmap-hint">{{ startDisplay }}</p>
+            <p v-if="!hasCustomStart" class="capmap-hint" data-cap-start="current-user">{{ t('cm.startCurrentUser') }}</p>
+            <div v-else class="capmap-start-info" data-cap-start="custom">
+              <span v-if="startLabel" class="capmap-start-label" data-cap-start-label>{{ startLabel }}</span>
+              <span v-if="startDetail" class="capmap-start-detail" data-cap-start-detail>{{ startDetail }}</span>
+            </div>
             <div class="capmap-inline-actions">
               <sdk-button
                 size="small"
@@ -370,7 +437,7 @@
           </section-group>
 
           <section-group v-if="showUserPicker" :title="t('cm.userPickerTitle')" :description="t('cm.userPickerHint')">
-            <projection slot="userPicker"></projection>
+            <projection slot="userPicker" @choose="onSetStart"></projection>
           </section-group>
         </template>
 
@@ -378,7 +445,7 @@
           <section-group :title="t('cm.pickByTypeTitle')" :description="t('cm.pickByTypeHint')">
             <div class="capmap-pick">
               <projection slot="typePicker"></projection>
-              <projection v-if="selectedType" slot="typeObjects"></projection>
+              <projection v-if="selectedType" slot="typeObjects" @choose="onSetStart"></projection>
               <p v-else class="capmap-hint">{{ t('cm.pickChooseType') }}</p>
             </div>
           </section-group>
@@ -389,7 +456,7 @@
           :title="t('cm.relationsTitle')"
           :description="t('cm.relationsHint')"
         >
-          <projection slot="relations"></projection>
+          <projection slot="relations" @update:start="onSetStart"></projection>
         </section-group>
       </aside>
     </div>

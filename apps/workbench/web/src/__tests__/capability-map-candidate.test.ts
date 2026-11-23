@@ -2,12 +2,14 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { defineComponent, h } from "vue";
+import { defineComponent, h, ref } from "vue";
 import { createMemoryHistory, createRouter, RouterView, type RouteRecordRaw } from "vue-router";
+import { PanelHost } from "@ontomato/platform-shell";
+import { candidatePanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
 import type { CandidatePanelSource } from "@ontomato/contracts/panel-host";
-import { panelAddress } from "@ontomato/contracts/panel-host";
+import { panelAddress, panelAddressState } from "@ontomato/contracts/panel-host";
 import {
   ACTION,
   APPLICATION,
@@ -882,6 +884,21 @@ describe("builtin capability-map panel (PanelData-free)", () => {
       ];
     }
 
+    if (dataName === "objects" && member === "userPicker") {
+      return {
+        type: USER,
+        layer: "governance",
+        status: "ok",
+        items: [
+          { node: { className: USER, primaryKey: "u-alice" }, label: "Alice" },
+          { node: { className: USER, primaryKey: "u-bob" }, label: "Bob" },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 20,
+      };
+    }
+
     if (dataName === "neighbors") {
       const node = (runtimeParams?.node ?? inputs.node ?? inputs.selected) as { className: string; primaryKey: string };
       if (node.className === PRODUCT_PROJECTION && node.primaryKey === "proj-kb") {
@@ -916,6 +933,31 @@ describe("builtin capability-map panel (PanelData-free)", () => {
             { relationKind: "panel.contains-projection", status: "ok", edgeCount: 0 },
             { relationKind: "user.created-workflow", status: "refused", edgeCount: 0, reason: "No workflow permission" },
           ],
+        };
+      }
+      if (node.className === ACTION && (node.primaryKey === "act-refund-1" || node.primaryKey === "act-refund-2")) {
+        return {
+          node: { className: ACTION, primaryKey: node.primaryKey, label: "Refund Order", layer: "capability" },
+          neighbors: [{ className: OBJECT_TYPE, primaryKey: "Order", label: "Order", layer: "fact" }],
+          edges: [
+            {
+              id: `e-${node.primaryKey}-order`,
+              relationKind: "action.targets-object-type",
+              from: { className: ACTION, primaryKey: node.primaryKey },
+              to: { className: OBJECT_TYPE, primaryKey: "Order" },
+              direction: "outgoing",
+              derived: false,
+            },
+          ],
+          relations: [{ relationKind: "action.targets-object-type", status: "ok", edgeCount: 1 }],
+        };
+      }
+      if (node.className === OBJECT_TYPE && node.primaryKey === "Order") {
+        return {
+          node: { className: OBJECT_TYPE, primaryKey: "Order", label: "Order", layer: "fact" },
+          neighbors: [{ className: ACTION, primaryKey: "act-refund-1", label: "Refund Order", layer: "capability" }],
+          edges: [],
+          relations: [],
         };
       }
       if (node.className === ONTOLOGY_TYPE && node.primaryKey === BUSINESS_KNOWLEDGE) {
@@ -970,15 +1012,86 @@ describe("builtin capability-map panel (PanelData-free)", () => {
     return { ...page, router, sent, bundle };
   }
 
-  it("removes all PanelData and usePanelData references and keeps bilingual messages and schemas valid", () => {
-    const { rawJson, html, module, parsed, manifest } = loadBuiltinBundle();
+  async function mountBuiltinWithHost(initialState: Record<string, unknown> = {}) {
+    const bundle = loadBuiltinBundle();
+    const router = createRouter({ history: createMemoryHistory(), routes: appBuilderPages() });
+    const sent = installPlatform((request) => {
+      if (request.path === `/api/workspaces/${BUILTIN_WORKSPACE}/panel-candidate`) {
+        return Response.json(bundle.source);
+      }
+      if (request.path === "/api/product-panels/definition-stream") {
+        return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
+      }
+      const projected = request.path.match(/^\/api\/product-projections\/([^/]+)$/u);
+      if (projected && bundle.projections[projected[1]!]) {
+        return Response.json({ projection: bundle.projections[projected[1]!] });
+      }
+      if (request.path === "/api/product-panels/read") {
+        return Response.json({ status: "ready", value: builtinMemberData(request.body as Read) });
+      }
+      return nothingAt(request);
+    }, router);
+    await router.push(panelAddress(builtinPreviewPath, initialState));
+    const hostRef = ref<InstanceType<typeof PanelHost> | null>(null);
+    const port = candidatePanelHost({ id: BUILTIN_WORKSPACE, ref: "working", pageKey: "capability-map" });
+    const page = mountPlatformPage(
+      () =>
+        h(PanelHost, {
+          ref: hostRef,
+          port,
+          label: "Capability map",
+          address: router.currentRoute.value.fullPath,
+          initial: panelAddressState(router.currentRoute.value.fullPath),
+          language: { locale: "en", fallback: "en" },
+          labels: {
+            notStarted: "Not started",
+            failures: { fileUnavailable: "{file}", scriptThrew: "threw", scriptRejected: "rejected" },
+            content: { styleOutside: "style" },
+            refresh: "Refresh",
+          },
+          onDisplayAddress: (input: { address: string }) => {
+            if (router.currentRoute.value.fullPath !== input.address) void router.replace(input.address);
+          },
+        }),
+      router,
+    );
+    await vi.waitFor(() => expect(hostRef.value?.direct).toBeTruthy(), { timeout: 5000 });
+    return { ...page, router, sent, bundle, host: hostRef.value! };
+  }
+
+  it("removes all PanelData and usePanelData references, viewport height/media queries, and script start concatenation while keeping bilingual messages, schemas, and recipes valid", () => {
+    const { rawJson, html, module, recipes, parsed, manifest } = loadBuiltinBundle();
     expect(rawJson).not.toContain("PanelData");
     expect(module).not.toContain("usePanelData");
     expect(module).not.toContain("INSTANCE_DIRECTORIES");
+    // No script string concatenation of start state fields.
+    expect(module).not.toContain("start.value.className");
+    expect(module).not.toContain("start.value.primaryKey");
+    expect(module).not.toContain("startDisplay");
+    // No window media queries, viewport height units, or hidden background canvas mount.
+    expect(html).not.toMatch(/@media\b/u);
+    expect(html).not.toMatch(/\b\d+d?vh\b/u);
+    expect(html).not.toContain("is-behind");
+    expect(html).toContain("@container (max-width: 960px)");
     // Enforce English-only source and template text outside zh-CN message entries.
     expect(/[\u4e00-\u9fff]/u.test(html)).toBe(false);
     expect(/[\u4e00-\u9fff]/u.test(module)).toBe(false);
     expect(Object.values(manifest.members).every((m) => !("component" in m) || m.component !== "PanelData")).toBe(true);
+    // Recipes document every newly exposed public state and clarify setState null / selected focus semantics.
+    for (const field of [
+      "visibleLayers",
+      "expandedNodes",
+      "pickingStart",
+      "showUserPicker",
+      "typeObjectsSearch",
+      "userPickerSearch",
+      "relationKindsSearch",
+    ]) {
+      expect(Object.hasOwn(manifest.state, field)).toBe(true);
+      expect(recipes).toContain(`\`${field}\``);
+    }
+    expect(recipes).toContain("明确传 `null`");
+    expect(recipes).toContain("当前子图内");
     const enMessages = parsed.content?.messages?.en ?? {};
     const zhMessages = parsed.content?.messages?.["zh-CN"] ?? {};
     expect(Object.keys(zhMessages).sort()).toEqual(Object.keys(enMessages).sort());
@@ -1037,6 +1150,9 @@ describe("builtin capability-map panel (PanelData-free)", () => {
       expect(
         reads(sent).some((r) => r.memberPath[0].member === "typeOperations" && r.inputs.type === SDK_COMPONENT),
       ).toBe(true);
+      // Hidden graph projection is unmounted in type/list view and issues zero background reads.
+      expect(document.querySelector(".panel-host-coded .capmap-canvas")).toBeNull();
+      expect(reads(sent).filter((r) => r.memberPath[0].member === "graph")).toHaveLength(0);
 
       // 3) Clicking "Action" in typeList updates selectedTypeRef -> syncs URL selectedType -> hides directoryPath button.
       const actionRow = [...document.querySelectorAll<HTMLTableRowElement>(".panel-host-coded .capmap-types tbody tr")].find((row) =>
@@ -1191,6 +1307,151 @@ describe("builtin capability-map panel (PanelData-free)", () => {
       await vi.waitFor(() => {
         expect(document.querySelector(".panel-host-coded .capmap-notice")).toBeNull();
       }, { timeout: 2500 });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("preserves simultaneous start+selected, re-selects same start via relations Set as start, renders start outputs distinguishing same-name objects, and groups typePicker by layer", { timeout: 30000 }, async () => {
+    const { app, host } = await mountBuiltinWithHost({
+      mode: "instance",
+      start: { className: PRODUCT_PROJECTION, primaryKey: "proj-kb" },
+      selected: { className: ONTOLOGY_TYPE, primaryKey: BUSINESS_KNOWLEDGE },
+    });
+    try {
+      // 1) Setting start and selected together never overwrites selected to start.
+      await vi.waitFor(() => {
+        const subject = document.querySelector(".panel-host-coded .sdk-object-relations-subject")?.textContent?.trim();
+        expect(subject).toBe("Business knowledge");
+        expect(document.querySelector(".panel-host-coded [data-cap-start-label]")?.textContent?.trim()).toBe("Knowledge List");
+        expect(document.querySelector(".panel-host-coded [data-cap-start-detail]")?.textContent?.trim()).toBe("Projection · proj-kb");
+      }, { timeout: 5000 });
+
+      // 2) Clicking "Set as start" on the peer that is ALREADY start moves selected back to that start node.
+      const setStartBackBtn = document.querySelector<HTMLButtonElement>(
+        '.panel-host-coded [data-relation-kind="projection.binds-target"] .sdk-object-relations-set-start',
+      )!;
+      expect(setStartBackBtn).not.toBeNull();
+      setStartBackBtn.click();
+
+      await vi.waitFor(() => {
+        const subject = document.querySelector(".panel-host-coded .sdk-object-relations-subject")?.textContent?.trim();
+        expect(subject).toBe("Knowledge List");
+      }, { timeout: 5000 });
+
+      // 3) Agent setting start+selected live on an already-mounted panel also preserves selected.
+      host.applyState({
+        start: { className: ACTION, primaryKey: "act-refund-1" },
+        selected: { className: OBJECT_TYPE, primaryKey: "Order" },
+      });
+      await vi.waitFor(() => {
+        expect(document.querySelector(".panel-host-coded .sdk-object-relations-subject")?.textContent?.trim()).toBe("Order");
+        expect(document.querySelector(".panel-host-coded [data-cap-start-label]")?.textContent?.trim()).toBe("Refund Order");
+        expect(document.querySelector(".panel-host-coded [data-cap-start-detail]")?.textContent?.trim()).toBe("Action · act-refund-1");
+      }, { timeout: 5000 });
+
+      // 4) Switching to a second same-name start object keeps them distinguishable via startDetail even when selected === start.
+      host.applyState({
+        start: { className: ACTION, primaryKey: "act-refund-2" },
+        selected: { className: ACTION, primaryKey: "act-refund-2" },
+      });
+      await vi.waitFor(() => {
+        expect(document.querySelector(".panel-host-coded [data-cap-start-label]")?.textContent?.trim()).toBe("Refund Order");
+        expect(document.querySelector(".panel-host-coded [data-cap-start-detail]")?.textContent?.trim()).toBe("Action · act-refund-2");
+      }, { timeout: 5000 });
+
+      // 5) typePicker renders four layer option groups via generic groupBy="layer".
+      (document.querySelector(".panel-host-coded .sdk-inline-reference-picker-select") as HTMLElement).click();
+      await vi.waitFor(() => {
+        const titles = [...document.querySelectorAll<HTMLElement>(".el-select-group__title")].map((el) =>
+          el.textContent?.trim(),
+        );
+        expect(titles).toEqual(["Fact", "Capability", "Governance", "Product"]);
+      }, { timeout: 5000 });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("exposes visibleLayers, expandedNodes, pickingStart, showUserPicker, search states, and collapsed relation-kind tags with inline clear", { timeout: 30000 }, async () => {
+    const { app, host, sent } = await mountBuiltinWithHost({ mode: "type", view: "graph" });
+    try {
+      await vi.waitFor(() => expect(canvasRecorder.nodes.length).toBeGreaterThan(0), { timeout: 5000 });
+
+      // 1) Collapsed relation-kind filter shows localized selected kind tags from graph.visibleRelationKindLabels and inline clear.
+      host.applyState({
+        relationKinds: [{ className: ONTOLOGY_RELATION_KIND, primaryKey: "action.targets-object-type" }],
+      });
+      await vi.waitFor(() => {
+        const labels = [...document.querySelectorAll<HTMLElement>(".panel-host-coded [data-cap-relation-kind-label]")].map((el) =>
+          el.textContent?.trim(),
+        );
+        expect(labels).toEqual(["Targets object type"]);
+        expect(document.querySelector('.panel-host-coded [data-cap-action="clear-relation-kinds-inline"]')).not.toBeNull();
+      }, { timeout: 5000 });
+
+      document.querySelector<HTMLButtonElement>('.panel-host-coded [data-cap-action="clear-relation-kinds-inline"]')!.click();
+      await vi.waitFor(() => {
+        expect(document.querySelectorAll(".panel-host-coded [data-cap-relation-kind-label]")).toHaveLength(0);
+        expect(document.querySelector('.panel-host-coded [data-cap-action="clear-relation-kinds-inline"]')).toBeNull();
+      }, { timeout: 5000 });
+
+      // 2) Agent controls visibleLayers in type mode.
+      host.applyState({ visibleLayers: ["fact"] });
+      await vi.waitFor(() => {
+        expect(canvasRecorder.nodes.every((node) => node.category === "fact")).toBe(true);
+      }, { timeout: 5000 });
+      host.applyState({ visibleLayers: null });
+      await vi.waitFor(() => {
+        expect(new Set(canvasRecorder.nodes.map((node) => node.category)).size).toBeGreaterThan(1);
+      }, { timeout: 5000 });
+
+      // 3) Agent controls pickingStart and typeObjectsSearch in type mode.
+      host.applyState({ pickingStart: true, selectedType: ACTION, typeObjectsSearch: "Refund" });
+      await vi.waitFor(() => {
+        expect(
+          reads(sent).some(
+            (r) =>
+              r.memberPath[0].member === "typeObjects"
+              && r.dataName === "objects"
+              && r.inputs.type === ACTION
+              && (r.inputs.search === "Refund" || r.runtimeParams?.search === "Refund"),
+          ),
+        ).toBe(true);
+      }, { timeout: 5000 });
+
+      // 4) Agent controls showUserPicker, userPickerSearch, and expandedNodes in instance mode.
+      host.applyState({
+        mode: "instance",
+        start: { className: USER, primaryKey: "u-1" },
+        showUserPicker: true,
+        userPickerSearch: "Alice",
+        expandedNodes: [{ className: ACTION, primaryKey: "act-refund-1" }],
+      });
+      await vi.waitFor(() => {
+        expect(
+          reads(sent).some(
+            (r) =>
+              r.memberPath[0].member === "userPicker"
+              && r.dataName === "objects"
+              && (r.inputs.search === "Alice" || r.runtimeParams?.search === "Alice"),
+          ),
+        ).toBe(true);
+        expect(canvasRecorder.nodes.map((n) => n.label)).toContain("Order");
+      }, { timeout: 5000 });
+
+      // 5) relationKindsSearch filters relationKindFilter via declared public state.
+      host.applyState({ mode: "type", view: "graph", relationKindsSearch: "Binds" });
+      await vi.waitFor(() => {
+        const trigger = document.querySelector<HTMLButtonElement>('.panel-host-coded [data-cap-action="relation-kind-filter"]');
+        expect(trigger).not.toBeNull();
+      }, { timeout: 5000 });
+      document.querySelector<HTMLButtonElement>('.panel-host-coded [data-cap-action="relation-kind-filter"]')!.click();
+      await vi.waitFor(() => {
+        const list = document.querySelector(".capmap-kind-popover-list");
+        expect(list?.textContent).toContain("Binds target");
+        expect(list?.textContent).not.toContain("Uses component");
+      }, { timeout: 5000 });
     } finally {
       app.unmount();
     }

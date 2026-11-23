@@ -495,3 +495,78 @@ it("disables inline picker with readable tooltip when rows or options data is fo
     expect(root?.querySelector(".el-select__wrapper")?.classList.contains("is-disabled")).toBe(true);
   });
 });
+
+it("groups inline rows by a generic record field (groupBy) preserving owner order and local filtering", async () => {
+  const groupedProjection: DirectProjection = {
+    ...meta,
+    id: "grouped-teacher-picker",
+    name: "Teacher picker",
+    componentId: "@ontomato/sdk:ReferencePicker",
+    inputs: {},
+    outputs: { selected: { kind: "object", objectType: USER } },
+    config: { placeholder: "Pick teacher", groupBy: "department" },
+    data: {
+      rows: { source: { type: { kind: "PlatformObjectType", id: USER } }, read: "query", params: {} },
+    },
+  };
+  const manifest: DirectPanelManifest = {
+    state: {
+      teacher: { type: { kind: "object", objectType: USER }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      picker: {
+        target: { projectionId: groupedProjection.id },
+        outputs: { selected: { state: "teacher" } },
+      },
+    },
+  };
+
+  const { container, instance } = mountPanel(manifest, { [groupedProjection.id]: groupedProjection }, () =>
+    ready({
+      rows: [
+        { className: USER, primaryKey: "t-1", label: "Alice", fields: { department: "Mathematics" } },
+        { className: USER, primaryKey: "t-2", label: "Bob", fields: { department: "Physics" } },
+        { className: USER, primaryKey: "t-3", label: "Carol", fields: { department: "Mathematics" } },
+      ],
+      total: 3,
+    }),
+  );
+
+  await vi.waitFor(() => {
+    expect(container.querySelector(".sdk-inline-reference-picker")?.getAttribute("data-state")).toBe("ready");
+  });
+
+  const wrapper = container.querySelector<HTMLElement>(".sdk-inline-reference-picker .el-select__wrapper")!;
+  wrapper.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+  await vi.waitFor(() => {
+    const groupTitles = [...document.querySelectorAll<HTMLElement>(".el-select-group__title")].map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(groupTitles).toEqual(["Mathematics", "Physics"]);
+  });
+
+  const groups = [...document.querySelectorAll<HTMLElement>(".el-select-group__wrap")];
+  expect(groups[0]?.textContent).toContain("Alice");
+  expect(groups[0]?.textContent).toContain("Carol");
+  expect(groups[1]?.textContent).toContain("Bob");
+
+  // Local filter narrows visible groups and items without issuing extra reads.
+  const input = container.querySelector<HTMLInputElement>(".sdk-inline-reference-picker input.el-select__input")!;
+  input.value = "Bob";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.waitFor(() => {
+    const visibleTitles = [...document.querySelectorAll<HTMLElement>(".el-select-group__title")].map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(visibleTitles).toEqual(["Physics"]);
+  });
+
+  const bobItem = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")].find((el) =>
+    el.textContent?.includes("Bob"),
+  )!;
+  bobItem.click();
+  await vi.waitFor(() => {
+    expect(instance.state.values.value.teacher).toEqual({ className: USER, primaryKey: "t-2" });
+  });
+});

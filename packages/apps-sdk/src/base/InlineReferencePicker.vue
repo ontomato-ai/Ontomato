@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElOption, ElSelect } from "element-plus/es/components/select/index";
+import { ElOption, ElOptionGroup, ElSelect } from "element-plus/es/components/select/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
   directReadDeclaration,
@@ -15,12 +15,15 @@ import type { PlatformObjectOption, PlatformObjectRecord } from "../panel/platfo
 import { projectionElement } from "../panel/projection-element";
 import { stateObject, type PanelFieldValue, type PanelObjectRef } from "../panel/state";
 import { readConfigString, readConfigStringMap, resolveLocalizedText } from "./localized-text";
+import { resolveGroupForRecord } from "./object-list-local";
 
 interface InlineOption {
   readonly primaryKey: string;
   readonly className: string;
   readonly label: string;
   readonly description?: string;
+  readonly groupKey?: string;
+  readonly groupLabel?: string;
   readonly unavailableReason?: string;
   readonly isNullChoice?: boolean;
 }
@@ -33,6 +36,7 @@ const props = withDefaults(
     clearable?: boolean;
     disabled?: boolean;
     size?: "small" | "default" | "large";
+    groupBy?: string;
   }>(),
   {
     placeholder: undefined,
@@ -41,6 +45,7 @@ const props = withDefaults(
     clearable: true,
     disabled: false,
     size: "small",
+    groupBy: undefined,
   },
 );
 
@@ -85,6 +90,12 @@ const placeholderText = computed(() =>
 
 const isClearable = computed(() => props.clearable !== false);
 
+const groupByKey = computed<string | undefined>(() => {
+  const configured = props.groupBy ?? readConfigString(rawConfig.value, "groupBy", "group-by");
+  const trimmed = configured?.trim();
+  return trimmed ? trimmed : undefined;
+});
+
 // ---- Rows mode (`panelRecordList` / `panelRecordQuery`): local filtering, zero requests while typing ----
 const rowsData = dataMode === "rows" ? useMemberData("rows") : null;
 const localQuery = ref("");
@@ -97,13 +108,20 @@ const allRowOptions = computed<readonly InlineOption[]>(() => {
     : Array.isArray((raw as unknown as PanelRecordQuery)?.rows)
       ? ((raw as unknown as PanelRecordQuery).rows as unknown as readonly PlatformObjectRecord[])
       : [];
+  const groupField = groupByKey.value;
   return rows.map((row) => {
     const ref = panelRecordObjectRef(row, defaultClassName);
+    const resolvedGroup = groupField
+      ? resolveGroupForRecord(row, groupField, defaultClassName, locale.value, localized, "")
+      : null;
     return {
       primaryKey: ref.primaryKey,
       className: ref.className,
       label: row.label || ref.primaryKey,
       description: row.subtitle,
+      ...(resolvedGroup && !resolvedGroup.isEmpty
+        ? { groupKey: resolvedGroup.key, groupLabel: resolvedGroup.label }
+        : {}),
     };
   });
 });
@@ -293,8 +311,41 @@ const shownOptions = computed<readonly InlineOption[]>(() => {
     (option) =>
       option.label.toLowerCase().includes(query)
       || option.primaryKey.toLowerCase().includes(query)
-      || (option.description?.toLowerCase().includes(query) ?? false),
+      || (option.description?.toLowerCase().includes(query) ?? false)
+      || (option.groupLabel?.toLowerCase().includes(query) ?? false),
   );
+});
+
+interface InlineOptionGroup {
+  readonly key: string;
+  readonly label: string;
+  readonly options: readonly InlineOption[];
+}
+
+const optionGroups = computed<readonly InlineOptionGroup[] | null>(() => {
+  if (!groupByKey.value) return null;
+  const items = shownOptions.value;
+  if (!items.some((option) => Boolean(option.groupLabel))) return null;
+  const buckets = new Map<string, { key: string; label: string; options: InlineOption[] }>();
+  const ungrouped: InlineOption[] = [];
+  for (const option of items) {
+    if (!option.groupLabel) {
+      ungrouped.push(option);
+      continue;
+    }
+    const bucketKey = option.groupKey ?? option.groupLabel;
+    let bucket = buckets.get(bucketKey);
+    if (!bucket) {
+      bucket = { key: bucketKey, label: option.groupLabel, options: [] };
+      buckets.set(bucketKey, bucket);
+    }
+    bucket.options.push(option);
+  }
+  const ordered: InlineOptionGroup[] = [...buckets.values()];
+  if (ungrouped.length > 0) {
+    ordered.push({ key: "", label: "", options: ungrouped });
+  }
+  return ordered;
 });
 
 function onLocalFilter(query: string) {
@@ -353,25 +404,73 @@ function onSelect(value: string | undefined) {
       @visible-change="onVisibleChange"
       @update:model-value="onSelect"
     >
-      <el-option
-        v-for="option in shownOptions"
-        :key="option.primaryKey"
-        :value="option.primaryKey"
-        :label="option.label"
-        :disabled="option.unavailableReason !== undefined"
-        :title="option.unavailableReason ?? option.description"
-        :class="{ 'sdk-reference-option-described': Boolean(option.description) }"
-      >
-        <slot
-          name="option"
-          :option="option"
-          :selected="currentKey === option.primaryKey"
+      <template v-if="optionGroups">
+        <template v-for="group in optionGroups" :key="group.key || '__ungrouped'">
+          <el-option-group v-if="group.label" :label="group.label">
+            <el-option
+              v-for="option in group.options"
+              :key="option.primaryKey"
+              :value="option.primaryKey"
+              :label="option.label"
+              :disabled="option.unavailableReason !== undefined"
+              :title="option.unavailableReason ?? option.description"
+              :class="{ 'sdk-reference-option-described': Boolean(option.description) }"
+            >
+              <slot
+                name="option"
+                :option="option"
+                :selected="currentKey === option.primaryKey"
+                :disabled="option.unavailableReason !== undefined"
+              >
+                <span class="sdk-reference-option-label">{{ option.label }}</span>
+                <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
+              </slot>
+            </el-option>
+          </el-option-group>
+          <template v-else>
+            <el-option
+              v-for="option in group.options"
+              :key="option.primaryKey"
+              :value="option.primaryKey"
+              :label="option.label"
+              :disabled="option.unavailableReason !== undefined"
+              :title="option.unavailableReason ?? option.description"
+              :class="{ 'sdk-reference-option-described': Boolean(option.description) }"
+            >
+              <slot
+                name="option"
+                :option="option"
+                :selected="currentKey === option.primaryKey"
+                :disabled="option.unavailableReason !== undefined"
+              >
+                <span class="sdk-reference-option-label">{{ option.label }}</span>
+                <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
+              </slot>
+            </el-option>
+          </template>
+        </template>
+      </template>
+      <template v-else>
+        <el-option
+          v-for="option in shownOptions"
+          :key="option.primaryKey"
+          :value="option.primaryKey"
+          :label="option.label"
           :disabled="option.unavailableReason !== undefined"
+          :title="option.unavailableReason ?? option.description"
+          :class="{ 'sdk-reference-option-described': Boolean(option.description) }"
         >
-          <span class="sdk-reference-option-label">{{ option.label }}</span>
-          <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
-        </slot>
-      </el-option>
+          <slot
+            name="option"
+            :option="option"
+            :selected="currentKey === option.primaryKey"
+            :disabled="option.unavailableReason !== undefined"
+          >
+            <span class="sdk-reference-option-label">{{ option.label }}</span>
+            <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
+          </slot>
+        </el-option>
+      </template>
     </el-select>
     <span v-if="optionDiagnostics.length" class="sdk-inline-reference-picker-note" role="status">
       {{ optionDiagnostics.join(" ") }}

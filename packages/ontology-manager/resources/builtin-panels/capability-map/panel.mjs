@@ -46,13 +46,15 @@ const CapabilityMap = {
     const selectedTypeRef = computed(() => identity(values.value.selectedTypeRef));
     const query = computed(() => (typeof values.value.query === "string" ? values.value.query : ""));
 
-    // Read-only projection outputs published by `typeHeader` (`ObjectHeader`) and `relations` (`ObjectRelations`).
+    // Read-only projection outputs published by `typeHeader` (`ObjectHeader`) and `graph` (`OntologyGraph`).
     const typeHeaderStatus = usePanelOutput("typeHeader", "status");
     const typeHeaderLabel = usePanelOutput("typeHeader", "label");
     const typeHeaderError = usePanelOutput("typeHeader", "errorMessage");
     const directoryPath = usePanelOutput("typeHeader", "directoryPath");
     const directoryName = usePanelOutput("typeHeader", "directoryName");
-    const relationsLabel = usePanelOutput("relations", "label");
+    const graphStartLabel = usePanelOutput("graph", "startLabel");
+    const graphStartDetail = usePanelOutput("graph", "startDetail");
+    const graphRelationKindLabels = usePanelOutput("graph", "visibleRelationKindLabels");
 
     // Bidirectional loop-free sync between URL-friendly `selectedType` string and `selectedTypeRef` object state.
     watch(
@@ -90,6 +92,11 @@ const CapabilityMap = {
     );
 
     const relationKindsCount = computed(() => (Array.isArray(values.value.relationKinds) ? values.value.relationKinds.length : 0));
+    const activeRelationKindLabels = computed(() =>
+      Array.isArray(graphRelationKindLabels.value)
+        ? graphRelationKindLabels.value.filter((item) => typeof item === "string" && item.length > 0)
+        : [],
+    );
 
     function clearRelationKinds() {
       state.set("relationKinds", null);
@@ -100,11 +107,11 @@ const CapabilityMap = {
     );
 
     const notice = ref(null);
-    const pickingStart = ref(false);
-    const showUserPicker = ref(false);
+    const pickingStart = computed(() => values.value.pickingStart === true);
+    const showUserPicker = computed(() => values.value.showUserPicker === true);
 
     function onTypeChosen() {
-      pickingStart.value = false;
+      if (pickingStart.value) state.set("pickingStart", false);
     }
 
     /** Navigates to the product-layer instance directory reported by the type record's read-only outputs. */
@@ -132,31 +139,45 @@ const CapabilityMap = {
       () => Boolean(selected.value) && identityKey(selected.value) !== identityKey(start.value),
     );
 
-    const startDisplay = computed(() => {
-      if (!start.value) return t("cm.startCurrentUser");
-      if (
-        identityKey(selected.value) === identityKey(start.value)
-        && typeof relationsLabel.value === "string"
-        && relationsLabel.value
-      ) {
-        return relationsLabel.value;
-      }
-      return `${start.value.className} · ${start.value.primaryKey}`;
-    });
+    const startLabel = computed(() =>
+      typeof graphStartLabel.value === "string" && graphStartLabel.value ? graphStartLabel.value : null,
+    );
+    const startDetail = computed(() =>
+      typeof graphStartDetail.value === "string" && graphStartDetail.value ? graphStartDetail.value : null,
+    );
+
+    /** Explicit user action to promote a node as instance-mode start and focus it in the right pane. */
+    function onSetStart(node) {
+      const target = identity(node);
+      if (!target) return;
+      state.setState({
+        mode: "instance",
+        start: target,
+        selected: target,
+        expandedNodes: null,
+        showUserPicker: false,
+        pickingStart: false,
+      });
+    }
 
     function useSelectedAsStart() {
       if (!canUseSelectedAsStart.value) return;
-      state.setState({ start: { ...selected.value } });
+      onSetStart(selected.value);
     }
 
     function resetStart() {
-      showUserPicker.value = false;
-      pickingStart.value = false;
-      state.setState({ mode: "instance", start: null, selected: null });
+      state.setState({
+        mode: "instance",
+        start: null,
+        selected: null,
+        expandedNodes: null,
+        showUserPicker: false,
+        pickingStart: false,
+      });
     }
 
     function toggleUserPicker() {
-      showUserPicker.value = !showUserPicker.value;
+      state.set("showUserPicker", !showUserPicker.value);
     }
 
     const pickerSection = ref(null);
@@ -166,28 +187,8 @@ const CapabilityMap = {
     });
 
     function togglePickingStart() {
-      pickingStart.value = !pickingStart.value;
+      state.set("pickingStart", !pickingStart.value);
     }
-
-    // Choosing a start object anywhere opens instance mode focused on that start node.
-    watch(
-      () => identityKey(values.value.start),
-      (nextKey, previousKey) => {
-        if (!nextKey || nextKey === previousKey) return;
-        const nextStart = identity(values.value.start);
-        if (!nextStart) return;
-        showUserPicker.value = false;
-        pickingStart.value = false;
-        if (values.value.mode !== "instance") state.set("mode", "instance");
-        if (identityKey(values.value.selected) !== nextKey) state.set("selected", { ...nextStart });
-      },
-    );
-
-    watch(mode, (next, previous) => {
-      if (next === previous) return;
-      showUserPicker.value = false;
-      if (next === "instance") pickingStart.value = false;
-    });
 
     function onQueryChange(value) {
       const text = typeof value === "string" ? value : "";
@@ -199,7 +200,13 @@ const CapabilityMap = {
     }
 
     function setMode(value) {
-      state.set("mode", value === "type" ? "type" : "instance");
+      const next = value === "type" ? "type" : "instance";
+      if (next === mode.value) return;
+      state.setState({
+        mode: next,
+        showUserPicker: false,
+        ...(next === "instance" ? { pickingStart: false } : {}),
+      });
     }
 
     function setView(value) {
@@ -225,6 +232,7 @@ const CapabilityMap = {
       directoryName,
       typeDetailVisible,
       relationKindsCount,
+      activeRelationKindLabels,
       clearRelationKinds,
       onTypeChosen,
       openInstances,
@@ -235,7 +243,9 @@ const CapabilityMap = {
       toggleUserPicker,
       hasCustomStart,
       canUseSelectedAsStart,
-      startDisplay,
+      startLabel,
+      startDetail,
+      onSetStart,
       useSelectedAsStart,
       resetStart,
       onQueryChange,
