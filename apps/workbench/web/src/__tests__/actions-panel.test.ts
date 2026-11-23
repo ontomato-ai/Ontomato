@@ -16,10 +16,11 @@ import { ACTION, DELETE_ACTION, SET_ACTION_STATUS, platformObjectTypes } from "@
 import { platformTypeTableEntrySchema } from "@ontomato/contracts/platform-type-table";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { randomId } from "@ontomato/contracts/random-id";
-import { codedPanelTarget } from "@ontomato/platform-shell";
+import { codedPanelTarget, createPanelBackController } from "@ontomato/platform-shell";
 import { components } from "../../../../../packages/apps-sdk/src/catalogue";
 import { panelModuleFor, type DirectPanelMount } from "../../../../../packages/apps-sdk/src/direct";
 import type { PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
+import { applyPanelRequest } from "../../../../../packages/apps-sdk/src/panel/instance";
 import { runPanelModule, useTemplateCompiler } from "../../../../../packages/platform-web/src/panel-module";
 import source from "../../../../../packages/ontology-manager/resources/builtin-panels/actions/panel.json";
 import html from "../../../../../packages/ontology-manager/resources/builtin-panels/actions/panel.html?raw";
@@ -208,15 +209,34 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-async function mountActionsPanel(initial: Record<string, RuntimeJsonValue> = {}) {
+interface MountActionsOptions {
+  initial?: Record<string, RuntimeJsonValue>;
+  confirmLeave?: () => boolean | Promise<boolean>;
+}
+
+async function mountActionsPanel(options: MountActionsOptions | Record<string, RuntimeJsonValue> = {}) {
+  const normalized: MountActionsOptions =
+    "initial" in options || "confirmLeave" in options
+      ? (options as MountActionsOptions)
+      : { initial: options as Record<string, RuntimeJsonValue> };
+  const initial = normalized.initial ?? {};
+
   await useTemplateCompiler();
   const { element, template } = codedPanelTarget(html);
   document.body.append(element);
 
   const reads: PanelMemberReadRequest[] = [];
+  const confirmLeaveUnsaved = vi.fn(async () => (normalized.confirmLeave ? await normalized.confirmLeave() : true));
   let resolveMount!: (mount: DirectPanelMount) => void;
   const mountedPromise = new Promise<DirectPanelMount>((resolve) => {
     resolveMount = resolve;
+  });
+  let currentMount: DirectPanelMount | null = null;
+  const backController = createPanelBackController({
+    active: () => true,
+    allowHistory: () => false,
+    isDirty: () => Boolean(currentMount?.instance.dirty()),
+    confirmLeaveUnsaved,
   });
 
   const panelSdk = panelModuleFor({
@@ -228,6 +248,7 @@ async function mountActionsPanel(initial: Record<string, RuntimeJsonValue> = {})
         .use(ElementPlus);
     },
     mounted(mount) {
+      currentMount = mount;
       activeMounts.push(mount);
       resolveMount(mount);
     },
@@ -237,6 +258,8 @@ async function mountActionsPanel(initial: Record<string, RuntimeJsonValue> = {})
       url: () => "/ontology/actions",
       label: () => "Actions",
       initial,
+      registerBackHandler: backController.register,
+      confirmLeaveUnsaved,
     }),
     messages: source.content.messages,
     locale: ref("en"),
@@ -418,7 +441,12 @@ async function mountActionsPanel(initial: Record<string, RuntimeJsonValue> = {})
   });
 
   const mount = await mountedPromise;
-  return { mount, element, reads };
+  const originalDispose = mount.dispose;
+  mount.dispose = () => {
+    backController.dispose();
+    originalDispose();
+  };
+  return { mount, element, reads, confirmLeaveUnsaved };
 }
 
 function catalogSection(element: HTMLElement): HTMLElement {
@@ -428,8 +456,11 @@ function catalogSection(element: HTMLElement): HTMLElement {
 }
 
 describe("builtin actions panel detail mount lifecycle", () => {
-  it("unmounts form on catalog view, preserves catalog and form draft across detail tabs, and unmounts form again on back", async () => {
-    const { mount, element, reads } = await mountActionsPanel();
+  it("guards unsaved changes across detail tabs on back and Escape, preserves catalog on leave, and updates stale explanation copy", async () => {
+    let allowLeave = false;
+    const { mount, element, reads, confirmLeaveUnsaved } = await mountActionsPanel({
+      confirmLeave: () => allowLeave,
+    });
     const { instance } = mount;
 
     // 1. Catalog view (!detailVisible): catalog is mounted & visible; detail and form are unmounted.
@@ -477,31 +508,61 @@ describe("builtin actions panel detail mount lifecycle", () => {
     codeTab!.click();
     await vi.waitFor(() => {
       expect(instance.state.values.value.activeTab).toBe("code");
-      expect(element.textContent).toContain("Explanation expired");
+      expect(element.textContent).toContain("Explanation may be outdated");
+      expect(element.textContent).toContain(
+        "The code in this form differs from the code this explanation was written for; save it and explain the action again if needed.",
+      );
     });
     expect(instance.forms.handle("form")).toBe(formHandle);
     expect((formHandle.values.value.function as Record<string, unknown>).code).toBe(EDITED_CODE);
     expect(formHandle.dirty.value).toBe(true);
     expect(instance.state.values.value.draftCode).toBe(EDITED_CODE);
 
-    derivedTab!.click();
-    await vi.waitFor(() => {
-      expect(instance.state.values.value.activeTab).toBe("derived");
-    });
-    expect(instance.forms.handle("form")).toBe(formHandle);
-    expect((formHandle.values.value.function as Record<string, unknown>).code).toBe(EDITED_CODE);
-    expect(formHandle.dirty.value).toBe(true);
-    expect(instance.state.values.value.draftCode).toBe(EDITED_CODE);
-
-    // 4. Back to catalog: detail and form unmount; catalog is visible again with state intact.
+    // 4a. Clicking Back on the `code` tab with unsaved changes triggers confirmation; cancelling keeps detail & draft.
     const backButton = [...element.querySelectorAll<HTMLButtonElement>(".ac-detail-head button")]
       .find((button) => button.textContent?.trim() === "Back to the catalog");
     expect(backButton).toBeDefined();
     backButton!.click();
 
     await vi.waitFor(() => {
+      expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(1);
+    });
+    // Flush the cancelled confirmation promise so usePanelBack finishes and releases its in-flight guard.
+    await Promise.resolve();
+    await nextTick();
+    expect(instance.state.values.value.selected).toEqual({ className: ACTION, primaryKey: "approve-order" });
+    expect(instance.state.values.value.activeTab).toBe("code");
+    expect(element.querySelector(".ac-detail")).not.toBeNull();
+    expect(instance.forms.handle("form")).toBe(formHandle);
+    expect((formHandle.values.value.function as Record<string, unknown>).code).toBe(EDITED_CODE);
+    expect(formHandle.dirty.value).toBe(true);
+    expect(instance.state.values.value.draftCode).toBe(EDITED_CODE);
+
+    // 4b. Switch to `derived` tab; Escape also passes through the unsaved confirmation guard; cancelling keeps draft.
+    derivedTab!.click();
+    await vi.waitFor(() => {
+      expect(instance.state.values.value.activeTab).toBe("derived");
+    });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await vi.waitFor(() => {
+      expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(2);
+    });
+    await Promise.resolve();
+    await nextTick();
+    expect(instance.state.values.value.selected).toEqual({ className: ACTION, primaryKey: "approve-order" });
+    expect(instance.state.values.value.activeTab).toBe("derived");
+    expect(formHandle.dirty.value).toBe(true);
+    expect(instance.state.values.value.draftCode).toBe(EDITED_CODE);
+
+    // 4c. Confirming Back on `derived` tab leaves detail, unmounts form, clears draft, and preserves catalog state.
+    allowLeave = true;
+    backButton!.click();
+
+    await vi.waitFor(() => {
+      expect(confirmLeaveUnsaved).toHaveBeenCalledTimes(3);
       expect(instance.state.values.value.selected).toBeNull();
       expect(instance.state.values.value.creating).toBe(false);
+      expect(instance.state.values.value.activeTab).toBe("definition");
       expect(element.querySelector(".ac-detail")).toBeNull();
       expect(instance.forms.handle("form")).toBeUndefined();
     });
@@ -512,7 +573,7 @@ describe("builtin actions panel detail mount lifecycle", () => {
   });
 
   it("mounts form in create mode (creating: true) while keeping catalog mounted, and unmounts form on back", async () => {
-    const { mount, element } = await mountActionsPanel();
+    const { mount, element, confirmLeaveUnsaved } = await mountActionsPanel();
     const { instance } = mount;
 
     await vi.waitFor(() => {
@@ -534,7 +595,7 @@ describe("builtin actions panel detail mount lifecycle", () => {
     expect(element.querySelector('[data-member="catalog"]')).toBe(initialCatalogEl);
     expect(catalogSection(element).style.display).toBe("none");
 
-    // Back to catalog unmounts detail and form.
+    // Clean back to catalog does not prompt and unmounts detail and form.
     const backButton = [...element.querySelectorAll<HTMLButtonElement>(".ac-detail-head button")]
       .find((button) => button.textContent?.trim() === "Back to the catalog");
     expect(backButton).toBeDefined();
@@ -545,12 +606,15 @@ describe("builtin actions panel detail mount lifecycle", () => {
       expect(element.querySelector(".ac-detail")).toBeNull();
       expect(instance.forms.handle("form")).toBeUndefined();
     });
+    expect(confirmLeaveUnsaved).not.toHaveBeenCalled();
     expect(element.querySelector('[data-member="catalog"]')).toBe(initialCatalogEl);
     expect(catalogSection(element).style.display).not.toBe("none");
   });
 
-  it("transitions from create to edit on save without unmounting detail, and unmounts detail and form after delete", async () => {
-    const { mount, element } = await mountActionsPanel();
+  it("transitions from create to edit on save without unmounting detail, and leaves detail directly after delete without unsaved prompt", async () => {
+    const { mount, element, confirmLeaveUnsaved } = await mountActionsPanel({
+      confirmLeave: () => false,
+    });
     const { instance } = mount;
 
     await vi.waitFor(() => {
@@ -579,7 +643,13 @@ describe("builtin actions panel detail mount lifecycle", () => {
     });
     expect(instance.forms.handle("form")).toBe(formHandle);
 
-    // Delete via header's remove OperationButton -> returns to catalog and unmounts detail & form.
+    // Dirty the form again before deleting to verify delete bypasses the unsaved-changes back confirmation.
+    formHandle.set("/function/code", EDITED_CODE);
+    await vi.waitFor(() => {
+      expect(formHandle.dirty.value).toBe(true);
+    });
+
+    // Delete via header's remove OperationButton -> returns to catalog directly without triggering confirmLeaveUnsaved.
     element.querySelector<HTMLButtonElement>('[data-member="remove"] button')!.click();
     await vi.waitFor(() => {
       expect(instance.state.values.value.selected).toBeNull();
@@ -587,6 +657,46 @@ describe("builtin actions panel detail mount lifecycle", () => {
       expect(element.querySelector(".ac-detail")).toBeNull();
       expect(instance.forms.handle("form")).toBeUndefined();
     });
+    expect(confirmLeaveUnsaved).not.toHaveBeenCalled();
     expect(catalogSection(element).style.display).not.toBe("none");
+  });
+
+  it("deep-links activeTab so derived and code tabs restore from initial state and address requests", async () => {
+    expect(manifest.state.activeTab?.deepLink).toBe(true);
+
+    // 1. Restore `derived` tab directly from initial state.
+    const derivedMount = await mountActionsPanel({
+      initial: {
+        selected: { className: ACTION, primaryKey: "approve-order" },
+        activeTab: "derived",
+      },
+    });
+    await vi.waitFor(() => {
+      expect(derivedMount.mount.instance.state.values.value.activeTab).toBe("derived");
+      const activeTabEl = derivedMount.element.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
+      expect(activeTabEl?.textContent?.trim()).toBe("Derived definition");
+    });
+    expect(derivedMount.mount.instance.deepLink()).toMatchObject({
+      selected: { className: ACTION, primaryKey: "approve-order" },
+      activeTab: "derived",
+    });
+
+    // 2. Restore `code` tab via an incoming address request (`applyPanelRequest`).
+    applyPanelRequest(manifest, derivedMount.mount.instance.state, {
+      useId: "ontology-actions",
+      state: {
+        selected: { className: ACTION, primaryKey: "approve-order" },
+        activeTab: "code",
+      },
+    });
+    await vi.waitFor(() => {
+      expect(derivedMount.mount.instance.state.values.value.activeTab).toBe("code");
+      const activeTabEl = derivedMount.element.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
+      expect(activeTabEl?.textContent?.trim()).toBe("Code explanation");
+    });
+    expect(derivedMount.mount.instance.deepLink()).toMatchObject({
+      selected: { className: ACTION, primaryKey: "approve-order" },
+      activeTab: "code",
+    });
   });
 });

@@ -196,6 +196,47 @@ test("a required read parameter can come from the component's declared runtime v
   }), /Member 'graph', field 'data.neighborhood.params.node'.*Required/);
 });
 
+test("ObjectRelations specializes education state and resolves the customer relationship owner", () => {
+  const selection = { kind: "object-union", objectTypes: ["Student", "Class", "Course"] };
+  const start = { kind: "object", objectType: "Course" };
+  const ids = { kind: "list", items: { kind: "scalar", type: "string" } };
+  const refs = { kind: "list", items: { kind: "object", objectType: "SchoolRelationKind" } };
+  const anyObject = { kind: "object", objectType: "@any" };
+  const component = buildComponent("ObjectRelations", {
+    data: { neighbors: { results: ["panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
+    inputs: { selected: anyObject, visibleRelationKinds: ids },
+    outputs: { selected: anyObject, start: anyObject, visibleRelationKinds: ids },
+  });
+  const state = panelManifestSchema.parse({
+    state: {
+      selection: { type: selection }, start: { type: start },
+      ids: { type: ids }, refs: { type: refs }, search: { type: search },
+    },
+    members: {},
+  }).state;
+  const options = { state, components: [component], typeTable: { objectTypes: {} } };
+  function expand(relationship: string, filterState: string, selectionState = "selection") {
+    const member = panelAuthoringMemberSchema.parse({
+      component: "ObjectRelations",
+      data: { neighbors: { read: "neighbors", type: relationship, params: { node: { state: selectionState } } } },
+      state: { selected: selectionState, start: "start", visibleRelationKinds: filterState },
+    });
+    assert("component" in member);
+    return expandPanelAuthoringMember("relations", member, options);
+  }
+  for (const [relationship, field, filterType] of [
+    ["enrolledIn", "ids", ids], ["covers", "refs", refs],
+  ] as const) {
+    const { projection, placement } = expand(relationship, field);
+    assert.deepEqual(projection.data.neighbors.source, { type: { kind: "Relationship", id: relationship } });
+    assert.deepEqual(projection.inputs, { node: selection, selected: selection, visibleRelationKinds: filterType });
+    assert.deepEqual(projection.outputs, { selected: selection, start, visibleRelationKinds: filterType });
+    assert.deepEqual(placement.inputs?.visibleRelationKinds, { state: field });
+    assert.deepEqual(placement.outputs?.visibleRelationKinds, { state: field });
+  }
+  assert.throws(() => expand("covers", "search"), /state.visibleRelationKinds.*list of strings or object references/);
+});
+
 test("ontology object lists expose the four layers as the selected output", () => {
   const ontologyType = "platform:OntologyType";
   const typeTable = { objectTypes: {

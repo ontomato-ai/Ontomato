@@ -71,6 +71,8 @@ export const en = {
   "panels.sdkComponent.readOnlyOutputDeclared": "A read-only output exposed to the panel.",
   "panels.sdkComponent.signature": "Signature",
   "panels.sdkComponent.portBinding": "the object type of the projection that uses it",
+  "panels.sdkComponent.portAnyOntologyObject": "any ontology object",
+  "panels.sdkComponent.portRelationKinds": "a list of relation kind IDs or object references",
   "panels.sdkComponent.portObject": "an object of {type}",
   "panels.sdkComponent.portScalar": "a {type} scalar",
   "panels.sdkComponent.portUnion": "an object union of {parts}",

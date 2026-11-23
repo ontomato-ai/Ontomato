@@ -198,13 +198,9 @@ const legendItems = computed<readonly LegendItem[]>(() => {
 const summarySections = computed<readonly AnnotatedCodeSummarySection[]>(() => annotated.value?.summary ?? []);
 const showSummaryArea = computed(() => summarySections.value.length > 0 || resolvedEmptySummaryText.value.length > 0);
 
-const localActiveSegmentId = ref<string | null>(null);
 const activeSegmentId = computed<string | null>(() => {
   const fromParam = activeSegmentParam.value.value;
-  if (typeof fromParam === "string" && fromParam.length > 0) return fromParam;
-  const fromInput = member.inputs.value.activeSegmentId;
-  if (typeof fromInput === "string" && fromInput.length > 0) return fromInput;
-  return localActiveSegmentId.value;
+  return typeof fromParam === "string" && fromParam.length > 0 ? fromParam : null;
 });
 
 const activeSegment = computed<AnnotatedCodeSegment | null>(() => {
@@ -220,14 +216,32 @@ const selectedRef = ref<string | null>(null);
 const codeBox = ref<HTMLElement | null>(null);
 const segmentsBox = ref<HTMLElement | null>(null);
 
-function setActiveSegment(id: string | null) {
-  localActiveSegmentId.value = id;
+type ScrollTargets = "both" | "code" | "segments";
+let pendingLocalScroll: { readonly id: string; readonly targets: "code" | "segments" } | null = null;
+
+function setActiveSegment(id: string | null): boolean {
   try {
     activeSegmentParam.set(id);
   } catch {
-    // Fixed literal input cannot be overwritten; retain local highlight state.
+    // Fixed literal input cannot be overwritten; do not invent a stale local fallback.
+    return false;
   }
   emit("select-segment", id);
+  return true;
+}
+
+function scrollSegmentIntoView(segment: AnnotatedCodeSegment, targets: ScrollTargets) {
+  void nextTick(() => {
+    if (activeSegment.value?.id !== segment.id) return;
+    if (targets === "both" || targets === "code") {
+      const lineTarget = codeBox.value?.querySelector(`[data-line="${segment.lineRange.start}"]`) ?? null;
+      scrollContainerToElement(codeBox.value, lineTarget);
+    }
+    if (targets === "both" || targets === "segments") {
+      const segTarget = segmentsBox.value?.querySelector(`[data-segment-id="${escapeAttrValue(segment.id)}"]`) ?? null;
+      scrollContainerToElement(segmentsBox.value, segTarget);
+    }
+  });
 }
 
 watch(annotated, (next, prev) => {
@@ -239,6 +253,18 @@ watch(annotated, (next, prev) => {
     setActiveSegment(null);
   }
 });
+
+watch(
+  activeSegment,
+  (segment) => {
+    const local = pendingLocalScroll;
+    pendingLocalScroll = null;
+    if (!segment) return;
+    const targets: ScrollTargets = local && local.id === segment.id ? local.targets : "both";
+    scrollSegmentIntoView(segment, targets);
+  },
+  { immediate: true, flush: "post" },
+);
 
 useMemberOutput("status", () => contentData.value.status);
 useMemberOutput("activeSegmentId", () => activeSegmentId.value);
@@ -299,22 +325,28 @@ function pickLine(lineNumber: number) {
       best = entry;
     }
   }
+  const prevSegment = activeSegment.value;
   const nextId = best?.segment.id ?? null;
-  setActiveSegment(nextId);
-  if (nextId) {
-    void nextTick(() => {
-      const target = segmentsBox.value?.querySelector(`[data-segment-id="${escapeAttrValue(nextId)}"]`) ?? null;
-      scrollContainerToElement(segmentsBox.value, target);
-    });
+  if (!setActiveSegment(nextId)) return;
+  const nextSegment = activeSegment.value;
+  if (!nextSegment) return;
+  if (nextSegment !== prevSegment) {
+    pendingLocalScroll = { id: nextSegment.id, targets: "segments" };
+  } else {
+    scrollSegmentIntoView(nextSegment, "segments");
   }
 }
 
 function pickSegment(segment: AnnotatedCodeSegment) {
-  setActiveSegment(segment.id);
-  void nextTick(() => {
-    const target = codeBox.value?.querySelector(`[data-line="${segment.lineRange.start}"]`) ?? null;
-    scrollContainerToElement(codeBox.value, target);
-  });
+  const prevSegment = activeSegment.value;
+  if (!setActiveSegment(segment.id)) return;
+  const nextSegment = activeSegment.value;
+  if (!nextSegment) return;
+  if (nextSegment !== prevSegment) {
+    pendingLocalScroll = { id: nextSegment.id, targets: "code" };
+  } else {
+    scrollSegmentIntoView(nextSegment, "code");
+  }
 }
 
 function selectRef(refKey: string) {

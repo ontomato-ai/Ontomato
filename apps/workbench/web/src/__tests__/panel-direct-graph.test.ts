@@ -911,18 +911,18 @@ it("drives direct ObjectRelations through useMemberData with complete identities
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-relations-error")?.textContent).toContain("Upstream graph failed"));
 });
 
-it("marks truncated customer Relationship neighbors (panelRelationNeighbors) on direct ObjectRelations", async () => {
+it("shows truncated edges alongside a refused direction and hides an unbound start action", async () => {
   const relationProjection: ProductProjection = {
     ...meta,
     id: "customer-relations",
     name: "Customer relations",
     componentId: "@ontomato/sdk:ObjectRelations",
     inputs: { selected: { kind: "object", objectType: "Customer" } },
-    outputs: { selected: { kind: "object", objectType: "Order" } },
-    config: {},
+    outputs: { start: { kind: "object", objectType: "Customer" } },
+    config: { showSummary: true, allowSetStart: false },
     data: {
       neighbors: {
-        source: { type: { kind: "Relationship", id: "places" } },
+        source: { type: { kind: "Relationship", id: "refers" } },
         read: "neighbors",
         params: { node: { input: "selected" } },
       },
@@ -939,28 +939,96 @@ it("marks truncated customer Relationship neighbors (panelRelationNeighbors) on 
       },
     },
   };
-  const { element } = mountDirect(
+  const { instance, element } = mountDirect(
     manifest,
     { "customer-relations": relationProjection },
-    () => ready({
-      node: { className: "Customer", primaryKey: "cust-1", label: "Acme", layer: "fact" },
-      neighbors: [{ className: "Order", primaryKey: "ord-1", label: "Order #1", layer: "fact" }],
-      edges: [
-        {
-          id: "rel-edge-1",
-          relationKind: "places",
-          from: { className: "Customer", primaryKey: "cust-1" },
-          to: { className: "Order", primaryKey: "ord-1" },
-          direction: "outgoing",
-          derived: false,
-        },
-      ],
-      relations: [{ relationKind: "places", status: "ok", edgeCount: 1, truncated: true }],
-    }),
-    { initial: { selected: { className: "Customer", primaryKey: "cust-1" } } },
+    ({ inputs }) => {
+      const node = inputs.selected as { className: string; primaryKey: string };
+      return ready({
+        node: { ...node, label: "Acme", typeLabel: "Customer account", layer: "fact" },
+        neighbors: [{ className: "Customer", primaryKey: "cust-2", label: "Globex", typeLabel: "Customer account", layer: "fact" }],
+        edges: [
+          {
+            id: "rel-edge-1",
+            relationKind: "refers",
+            label: "Referral edge",
+            from: node,
+            to: { className: "Customer", primaryKey: "cust-2" },
+            direction: "outgoing",
+            derived: false,
+          },
+        ],
+        relations: [{
+          relationKind: "refers", label: "Referrals", status: "refused",
+          reason: "Incoming referrals require permission", edgeCount: 1, truncated: node.primaryKey === "cust-1",
+        }],
+      });
+    },
+    { initial: { selected: { className: "Customer", primaryKey: "cust-0" } } },
   );
-  await vi.waitFor(() => expect(element.querySelector(".sdk-object-relations-peer-name")?.textContent).toBe("Order #1"));
-  expect(element.querySelector("[data-relation-kind='places']")?.getAttribute("data-truncated")).toBe("true");
+  await vi.waitFor(() => expect(instance.outputs.relations?.edgeCount).toBe(1));
+  instance.state.set("selected", { className: "Customer", primaryKey: "cust-1" });
+  await vi.waitFor(() => expect(instance.outputs.relations.edgeCount).toBeNull());
+  const group = element.querySelector('[data-relation-kind="refers"][data-status="refused"][data-truncated="true"]')!;
+  expect(group.querySelector(".sdk-object-relations-peer-name")?.textContent).toBe("Globex");
+  expect(group.querySelector(".sdk-object-relations-reason")?.textContent).toBe("Incoming referrals require permission");
+  expect(group.querySelector(".sdk-object-relations-kind")?.textContent).toBe("Referrals");
+  expect(group.querySelector(".sdk-object-relations-peer-type")?.textContent).toBe("Customer account");
+  expect(element.querySelector(".sdk-object-relations-type")?.textContent).toBe("Customer account");
+  expect(group.querySelector(".sdk-object-relations-count")?.textContent?.trim())
+    .toBe(publicEn.platform.relationsGroupTruncated.replace("{count}", "1"));
+  expect(element.querySelector(".sdk-object-relations-summary-count")?.textContent?.trim())
+    .toBe(publicEn.platform.relationsSummaryTruncated.replace("{count}", "1"));
+  expect(instance.outputs.relations.edgeCount).toBeNull();
+  expect(group.querySelector(".sdk-object-relations-set-start")).toBeNull();
+});
+
+it("syncs string relation kinds from education panel state to ObjectRelations and back", async () => {
+  const selection = { kind: "object-union", objectTypes: ["Student", "Class", "Course"] } satisfies ProductProjection["inputs"][string];
+  const kinds = { kind: "list", items: { kind: "scalar", type: "string" } } as const;
+  const projection: ProductProjection = {
+    ...meta, id: "class-relations", name: "Class Relations", componentId: "@ontomato/sdk:ObjectRelations",
+    inputs: { selected: selection, visibleRelationKinds: kinds },
+    outputs: { visibleRelationKinds: kinds },
+    config: { showRelationFilter: true },
+    data: { neighbors: {
+      source: { type: { kind: "Relationship", id: "covers" } }, read: "neighbors",
+      params: { node: { input: "selected" } },
+    } },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: selection },
+      kinds: { type: kinds },
+    },
+    members: {
+      relations: {
+        target: { projectionId: projection.id },
+        inputs: { selected: { state: "selected" }, visibleRelationKinds: { state: "kinds" } },
+        outputs: { visibleRelationKinds: { state: "kinds" } },
+      },
+    },
+  });
+  const node = { className: "Class", primaryKey: "class-1" };
+  const course = { className: "Course", primaryKey: "course-1" };
+  const { instance, element } = mountDirect(manifest, { [projection.id]: projection }, () => ready({
+    node: { ...node, label: "Class 1", layer: "fact" },
+    neighbors: [{ ...course, label: "Course 1", layer: "fact" }],
+    edges: [{ id: "class-1-covers-course-1", relationKind: "covers", from: node, to: course, direction: "outgoing", derived: false }],
+    relations: [{ relationKind: "covers", status: "ok", edgeCount: 1, truncated: false }],
+  }), { initial: { selected: node } });
+
+  const group = '[data-relation-kind="covers"]';
+  await vi.waitFor(() => expect(element.querySelector(group)).not.toBeNull());
+  expect(instance.outputs.relations.edgeCount).toBe(1);
+  instance.state.set("kinds", ["enrolledIn"]);
+  await vi.waitFor(() => expect(element.querySelector('[data-status="filtered-empty"]')).not.toBeNull());
+  element.querySelector<HTMLElement>(".sdk-object-relations-filter-select .el-select__wrapper")!.click();
+  await vi.waitFor(() => expect(document.querySelectorAll(".el-select-dropdown__item")).toHaveLength(2));
+  const options = [...document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")];
+  options.find(option => option.textContent?.trim() === "covers")!.click();
+  await vi.waitFor(() => expect(instance.state.values.value.kinds).toEqual(["enrolledIn", "covers"]));
+  expect(element.querySelector(group)).not.toBeNull();
 });
 
 it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberData and platformOntologyAdapters", async () => {

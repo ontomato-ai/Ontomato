@@ -235,22 +235,26 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       visibleLayers: stringList,
       expandedNodes: ontologyNodeList,
     });
-    const relationKindList = { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } };
+    const platformRelationKindList = { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } };
     assert.deepEqual(declared.get("OntologyGraph").outputs, {
       selectedNode: ontologyNode,
       selected: ontologyNode,
       selectedType: { kind: "scalar", type: "string" },
-      visibleRelationKinds: relationKindList,
+      visibleRelationKinds: platformRelationKindList,
       visibleLayers: stringList,
       expandedNodes: ontologyNodeList,
     });
-    assert.deepEqual(declared.get("ObjectRelations").inputs, {
-      selected: ontologyNode,
+    const relationKindList = { kind: "list", items: { kind: "scalar", type: "string" } };
+    const anyObject = { kind: "object", objectType: "@any" };
+    const objectRelations = declared.get("ObjectRelations");
+    assert.ok(objectRelations.bindsElement.includes("Relationship:*"));
+    assert.deepEqual(objectRelations.inputs, {
+      selected: anyObject,
       visibleRelationKinds: relationKindList,
     });
-    assert.deepEqual(declared.get("ObjectRelations").outputs, {
-      selected: ontologyNode,
-      start: ontologyNode,
+    assert.deepEqual(objectRelations.outputs, {
+      selected: anyObject,
+      start: anyObject,
       visibleRelationKinds: relationKindList,
     });
     for (const propName of ["show-relation-filter", "allow-set-start", "show-summary", "collapse-empty-groups"]) {
@@ -373,10 +377,10 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(componentsDoc, /`<sdk-button>`/);
     assert.match(componentsDoc, /`v-sdk-loading`/);
     assert.match(componentsDoc, /`--sdk-color-primary`/);
-    const relationsDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("ObjectRelations\n"));
+    const ontologyGraphDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("OntologyGraph\n"));
     assert.match(
-      relationsDoc,
-      /Inputs:\n\n- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
+      ontologyGraphDoc,
+      /Inputs:\n\n[\s\S]*?- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n[\s\S]*?- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
       "docs/components.md must print both layers and objectTypes for object-union ports",
     );
     assert.match(
@@ -388,6 +392,10 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     for (const kind of ['"text"', '"tag"', '"tags"', '"reference"', '"time"']) {
       assert.ok(columnTypeLine.includes(kind), `ObjectListColumn in docs/components.md must include kind ${kind}: ${columnTypeLine}`);
     }
+    const relationsDoc = componentsDoc.match(/^## ObjectRelations\n([\s\S]*?)(?=^## )/mu)?.[1] ?? "";
+    assert.match(relationsDoc, /`selected`: any ontology object/u);
+    assert.match(relationsDoc, /`visibleRelationKinds`: a list of relation kind IDs or object references/u);
+    assert.doesNotMatch(relationsDoc, /@any/u);
     const referenceDoc = readFileSync(join(out, version, "docs/reference.md"), "utf8");
     assert.doesNotMatch(referenceDoc, /type PanelComponent = PanelComponent;/u);
     assert.equal(
