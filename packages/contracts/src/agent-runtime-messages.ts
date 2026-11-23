@@ -61,6 +61,20 @@ export const runtimeUsageSchema = z
       .strict(),
   })
   .strict();
+/**
+ * Token counts alone, for engines that report usage without a per-token price (the gateway prices the call,
+ * not the engine). A later report replaces an earlier one; counts are never summed across engines.
+ */
+export const runtimeUsageCountSchema = z
+  .object({
+    input: runtimeSequenceSchema,
+    output: runtimeSequenceSchema,
+    cacheRead: runtimeSequenceSchema,
+    cacheWrite: runtimeSequenceSchema,
+    reasoning: runtimeSequenceSchema.optional(),
+    totalTokens: runtimeSequenceSchema,
+  })
+  .strict();
 
 /** JSON Schema, interpreted at the skill/provider boundary rather than by a business host. */
 export const runtimeToolDeclarationSchema = z
@@ -113,6 +127,11 @@ export const runtimeAssistantMessageSchema = z
       .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
       .optional(),
     usage: runtimeUsageSchema.nullable(),
+    /**
+     * Whether the engine meant this message as process or as its answer. Advisory: the run's `answerMessageId`
+     * still decides what the reader sees as the answer, and an engine that has no such distinction omits it.
+     */
+    phase: z.enum(["process", "answer"]).optional(),
     // Pending is only valid in an in-memory partial, never a settled message row.
     stopReason: z.enum([
       "pending",
@@ -226,6 +245,14 @@ export const runtimeAssistantStreamEventSchema = z.discriminatedUnion("type", [
 ]);
 
 export type RuntimeMessage = z.infer<typeof runtimeMessageSchema>;
+export type RuntimeSettledMessage = z.infer<typeof runtimeSettledMessageSchema>;
+export type RuntimeText = z.infer<typeof runtimeTextSchema>;
+export type RuntimeImage = z.infer<typeof runtimeImageSchema>;
+export type RuntimeToolDeclaration = z.infer<
+  typeof runtimeToolDeclarationSchema
+>;
+export type RuntimeUsage = z.infer<typeof runtimeUsageSchema>;
+export type RuntimeUsageCount = z.infer<typeof runtimeUsageCountSchema>;
 export type RuntimeAssistantMessage = z.infer<
   typeof runtimeAssistantMessageSchema
 >;

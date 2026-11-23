@@ -21,6 +21,7 @@ export const runtimeJsonValueSchema: z.ZodType<RuntimeJsonValue> = z.lazy(() =>
   ]),
 );
 export const runtimeJsonObjectSchema = z.record(runtimeJsonValueSchema);
+export type RuntimeJsonObject = Record<string, RuntimeJsonValue>;
 export const runtimeIdSchema = z.string().uuid();
 export const runtimeKeySchema = z.string().min(1);
 export const runtimeSequenceSchema = z.number().int().nonnegative().safe();
