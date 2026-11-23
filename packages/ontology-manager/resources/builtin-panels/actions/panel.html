@@ -98,7 +98,7 @@
     </section>
 
     <!-- Details: selected action header, definition form, derived definition tables, and annotated code explanation. -->
-    <section class="ac-detail" v-show="detailVisible">
+    <section class="ac-detail" v-if="detailVisible">
       <div class="ac-detail-head">
         <sdk-button size="small" text @click="back">{{ t("back") }}</sdk-button>
         <projection v-if="selected" slot="header" class="ac-detail-header">
