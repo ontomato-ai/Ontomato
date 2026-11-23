@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { mountPanel, usePanelBack, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:BusinessKnowledge";
@@ -27,7 +27,7 @@ await mountPanel({
       return value === "edit" || value === "create" ? value : "view";
     });
     const editing = computed(() => mode.value !== "view");
-    const detailOpen = ref(mode.value !== "view");
+    const detailOpen = ref(Boolean(selected.value) || mode.value !== "view");
     const narrow = ref(false);
     const root = ref(null);
     const returnTarget = ref(selected.value);
@@ -48,6 +48,15 @@ await mountPanel({
       try {
         const handle = instance.forms?.handle?.("form");
         return Boolean(handle?.busy?.value ?? handle?.busy);
+      } catch {
+        return false;
+      }
+    });
+
+    const formCanSubmit = computed(() => {
+      try {
+        const handle = instance.forms?.handle?.("form");
+        return Boolean(handle?.canSubmit?.value ?? handle?.canSubmit);
       } catch {
         return false;
       }
@@ -90,6 +99,20 @@ await mountPanel({
 
     let prevSelected = selected.value;
     let handlingUserSelect = false;
+    let suppressAutoDetailOpen = false;
+    let closingToList = false;
+
+    function onListUpdateSelected() {
+      // ObjectList emits `update:selected` for automatic fallback selections (`fallbackToFirst`
+      // and filter fallback) without emitting `choose`. Keep narrow containers on the list view
+      // for those automatic updates; explicit clicks emit `choose` synchronously right after and
+      // open detail in `onUserSelect`.
+      suppressAutoDetailOpen = true;
+      void nextTick(() => {
+        suppressAutoDetailOpen = false;
+      });
+    }
+
     watch(
       selected,
       (value, old) => {
@@ -105,7 +128,16 @@ await mountPanel({
       { immediate: true },
     );
     watch([selected, editing], ([sel, isEditing]) => {
-      if (!sel && !isEditing) detailOpen.value = false;
+      if (isEditing) {
+        detailOpen.value = true;
+        return;
+      }
+      if (!sel) {
+        detailOpen.value = false;
+        return;
+      }
+      if (suppressAutoDetailOpen || closingToList) return;
+      detailOpen.value = true;
     });
 
     let revertingMode = false;
@@ -143,6 +175,7 @@ await mountPanel({
 
     async function onUserSelect(nextSelection) {
       if (!nextSelection) return;
+      suppressAutoDetailOpen = false;
       detailOpen.value = true;
       if (!editing.value) return;
 
@@ -176,9 +209,17 @@ await mountPanel({
 
     function backToList() {
       if (editing.value) {
-        void editBack.back().then((left) => {
-          if (left) detailOpen.value = false;
-        });
+        closingToList = true;
+        void editBack
+          .back()
+          .then((left) => {
+            if (left) detailOpen.value = false;
+          })
+          .finally(() => {
+            void nextTick(() => {
+              closingToList = false;
+            });
+          });
         return;
       }
       void narrowBack.back();
@@ -234,7 +275,9 @@ await mountPanel({
       root,
       formDirty,
       formBusy,
+      formCanSubmit,
       t,
+      onListUpdateSelected,
       onUserSelect,
       openCreate: () => instance.state.set("mode", "create"),
       refresh: () => instance.refreshObjects(),
