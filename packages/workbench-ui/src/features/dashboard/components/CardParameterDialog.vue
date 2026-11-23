@@ -24,6 +24,8 @@ const emit = defineEmits<{ saved: [cardId: string] }>();
 const { t } = useI18n();
 
 const form = ref<DashboardParameterForm | null>(null);
+const loadedCardId = ref<string | null>(null);
+const loadedDashboardId = ref<string | null>(null);
 const values = ref<Record<string, string>>({});
 const original = ref<Record<string, string>>({});
 const edited = ref(new Set<string>());
@@ -43,29 +45,63 @@ const changes = computed(() => {
     .map((field) => ({ key: field.key, label: field.label, from: original.value[field.key] ?? "", to: values.value[field.key] ?? "" }));
 });
 
-watch(visible, (open) => {
-  if (!open || !props.card) return;
-  form.value = null;
-  values.value = {};
-  original.value = {};
-  edited.value = new Set();
-  fieldErrors.value = {};
-  failure.value = null;
-  loading.value = true;
-  const seq = ++loadSeq;
-  loadPromise = (async () => {
-    try {
-      form.value = await fetchCardParameterForm(props.dashboardId, props.card!.id);
-      original.value = { ...form.value.values };
-      values.value = { ...form.value.values };
-    } catch (error) {
-      failure.value = cardError(error);
-    } finally {
+function isCurrentFormLoaded(): boolean {
+  return Boolean(
+    visible.value
+    && form.value
+    && props.card
+    && loadedCardId.value === props.card.id
+    && loadedDashboardId.value === props.dashboardId,
+  );
+}
+
+async function waitForLoad(): Promise<void> {
+  while (loadPromise) {
+    const pending = loadPromise;
+    await pending;
+  }
+}
+
+watch(
+  [visible, () => props.dashboardId, () => props.card?.id ?? null] as const,
+  ([open, dashboardId, cardId]) => {
+    const seq = ++loadSeq;
+    loadedCardId.value = null;
+    loadedDashboardId.value = null;
+    form.value = null;
+    values.value = {};
+    original.value = {};
+    edited.value = new Set();
+    fieldErrors.value = {};
+    failure.value = null;
+    if (!open || !cardId) {
       loading.value = false;
-      if (loadSeq === seq) loadPromise = null;
+      loadPromise = null;
+      return;
     }
-  })();
-}, { immediate: true });
+    loading.value = true;
+    loadPromise = (async () => {
+      try {
+        const loaded = await fetchCardParameterForm(dashboardId, cardId);
+        if (loadSeq !== seq) return;
+        form.value = loaded;
+        loadedCardId.value = cardId;
+        loadedDashboardId.value = dashboardId;
+        original.value = { ...loaded.values };
+        values.value = { ...loaded.values };
+      } catch (error) {
+        if (loadSeq !== seq) return;
+        failure.value = cardError(error);
+      } finally {
+        if (loadSeq === seq) {
+          loading.value = false;
+          loadPromise = null;
+        }
+      }
+    })();
+  },
+  { immediate: true },
+);
 
 function edit(key: string, value: string) {
   values.value = { ...values.value, [key]: value };
@@ -84,8 +120,8 @@ async function fillValues(
   patch: Readonly<Record<string, RuntimeJsonValue>>,
   overwriteUnsaved?: boolean,
 ): Promise<FormFillOutcome> {
-  if (loadPromise) await loadPromise;
-  if (!visible.value || !form.value) {
+  await waitForLoad();
+  if (!isCurrentFormLoaded() || !form.value) {
     return {
       ok: false,
       reason: "form_not_ready",
@@ -140,18 +176,24 @@ async function fillValues(
 }
 
 async function save(): Promise<boolean> {
-  const card = props.card!;
+  if (!isCurrentFormLoaded() || !props.card || !form.value) return false;
+  const targetDashboardId = props.dashboardId;
+  const targetCardId = props.card.id;
+  const targetRevision = form.value.revision;
+  const targetValues = Object.fromEntries([...edited.value].map((key) => [key, values.value[key]!]));
   saving.value = true;
   failure.value = null;
   try {
     await saveCardParameters({
-      dashboardId: props.dashboardId,
-      cardId: card.id,
-      revision: form.value!.revision,
-      values: Object.fromEntries([...edited.value].map((key) => [key, values.value[key]!])),
+      dashboardId: targetDashboardId,
+      cardId: targetCardId,
+      revision: targetRevision,
+      values: targetValues,
     });
-    emit("saved", card.id);
-    visible.value = false;
+    emit("saved", targetCardId);
+    if (props.card?.id === targetCardId && props.dashboardId === targetDashboardId) {
+      visible.value = false;
+    }
     return true;
   } catch (error) {
     const details = error instanceof ApiRequestError ? (error.payload.details as { errors?: { field: string; message: string }[] }) : undefined;
@@ -178,8 +220,8 @@ async function save(): Promise<boolean> {
 }
 
 async function saveFromAction(operation: string): Promise<PageActionOutcome> {
-  if (loadPromise) await loadPromise;
-  if (!visible.value || !form.value) {
+  await waitForLoad();
+  if (!isCurrentFormLoaded() || !form.value) {
     return { ok: false, reason: "action_not_ready", operation, message: "The card parameter form is not open." };
   }
   if (edited.value.size === 0) {
@@ -200,6 +242,9 @@ function discard() {
 
 defineExpose({
   isOpen: visible,
+  currentCardId: () => props.card?.id ?? null,
+  hasUnsavedChanges: () => edited.value.size > 0,
+  waitForLoad,
   fillValues,
   saveFromAction,
   discard,
