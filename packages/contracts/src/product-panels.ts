@@ -282,16 +282,6 @@ export const applicationPanelUseSchema = z.object({
   descriptions: z.record(z.string().refine(text => text.trim().length > 0, "Expected a nonblank description"))
     .refine(text => Object.keys(text).length > 0, "At least one localized description is required").optional(),
   inputs: applicationPanelInputsSchema.optional(),
-  /**
-   * A menu count from the named data read on a member of this entry's content panel.
-   * Two entries can supply different fixed inputs to the same panel and receive different counts.
-   * Use the result's total when present or the length of an array result. An empty read counts as zero.
-   * Omit the count for forbidden or failed reads.
-   */
-  count: z.object({
-    member: panelMemberPathSegmentSchema.shape.member,
-    data: directProjectionPortsSchema.shape.data.keySchema,
-  }).strict().optional(),
   groupKey: applicationMetadataSchema.shape.groups.element.shape.key.optional(),
 }).strict();
 export type ApplicationPanelUse = z.infer<typeof applicationPanelUseSchema>;
@@ -308,6 +298,7 @@ export const applicationEntryResolutionQuerySchema = z.union([
 ]);
 export type ApplicationEntryResolutionQuery = z.infer<typeof applicationEntryResolutionQuerySchema>;
 export const applicationEntryMenuSchema = z.object({
+  names: applicationMetadataSchema.shape.names.optional(),
   groups: applicationMetadataSchema.shape.groups,
   panelUses: z.array(applicationPanelUseSchema),
 }).strict();

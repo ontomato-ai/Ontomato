@@ -63,12 +63,13 @@ it("opens and highlights a panel application under its application route", () =>
   expect(appAt(rail, "/applications/app-panels-trial-a/tasks")?.id).toBe(application.id);
 });
 
-it("lists only named panel uses in declared order and gives one named use no menu", () => {
+it("propagates framePanelId and leaves panel application menus to their frame panel", () => {
   const use = (path: string, names?: Record<string, string>) => ({
     id: path, pageKey: path, panelId: "shared-panel", path, access: { kind: "domain-member" as const }, names,
   });
   const application = {
     ...catalogFixture()[0]!, id: "app-panels-trial-b", kind: "product" as const,
+    framePanelId: "builtin-product-platform-frame",
     entry: { renderer: "panels", path: "/panels-trial-b" },
     panelUses: [
       use("/applications/app-panels-trial-b/tasks", { en: "Tasks", "zh-CN": "定时任务" }),
@@ -80,13 +81,10 @@ it("lists only named panel uses in declared order and gives one named use no men
     generatedNavigation(), closedAccess([]), catalogPartition([app], "zh-CN"), t,
   )[0]!;
   const both = declare(application);
-  expect(both.frame).toBe("menu");
-  expect(both.groups?.flatMap(group => group.pages)).toEqual([
-    { id: "/applications/app-panels-trial-b/tasks", label: "定时任务" },
-    { id: "/applications/app-panels-trial-b/summary", label: "Task summary" },
-  ]);
+  expect(both.framePanelId).toBe("builtin-product-platform-frame");
+  expect(both.groups).toEqual([]);
   const single = declare({ ...application, panelUses: application.panelUses.slice(0, 2) });
-  expect(single.frame).toBeUndefined();
+  expect(single.framePanelId).toBe("builtin-product-platform-frame");
   expect(single.groups).toEqual([]);
 });
 
@@ -112,20 +110,6 @@ describe("the operations application's user feedback", () => {
   it("does not open on user feedback for a reader the catalogue gives no such entry", () => {
     expect(operations(["user-feedback"], withoutFeedback).home).not.toBe("/ops/feedback");
   });
-});
-
-it("gives a panel entry's row the count its entry declares, and keeps a native page's own count for an entry declaring none", () => {
-  const catalog = catalogFixture().map(app => app.id !== "ontology" ? app : {
-    ...app,
-    panelUses: (app.panelUses ?? []).map(use => use.id === "ontology-functions" ? { ...use, count: { member: "list", data: "rows" } } : use),
-  });
-  // The shell's reading of the declared read (its own module's tests cover the read).
-  const read = (applicationId: string, use: { id: string }) => `${applicationId}/${use.id}` === "ontology/ontology-functions" ? 63 : null;
-  const ontology = catalogPartition(catalog, "zh-CN", {}, read).find(app => app.id === "ontology")!;
-  expect(ontology.entries?.get("/ontology/assets/functions")).toMatchObject({ count: 63 });
-  // An entry that declares nothing carries no count of its own: the row it stands in keeps the page's.
-  const graph = ontology.entries?.get("/ontology/playground");
-  expect(graph && "count" in graph).toBe(false);
 });
 
 it("skips reading native page counts for applications whose menu is not active", () => {

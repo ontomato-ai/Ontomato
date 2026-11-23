@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-platform-frame",
+      "input": {
+        "name": "Platform application frame",
+        "description": "Default platform application frame panel rendering the official application navigation menu for multi-entry applications and the current entry content."
+      }
+    }
+  ]
+}

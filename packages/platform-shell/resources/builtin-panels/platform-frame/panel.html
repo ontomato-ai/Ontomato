@@ -1,0 +1,56 @@
+<style>
+  .platform-frame-shell {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    container-type: inline-size;
+  }
+
+  .platform-frame {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .platform-frame-content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .platform-frame-content > .sdk-current-entry-slot {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  @container (max-width: 760px) {
+    .platform-frame {
+      flex-direction: column;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .platform-frame {
+      flex-direction: column;
+    }
+  }
+</style>
+
+<div id="app" class="platform-frame-shell">
+  <div class="platform-frame">
+    <app-menu v-if="showMenu" />
+    <div class="platform-frame-content">
+      <current-entry member="content" />
+    </div>
+  </div>
+</div>

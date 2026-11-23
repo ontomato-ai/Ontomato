@@ -38,6 +38,7 @@ import {
   reconcileDefinitionCacheWithSnapshot, setCachedPanel,
 } from "./panel-definition-cache";
 import { workbenchI18n, workbenchLanguage } from "@ontomato/workbench-ui/i18n";
+import type { Router } from "vue-router";
 import * as Vue from "vue";
 import { provideGlobalConfig } from "element-plus";
 import { runPanelModule, useTemplateCompiler } from "./panel-module";
@@ -256,6 +257,7 @@ export function platformPanelHost(
  */
 export function framePanelHost(
   applicationId: string, use: ApplicationPanelUse, framePanelId: string, changed: (change: PanelObjectChange) => void,
+  router?: Router,
 ): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
   const shown: PanelUseRef = { applicationId, useId: use.id };
   const frameSource: PanelReadSource = { kind: "frame", applicationId, useId: use.id } as PanelReadSource;
@@ -313,7 +315,7 @@ export function framePanelHost(
     release,
     frame: () => { throw new Error("An application's frame runs in the platform's document, not in a frame"); },
     coded: (source, run, target) => mountCoded(
-      withNested(directOptions(source, run, shown, changed, undefined, frameSource, "frame", mountUnavailable), frameSource),
+      withNested(directOptions(source, run, shown, changed, undefined, frameSource, "frame", mountUnavailable, router), frameSource),
       target, source.panel.content.module,
     ),
     // The frame is the entry's: it stands while Java still names the same entry, bound to the same frame panel.
@@ -336,6 +338,113 @@ export function framePanelHost(
         mountUnavailable.clear();
         for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
       }
+      return answer;
+    },
+    mode: { kind: "view" },
+  };
+}
+
+/**
+ * A platform-shipped frame panel mounted around a built-in native application that has no registered panel entries
+ * (such as System settings or Permissions): reads the platform panel record directly without a panel-use anchor and
+ * renders its official navigation menu around the native route's page.
+ */
+export function builtinFramePanelHost(
+  applicationId: string,
+  framePanelId: string,
+  router?: Router,
+): PanelHostPort<Extract<PanelHostSource | DirectPanelHostSource, { kind: "registered" }>> {
+  const placeholderUse: ApplicationPanelUse = {
+    id: applicationId,
+    pageKey: applicationId,
+    panelId: framePanelId,
+    path: `/${applicationId}`,
+    access: { kind: "domain-member" },
+  };
+  const shown: PanelUseRef = { applicationId, useId: placeholderUse.id };
+  const sourceQuery = new URLSearchParams({ includeProjections: "1" });
+  const cacheKey = framePanelCacheKey(applicationId, framePanelId);
+  let lastPanel: ProductPanel | undefined;
+  let sourceReconciled = false;
+  return {
+    async source() {
+      sourceReconciled = false;
+      const cached = getCachedPanel(cacheKey);
+      if (cached) {
+        const scope = currentDefinitionCacheScope();
+        let verified;
+        try {
+          verified = panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(framePanelId)));
+        } catch (failure) {
+          invalidateCachedPanel(cacheKey);
+          throw failure;
+        }
+        reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
+        if (verified.panel.revision === cached.revision) {
+          lastPanel = cached;
+          sourceReconciled = true;
+          return { kind: "registered", applicationId, use: placeholderUse, panel: cached };
+        }
+        invalidateCachedPanel(cacheKey);
+        sourceReconciled = true;
+      }
+      const scope = currentDefinitionCacheScope();
+      const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
+      setCachedPanel(cacheKey, answer.panel, scope);
+      ingestBundledPanelProjections(answer.projections, scope);
+      lastPanel = answer.panel;
+      return { kind: "registered", applicationId, use: placeholderUse, panel: answer.panel };
+    },
+    sourceReconciled: () => sourceReconciled,
+    pageKey: placeholderUse.pageKey,
+    use: shown,
+    async panel(panelId) {
+      if (panelId === framePanelId) {
+        const scope = currentDefinitionCacheScope();
+        const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}?${sourceQuery}`));
+        setCachedPanel(cacheKey, answer.panel, scope);
+        ingestBundledPanelProjections(answer.projections, scope);
+        lastPanel = answer.panel;
+        return answer.panel;
+      }
+      return panel(panelId);
+    },
+    release,
+    frame: () => { throw new Error("An application's frame runs in the platform's document, not in a frame"); },
+    coded: (source, run, target) => {
+      const { global } = workbenchI18n();
+      const navRouter = router ?? platformRouter();
+      return mountCoded({
+        manifest: source.panel.manifest,
+        run,
+        requests: platformRequests,
+        readProjection: (id) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id)),
+        use: null,
+        read: () => Promise.resolve({ status: "forbidden", reason: "Native frame does not read panel data" }),
+        confirmOperation: () => Promise.reject(new Error("A native frame runs no panel operations")),
+        expandPageComposer: expandDeclaredComposer,
+        navigate: panelNavigator(navRouter),
+        messages: source.panel.content.messages ?? {},
+        locale: global.locale,
+        defaultLocale: String(global.fallbackLocale.value),
+        translate: (key, params) => global.t(key, params ?? {}),
+        nested: () => { throw new Error("A native frame does not mount nested panels"); },
+      }, target, source.panel.content.module);
+    },
+    async current() {
+      return true;
+    },
+    async snapshot(panelId) {
+      const scope = currentDefinitionCacheScope();
+      const targetKey = panelId === framePanelId ? cacheKey : panelId;
+      let answer;
+      try {
+        answer = panelDefinitionSnapshotSchema.parse(await json(panelHostPaths.snapshot(panelId)));
+      } catch (failure) {
+        invalidateCachedPanel(targetKey);
+        throw failure;
+      }
+      reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
       return answer;
     },
     mode: { kind: "view" },
@@ -402,6 +511,7 @@ function directOptions(
   root?: "frame",
   /** Bundled unavailable fixed projections for this mount only; never persisted across re-entries. */
   mountUnavailable?: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>>,
+  router?: Router,
 ): OwnPanelOptions {
   const { global } = workbenchI18n();
   return {
@@ -419,7 +529,7 @@ function directOptions(
       hooks?.onConfirmed ? { onConfirmed: hooks.onConfirmed } : undefined,
     ),
     expandPageComposer: expandDeclaredComposer,
-    navigate: panelNavigator(platformRouter(), beside),
+    navigate: panelNavigator(router ?? platformRouter(), beside),
     messages: source.panel.content.messages ?? {},
     locale: global.locale,
     defaultLocale: String(global.fallbackLocale.value),

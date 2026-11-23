@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.applications;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationContext;
@@ -14,24 +15,20 @@ import java.util.*;
 import org.springframework.web.util.UriUtils;
 
 /** Java owns entry facts; panels retain only their shared content and manifest. */
+@JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApplicationPanelUse(String id, String pageKey, String panelId, String path,
                                   Access access, DefaultAgentTarget defaultAgent, Map<String, String> names,
                                   @JsonDeserialize(using = DescriptionsDeserializer.class) Map<String, String> descriptions,
-                                  Map<String, Map<String, Object>> inputs, String groupKey, Count count) {
+                                  Map<String, Map<String, Object>> inputs, String groupKey) {
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
                                DefaultAgentTarget defaultAgent, Map<String, String> names) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null, null, null);
+        this(id, pageKey, panelId, path, access, defaultAgent, names, null, null, null);
     }
     public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
                                DefaultAgentTarget defaultAgent, Map<String, String> names,
                                Map<String, Map<String, Object>> inputs, String groupKey) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, null, inputs, groupKey, null);
-    }
-    public ApplicationPanelUse(String id, String pageKey, String panelId, String path, Access access,
-                               DefaultAgentTarget defaultAgent, Map<String, String> names, Map<String, String> descriptions,
-                               Map<String, Map<String, Object>> inputs, String groupKey) {
-        this(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, inputs, groupKey, null);
+        this(id, pageKey, panelId, path, access, defaultAgent, names, null, inputs, groupKey);
     }
 
     private static final class DescriptionsDeserializer extends JsonDeserializer<Map<String, String>> {
@@ -63,17 +60,15 @@ public record ApplicationPanelUse(String id, String pageKey, String panelId, Str
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Access(String permissionCode, String kind) {}
 
-    public record Count(String member, String data) {}
-
     public String locator() { return PageSkills.locator(access.permissionCode(), access.kind(), pageKey); }
 
     ApplicationPanelUse withoutInputs() {
-        return new ApplicationPanelUse(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, null, groupKey, count);
+        return new ApplicationPanelUse(id, pageKey, panelId, path, access, defaultAgent, names, descriptions, null, groupKey);
     }
 
     static List<ApplicationPanelUse> canonical(List<ApplicationPanelUse> uses) {
         var normalized = uses.stream().map(use -> new ApplicationPanelUse(use.id, use.pageKey, use.panelId,
-            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.descriptions, use.inputs, use.groupKey, use.count)).toList();
+            canonicalPath(use.path), use.access, use.defaultAgent, use.names, use.descriptions, use.inputs, use.groupKey)).toList();
         validate(normalized);
         return normalized;
     }

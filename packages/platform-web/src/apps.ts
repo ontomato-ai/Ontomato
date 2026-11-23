@@ -3,13 +3,6 @@ import { allowsStandalone, type CatalogApplication } from "@ontomato/contracts/p
 import type { PlatformApp, PlatformBrand, PlatformPanelGroup, PlatformPanelPage, PlatformRailSection } from "@ontomato/platform-shell";
 import { externalLinkOf } from "./external-link";
 
-/**
- * How an application that holds several pages shows them: as a menu in its own column beside its pages, headed by the
- * application's name (the ontology manager, the system settings, the permissions). An application without one shows a
- * single page under a header that names the application (the object browser).
- */
-export type PlatformAppFrame = "menu";
-
 /** One application the platform shows in its rail. */
 export interface PlatformAppDeclaration {
   id: string;
@@ -30,8 +23,8 @@ export interface PlatformAppDeclaration {
   category: CatalogApplication["category"];
   /** The application owns the addresses under this prefix. */
   prefix: string;
-  /** How its pages are shown when it holds several; absent means one page under the application's header. */
-  frame?: PlatformAppFrame;
+  /** Platform or domain frame panel ID wrapping this application's entries when it draws a navigation frame. */
+  framePanelId?: string;
   /** The address its rail row opens: the first page the account may open, or the entry the declaration names. */
   home?: string;
   /** An external application: its fixed address, or the host's resolver for a signed jump; the rail opens it. */

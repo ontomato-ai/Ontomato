@@ -83,14 +83,13 @@ export function appDeclarations(
             const entry = app.entries?.get(path);
             const listed = byPath.get(base(path));
             if (!entry) return listed ? panelPage(listed, countsActive) : undefined;
-            // The entry stands where a native page stood: its row keeps that page's icon and count, from the page the
-            // navigation still lists there or the row it declares for an entry whose page is gone.
-            // Its count is the one the entry declares, read as its page reads it; an entry declaring none keeps the row's.
+            // The entry stands where a native page stood: its row keeps that page's icon and any native count source
+            // from the page the navigation still lists there or the row it declares for an entry whose page is gone.
             const row = listed ?? entryRows.get(path);
             return {
               ...entry,
               icon: row?.icon ?? "pages",
-              count: "count" in entry ? entry.count ?? null : (countsActive ? row?.count?.() ?? null : null),
+              count: countsActive ? row?.count?.() ?? null : null,
             };
           })
           .filter((page): page is PlatformPanelPage => page !== undefined),
@@ -115,7 +114,7 @@ export function appDeclarations(
       rail: app.rail ?? "apps",
       category: app.category,
       prefix: app.prefix,
-      frame: app.frame,
+      framePanelId: app.framePanelId,
       href: app.href,
       open: app.open,
       allowStandalone: app.allowStandalone,
