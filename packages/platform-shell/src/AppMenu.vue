@@ -107,7 +107,7 @@ const matchedActiveId = computed<string | null>(() => {
     >
       <optgroup v-for="group in panelGroups" :key="group.key" :label="group.label || title || ariaLabel">
         <option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">
-          {{ page.label }}
+          {{ page.count !== null && page.count !== undefined ? `${page.label} (${page.count})` : page.label }}
         </option>
       </optgroup>
       <option v-if="panelFoot" :value="panelFoot.id">{{ panelFoot.label }}</option>
@@ -155,7 +155,42 @@ const matchedActiveId = computed<string | null>(() => {
 .mobile-page-select {
   display: none;
 }
-@media (max-width: 600px) {
+@container (max-width: 760px) {
+  .platform-app-menu {
+    flex: 0 0 auto;
+    width: 100%;
+    padding: var(--spacing-sm) var(--page-gutter);
+    border-right: 0;
+    border-bottom: 1px solid var(--el-border-color);
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-md);
+  }
+  .app-menu-title {
+    min-height: 28px;
+    font-size: var(--text-sm);
+    padding: 0;
+    white-space: nowrap;
+  }
+  .platform-app-menu > .app-menu-pages {
+    display: none;
+  }
+  .mobile-page-select {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    height: var(--control-height);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--el-border-color);
+    border-radius: var(--radius-sm);
+    background: var(--el-bg-color);
+    color: var(--el-text-color-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+  }
+}
+@media (max-width: 760px) {
   .platform-app-menu {
     flex: 0 0 auto;
     width: 100%;

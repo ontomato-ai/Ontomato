@@ -3,9 +3,8 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelUsePath } from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
-import type { ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { AppPartition } from "./partition";
-export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "frame" | "home" | "homePage" | "homePermission" | "entryHome" | "open" | "descriptionKey">;
+export type NativeLayout = Pick<AppPartition, "sections" | "foot" | "home" | "homePage" | "homePermission" | "entryHome" | "open" | "descriptionKey">;
 const layouts: readonly (NativeLayout & { renderer: string })[] = [
   { renderer: "personal-workspace", sections: [] },
   // The platform's home draws its own page: no column, no header of the shell's.
@@ -17,7 +16,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   {
     renderer: "ontology",
     // Four layers organize existing screens; cross-application entries keep their original routes and permissions.
-    frame: "menu",
     sections: [
       {
         key: "ontology:facts",
@@ -113,8 +111,7 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   },
   {
     renderer: "settings",
-    // Its pages are its own menu, by group; an account enters at the first page it may open.
-    frame: "menu",
+    // Its pages are shown through its platform frame panel, by group; an account enters at the first page it may open.
     sections: [
       { key: "settings:models", titleKey: "platform.settingsGroups.models", paths: [platformRoutes.usage.path, platformRoutes.providers.path,platformRoutes.systemAgentModels.path] },
       // The licence is the enterprise edition's; the open-source navigation has no such page, so it is not listed.
@@ -131,32 +128,20 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
 
 export const nativeLayouts: Record<string, NativeLayout> = Object.fromEntries(layouts.map(({ renderer, ...layout }) => [renderer, layout]));
 
-/** The count a declaring entry's row shows: the shell's reading of the read the entry declares (`entry-counts`). */
-export type EntryCount = (applicationId: string, use: ApplicationPanelUse) => number | null;
-
 export function catalogPartition(applications: import("@ontomato/contracts/platform-identity").CatalogApplication[], locale: string,
-  renderers: Record<string, NativeLayout> = {}, entryCount: EntryCount = () => null): AppPartition[] {
+  renderers: Record<string, NativeLayout> = {}): AppPartition[] {
   return applications.filter(app => app.kind === "hosted" || app.kind === "connected"||app.kind==='product'
     || Boolean(nativeLayouts[app.entry.renderer!] || renderers[app.entry.renderer!])).map((app) => {
     const embedded = app.kind === "hosted" || app.kind === "connected";
     const panels = isPanelApplication(app);
     const applicationRoute = embedded || panels;
-    // Catalog entries may precede their renderer or an edition's asynchronous layout registration.
-    // An entry's count is the one its declaration names, read as its page reads it, by the shell that draws the menu.
-    const panelPages = panels ? app.panelUses?.flatMap(use => use.names ? [{
-      id: panelUsePath(use.path),
-      label: localizedApplicationText(use.names, locale) ?? use.pageKey,
-      ...use.count ? { count: entryCount(app.id, use) } : {},
-    }] : []) ?? [] : [];
     // A native application's panel entries stand where its menu table lists their addresses.
     const entries = !panels && !embedded ? new Map(app.panelUses?.flatMap(use => use.names ? [[panelUsePath(use.path), {
       id: panelUsePath(use.path),
       label: localizedApplicationText(use.names, locale) ?? use.pageKey,
-      ...use.count ? { count: entryCount(app.id, use) } : {},
     }] as const] : []) ?? []) : undefined;
-    const layout: NativeLayout = panelPages.length > 1
-      ? { frame: "menu", sections: [{ key: app.id, pages: panelPages }] }
-      : applicationRoute || app.kind === "product" ? { sections: [] } : {
+    // Panel applications draw their navigation through their frame panel (platform default or custom), never the shell.
+    const layout: NativeLayout = applicationRoute || app.kind === "product" ? { sections: [] } : {
       ...nativeLayouts[app.entry.renderer!], ...renderers[app.entry.renderer!],
       sections: renderers[app.entry.renderer!]?.sections ?? nativeLayouts[app.entry.renderer!]?.sections ?? [],
     };
@@ -164,6 +149,7 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       ? layout.entryHome : undefined;
     return { ...layout, entryHome, entries, id: app.id, label: localizedApplicationText(app.names, locale) ?? app.id, description: app.descriptions[locale] ?? ("descriptionKey" in layout && layout.descriptionKey ? undefined : localizedApplicationText(app.descriptions, locale) ?? null), icon: app.icon, rail: app.rail, category: app.category,
       allowStandalone: app.allowStandalone,
+      framePanelId: app.framePanelId,
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
       prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
       home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home };
