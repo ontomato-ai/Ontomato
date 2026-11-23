@@ -7,10 +7,17 @@ import publicEn from "@ontomato/workbench-ui/locales/en";
 import en from "element-plus/es/locale/lang/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH } from "@ontomato/contracts/panel-host";
-import { PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
+import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { SCHEDULED_TASK } from "@ontomato/contracts/panel-client-requests";
+import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels } from "@ontomato/platform-shell";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAppHost } from "../app-host";
+import {
+  clearPanelDefinitionCache,
+  getCachedProjection,
+  setCachedProjection,
+} from "../panel-definition-cache";
 import { cachedApplicationFrameManifest, framePanelHost, panelHostPaths, platformPanelHost, readApplicationFrameManifest } from "../panel-host";
 
 /*
@@ -783,6 +790,391 @@ describe("controlled personal state fields", () => {
     } finally {
       scope.stop();
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("dynamic and nested member projection access verification", () => {
+  beforeEach(() => {
+    clearPanelDefinitionCache();
+    installAppHost({
+      credential: { type: "anonymous" },
+      preferences: { locale: ref("en"), locales: ["en"], theme: ref("light"), setLocale: () => {}, setTheme: () => {} } as PlatformPreferences,
+      router: createRouter({ history: createMemoryHistory(), routes: [] }),
+      onAuthFailure: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    clearPanelDefinitionCache();
+  });
+
+  const hostLabels: PanelHostLabels = {
+    notStarted: "Not started",
+    failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
+    content: { styleOutside: "Style outside" },
+    refresh: "Refresh",
+  };
+
+  function makeProjection(id: string, emptyText: string, revision = 1): ProductProjection {
+    return {
+      id,
+      revision,
+      name: emptyText,
+      description: "",
+      domainId: "domain-1",
+      ownerId: "owner-1",
+      editable: false,
+      visibility: "domain",
+      createdAt: "2026-11-24T00:00:00.000Z",
+      updatedAt: "2026-11-24T00:00:00.000Z",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: { emptyText },
+      data: {
+        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+      },
+    };
+  }
+
+  function makeCodedPanel(id: string, manifestDef: ReturnType<typeof definePanel>, slotName: string, revision = 1) {
+    return {
+      id,
+      revision,
+      name: id,
+      description: "",
+      visibility: "domain" as const,
+      domainId: "domain-1",
+      ownerId: "owner-1",
+      editable: true,
+      createdAt: "2026-11-24T00:00:00.000Z",
+      updatedAt: "2026-11-24T00:00:00.000Z",
+      content: {
+        html: `<div id="app"><projection slot="${slotName}"></projection></div>`,
+        module: `import { mountPanel } from "@ontomato/sdk/panel"; await mountPanel({});`,
+      },
+      manifest: manifestDef,
+    };
+  }
+
+  it("verifies server use grant for a cached projection selected by a fromState dynamic member and clears cache on 403", async () => {
+    const use = {
+      id: "use-proj-catalog",
+      pageKey: "proj-catalog",
+      panelId: "panel-proj-catalog",
+      path: "/applications/app-a/proj-catalog",
+      access: { kind: "domain-member" as const },
+    };
+    const projP = makeProjection("proj-dynamic-p", "Cached Projection P");
+    // Pre-populate the client cache within the same login session.
+    setCachedProjection({ projection: projP });
+    expect(getCachedProjection(projP.id)).toBeDefined();
+
+    const catalogManifest = definePanel({
+      state: {
+        selected: { type: { kind: "object", objectType: PRODUCT_PROJECTION }, personal: false, deepLink: false, default: { className: PRODUCT_PROJECTION, primaryKey: projP.id } },
+      },
+      members: {
+        preview: { target: { fromState: "selected", candidates: { rule: "usable" } } },
+      },
+    });
+    const catalogPanel = makeCodedPanel(use.panelId, catalogManifest, "preview");
+
+    const projectionRequests: string[] = [];
+    const readRequests: unknown[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === panelHostPaths.panel(use.panelId)) {
+        return Response.json({ panel: catalogPanel, projections: {} });
+      }
+      if (url.pathname.endsWith("/page-skill-context")) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === `/api/product-projections/${projP.id}`) {
+        projectionRequests.push(url.pathname);
+        return Response.json({ error: { code: "FORBIDDEN", message: "Product use Grant required" } }, { status: 403 });
+      }
+      if (url.pathname === "/api/product-panels/read") {
+        readRequests.push(JSON.parse(init?.body ?? "{}"));
+        return Response.json({ status: "ready", value: [] });
+      }
+      return Response.json({});
+    });
+
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Projection Catalog",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      const element = view.direct.value!.element;
+      await vi.waitFor(() => expect(projectionRequests).toEqual([`/api/product-projections/${projP.id}`]));
+      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden));
+      expect(element.textContent).not.toContain("Cached Projection P");
+      expect(getCachedProjection(projP.id)).toBeUndefined();
+      expect(readRequests).toEqual([]);
+    } finally {
+      scope.stop();
+    }
+  });
+
+  it("re-verifies a dynamic projection after revoking and switching away and back while the panel stays open", async () => {
+    const use = {
+      id: "use-proj-switch",
+      pageKey: "proj-switch",
+      panelId: "panel-proj-switch",
+      path: "/applications/app-a/proj-switch",
+      access: { kind: "domain-member" as const },
+    };
+    const proj1 = makeProjection("proj-switch-1", "Projection One");
+    const proj2 = makeProjection("proj-switch-2", "Projection Two");
+    let proj1Revoked = false;
+
+    const catalogManifest = definePanel({
+      state: {
+        selected: { type: { kind: "object", objectType: PRODUCT_PROJECTION }, personal: false, deepLink: false },
+      },
+      members: {
+        preview: { target: { fromState: "selected", candidates: { rule: "usable" } } },
+      },
+    });
+    const catalogPanel = makeCodedPanel(use.panelId, catalogManifest, "preview");
+
+    const projectionRequests: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === panelHostPaths.panel(use.panelId)) {
+        return Response.json({ panel: catalogPanel, projections: {} });
+      }
+      if (url.pathname.endsWith("/page-skill-context")) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === `/api/product-projections/${proj1.id}`) {
+        projectionRequests.push(proj1.id);
+        return proj1Revoked
+          ? Response.json({ error: { code: "FORBIDDEN", message: "Product use Grant required" } }, { status: 403 })
+          : Response.json({ projection: proj1 });
+      }
+      if (url.pathname === `/api/product-projections/${proj2.id}`) {
+        projectionRequests.push(proj2.id);
+        return Response.json({ projection: proj2 });
+      }
+      if (url.pathname === "/api/product-panels/read") {
+        const body = JSON.parse(init?.body ?? "{}") as { operations?: true };
+        return Response.json(body.operations ? { status: "ready", value: {} } : { status: "ready", value: [] });
+      }
+      return Response.json({});
+    });
+
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Projection Switch",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      const mount = view.direct.value!.mount as unknown as {
+        instance: { state: { set(name: string, value: unknown): void } };
+      };
+      const element = view.direct.value!.element;
+
+      // 1. Select P1 -> mounts and warms cache.
+      mount.instance.state.set("selected", { className: PRODUCT_PROJECTION, primaryKey: proj1.id });
+      await vi.waitFor(() => expect(element.textContent).toContain("Projection One"));
+      expect(getCachedProjection(proj1.id)).toBeDefined();
+
+      // 2. Revoke P1 on server, switch to P2, then switch back to P1.
+      proj1Revoked = true;
+      mount.instance.state.set("selected", { className: PRODUCT_PROJECTION, primaryKey: proj2.id });
+      await vi.waitFor(() => expect(element.textContent).toContain("Projection Two"));
+
+      mount.instance.state.set("selected", { className: PRODUCT_PROJECTION, primaryKey: proj1.id });
+      await vi.waitFor(() => expect(projectionRequests).toEqual([proj1.id, proj2.id, proj1.id]));
+      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden));
+      expect(element.textContent).not.toContain("Projection One");
+      expect(getCachedProjection(proj1.id)).toBeUndefined();
+    } finally {
+      scope.stop();
+    }
+  });
+
+  it("verifies server use grant for projections inside a nested panel preview even when the projection was cached", async () => {
+    const use = {
+      id: "use-panel-catalog",
+      pageKey: "panel-catalog",
+      panelId: "panel-catalog-outer",
+      path: "/applications/app-a/panel-catalog",
+      access: { kind: "domain-member" as const },
+    };
+    const projP = makeProjection("proj-nested-p", "Nested Cached Projection P");
+    // Pre-populate the client cache within the same login session.
+    setCachedProjection({ projection: projP });
+    expect(getCachedProjection(projP.id)).toBeDefined();
+
+    const outerManifest = definePanel({
+      state: {
+        selectedPanel: { type: { kind: "object", objectType: PRODUCT_PANEL }, personal: false, deepLink: false, default: { className: PRODUCT_PANEL, primaryKey: "panel-b" } },
+      },
+      members: {
+        preview: { target: { fromState: "selectedPanel", candidates: { rule: "usable" } } },
+      },
+    });
+    const innerManifest = definePanel({
+      state: {},
+      members: {
+        innerMember: { target: { projectionId: projP.id } },
+      },
+    });
+    const outerPanel = makeCodedPanel(use.panelId, outerManifest, "preview");
+    const innerPanel = makeCodedPanel("panel-b", innerManifest, "innerMember");
+
+    const projectionRequests: string[] = [];
+    const readRequests: unknown[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === panelHostPaths.panel(use.panelId)) {
+        return Response.json({ panel: outerPanel, projections: {} });
+      }
+      if (url.pathname.endsWith("/page-skill-context")) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === `/api${PANEL_NESTED_READ_PATH}`) {
+        return Response.json({
+          panel: { id: innerPanel.id, revision: innerPanel.revision, content: innerPanel.content, manifest: innerPanel.manifest },
+        });
+      }
+      if (url.pathname === `/api/product-projections/${projP.id}`) {
+        projectionRequests.push(url.pathname);
+        return Response.json({ error: { code: "FORBIDDEN", message: "Product use Grant required" } }, { status: 403 });
+      }
+      if (url.pathname === "/api/product-panels/read") {
+        readRequests.push(JSON.parse(init?.body ?? "{}"));
+        return Response.json({ status: "ready", value: [] });
+      }
+      return Response.json({});
+    });
+
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Panel Catalog",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      const element = view.direct.value!.element;
+      await vi.waitFor(() => expect(projectionRequests).toEqual([`/api/product-projections/${projP.id}`]));
+      await vi.waitFor(() => expect(element.textContent).toContain(publicEn.platform.dataForbidden));
+      expect(element.textContent).not.toContain("Nested Cached Projection P");
+      expect(getCachedProjection(projP.id)).toBeUndefined();
+      expect(readRequests).toEqual([]);
+    } finally {
+      scope.stop();
+    }
+  });
+
+  it("keeps the fast cache path for fixed projection members verified via includeProjections or snapshot", async () => {
+    const use = {
+      id: "use-fixed-fast",
+      pageKey: "fixed-fast",
+      panelId: "panel-fixed-fast",
+      path: "/applications/app-a/fixed-fast",
+      access: { kind: "domain-member" as const },
+    };
+    const projFixed = makeProjection("proj-fixed-fast", "Fixed Projection Fast");
+    const fixedManifest = definePanel({
+      state: {},
+      members: {
+        fixedMember: { target: { projectionId: projFixed.id } },
+      },
+    });
+    const fixedPanel = makeCodedPanel(use.panelId, fixedManifest, "fixedMember");
+
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      requests.push(url.pathname + url.search);
+      if (url.pathname === panelHostPaths.panel(use.panelId)) {
+        return Response.json({
+          panel: fixedPanel,
+          projections: {
+            [projFixed.id]: { status: "ready", projection: projFixed },
+          },
+        });
+      }
+      if (url.pathname === panelHostPaths.snapshot(use.panelId)) {
+        return Response.json({
+          panel: { id: fixedPanel.id, revision: fixedPanel.revision },
+          projections: [{ id: projFixed.id, revision: projFixed.revision }],
+          members: [{ status: "ready", memberPath: [{ member: "fixedMember" }], target: { kind: "projection", id: projFixed.id }, revision: projFixed.revision }],
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname.endsWith("/page-skill-context")) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === "/api/product-panels/read") {
+        const body = JSON.parse(init?.body ?? "{}") as { operations?: true };
+        return Response.json(body.operations ? { status: "ready", value: {} } : { status: "ready", value: [] });
+      }
+      return Response.json({});
+    });
+
+    // 1. Cold open via ?includeProjections=1 -> 0 individual projection GETs.
+    const firstScope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = firstScope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Fixed Fast",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+      await vi.waitFor(() => expect(view.direct.value!.element.textContent).toContain("Fixed Projection Fast"));
+      expect(requests.filter((entry) => entry.startsWith("/api/product-projections/"))).toEqual([]);
+    } finally {
+      firstScope.stop();
+    }
+
+    // 2. Re-entry verified via /snapshot -> still 0 individual projection GETs.
+    requests.length = 0;
+    const secondScope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = secondScope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Fixed Fast",
+        address: () => use.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+      await vi.waitFor(() => expect(view.direct.value!.element.textContent).toContain("Fixed Projection Fast"));
+      expect(requests.some((entry) => entry.startsWith(panelHostPaths.snapshot(use.panelId)))).toBe(true);
+      expect(requests.filter((entry) => entry.startsWith("/api/product-projections/"))).toEqual([]);
+    } finally {
+      secondScope.stop();
     }
   });
 });

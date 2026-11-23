@@ -5,7 +5,8 @@
  */
 export type { DirectPanelMount, DirectPanelMountOptions } from "./panel/direct-mount";
 export {
-  createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type MemberDataState, type PanelOperationAffected,
+  createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type DirectProjectionReadOptions,
+  type MemberDataState, type PanelOperationAffected,
   type PanelMemberReadRequest, PanelMemberUnavailable, type MemberPlacing, type NestedPanelMount,
 } from "./panel/direct";
 export { panelModuleFor, type DirectPanelComponentPort, type DirectPanelModuleExports } from "./panel/direct-run";
