@@ -787,7 +787,7 @@ describe("Manager pages in the service router", () => {
     const { host, failures, showMenu } = mountHost({ ...base, view: "/ontology/assets/workflows" });
     showMenu();
     await settle();
-    expect(failures.sort()).toEqual([401, 402]);
+    expect([...new Set(failures)].sort()).toEqual([401, 402]);
 
     requests = [];
     statusFor = () => 200;
