@@ -623,4 +623,234 @@ describe("official component generality fixes (Items 1-4)", () => {
       expect(btn!.disabled).toBe(false);
     });
   });
+
+  it("treats fixed literal inputs.selected as read-only highlight without listbox role or throwing on click", async () => {
+    const listProjection: DirectProjection = {
+      ...meta,
+      id: "rels-select-list",
+      name: "Relationships",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { selected: { kind: "object", objectType: RELATIONSHIP } },
+      outputs: {},
+      config: { layout: "list", fallbackToFirst: true },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: RELATIONSHIP } }, read: "list", params: {} } },
+    };
+    const literalRef = { className: RELATIONSHIP, primaryKey: "rel-2" };
+    const literalManifest: DirectPanelManifest = {
+      state: {},
+      members: {
+        rels: {
+          target: { projectionId: "rels-select-list" },
+          inputs: { selected: { literal: literalRef } },
+        },
+      },
+    };
+    const rows = [
+      { primaryKey: "rel-1", label: "First Relation", fields: {} },
+      { primaryKey: "rel-2", label: "Second Relation", fields: {} },
+    ];
+
+    const { instance, container } = mountTestPanel({
+      manifest: literalManifest,
+      projections: { "rels-select-list": listProjection },
+      members: ["rels"],
+      answer: () => ready(rows),
+    });
+    await vi.waitFor(() => expect(container.querySelectorAll(".sdk-object-list-row")).toHaveLength(2));
+    const ul = container.querySelector<HTMLUListElement>("ul.sdk-object-list-items")!;
+    expect(ul.getAttribute("role")).toBeNull();
+    const listItems = container.querySelectorAll<HTMLLIElement>(".sdk-object-list-row");
+    const itemEls = container.querySelectorAll<HTMLElement>(".sdk-object-list-item-btn");
+    expect(itemEls).toHaveLength(2);
+    expect(itemEls[0]!.tagName).toBe("DIV");
+    expect(itemEls[0]!.getAttribute("role")).toBeNull();
+    expect(itemEls[0]!.classList.contains("is-non-selectable")).toBe(true);
+    expect(itemEls[0]!.classList.contains("chosen")).toBe(false);
+    expect(listItems[1]!.classList.contains("chosen")).toBe(true);
+    expect(itemEls[1]!.classList.contains("chosen")).toBe(true);
+    expect(instance.outputs.rels?.selectedLabel).toBe("Second Relation");
+
+    expect(() => {
+      itemEls[0]!.click();
+      itemEls[1]!.click();
+    }).not.toThrow();
+    expect(listItems[1]!.classList.contains("chosen")).toBe(true);
+    expect(instance.ownParams("rels").selected).toBeUndefined();
+  });
+
+  it("keeps state-backed inputs.selected selectable and updates public state on click", async () => {
+    const listProjection: DirectProjection = {
+      ...meta,
+      id: "rels-select-list",
+      name: "Relationships",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { selected: { kind: "object", objectType: RELATIONSHIP } },
+      outputs: {},
+      config: { layout: "list", fallbackToFirst: true },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: RELATIONSHIP } }, read: "list", params: {} } },
+    };
+    const manifest: DirectPanelManifest = {
+      state: {
+        selectedRel: {
+          type: { kind: "object", objectType: RELATIONSHIP },
+          personal: false,
+          deepLink: false,
+          external: false,
+          default: null,
+        },
+      },
+      members: {
+        rels: {
+          target: { projectionId: "rels-select-list" },
+          inputs: { selected: { state: "selectedRel" } },
+        },
+      },
+    };
+    const rows = [
+      { primaryKey: "rel-1", label: "First Relation", fields: {} },
+      { primaryKey: "rel-2", label: "Second Relation", fields: {} },
+    ];
+
+    const { instance, container } = mountTestPanel({
+      manifest,
+      projections: { "rels-select-list": listProjection },
+      members: ["rels"],
+      answer: () => ready(rows),
+    });
+    await vi.waitFor(() =>
+      expect(instance.state.values.value.selectedRel).toEqual({
+        className: RELATIONSHIP,
+        primaryKey: "rel-1",
+      }),
+    );
+    expect(container.querySelector<HTMLUListElement>("ul.sdk-object-list-items")!.getAttribute("role")).toBe("listbox");
+    const buttons = container.querySelectorAll<HTMLButtonElement>("button.sdk-object-list-item-btn[role='option']");
+    expect(buttons).toHaveLength(2);
+    buttons[1]!.click();
+    await vi.waitFor(() =>
+      expect(instance.state.values.value.selectedRel).toEqual({
+        className: RELATIONSHIP,
+        primaryKey: "rel-2",
+      }),
+    );
+  });
+
+  it("keeps outputs.selected selectable and updates public state on click", async () => {
+    const outputListProjection: DirectProjection = {
+      ...meta,
+      id: "rels-output-list",
+      name: "Relationships",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: { selected: { kind: "object", objectType: RELATIONSHIP } },
+      config: { layout: "list" },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: RELATIONSHIP } }, read: "list", params: {} } },
+    };
+    const manifest: DirectPanelManifest = {
+      state: {
+        selectedRel: {
+          type: { kind: "object", objectType: RELATIONSHIP },
+          personal: false,
+          deepLink: false,
+          external: false,
+          default: null,
+        },
+      },
+      members: {
+        rels: {
+          target: { projectionId: "rels-output-list" },
+          outputs: { selected: { state: "selectedRel" } },
+        },
+      },
+    };
+    const rows = [
+      { primaryKey: "rel-1", label: "First Relation", fields: {} },
+      { primaryKey: "rel-2", label: "Second Relation", fields: {} },
+    ];
+
+    const { instance, container } = mountTestPanel({
+      manifest,
+      projections: { "rels-output-list": outputListProjection },
+      members: ["rels"],
+      answer: () => ready(rows),
+    });
+    await vi.waitFor(() =>
+      expect(container.querySelectorAll("button.sdk-object-list-item-btn[role='option']")).toHaveLength(2),
+    );
+    expect(container.querySelector("ul.sdk-object-list-items")?.getAttribute("role")).toBe("listbox");
+    container.querySelectorAll<HTMLButtonElement>("button.sdk-object-list-item-btn[role='option']")[1]!.click();
+    await vi.waitFor(() =>
+      expect(instance.state.values.value.selectedRel).toEqual({
+        className: RELATIONSHIP,
+        primaryKey: "rel-2",
+      }),
+    );
+  });
+
+  it("keeps fixed literal inputs.selected safe with @choose and avoids writing fixed literal search/checked inputs", async () => {
+    const chosenEvents: unknown[] = [];
+    const cardsProjection: DirectProjection = {
+      ...meta,
+      id: "apps-cards",
+      name: "Apps Cards",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        selected: { kind: "object", objectType: APPLICATION },
+        checked: { kind: "list", items: { kind: "object", objectType: APPLICATION } },
+        q: { kind: "scalar", type: "string" },
+      },
+      outputs: {},
+      config: { layout: "cards" },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: APPLICATION } },
+          read: "query",
+          params: { search: { input: "q" } },
+        },
+      },
+    };
+    const fixedRef = { className: APPLICATION, primaryKey: "app-1" };
+    const manifest: DirectPanelManifest = {
+      state: {},
+      members: {
+        apps: {
+          target: { projectionId: "apps-cards" },
+          inputs: {
+            selected: { literal: fixedRef },
+            checked: { literal: [fixedRef] },
+            q: { literal: "fixed-term" },
+          },
+        },
+      },
+    };
+    let toggleCheckFn: (() => void) | null = null;
+    const { container } = mountTestPanel({
+      manifest,
+      projections: { "apps-cards": cardsProjection },
+      members: ["apps"],
+      memberListeners: {
+        apps: {
+          onChoose: (val: unknown) => chosenEvents.push(val),
+        },
+      },
+      memberSlots: () => ({
+        apps: {
+          card: (slotProps: Record<string, unknown>) => {
+            toggleCheckFn = slotProps.toggleCheck as () => void;
+            return h("span", { class: "custom-card-label" }, String(slotProps.checked));
+          },
+        },
+      }),
+      answer: () => ready({ rows: [{ primaryKey: "app-1", label: "First App", fields: {} }], total: 1 }),
+    });
+
+    await vi.waitFor(() => expect(container.querySelectorAll(".sdk-object-list-card")).toHaveLength(1));
+    // Mapped fixed literal search input must not render an editable search box.
+    expect(container.querySelector("input[type='search']")).toBeNull();
+    // Clicking card with @choose + fixed literal selected emits choose without calling selectedParam.set().
+    expect(() => container.querySelector<HTMLElement>(".sdk-object-list-card")!.click()).not.toThrow();
+    expect(chosenEvents).toEqual([fixedRef]);
+    // Calling toggleCheck from card slot with fixed literal checked does not throw.
+    expect(() => toggleCheckFn?.()).not.toThrow();
+  });
 });

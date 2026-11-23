@@ -381,7 +381,7 @@ const requiredParamNames = new Set(declaration?.parameterMode === "fixed" ? (dec
 function isFixedLiteral(name: string): boolean {
   const mapped = datum!.params[name];
   if (mapped && "literal" in mapped) return true;
-  const input = placement.inputs?.[name];
+  const input = placement.inputs?.[paramNameOf(name)];
   return Boolean(input && "literal" in input);
 }
 
@@ -401,22 +401,31 @@ function paramNameOf(name: string): string {
   return mapped && "input" in mapped ? mapped.input : name;
 }
 
-const hasServerSearch = "search" in signatureParams && !isFixedLiteral("search");
+const hasServerSearch = "search" in signatureParams && isWritableParam("search");
 const pageMode: "cursor" | "page" | "none" = "cursor" in signatureParams
   ? "cursor"
   : "page" in signatureParams
     ? "page"
     : "none";
-const searchStateBound = Boolean(placement.inputs?.search || placement.outputs?.search);
+const hasWritableSearchInput = Boolean(
+  placement.inputs?.search && "state" in placement.inputs.search,
+);
+const searchStateBound = Boolean(hasWritableSearchInput || placement.outputs?.search);
 const isLocalSearchActive = computed(
   () => !hasServerSearch && pageMode === "none" && (props.searchable === true || searchStateBound),
 );
 const canSearch = computed(
-  () => props.searchable !== false && (hasServerSearch || (isLocalSearchActive.value && !isFixedLiteral("search"))),
+  () => props.searchable !== false && (hasServerSearch || (isLocalSearchActive.value && isWritableParam("search"))),
 );
 const canCheck = Boolean(slotOutputState(panel.manifest, member.key, "checked"));
 const canSelect = Boolean(slotOutputState(panel.manifest, member.key, "selected"));
-const hasSelectedBinding = Boolean(canSelect || placement.inputs?.selected);
+const hasWritableSelectedInput = Boolean(
+  placement.inputs?.selected && "state" in placement.inputs.selected,
+);
+// Only a state-backed selection binding (outputs.selected or state inputs.selected) is writable on row click;
+// a fixed literal inputs.selected provides read-only highlight without making rows interactive or calling .set().
+const hasSelectedBinding = Boolean(canSelect || hasWritableSelectedInput);
+const hasSelectedSource = Boolean(hasSelectedBinding || placement.inputs?.selected);
 const vnodeProps = getCurrentInstance()?.vnode.props as Record<string, unknown> | null | undefined;
 const hasChooseListener = Boolean(
   vnodeProps && (typeof vnodeProps.onChoose === "function" || Array.isArray(vnodeProps.onChoose)),
@@ -433,7 +442,7 @@ watch(() => props.pageSize, (next) => {
 const effectivePageSize = computed(() => activePageSize.value);
 const cursorStack = ref<readonly (string | null)[]>([null]);
 
-const searchParam = !isFixedLiteral("search") ? useMemberParam(paramNameOf("search")) : null;
+const searchParam = isWritableParam("search") ? useMemberParam(paramNameOf("search")) : null;
 const cursorParam = pageMode === "cursor" ? useMemberParam(paramNameOf("cursor")) : null;
 const sizeParam = pageMode === "cursor" && "size" in signatureParams ? useMemberParam(paramNameOf("size")) : null;
 const pageParam = pageMode === "page" ? useMemberParam(paramNameOf("page")) : null;
@@ -908,7 +917,7 @@ function rowIdentityKey(row: PlatformObjectRecord): string {
 }
 
 const chosenRef = computed<ObjectListSelection | null>(() => {
-  if (!hasSelectedBinding) return null;
+  if (!hasSelectedSource) return null;
   const raw = selectedParam.value.value as PanelFieldValue;
   return stateChildObject(raw) ?? stateObject(raw);
 });
@@ -1183,8 +1192,10 @@ function setSelected(next: ObjectListSelection | null) {
 function setChecked(next: readonly ObjectListRef[]) {
   if (placement.outputs?.checked) {
     void panel.instance.output(member.key, "checked", next as unknown as RuntimeJsonValue);
-  } else {
+  } else if (isWritableParam("checked")) {
     checkedParam.set(next as unknown as RuntimeJsonValue);
+  } else {
+    return;
   }
   emit("update:checked", next);
 }
@@ -1292,7 +1303,7 @@ if (pageMode === "none") {
 }
 
 function onSearchInput(event: Event) {
-  if (!searchParam) return;
+  if (!searchParam || !isWritableParam("search")) return;
   const next = (event.target as HTMLInputElement).value;
   searchParam.set(next === "" ? null : next);
 }
@@ -2291,7 +2302,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   :tabindex="rowSelectable ? 0 : undefined"
                   data-row-item="true"
                   :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
-                  :class="{ chosen: rowSelectable && entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
+                  :class="{ chosen: entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
                   @click="rowSelectable ? choose(entry.row) : undefined"
                   @keydown="rowSelectable ? onRowKeydown(entry.row, $event) : undefined"
                 >
@@ -2562,7 +2573,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
             :tabindex="rowSelectable ? 0 : undefined"
             class="sdk-object-list-card"
             :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
-            :class="{ chosen: rowSelectable && entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
+            :class="{ chosen: entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
             @click="rowSelectable ? choose(entry.row) : undefined"
             @keydown="rowSelectable ? onCardKeydown(entry.row, $event) : undefined"
           >
@@ -2855,7 +2866,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
             v-else
             :ref="(el) => setRowElement(entry.key, el)"
             class="sdk-object-list-row"
-            :class="{ chosen: rowSelectable && entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
+            :class="{ chosen: entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
           >
             <div class="sdk-object-list-row-main">
               <button
@@ -2884,7 +2895,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                 :data-row-density="listHasTwoLines ? 'two-line' : 'single'"
                 :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
                 :class="{
-                  chosen: rowSelectable && entry.key === chosenIdentity,
+                  chosen: entry.key === chosenIdentity,
                   'is-non-selectable': !rowSelectable,
                   'sdk-object-list-item-two-line': listHasTwoLines,
                   'has-leading': Boolean($slots['item-leading']),
