@@ -511,4 +511,193 @@ describe("OperationButton with targetless customer Action", () => {
       harness.unmount();
     }
   });
+
+  it("serializes literal and input bound params alongside same-name, formField, and formFields in ObjectForm create mode and OperationButton", async () => {
+    const richActionDescriptor: PanelOwnerOperationDescriptor = {
+      kind: "action",
+      handlerRef: "actions.execute",
+      label: "Create order with campus",
+      effect: "write",
+      batch: false,
+      target: { source: "none" },
+      inputSchema: {
+        type: "object",
+        properties: {
+          values: {
+            type: "object",
+            properties: {
+              campus: { type: "string", title: "Campus" },
+              term: { type: "string", title: "Term" },
+              limit: { type: "string", title: "Limit", contentMediaType: "application/json" },
+              cleared: { type: "string", title: "Cleared", contentMediaType: "application/json" },
+              customer: { type: "string", title: "Customer" },
+              studentPhone: { type: "string", title: "Phone" },
+              profile: { type: "string", title: "Profile", contentMediaType: "application/json" },
+            },
+            additionalProperties: false,
+          },
+        },
+        required: ["values"],
+        additionalProperties: false,
+      },
+      resultSchema: {},
+    };
+
+    const richCreateForm = {
+      fields: [
+        { path: "/campus", label: "Campus", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
+        { path: "/term", label: "Term", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
+        { path: "/customer", label: "Customer", valueSchema: { type: "string" }, required: true, readOnly: false, control: { kind: "text" } },
+        { path: "/phone", label: "Phone", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
+        { path: "/grade", label: "Grade", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
+        { path: "/note", label: "Note", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
+      ],
+      values: { campus: "", term: "", customer: "", phone: "", grade: "", note: "" },
+      errors: [],
+      save: { method: "POST", path: "/ontology/objects/CustomerOrder", bodySchema: {}, draftOperation: "CustomerOrder.create" },
+    };
+
+    const actionParams = {
+      campus: { literal: "north" as const },
+      term: { input: "activeTerm" },
+      limit: { literal: 10 },
+      cleared: { literal: null },
+      studentPhone: { formField: "/phone" },
+      profile: { formFields: { grade: "/grade", note: "/note" } },
+    };
+
+    const projections: Record<string, DirectProjection> = {
+      "rich-form": {
+        ...baseRecord,
+        id: "rich-form",
+        name: "Create order",
+        componentId: "@ontomato/sdk:ObjectForm",
+        inputs: { activeTerm: { kind: "scalar", type: "string" } },
+        outputs: {},
+        config: {},
+        data: {
+          createForm: { source: { type: { kind: "ObjectType", id: ORDER } }, read: "createForm", params: {} },
+        },
+        operations: {
+          save: { operation: { kind: "Action", id: "create-order" }, params: actionParams },
+        },
+      },
+      "draft-btn": {
+        ...baseRecord,
+        id: "draft-btn",
+        name: "Submit via button",
+        componentId: "@ontomato/sdk:OperationButton",
+        inputs: { activeTerm: { kind: "scalar", type: "string" } },
+        outputs: {},
+        config: { operation: "submit" },
+        data: {},
+        operations: {
+          submit: { operation: { kind: "Action", id: "create-order" }, params: actionParams },
+        },
+      },
+    };
+    const manifest: DirectPanelManifest = {
+      state: {
+        activeTerm: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
+      },
+      members: {
+        richForm: {
+          target: { projectionId: "rich-form" },
+          inputs: { activeTerm: { state: "activeTerm" } },
+        },
+        draftBtn: {
+          target: { projectionId: "draft-btn" },
+          inputs: { activeTerm: { state: "activeTerm" } },
+          operationDrafts: { submit: { slot: "richForm" } },
+        },
+      },
+    };
+
+    const harness = mountCreatePanel({
+      manifest,
+      projections,
+      initial: { activeTerm: "2026-fall" },
+      answer: (request) => {
+        if (request.operations) {
+          const member = request.memberPath.at(-1)?.member;
+          if (member === "richForm") return ready({ save: richActionDescriptor });
+          if (member === "draftBtn") return ready({ submit: richActionDescriptor });
+        }
+        return ready(richCreateForm);
+      },
+    });
+    try {
+      // Fixed literal/input fields `/campus` and `/term` stay read-only; wired fields stay editable.
+      await vi.waitFor(() => {
+        expect(harness.element.querySelector<HTMLInputElement>('[data-field="/campus"] input')?.disabled).toBe(true);
+        expect(harness.element.querySelector<HTMLInputElement>('[data-field="/term"] input')?.disabled).toBe(true);
+        expect(harness.element.querySelector<HTMLInputElement>('[data-field="/customer"] input')?.disabled).toBe(false);
+        expect(harness.element.querySelector<HTMLInputElement>('[data-field="/phone"] input')?.disabled).toBe(false);
+        expect(harness.element.querySelector<HTMLInputElement>('[data-field="/grade"] input')?.disabled).toBe(false);
+        expect(harness.element.querySelector<HTMLInputElement>('[data-field="/note"] input')?.disabled).toBe(false);
+      });
+
+      const form = harness.instance.forms.handle("richForm")!;
+      form.set("/customer", "Alice");
+      form.set("/phone", "13800001111");
+      form.set("/grade", "G3");
+      form.set("/note", "honor");
+      await nextTick();
+
+      // 1. Direct ObjectForm submit outputs clean { values } matching server serialization.
+      await harness.instance.forms.submit("richForm");
+      expect(harness.prepared).toHaveLength(1);
+      expect(harness.prepared[0]).toEqual([
+        "richForm.save",
+        {
+          call: {
+            target: null,
+            input: {
+              values: {
+                campus: "north",
+                term: "2026-fall",
+                limit: "10",
+                cleared: "null",
+                customer: "Alice",
+                studentPhone: "13800001111",
+                profile: JSON.stringify({ grade: "G3", note: "honor" }),
+              },
+            },
+          },
+        },
+      ]);
+
+      // 2. OperationButton routed via operationDrafts does not double-encode JSON-typed literals (`limit`, `cleared`).
+      form.set("/customer", "Bob");
+      form.set("/phone", "13900002222");
+      form.set("/grade", "G4");
+      form.set("/note", "transfer");
+      await nextTick();
+
+      const btn = harness.element.querySelector<HTMLButtonElement>(".sdk-operation-button button")!;
+      btn.click();
+      await vi.waitFor(() => expect(harness.prepared).toHaveLength(2));
+      expect(harness.prepared[1]).toEqual([
+        "draftBtn.submit",
+        {
+          call: {
+            target: null,
+            input: {
+              values: {
+                campus: "north",
+                term: "2026-fall",
+                limit: "10",
+                cleared: "null",
+                customer: "Bob",
+                studentPhone: "13900002222",
+                profile: JSON.stringify({ grade: "G4", note: "transfer" }),
+              },
+            },
+          },
+        },
+      ]);
+    } finally {
+      harness.unmount();
+    }
+  });
 });

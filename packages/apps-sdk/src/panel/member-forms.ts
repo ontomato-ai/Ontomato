@@ -21,6 +21,7 @@ import { PlatformObjectRefusal, selectedKey } from "./platform-objects";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { FormSubmitOverride } from "./draft";
 import type { MemberOperationsState } from "./member-operations";
+import { serializeActionParamValue } from "../base/operation-input-schema";
 import { slotInputState } from "./context";
 import { changedPaths, jsonValuesEqual, valueAt } from "./form-values";
 import { projectionElement } from "./projection-element";
@@ -453,18 +454,6 @@ export function unwiredModifiedPaths(
 }
 
 /**
- * Serializes a single Action parameter value for `/action/form`:
- * - JSON-typed parameters (`contentMediaType: "application/json"`, e.g. numbers, arrays, objects) encode `null` as
- *   `"null"` so `ParameterForms.interactive` parses an explicit null without rejecting empty text.
- * - Text parameters (`TYPE_STRING`, `TYPE_TIME`) encode `null` as `""`.
- */
-function serializeActionParamValue(raw: unknown, isJson: boolean): string {
-  if (raw === null || raw === undefined) return isJson ? "null" : "";
-  if (isJson || typeof raw === "object") return JSON.stringify(raw);
-  return String(raw);
-}
-
-/**
  * Validates that every modified/submitted form field has a submit destination in the customer Action and converts live
  * form values into `{ values: Record<string, string> }` without silently dropping cleared `null`/empty values.
  */
@@ -514,8 +503,13 @@ function prepareActionSaveInput(
   const serialized: Record<string, string> = {};
   for (const [param, source] of Object.entries(wiring.params)) {
     if (extraValues && Object.hasOwn(extraValues, param)) {
-      if (extraValues[param] !== undefined) {
-        serialized[param] = serializeActionParamValue(extraValues[param], source.isJson);
+      const extra = extraValues[param];
+      if (extra !== undefined) {
+        // `extraInput.values` from operation dispatch is already serialized into action form strings;
+        // preserve strings as-is to avoid double-encoding JSON-typed parameters.
+        serialized[param] = typeof extra === "string"
+          ? extra
+          : serializeActionParamValue(extra, source.isJson);
       }
       continue;
     }

@@ -32,6 +32,7 @@ import { credentialsForRun, runForOwner } from "../assistant/execution";
 import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource, type AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
+import { mergeObjectActionBoundParams } from "../action/object-actions";
 import { readCurrentPanelRecord } from "./current";
 import {
   declaredDirectOperation, type DeclaredDirectOperationOptions, type PlacedOperationTarget,
@@ -114,24 +115,22 @@ function invocationTarget(
   return "call" in input ? input.call.target : undefined;
 }
 
-function serializeActionParamValue(raw: unknown, isJson: boolean): string {
-  if (raw === null || raw === undefined) return isJson ? "null" : "";
-  if (isJson || typeof raw === "object") return JSON.stringify(raw);
-  return String(raw);
-}
-
-function actionParamSchemas(descriptor: ReturnType<typeof writeOperation>["descriptor"]) {
-  const schemaProps = descriptor.inputSchema.properties as Record<string, unknown> | undefined;
-  const valuesSchema = schemaProps?.values as { properties?: Record<string, { contentMediaType?: string }> } | undefined;
-  return valuesSchema?.properties;
+interface BoundParamTarget {
+  readonly boundParams?: Readonly<Record<string, unknown>>;
+  readonly handler: { readonly handlerRef: string };
+  readonly descriptor: { readonly inputSchema: Record<string, unknown> };
 }
 
 function mergeBoundParams(
   supplied: Record<string, unknown>,
-  boundParams: Readonly<Record<string, unknown>> | undefined,
+  resolved: BoundParamTarget,
   onMismatch: (key: string) => never,
 ): Record<string, unknown> {
+  const { boundParams } = resolved;
   if (!boundParams || !Object.keys(boundParams).length) return supplied;
+  if (resolved.handler.handlerRef === EXECUTE_OBJECT_ACTION) {
+    return mergeObjectActionBoundParams(supplied, boundParams, resolved.descriptor.inputSchema, onMismatch);
+  }
   const merged: Record<string, unknown> = { ...supplied };
   for (const [key, expected] of Object.entries(boundParams)) {
     if (Object.hasOwn(supplied, key) && supplied[key] !== undefined && !isDeepStrictEqual(supplied[key], expected)) {
@@ -147,52 +146,30 @@ function mergeWriteInput(
   resolved: Pick<ReturnType<typeof writeOperation>, "boundParams" | "bindingParams" | "handler" | "descriptor">,
   onMismatch: (key: string) => never,
 ): Record<string, unknown> {
-  if (resolved.handler.handlerRef !== EXECUTE_OBJECT_ACTION) {
-    return mergeBoundParams(supplied, resolved.boundParams, onMismatch);
-  }
-  const rawValues = supplied.values;
-  const valuesRecord = rawValues && typeof rawValues === "object" && !Array.isArray(rawValues)
-    ? { ...(rawValues as Record<string, unknown>) }
-    : undefined;
-  const paramSchemas = actionParamSchemas(resolved.descriptor);
-  if (resolved.boundParams && Object.keys(resolved.boundParams).length > 0 && valuesRecord) {
-    for (const [key, expected] of Object.entries(resolved.boundParams)) {
-      const isJson = paramSchemas?.[key]?.contentMediaType === "application/json";
-      const serialized = serializeActionParamValue(expected, isJson);
-      if (Object.hasOwn(valuesRecord, key) && valuesRecord[key] !== undefined && valuesRecord[key] !== serialized) {
-        onMismatch(key);
-      }
-      valuesRecord[key] = serialized;
+  const merged = mergeBoundParams(supplied, resolved, onMismatch);
+  if (resolved.handler.handlerRef !== EXECUTE_OBJECT_ACTION || !resolved.bindingParams) return merged;
+
+  const values = merged.values as Record<string, unknown> | undefined;
+  for (const [paramKey, spec] of Object.entries(resolved.bindingParams)) {
+    if (!("formFields" in spec)) continue;
+    const raw = values?.[paramKey];
+    if (typeof raw !== "string") continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new HttpError(400, `Operation input '${paramKey}' must be valid JSON`, "ACTION_INPUT_INVALID");
     }
-  }
-  if (resolved.bindingParams && valuesRecord) {
-    for (const [paramKey, spec] of Object.entries(resolved.bindingParams)) {
-      if (!("formFields" in spec)) continue;
-      if (!Object.hasOwn(valuesRecord, paramKey) || valuesRecord[paramKey] === undefined) continue;
-      const raw = valuesRecord[paramKey];
-      if (typeof raw !== "string") continue;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        throw new HttpError(400, `Operation input '${paramKey}' must be valid JSON`, "ACTION_INPUT_INVALID");
-      }
-      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new HttpError(400, `Operation input '${paramKey}' must be a JSON object`, "ACTION_INPUT_INVALID");
-      }
-      const allowedKeys = new Set(Object.keys(spec.formFields));
-      for (const fieldKey of Object.keys(parsed as Record<string, unknown>)) {
-        if (!allowedKeys.has(fieldKey)) {
-          throw new HttpError(
-            400,
-            `Operation input '${paramKey}' contains undeclared field '${fieldKey}'`,
-            "ACTION_INPUT_INVALID",
-          );
-        }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new HttpError(400, `Operation input '${paramKey}' must be a JSON object`, "ACTION_INPUT_INVALID");
+    }
+    for (const fieldKey of Object.keys(parsed)) {
+      if (!Object.hasOwn(spec.formFields, fieldKey)) {
+        throw new HttpError(400, `Operation input '${paramKey}' contains undeclared field '${fieldKey}'`, "ACTION_INPUT_INVALID");
       }
     }
   }
-  return valuesRecord ? { ...supplied, values: valuesRecord } : supplied;
+  return merged;
 }
 
 /** Shared server-side materialization for both human and agent write operations. */
@@ -231,11 +208,11 @@ export async function readPanelOperationDescriptor(owner: AssistantOwner, creden
 export async function readPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, request: ReadPanelOperationRequest) {
   const current = await operationForUse(owner, credentials, request, request.call.target, { mode: "read" });
   if (current.effect !== "read") throw new HttpError(422, "This operation requires a write intent", "OPERATION_READ_REQUIRED");
-  const { handler, fixedTarget, boundParams } = current;
+  const { handler, fixedTarget } = current;
   const target = handler.targetSchema.parse(request.call.target);
   if (fixedTarget !== undefined && !isDeepStrictEqual(target, fixedTarget))
     throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
-  const mergedInput = mergeBoundParams(request.call.input, boundParams, key => {
+  const mergedInput = mergeBoundParams(request.call.input, current, key => {
     throw new HttpError(403, `Operation input '${key}' does not match the panel member binding`, "OPERATION_PARAM_MISMATCH");
   });
   const call = { target, input: handler.inputSchema.parse(mergedInput) };

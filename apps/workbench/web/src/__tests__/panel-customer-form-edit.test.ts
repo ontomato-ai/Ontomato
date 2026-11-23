@@ -511,6 +511,125 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     unmount();
   });
 
+  it("combines fixed literal and input bound params with same-name, formField, and formFields on a targeted edit Action without marking fixed fields editable or dirty", async () => {
+    const fields: PanelFormField[] = [
+      ...baseFields,
+      { path: "/campus", label: "Campus", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
+      { path: "/term", label: "Term", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
+      { path: "/remark", label: "Remark", valueSchema: { type: ["string", "null"] }, required: false, readOnly: false, control: { kind: "text" } },
+    ];
+    const extraProjections: Record<string, DirectProjection> = {
+      "customer-form": {
+        ...baseRecord,
+        id: "customer-form",
+        name: "Customer form",
+        componentId: "@ontomato/sdk:ObjectForm",
+        inputs: {
+          target: { kind: "object", objectType: CUSTOMER },
+          activeTerm: { kind: "scalar", type: "string" },
+          values: { kind: "json" },
+          changedField: { kind: "scalar", type: "string" },
+        },
+        outputs: {},
+        config: {},
+        data: {
+          form: {
+            source: { object: { input: "target" } },
+            read: "form",
+            params: { values: { input: "values" }, changedField: { input: "changedField" } },
+          },
+        },
+        operations: {
+          save: {
+            operation: { kind: "Action", id: "action-update-customer-bound" },
+            target: { input: "target" },
+            params: {
+              campus: { literal: "north" },
+              term: { input: "activeTerm" },
+              limit: { literal: 10 },
+              studentPhone: { formField: "/phone" },
+              profile: { formFields: { grade: "/grade", note: "/remark" } },
+            },
+          },
+        },
+      },
+    };
+    const { instance, element, prepared, unmount } = mountCustomerForm({
+      fields,
+      values: {
+        id: "cust-1",
+        name: "Alice",
+        grade: "A",
+        phone: "13800001111",
+        campus: "legacy",
+        term: "2025-spring",
+        remark: "VIP",
+      },
+      operations: {},
+      extraProjections,
+      extraMembers: {
+        customerForm: {
+          target: { projectionId: "customer-form" },
+          inputs: {
+            target: { state: "selected" },
+            activeTerm: { literal: "2026-fall" },
+          },
+        },
+      },
+      admittedOperations: {
+        save: actionDescriptor("Update customer", {
+          campus: {},
+          term: {},
+          limit: { contentMediaType: "application/json" },
+          name: {},
+          studentPhone: {},
+          profile: { contentMediaType: "application/json" },
+        }),
+      },
+    });
+
+    await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/campus"] input')?.disabled).toBe(true));
+
+    // Fixed literal/input params are read-only; same-name, formField, and formFields targets are editable.
+    expect(element.querySelector<HTMLInputElement>('[data-field="/campus"] input')?.disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/term"] input')?.disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(false);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/phone"] input')?.disabled).toBe(false);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/grade"] input')?.disabled).toBe(false);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/remark"] input')?.disabled).toBe(false);
+
+    const form = instance.forms.handle("customerForm")!;
+    form.set("/name", "Alice Chen");
+    form.set("/phone", "13900009999");
+    form.set("/grade", "S");
+    form.set("/remark", "Updated");
+    await nextTick();
+
+    await instance.forms.submit("customerForm");
+
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]).toEqual([
+      "customerForm.save",
+      {
+        call: {
+          target: { kind: "object", objectType: CUSTOMER, primaryKey: "cust-1" },
+          input: {
+            values: {
+              campus: "north",
+              term: "2026-fall",
+              limit: "10",
+              name: "Alice Chen",
+              studentPhone: "13900009999",
+              profile: JSON.stringify({ grade: "S", note: "Updated" }),
+            },
+          },
+        },
+      },
+    ]);
+
+    unmount();
+  });
+
   it("governs form editability solely by the named save operation (never unioning or intersecting other actions) and leaves platform form.save untouched", async () => {
     // 1. Customer form with both `save` (takes `name`, `grade`) and `submitReview` (takes `phone`, `reviewComment`).
     const fields: PanelFormField[] = [

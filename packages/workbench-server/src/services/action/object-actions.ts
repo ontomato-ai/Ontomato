@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { actionFormSchema } from "@ontomato/contracts/action-forms";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
@@ -93,6 +94,75 @@ const objectActionResultJsonSchema = cachedZodToRuntimeJsonSchema(
   { effectStrategy: "input" },
 );
 const objectActionInputSchema = z.object({ values: z.record(z.string(), z.string()) }).strict();
+
+/**
+ * Serializes a server-bound parameter value (literal, pinned input, or row key) into the string form
+ * expected by `/action/form`:
+ * - JSON-typed parameters (`contentMediaType: "application/json"`) JSON-encode every value, including `null` (`"null"`).
+ * - Text parameters (`TYPE_STRING`, `TYPE_TIME`) encode `null`/`undefined` as `""`, objects as JSON, and scalars via `String`.
+ */
+export function serializeObjectActionParamValue(raw: unknown, isJson: boolean): string {
+  if (raw === null || raw === undefined) return isJson ? "null" : "";
+  if (isJson || typeof raw === "object") return JSON.stringify(raw);
+  return String(raw);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function actionParamIsJson(inputSchema: Record<string, unknown>, paramKey: string): boolean {
+  const properties = isPlainRecord(inputSchema.properties) ? inputSchema.properties : undefined;
+  const valuesSchema = properties && isPlainRecord(properties.values) ? properties.values : undefined;
+  const valueProps = valuesSchema && isPlainRecord(valuesSchema.properties) ? valuesSchema.properties : undefined;
+  const paramSchema = valueProps && isPlainRecord(valueProps[paramKey]) ? valueProps[paramKey] : undefined;
+  return paramSchema?.contentMediaType === "application/json";
+}
+
+function serializedActionParamMatches(
+  supplied: unknown,
+  expectedRaw: unknown,
+  expectedSerialized: string,
+  isJson: boolean,
+): boolean {
+  if (supplied === expectedSerialized) return true;
+  if (!isJson || typeof supplied !== "string") return false;
+  try {
+    return isDeepStrictEqual(JSON.parse(supplied), expectedRaw);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Merges server-pinned `boundParams` into a customer Action's `{ values: Record<string, string> }` envelope,
+ * never writing bound keys to the top level of `input` (which `objectActionInputSchema.strict()` forbids).
+ */
+export function mergeObjectActionBoundParams(
+  supplied: Record<string, unknown>,
+  boundParams: Readonly<Record<string, unknown>>,
+  inputSchema: Record<string, unknown>,
+  onMismatch: (key: string) => never,
+): Record<string, unknown> {
+  if (supplied.values !== undefined && !isPlainRecord(supplied.values)) {
+    return supplied;
+  }
+  const suppliedValues: Record<string, unknown> = isPlainRecord(supplied.values) ? supplied.values : {};
+  const mergedValues: Record<string, unknown> = { ...suppliedValues };
+  for (const [key, expectedRaw] of Object.entries(boundParams)) {
+    const isJson = actionParamIsJson(inputSchema, key);
+    const expectedSerialized = serializeObjectActionParamValue(expectedRaw, isJson);
+    if (
+      Object.hasOwn(suppliedValues, key)
+      && suppliedValues[key] !== undefined
+      && !serializedActionParamMatches(suppliedValues[key], expectedRaw, expectedSerialized, isJson)
+    ) {
+      onMismatch(key);
+    }
+    mergedValues[key] = expectedSerialized;
+  }
+  return { ...supplied, values: mergedValues };
+}
 
 /** An owner code that denies the caller is a forbidden read; one that finds nothing is a missing one; the rest conflict. */
 function readStatus(code: string): number {
