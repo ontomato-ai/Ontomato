@@ -68,7 +68,7 @@ const props = withDefaults(
     size?: "small" | "default";
     /** Optional external disabled override (for example while a bound state input is empty). */
     disabled?: boolean;
-    /** When true, hides the button instead of rendering a disabled state or notice when the owner marks this operation unavailable or unadmitted. */
+    /** When true, hides the button unless the owner's operation read is ready and admits this operation as available (fail-closed on loading, error, forbidden, empty, unadmitted, or unavailable). */
     hideWhenUnavailable?: boolean;
   }>(),
   { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false, hideWhenUnavailable: false },
@@ -166,13 +166,8 @@ watch(targetKey, () => {
 
 const hiddenByAvailability = computed(() => {
   if (!props.hideWhenUnavailable) return false;
-  if (operations.value.status === "loading" || operations.value.status === "forbidden" || operations.value.status === "empty") {
-    return true;
-  }
-  if (operations.value.status === "ready") {
-    return !descriptor.value || Boolean(descriptor.value.unavailable);
-  }
-  return false;
+  // Fail closed: only render when operations are ready and the owner admits this operation without unavailability.
+  return operations.value.status !== "ready" || !descriptor.value || Boolean(descriptor.value.unavailable);
 });
 
 const ready = computed(() =>

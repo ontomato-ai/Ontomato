@@ -137,6 +137,7 @@ export const en = {
   "panels.productCatalog.application.maintenance": "Maintenance access",
   "panels.productCatalog.application.maintainable": "Can maintain",
   "panels.productCatalog.application.readOnly": "Read only",
+  "panels.productCatalog.application.availabilityUnavailable": "Unable to verify application permissions.",
   "panels.productCatalog.application.entryCount": "Entry count",
   "panels.productCatalog.application.path": "Application address",
   "panels.productCatalog.application.home": "Home page",
