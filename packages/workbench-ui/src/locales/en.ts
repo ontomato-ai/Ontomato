@@ -567,6 +567,7 @@ export default {
   },
   "dashboard": {
     "dragToResize": "Drag to resize",
+    "previewLocksBoardEdits": "Save or discard the unsaved preview before editing this dashboard directly",
     "noDataToDisplay": "No data to display",
     "rows": "{n} row | {n} rows",
     "rowsShown": "{n} rows, first {shown} shown",

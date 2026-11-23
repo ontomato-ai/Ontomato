@@ -9,7 +9,7 @@ import {
   type DisplayHistory, type DisplayPage, type DisplayPageController, type DisplayView, type PageContext, type PageSelection,
   type ShellBottomEntry, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import { useLeaveConfirmation, usePageAccess, usePageAdmission, usePilotPage } from "@ontomato/platform-shell";
+import { useLeaveConfirmation, usePageAccess, usePageAdmission, usePilotPage, useUnsavedChanges } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { WorkbenchAppearance } from "@ontomato/contracts/workbench-appearance";
@@ -120,6 +120,11 @@ const display = useConversationDisplay({
     ...(reported?.forms?.length ? { forms: reported.forms } : {}),
   }),
   leave: { leaves: (address) => leave.leaves(address?.split("?")[0] ?? ""), confirm: () => leave.confirm() },
+});
+// Keep the platform unsaved-changes guard (route leaves and beforeunload) informed when a paired page reports dirty.
+useUnsavedChanges({
+  dirty: () => display.isDirty.value,
+  paths: () => [route.path],
 });
 // A native entry becomes resolvable beside the conversation when the reader's application catalog arrives.
 watch(

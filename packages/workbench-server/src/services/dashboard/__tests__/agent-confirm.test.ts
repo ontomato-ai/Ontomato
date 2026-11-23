@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 
 const mocks = vi.hoisted(() => ({
   getDashboard: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("../../../infrastructure/agent-runtime/client", () => ({
 
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
+import { openPresentationView, presentationCallback, releasePresentationRun } from "../../agent-host/presentation";
 import { prepareDashboardAgentConfirm } from "../agent-confirm";
 
 configureI18n({
@@ -36,16 +38,51 @@ configureI18n({
 });
 
 const owner = { userId: "reader", domainId: "domain" };
+const actor = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", domainId: owner.domainId };
 const credentials = { token: "tok", apiKey: "", locale: "en" };
+const sessionId = "11111111-1111-4111-8111-111111111111";
+const runId = "22222222-2222-4222-8222-222222222222";
+const viewId = "44444444-4444-4444-8444-444444444444";
+
 const activeRun = {
+  id: runId,
   status: "running",
-  sessionId: "sess-1",
+  sessionId,
   channel: {
-    agent: { providerId: "workbench", sessionId: "sess-1" },
-    userRecipient: { session: { providerId: "workbench", sessionId: "root-1" } },
-    authority: { executionKind: "live" },
+    agent: { providerId: "workbench", agentId: "assistant" },
+    actor,
+    requestedBy: null,
+    root: { session: { providerId: "workbench", sessionId }, runId },
+    userRecipient: { session: { providerId: "workbench", sessionId }, actor },
+    authority: { classNames: [], executionKind: "live" },
   },
 };
+
+let viewAbort: AbortController | null = null;
+
+function bindActivePresentationView(targetRunId = runId) {
+  vi.stubEnv("AGENT_RUNTIME_SERVICE_TOKEN", "agent-confirm-test-only");
+  viewAbort?.abort();
+  viewAbort = new AbortController();
+  openPresentationView("workbench", owner, viewId, () => {}, viewAbort.signal);
+  const prepareBody: AgentPrepareRequest = {
+    mode: "run",
+    language: "en",
+    agent: { providerId: "workbench", agentId: "assistant" },
+    sessionId,
+    runId: targetRunId,
+    actor,
+    inputId: targetRunId,
+    input: { role: "user", content: "Update the dashboard", timestamp: 1 },
+    authority: { classNames: [], executionKind: "live" },
+    requestedBy: null,
+    root: { session: { providerId: "workbench", sessionId }, runId: targetRunId },
+    userRecipient: { session: { providerId: "workbench", sessionId }, actor },
+    presentationBinding: { viewId },
+  };
+  const cb = presentationCallback("workbench", prepareBody, owner, credentials, Date.now() + 60_000);
+  expect(cb).toBeDefined();
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -59,14 +96,22 @@ beforeEach(() => {
   });
   mocks.runForOwner.mockResolvedValue(activeRun);
   mocks.settings.mockResolvedValue({
-    rootSession: { providerId: "workbench", sessionId: "root-1" },
+    rootSession: { providerId: "workbench", sessionId },
     confirmBeforeExecute: true,
   });
   mocks.runtimeRequest.mockResolvedValue({ ok: true });
+  bindActivePresentationView();
+});
+
+afterEach(() => {
+  viewAbort?.abort();
+  viewAbort = null;
+  releasePresentationRun("workbench", owner, runId);
+  vi.unstubAllEnvs();
 });
 
 describe("prepareDashboardAgentConfirm", () => {
-  it("publishes a conversation confirmation question in default confirm mode", async () => {
+  it("publishes a conversation confirmation question in default confirm mode for a direct live root run with an active view", async () => {
     const result = await prepareDashboardAgentConfirm(
       owner,
       credentials,
@@ -75,7 +120,7 @@ describe("prepareDashboardAgentConfirm", () => {
         operation: "board.save",
         targetLabel: "Sales Board",
         impactSummary: "Dashboard name; Charts: Revenue (name, chart)",
-        agentRun: { sessionId: "sess-1", runId: "run-1", toolCallId: "tc-1" },
+        agentRun: { sessionId, runId, toolCallId: "tc-1" },
       },
       "Alice",
     );
@@ -91,8 +136,8 @@ describe("prepareDashboardAgentConfirm", () => {
     expect(questionId).toBe(result.questionId);
     expect(payload).toMatchObject({
       source: {
-        session: { providerId: "workbench", sessionId: "sess-1" },
-        runId: "run-1",
+        session: { providerId: "workbench", sessionId },
+        runId,
       },
     });
     expect(payload.message).toContain("Save dashboard changes");
@@ -103,7 +148,7 @@ describe("prepareDashboardAgentConfirm", () => {
 
   it("returns autoMode without publishing a user question when confirmBeforeExecute is false", async () => {
     mocks.settings.mockResolvedValue({
-      rootSession: { providerId: "workbench", sessionId: "root-1" },
+      rootSession: { providerId: "workbench", sessionId },
       confirmBeforeExecute: false,
     });
 
@@ -115,7 +160,7 @@ describe("prepareDashboardAgentConfirm", () => {
         operation: "card.parameters.save",
         targetLabel: "Revenue",
         impactSummary: "Fields: Year",
-        agentRun: { sessionId: "sess-1", runId: "run-1", toolCallId: "tc-2" },
+        agentRun: { sessionId, runId, toolCallId: "tc-2" },
       },
       "Alice",
     );
@@ -135,7 +180,7 @@ describe("prepareDashboardAgentConfirm", () => {
         dashboardId: "board-1",
         operation: "board.save",
         targetLabel: "Sales Board",
-        agentRun: { sessionId: "other-sess", runId: "run-1", toolCallId: "tc-3" },
+        agentRun: { sessionId: "other-sess", runId, toolCallId: "tc-3" },
       }),
     ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
 
@@ -145,21 +190,108 @@ describe("prepareDashboardAgentConfirm", () => {
         dashboardId: "board-1",
         operation: "board.save",
         targetLabel: "Sales Board",
-        agentRun: { sessionId: "sess-1", runId: "run-1", toolCallId: "tc-4" },
+        agentRun: { sessionId, runId, toolCallId: "tc-4" },
       }),
     ).rejects.toMatchObject({ status: 409, code: "RUN_CLOSED" });
 
     mocks.runForOwner.mockResolvedValue({
       ...activeRun,
-      channel: { ...activeRun.channel, authority: { executionKind: "test" } },
+      channel: { ...activeRun.channel, authority: { classNames: [], executionKind: "build-test" } },
     });
     await expect(
       prepareDashboardAgentConfirm(owner, credentials, {
         dashboardId: "board-1",
         operation: "board.save",
         targetLabel: "Sales Board",
-        agentRun: { sessionId: "sess-1", runId: "run-1", toolCallId: "tc-5" },
+        agentRun: { sessionId, runId, toolCallId: "tc-5" },
       }),
     ).rejects.toMatchObject({ status: 422, code: "BUILD_TEST_UNSUPPORTED" });
+  });
+
+  it("rejects delegated child runs, non-root runs, wrong host, actor mismatch, and runs without a connected live view", async () => {
+    // 1. Delegated child run (requestedBy set).
+    mocks.runForOwner.mockResolvedValue({
+      ...activeRun,
+      channel: {
+        ...activeRun.channel,
+        requestedBy: { session: { providerId: "workbench", sessionId }, runId: "parent-run" },
+      },
+    });
+    await expect(
+      prepareDashboardAgentConfirm(owner, credentials, {
+        dashboardId: "board-1",
+        operation: "board.save",
+        targetLabel: "Sales Board",
+        agentRun: { sessionId, runId, toolCallId: "tc-delegated" },
+      }),
+    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+
+    // 2. Non-root run (root.runId differs from run.id).
+    mocks.runForOwner.mockResolvedValue({
+      ...activeRun,
+      channel: {
+        ...activeRun.channel,
+        root: { session: { providerId: "workbench", sessionId }, runId: "other-root-run" },
+      },
+    });
+    await expect(
+      prepareDashboardAgentConfirm(owner, credentials, {
+        dashboardId: "board-1",
+        operation: "board.save",
+        targetLabel: "Sales Board",
+        agentRun: { sessionId, runId, toolCallId: "tc-nonroot" },
+      }),
+    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+
+    // 3. Initiator/recipient actor mismatch.
+    mocks.runForOwner.mockResolvedValue({
+      ...activeRun,
+      channel: {
+        ...activeRun.channel,
+        userRecipient: {
+          session: { providerId: "workbench", sessionId },
+          actor: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", domainId: owner.domainId },
+        },
+      },
+    });
+    await expect(
+      prepareDashboardAgentConfirm(owner, credentials, {
+        dashboardId: "board-1",
+        operation: "board.save",
+        targetLabel: "Sales Board",
+        agentRun: { sessionId, runId, toolCallId: "tc-actor" },
+      }),
+    ).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+
+    // 4. Direct user root run whose presentation view disconnected.
+    mocks.runForOwner.mockResolvedValue(activeRun);
+    viewAbort?.abort();
+    await expect(
+      prepareDashboardAgentConfirm(owner, credentials, {
+        dashboardId: "board-1",
+        operation: "board.save",
+        targetLabel: "Sales Board",
+        agentRun: { sessionId, runId, toolCallId: "tc-disconnected" },
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "VIEW_UNAVAILABLE" });
+
+    // 5. Direct user root run that never had a bound presentation view (e.g., background/CLI run).
+    const unboundRunId = "33333333-3333-4333-8333-333333333333";
+    mocks.runForOwner.mockResolvedValue({
+      ...activeRun,
+      id: unboundRunId,
+      channel: {
+        ...activeRun.channel,
+        root: { session: { providerId: "workbench", sessionId }, runId: unboundRunId },
+      },
+    });
+    await expect(
+      prepareDashboardAgentConfirm(owner, credentials, {
+        dashboardId: "board-1",
+        operation: "board.save",
+        targetLabel: "Sales Board",
+        agentRun: { sessionId, runId: unboundRunId, toolCallId: "tc-unbound" },
+      }),
+    ).rejects.toMatchObject({ status: 409, code: "VIEW_UNAVAILABLE" });
   });
 });

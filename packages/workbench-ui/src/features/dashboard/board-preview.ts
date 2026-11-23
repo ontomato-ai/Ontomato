@@ -605,6 +605,143 @@ export function applyBoardPreviewOverlay(
   }));
 }
 
+/** Identifies which metric card fields differ between the saved card and a preview patch. */
+function changedMetricFields(
+  saved: RuntimeGroup["metrics"][number],
+  patch: DashboardReplaceLayout["groups"][number]["metrics"][number],
+  preview: BoardPreviewState,
+): string[] {
+  const fields: string[] = [];
+  const nextName = preview.metricRenames[patch.id] ?? patch.name;
+  if (nextName !== undefined && nextName !== saved.name) fields.push("name");
+  if (patch.unit !== undefined && patch.unit !== (saved.unit ?? undefined)) fields.push("unit");
+  if (patch.valueField !== undefined && patch.valueField !== saved.valueField) fields.push("valueField");
+  if (patch.formats !== undefined && !sameJson(patch.formats, saved.formats ?? undefined)) fields.push("formats");
+  if (patch.sort !== undefined && !sameJson(patch.sort, saved.sort ?? undefined)) fields.push("sort");
+  if (patch.displayLimit !== undefined && patch.displayLimit !== (saved.displayLimit ?? undefined)) fields.push("displayLimit");
+  if (patch.style !== undefined && !sameJson(patch.style, saved.style ?? undefined)) fields.push("style");
+  if (patch.layout && (patch.layout.colSpan !== saved.layout?.colSpan || patch.layout.rowSpan !== saved.layout?.rowSpan)) {
+    fields.push("layout");
+  }
+  const known = new Set(["id", "name", "unit", "valueField", "formats", "sort", "displayLimit", "style", "layout"]);
+  for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+    if (known.has(key) || value === undefined) continue;
+    if (!sameJson(value, (saved as Record<string, unknown>)[key])) fields.push(key);
+  }
+  return fields;
+}
+
+/**
+ * Merges a new agent board preview fill into an existing unsaved preview so consecutive
+ * fills accumulate rather than rejecting or clobbering untouched fields.
+ */
+export function mergeBoardPreview(
+  existing: BoardPreviewState | null,
+  incoming: BoardPreviewState,
+): BoardPreviewState {
+  if (!existing) return incoming;
+  const boardName = incoming.boardName !== undefined ? incoming.boardName : existing.boardName;
+
+  if (incoming.layoutGroups) {
+    const prevCharts = new Map<string, DashboardReplaceLayout["groups"][number]["charts"][number]>();
+    const prevMetrics = new Map<string, DashboardReplaceLayout["groups"][number]["metrics"][number]>();
+    if (existing.layoutGroups) {
+      for (const group of existing.layoutGroups) {
+        for (const chart of group.charts) prevCharts.set(chart.id, chart);
+        for (const metric of group.metrics) prevMetrics.set(metric.id, metric);
+      }
+    }
+    const mergedGroups: DashboardReplaceLayout["groups"] = incoming.layoutGroups.map((group) => ({
+      ...group,
+      title: incoming.groupRenames[group.id] ?? group.title,
+      charts: group.charts.map((chart) => {
+        const prev = prevCharts.get(chart.id);
+        const merged = prev ? { ...prev, ...chart } : { ...chart };
+        if (chart.name === undefined && existing.chartRenames[chart.id] !== undefined) {
+          merged.name = existing.chartRenames[chart.id];
+        }
+        return merged;
+      }),
+      metrics: group.metrics.map((metric) => {
+        const prev = prevMetrics.get(metric.id);
+        const merged = prev ? { ...prev, ...metric } : { ...metric };
+        if (metric.name === undefined && existing.metricRenames[metric.id] !== undefined) {
+          merged.name = existing.metricRenames[metric.id];
+        }
+        return merged;
+      }),
+    }));
+    return {
+      version: incoming.version,
+      ...(boardName !== undefined ? { boardName } : {}),
+      groupRenames: { ...incoming.groupRenames },
+      chartRenames: { ...incoming.chartRenames },
+      metricRenames: { ...incoming.metricRenames },
+      layoutGroups: mergedGroups,
+    };
+  }
+
+  return {
+    version: incoming.version,
+    ...(boardName !== undefined ? { boardName } : {}),
+    groupRenames: { ...existing.groupRenames, ...incoming.groupRenames },
+    chartRenames: { ...existing.chartRenames, ...incoming.chartRenames },
+    metricRenames: { ...existing.metricRenames, ...incoming.metricRenames },
+    ...(existing.layoutGroups ? { layoutGroups: existing.layoutGroups } : {}),
+  };
+}
+
+/** True when a preview state still holds at least one pending change. */
+export function hasBoardPreviewEntries(preview: BoardPreviewState): boolean {
+  return Boolean(
+    preview.boardName !== undefined
+    || preview.layoutGroups !== undefined
+    || Object.keys(preview.groupRenames).length > 0
+    || Object.keys(preview.chartRenames).length > 0
+    || Object.keys(preview.metricRenames).length > 0,
+  );
+}
+
+/**
+ * Checks that every saved group, chart, and metric referenced by the preview still exists
+ * on the currently loaded dashboard; returns human-readable descriptions of any missing targets.
+ */
+export function findMissingPreviewTargets(
+  savedGroups: readonly RuntimeGroup[],
+  preview: BoardPreviewState,
+): string[] {
+  const index = buildBoardIndex(savedGroups);
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  const record = (label: string) => {
+    if (seen.has(label)) return;
+    seen.add(label);
+    missing.push(label);
+  };
+
+  for (const groupId of Object.keys(preview.groupRenames)) {
+    if (!index.groupMap.has(groupId)) record(`group '${groupId}'`);
+  }
+  for (const chartId of Object.keys(preview.chartRenames)) {
+    if (!index.chartMap.has(chartId)) record(`chart '${chartId}'`);
+  }
+  for (const metricId of Object.keys(preview.metricRenames)) {
+    if (!index.metricMap.has(metricId)) record(`metric '${metricId}'`);
+  }
+  if (preview.layoutGroups) {
+    for (const group of preview.layoutGroups) {
+      if (!index.groupMap.has(group.id)) record(`group '${group.id}'`);
+      for (const chart of group.charts) {
+        if (!index.chartMap.has(chart.id)) record(`chart '${chart.id}'`);
+      }
+      for (const metric of group.metrics) {
+        if (!index.metricMap.has(metric.id)) record(`metric '${metric.id}'`);
+      }
+    }
+  }
+  return missing;
+}
+
 /** Identifies cards visually modified by the active unsaved preview. */
 export function boardPreviewModifiedCards(
   savedGroups: readonly RuntimeGroup[],
@@ -638,11 +775,7 @@ export function boardPreviewModifiedCards(
       for (const patch of entry.metrics) {
         const saved = index.metricMap.get(patch.id);
         if (!saved) continue;
-        const nameChanged = patch.name !== undefined && patch.name !== saved.name;
-        const layoutChanged = patch.layout !== undefined && (
-          patch.layout.colSpan !== saved.layout?.colSpan || patch.layout.rowSpan !== saved.layout?.rowSpan
-        );
-        if (nameChanged || layoutChanged) modified.add(patch.id);
+        if (changedMetricFields(saved, patch, preview).length > 0) modified.add(patch.id);
       }
     }
   }
@@ -667,6 +800,10 @@ export function summarizeBoardPreview(
     confirmParts.push("Dashboard name");
   }
 
+  const addedGroups: string[] = [];
+  const removedGroups: string[] = [];
+  const addedCards: string[] = [];
+  const removedCards: string[] = [];
   const groupChanges: string[] = [];
   const groupConfirm: string[] = [];
   const chartChanges: string[] = [];
@@ -676,21 +813,52 @@ export function summarizeBoardPreview(
   let layoutOrderChanged = false;
 
   if (preview.layoutGroups) {
-    const savedOrder = savedGroups.map((g) => `${g.id}:${(g.charts ?? []).map((c) => c.id).join(",")}|${(g.metrics ?? []).map((m) => m.id).join(",")}`);
-    const nextOrder = preview.layoutGroups.map((g) => `${g.id}:${g.charts.map((c) => c.id).join(",")}|${g.metrics.map((m) => m.id).join(",")}`);
-    layoutOrderChanged = !sameJson(savedOrder, nextOrder);
+    const nextGroupIds = new Set(preview.layoutGroups.map((g) => g.id));
+    const nextChartIds = new Set(preview.layoutGroups.flatMap((g) => g.charts.map((c) => c.id)));
+    const nextMetricIds = new Set(preview.layoutGroups.flatMap((g) => g.metrics.map((m) => m.id)));
+
+    for (const savedGroup of savedGroups) {
+      if (!nextGroupIds.has(savedGroup.id)) {
+        removedGroups.push(savedGroup.title || savedGroup.id);
+      }
+      for (const savedChart of savedGroup.charts ?? []) {
+        if (!nextChartIds.has(savedChart.id)) {
+          removedCards.push(savedChart.name || savedChart.id);
+        }
+      }
+      for (const savedMetric of savedGroup.metrics ?? []) {
+        if (!nextMetricIds.has(savedMetric.id)) {
+          removedCards.push(savedMetric.name || savedMetric.id);
+        }
+      }
+    }
+
+    // Check whether surviving groups or surviving cards changed group placement or relative order.
+    const savedSurvivingOrder = savedGroups
+      .filter((g) => nextGroupIds.has(g.id))
+      .map((g) => `${g.id}:${(g.charts ?? []).filter((c) => nextChartIds.has(c.id)).map((c) => c.id).join(",")}|${(g.metrics ?? []).filter((m) => nextMetricIds.has(m.id)).map((m) => m.id).join(",")}`);
+    const nextSurvivingOrder = preview.layoutGroups
+      .filter((g) => index.groupMap.has(g.id))
+      .map((g) => `${g.id}:${g.charts.filter((c) => index.chartMap.has(c.id)).map((c) => c.id).join(",")}|${g.metrics.filter((m) => index.metricMap.has(m.id)).map((m) => m.id).join(",")}`);
+    layoutOrderChanged = !sameJson(savedSurvivingOrder, nextSurvivingOrder);
 
     for (const entry of preview.layoutGroups) {
       const savedGroup = index.groupMap.get(entry.id);
-      if (!savedGroup) continue;
-      const nextTitle = preview.groupRenames[entry.id] ?? entry.title;
-      if (nextTitle !== savedGroup.title) {
-        groupChanges.push(`${savedGroup.title || entry.id} → ${nextTitle}`);
-        groupConfirm.push(`${savedGroup.title || entry.id} (title)`);
+      if (!savedGroup) {
+        addedGroups.push(entry.title || entry.id);
+      } else {
+        const nextTitle = preview.groupRenames[entry.id] ?? entry.title;
+        if (nextTitle !== savedGroup.title) {
+          groupChanges.push(`${savedGroup.title || entry.id} → ${nextTitle}`);
+          groupConfirm.push(`${savedGroup.title || entry.id} (title)`);
+        }
       }
       for (const patch of entry.charts) {
         const saved = index.chartMap.get(patch.id);
-        if (!saved) continue;
+        if (!saved) {
+          addedCards.push(patch.name || patch.id);
+          continue;
+        }
         const fields: string[] = [];
         const nextName = preview.chartRenames[patch.id] ?? patch.name;
         if (nextName !== undefined && nextName !== saved.name) fields.push("name");
@@ -703,11 +871,12 @@ export function summarizeBoardPreview(
       }
       for (const patch of entry.metrics) {
         const saved = index.metricMap.get(patch.id);
-        if (!saved) continue;
-        const fields: string[] = [];
+        if (!saved) {
+          addedCards.push(patch.name || patch.id);
+          continue;
+        }
+        const fields = changedMetricFields(saved, patch, preview);
         const nextName = preview.metricRenames[patch.id] ?? patch.name;
-        if (nextName !== undefined && nextName !== saved.name) fields.push("name");
-        if (patch.layout && (patch.layout.colSpan !== saved.layout?.colSpan || patch.layout.rowSpan !== saved.layout?.rowSpan)) fields.push("layout");
         if (fields.length > 0) {
           metricChanges.push(nextName && nextName !== saved.name ? `${saved.name} → ${nextName}` : `${saved.name} (${fields.join(", ")})`);
           metricConfirm.push(`${saved.name} (${fields.join(", ")})`);
@@ -738,11 +907,19 @@ export function summarizeBoardPreview(
     }
   }
 
+  if (addedGroups.length > 0) displayParts.push(`Add groups: ${addedGroups.join(", ")}`);
+  if (removedGroups.length > 0) displayParts.push(`Remove groups: ${removedGroups.join(", ")}`);
+  if (addedCards.length > 0) displayParts.push(`Add cards: ${addedCards.join(", ")}`);
+  if (removedCards.length > 0) displayParts.push(`Remove cards: ${removedCards.join(", ")}`);
   if (groupChanges.length > 0) displayParts.push(groupChanges.join(", "));
   if (chartChanges.length > 0) displayParts.push(chartChanges.join(", "));
   if (metricChanges.length > 0) displayParts.push(metricChanges.join(", "));
   if (layoutOrderChanged) displayParts.push("layout");
 
+  if (addedGroups.length > 0) confirmParts.push(`Added groups: ${addedGroups.join(", ")}`);
+  if (removedGroups.length > 0) confirmParts.push(`Removed groups: ${removedGroups.join(", ")}`);
+  if (addedCards.length > 0) confirmParts.push(`Added cards: ${addedCards.join(", ")}`);
+  if (removedCards.length > 0) confirmParts.push(`Removed cards: ${removedCards.join(", ")}`);
   if (groupConfirm.length > 0) confirmParts.push(`Groups: ${groupConfirm.join(", ")}`);
   if (chartConfirm.length > 0) confirmParts.push(`Charts: ${chartConfirm.join(", ")}`);
   if (metricConfirm.length > 0) confirmParts.push(`Metrics: ${metricConfirm.join(", ")}`);

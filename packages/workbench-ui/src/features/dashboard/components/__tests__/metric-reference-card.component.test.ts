@@ -328,7 +328,19 @@ describe("the card parameter form", () => {
     expect(document.body.textContent).toContain("2024");
     expect(api.saved).toEqual([]);
 
-    const blocked = await vm.fillValues({ year: "2023" });
+    // Consecutive agent fills merge cleanly; user manual edits block conflicting agent overwrites.
+    const merged = await vm.fillValues({ year: "2023" });
+    expect(merged).toEqual({ ok: true, member: "card.parameters", filledFields: ["year"] });
+    await flushPromises();
+    expect(document.querySelector<HTMLInputElement>("[data-field='year'] input")!.value).toBe("2023");
+
+    // Simulate a manual user edit on 'year' -> conflicting agent fill without overwriteUnsaved is blocked.
+    const input = document.querySelector<HTMLInputElement>("[data-field='year'] input")!;
+    input.value = "2024";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await flushPromises();
+
+    const blocked = await vm.fillValues({ year: "2022" });
     expect(blocked).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "card.parameters" });
 
     const saved = await vm.saveFromAction("card.parameters.save", { sessionId: "s1", runId: "r1", toolCallId: "t1" });

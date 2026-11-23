@@ -3,6 +3,7 @@ import { z } from "zod";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { hasActivePresentationForRun, isLivePresentationEligibleRun } from "../agent-host/presentation";
 import { runForOwner } from "../assistant/execution";
 import type { AssistantOwner } from "../assistant/store";
 import { panelConfirmation } from "../product-panels/confirmation";
@@ -65,6 +66,18 @@ export async function prepareDashboardAgentConfirm(
   }
   if (run.channel.authority.executionKind !== "live") {
     throw new HttpError(422, "Dashboard operations do not support test data", "BUILD_TEST_UNSUPPORTED");
+  }
+  if (!isLivePresentationEligibleRun({
+    host: "workbench",
+    owner,
+    runId: run.id,
+    sessionId: run.sessionId,
+    channel: run.channel,
+  })) {
+    throw new HttpError(403, "Run is not eligible for live dashboard confirmation", "FORBIDDEN");
+  }
+  if (!hasActivePresentationForRun("workbench", owner, run.id)) {
+    throw new HttpError(409, "No active live presentation view is connected for this run", "VIEW_UNAVAILABLE");
   }
 
   const settings = await panelOperationStore.settings(owner, root);

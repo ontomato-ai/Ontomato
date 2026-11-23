@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
+import { useUnsavedChanges } from "@ontomato/platform-shell";
 import {
   DashboardHome, useDashboardStore, type DashboardSurface,
 } from "@ontomato/workbench-ui/features/dashboard";
@@ -32,10 +33,26 @@ const props = withDefaults(
   }>(),
   { paired: false, dashboardId: undefined, navigate: undefined, objectRefresh: null, registerPageController: undefined },
 );
+const emit = defineEmits<{ "display-dirty": [dirty: boolean] }>();
 
 const { t } = useI18n();
 const route = useRoute();
 const store = useDashboardStore();
+const dirty = ref(false);
+
+function onDisplayDirty(next: boolean) {
+  dirty.value = next;
+  emit("display-dirty", next);
+}
+
+// Leaving the standalone dashboards page with unsaved changes asks via the platform shell (both router and beforeunload).
+// Beside a conversation, the host conversation display owns leave confirmation through the forwarded display-dirty event.
+if (!props.paired) {
+  useUnsavedChanges({
+    dirty: () => dirty.value,
+    paths: () => [route.path],
+  });
+}
 
 /*
  * The board this page shows is its own context, not the page load's: beside a conversation it is the conversation's page
@@ -92,6 +109,7 @@ const page = computed(
     <DashboardHome
       :object-refresh="props.objectRefresh"
       :register-page-controller="props.registerPageController"
+      @display-dirty="onDisplayDirty"
     />
     <template v-if="!props.paired" #foot>
       <!-- The page's own composer offers the agents this page can work with, the same declaration the conversation reads. -->
