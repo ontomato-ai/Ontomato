@@ -3,7 +3,6 @@ import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } fro
 import { panelDownloadReceiptSchema } from "./panel-download";
 import { panelUploadDeclarationSchema } from "./panel-upload";
 import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema, panelOperationUnavailableSchema } from "./panel-manifest";
-export { panelOperationRowContextSchema, type PanelOperationRowContext } from "./panel-manifest";
 import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,

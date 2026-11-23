@@ -53,7 +53,7 @@ const manifest: DirectPanelManifest = {
   members: {
     list: { target: { projectionId: "skill-list" } },
     form: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "agent" } } },
-    skills: { target: { projectionId: "agent-skills" }, formField: { slot: "form", path: "/skills" } },
+    skills: { target: { projectionId: "agent-skills" } },
   },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
@@ -89,7 +89,16 @@ function open(members: string[], none = false, incompatible?: string) {
   });
   const element = document.createElement("div");
   document.body.append(element);
-  createApp({ render: () => h("div", members.map((member) => h(PanelMember, { instance, member })) ) })
+  const includeSkillsSlot = members.includes("skills");
+  const topMembers = members.filter((member) => member !== "skills");
+  createApp({
+    render: () => h(
+      "div",
+      topMembers.map((member) => (member === "form" && includeSkillsSlot
+        ? h(PanelMember, { instance, member }, { "field-skills": () => [h(PanelMember, { instance, member: "skills" })] })
+        : h(PanelMember, { instance, member }))),
+    ),
+  })
     .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
   return { element, instance };
 }

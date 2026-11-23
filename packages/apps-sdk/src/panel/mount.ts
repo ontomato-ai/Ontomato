@@ -70,6 +70,20 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
   const transport = contextTransport(appContext);
   const address = ref(message.url);
   const text = createPanelText(message.panel.content.messages ?? {}, appContext.locale, defaultLocale);
+  const projectionPromises = new Map<string, Promise<ProductProjection>>();
+  const readProjectionCached = (id: string) => {
+    const cached = projectionPromises.get(id);
+    if (cached) return cached;
+    const pending = readProjectionRecord(transport, id).then(
+      (record) => record as ProductProjection,
+      (error) => {
+        if (projectionPromises.get(id) === pending) projectionPromises.delete(id);
+        throw error;
+      },
+    );
+    projectionPromises.set(id, pending);
+    return pending;
+  };
   const instance = createPanelInstance(message.panel.manifest, {
     text,
     operations: panelHumanOperations(message.use, { request: (path, init, service) => transport.request(path, init, service) }),
@@ -81,7 +95,7 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     translate: contextTranslate(appContext),
     reportDraftError: failed,
     recordDraftCreated: (link, id) => recordDraftCreated(transport, link, id),
-    readProjection: async (id) => await readProjectionRecord(transport, id) as ProductProjection,
+    readProjection: readProjectionCached,
   });
   const unsaved = shallowReactive(new Set<Ref<boolean>>());
   const projectionListeners = new Set<(id: string, revision?: number) => void>();
@@ -146,7 +160,10 @@ export async function mountPanel(component: PanelComponent): Promise<PanelMount>
     address,
     isDirty: () => instance.dirty() || [...unsaved].some((flag) => flag.value),
     readPageDraft: (sessionId, runId, path) => readPageDraft(transport, sessionId, runId, path),
-    projectionChanged: (id, revision) => projectionListeners.forEach((listener) => listener(id, revision)),
+    projectionChanged: (id, revision) => {
+      projectionPromises.delete(id);
+      projectionListeners.forEach((listener) => listener(id, revision));
+    },
     refreshObject: (target) => {
       if (target) instance.objectChanged(target);
       else void nextTick(() => instance.refreshObjects());

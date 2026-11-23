@@ -9,22 +9,25 @@ description: Build and register an Ontomato panel from declared read functions, 
    `node "$SKILL/scripts/ontomato.mjs" panel type <type-id>` (and `--read <name>` for one read's parameters and `resultSchema`).
    - **Customer ontology classes** (for example `Student`): projections only bind read and write functions — bind the
      platform's generic read functions parameterized by class (list objects of a class / get one object by ID, listed
-     under `panel type <class>`), MetricViews for filtered/calculated reads, and Actions for writes. Until generic
-     display components bind MetricView results, calculated displays use `MetricChart` (registered from a dashboard card).
+     under `panel type <class>`), MetricViews for filtered/calculated reads, and Actions for writes.
    - **Platform types** (`platform:*`): bind their built-in platform reads and management operations.
 2. **Respect the four boundaries:**
    - **Hierarchy**: platform sidebar → application menu / frame (use the platform's default application menu; do not
      hand-author custom frame panels yet) → current entry panel → nested panels and components.
    - **Display belongs to universal components**: follow the
      [three-step component lookup](CODE.md#choose-an-official-component-before-writing-one) — check official component
-     defaults first (`sdk read docs/components.md`), then `config`, and write a formal component only as a last resort.
-     (Table action columns and standard Vue slots for custom cells/fields/row details are provided in the next SDK
-     update; do not use legacy `listColumn`/`listRowDetail`/`formField` wiring or hand-roll tables with `PanelData`.)
+     defaults first (`sdk read docs/components.md`), then `config` (including `ObjectList` `config.rowActions` and
+     column widths, `ObjectForm` `config.presentation`/`groups`), and use standard Vue slots (`#cell-<key>`, `#actions`,
+     `#row-detail`, `#field-<dotPath>`, etc.) with a domain component declared in `manifest.components` or nested
+     `<projection>` only when a specific piece still cannot be configured. Legacy `listColumn` / `listRowDetail` /
+     `formField` bindings are removed — follow the
+     [end-to-end Vue slots, `rowActions`, and per-row operation example](CODE.md#custom-list-columns-row-detail-and-per-row-operations).
    - **Logic belongs to the capability layer**: calculations, derived labels, and business rules belong in MetricViews
      (reads), Actions (writes), or platform-owned reads — not in panels or components.
    - **Panels only lay out and wire**: panels coordinate layout, typed public state, visibility, navigation, and
-     projection outputs (titles, counts, selections, draft state). Panels do not read business record fields directly
-     or compute business values; unsaved form drafts do not count as ontology data; there are no panel-private components.
+     read-only projection outputs (`usePanelOutput` / `usePanelOutputs` for titles, counts, selections, dirty/draft state).
+     Panels do not read business record fields directly or compute business values; unsaved form drafts do not count as
+     ontology data; there are no panel-private components.
 3. **Pick a matching [page template](../templates/README.md)** (prefer
    [two-entry-catalog-detail](../templates/two-entry-catalog-detail/README.md) for multi-column catalogs with full-width
    detail, or [catalog-detail-dialog](../templates/catalog-detail-dialog/README.md) / `panel scaffold` for a single-panel

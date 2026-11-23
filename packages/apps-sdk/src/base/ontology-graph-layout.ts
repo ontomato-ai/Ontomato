@@ -1,11 +1,11 @@
-import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectRef } from "@ontomato/contracts/panel-manifest";
 import type { GraphCanvasPoint } from "@ontomato/foundation-ui/graph/g6";
 import type {
   PlatformGraphRelationStatus,
   PlatformGraphTypeSpec,
 } from "../panel/platform-objects";
 
-type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
+type PanelObjectValue = PanelObjectRef;
 
 const COLUMN_GAP = 280;
 const ROW_GAP = 76;

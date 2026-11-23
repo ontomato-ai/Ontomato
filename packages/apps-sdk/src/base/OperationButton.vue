@@ -77,7 +77,6 @@ const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const member = useMember();
-const rowOperation = member.rowOperation ?? null;
 const labels = useDataStateLabels();
 
 /** The member's operations, as their owners admit them now. */
@@ -141,11 +140,9 @@ const label = computed(() => {
 });
 
 const targetKey = computed(() => (
-  rowOperation
-    ? JSON.stringify(member.inputs.value)
-    : targetInfo.value.target?.kind === "object"
-      ? `${targetInfo.value.target.objectType}:${targetInfo.value.target.primaryKey}`
-      : null
+  targetInfo.value.target?.kind === "object"
+    ? `${targetInfo.value.target.objectType}:${targetInfo.value.target.primaryKey}`
+    : null
 ));
 
 const inputFields = computed(() =>
@@ -157,7 +154,7 @@ watch(targetKey, () => {
 });
 
 const ready = computed(() =>
-  isOperationReady(descriptor.value, targetInfo.value, Boolean(rowOperation), running.value),
+  isOperationReady(descriptor.value, targetInfo.value, running.value),
 );
 
 function onTriggerClick() {

@@ -1,31 +1,42 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
 import { useFormControls } from "./form-controls";
 import FormFieldControl from "./FormFieldControl.vue";
+import FormFieldSlotHost from "./FormFieldSlotHost.vue";
 
 /**
- * One field of a row of the array at `path`, at the row's current `index`: a reference is drawn by the projection
- * declared for it, any other field by its own control.
+ * One field of a row of the array at `path`, at the row's current `index`: drawn by a custom Vue slot
+ * (`#field-<arrayPath>/*<itemPath>` or `#field`) when supplied, else by its default control.
  */
-defineProps<{ field: PanelFormField; path: string; index: number; disabled: boolean }>();
+const props = defineProps<{ field: PanelFormField; path: string; index: number; disabled: boolean }>();
 const { t } = useI18n();
 const controls = useFormControls();
+const absolutePath = computed(() => `${props.path}/${props.index}${props.field.path}`);
+const customSlot = computed(() => controls.resolveFieldSlot(props.field, absolutePath.value, props.path, props.index));
 </script>
 
 <template>
-  <template v-if="field.control.kind === 'reference'">
-    <component
-      :is="controls.fieldControl(path, field.path)"
-      v-if="controls.fieldControl(path, field.path)"
-      class="sdk-form-field"
-      :path="path + '/' + index + field.path"
-    ></component>
-    <p v-else-if="controls.fieldControl(path, field.path) === undefined" role="alert" class="sdk-form-field-unavailable">
+  <form-field-slot-host
+    v-if="customSlot"
+    class="sdk-form-field"
+    :form-slot="controls.formSlot"
+    :path="absolutePath"
+    :field="props.field"
+    :index="props.index"
+    :render-slot="customSlot.slot"
+    :slot-props="customSlot.props"
+  >
+    <p v-if="field.control.kind === 'reference'" role="alert" class="sdk-form-field-unavailable">
       {{ field.label }}: {{ t("platform.formControlUnavailable") }}
     </p>
-  </template>
-  <form-field-control v-else :field="field" :path="path + '/' + index + field.path" :disabled="disabled"></form-field-control>
+    <form-field-control v-else :field="props.field" :path="absolutePath" :disabled="disabled"></form-field-control>
+  </form-field-slot-host>
+  <p v-else-if="field.control.kind === 'reference'" role="alert" class="sdk-form-field-unavailable">
+    {{ field.label }}: {{ t("platform.formControlUnavailable") }}
+  </p>
+  <form-field-control v-else :field="props.field" :path="absolutePath" :disabled="disabled"></form-field-control>
 </template>
 
 <style scoped>

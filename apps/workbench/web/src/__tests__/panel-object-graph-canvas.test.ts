@@ -88,7 +88,7 @@ const graph = (editable: boolean, look: Record<string, unknown> = {}): DirectPro
   outputs: {
     selectedNode: { kind: "object", objectType: OBJECT_TYPE }, selectedEdge: { kind: "object", objectType: RELATIONSHIP },
     connectFrom: { kind: "scalar", type: "string" }, connectTo: { kind: "scalar", type: "string" },
-    positions: { kind: "node-positions" }, zoom: { kind: "scalar", type: "number" },
+    positions: { kind: "json" }, zoom: { kind: "scalar", type: "number" },
   },
   config: {
     edgeEnds: { source: "/fromclass", target: "/toclass" }, ...(editable ? { editable: true } : {}),
@@ -106,7 +106,7 @@ const manifest = (projectionId: string): DirectPanelManifest => ({
     selectedRelation: { type: { kind: "object", objectType: RELATIONSHIP }, personal: false, deepLink: true, external: false },
     connectFrom: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
     connectTo: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
-    positions: { type: { kind: "node-positions" }, personal: true, deepLink: false, external: false },
+    positions: { type: { kind: "json" }, personal: true, deepLink: false, external: false },
     pathClasses: { type: { kind: "list", items: { kind: "object", objectType: OBJECT_TYPE } }, personal: false, deepLink: false, external: false },
     pathRelations: { type: { kind: "list", items: { kind: "object", objectType: RELATIONSHIP } }, personal: false, deepLink: false, external: false },
     pathFrom: { type: { kind: "object", objectType: OBJECT_TYPE }, personal: false, deepLink: false, external: false },

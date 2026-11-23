@@ -245,6 +245,7 @@ export default {
     "listPerPage": "{size} / page",
     "listExpandRow": "Expand {label}",
     "listCollapseRow": "Collapse {label}",
+    "listActions": "Actions",
     "clearFilters": "Clear filters",
     "booleanTrue": "Yes",
     "booleanFalse": "No",

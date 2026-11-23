@@ -130,7 +130,9 @@ export const SDK_UI_COMPONENTS: readonly SdkUiComponentMapping[] = [
   { sdkTag: "sdk-menu-item-group", sdkExport: "SdkMenuItemGroup", implTag: "el-menu-item-group", implExport: "ElMenuItemGroup", implSubpath: "menu" },
   { sdkTag: "sdk-option", sdkExport: "SdkOption", implTag: "el-option", implExport: "ElOption", implSubpath: "select" },
   { sdkTag: "sdk-option-group", sdkExport: "SdkOptionGroup", implTag: "el-option-group", implExport: "ElOptionGroup", implSubpath: "select" },
+  { sdkTag: "sdk-page-header", sdkExport: "SdkPageHeader", implTag: "el-page-header", implExport: "ElPageHeader", implSubpath: "page-header" },
   { sdkTag: "sdk-pagination", sdkExport: "SdkPagination", implTag: "el-pagination", implExport: "ElPagination", implSubpath: "pagination" },
+  { sdkTag: "sdk-popconfirm", sdkExport: "SdkPopconfirm", implTag: "el-popconfirm", implExport: "ElPopconfirm", implSubpath: "popconfirm" },
   { sdkTag: "sdk-popover", sdkExport: "SdkPopover", implTag: "el-popover", implExport: "ElPopover", implSubpath: "popover" },
   { sdkTag: "sdk-progress", sdkExport: "SdkProgress", implTag: "el-progress", implExport: "ElProgress", implSubpath: "progress" },
   { sdkTag: "sdk-radio", sdkExport: "SdkRadio", implTag: "el-radio", implExport: "ElRadio", implSubpath: "radio" },
@@ -179,11 +181,8 @@ export const SDK_UI_COMPONENTS: readonly SdkUiComponentMapping[] = [
 /** Excluded UI primitives and imperative services that remain platform-owned. */
 export const SDK_UI_FORBIDDEN_COMPONENTS: readonly SdkUiForbiddenComponent[] = [
   { implTag: "el-config-provider", implExport: "ElConfigProvider", replacement: "Platform host manages locale and theme configuration automatically" },
-  { implTag: "el-page-header", implExport: "ElPageHeader", replacement: "Use the official <page-header> component (PageHeader from @ontomato/sdk/base)" },
   { implTag: "el-popper", implExport: "ElPopper", replacement: "Use <sdk-popover> or <sdk-tooltip> instead of internal floating primitives" },
-  { implTag: "el-popconfirm", implExport: "ElPopconfirm", replacement: "Declare a write operation so the platform host confirms and dispatches it" },
   { implExport: "ElMessage", replacement: "usePanelContext().notify({ kind, text }) from @ontomato/sdk/panel" },
-  { implExport: "ElMessageBox", replacement: "Declare a write operation so the platform host confirms it, or use <sdk-dialog> for local UI state" },
   { implExport: "ElNotification", replacement: "usePanelContext().notify({ kind, text }) from @ontomato/sdk/panel" },
   { implExport: "ElLoading", replacement: "v-sdk-loading in templates or vSdkLoading from @ontomato/sdk/ui" },
 ];

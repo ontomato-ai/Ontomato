@@ -6,7 +6,17 @@
   "exports": {
     ".": "./src/edition.ts",
     "./direct": "./src/direct.ts",
-    "./ui": "./src/entries/ui.ts"
+    "./sdk": "./src/entries/sdk.ts",
+    "./ui": "./src/entries/ui.ts",
+    "./base": "./src/entries/base.ts",
+    "./graph": "./src/entries/graph.ts",
+    "./chart": "./src/entries/chart.ts",
+    "./markdown": "./src/entries/markdown.ts",
+    "./form": "./src/entries/form.ts",
+    "./code": "./src/entries/code.ts",
+    "./preview": "./src/entries/preview.ts",
+    "./chat": "./src/entries/chat.ts",
+    "./echarts": "./src/entries/echarts.js"
   },
   "scripts": {
     "test": "node --test '*.node-test.mjs' 'examples/**/*.node-test.mjs'",

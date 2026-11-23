@@ -125,8 +125,7 @@ export type SdkAuthoringViolationKind =
   | "forbidden-import"
   | "forbidden-directive"
   | "forbidden-token"
-  | "forbidden-export"
-  | "forbidden-viewport-unit";
+  | "forbidden-export";
 
 export interface SdkAuthoringViolation {
   readonly file: string;
@@ -138,29 +137,14 @@ export interface SdkAuthoringViolation {
   readonly message: string;
 }
 
-/**
- * Single switch controlling whether panel authoring CSS checks reject viewport-relative length
- * units (`vh`, `vw`, `vmin`, `vmax`, `vi`, `vb`, and their `s`/`l`/`d` variants).
- *
- * Kept `false` while existing built-in panels finish migrating off viewport height formulas and
- * inline modal cards to normal content-box CSS and `<sdk-dialog>` / `<sdk-drawer>`. Flip this
- * constant to `true` to enforce the rule globally across `panel check`, built-in checks, and CI.
- */
-export const REJECT_VIEWPORT_UNITS = false;
-
-export interface CheckAuthoringStylesOptions {
-  readonly rejectViewportUnits?: boolean;
-}
-
-export interface CheckAuthoringTemplateOptions extends CheckAuthoringStylesOptions {
+export interface CheckAuthoringTemplateOptions {
   readonly allowedSdkTags?: ReadonlySet<string>;
 }
 
-const CSS_VIEWPORT_UNIT_PATTERN =
-  /(?<![A-Za-z0-9_.#\\-])([+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?:[sld]?v(?:min|max|[whib])))(?![A-Za-z0-9_-])/giu;
-
-const VIEWPORT_UNIT_REPLACEMENT =
-  "fill the parent content box with normal CSS and a rem/px min-height, or use <sdk-dialog>/<sdk-drawer> for overlays";
+export interface CheckAuthoringScriptOptions {
+  /** Whether the checked module is a panel script (`panel.mjs`) or a component module. Defaults to `"component"`. */
+  readonly target?: "panel" | "component";
+}
 
 interface TemplateAttribute {
   readonly name: string;
@@ -424,15 +408,13 @@ function makeViolation(
 }
 
 /**
- * Check a CSS block or stylesheet for third-party `--el-*` variables and (when enabled via
- * `REJECT_VIEWPORT_UNITS` or `options.rejectViewportUnits`) viewport length units.
+ * Check a CSS block or stylesheet for third-party `--el-*` variables.
  */
 export function checkAuthoringStyles(
   css: string,
   file: string,
   baseOffset = 0,
   fullSource = css,
-  options: CheckAuthoringStylesOptions = {},
 ): SdkAuthoringViolation[] {
   const violations: SdkAuthoringViolation[] = [];
   const stripped = stripCssCommentsAndStrings(css);
@@ -443,16 +425,6 @@ export function checkAuthoringStyles(
       ? `Replace third-party theme variable '${found}' with '${replacement}'`
       : `Do not use third-party theme variable '${found}'; use a published --sdk-* or platform design token`;
     violations.push(makeViolation(fullSource, file, baseOffset + match.index!, "forbidden-token", found, replacement, message));
-  }
-  const rejectViewport = options.rejectViewportUnits ?? REJECT_VIEWPORT_UNITS;
-  if (rejectViewport) {
-    for (const match of stripped.matchAll(CSS_VIEWPORT_UNIT_PATTERN)) {
-      const found = match[0];
-      const message = `Do not use viewport unit '${found}'; ${VIEWPORT_UNIT_REPLACEMENT}`;
-      violations.push(makeViolation(
-        fullSource, file, baseOffset + match.index!, "forbidden-viewport-unit", found, VIEWPORT_UNIT_REPLACEMENT, message,
-      ));
-    }
   }
   return violations.sort((a, b) => a.line - b.line || a.column - b.column);
 }
@@ -492,15 +464,12 @@ export function checkAuthoringTemplate(
   options: CheckAuthoringTemplateOptions = {},
 ): SdkAuthoringViolation[] {
   const violations: SdkAuthoringViolation[] = [];
-  const styleOptions: CheckAuthoringStylesOptions = {
-    ...(options.rejectViewportUnits !== undefined && { rejectViewportUnits: options.rejectViewportUnits }),
-  };
   // Preserve offsets by blanking comments and script bodies while scanning <style> bodies separately.
   let sanitized = template.replace(/<!--[\s\S]*?-->/gu, match => match.replace(/[^\r\n]/gu, " "));
   sanitized = sanitized.replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, match => match.replace(/[^\r\n]/gu, " "));
   sanitized = sanitized.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/giu, (full, body: string, offset: number) => {
     const bodyOffset = offset + full.indexOf(body);
-    violations.push(...checkAuthoringStyles(body, file, bodyOffset, template, styleOptions));
+    violations.push(...checkAuthoringStyles(body, file, bodyOffset, template));
     return full.replace(/[^\r\n]/gu, " ");
   });
 
@@ -515,7 +484,7 @@ export function checkAuthoringTemplate(
     for (const attr of attrs) {
       if (attr.name.toLowerCase() === "style" && attr.value !== undefined && attr.valueOffset !== undefined) {
         violations.push(
-          ...checkAuthoringStyles(attr.value, file, tag.tagStart + attr.valueOffset, template, styleOptions),
+          ...checkAuthoringStyles(attr.value, file, tag.tagStart + attr.valueOffset, template),
         );
       }
     }
@@ -603,7 +572,12 @@ export function checkAuthoringTemplate(
 }
 
 /** Check JS/TS script source for forbidden `element-plus` imports and renamed SDK exports. */
-export async function checkAuthoringScript(source: string, file: string): Promise<SdkAuthoringViolation[]> {
+export async function checkAuthoringScript(
+  source: string,
+  file: string,
+  options: CheckAuthoringScriptOptions = {},
+): Promise<SdkAuthoringViolation[]> {
+  const isPanel = options.target === "panel";
   const violations: SdkAuthoringViolation[] = [];
   const { imports } = await readModuleFacts(source, file);
   for (const entry of imports) {
@@ -614,9 +588,15 @@ export async function checkAuthoringScript(source: string, file: string): Promis
       const mappedNames: string[] = [];
       if (namedBlock) {
         for (const raw of namedBlock.split(",").map(s => s.trim().split(/\s+as\s+/u)[0]?.trim()).filter(Boolean)) {
+          if (raw === "ElMessageBox") {
+            mappedNames.push(isPanel
+              ? `ElMessageBox -> SdkMessageBox from "${panelModuleSpecifiers.sdk}"`
+              : `ElMessageBox -> SdkMessageBox`);
+            continue;
+          }
           const comp = sdkUiComponentByImplExport(raw!);
           if (comp) {
-            mappedNames.push(`${raw} -> ${comp.sdkExport}`);
+            mappedNames.push(isPanel ? `${raw} -> <${comp.sdkTag}> in panel.html` : `${raw} -> ${comp.sdkExport}`);
             continue;
           }
           const forbidden = sdkUiForbiddenByImplExport(raw!);
@@ -626,9 +606,13 @@ export async function checkAuthoringScript(source: string, file: string): Promis
           }
         }
       }
-      const replacement = mappedNames.length
-        ? `import from "${SDK_UI_ENTRY_SPECIFIER}" (${mappedNames.join("; ")})`
-        : SDK_UI_ENTRY_SPECIFIER;
+      const replacement = isPanel
+        ? (mappedNames.length
+            ? mappedNames.join("; ")
+            : `<sdk-*> tags in panel.html or ${panelModuleSpecifiers.sdk}`)
+        : (mappedNames.length
+            ? `import from "${SDK_UI_ENTRY_SPECIFIER}" (${mappedNames.join("; ")})`
+            : SDK_UI_ENTRY_SPECIFIER);
       violations.push(makeViolation(
         source, file, start, "forbidden-import", specifier, replacement,
         `Do not import '${specifier}'; use '${replacement}'`,

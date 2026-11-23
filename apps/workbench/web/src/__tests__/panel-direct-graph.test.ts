@@ -139,7 +139,11 @@ function mountDirect(
   manifest: PanelManifest,
   projections: Record<string, ProductProjection>,
   answer: (request: Read) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>,
-  options: { initial?: Record<string, unknown>; members?: readonly string[] } = {},
+  options: {
+    initial?: Record<string, unknown>;
+    members?: readonly string[];
+    memberSlots?: (instance: ReturnType<typeof createDirectPanelInstance>) => Record<string, Record<string, () => ReturnType<typeof h>[]>>;
+  } = {},
 ) {
   const reads: Read[] = [];
   const memberKeys = options.members ?? Object.keys(manifest.members);
@@ -168,8 +172,9 @@ function mountDirect(
   });
   const element = document.createElement("div");
   document.body.appendChild(element);
+  const resolvedSlots = options.memberSlots?.(instance);
   const app = createApp({
-    setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, { instance, member, key: member }))),
+    setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, { instance, member, key: member }, resolvedSlots?.[member]))),
   })
     .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }))
     .use(ElementPlus);
@@ -224,7 +229,7 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
     },
     members: {
       definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
-      scope: { target: { projectionId: "agent-data-scope" }, formField: { slot: "definition", path: "/classNames" } },
+      scope: { target: { projectionId: "agent-data-scope" } },
     },
   };
 
@@ -263,7 +268,11 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
       }
       throw new Error(`Unexpected read ${request.dataName}`);
     },
-    { initial: { selectedAgent: { className: AGENT_DEFINITION, primaryKey: "agent-1" } } },
+    {
+      initial: { selectedAgent: { className: AGENT_DEFINITION, primaryKey: "agent-1" } },
+      members: ["definition"],
+      memberSlots: (inst) => ({ definition: { "field-classNames": () => [h(PanelMember, { instance: inst, member: "scope" })] } }),
+    },
   );
 
   const adjacentBtn = await vi.waitFor(() => {
@@ -353,7 +362,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
     state: { selectedAgent: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
     members: {
       definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
-      scope: { target: { projectionId: "agent-data-scope" }, inputs: {}, formField: { slot: "definition", path: "/classNames" } },
+      scope: { target: { projectionId: "agent-data-scope" }, inputs: {} },
     },
   });
 
@@ -388,7 +397,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
         // A frame panel's own frame is not an application's frame: no current entry, no menu.
         currentEntry: computed(() => null), entryMenu: computed(() => null),
       });
-      return () => h("div", [h(Projection, { slot: "definition" }), h(Projection, { slot: "scope" })]);
+      return () => h("div", [h(Projection, { slot: "definition" }, { "field-classNames": () => h(Projection, { slot: "scope" }) })]);
     },
   }))
     .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }))
@@ -420,7 +429,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
   const { panelContextKey, projectionKey } = await import("../../../../../packages/apps-sdk/src/panel/context");
   const { panelMemberKey } = await import("../../../../../packages/apps-sdk/src/panel/member");
   const { default: ObjectGraph } = await import("../../../../../packages/apps-sdk/src/base/ObjectGraph.vue");
-  const { fieldControlKey, fieldControlsOf } = await import("../../../../../packages/apps-sdk/src/base/form-controls");
+  const { formFieldSlotKey } = await import("../../../../../packages/apps-sdk/src/panel/slot-context");
 
   const scopeProjection: ProductProjection = {
     ...meta,
@@ -439,7 +448,7 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
     state: {},
     members: {
       definition: { target: { projectionId: "agent-form" }, inputs: {} },
-      scope: { target: { projectionId: "agent-data-scope" }, inputs: {}, formField: { slot: "definition", path: "/classNames" } },
+      scope: { target: { projectionId: "agent-data-scope" }, inputs: {} },
     },
   });
   const instance = createPanelInstance(panel, {
@@ -519,11 +528,20 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
           read: async (name) => (name === "nodes" ? nodesState.value : edgesState.value),
         },
       }));
-      // The projection registers its choice of the field; the form draws it where the field is (here, after it).
-      return () => {
-        const field = fieldControlsOf(instance).get(fieldControlKey("definition", "/classNames"));
-        return [h(ObjectGraph, { edgeEnds: { source: "/fromclass", target: "/toclass" } }), field ? h(field, { path: "/classNames" }) : null];
-      };
+      provide(formFieldSlotKey, {
+        formSlot: "definition",
+        path: computed(() => "/classNames"),
+        field: computed(() => ({
+          path: "/classNames",
+          label: "Data scope",
+          control: { kind: "string-array" as const },
+          valueSchema: {},
+          required: false,
+          readOnly: false,
+        })),
+        index: computed(() => undefined),
+      });
+      return () => h(ObjectGraph, { edgeEnds: { source: "/fromclass", target: "/toclass" } });
     },
   }))
     .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } }))

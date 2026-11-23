@@ -234,9 +234,7 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
     async save(target, input) {
       const save = formSave(member.operations.value);
       if (!save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
-      const answer = member.rowOperation
-        ? await member.rowOperation.run(save.name, { ...input })
-        : await instance.writeOperation(instance.operationIdOf(member.key, save.name), { call: { target, input } });
+      const answer = await instance.writeOperation(instance.operationIdOf(member.key, save.name), { call: { target, input } });
       if (answer.decision === "cancel") throw new Error("The save was cancelled");
       const { response } = answer;
       if (response.kind === "not-dispatched") throw new Error(response.message);

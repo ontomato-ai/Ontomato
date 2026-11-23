@@ -534,31 +534,16 @@ it("documents only the platform ontology reads declared on the projection", asyn
   expect(reads).not.toContain("dataName `start`");
 });
 
-it("describes listColumn and listRowDetail members, bound operation params, and row-scoped operate guidance", async () => {
+it("describes row-scoped operations declared on a list projection, bound operation params, and row-scoped operate guidance", async () => {
   javaSources([uses[0]!]);
   const listProj = trialProjections.get("projection-schedules-tasks")!;
-  const summaryProj = trialProjections.get("projection-schedules-summary")!;
-  extraProjections.set("row-list", listProj);
-  extraProjections.set("row-col-run", {
-    ...runProjection,
-    inputs: {
-      task: { kind: "object", objectType: "platform:ScheduledTask" },
-      note: { kind: "scalar", type: "string" },
-    },
+  extraProjections.set("row-list", {
+    ...listProj,
     operations: {
       runNow: {
         operation: { kind: "PlatformOperation", id: "schedules.runNow" },
-        target: { input: "task" },
-        params: { note: { input: "note" }, source: { literal: "row-action" } },
-      },
-    },
-  });
-  extraProjections.set("row-detail-summary", {
-    ...summaryProj,
-    operations: {
-      runNow: {
-        operation: { kind: "PlatformOperation", id: "schedules.runNow" },
-        target: { input: "task" },
+        target: { row: true },
+        params: { note: { rowField: "schedule" }, source: { literal: "row-action" } },
       },
     },
   });
@@ -571,33 +556,19 @@ it("describes listColumn and listRowDetail members, bound operation params, and 
       state: { selectedTask },
       members: {
         tasks: { target: { projectionId: "row-list" }, outputs: { selected: { state: "selectedTask" } } },
-        rowRun: {
-          target: { projectionId: "row-col-run" },
-          listColumn: { slot: "tasks", column: "actions" },
-          inputs: { task: { item: true }, note: { itemField: "schedule" } },
-        },
-        rowDetail: {
-          target: { projectionId: "row-detail-summary" },
-          listRowDetail: { slot: "tasks" },
-          inputs: { task: { item: true } },
-        },
       },
     },
   });
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
-  expect(markdown).toContain("Attached as listColumn on host list `tasks`, column `actions`.");
-  expect(markdown).toContain("Attached as listRowDetail on host list `tasks`.");
-  expect(markdown).toContain('Row-scoped (listColumn on host list `tasks`, column `actions`).');
-  expect(markdown).toContain('Row inputs: {"task":{"item":true},"note":{"itemField":"schedule"}}.');
-  expect(markdown).toContain('Bound params: {"note":{"input":"note"},"source":{"literal":"row-action"}}.');
-  expect(markdown).toContain("Row-scoped (listRowDetail on host list `tasks`).");
-  expect(markdown).toContain("rowContext");
-  expect(markdown).toContain("itemKey");
-  expect(markdown).toContain("Row-scoped operations accept only a single `call`, never `calls`.");
+  expect(markdown).toContain("Row-scoped operation on list rows.");
+  expect(markdown).toContain('Bound params: {"note":{"rowField":"schedule"},"source":{"literal":"row-action"}}.');
+  expect(markdown).toContain("batch per-row availability (`rowOperations`)");
+  expect(markdown).toContain("Entry-pinned and literal parameters are enforced server-side.");
+  expect(markdown).not.toContain("rowContext");
 });
 
-it("refuses generating a panel skill when a listColumn member declares independent data", async () => {
+it("refuses generating a panel skill when legacy listColumn syntax is present", async () => {
   javaSources([uses[0]!]);
   const listProj = trialProjections.get("projection-schedules-tasks")!;
   const summaryProj = trialProjections.get("projection-schedules-summary")!;
@@ -615,7 +586,6 @@ it("refuses generating a panel skill when a listColumn member declares independe
         badCol: {
           target: { projectionId: "bad-col-with-data" },
           listColumn: { slot: "tasks", column: "actions" },
-          inputs: { task: { item: true } },
         },
       },
     },

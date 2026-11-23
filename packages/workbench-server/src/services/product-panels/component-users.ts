@@ -86,6 +86,13 @@ export async function findComponentUsers(componentIds: readonly string[], client
      WHERE definition->>'componentId'=ANY($1::text[]) AND ($2::text IS NULL OR domain_id=$2)
      ORDER BY domain_id,id`, [componentIds, domainId ?? null],
   );
+  const { rows: directPanels } = await client.query<{ domainId: string | null; id: string }>(
+    `SELECT DISTINCT domain_id AS "domainId",id
+     FROM ${currentProductRows("panel")} AS definitions,
+          jsonb_each_text(COALESCE(definition->'manifest'->'components', '{}'::jsonb)) AS comp(tag, component_id)
+     WHERE comp.component_id=ANY($1::text[]) AND ($2::text IS NULL OR domain_id=$2)
+     ORDER BY domain_id,id`, [componentIds, domainId ?? null],
+  );
   const users: Awaited<ReturnType<typeof findProjectionPanelUsers>> = rows.length ? await findProjectionPanelUsers(rows, client) : new Map();
-  return { rows, users };
+  return { rows, users, directPanels };
 }

@@ -646,10 +646,10 @@ it("reads back stable member keys and named data, and leaves the record intact a
   expect((await request("PUT", panelPath, { ...panel, revision: original.revision })).status).toBe(200);
   expect((await request("PUT", panelPath, { ...panel, revision: original.revision })).status).toBe(409);
   const current = (await (await request("GET", panelPath)).json()).panel;
-  const malformed = { ...panel, content: { html: panel.content.html }, revision: current.revision };
+  const malformed = { ...panel, content: { module: panel.content.module }, revision: current.revision };
   const rejected = await request("PUT", panelPath, malformed);
   expect(rejected.status).toBe(400);
-  expect(await rejected.json()).toMatchObject({ error: { message: "Panel 'panel-schedules-pilot', field 'content.module' is required" } });
+  expect(await rejected.json()).toMatchObject({ error: { message: "Panel 'panel-schedules-pilot', field 'content.html' is required" } });
   expect((await (await request("GET", panelPath)).json()).panel).toEqual(current);
 
   const source = { kind: "registered", applicationId: "app-schedules", useId: "pilot" };

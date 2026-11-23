@@ -1,24 +1,18 @@
 <script setup lang="ts">
-import { computed, defineComponent, h, inject, onBeforeUnmount, provide } from "vue";
-import { projectionKey, usePanelContext, useProjectionSlot } from "../panel/context";
-import { panelMemberKey } from "../panel/member";
+import { computed } from "vue";
+import { useFormFieldSlot } from "../panel/slot-context";
 import type { PanelObjectRef } from "../panel/state";
-import { fieldControlKey, fieldControlsOf } from "./form-controls";
 import InlineReferencePicker from "./InlineReferencePicker.vue";
 import ReferenceChoice from "./ReferenceChoice.vue";
 
 /**
  * Chooses a reference from the bound type's records or option catalogue.
  *
- * - **Form field mode** (when the member declares `formField: { slot, path, itemPath? }`): registers the picker into
- *   the target `ObjectForm` at that field's pointer (or inside each array row for `itemPath`) and renders nothing at
- *   the `<Projection>` site. Edits write the owner's own value into the form so they are saved, discarded and drafted
- *   with it.
- * - **Standalone inline mode** (when `formField` is omitted): renders a compact, filterable single-select dropdown
- *   directly in place (for toolbar controls such as path start/target selectors), reading `data.rows` (`panelRecordList`
- *   / `panelRecordQuery`, filtered locally with zero extra requests) or `data.options` (`panelOptionList`, with optional
- *   `data.selected`) and syncing the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected`
- *   member parameter.
+ * - **Form field mode**: when placed inside an `ObjectForm` field slot (`#field-<path>`, `#field-<arrayPath>/*<itemPath>`,
+ *   or `#field`), automatically connects to the enclosing form field via `useFormFieldSlot()` and renders `ReferenceChoice`
+ *   in place so edits are saved, discarded, and drafted with the form.
+ * - **Standalone inline mode**: otherwise renders a compact filterable single-select dropdown directly in place, syncing
+ *   the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected` member parameter.
  */
 const props = withDefaults(
   defineProps<{
@@ -50,33 +44,27 @@ const emit = defineEmits<{
   "update:selected": [value: PanelObjectRef | null];
 }>();
 
-const panel = usePanelContext();
-const slot = useProjectionSlot();
-const member = inject(panelMemberKey, null);
-const port = panel.manifest.members[slot.slot]?.formField;
-const choosesField = computed(() => port !== undefined);
+const fieldSlot = useFormFieldSlot();
+const choosesField = computed(() => fieldSlot !== null);
 
-if (port) {
-  // Form field mode: the choice is drawn inside the form, under this projection's slot and member.
-  const Choice = defineComponent({
-    props: { path: { type: String, required: true } },
-    setup(field) {
-      provide(projectionKey, slot);
-      if (member) provide(panelMemberKey, member);
-      return () => h(ReferenceChoice, { formSlot: port.slot, path: field.path });
-    },
-  });
-  const controls = fieldControlsOf(panel.instance);
-  const key = fieldControlKey(port.slot, port.path, port.itemPath);
-  controls.set(key, Choice);
-  onBeforeUnmount(() => controls.delete(key));
-}
+defineSlots<{
+  /** Custom option row renderer inside the dropdown list (both form-field and standalone modes). */
+  option?(props: { option: unknown; selected: boolean; disabled: boolean }): unknown;
+}>();
 </script>
 
 <template>
-  <!-- In form field mode the control is rendered by ObjectForm; in standalone mode it renders inline here. -->
+  <ReferenceChoice
+    v-if="choosesField && fieldSlot"
+    :form-slot="fieldSlot.formSlot"
+    :path="fieldSlot.path.value"
+  >
+    <template v-if="$slots.option" #option="scope">
+      <slot name="option" v-bind="scope"></slot>
+    </template>
+  </ReferenceChoice>
   <InlineReferencePicker
-    v-if="!choosesField"
+    v-else
     :placeholder="props.placeholder"
     :placeholder-key="props.placeholderKey"
     :placeholders="props.placeholders"
@@ -84,5 +72,9 @@ if (port) {
     :disabled="props.disabled"
     :size="props.size"
     @update:selected="emit('update:selected', $event)"
-  />
+  >
+    <template v-if="$slots.option" #option="scope">
+      <slot name="option" v-bind="scope"></slot>
+    </template>
+  </InlineReferencePicker>
 </template>

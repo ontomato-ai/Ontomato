@@ -230,10 +230,9 @@ async function workspaceDefinition(
       Object.keys(content).some(key => key !== "messages")) {
     throw new Error(`${descriptorFile}: content only accepts messages`);
   }
-  if (!files.includes("panel.mjs")) throw new Error(`${resolve(directory, "panel.mjs")}: required Vue module is missing`);
   const sources = [
     ["html", "panel.html"],
-    ["module", "panel.mjs"],
+    ...(files.includes("panel.mjs") ? [["module", "panel.mjs"]] : []),
     ...(files.includes("recipes.md") ? [["recipes", "recipes.md"]] : []),
   ];
   const contents = await Promise.all(sources.map(async ([key, file]) => [
@@ -248,10 +247,12 @@ async function workspaceDefinition(
     ...descriptor, manifest: expanded.manifest, content: { ...content, ...Object.fromEntries(contents) },
   });
   if (result.success) {
-    try {
-      await checks.panelModuleImports(result.data.content.module);
-    } catch (error) {
-      throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
+    if (result.data.content.module !== undefined) {
+      try {
+        await checks.panelModuleImports(result.data.content.module);
+      } catch (error) {
+        throw new Error(`${resolve(directory, "panel.mjs")}: ${error.message}`, { cause: error });
+      }
     }
     await checkPanelAuthoringSources({
       directory,
@@ -312,22 +313,11 @@ function checkOperations(id, projection, typeTable, placements, state, checks) {
   }
 }
 
-function checkProjectionData(id, projection, component, checks, placements = []) {
+function checkProjectionData(id, projection, component, checks) {
   if (!("data" in projection)) return;
-  for (const [member, placement] of placements) {
-    if (placement.listColumn !== undefined && Object.keys(projection.data).length > 0) {
-      throw new Error(
-        `member ${member} (projection ${id}, listColumn ${placement.listColumn.slot}.${placement.listColumn.column}): listColumn members cannot declare independent data reads. Pass row values through inputs ({ itemField } / { item }) or use listRowDetail when each expanded row reads child data.`,
-      );
-    }
-  }
   const { data } = component;
-  const hostMountedOnly = placements.length > 0 && placements.every(([, placement]) =>
-    checks.isHostMountedPanelMember
-      ? checks.isHostMountedPanelMember(placement)
-      : Boolean(placement.formField || placement.listColumn || placement.listRowDetail));
   if (data === undefined) {
-    if (hostMountedOnly && Object.keys(projection.data).length === 0) return;
+    if (Object.keys(projection.data).length === 0) return;
     throw new Error(`projection ${id}: component ${projection.componentId} does not declare projection data`);
   }
   for (const [name, declaration] of Object.entries(data)) {
@@ -519,7 +509,7 @@ export async function checkPanelWorkspace(directory, {
       if (!component) {
         throw new Error(`${resolve(directory, "panel.json")}: projection ${id} uses unavailable component ${record.componentId}`);
       }
-      checkProjectionData(id, record, component, checks, placements.get(id));
+      checkProjectionData(id, record, component, checks);
       if (typeTable) checkOperations(id, record, typeTable, placements.get(id), manifest.state, checks);
       // A conversation entry's opening sentence named by key is the placing panel's own words, in each language it
       // declares: a reused projection's key counts as much as a new one's.
@@ -534,41 +524,11 @@ export async function checkPanelWorkspace(directory, {
     }
   }
   const descriptorFile = resolve(directory, "panel.json");
-  for (const [memberKey, member] of Object.entries(manifest.members)) {
-    if (member.listColumn) {
-      const { slot, column } = member.listColumn;
-      const hostId = manifest.members[slot]?.target?.projectionId;
-      const host = hostId ? resolvedProjections.get(hostId) : undefined;
-      if (host) {
-        if (host.componentId !== "@ontomato/sdk:ObjectList") {
-          throw new Error(
-            `${descriptorFile}: manifest.members.${memberKey}.listColumn.slot: host member '${slot}' uses '${host.componentId}', not '@ontomato/sdk:ObjectList'. Bind listColumn.slot to an ObjectList member.`,
-          );
-        }
-        if (!Array.isArray(host.config?.columns)) {
-          throw new Error(
-            `${descriptorFile}: manifest.members.${memberKey}.listColumn.column: host ObjectList '${slot}' has no config.columns (compact list mode). Add { "key": "${column}" } to manifest.members.${slot}.config.columns.`,
-          );
-        }
-        const declaredColumns = host.config.columns
-          .filter(entry => entry && typeof entry === "object" && typeof entry.key === "string")
-          .map(entry => entry.key);
-        if (!declaredColumns.includes(column)) {
-          const available = declaredColumns.length ? declaredColumns.join(", ") : "none";
-          throw new Error(
-            `${descriptorFile}: manifest.members.${memberKey}.listColumn.column: column '${column}' is not declared in host ObjectList '${slot}' config.columns (${available}). Add { "key": "${column}" } to config.columns or fix listColumn.column.`,
-          );
-        }
-      }
-    }
-    if (member.listRowDetail) {
-      const { slot } = member.listRowDetail;
-      const hostId = manifest.members[slot]?.target?.projectionId;
-      const host = hostId ? resolvedProjections.get(hostId) : undefined;
-      if (host && host.componentId !== "@ontomato/sdk:ObjectList") {
-        throw new Error(
-          `${descriptorFile}: manifest.members.${memberKey}.listRowDetail.slot: host member '${slot}' uses '${host.componentId}', not '@ontomato/sdk:ObjectList'. Bind listRowDetail.slot to an ObjectList member.`,
-        );
+  for (const [tag, componentId] of Object.entries(manifest.components ?? {})) {
+    if (loadDomainComponent) {
+      const component = await loadDomainComponent(componentId);
+      if (!component) {
+        throw new Error(`${descriptorFile}: manifest.components.${tag} references unavailable component ${componentId}`);
       }
     }
   }

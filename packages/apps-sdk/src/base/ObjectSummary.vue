@@ -5,7 +5,7 @@ import { useI18n } from "vue-i18n";
 import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
-import { useMemberData } from "../panel/member";
+import { useMemberData, useMemberOutput } from "../panel/member";
 import type { PlatformFieldReference, PlatformObjectRecord } from "../panel/platform-objects";
 import {
   displayFieldText,
@@ -82,6 +82,8 @@ const recordData = useMemberData("record");
 
 const record = computed<PlatformObjectRecord | null>(() =>
   recordData.value.status === "ready" ? (recordData.value.value as unknown as PlatformObjectRecord) : null);
+
+useMemberOutput("label", () => record.value?.label ?? null);
 
 const shown = computed(() => {
   const fields = record.value?.fields ?? {};

@@ -243,7 +243,7 @@ it("validates object-union state via contracts and formats panelSelection with t
 it("keeps graph coordinates as personal state even when node keys resemble object fields", async () => {
   const { createPanelState, stateObject, stateChildObject } = await import("../../../../../packages/apps-sdk/src/panel/state");
   const manifest = definePanel({
-    state: { positions: { type: { kind: "node-positions" }, personal: true } },
+    state: { positions: { type: { kind: "json" }, personal: true } },
     members: {},
   });
   const state = createPanelState(manifest);

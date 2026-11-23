@@ -145,6 +145,7 @@ export function platformPanelHost(
   const page = new URLSearchParams(read);
   let lastPanel: ProductPanel | undefined;
   let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
+  let panelDomainComponents: Record<string, import("@ontomato/contracts/domain-components").DomainComponentRuntime> | undefined;
   let sourceReconciled = false;
   return {
     // Opening reads the panel's record (bundled with its fixed projections on cache miss), and — beside it, not before
@@ -187,6 +188,7 @@ export function platformPanelHost(
         const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(use.panelId)}?includeProjections=1`));
         setCachedPanel(use.panelId, answer.panel, scope);
         mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        panelDomainComponents = answer.domainComponents;
         lastPanel = answer.panel;
         return { kind: "registered", applicationId, use, panel: answer.panel };
       } catch (failure) {
@@ -217,7 +219,10 @@ export function platformPanelHost(
     // The panel runs in this document, as the same application's page: its members read through the platform as the
     // reader, within this use, and a person's write is confirmed and dispatched here.
     coded: (source, run, target) => withPersonalState({ kind: "registered", ...shown }, [], source.panel.manifest, run,
-      (opened) => mountCoded(withNested(directOptions(source, opened, shown, changed, beside, undefined, undefined, mountUnavailable), { kind: "registered", ...shown }), target, source.panel.content.module)),
+      (opened) => mountCoded(withNested({
+        ...directOptions(source, opened, shown, changed, beside, undefined, undefined, mountUnavailable),
+        ...(panelDomainComponents ? { panelDomainComponents } : {}),
+      }, { kind: "registered", ...shown }), target, source.panel.content.module)),
     // The relation this page opens is still the application's, bound to the same panel: a kept page shown again is
     // checked against Java's current relations before its frame may ask for anything.
     async current() {
@@ -266,6 +271,7 @@ export function framePanelHost(
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
   let lastPanel: ProductPanel | undefined;
   let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
+  let frameDomainComponents: Record<string, import("@ontomato/contracts/domain-components").DomainComponentRuntime> | undefined;
   let sourceReconciled = false;
   return {
     async source() {
@@ -295,6 +301,7 @@ export function framePanelHost(
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
       setCachedPanel(cacheKey, answer.panel, scope);
       mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+      frameDomainComponents = answer.domainComponents;
       lastPanel = answer.panel;
       return { kind: "registered", applicationId, use, panel: answer.panel };
     },
@@ -307,6 +314,7 @@ export function framePanelHost(
         const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}?${sourceQuery}`));
         setCachedPanel(cacheKey, answer.panel, scope);
         mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
+        frameDomainComponents = answer.domainComponents;
         lastPanel = answer.panel;
         return answer.panel;
       }
@@ -315,7 +323,10 @@ export function framePanelHost(
     release,
     frame: () => { throw new Error("An application's frame runs in the platform's document, not in a frame"); },
     coded: (source, run, target) => mountCoded(
-      withNested(directOptions(source, run, shown, changed, undefined, frameSource, "frame", mountUnavailable, router), frameSource),
+      withNested({
+        ...directOptions(source, run, shown, changed, undefined, frameSource, "frame", mountUnavailable, router),
+        ...(frameDomainComponents ? { panelDomainComponents: frameDomainComponents } : {}),
+      }, frameSource),
       target, source.panel.content.module,
     ),
     // The frame is the entry's: it stands while Java still names the same entry, bound to the same frame panel.
@@ -478,6 +489,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         manifest: source.panel.manifest,
         run,
         requests: platformRequests,
+        ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
         read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
         confirmOperation: () => Promise.reject(new Error("A panel preview runs no operations; they run in the panel's application")),
@@ -567,7 +579,7 @@ async function mountNested(
         throw new PanelMemberUnavailable(failure.status, failure.message);
       throw failure;
     });
-  const { panel } = productPanelNestedReadResponseSchema.parse(answer);
+  const { panel, domainComponents } = productPanelNestedReadResponseSchema.parse(answer);
   // An object's detail panel is Node's to name: the placement asked by the object alone, and the panel Node answered
   // with completes it, so the placed panel's own reads and operations name the panel they were admitted for.
   const placedAt: PanelMemberPath = [...path.slice(0, -1) as PanelMemberPath, resolvedSegment(path.at(-1)!, panel.id)];
@@ -582,7 +594,15 @@ async function mountNested(
       ? undefined
       : (id: string) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id));
     const mount = await withPersonalState(source, placedAt, panel.manifest, run, (opened) => mountCoded(
-      withNested({ ...outer, readProjection: nestedReadProjection, manifest: panel.manifest, messages: panel.content.messages ?? {}, run: opened, memberPath: placedAt }, source),
+      withNested({
+        ...outer,
+        readProjection: nestedReadProjection,
+        manifest: panel.manifest,
+        messages: panel.content.messages ?? {},
+        run: opened,
+        memberPath: placedAt,
+        panelDomainComponents: domainComponents,
+      }, source),
       { element, template }, panel.content.module,
     ));
     return { element, mount: { ...mount, dispose() { mount.dispose(); dropStyle?.(); dropTheme(); } } };
@@ -665,25 +685,33 @@ function resolvedSegment(segment: ProductPanelNestedReadRequest["memberPath"][nu
  * Vue and `@ontomato/sdk/panel` an SDK of this instance's own, whose `mountPanel` mounts the panel's component into the
  * host's element on `options`' instance, with the platform's words and Element Plus's in the reader's language.
  */
-async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTarget, module: string): Promise<PanelRunMount> {
+async function mountCoded(options: DirectPanelMountOptions, target: CodedPanelTarget, module?: string): Promise<PanelRunMount> {
   const { global } = workbenchI18n();
   const language = workbenchLanguage();
   await useTemplateCompiler();
   let mounted: PanelRunMount | undefined;
-  await runPanelModule(module, {
-    [panelModuleSpecifiers.vue]: Vue as unknown as Record<string, unknown>,
-    [panelModuleSpecifiers.sdk]: panelModuleFor({
-      ...options,
-      loadDomainComponent,
-      element: target.element,
-      template: target.template,
-      install(app) {
-        app.use(workbenchI18n());
-        provideGlobalConfig(Vue.computed(() => ({ locale: language.elementLocale(global.locale.value) })), app, true);
-      },
-      mounted: mount => (mounted = mount),
-    }),
+  const panelSdk = panelModuleFor({
+    ...options,
+    loadDomainComponent,
+    element: target.element,
+    template: target.template,
+    install(app) {
+      app.use(workbenchI18n());
+      provideGlobalConfig(Vue.computed(() => ({ locale: language.elementLocale(global.locale.value) })), app, true);
+    },
+    mounted: mount => (mounted = mount),
   });
+  if (!module || !module.trim()) {
+    await panelSdk.mountPanel({});
+  } else {
+    const exported = await runPanelModule(module, {
+      [panelModuleSpecifiers.vue]: Vue as unknown as Record<string, unknown>,
+      [panelModuleSpecifiers.sdk]: panelSdk,
+    });
+    if (!mounted && exported.default && (typeof exported.default === "object" || typeof exported.default === "function")) {
+      await panelSdk.mountPanel(exported.default as Parameters<typeof panelSdk.mountPanel>[0]);
+    }
+  }
   if (!mounted) throw new Error("The panel's module did not mount its component");
   return mounted;
 }

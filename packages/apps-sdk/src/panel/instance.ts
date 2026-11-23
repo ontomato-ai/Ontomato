@@ -1,10 +1,10 @@
 import type { PanelUploadReceipt } from "@ontomato/contracts/panel-upload";
 import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import { computed, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
+import { computed, reactive, readonly, shallowReactive, shallowRef, type ComputedRef, type DeepReadonly, type Ref } from "vue";
 import type { PageContext, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
-  type PanelOperationRowContext, type PanelStateValue,
+  type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
@@ -23,7 +23,6 @@ import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/a
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelReadCall, PanelWriteInvocation } from "./human-operations";
-import { isListAttachedPanelMember } from "./row-member";
 
 /*
  * One panel instance's runtime (overall design 3.4): its state, the projections it registered, the operations it offers,
@@ -66,10 +65,9 @@ export interface PanelInstanceOptions {
 /** A path that names at least one member: a nested publisher's, as the platform finds its operations by. */
 export type PublisherPath = [PanelMemberPath[number], ...PanelMemberPath];
 
-/** Explicit overrides for write operations (`memberPath` carrying `itemKey`, host `rowContext`, and lifecycle hooks). */
+/** Explicit overrides for write operations (`memberPath` and lifecycle hooks). */
 export interface PanelWriteOperationOptions {
   memberPath?: PanelMemberPath;
-  rowContext?: PanelOperationRowContext;
   /** Called right after confirmation passes (or immediately when no confirmation is required), before dispatch begins. */
   onConfirmed?: () => void;
 }
@@ -165,8 +163,14 @@ export interface PanelInstance {
    * by its owner's label. Only reads call it: a name is never typed in, guessed or carried in an address.
    */
   nameObjects(objectType: string, objects: readonly { primaryKey: string; label: string }[]): void;
+  /** Looks up the last known display label of an object recorded on this panel instance. */
+  objectName(objectType: string, primaryKey: string): string | null;
   /** Keeps owner labels for child objects read under a parent identity and declared collection. */
   nameChildObjects(parent: PanelObjectIdentity, collection: string, objects: readonly { primaryKey: string; label: string }[]): void;
+  /** Reactive map of read-only outputs published by projection members (`outputs[member][name]`), separate from writable `state`. */
+  readonly outputs: Readonly<Record<string, Readonly<Record<string, RuntimeJsonValue | null>>>>;
+  /** Publish or clear one read-only output for a projection member. */
+  setMemberOutput(member: string, name: string, value: RuntimeJsonValue | null): void;
   /** Whether this instance holds unsaved changes: a received draft, a form the reader edited, or a panel placed in it. */
   dirty(): boolean;
   /** A member's path in the panel the reader opened: this instance's own, then the member's segment. */
@@ -236,9 +240,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
     // write does, and is read again from there; the receipt itself rereads nothing.
     const path = writeOptions?.memberPath ?? operationPath(operationId);
-    const preparation = writeOptions?.rowContext !== undefined
-      ? await options.operations.prepare(operationId, invocation, path, writeOptions.rowContext)
-      : await options.operations.prepare(operationId, invocation, path);
+    const preparation = await options.operations.prepare(operationId, invocation, path);
     const confirmed = writeOptions?.onConfirmed
       ? await options.confirmOperation(preparation, { onConfirmed: writeOptions.onConfirmed })
       : await options.confirmOperation(preparation);
@@ -263,12 +265,24 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     if (!found) throw new Error(`The panel offers no operation '${id}'`);
     return found.invoke(input);
   }
-  const topLevelMemberKeys = Object.entries(manifest.members)
-    .filter(([, member]) => !isListAttachedPanelMember(member))
-    .map(([memberKey]) => memberKey);
-  const hasRowDetailMembers = Object.values(manifest.members).some((member) => member.listRowDetail !== undefined);
+  const topLevelMemberKeys = Object.keys(manifest.members);
   const forms = new PanelFormAdapters(options.reportDraftError, topLevelMemberKeys);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
+  const memberOutputStore = reactive<Record<string, Record<string, RuntimeJsonValue | null>>>({});
+  function setMemberOutput(member: string, name: string, value: RuntimeJsonValue | null) {
+    let bucket = memberOutputStore[member];
+    if (value === null) {
+      if (bucket && Object.hasOwn(bucket, name)) {
+        bucket[name] = null;
+      }
+      return;
+    }
+    if (!bucket) {
+      bucket = {};
+      memberOutputStore[member] = bucket;
+    }
+    bucket[name] = value;
+  }
   const names = shallowReactive(new Map<string, string>());
   const highlights = shallowReactive(new Map<string, Readonly<Ref<PageHighlight | null>>>());
   const translate = options.translate ?? ((key: string) => key);
@@ -319,7 +333,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const registered = registrations.value;
       if (!topLevelMemberKeys.every((member) => registered.some((registration) => registration.slot === member))) return null;
       const formSlots = registered.filter((registration) => registration.takesDrafts).map((registration) => registration.slot);
-      return forms.unclaimed(formSlots, hasRowDetailMembers);
+      return forms.unclaimed(formSlots, forms.hasRowDetailHost());
     }),
     projections: readonly(registrations),
     register(registration) {
@@ -394,9 +408,14 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     nameObjects(objectType, objects) {
       for (const { primaryKey, label } of objects) names.set(objectNameKey(objectType, primaryKey), label);
     },
+    objectName(objectType, primaryKey) {
+      return names.get(objectNameKey(objectType, primaryKey)) ?? null;
+    },
     nameChildObjects(parent, collection, objects) {
       for (const { primaryKey, label } of objects) names.set(childObjectNameKey(parent, collection, primaryKey), label);
     },
+    outputs: memberOutputStore,
+    setMemberOutput,
     dirty: () => draft.value !== null || forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
     memberPathOf,
     operationIdOf,

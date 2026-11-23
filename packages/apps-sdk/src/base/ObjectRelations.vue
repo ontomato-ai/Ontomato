@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectRef } from "@ontomato/contracts/panel-manifest";
 import { platformObjectTypes, platformRelationKinds } from "@ontomato/contracts/platform-object-types";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberRead } from "../panel/member";
@@ -13,7 +13,7 @@ import type {
 } from "../panel/platform-objects";
 import { stateObject, type PanelFieldValue } from "../panel/state";
 
-type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
+type PanelObjectValue = PanelObjectRef;
 
 /**
  * Displays one-hop relations of the currently selected node, shared by the four-layer capability map (M3) and the

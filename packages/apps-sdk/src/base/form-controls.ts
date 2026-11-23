@@ -1,6 +1,6 @@
-import { inject, shallowReactive, type Component, type InjectionKey, type Ref } from "vue";
+import { inject, type InjectionKey, type Ref, type Slot } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
+import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
 
 /*
  * What the controls of one owner form edit, provided by the form that holds it: the values, the messages and marks by
@@ -8,6 +8,8 @@ import type { PanelFormValues } from "@ontomato/contracts/panel-projection";
  * and writes the same values at its current absolute path, so there is one value and never a row's copy of it.
  */
 export interface FormControls {
+  /** The `ObjectForm`'s own member key in the panel manifest. */
+  readonly formSlot: string;
   readonly values: Readonly<Ref<PanelFormValues>>;
   /** Effective values with inactive object-variant keys pruned, used for default equality checks. */
   readonly prunedValues: Readonly<Ref<PanelFormValues>>;
@@ -36,12 +38,16 @@ export interface FormControls {
   /** The field at `path` holds text that is not a value of the owner's (a message), or no longer does (null). */
   invalid(path: string, message: string | null): void;
   /**
-   * What draws the field at `path` — or, with `itemPath`, the row field `itemPath` of the array at `path` in each row —
-   * when a projection of the panel is declared for it: the component that projection registered (drawn with the field's
-   * absolute `path`), null while it has not drawn yet, or undefined when no slot of the panel declares one, and the form
-   * draws the field itself.
+   * Look up a custom Vue slot for a form field (`#field-<path>`, `#field-<arrayPath>/*<itemPath>`, or `#field`).
+   * Returns the slot function and scoped props when a slot is provided for this field, or `undefined` to render the
+   * default control.
    */
-  fieldControl(path: string, itemPath?: string): Component | null | undefined;
+  resolveFieldSlot(
+    field: PanelFormField,
+    absolutePath: string,
+    arrayPath?: string,
+    index?: number,
+  ): { slot: Slot; props: Record<string, unknown> } | undefined;
 }
 
 export const formControlsKey: InjectionKey<FormControls> = Symbol("form-controls");
@@ -49,20 +55,5 @@ export const formControlsKey: InjectionKey<FormControls> = Symbol("form-controls
 export function useFormControls(): FormControls {
   const controls = inject(formControlsKey, null);
   if (!controls) throw new Error("A form control is drawn inside an owner form, which provides its values");
-  return controls;
-}
-
-/**
- * The field controls of one panel instance, by form slot, field path and row path: a projection whose `formField` port
- * names a field registers here the component that draws it at one absolute path, and the form draws it where the field
- * is — in its place among the form's fields, or in each row of an array for a port with an `itemPath`. The projection is
- * read, registered and admitted once, under its own binding.
- */
-const fieldControls = new WeakMap<object, Map<string, Component>>();
-export const fieldControlKey = (formSlot: string, path: string, itemPath?: string) => JSON.stringify([formSlot, path, itemPath ?? null]);
-
-export function fieldControlsOf(instance: object): Map<string, Component> {
-  let controls = fieldControls.get(instance);
-  if (!controls) fieldControls.set(instance, (controls = shallowReactive(new Map())));
   return controls;
 }

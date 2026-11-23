@@ -12,7 +12,6 @@ import type { PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadReq
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { createPanelInstance, type PanelInstance, type PanelInstanceOptions, type PublisherPath } from "./instance";
 import type { ComponentPackageReader } from "./component-packages";
-import { isListAttachedPanelMember, rowOperationTargetInputs } from "./row-member";
 import { stateObject, type PanelFieldValue } from "./state";
 import type { PanelText } from "./text";
 import type { PanelContext } from "./context";
@@ -120,9 +119,7 @@ export type MemberPlacing =
   | { kind: "panel"; element: HTMLElement; failure: Readonly<Ref<Error | null>> }
   | { kind: "awaiting" }
   /** The platform's current entry is placed only in an application's frame; this panel is not running as one. */
-  | { kind: "outsideFrame" }
-  /** Mounted per row by its host `ObjectList` (`listColumn` or `listRowDetail`), not at panel top level. */
-  | { kind: "hostMounted" };
+  | { kind: "outsideFrame" };
 
 /**
  * The target a state value chooses for a member placed from it: the panel or projection it names. A member that places
@@ -180,6 +177,16 @@ export interface DirectPanelInstance extends PanelInstance {
   /** What the member places now, held from the start, drawn or not, and placed anew when the state choosing it changes. */
   placing(member: string): Promise<MemberPlacing>;
   /**
+   * Create an isolated per-instance projection context for a `<Projection slot="..." :inputs="{ ... }">` mounted inside
+   * a Vue slot (such as `ObjectList`'s `#row-detail` / `#cell-*` or an `ObjectForm` array row). Returns the context and a
+   * disposer that tears down its own reads and operations when the slot instance unmounts.
+   */
+  placingScoped(
+    member: string,
+    overrideInputs: () => MemberInputs,
+    rowItemKey?: import("@ontomato/contracts/panel-manifest").PanelMemberItemKey,
+  ): Promise<{ context: PanelMemberContext; dispose(): void }>;
+  /**
    * The member as the instance holds it, drawn or not: its projection, the inputs its placement fills now, its data and
    * the operations its owners admit, registered with the instance once its projection is read. A member is held once per
    * reading of its projection; one its definition changed is held anew.
@@ -189,8 +196,6 @@ export interface DirectPanelInstance extends PanelInstance {
   memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs, ownParams?: () => MemberInputs): MemberData;
   /** The operations one member can do now, as the owner admits them for its inputs; kept current while it is drawn. */
   memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs): ComputedRef<MemberOperationsState>;
-  /** The operations one row-attached member can do for one row, sharing identical target reads across rows. */
-  rowMemberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs): ComputedRef<MemberOperationsState>;
   /** An operation's reported changes: the shown data they concern are read again. */
   refresh(affected: PanelOperationAffected): void;
   /** True while a new external address with changed deep-link state is held pending reactivation. */
@@ -323,7 +328,11 @@ export async function readMemberDatum(read: PanelReadPort, projection: DirectPro
   // The host's answer is checked against the result the owner registered for this read.
   const declaration = directReadDeclaration(projection, data);
   if (!declaration) throw new Error(`No owner registers the read '${data.read}' that datum '${name}' names`);
-  return { status: "ready", value: panelReadResultSchemas[declaration.result].parse(result.value) as RuntimeJsonValue };
+  return {
+    status: "ready",
+    value: panelReadResultSchemas[declaration.result].parse(result.value) as RuntimeJsonValue,
+    ...(result.rowOperations ? { rowOperations: result.rowOperations } : {}),
+  };
 }
 
 /** The object a datum is read from now, when its source is one: the literal, or the input that holds it. */
@@ -335,16 +344,8 @@ function sourceObject(data: DirectProjectionData, inputs: MemberInputs): PanelFi
 
 export function createDirectPanelInstance(direct: PanelManifest, options: DirectPanelInstanceOptions): DirectPanelInstance {
   const projections = new Map<string, Promise<DirectProjection>>();
-  /** Cached projection + component resolution per member so repeated list rows load each definition once. */
+  /** Cached projection + component resolution per member so repeated slot instances load each definition once. */
   const definitions = new Map<string, Promise<{ projection: DirectProjection; component: Component }>>();
-  /** Ref-counted `operations: true` reads shared across rows of a list-attached member with identical target inputs. */
-  const rowOperationsCache = new Map<string, {
-    refs: number;
-    member: string;
-    scope: EffectScope;
-    state: ComputedRef<MemberOperationsState>;
-    reread(): void;
-  }>();
   /** The revision each member's projection was last read at. */
   const readRevisions = new Map<string, number>();
   /** The newest revision reported for each projection ID, to reconcile in-flight initial reads without duplicating them. */
@@ -409,12 +410,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     projections.delete(member);
     definitions.delete(member);
     readRevisions.delete(member);
-    for (const [key, entry] of [...rowOperationsCache.entries()]) {
-      if (entry.member !== member) continue;
-      rowOperationsCache.delete(key);
-      operationReads.delete(entry.reread);
-      entry.scope.stop();
-    }
     versions.set(member, (versions.get(member) ?? 0) + 1);
     const held = members.get(member);
     if (!held) return;
@@ -601,7 +596,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       const placing = await directInstance.placing(member);
       if (placing.kind === "projection") return placing.context;
       if (placing.kind === "panel") throw new Error(`Member '${member}' places a panel: its data and operations are that panel's`);
-      if (placing.kind === "hostMounted") throw new Error(`Member '${member}' is mounted per row by its host list`);
       throw new Error(`Member '${member}' waits for the panel's state to choose what it places`);
     },
     placing(member: string) {
@@ -609,9 +603,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       if (held) return held.placing;
       if (!Object.hasOwn(direct.members, member)) throw new Error(`The panel declares no member '${member}'`);
       const declaration = direct.members[member]!;
-      if (isListAttachedPanelMember(declaration)) {
-        return Promise.resolve({ kind: "hostMounted" as const });
-      }
       const scope = membersScope.run(() => effectScope())!;
       const { target } = declaration;
       if ("fromPlatform" in target) {
@@ -634,6 +625,40 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       });
       members.set(member, { scope, placing: tracked });
       return tracked;
+    },
+    async placingScoped(member: string, overrideInputs: () => MemberInputs, rowItemKey?: import("@ontomato/contracts/panel-manifest").PanelMemberItemKey) {
+      if (!Object.hasOwn(direct.members, member)) throw new Error(`The panel declares no member '${member}'`);
+      const projection = await directInstance.projectionOf(member);
+      const scope = membersScope.run(() => effectScope())!;
+      const ownParamsRef = shallowRef<Record<string, RuntimeJsonValue>>({});
+      const context = scope.run(() => {
+        const inputs = computed<MemberInputs>(() => ({
+          ...(slotInputValues(direct, member, instance.state.values.value) as MemberInputs),
+          ...overrideInputs(),
+        }));
+        const operations = directInstance.memberOperations(member, projection, () => inputs.value);
+        const param = (name: string) => ({
+          value: computed(() => ownParamsRef.value[name] ?? null),
+          set(value: RuntimeJsonValue | null) {
+            const next = { ...ownParamsRef.value };
+            if (value === null) delete next[name];
+            else next[name] = value;
+            ownParamsRef.value = next;
+          },
+        });
+        const memberContext: PanelMemberContext = {
+          key: member,
+          projection,
+          inputs,
+          operations,
+          param,
+          scoped: true,
+          ...(rowItemKey !== undefined ? { rowItemKey } : {}),
+          data: directInstance.memberData(member, projection, () => inputs.value, () => ownParamsRef.value),
+        };
+        return memberContext;
+      })!;
+      return { context, dispose: () => scope.stop() };
     },
     memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs, ownParams?: () => MemberInputs): MemberData {
       const own = ownParams ?? (() => instance.ownParams(member));
@@ -702,48 +727,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       operationReads.add(reread);
       onScopeDispose(() => operationReads.delete(reread));
       return state;
-    },
-    rowMemberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs) {
-      if (!projection.operations || Object.keys(projection.operations).length === 0) {
-        return computed<MemberOperationsState>(() => ({ status: "ready", value: {} }));
-      }
-      const targetInputs = computed(() => rowOperationTargetInputs(projection, inputs()));
-      const keyOf = computed(() => JSON.stringify([member, projection.id, projection.revision, targetInputs.value]));
-      const activeEntry = shallowRef<{ key: string; state: ComputedRef<MemberOperationsState> } | null>(null);
-      const releaseEntry = (key: string) => {
-        const existing = rowOperationsCache.get(key);
-        if (!existing) return;
-        existing.refs -= 1;
-        if (existing.refs <= 0) {
-          rowOperationsCache.delete(key);
-          operationReads.delete(existing.reread);
-          existing.scope.stop();
-        }
-      };
-      watch(keyOf, (nextKey, prevKey) => {
-        if (nextKey === prevKey && activeEntry.value?.key === nextKey) return;
-        let entry = rowOperationsCache.get(nextKey);
-        if (!entry) {
-          const snapshot = targetInputs.value;
-          const entryScope = membersScope.run(() => effectScope())!;
-          const { state, reread } = entryScope.run(() =>
-            watchMemberOperations(options.read, projection, () => instance.memberPathOf(member), () => snapshot, () => active))!;
-          operationReads.add(reread);
-          entry = { refs: 0, member, scope: entryScope, state, reread };
-          rowOperationsCache.set(nextKey, entry);
-        }
-        entry.refs += 1;
-        const previousKey = activeEntry.value?.key;
-        activeEntry.value = { key: nextKey, state: entry.state };
-        if (previousKey !== undefined && previousKey !== nextKey) releaseEntry(previousKey);
-      }, { immediate: true });
-      onScopeDispose(() => {
-        if (activeEntry.value) {
-          releaseEntry(activeEntry.value.key);
-          activeEntry.value = null;
-        }
-      });
-      return computed<MemberOperationsState>(() => activeEntry.value?.state.value ?? { status: "loading" });
     },
     refresh(affected: PanelOperationAffected) {
       // What the write removed is let go of first, so nothing below reads it again.

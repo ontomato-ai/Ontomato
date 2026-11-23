@@ -16,7 +16,6 @@ import {
   componentOfficialSpecifiers,
   isComponentOfficialSpecifier,
   panelModuleImports,
-  REJECT_VIEWPORT_UNITS,
 } from "./panel-module";
 import {
   SDK_PLATFORM_THEME_TOKENS,
@@ -49,17 +48,21 @@ test("SDK_UI_COMPONENTS maps every supported primitive uniquely and excludes pla
   assert.equal(implTags.size, SDK_UI_COMPONENTS.length);
   assert.equal(implExports.size, SDK_UI_COMPONENTS.length);
 
-  for (const excluded of ["el-config-provider", "el-page-header", "el-popper", "el-popconfirm"]) {
+  for (const excluded of ["el-config-provider", "el-popper"]) {
     assert.equal(sdkUiComponentByImplTag(excluded), undefined);
     assert.ok(sdkUiForbiddenByImplTag(excluded)?.replacement);
   }
-  for (const service of ["ElMessage", "ElMessageBox", "ElNotification", "ElLoading"]) {
+  for (const service of ["ElMessage", "ElNotification", "ElLoading"]) {
     assert.equal(sdkUiComponentByImplExport(service), undefined);
     assert.ok(sdkUiForbiddenByImplExport(service)?.replacement);
   }
+  // Popconfirm, PageHeader, and MessageBox are released as SDK UI primitives/services.
+  assert.equal(sdkUiComponentByImplTag("el-popconfirm")?.sdkTag, "sdk-popconfirm");
+  assert.equal(sdkUiComponentByImplTag("el-page-header")?.sdkTag, "sdk-page-header");
+  assert.equal(sdkUiForbiddenByImplExport("ElMessageBox"), undefined);
   assert.equal(sdkUiComponentByTag("sdk-button")?.sdkExport, "SdkButton");
   assert.equal(sdkUiComponentByImplExport("ElDialog")?.sdkTag, "sdk-dialog");
-  assert.ok(SDK_UI_FORBIDDEN_COMPONENTS.length >= 8);
+  assert.ok(SDK_UI_FORBIDDEN_COMPONENTS.length >= 5);
 });
 
 test("SDK_UI_DIRECTIVES maps all three directives into v-sdk-* and vSdk*", () => {
@@ -137,18 +140,22 @@ test("appsSdkComponentCatalogSchema validates SDK-owned UI primitive, directive,
   assert.equal(catalogue.themeTokens?.length, 1);
 });
 
-test("componentModuleImports allows @ontomato/sdk/ui and rejects element-plus", async () => {
+test("componentModuleImports allows @ontomato/sdk/* official specifiers and rejects element-plus", async () => {
   assert.ok(componentOfficialSpecifiers.includes(SDK_UI_ENTRY_SPECIFIER));
+  assert.equal(isComponentOfficialSpecifier("@ontomato/sdk/chart"), true);
+  assert.equal(isComponentOfficialSpecifier("@ontomato/sdk/base"), true);
   assert.equal(isComponentOfficialSpecifier("element-plus"), false);
 
   const allowed = await componentModuleImports(`
     import { ref } from "vue";
     import { SdkButton, vSdkLoading } from "@ontomato/sdk/ui";
+    import { MetricChart } from "@ontomato/sdk/base";
     import { helper } from "./helper.js";
   `);
   assert.deepEqual(allowed.map(item => [item.specifier, item.kind]), [
     ["vue", "official"],
     ["@ontomato/sdk/ui", "official"],
+    ["@ontomato/sdk/base", "official"],
     ["./helper.js", "relative"],
   ]);
 
@@ -159,10 +166,6 @@ test("componentModuleImports allows @ontomato/sdk/ui and rejects element-plus", 
   await assert.rejects(
     componentModuleImports('import { ElButton } from "element-plus/es/components/button/index";'),
     /import SDK UI primitives from '@ontomato\/sdk\/ui'/u,
-  );
-  await assert.rejects(
-    panelModuleImports('import { SdkButton } from "@ontomato/sdk/ui";'),
-    /imports @ontomato\/sdk\/ui/u,
   );
   await assert.rejects(
     panelModuleImports('import { ElButton } from "element-plus";'),
@@ -179,8 +182,8 @@ test("checkAuthoringTemplate reports file, line, column, and replacement for tag
     "</style>",
     '<div id="app" v-loading="busy">',
     '  <el-button type="primary">Save</el-button>',
-    '  <el-popconfirm title="Delete?"></el-popconfirm>',
-    '  <sdk-popconfirm></sdk-popconfirm>',
+    '  <el-config-provider></el-config-provider>',
+    '  <sdk-popconfirm title="Delete?"></sdk-popconfirm>',
     '  <sdk-nonexistent></sdk-nonexistent>',
     '  <component :is="\'el-input\'"></component>',
     '  <g6-graph-canvas></g6-graph-canvas>',
@@ -196,8 +199,7 @@ test("checkAuthoringTemplate reports file, line, column, and replacement for tag
       { line: 4, kind: "forbidden-token", found: "--el-bg-color", replacement: "--sdk-bg-color" },
       { line: 6, kind: "forbidden-directive", found: "v-loading", replacement: "v-sdk-loading" },
       { line: 7, kind: "forbidden-tag", found: "el-button", replacement: "<sdk-button>" },
-      { line: 8, kind: "forbidden-tag", found: "el-popconfirm", replacement: sdkUiForbiddenByImplTag("el-popconfirm")!.replacement },
-      { line: 9, kind: "unknown-sdk-tag", found: "sdk-popconfirm", replacement: sdkUiForbiddenByImplTag("el-popconfirm")!.replacement },
+      { line: 8, kind: "forbidden-tag", found: "el-config-provider", replacement: sdkUiForbiddenByImplTag("el-config-provider")!.replacement },
       { line: 10, kind: "unknown-sdk-tag", found: "sdk-nonexistent", replacement: null },
       { line: 11, kind: "forbidden-tag", found: "el-input", replacement: "sdk-input" },
       { line: 12, kind: "forbidden-export", found: "g6-graph-canvas", replacement: "<interactive-graph-canvas>" },
@@ -236,74 +238,11 @@ test("checkAuthoringScript, checkAuthoringStyles, and checkAuthoringTheme report
   assert.equal(themeViolations[0]!.replacement, "--sdk-color-primary");
 });
 
-test("checkAuthoringStyles and checkAuthoringTemplate reject all CSS viewport units when enabled and stay off by default", () => {
-  assert.equal(REJECT_VIEWPORT_UNITS, false);
-
-  const allUnits = [
-    "vh", "vw", "vmin", "vmax", "vi", "vb",
-    "svh", "svw", "svmin", "svmax", "svi", "svb",
-    "lvh", "lvw", "lvmin", "lvmax", "lvi", "lvb",
-    "dvh", "dvw", "dvmin", "dvmax", "dvi", "dvb",
-  ];
-  const allUnitsCss = allUnits.map((unit, idx) => `.u${idx} { height: ${idx + 1}${idx % 2 === 0 ? unit : unit.toUpperCase()}; }`).join("\n");
-
-  // Default switch is off: viewport units are not reported until enabled.
-  assert.deepEqual(checkAuthoringStyles(allUnitsCss, "style.css"), []);
-
-  // Enabled explicitly: every viewport unit is reported with exact file/line/column and replacement guidance.
-  const allHits = checkAuthoringStyles(allUnitsCss, "style.css", 0, allUnitsCss, { rejectViewportUnits: true });
-  assert.equal(allHits.length, allUnits.length);
-  allHits.forEach((violation, idx) => {
-    const unit = allUnits[idx]!;
-    const expectedFound = `${idx + 1}${idx % 2 === 0 ? unit : unit.toUpperCase()}`;
-    assert.equal(violation.file, "style.css");
-    assert.equal(violation.line, idx + 1);
-    assert.equal(violation.column, `.u${idx} { height: `.length + 1);
-    assert.equal(violation.kind, "forbidden-viewport-unit");
-    assert.equal(violation.found, expectedFound);
-    assert.match(violation.message, /content box.*rem\/px min-height.*<sdk-dialog>/u);
-  });
-
-  // Expressions, signs, decimals, scientific notation, and negative false-positive cases.
-  const mixedCss = [
-    "/* height: 100vh; don't break 50vw inside a comment */",
-    '.safe-100vh { --card-100vh: 24rem; --100vh: 320px; content: "100vh"; background: url(/img/50vw.png); }',
-    ".p50vw, #id100vh, #100vh { min-height: 24rem; width: 100%; padding: 12px 1.5em; height: 50cqh; }",
-    ".bad-expr { height: calc(100dvh - 120px); width: 50vw; min-height: 80svh; }",
-    ".bad-num { margin-top: -10vh; padding-left: .5Vw; max-height: 1e2LVH; }",
-  ].join("\n");
-  const mixedHits = checkAuthoringStyles(mixedCss, "panel.css", 0, mixedCss, { rejectViewportUnits: true });
-  assert.deepEqual(
-    mixedHits.map(v => ({ line: v.line, column: v.column, found: v.found })),
-    [
-      { line: 4, column: 26, found: "100dvh" },
-      { line: 4, column: 50, found: "50vw" },
-      { line: 4, column: 68, found: "80svh" },
-      { line: 5, column: 24, found: "-10vh" },
-      { line: 5, column: 45, found: ".5Vw" },
-      { line: 5, column: 63, found: "1e2LVH" },
-    ],
-  );
-
-  // Template check covers inline <style> blocks and static style="..." attributes, preserving exact offsets.
-  const html = [
-    "<!-- <style>.ignored { height: 100vh; }</style> -->",
-    "<style>",
-    "  .root { height: 100vh; min-height: 24rem; }",
-    "</style>",
-    '<div id="app" style="min-height: 80svh">',
-    "  <div :style=\"{ height: '100vh' }\"></div>",
-    "</div>",
-  ].join("\n");
+test("checkAuthoringStyles and checkAuthoringTemplate allow CSS viewport units", () => {
+  const css = ".root { height: 100vh; width: 50vw; min-height: 80dvh; }";
+  assert.deepEqual(checkAuthoringStyles(css, "style.css"), []);
+  const html = '<style>.root { height: 100vh; }</style><div style="min-height: 80svh"></div>';
   assert.deepEqual(checkAuthoringTemplate(html, "panel.html"), []);
-  const templateHits = checkAuthoringTemplate(html, "panel.html", { rejectViewportUnits: true });
-  assert.deepEqual(
-    templateHits.map(v => ({ file: v.file, line: v.line, column: v.column, kind: v.kind, found: v.found })),
-    [
-      { file: "panel.html", line: 3, column: 19, kind: "forbidden-viewport-unit", found: "100vh" },
-      { file: "panel.html", line: 5, column: 34, kind: "forbidden-viewport-unit", found: "80svh" },
-    ],
-  );
 });
 
 test("checkAuthoringTemplate and checkAuthoringStyles allow normal HTML/CSS, SDK UI primitives, and ignore comments, scripts, strings, and mustaches", async () => {
@@ -314,7 +253,6 @@ test("checkAuthoringTemplate and checkAuthoringStyles allow normal HTML/CSS, SDK
   ].join("\n");
 
   assert.deepEqual(checkAuthoringStyles(allowedCss, "panel.css"), []);
-  assert.deepEqual(checkAuthoringStyles(allowedCss, "panel.css", 0, allowedCss, { rejectViewportUnits: true }), []);
 
   const allowedTemplate = [
     "<!-- <el-button>commented</el-button> -->",
@@ -330,13 +268,14 @@ test("checkAuthoringTemplate and checkAuthoringStyles allow normal HTML/CSS, SDK
     '  <sdk-table :data="staticLegend"></sdk-table>',
     '  <sdk-input v-model="q" @keyup.enter="() => run(a > 0)" />',
     '  <sdk-button type="primary" @click="() => submit()">Save</sdk-button>',
+    '  <sdk-popconfirm title="Confirm?"><template #reference><sdk-button>Delete</sdk-button></template></sdk-popconfirm>',
+    '  <sdk-page-header content="Detail" />',
     '  <sdk-dialog v-model="open"><p>Modal body</p></sdk-dialog>',
     '  <SdkDrawer v-model="drawer"><span>Drawer body</span></SdkDrawer>',
     '  <projection slot="list"></projection>',
     "</div>",
   ].join("\n");
   assert.deepEqual(checkAuthoringTemplate(allowedTemplate, "panel.html"), []);
-  assert.deepEqual(checkAuthoringTemplate(allowedTemplate, "panel.html", { rejectViewportUnits: true }), []);
 
   const scriptSource = 'export const snippet = "<button>Click</button><el-button>Docs</el-button>";\n';
   assert.deepEqual(await checkAuthoringScript(scriptSource, "panel.mjs"), []);

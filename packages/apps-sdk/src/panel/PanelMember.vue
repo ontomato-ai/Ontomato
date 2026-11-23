@@ -5,34 +5,31 @@ import { DataState } from "@ontomato/foundation-ui/data-state";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { componentFor } from "../catalogue-components";
 import { panelContextKey, projectionKey, type ProjectionSlot } from "./context";
-import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance } from "./direct";
+import { directPanelContext, PanelMemberUnavailable, type DirectPanelInstance, type MemberInputs } from "./direct";
 import { memberComponentId } from "./projection-element";
 import { panelMemberKey, type PanelMemberContext } from "./member";
-import { isListAttachedPanelMember } from "./row-member";
+import { useListRowSlot } from "./slot-context";
 import { useDataStateLabels } from "../base/data-state-labels";
 
-/**
- * One member of a directly rendered panel, drawn in the platform's own document: the member's projection, read once for
- * the instance, names its component and its data; the component gets the member's inputs as its placement fills them
- * now, its configuration, and its data through the instance. Its typed outputs write the panel's state as the member
- * declares, and its operations are the projection's, registered with the instance under the member's key.
- *
- * A member placed from the panel's state draws what the state chose: a projection, as any member's; a panel, run by the
- * host in an element of its own, which is placed here; nothing chosen yet, which asks for a choice. What the reader may
- * not use, or what is not available there, is said in this member's place alone.
- */
 const props = defineProps<{
   instance: DirectPanelInstance;
   /** The member's key in the panel's declaration. */
   member: string;
+  /** Optional slot-supplied input overrides (creates an isolated per-instance member context). */
+  inputs?: MemberInputs;
 }>();
 
 const { t } = useI18n();
 const declaration = props.instance.direct.members[props.member];
 if (!declaration) throw new Error(`The panel declares no member '${props.member}'`);
-const hostMounted = isListAttachedPanelMember(declaration);
-const stopDrawn = hostMounted ? () => {} : props.instance.markDrawn(props.member);
-onBeforeUnmount(stopDrawn);
+const listRowSlot = useListRowSlot();
+const isScoped = props.inputs !== undefined || listRowSlot !== null;
+const stopDrawn = isScoped ? () => {} : props.instance.markDrawn(props.member);
+let disposeScoped: (() => void) | undefined;
+onBeforeUnmount(() => {
+  disposeScoped?.();
+  stopDrawn();
+});
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ component: Component; slot: ProjectionSlot; member: PanelMemberContext } | null>(null);
 /** A panel the member places, run by the host: its element, placed in this member's container once both are there. */
@@ -48,20 +45,32 @@ onErrorCaptured((reason: unknown) => {
   return false;
 });
 
-// The member as the instance holds it — read, registered and kept current there, drawn here.
-if (!hostMounted) {
+async function loadComponentFor(member: PanelMemberContext): Promise<Component> {
+  const componentId = memberComponentId(member.projection);
+  const component = isDomainComponentId(componentId)
+    ? await props.instance.loadDomainComponent?.(member.projection)
+    : await componentFor(componentId, props.instance.readComponentPackage);
+  if (!component) throw new Error(`Component '${componentId}' has no runtime for this projection`);
+  return component;
+}
+
+if (isScoped) {
+  void props.instance.placingScoped(props.member, () => props.inputs ?? {}, listRowSlot?.itemKey.value).then(async ({ context, dispose }) => {
+    disposeScoped = dispose;
+    const component = await loadComponentFor(context);
+    loaded.value = { component, slot: { slot: props.member, projection: context.projection, get inputs() { return context.inputs.value; } }, member: context };
+  }).catch((reason: unknown) => {
+    failure.value = reason instanceof Error ? reason : new Error(String(reason));
+  });
+} else {
+  // The member as the instance holds it — read, registered and kept current there, drawn here.
   void props.instance.placing(props.member).then(async (placing) => {
-    if (placing.kind === "hostMounted") return;
     if (placing.kind === "awaiting") awaiting.value = true;
     else if (placing.kind === "outsideFrame") outsideFrame.value = true;
     else if (placing.kind === "panel") nested.value = placing;
     else {
       const member = placing.context;
-      const componentId = memberComponentId(member.projection);
-      const component = isDomainComponentId(componentId)
-        ? await props.instance.loadDomainComponent?.(member.projection)
-        : await componentFor(componentId, props.instance.readComponentPackage);
-      if (!component) throw new Error(`Component '${componentId}' has no runtime for this projection`);
+      const component = await loadComponentFor(member);
       loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
     }
   }).catch((reason: unknown) => {
@@ -101,8 +110,7 @@ const labels = useDataStateLabels();
 </script>
 
 <template>
-  <template v-if="hostMounted"></template>
-  <data-state v-else-if="refused" :result="refused" :labels="labels"></data-state>
+  <data-state v-if="refused" :result="refused" :labels="labels"></data-state>
   <data-state v-else-if="awaiting" :result="{ status: 'awaiting' }" :labels="labels"></data-state>
   <p v-else-if="outsideFrame" class="sdk-panel-member-outside-frame" role="status">{{ t("platform.currentEntryOutsideFrame") }}</p>
   <div v-else-if="nested" ref="container" class="sdk-panel-member-nested"></div>

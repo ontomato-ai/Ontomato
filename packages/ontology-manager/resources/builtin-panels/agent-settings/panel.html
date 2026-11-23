@@ -60,13 +60,11 @@
       </div>
       <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
         <projection slot="form">
-          <template #after-fields>
-            <projection slot="model"></projection>
-            <projection slot="skills"></projection>
-            <projection slot="tools"></projection>
-            <projection slot="executor"></projection>
-            <projection slot="scope"></projection>
-          </template>
+          <template #field-modelSelection.modelId><projection slot="model"></projection></template>
+          <template #field-skills><projection slot="skills"></projection></template>
+          <template #field-enabledMcpServiceIds><projection slot="tools"></projection></template>
+          <template #field-executionUserId><projection slot="executor"></projection></template>
+          <template #field-classNames><projection slot="scope"></projection></template>
         </projection>
       </section-group>
     </div>

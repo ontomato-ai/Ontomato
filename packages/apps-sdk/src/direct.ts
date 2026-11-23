@@ -13,4 +13,6 @@ export { panelHumanOperations, type ConfirmPanelOperation, type PanelHumanOperat
 export type { PlatformRequests } from "./panel/platform-objects";
 export { readProjectionForRender } from "./panel/platform-requests";
 
-export { useMember, useMemberData, useMemberOperations, useMemberParam, useMemberRead, type PanelMemberRowOperation } from "./panel/member";
+export { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam, useMemberRead } from "./panel/member";
+export { usePanelOutput, usePanelOutputs } from "./panel/panel-output";
+export { useFormFieldSlot, useListRowSlot, type FormFieldSlotContext, type ListRowSlotContext, type ListRowSlotOperation } from "./panel/slot-context";

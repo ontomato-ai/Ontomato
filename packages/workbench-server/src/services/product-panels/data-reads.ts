@@ -473,9 +473,6 @@ export async function executeProjectionDataRead(
   callerUserName?: string,
   location?: McpRequestLocation,
 ): Promise<ProjectionDataReadOutcome> {
-  if ("listColumn" in member && member.listColumn !== undefined) {
-    throw new HttpError(422, "listColumn members cannot declare independent data reads", "LIST_COLUMN_DATA_FORBIDDEN");
-  }
   const inputs = effectiveInputs(projection, member, submittedInputs);
   if (!Object.hasOwn(projection.data, dataName)) {
     throw new HttpError(
@@ -520,9 +517,6 @@ export async function readProductPanelData(
 ): Promise<ProductPanelReadResponse> {
   try {
     const { member, projection, panel, viewer: readViewer } = await resolveReadMember(owner, viewer, request);
-    if ("listColumn" in member && member.listColumn !== undefined && Object.keys(projection.data).length > 0) {
-      throw new HttpError(422, "listColumn members cannot declare independent data reads", "LIST_COLUMN_DATA_FORBIDDEN");
-    }
     const slot = request.memberPath.at(-1)!.member;
     if ("operations" in request) {
       const inputs = effectiveInputs(projection, member, request.inputs);
@@ -534,7 +528,45 @@ export async function readProductPanelData(
     const outcome = await executeProjectionDataRead(
       owner, readViewer, { member, projection, slot }, request.dataName, request.inputs, request.runtimeParams, callerUserName, location,
     );
-    return outcome.status === "empty" ? { status: "empty" } : { status: "ready", value: outcome.value };
+    if (outcome.status === "empty") return { status: "empty" };
+    let rowOperations;
+    if (
+      projection.operations && Object.keys(projection.operations).length > 0
+      && (outcome.declaration.result === "panelRecordList"
+        || outcome.declaration.result === "panelRecordQuery"
+        || outcome.declaration.result === "panelOntologyObjects")
+    ) {
+      const datum = projection.data[request.dataName];
+      const inputs = effectiveInputs(projection, member, request.inputs);
+      const fallbackClassName = datum
+        ? ("type" in datum.source
+            ? datum.source.type.id
+            : ("literal" in datum.source.object
+                ? datum.source.object.literal.className
+                : (projection.inputs[datum.source.object.input]?.kind === "object"
+                    ? (projection.inputs[datum.source.object.input] as { kind: "object"; objectType: string }).objectType
+                    : undefined)))
+        : undefined;
+      const rows = outcome.declaration.result === "panelRecordList"
+        ? (outcome.value as import("@ontomato/contracts/panel-projection").PanelRecord[])
+        : outcome.declaration.result === "panelRecordQuery"
+          ? ((outcome.value as import("@ontomato/contracts/panel-projection").PanelRecordQuery).rows)
+          : ((outcome.value as import("@ontomato/contracts/platform-ontology-data").PlatformOntologyObjectsResponse).items.map(item => ({
+              primaryKey: item.node.primaryKey,
+              className: item.node.className,
+              label: item.label,
+              fields: {},
+            })));
+      const { describeRowOperationsForRows } = await import("./direct-operations");
+      rowOperations = await describeRowOperationsForRows(
+        { owner, credentials: readViewer },
+        { panel, projection, member, slot },
+        inputs,
+        rows,
+        fallbackClassName,
+      );
+    }
+    return { status: "ready", value: outcome.value, ...(rowOperations && { rowOperations }) };
   } catch (error) {
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) return { status: "forbidden" };
     if (error instanceof HttpError || error instanceof BackendUnavailableError || error instanceof z.ZodError || error instanceof SyntaxError)

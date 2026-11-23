@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, defineComponent, h, inject, onBeforeUnmount, provide } from "vue";
-import { projectionKey, usePanelContext, useProjectionSlot } from "../panel/context";
-import { panelMemberKey, useMember } from "../panel/member";
-import { fieldControlKey, fieldControlsOf } from "./form-controls";
+import { computed } from "vue";
+import { useFormFieldSlot } from "../panel/slot-context";
 import type { EdgeEndsConfig } from "./object-graph-data";
 import ObjectGraphCanvas from "./ObjectGraphCanvas.vue";
 import ObjectGraphField from "./ObjectGraphField.vue";
@@ -10,11 +8,11 @@ import ObjectGraphField from "./ObjectGraphField.vue";
 /**
  * Objects of one type as a graph, joined by the objects of another (classes joined by their relationships): the member's
  * `nodes` and `edges` datums (`panelRecordList`), with `config.edgeEnds` (`source`, `target`) pointing to the node keys
- * inside each edge's fields. A member whose formField port names a form field chooses that field's list of node keys
- * on it (an agent's data scope); any other member is the page's graph canvas, shared by the ontology graph and visual
- * modeling (see ObjectGraphCanvas). The field's choice is drawn by its form, where the field is.
+ * inside each edge's fields. When placed inside an `ObjectForm` field slot (`#field-<path>` or `#field`), it renders
+ * `ObjectGraphField` in place to choose that field's list of node keys; otherwise it renders the interactive
+ * `ObjectGraphCanvas` (with `#toolbar` and `#overlay` Vue slots).
  */
-const props = withDefaults(defineProps<{
+withDefaults(defineProps<{
   /** JSON Pointers into each edge record's `fields` naming its source and target node keys. */
   edgeEnds?: EdgeEndsConfig;
   /** On the page's canvas, a line drawn with Shift from one node to another hands the panel its two ends. */
@@ -37,33 +35,38 @@ const props = withDefaults(defineProps<{
   hint?: string;
 }>(), { editable: undefined, highlightBanner: undefined, showFocusButton: undefined });
 
-const panel = usePanelContext();
-const member = useMember();
-const slot = useProjectionSlot();
-const memberContext = inject(panelMemberKey, null);
-const port = panel.manifest.members[member.key]?.formField;
-const choosesField = computed(() => port !== undefined);
+const fieldSlot = useFormFieldSlot();
+const choosesField = computed(() => fieldSlot !== null);
 
-// Choosing a form's field, the graph is drawn by the form where the field is, under this projection's slot and member.
-if (port) {
-  const Field = defineComponent({
-    setup() {
-      provide(projectionKey, slot);
-      if (memberContext) provide(panelMemberKey, memberContext);
-      return () => h(ObjectGraphField, { edgeEnds: props.edgeEnds });
-    },
-  });
-  const controls = fieldControlsOf(panel.instance);
-  const key = fieldControlKey(port.slot, port.path, port.itemPath);
-  controls.set(key, Field);
-  onBeforeUnmount(() => controls.delete(key));
-}
+defineSlots<{
+  /** Extra controls appended to the floating canvas toolbar. */
+  toolbar?(props: {
+    zoom: unknown;
+    zoomIn: () => unknown;
+    zoomOut: () => unknown;
+    fitView: () => void;
+    relayout: () => void;
+    exportPng: () => void;
+    selectedNodes: readonly string[];
+    selectedEdges: readonly string[];
+    nodeCount: number;
+    edgeCount: number;
+  }): unknown;
+  /** Floating overlay region rendered over the graph canvas (for legends, path cards, or inspector chips). */
+  overlay?(props: {
+    selectedNode: unknown;
+    selectedEdge: unknown;
+    pathResult: unknown;
+    nodeCount: number;
+    edgeCount: number;
+  }): unknown;
+}>();
 </script>
 
 <template>
-  <!-- Choosing a form's field, the graph is drawn by the form, where the field is. -->
+  <ObjectGraphField v-if="choosesField" :edge-ends="edgeEnds"></ObjectGraphField>
   <ObjectGraphCanvas
-    v-if="!choosesField"
+    v-else
     :edge-ends="edgeEnds"
     :editable="editable"
     :categories="categories"
@@ -74,5 +77,12 @@ if (port) {
     :highlight-banner="highlightBanner"
     :show-focus-button="showFocusButton"
     :hint="hint"
-  ></ObjectGraphCanvas>
+  >
+    <template v-if="$slots.toolbar" #toolbar="scope">
+      <slot name="toolbar" v-bind="scope"></slot>
+    </template>
+    <template v-if="$slots.overlay" #overlay="scope">
+      <slot name="overlay" v-bind="scope"></slot>
+    </template>
+  </ObjectGraphCanvas>
 </template>

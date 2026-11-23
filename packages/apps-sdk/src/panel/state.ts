@@ -1,4 +1,4 @@
-import { computed, readonly, ref, type DeepReadonly, type Ref } from "vue";
+import { computed, shallowRef, type ComputedRef, type Ref } from "vue";
 import {
   matchesDirectPanelValue,
   panelStateValueSchema,
@@ -23,45 +23,46 @@ import type { PanelSelection } from "./types";
  */
 
 /** A reference to one ontology object, as a state field holds it. */
-export interface PanelObjectRef {
+export type PanelObjectRef = {
   readonly className: string;
   readonly primaryKey: string;
-}
+};
 
-/** One field's value as the panel reads it: an object reference, a collection of them, a scalar, node positions, or null while unset. */
-export type PanelFieldValue = Exclude<PanelStateValue, readonly unknown[]> | readonly PanelObjectRef[];
+/** One field's value as the panel reads it: an object reference, a collection, a scalar, JSON object, or null while unset. */
+export type PanelFieldValue = PanelStateValue;
 
 /** The one top-level object a state value names; null for a child identity, a scalar, a collection or nothing. */
-export function stateObject(value: DeepReadonly<PanelFieldValue> | undefined): PanelObjectRef | null {
-  return value !== null && value !== undefined && typeof value === "object" && "className" in value && typeof value.className === "string"
-    ? value as PanelObjectRef
+export function stateObject(value: PanelFieldValue | undefined): PanelObjectRef | null {
+  return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value)
+    && "className" in value && typeof value.className === "string"
+    ? value as unknown as PanelObjectRef
     : null;
 }
 
 /** The parent-scoped child identity a state value holds; null for anything else. */
-export function stateChildObject(value: DeepReadonly<PanelFieldValue> | undefined): PanelChildObjectIdentity | null {
-  return value !== null && value !== undefined && typeof value === "object" && "parent" in value
-    && "primaryKey" in value && typeof value.primaryKey === "string"
-    ? value as PanelChildObjectIdentity
+export function stateChildObject(value: PanelFieldValue | undefined): PanelChildObjectIdentity | null {
+  return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value)
+    && "parent" in value && "primaryKey" in value && typeof value.primaryKey === "string"
+    ? value as unknown as PanelChildObjectIdentity
     : null;
 }
 
 /** The objects a collection state value holds; none for anything else. */
-export function stateObjects(value: DeepReadonly<PanelFieldValue> | undefined): readonly PanelObjectRef[] {
-  return Array.isArray(value) ? value as readonly PanelObjectRef[] : [];
+export function stateObjects(value: PanelFieldValue | undefined): readonly PanelObjectRef[] {
+  return Array.isArray(value) ? value as unknown as readonly PanelObjectRef[] : [];
 }
 
 /**
  * What a panel instance starts with: values for the fields an open request or a link named. A field it leaves out starts
- * at its declared default, else empty; an object-typed field declares no object to open on: that belongs to the request.
+ * at its declared default, else empty.
  */
 export type PanelInitialState = Readonly<Record<string, RuntimeJsonValue>>;
 
 export interface PanelStateStore {
   /** Every declared field, by name, as the panel's template and script read them. */
-  readonly values: DeepReadonly<Ref<Record<string, PanelFieldValue>>>;
+  readonly values: Readonly<Ref<Readonly<Record<string, PanelFieldValue>>>>;
   /** One field; the same value `values` holds. */
-  field(name: string): DeepReadonly<Ref<PanelFieldValue>>;
+  field(name: string): Readonly<Ref<PanelFieldValue>>;
   /** What the reader or a state operation set. A value of the wrong type for the field is refused here. */
   set(name: string, value: PanelFieldValue): void;
   /**
@@ -93,7 +94,7 @@ export function checkPanelValue(manifest: PanelManifest, name: string, value: un
  * another instance of the panel, and nothing is written to the platform: the panel's state is the reader's moment.
  */
 export function createPanelState(manifest: PanelManifest, initial: PanelInitialState = {}): PanelStateStore {
-  const values = ref<Record<string, PanelFieldValue>>(
+  const values = shallowRef<Record<string, PanelFieldValue>>(
     Object.fromEntries(
       Object.entries(manifest.state).map(([name, field]) => {
         // An address or an open request names what it opens on; otherwise the field starts at its declared default.
@@ -102,14 +103,15 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
       }),
     ),
   );
-  const fields = new Map<string, DeepReadonly<Ref<PanelFieldValue>>>(
+  const fields = new Map<string, ComputedRef<PanelFieldValue>>(
     Object.keys(manifest.state).map((name) => [
       name,
-      readonly(computed(() => values.value[name] ?? null)) as DeepReadonly<Ref<PanelFieldValue>>,
+      computed(() => values.value[name] ?? null),
     ]),
   );
+  const readonlyValues = computed<Readonly<Record<string, PanelFieldValue>>>(() => values.value);
   return {
-    values: readonly(values) as DeepReadonly<Ref<Record<string, PanelFieldValue>>>,
+    values: readonlyValues,
     field(name) {
       const field = fields.get(name);
       if (!field) throw new Error(`Panel state has no field '${name}'`);
@@ -126,9 +128,8 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
       values.value = { ...values.value, ...checked };
     },
     deepLinkable() {
-      // The declaration keeps collections and node positions out of addresses.
       return Object.fromEntries(Object.entries(values.value).filter((entry): entry is [string, PanelDeepLinkStateValue] =>
-        entry[1] !== null && !Array.isArray(entry[1]) && manifest.state[entry[0]]!.deepLink));
+        entry[1] !== null && manifest.state[entry[0]]!.deepLink));
     },
   };
 }

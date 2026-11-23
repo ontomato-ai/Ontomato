@@ -5,6 +5,10 @@
 
 Direct panel modules can import `vue`, `@ontomato/sdk/panel`.
 
+For a domain application, choose `declaration.icon` from `node "$SKILL/scripts/ontomato.mjs" sdk icons` (all catalogue icons are available).
+To show an application by its icon key, draw `<component :is="appIcon(key)" :size="16" />` with `appIcon` from
+`@ontomato/sdk/panel`: it is the platform's own icon for the key, and an unknown key draws the platform's fallback.
+
 ## Vue setup
 
 ### usePanelContext
@@ -66,6 +70,8 @@ interface PanelInstance {
    */
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
+  /** Reactive map of read-only outputs published by projection members (`outputs[member][name]`), separate from writable `state`. */
+  readonly outputs: Readonly<Record<string, Readonly<Record<string, RuntimeJsonValue | null>>>>;
 }
 ```
 
@@ -74,9 +80,9 @@ interface PanelInstance {
 ```ts
 interface PanelStateStore {
   /** Every declared field, by name, as the panel's template and script read them. */
-  readonly values: DeepReadonly<Ref<Record<string, PanelFieldValue>>>;
+  readonly values: Readonly<Ref<Readonly<Record<string, PanelFieldValue>>>>;
   /** One field; the same value `values` holds. */
-  field(name: string): DeepReadonly<Ref<PanelFieldValue>>;
+  field(name: string): Readonly<Ref<PanelFieldValue>>;
   /** What the reader or a state operation set. A value of the wrong type for the field is refused here. */
   set(name: string, value: PanelFieldValue): void;
   /**
@@ -88,6 +94,24 @@ interface PanelStateStore {
   /** The fields an address or an open request may carry, with the values they hold now. */
   deepLinkable(): Record<string, PanelDeepLinkStateValue>;
 }
+```
+
+### usePanelOutput
+
+Read one read-only output published by a projection member (e.g. `ObjectList`'s `total`, `filteredCount`,
+`checkedCount`, `selectedLabel`, `activeLabel`; `ObjectSummary`/`ObjectHeader`/`ObjectForm`'s `label`; `ObjectForm`'s
+`dirty` and `draft`). Read-only outputs stay separate from the panel's writable public `manifest.state`.
+
+```ts
+function usePanelOutput<T extends RuntimeJsonValue = RuntimeJsonValue>(member: string, name: string): ComputedRef<T | null>
+```
+
+### usePanelOutputs
+
+Read all read-only outputs published by a projection member as a reactive map (`{ total, filteredCount, ... }`).
+
+```ts
+function usePanelOutputs(member: string): ComputedRef<Readonly<Record<string, RuntimeJsonValue>>>
 ```
 
 ### usePanelFormDraft
@@ -173,7 +197,7 @@ interface AppMenuItem {
 
 ### PanelFormHandle
 
-What one form holds, as the projections that edit one of its fields read and write it (`formField`): the owner's
+What one form holds, as the projections placed in its `#field-*` Vue slots read and write it: the owner's
 fields, the values, the field errors and changed marks by path, and whether the form is busy. Every one of them is the
 form's own; a field projection never keeps a copy.
 
@@ -289,7 +313,7 @@ The result type is `type MemberDataState =
 
 | Status in PanelDataState | Additional fields |
 | --- | --- |
-| `ready` | `value` |
+| `ready` | `value`, `rowOperations` |
 | `empty` |  |
 | `error` | `message` |
 | `forbidden` | `reason` |
