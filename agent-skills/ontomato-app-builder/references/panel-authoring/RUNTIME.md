@@ -81,6 +81,8 @@ interface PanelInstance {
 interface PanelStateStore {
   /** Every declared field, by name, as the panel's template and script read them. */
   readonly values: Readonly<Ref<Readonly<Record<string, PanelFieldValue>>>>;
+  /** Field names explicitly named by the most recent `set` or `setState` call (empty before any update). */
+  readonly lastPatchedKeys: ReadonlySet<string>;
   /** One field; the same value `values` holds. */
   field(name: string): Readonly<Ref<PanelFieldValue>>;
   /** What the reader or a state operation set. A value of the wrong type for the field is refused here. */

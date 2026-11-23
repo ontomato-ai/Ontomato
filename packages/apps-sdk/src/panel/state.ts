@@ -61,6 +61,8 @@ export type PanelInitialState = Readonly<Record<string, RuntimeJsonValue>>;
 export interface PanelStateStore {
   /** Every declared field, by name, as the panel's template and script read them. */
   readonly values: Readonly<Ref<Readonly<Record<string, PanelFieldValue>>>>;
+  /** Field names explicitly named by the most recent `set` or `setState` call (empty before any update). */
+  readonly lastPatchedKeys: ReadonlySet<string>;
   /** One field; the same value `values` holds. */
   field(name: string): Readonly<Ref<PanelFieldValue>>;
   /** What the reader or a state operation set. A value of the wrong type for the field is refused here. */
@@ -110,21 +112,28 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
     ]),
   );
   const readonlyValues = computed<Readonly<Record<string, PanelFieldValue>>>(() => values.value);
+  let patchedKeys: ReadonlySet<string> = new Set();
   return {
     values: readonlyValues,
+    get lastPatchedKeys() {
+      return patchedKeys;
+    },
     field(name) {
       const field = fields.get(name);
       if (!field) throw new Error(`Panel state has no field '${name}'`);
       return field;
     },
     set(name, value) {
-      values.value = { ...values.value, [name]: checkPanelValue(manifest, name, value) };
+      const next = checkPanelValue(manifest, name, value);
+      patchedKeys = new Set([name]);
+      values.value = { ...values.value, [name]: next };
     },
     setState(patch) {
       const entries = Object.entries(patch);
       if (!entries.length) return;
       const checked: Record<string, PanelFieldValue> = {};
       for (const [name, value] of entries) checked[name] = checkPanelValue(manifest, name, value);
+      patchedKeys = new Set(entries.map(([name]) => name));
       values.value = { ...values.value, ...checked };
     },
     deepLinkable() {
