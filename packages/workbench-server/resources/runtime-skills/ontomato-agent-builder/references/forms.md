@@ -45,7 +45,13 @@ With live page tools, use `present({ target: "/agents/settings/new" })` to creat
 `/ontology/agents`. Call `fill_form({ member: "form", values })` with just the fields being
 set or changed. Include `skills` only for a requested selection change. Leave the form visible
 for review. When the user asks to save, call `page_action({ operation: "form.save" })`.
-For a requested deletion, open the existing agent and call `page_action({ operation: "remove.delete" })`.
+For a requested deletion, pass the intended agent to
+`present({ target: "/agents/settings", state: { mode: "edit", selected: { className: "platform:AgentDefinition", primaryKey: id } } })`.
+From the opened page snapshot, check that `current.target.state.selected.primaryKey` equals
+that `id` and take `current.target.pageInstanceId` as `expectedPageInstanceId`.
+If the selection differs, is absent, or the page instance cannot be verified, stop and tell the
+user the intended agent could not be verified on the page. Otherwise call
+`page_action({ operation: "remove.delete", expectedPageInstanceId, expectedTarget: { kind: "object", objectType: "platform:AgentDefinition", primaryKey: id } })`.
 Writes default to user confirmation in the conversation.
 
 If you need to validate the complete definition before handing over the form, send
