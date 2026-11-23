@@ -1,6 +1,5 @@
 import { platformRoutes as routes } from "@ontomato/platform-shell/routes";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import { OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
 import { defineAsyncComponent, defineComponent, h } from "vue";
 import { useRoute, useRouter, type RouteRecordRaw } from "vue-router";
 import type { ObjectReference } from "@ontomato/contracts/object-views";
@@ -52,7 +51,7 @@ const ObjectViewEditorRoute = defineComponent({
       onOpen: (reference: ObjectReference) => void router.push(objectViewLocation(reference)),
       // Back goes to the object types panel with this class selected: the page that class's detail address opens.
       onBack: () => void router.push(panelAddress(managerPaths.objects, {
-        selected: { className: OBJECT_TYPE, primaryKey: String(route.params.className) },
+        selected: String(route.params.className),
       })),
     });
   },

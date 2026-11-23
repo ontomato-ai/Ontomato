@@ -2,6 +2,8 @@
 // the projections it composes, the drafts it receives and the operations it offers. A panel's `panel.mjs` imports
 // `definePanel` and `mountPanel` from here and writes nothing about page context, deep links, drafts or buttons.
 export { panelManifestSchema, definePanel, panelOperationId } from "@ontomato/contracts/panel-manifest";
+/** Build a panel address with flat named query parameters (e.g. `panelAddress("/ontology/objects", { selected: id })`). */
+export { panelAddress } from "@ontomato/contracts/panel-host";
 export type {
   PanelManifest,
   PanelOperation,

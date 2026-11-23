@@ -9,7 +9,6 @@ import { PAGE_DRAFT_QUERY_KEYS, pageDraftLink, type PageDraftLink } from "@ontom
 import {
   PANEL_HOST_CHANNEL,
   panelAddress,
-  panelAddressState,
   panelFrameMessageSchema,
   panelMessageOf,
   type PanelDefinitionMode,
@@ -482,7 +481,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   async function adopt(next: HostedPanelSource) {
     error.value = "";
     const requested = requestedState(next.panel) as PanelHostState;
-    const requestedAddress = panelAddress(pageAddress(), requested);
+    const requestedAddress = panelAddress(pageAddress(), requested, next.panel.manifest);
     // A panel runs in the platform's document (user's ruling, 2026-11-20): the frame below is kept but no
     // longer a way a panel runs.
     if (next.panel.content.module !== undefined) {
@@ -556,7 +555,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const deepLinkInitial: PanelHostState = Object.fromEntries(
       Object.entries(mergedInitial).filter(([name]) => next.panel.manifest.state[name]?.deepLink),
     );
-    const effectiveAddress = livePatch ? panelAddress(pageAddress(), deepLinkInitial) : requestedAddress;
+    const effectiveAddress = livePatch ? panelAddress(pageAddress(), deepLinkInitial, next.panel.manifest) : requestedAddress;
     adoptedExternalAddress = requestedAddress;
     if (!replaceDirect(next, deepLinkInitial, effectiveAddress)) return;
     const { element, template, css } = codedPanelTarget(next.panel.content.html);
@@ -664,7 +663,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         pendingObjectRefresh = false;
         refresh(null);
       }
-      if (source.value && panelAddress(pageAddress(), requestedState(source.value.panel)) !== adoptedExternalAddress && syncAddress()) return;
+      if (source.value && panelAddress(pageAddress(), requestedState(source.value.panel), source.value.panel.manifest) !== adoptedExternalAddress && syncAddress()) return;
     }
     const deepLinkOnly = source.value
       ? Object.fromEntries(Object.entries(next).filter(([name]) => source.value!.panel.manifest.state[name]?.deepLink))
@@ -675,7 +674,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** The instance's deep-linkable state changed: the address carries it. */
   function reportState(next: PanelHostState) {
     state.value = next;
-    address.value = panelAddress(pageAddress(), next);
+    address.value = panelAddress(pageAddress(), next, source.value?.panel.manifest);
   }
 
   /** The instance holds unsaved changes, or no longer does: a definition change waits for them. */
@@ -906,7 +905,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function syncAddress(): boolean {
     const shown = source.value;
     if (!shown) return false;
-    const requested = panelAddress(pageAddress(), requestedState(shown.panel));
+    const requested = panelAddress(pageAddress(), requestedState(shown.panel), shown.panel.manifest);
     if (error.value !== "" || displayLoad.value.status === "error") {
       if (requested === address.value) return false;
       if (!direct.value && !document.value) {
@@ -936,7 +935,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function settleDraft(draft: PageDraftLink) {
     if (!linksDraft(address.value, draft)) return;
     settledDraft = draft;
-    tellAddress(panelAddress(pageAddress(), state.value));
+    tellAddress(panelAddress(pageAddress(), state.value, source.value?.panel.manifest));
   }
 
   /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */

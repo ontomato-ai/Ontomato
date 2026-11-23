@@ -134,7 +134,7 @@ or types.
 admitted (otherwise `null`), and `run(input?)` runs the operation through the platform's confirmation and permission
 flow.
 
-To navigate to another registered entry (such as a separate detail entry with `?state=...` or `/agents/chat?agentId=…`),
+To navigate to another registered entry (such as a separate detail entry built with `panelAddress("/path", { selected: id })` or `/agents/chat?agentId=…`),
 call `usePanelContext().navigate(address)`. To show transient feedback ("Saved", "Exported", or an error), call
 `usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })`. Never call business HTTP endpoints
 directly from panel code.

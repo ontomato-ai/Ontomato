@@ -28,7 +28,7 @@ export interface PanelBackControllerOptions {
 
 export interface PanelBackController {
   register(registration: PanelBackHandlerRegistration): () => void;
-  /** Refreshes the stored URL/state snapshot after the host replaces the address (e.g. deep-link `?state=` sync). */
+  /** Refreshes the stored URL/state snapshot after the host replaces the address (e.g. deep-link query sync). */
   syncHistorySnapshot(): void;
   dispose(): void;
 }
