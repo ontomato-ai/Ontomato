@@ -1,4 +1,4 @@
-import type { Readable, Writable } from "node:stream";
+import type { Duplex, Readable, Writable } from "node:stream";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import type {
   RuntimeAssistantStreamEvent,
@@ -124,6 +124,12 @@ export interface HarnessProcess {
   readonly stdin: Writable;
   readonly stdout: Readable;
   readonly stderr: Readable;
+  /**
+   * A private two-way channel between the plugin and the program it started, file descriptor 3 inside the
+   * sandbox. The plugin owns what travels on it (for PI, platform tool calls from its controlled extension).
+   * Commands the program runs reach the platform through the sandbox callback, not this channel.
+   */
+  readonly channel: Duplex;
   /** Settles once the process tree has ended, with its exit code, or null when it was killed by a signal. */
   readonly exited: Promise<number | null>;
   kill(): void;

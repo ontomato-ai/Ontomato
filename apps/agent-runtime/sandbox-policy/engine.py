@@ -9,7 +9,7 @@ import time
 
 
 gateway, callback, file_bytes, *command = sys.argv[1:]
-with os.fdopen(3) as config:
+with os.fdopen(4) as config:
     environment = json.load(config)
 
 resource.setrlimit(resource.RLIMIT_FSIZE, (int(file_bytes), int(file_bytes)))
@@ -29,10 +29,11 @@ for port, name in [(gateway, "gateway"), (callback, "callback")]:
         time.sleep(0.01)
 
 # Reap orphaned descendants as PID 1. Exiting PID 1 ends the whole namespace.
-engine = subprocess.Popen(command, env=environment)
+engine = subprocess.Popen(command, env=environment, pass_fds=(3,))
+os.close(3)
 while True:
     pid, status = os.wait()
     if pid == engine.pid:
         code = os.waitstatus_to_exitcode(status)
-        os.write(4, str(code).encode("ascii"))
+        os.write(5, str(code).encode("ascii"))
         sys.exit(code if code >= 0 else 128 - code)
