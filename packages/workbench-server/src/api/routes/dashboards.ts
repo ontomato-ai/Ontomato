@@ -24,6 +24,7 @@ import { dashboardCardRequestSchema, dashboardAuthoring } from "@ontomato/contra
 import { dashboardSourceSchema, dashboardAddArtifactSchema, dashboardAddChartFileSchema } from "@ontomato/contracts/dashboard-artifacts";
 import { DashboardMetricClient } from "../../services/dashboard/metric-client";
 import { queryMetricCard, metricCardParameterForm, saveMetricCardParameters } from "../../services/dashboard/metric-data";
+import { dashboardAgentConfirmRequestSchema, prepareDashboardAgentConfirm } from "../../services/dashboard/agent-confirm";
 import {registerDashboardProduct} from '../../services/product-assets/register-dashboard';
 const router: ExpressRouter = Router();
 function metricContext(req: AuthenticatedRequest) {
@@ -44,6 +45,18 @@ router.post("/card-parameter-form", asyncHandler(async (req, res) => {
 router.post(dashboardAuthoring["dashboard.card.parameters"].path, asyncHandler(async (req, res) => {
   const { owner, client } = metricContext(req as AuthenticatedRequest);
   res.json({ success: true, data: await saveMetricCardParameters(owner, parseDashboardInput(dashboardAuthoring["dashboard.card.parameters"].schema, req.body), client) });
+}));
+router.post("/agent-confirm", asyncHandler(async (req, res) => {
+  const request = req as AuthenticatedRequest;
+  const domainId = requireDomainId(request);
+  const input = parseDashboardInput(dashboardAgentConfirmRequestSchema, req.body);
+  const data = await prepareDashboardAgentConfirm(
+    { userId: request.userId, domainId },
+    credentialsFromRequest(request),
+    input,
+    request.userName,
+  );
+  res.json({ success: true, data });
 }));
 router.get(
   "/",

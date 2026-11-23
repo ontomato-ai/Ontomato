@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { FormFields } from "@ontomato/foundation-ui/form";
-import type { FormFieldRejection, FormFillOutcome, PageActionOutcome } from "@ontomato/contracts/agent-presentation";
+import type {
+  FormFieldRejection,
+  FormFillOutcome,
+  PageActionConfirmedDispatchResult,
+  PageActionOutcome,
+  PageActionRequestInput,
+  PendingPageActionConfirmation,
+} from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldKey } from "@ontomato/contracts/form-fields";
 import type { DashboardParameterForm } from "@ontomato/contracts/dashboard";
 import { ApiRequestError } from "../../../utils/api";
-import { fetchCardParameterForm, saveCardParameters } from "../api";
+import { fetchCardParameterForm, prepareDashboardAgentConfirm, saveCardParameters } from "../api";
 import { cardError, cardErrorHeadline, type CardError } from "./utils/metricCard";
 
 /**
@@ -20,7 +27,7 @@ const props = defineProps<{
   card: { id: string; name: string } | null;
 }>();
 const visible = defineModel<boolean>({ required: true });
-const emit = defineEmits<{ saved: [cardId: string] }>();
+const emit = defineEmits<{ saved: [cardId: string]; dirty: [dirty: boolean] }>();
 const { t } = useI18n();
 
 const form = ref<DashboardParameterForm | null>(null);
@@ -35,7 +42,16 @@ const loading = ref(false);
 const saving = ref(false);
 let loadPromise: Promise<void> | null = null;
 let loadSeq = 0;
+let editSeq = 0;
+let unmounted = false;
 const failureHeadline = computed(() => (failure.value ? cardErrorHeadline(failure.value, t) : null));
+
+const isDirty = computed(() => visible.value && edited.value.size > 0);
+watch(isDirty, (dirty) => emit("dirty", dirty), { flush: "sync", immediate: true });
+onBeforeUnmount(() => {
+  unmounted = true;
+  emit("dirty", false);
+});
 
 /** Edited values, original value beside new, so both human edits and live fills stay reviewable before saving. */
 const changes = computed(() => {
@@ -66,6 +82,7 @@ watch(
   [visible, () => props.dashboardId, () => props.card?.id ?? null] as const,
   ([open, dashboardId, cardId]) => {
     const seq = ++loadSeq;
+    editSeq += 1;
     loadedCardId.value = null;
     loadedDashboardId.value = null;
     form.value = null;
@@ -104,6 +121,7 @@ watch(
 );
 
 function edit(key: string, value: string) {
+  editSeq += 1;
   values.value = { ...values.value, [key]: value };
   edited.value = new Set(edited.value).add(key);
   const { [key]: _, ...rest } = fieldErrors.value;
@@ -190,6 +208,7 @@ async function save(): Promise<boolean> {
       revision: targetRevision,
       values: targetValues,
     });
+    editSeq += 1;
     emit("saved", targetCardId);
     if (props.card?.id === targetCardId && props.dashboardId === targetDashboardId) {
       visible.value = false;
@@ -219,21 +238,139 @@ async function save(): Promise<boolean> {
   }
 }
 
-async function saveFromAction(operation: string): Promise<PageActionOutcome> {
+function currentEditedSnapshot(): string {
+  return JSON.stringify([...edited.value].sort().map((key) => [key, values.value[key] ?? ""]));
+}
+
+async function saveFromAction(
+  operation: string,
+  agentRun: PageActionRequestInput["agentRun"],
+): Promise<PageActionOutcome> {
   await waitForLoad();
-  if (!isCurrentFormLoaded() || !form.value) {
+  if (!isCurrentFormLoaded() || !form.value || !props.card) {
     return { ok: false, reason: "action_not_ready", operation, message: "The card parameter form is not open." };
   }
   if (edited.value.size === 0) {
     return { ok: false, reason: "action_unavailable", operation, message: "There are no parameter changes to save." };
   }
-  const ok = await save();
-  if (ok) return { ok: true, kind: "executed", operation };
-  const fieldMessages = Object.values(fieldErrors.value);
-  if (fieldMessages.length) {
-    return { ok: false, reason: "validation_failed", operation, message: fieldMessages.join(" ") };
+
+  const capturedDashboardId = props.dashboardId;
+  const capturedCardId = props.card.id;
+  const capturedCardName = props.card.name || props.card.id;
+  const capturedRevision = form.value.revision;
+  const capturedEditSeq = editSeq;
+  const capturedSnapshot = currentEditedSnapshot();
+
+  // Privacy rule: list only edited parameter field labels/keys, never edited field values.
+  const fieldLabels = changes.value.map((change) => change.label || change.key);
+  const impactSummary = fieldLabels.length > 0 ? `Fields: ${fieldLabels.join(", ")}` : undefined;
+
+  let prepared;
+  try {
+    prepared = await prepareDashboardAgentConfirm({
+      dashboardId: capturedDashboardId,
+      operation: "card.parameters.save",
+      targetLabel: capturedCardName,
+      impactSummary,
+      agentRun,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "failed",
+      operation,
+      message: error instanceof Error ? error.message : "Failed to prepare save confirmation.",
+    };
   }
-  return { ok: false, reason: "failed", operation, message: failure.value?.message ?? "Failed to save parameters." };
+
+  let cancelled = false;
+  let dispatched = false;
+  const isStillValid = () => {
+    if (unmounted) return { ok: false as const, reason: "stale", message: "The card parameter dialog was closed." };
+    if (cancelled) return { ok: false as const, reason: "stale", message: "The save confirmation was cancelled." };
+    if (dispatched) return { ok: false as const, reason: "stale", message: "The save confirmation was already executed." };
+    if (!visible.value || !isCurrentFormLoaded() || !form.value) {
+      return { ok: false as const, reason: "stale", message: "The card parameter dialog was closed or reloaded." };
+    }
+    if (props.dashboardId !== capturedDashboardId || props.card?.id !== capturedCardId) {
+      return { ok: false as const, reason: "stale", message: "The dashboard or target card changed." };
+    }
+    if (form.value.revision !== capturedRevision) {
+      return { ok: false as const, reason: "stale", message: "The parameter form revision changed." };
+    }
+    if (editSeq !== capturedEditSeq || currentEditedSnapshot() !== capturedSnapshot) {
+      return { ok: false as const, reason: "stale", message: "The card parameter values changed after confirmation was requested." };
+    }
+    if (saving.value || loading.value) {
+      return { ok: false as const, reason: "stale", message: "The card parameter dialog is currently busy." };
+    }
+    return { ok: true as const };
+  };
+
+  if (prepared.autoMode) {
+    const check = isStillValid();
+    if (!check.ok) {
+      return { ok: false, reason: "stale", operation, intentId: prepared.intentId, message: check.message };
+    }
+    dispatched = true;
+    const ok = await save();
+    if (ok) return { ok: true, kind: "executed", operation, intentId: prepared.intentId };
+    const fieldMessages = Object.values(fieldErrors.value);
+    if (fieldMessages.length) {
+      return { ok: false, reason: "validation_failed", operation, intentId: prepared.intentId, message: fieldMessages.join(" ") };
+    }
+    return {
+      ok: false,
+      reason: "failed",
+      operation,
+      intentId: prepared.intentId,
+      message: failure.value?.message ?? "Failed to save parameters.",
+    };
+  }
+
+  const confirmation: PendingPageActionConfirmation = {
+    intentId: prepared.intentId,
+    questionId: prepared.questionId!,
+    operationId: operation,
+    label: prepared.label,
+    isStillValid,
+    async dispatch(): Promise<PageActionConfirmedDispatchResult> {
+      const check = isStillValid();
+      if (!check.ok) {
+        return { ok: false, intentId: prepared.intentId, reason: "stale", message: check.message };
+      }
+      dispatched = true;
+      const ok = await save();
+      if (ok) {
+        return {
+          ok: true,
+          intentId: prepared.intentId,
+          outcome: { cardId: capturedCardId },
+          summary: prepared.label,
+        };
+      }
+      const fieldMessages = Object.values(fieldErrors.value);
+      return {
+        ok: false,
+        intentId: prepared.intentId,
+        reason: "failed",
+        message: fieldMessages.join(" ") || failure.value?.message || "Failed to save parameters.",
+      };
+    },
+    async cancel() {
+      cancelled = true;
+    },
+  };
+
+  return {
+    ok: true,
+    kind: "awaiting_confirmation",
+    operation,
+    intentId: prepared.intentId,
+    questionId: prepared.questionId!,
+    label: prepared.label,
+    confirmation,
+  };
 }
 
 function discard() {
