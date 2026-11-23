@@ -7,20 +7,6 @@ import {
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
-const OBJECT_TYPE = "platform:ObjectType";
-const RELATIONSHIP = "platform:Relationship";
-const ATTRIBUTE = "platform:Attribute";
-
-/** Extracts the owning class name from a platform:Attribute composite key JSON tuple `[className, attrName]`. */
-function attributeClass(primaryKey) {
-  try {
-    const parsed = JSON.parse(primaryKey ?? "");
-    return Array.isArray(parsed) && typeof parsed[0] === "string" ? parsed[0] : null;
-  } catch {
-    return null;
-  }
-}
-
 await mountPanel({
   setup() {
     const { instance, t, navigate } = usePanelContext();

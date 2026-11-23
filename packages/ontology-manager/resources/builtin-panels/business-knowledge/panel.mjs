@@ -100,7 +100,7 @@ await mountPanel({
           return;
         }
         if (next === "create") {
-          if (prev === "edit" && !activeDraft.value) {
+          if (prev === "edit") {
             if (!(await confirmLeave())) {
               revertingMode = true;
               instance.state.set("mode", "edit");

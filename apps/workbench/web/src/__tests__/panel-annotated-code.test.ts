@@ -180,7 +180,6 @@ function mountAnnotatedCode(options: MountOptions) {
     initial: options.initial ?? {},
     text: createPanelText(options.messages ?? {}, ref("en"), "en"),
     ...noOperations,
-    recordDraftCreated: async () => {},
     readProjection: async () => projection,
     read: async (request) => {
       reads.push(request);
