@@ -5,7 +5,7 @@ import { pageContextSchema } from "./page-context";
 import { PAGE_DRAFT_QUERY_KEYS, pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import {
-  normalizeExternalPanelState, normalizeExternalPanelValue, panelChildObjectIdentitySchema,
+  normalizePanelDeepLinkState, normalizeExternalPanelValue, panelChildObjectIdentitySchema,
   panelMemberPathSchema, panelMemberPathSegmentSchema,
   panelObjectIdentitySchema, panelObjectRefSchema, panelOpenRequestSchema, panelOperationSchema,
   panelOperationUnavailableSchema, type DirectPanelPortType, type PanelDeepLinkStateValue,
@@ -298,6 +298,9 @@ export const PANEL_ADDRESS_RESERVED_QUERY_KEYS = [
   "navigationContext",
 ] as const;
 
+// State names are nonempty. An empty query key identifies the field whose sole list item is an empty string.
+const EMPTY_LIST_ITEM_QUERY_KEY = "";
+
 const RESERVED_QUERY_KEY_SET: ReadonlySet<string> = new Set(PANEL_ADDRESS_RESERVED_QUERY_KEYS);
 
 function isReservedOrFrameKey(key: string): boolean {
@@ -369,7 +372,7 @@ function hasNonEmptyDefault(field: PanelStateField): boolean {
  * Values equal to the field's declared default are omitted to keep URLs clean. Conversely, clearing a field that
  * declares a non-empty / non-null default (`""` for string, `[]` for list, `null` for nullable scalar/object/list)
  * emits an explicit empty marker (`[""]` -> `?name=`) so reloading or restoring the URL keeps the cleared value
- * instead of snapping back to the default. For `list<string>`, a single empty query value `?name=` decodes to `[]`.
+ * instead of snapping back to the default. A singleton empty string list adds an item marker (`?name=&=name`).
  */
 function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStateField): string[] {
   if (value === undefined) return [];
@@ -381,7 +384,9 @@ function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStat
     }
     if (value === "" && (field.default === undefined || field.default === null || field.default === "")) return [];
     if (Array.isArray(value) && value.length === 0) {
-      return hasNonEmptyDefault(field) ? [""] : [];
+      const type = field.type;
+      const stringList = type.kind === "list" && type.items.kind === "scalar" && type.items.type === "string";
+      return stringList || hasNonEmptyDefault(field) ? [""] : [];
     }
   } else {
     if (value === null) return [];
@@ -396,15 +401,29 @@ function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStat
   return [encodeFlatItem(value, field?.type)];
 }
 
+function appendFlatState(
+  params: URLSearchParams, name: string, value: PanelDeepLinkStateValue, field?: PanelStateField,
+) {
+  const encoded = encodeFlatStateValues(value, field);
+  for (const item of encoded) params.append(name, item);
+  if (Array.isArray(value) && value.length === 1 && value[0] === "" && encoded.length === 1) {
+    params.append(EMPTY_LIST_ITEM_QUERY_KEY, name);
+  }
+}
+
 function collapseBucket(
   bucket: Record<string, string[]>,
+  emptyListItems: ReadonlySet<string>,
+  prefix: string,
   manifest?: Pick<PanelManifest, "state">,
 ): PanelAddressState {
   const raw: Record<string, PanelDeepLinkStateValue> = {};
   for (const [name, values] of Object.entries(bucket)) {
-    raw[name] = values.length === 1 ? values[0]! : values;
+    const singleItem = values.length === 1;
+    const emptyListItem = singleItem && values[0] === "" && emptyListItems.has(`${prefix}${name}`);
+    raw[name] = singleItem && !emptyListItem ? values[0]! : values;
   }
-  return manifest ? normalizeExternalPanelState(manifest, raw) : raw;
+  return manifest ? normalizePanelDeepLinkState(manifest, raw) : raw;
 }
 
 /**
@@ -423,10 +442,12 @@ export function parseApplicationPanelAddress(
   const path = applicationPanelUsePathSchema.parse(separator < 0 ? address : address.slice(0, separator));
   const rawParams = new URLSearchParams(separator < 0 ? "" : address.slice(separator + 1));
   const query = new URLSearchParams();
+  const emptyListItems = new Set(rawParams.getAll(EMPTY_LIST_ITEM_QUERY_KEY));
   const frameBucket: Record<string, string[]> = {};
   const stateBucket: Record<string, string[]> = {};
 
   for (const [key, value] of rawParams.entries()) {
+    if (key === EMPTY_LIST_ITEM_QUERY_KEY) continue;
     if (RESERVED_QUERY_KEY_SET.has(key)) {
       query.append(key, value);
       continue;
@@ -449,8 +470,8 @@ export function parseApplicationPanelAddress(
 
   return {
     path,
-    frame: collapseBucket(frameBucket, options?.frameManifest),
-    state: collapseBucket(stateBucket, options?.stateManifest),
+    frame: collapseBucket(frameBucket, emptyListItems, PANEL_FRAME_QUERY_PREFIX, options?.frameManifest),
+    state: collapseBucket(stateBucket, emptyListItems, "", options?.stateManifest),
     query,
   };
 }
@@ -480,18 +501,12 @@ export function applicationPanelAddress(path: string, {
   for (const [name, value] of Object.entries(values.frame)) {
     const key = `${PANEL_FRAME_QUERY_PREFIX}${name}`;
     params.delete(key);
-    const field = frameManifest?.state[name];
-    for (const encoded of encodeFlatStateValues(value, field)) {
-      params.append(key, encoded);
-    }
+    appendFlatState(params, key, value, frameManifest?.state[name]);
   }
   for (const [name, value] of Object.entries(values.state)) {
     if (isReservedOrFrameKey(name)) continue;
     params.delete(name);
-    const field = stateManifest?.state[name];
-    for (const encoded of encodeFlatStateValues(value, field)) {
-      params.append(name, encoded);
-    }
+    appendFlatState(params, name, value, stateManifest?.state[name]);
   }
   return joinAddress(route, params);
 }
@@ -543,17 +558,17 @@ export function panelAddress(
   const params = new URLSearchParams(separator < 0 ? "" : path.slice(separator + 1));
   if (manifest) {
     for (const [name, field] of Object.entries(manifest.state)) {
-      if (field.deepLink && !isReservedOrFrameKey(name)) params.delete(name);
+      if (!field.deepLink || isReservedOrFrameKey(name)) continue;
+      params.delete(name);
+      params.delete(EMPTY_LIST_ITEM_QUERY_KEY, name);
     }
   }
   for (const [name, value] of Object.entries(values)) {
     if (isReservedOrFrameKey(name)) continue;
     if (manifest && !manifest.state[name]?.deepLink) continue;
     params.delete(name);
-    const field = manifest?.state[name];
-    for (const encoded of encodeFlatStateValues(value, field)) {
-      params.append(name, encoded);
-    }
+    params.delete(EMPTY_LIST_ITEM_QUERY_KEY, name);
+    appendFlatState(params, name, value, manifest?.state[name]);
   }
   return joinAddress(route, params);
 }
@@ -570,9 +585,9 @@ export function panelAddressState(
   const params = new URL(address, "http://page.invalid").searchParams;
   const bucket: Record<string, string[]> = {};
   for (const [key, value] of params.entries()) {
-    if (isReservedOrFrameKey(key)) continue;
+    if (key === EMPTY_LIST_ITEM_QUERY_KEY || isReservedOrFrameKey(key)) continue;
     if (manifest && !manifest.state[key]?.deepLink) continue;
     (bucket[key] ??= []).push(value);
   }
-  return collapseBucket(bucket, manifest);
+  return collapseBucket(bucket, new Set(params.getAll(EMPTY_LIST_ITEM_QUERY_KEY)), "", manifest);
 }

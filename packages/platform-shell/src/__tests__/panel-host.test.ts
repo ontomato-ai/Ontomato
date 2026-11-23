@@ -655,6 +655,38 @@ describe("the panel host", () => {
     scope.stop();
   });
 
+  it("applies an external-only entry input without accepting it from or writing it to the URL", async () => {
+    const manifest = definePanel({
+      state: {
+        term: { type: { kind: "scalar", type: "string" }, external: true },
+        privateState: { type: { kind: "scalar", type: "string" } },
+      },
+      members: {},
+    });
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", manifest)]]);
+    const path = "/applications/app-a/a/schedules";
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", path)] });
+    const term = ref("fall");
+    const scope = effectScope();
+    const view = scope.run(() => usePanelInstance(port.port("use-a"), {
+      labels,
+      label: () => "Scheduled tasks",
+      address: () => path,
+      initial: () => ({ term: "from-url" }),
+      entryInputs: () => ({ term: term.value, privateState: "not exposed" }),
+      wired: () => ["term"],
+    }))!;
+    await view.ready;
+    const started = port.started("use-a");
+    expect(started.run.initial).toEqual({ term: "fall" });
+    expect(view.address.value).toBe(path);
+    term.value = "spring";
+    await nextTick();
+    expect(started.statePatches).toEqual([{ term: "spring" }]);
+    expect(view.address.value).toBe(path);
+    scope.stop();
+  });
+
   it("applies non-deepLink declared public state on mount and in place without reloading or writing to the address", async () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
