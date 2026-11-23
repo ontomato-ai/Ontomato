@@ -10,7 +10,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
+  AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
   PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
@@ -26,6 +26,9 @@ import { searchProductGrantPrincipals, type ProductOwner } from "../product-gove
 
 import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
 import { createGeneralSettingsReads } from "../admin/general-settings-panel";
+import {
+  createModelConnectionReads, createModelEntryReads, createModelUsageReads,
+} from "../admin/model-settings-panel";
 import { createBuilderModelReads } from "../app-builder/panel-model";
 import { createDiagnosisModelReads } from "../ops-diagnosis/panel-model";
 import { readPublishedMcpService, readPublishedMcpServices } from "../mcp/panel-reads";
@@ -142,6 +145,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   };
   const audit = createAuditLogPanelReads(viewer);
   const general = createGeneralSettingsReads({ owner, credentials: viewer });
+  const modelConnections = createModelConnectionReads({ owner, credentials: viewer });
+  const modelEntries = createModelEntryReads({ owner, credentials: viewer });
+  const modelUsage = createModelUsageReads({ owner, credentials: viewer });
   const diagnosis = createDiagnosisModelReads(owner.domainId, viewer);
   const builder = createBuilderModelReads(owner, viewer);
   return {
@@ -157,6 +163,24 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       list: () => general.list(),
       record: selection => general.record(selection.primaryKey!),
       form: (selection, params) => general.form(selection.primaryKey!, formParams(params)),
+    },
+    [MODEL_CONNECTION]: {
+      list: () => modelConnections.list(),
+      record: selection => modelConnections.record(selection.primaryKey!),
+      form: (selection, params) => modelConnections.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => modelConnections.createForm(formParams(params)),
+      createModelForm: (selection, params) => modelConnections.createModelForm(selection.primaryKey!, formParams(params)),
+      models: selection => modelConnections.models(selection.primaryKey!),
+      usages: selection => modelConnections.usages(selection.primaryKey!),
+    },
+    [MODEL_ENTRY]: {
+      record: selection => modelEntries.record(selection.primaryKey!),
+      form: (selection, params) => modelEntries.form(selection.primaryKey!, formParams(params)),
+    },
+    [MODEL_USAGE]: {
+      form: (selection, params) => modelUsage.form(selection.primaryKey!, formParams(params)),
+      vectorRebuild: selection => modelUsage.vectorRebuild(selection.primaryKey!),
+      agentUsages: selection => modelUsage.agentUsages(selection.primaryKey!),
     },
     [DIAGNOSIS_MODEL]: {
       list: () => diagnosis.list(),

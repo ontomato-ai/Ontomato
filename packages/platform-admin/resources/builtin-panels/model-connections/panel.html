@@ -1,0 +1,340 @@
+<style>
+  [v-cloak] { display: none; }
+  .mc-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    background: var(--sdk-bg-color);
+    container: mc-page / inline-size;
+  }
+  .mc-body {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: var(--spacing-lg);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 64px);
+    min-width: 0;
+    align-items: start;
+  }
+  .mc-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .mc-sidebar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .mc-section-title {
+    margin: 0;
+    font-size: var(--text-base, var(--text-sm));
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .mc-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    min-width: 0;
+  }
+  .mc-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .mc-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .mc-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .mc-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-4xl) var(--spacing-lg);
+    text-align: center;
+    border: 1px dashed var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+  }
+  .mc-empty-title {
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .mc-empty-hint {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-secondary);
+  }
+  .mc-form-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+  .mc-form-wrap :deep(.sdk-owner-form),
+  .mc-form-wrap :deep(.sdk-owner-form-inner) {
+    height: auto;
+  }
+  .mc-form-wrap :deep(.sdk-owner-form-body) {
+    overflow: visible;
+  }
+  .mc-test-status {
+    margin: 0;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+  }
+  .mc-test-status.is-ok {
+    color: var(--sdk-color-success-text, var(--sdk-text-color-primary));
+    background: var(--sdk-color-success-light-9, transparent);
+    border-color: var(--sdk-color-success-light-5, var(--ui-border));
+  }
+  .mc-test-status.is-error {
+    color: var(--sdk-color-danger-text, var(--sdk-text-color-primary));
+    background: var(--sdk-color-danger-light-9, transparent);
+    border-color: var(--sdk-color-danger-light-5, var(--ui-border));
+  }
+  .mc-discover-box {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+  .mc-discover-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 360px;
+    overflow-y: auto;
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-sm);
+  }
+  .mc-discover-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--ui-divider);
+  }
+  .mc-discover-row:last-child {
+    border-bottom: 0;
+  }
+  .mc-discover-id {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-primary);
+    word-break: break-all;
+  }
+  .mc-discover-error {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+  .mc-discover-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
+  .mc-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .mc-muted {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-secondary);
+  }
+  @container mc-page (max-width: 760px) {
+    .mc-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
+
+<div id="app" v-cloak>
+  <section class="mc-page">
+    <page-header
+      :title="t('panel.name')"
+      :description="t('panel.description')"
+      :draft="connectionDraft"
+    >
+      <template #actions>
+        <sdk-button @click="openUsage">{{ t('action.openUsage') }}</sdk-button>
+        <sdk-button type="primary" @click="openCreateConnection">{{ t('connections.add') }}</sdk-button>
+      </template>
+    </page-header>
+
+    <div class="mc-body">
+      <aside class="mc-sidebar">
+        <div class="mc-sidebar-head">
+          <h2 class="mc-section-title">{{ t('connections.title') }}</h2>
+          <sdk-button size="small" @click="openCreateConnection">{{ t('connections.add') }}</sdk-button>
+        </div>
+        <projection slot="connections"></projection>
+      </aside>
+
+      <div class="mc-detail">
+        <template v-if="selectedKey">
+          <section class="mc-card">
+            <div class="mc-card-head">
+              <projection slot="connectionHeader"></projection>
+              <div class="mc-card-actions">
+                <projection slot="deleteConnection" @done="onConnectionDeleted"></projection>
+              </div>
+            </div>
+            <div class="mc-form-wrap">
+              <projection slot="connectionForm" @saved="onConnectionSaved"></projection>
+            </div>
+          </section>
+
+          <section class="mc-card">
+            <div class="mc-card-head">
+              <h3 class="mc-section-title">{{ t('models.title') }}</h3>
+              <div class="mc-card-actions">
+                <sdk-button size="small" @click="openDiscover">{{ t('models.discover') }}</sdk-button>
+                <sdk-button size="small" type="primary" @click="openAddModel()">{{ t('models.add') }}</sdk-button>
+              </div>
+            </div>
+            <p v-if="testingModel" class="mc-test-status" role="status">
+              {{ t('models.testing', { name: testingModel }) }}
+            </p>
+            <p
+              v-else-if="testStatus"
+              :class="['mc-test-status', testStatus.ok ? 'is-ok' : 'is-error']"
+              role="status"
+            >
+              {{ testStatus.text }}
+            </p>
+            <projection slot="modelsList" @row-action="onModelRowAction"></projection>
+          </section>
+
+          <section class="mc-card">
+            <div class="mc-card-head">
+              <h3 class="mc-section-title">{{ t('usages.title') }}</h3>
+            </div>
+            <projection slot="usagesList"></projection>
+          </section>
+        </template>
+
+        <div v-else class="mc-empty">
+          <p class="mc-empty-title">{{ t('connections.empty') }}</p>
+          <p class="mc-empty-hint">{{ t('connections.emptyHint') }}</p>
+          <sdk-button type="primary" @click="openCreateConnection">{{ t('connections.add') }}</sdk-button>
+        </div>
+      </div>
+    </div>
+
+    <sdk-dialog
+      v-model="createConnectionOpen"
+      :title="t('connections.addTitle')"
+      width="560px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="mc-form-wrap">
+        <projection
+          v-if="createConnectionOpen"
+          slot="connectionCreateForm"
+          @saved="onConnectionCreated"
+          @cancel="createConnectionOpen = false"
+        ></projection>
+      </div>
+    </sdk-dialog>
+
+    <sdk-dialog
+      v-model="modelDialogOpen"
+      :title="modelDialogMode === 'edit' ? t('models.editTitle') : t('models.addTitle')"
+      width="640px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="mc-form-wrap">
+        <projection
+          v-if="modelDialogOpen && modelDialogMode === 'edit' && editingModelKey"
+          slot="editModelForm"
+          @saved="onModelSaved"
+          @discarded="closeModelDialog"
+          @cancel="closeModelDialog"
+        ></projection>
+        <projection
+          v-else-if="modelDialogOpen && modelDialogMode === 'create' && selectedKey"
+          slot="createModelForm"
+          @saved="onModelSaved"
+          @discarded="closeModelDialog"
+          @cancel="closeModelDialog"
+        ></projection>
+      </div>
+    </sdk-dialog>
+
+    <sdk-dialog
+      v-model="discoverOpen"
+      :title="t('discover.title', { name: selectedKey })"
+      width="560px"
+      append-to-body
+      destroy-on-close
+    >
+      <div class="mc-discover-box">
+        <div v-if="discoverError" class="mc-discover-error" role="alert">
+          <sdk-alert type="error" :title="discoverError" :closable="false" show-icon></sdk-alert>
+          <div class="mc-discover-actions">
+            <sdk-button @click="runDiscover">{{ t('discover.retry') }}</sdk-button>
+            <sdk-button type="primary" @click="addManuallyFromDiscover">{{ t('discover.manual') }}</sdk-button>
+          </div>
+        </div>
+        <template v-else>
+          <sdk-input
+            v-model="discoverQuery"
+            :placeholder="t('discover.search')"
+            :disabled="discoverLoading"
+            clearable
+          ></sdk-input>
+          <p v-if="discoverLoading" class="mc-muted">{{ t('discover.loading') }}</p>
+          <ul v-else-if="filteredCandidates.length > 0" class="mc-discover-list">
+            <li v-for="candidate in filteredCandidates" :key="candidate.id" class="mc-discover-row">
+              <span class="mc-discover-id">{{ candidate.id }}</span>
+              <sdk-button size="small" @click="pickDiscoveredModel(candidate.id)">
+                {{ t('discover.add') }}
+              </sdk-button>
+            </li>
+          </ul>
+          <p v-else class="mc-muted">
+            {{ discoverCandidates.length === 0 ? t('discover.empty') : t('discover.noMatch') }}
+          </p>
+        </template>
+      </div>
+      <template #footer>
+        <div class="mc-dialog-footer">
+          <sdk-button v-if="!discoverError" text type="primary" @click="addManuallyFromDiscover">
+            {{ t('discover.manual') }}
+          </sdk-button>
+          <sdk-button @click="discoverOpen = false">{{ t('discover.close') }}</sdk-button>
+        </div>
+      </template>
+    </sdk-dialog>
+  </section>
+</div>

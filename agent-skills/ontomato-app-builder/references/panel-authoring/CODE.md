@@ -353,7 +353,8 @@ An `ObjectForm` projection binds one `form.save` operation and submits `values`,
   confirmation), busy state, and unsaved-changes notice — no manual submit boilerplate needed.
 - **`config.fixedFields`**: fix parent-determined fields by JSON Pointer path (`{"state":"selected","path":"/primaryKey"}`
   or `{"literal":"..."}`) so they display read-only and submit with every save.
-- `ObjectForm` automatically renders word counters for schema `maxLength` fields and disables cascading select fields
+- `ObjectForm` automatically renders word counters for schema `maxLength` fields, password masking (`show-password`) for
+  single-line `text` fields declaring `secret: true`, and disables cascading select fields
   when the owner declares `disabledWhenEmpty`.
 
 The SDK evaluates incoming drafts against declared form members even before `ObjectForm` mounts, so you can mount

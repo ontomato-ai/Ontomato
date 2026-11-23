@@ -48,6 +48,9 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   ...pageRoutes(adminPages, components),
+  // Model usage and connections are served by built-in panel entries at their original paths.
+  { path: platformRoutes.usage.path, component: page },
+  { path: platformRoutes.providers.path, component: page },
   ...formerParentRoutes,
   { ...platformRoutes.ontology, component: page },
 ];
