@@ -830,14 +830,33 @@ function selectCardById(cardId) {
   return true;
 }
 
-async function openParametersForCard(cardId) {
+async function openParametersForCard(cardId, options = {}) {
   const targetId = cardId || selectedCardId();
-  if (!targetId) return false;
+  if (!targetId) {
+    return { ok: false, reason: "action_unavailable", message: "No dashboard card is selected to edit parameters." };
+  }
   const found = findCard(targetId);
-  if (!found) return false;
+  if (!found) {
+    return { ok: false, reason: "action_unavailable", message: `Dashboard card '${targetId}' was not found.` };
+  }
+  if (parametersOpen.value && parametersCard.value) {
+    if (parametersCard.value.id === found.card.id) {
+      await parameterDialogRef.value?.waitForLoad?.();
+      return { ok: true };
+    }
+    if (!options.allowReplaceUnsaved && parameterDialogRef.value?.hasUnsavedChanges?.()) {
+      return {
+        ok: false,
+        reason: "blocked_unsaved",
+        message: `Card '${parametersCard.value.name}' has unsaved parameter edits; save or discard them before switching to '${found.card.title || found.card.name}'.`,
+      };
+    }
+  }
+  selectCard({ id: found.card.id, name: shownName(found.card.id), kind: found.kind });
   openParameters(found.card);
   await nextTick();
-  return true;
+  await parameterDialogRef.value?.waitForLoad?.();
+  return { ok: true };
 }
 
 async function fillForm(request) {
@@ -849,14 +868,27 @@ async function fillForm(request) {
       message: `No form '${request.member}' exists on this dashboard page.`,
     };
   }
+  const selectedId = selectedCardId();
   if (!parametersOpen.value) {
-    const opened = await openParametersForCard();
-    if (!opened) {
+    const opened = await openParametersForCard(selectedId);
+    if (!opened.ok) {
       return {
         ok: false,
         reason: "form_not_ready",
         member: "card.parameters",
         message: "Select a dashboard card or open its parameter dialog before filling parameters.",
+      };
+    }
+  } else if (selectedId && parametersCard.value && selectedId !== parametersCard.value.id) {
+    const switched = await openParametersForCard(selectedId, {
+      allowReplaceUnsaved: Boolean(request.overwriteUnsaved),
+    });
+    if (!switched.ok) {
+      return {
+        ok: false,
+        reason: switched.reason === "blocked_unsaved" ? "blocked_unsaved" : "form_not_ready",
+        member: "card.parameters",
+        message: switched.message,
       };
     }
   }
@@ -881,9 +913,9 @@ async function executeAction(request) {
   if (operation === "card.parameters.open") {
     const requestedCardId = typeof request.input?.cardId === "string" ? request.input.cardId : undefined;
     const opened = await openParametersForCard(requestedCardId);
-    return opened
+    return opened.ok
       ? { ok: true, kind: "executed", operation }
-      : { ok: false, reason: "action_unavailable", operation, message: "No dashboard card is selected to edit parameters." };
+      : { ok: false, reason: "action_unavailable", operation, message: opened.message };
   }
   if (operation === "card.parameters.save" || operation === "form.save") {
     if (!parameterDialogRef.value) {

@@ -225,7 +225,7 @@
 
     <div class="pd-body" :class="{ 'with-detail': showDetail }">
       <aside class="pd-pane">
-        <projection slot="catalogue">
+        <projection slot="catalogue" @choose="onChoosePanel">
           <template #filters>
             <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="default"></sdk-segmented>
             <sdk-select v-model="sortModel" class="pd-filter-select" :aria-label="t('list.sort')">
@@ -245,8 +245,8 @@
         <!-- Edit or create form -->
         <section v-if="isFormMode" class="pd-section">
           <div class="pd-section-bar">
-            <h2 class="pd-section-title">{{ creating ? t('form.new') : t('form.edit') }}</h2>
-            <sdk-button size="small" @click="cancelForm">{{ t('action.cancel') }}</sdk-button>
+            <h2 class="pd-section-title">{{ selectedKey ? t('form.edit') : t('form.new') }}</h2>
+            <sdk-button size="small" @click="cancelFormGuarded">{{ t('action.cancel') }}</sdk-button>
           </div>
           <div class="pd-form-wrap">
             <projection slot="form" @saved="onSaved" @discarded="cancelForm" @cancel="cancelForm"></projection>

@@ -101,18 +101,34 @@ const PanelsDirectory = {
       }
     });
 
-    // Reset per-panel view state when switching selection.
+    // Clear stale create mode when a panel is selected without clobbering detailMode or sourceFile,
+    // so an agent `present({ selected, detailMode: "edit" })` lands directly on the edit form.
     watch(selectedKey, (nextKey, prevKey) => {
       if (nextKey === prevKey) return;
-      if (creating.value && !nextKey) return;
-      state.setState({
-        creating: null,
-        detailMode: "view",
-        sourceFile: null,
-        copyDialog: null,
-        grantDialog: null,
-      });
+      if (nextKey && creating.value) {
+        state.set("creating", null);
+      }
     });
+
+    // Reset per-panel view/dialog state when the reader chooses a panel from the catalogue list.
+    function onChoosePanel() {
+      const patch = {};
+      if (creating.value) patch.creating = null;
+      if (detailMode.value === "edit") patch.detailMode = "view";
+      if (values.value.sourceFile) patch.sourceFile = null;
+      if (values.value.copyDialog === true) {
+        patch.copyDialog = null;
+        patch.copyId = null;
+        patch.copyName = null;
+        patch.copyTemplate = null;
+      }
+      if (values.value.grantDialog === true) {
+        patch.grantDialog = null;
+      }
+      if (Object.keys(patch).length) {
+        state.setState(patch);
+      }
+    }
 
     // Copy / Save as template / Create from template dialog state.
     const copyMode = computed(() => {
@@ -335,10 +351,14 @@ const PanelsDirectory = {
     }
 
     // Wire Escape / browser Back while editing or creating so unsaved changes pass through the host guard.
-    usePanelBack({
-      active: isFormMode,
-      onBack: cancelForm,
+    const formBack = usePanelBack(isFormMode, cancelForm, {
+      pushHistory: false,
+      forms: "form",
     });
+
+    function cancelFormGuarded() {
+      void formBack.back();
+    }
 
     async function openAddress(address) {
       if (!address) return;
@@ -358,6 +378,11 @@ const PanelsDirectory = {
           detailMode: "view",
           tab: "overview",
           sourceFile: null,
+          copyDialog: null,
+          copyId: null,
+          copyName: null,
+          copyTemplate: null,
+          grantDialog: null,
         });
       } else if (reference.className === PROJECTION_TYPE) {
         void openAddress(panelAddress("/ontology/projections", { selected: reference.primaryKey }));
@@ -415,7 +440,9 @@ const PanelsDirectory = {
       startCreate,
       startEdit,
       cancelForm,
+      cancelFormGuarded,
       closeDetail,
+      onChoosePanel,
       onSaved,
       openAddress,
       onNavigateReference,

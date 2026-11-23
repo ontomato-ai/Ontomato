@@ -651,16 +651,22 @@ async function withPersonalState(
   const saved = await json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) })
     .then((answer) => panelPersonalStateResponseSchema.parse(answer).values, () => ({}));
   const mounted = await mount({ ...run, initial: { ...saved, ...run.initial } as PanelHostState });
-  const current = () => JSON.stringify(Object.fromEntries(fields.map((field) => [field, mounted.instance.state.values.value[field] ?? null])));
-  let stored = current();
+  const readField = (field: string) => mounted.instance.state.values.value[field] ?? null;
+  const stored: Record<string, string> = Object.fromEntries(fields.map((field) => [field, JSON.stringify(readField(field))]));
   let timer: ReturnType<typeof setTimeout> | undefined;
   const save = (keepalive = false) => {
     timer = undefined;
-    const next = current();
-    if (next === stored) return;
-    stored = next;
+    const values: Record<string, unknown> = {};
+    for (const field of fields) {
+      const raw = readField(field);
+      const serialized = JSON.stringify(raw);
+      if (serialized === stored[field]) continue;
+      stored[field] = serialized;
+      values[field] = raw;
+    }
+    if (!Object.keys(values).length) return;
     void json(`/api${PANEL_PERSONAL_STATE_PATH}`, {
-      method: "PUT", body: JSON.stringify({ ...scope, values: JSON.parse(next) }), ...(keepalive && { keepalive: true }),
+      method: "PUT", body: JSON.stringify({ ...scope, values }), ...(keepalive && { keepalive: true }),
     }).catch(() => {});
   };
   /** Sends at once what is still waiting for the delay; `keepalive` lets the request finish after the page is gone. */
@@ -671,7 +677,7 @@ async function withPersonalState(
   };
   const leave = () => flush(true);
   window.addEventListener("pagehide", leave);
-  const stop = Vue.watch(current, () => {
+  const stop = Vue.watch(() => JSON.stringify(fields.map((field) => [field, readField(field)])), () => {
     clearTimeout(timer);
     timer = setTimeout(save, PERSONAL_STATE_DELAY);
   });
