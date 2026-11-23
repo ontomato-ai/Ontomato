@@ -1,13 +1,15 @@
 import { beforeAll, expect, it, vi } from "vitest";
 import { applicationCatalogueRecordSchema } from "@ontomato/contracts/application-catalogue";
-import { panelFormDescriptionSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
+import { panelFormDescriptionSchema, panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { backendGet } from "../../../utils/backend-client";
 import { readProductGrantRecords } from "../../product-governance/grants";
 import { createApplicationReadAdapter, toApplicationPanelRecord } from "../application-catalogue";
-import { createProductProjectionReadAdapter } from "../catalog-reads";
+import { currentProductGrants, currentProductUsedBy, listCurrentProducts } from "../catalog";
+import { createProductProjectionReadAdapter, toProductProjectionPanelRecord } from "../catalog-reads";
+import { readCurrentProjection } from "../current";
 
 vi.mock("../component-catalogue", () => ({
   readAuthorComponentCatalogue: async () => new Map([["@ontomato/sdk:Example", {
@@ -30,6 +32,16 @@ vi.mock("../../product-governance/grants", async (importOriginal) => ({
 vi.mock("../../../utils/backend-client", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../utils/backend-client")>(),
   backendGet: vi.fn(),
+}));
+vi.mock("../catalog", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../catalog")>(),
+  listCurrentProducts: vi.fn(),
+  currentProductUsedBy: vi.fn(),
+  currentProductGrants: vi.fn(),
+}));
+vi.mock("../current", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../current")>(),
+  readCurrentProjection: vi.fn(),
 }));
 
 const owner = { domainId: "domain", userId: "reader" };
@@ -163,4 +175,167 @@ it("omits unprovided detail fields and preserves a frame panel as a typed refere
     },
     tones: { maintenance: "success" },
   });
+});
+
+it("maps projection summaries and details to standard PanelRecord records with outputs and sub-tables", async () => {
+  const sampleProjection = {
+    id: "proj-sample",
+    domainId: "domain",
+    ownerId: "user-1",
+    name: "Orders list",
+    description: "Lists customer orders",
+    visibility: "domain" as const,
+    revision: 3,
+    createdAt: "2026-11-23T09:00:00.000Z",
+    updatedAt: "2026-11-23T10:00:00.000Z",
+    editable: true,
+    componentId: "@ontomato/sdk:Example",
+    data: {
+      rows: {
+        source: { type: { kind: "PlatformObjectType" as const, id: "platform:Application" } },
+        read: "query",
+        params: { scope: { input: "scope" }, size: { literal: 20 } },
+      },
+    },
+    config: { layout: "table", pageSize: 20 },
+    inputs: { scope: { kind: "scalar" as const, type: "string" as const } },
+    outputs: { selected: { kind: "object" as const, objectType: "platform:Application" } },
+    operations: {
+      approve: {
+        operation: { kind: "Action" as const, id: "approve-order" },
+        target: { input: "selected" },
+      },
+    },
+  };
+
+  const summary = panelRecordSchema.parse(toProductProjectionPanelRecord({
+    id: sampleProjection.id,
+    ownerId: sampleProjection.ownerId,
+    name: sampleProjection.name,
+    description: sampleProjection.description,
+    visibility: sampleProjection.visibility,
+    revision: sampleProjection.revision,
+    updatedAt: sampleProjection.updatedAt,
+    editable: sampleProjection.editable,
+    componentId: sampleProjection.componentId,
+  }, "en", { ownerLabel: "Alice", componentLabel: "Example" }));
+  expect(summary).toMatchObject({
+    primaryKey: "proj-sample",
+    className: "platform:ProductProjection",
+    label: "Orders list",
+    subtitle: "Lists customer orders",
+    fields: {
+      component: "Example",
+      owner: "Alice",
+      scope: "Domain shared",
+      access: "Editable",
+      revision: 3,
+      updatedAt: "2026-11-23T10:00:00.000Z",
+    },
+    tones: { scope: "success", access: "success", projectionKind: "info" },
+  });
+  expect(summary.outputs).toBeUndefined();
+
+  vi.mocked(listCurrentProducts).mockResolvedValueOnce({
+    items: [{
+      id: sampleProjection.id,
+      ownerId: null,
+      name: sampleProjection.name,
+      description: sampleProjection.description,
+      visibility: "platform",
+      revision: 1,
+      updatedAt: sampleProjection.updatedAt,
+      editable: false,
+      componentId: sampleProjection.componentId,
+    }],
+    nextCursor: "cursor-2",
+    total: 5,
+  });
+  const adapter = createProductProjectionReadAdapter(owner, viewer);
+  const queryResult = panelRecordQuerySchema.parse(await adapter.query({ search: "Orders", scope: "all", sort: "updated" }));
+  expect(queryResult).toMatchObject({
+    total: 5,
+    nextCursor: "cursor-2",
+    rows: [expect.objectContaining({
+      primaryKey: "proj-sample",
+      fields: expect.objectContaining({ owner: "Platform", scope: "Built in", access: "Read only" }),
+    })],
+  });
+
+  vi.mocked(readCurrentProjection).mockResolvedValue(sampleProjection);
+  vi.mocked(currentProductGrants).mockResolvedValue({
+    grants: [
+      { principalKind: "domain", principalId: "*", verb: "use" },
+      { principalKind: "principal", principalId: "user-2", principalName: "Bob", verb: "edit" },
+    ],
+  });
+  vi.mocked(currentProductUsedBy).mockResolvedValue({
+    panels: [{ id: "panel-orders", name: "Orders page" }],
+    hiddenCount: 2,
+  });
+
+  const detail = panelRecordSchema.parse(await adapter.record("proj-sample"));
+  expect(detail).toMatchObject({
+    primaryKey: "proj-sample",
+    label: "Orders list",
+    fields: {
+      component: { kind: "reference", className: "platform:SDKComponent", primaryKey: "@ontomato/sdk:Example", label: "Example" },
+      domainShared: true,
+    },
+    outputs: {
+      canEdit: true,
+      canGrant: true,
+      canDelete: true,
+      canCopy: true,
+      isBuiltin: false,
+      isChart: false,
+      domainShared: true,
+      revision: 3,
+      usedByCount: 3,
+      hiddenUsedByCount: 2,
+    },
+  });
+
+  const usedByRows = panelRecordListSchema.parse(await adapter.usedByRows("proj-sample"));
+  expect(usedByRows).toEqual([expect.objectContaining({
+    primaryKey: "panel-orders",
+    className: "platform:ProductPanel",
+    label: "Orders page",
+    fields: {
+      id: "panel-orders",
+      panel: { kind: "reference", className: "platform:ProductPanel", primaryKey: "panel-orders", label: "Orders page" },
+    },
+  })]);
+
+  const grantRows = panelRecordListSchema.parse(await adapter.grantRows("proj-sample"));
+  expect(grantRows).toHaveLength(2);
+  expect(grantRows[0]).toMatchObject({ fields: { principalKind: "domain", revocable: false } });
+  expect(grantRows[1]).toMatchObject({ label: "Bob", subtitle: "user-2", fields: { principalKind: "principal", verb: "edit", revocable: true } });
+
+  const dataRows = panelRecordListSchema.parse(await adapter.dataRows("proj-sample"));
+  expect(dataRows).toEqual([expect.objectContaining({
+    primaryKey: "rows",
+    fields: expect.objectContaining({
+      source: { kind: "reference", className: "platform:OntologyType", primaryKey: "platform:Application", label: "Platform type · platform:Application" },
+      read: "query",
+    }),
+  })]);
+
+  const configRows = panelRecordListSchema.parse(await adapter.configRows("proj-sample"));
+  expect(configRows.map(row => [row.primaryKey, row.fields.value])).toEqual([["layout", "table"], ["pageSize", "20"]]);
+
+  const inputRows = panelRecordListSchema.parse(await adapter.inputRows("proj-sample"));
+  expect(inputRows).toEqual([expect.objectContaining({ primaryKey: "scope", fields: { portType: "Scalar · string" } })]);
+
+  const outputRows = panelRecordListSchema.parse(await adapter.outputRows("proj-sample"));
+  expect(outputRows).toEqual([expect.objectContaining({ primaryKey: "selected", fields: { portType: "Object · platform:Application" } })]);
+
+  const operationRows = panelRecordListSchema.parse(await adapter.operationRows("proj-sample"));
+  expect(operationRows).toEqual([expect.objectContaining({
+    primaryKey: "approve",
+    fields: {
+      operation: { kind: "reference", className: "platform:Action", primaryKey: "approve-order", label: "Action · approve-order" },
+      target: "Input 'selected'",
+    },
+  })]);
 });

@@ -349,7 +349,16 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [OBJECT_TYPE]: modelReads,
     [ATTRIBUTE]: modelReads,
     [RELATIONSHIP]: modelReads,
-    [PRODUCT_PROJECTION]: catalogueReads(projectionCatalogue),
+    [PRODUCT_PROJECTION]: {
+      ...catalogueReads(projectionCatalogue),
+      usedByRows: selection => projectionCatalogue.usedByRows(selection.primaryKey!),
+      grantRows: selection => projectionCatalogue.grantRows(selection.primaryKey!),
+      dataRows: selection => projectionCatalogue.dataRows(selection.primaryKey!),
+      configRows: selection => projectionCatalogue.configRows(selection.primaryKey!),
+      inputRows: selection => projectionCatalogue.inputRows(selection.primaryKey!),
+      outputRows: selection => projectionCatalogue.outputRows(selection.primaryKey!),
+      operationRows: selection => projectionCatalogue.operationRows(selection.primaryKey!),
+    },
     [PRODUCT_PANEL]: {
       ...catalogueReads(panelCatalogue),
       members: selection => panelCatalogue.members(selection.primaryKey!),
