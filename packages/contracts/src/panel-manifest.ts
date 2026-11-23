@@ -411,10 +411,15 @@ function decodeFlatChildObjectRef(raw: string, parentType: string): PanelChildOb
 /**
  * Normalizes a single externally supplied (URL / deep-link) state value against a declared field type:
  * - Scalar query strings are coerced to their declared `number` / `boolean` / `date` / `string` types.
+ *   An explicit empty query value (`""`, from `?name=`) decodes to `""` for `string` and `null` for nullable
+ *   `number` / `boolean` / `date` / `object` / `object-union` / `child-object` fields so cleared non-null defaults
+ *   round-trip without bouncing back.
  * - Single fixed-type `kind: "object"` accepts either bare `primaryKey` or `objectType~primaryKey` (or an object ref).
  * - Multi-type `kind: "object-union"` accepts `className~primaryKey` (or an object ref) verified against allowed types.
  * - `kind: "child-object"` accepts `parentKey~primaryKey` or `parentType~parentKey~primaryKey` (or a child identity).
- * - `kind: "list"` accepts either a single query value or repeated query values, normalizing every element.
+ * - `kind: "list"` decodes an explicit empty query value (`""`, from `?name=`) as `[]` (used when clearing a non-empty
+ *   list default; single-element `[""]` is not distinguished from `[]` in flat query strings), and otherwise accepts a
+ *   single query value or repeated query values, normalizing every non-null element.
  * - Any value that does not match the declared field type is rejected so callers can safely ignore malformed URLs.
  */
 export function normalizeExternalPanelValue(
@@ -426,6 +431,7 @@ export function normalizeExternalPanelValue(
     case "scalar": {
       if (Array.isArray(value)) return { ok: false };
       if (type.type === "string") return typeof value === "string" ? { ok: true, value } : { ok: false };
+      if (value === "") return { ok: true, value: null };
       if (type.type === "date") {
         return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value)
           ? { ok: true, value }
@@ -446,6 +452,7 @@ export function normalizeExternalPanelValue(
     }
     case "object": {
       if (Array.isArray(value)) return { ok: false };
+      if (value === "") return { ok: true, value: null };
       const candidate = typeof value === "string" ? decodeFlatObjectRef(value, type.objectType) : value;
       if (!candidate) return { ok: false };
       const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
@@ -455,6 +462,7 @@ export function normalizeExternalPanelValue(
     }
     case "object-union": {
       if (Array.isArray(value)) return { ok: false };
+      if (value === "") return { ok: true, value: null };
       const candidate = typeof value === "string" ? decodeFlatObjectRef(value) : value;
       if (!candidate) return { ok: false };
       const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
@@ -464,6 +472,7 @@ export function normalizeExternalPanelValue(
     }
     case "child-object": {
       if (Array.isArray(value)) return { ok: false };
+      if (value === "") return { ok: true, value: null };
       const candidate = typeof value === "string" ? decodeFlatChildObjectRef(value, type.parentType) : value;
       if (!candidate) return { ok: false };
       const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
@@ -472,12 +481,13 @@ export function normalizeExternalPanelValue(
         : { ok: false };
     }
     case "list": {
+      if (value === "") return { ok: true, value: [] };
       const rawItems = Array.isArray(value) ? value : [value];
       const normalizedItems: PanelDeepLinkStateValue[] = [];
       for (const item of rawItems) {
         if (item === null) return { ok: false };
         const normalized = normalizeExternalPanelValue(type.items, item);
-        if (!normalized.ok) return { ok: false };
+        if (!normalized.ok || normalized.value === null) return { ok: false };
         normalizedItems.push(normalized.value);
       }
       return { ok: true, value: normalizedItems };

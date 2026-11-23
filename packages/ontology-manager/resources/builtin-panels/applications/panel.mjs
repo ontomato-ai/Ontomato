@@ -29,20 +29,17 @@ const ApplicationsCatalogPanel = {
       { value: "maintainable", label: t("scope.maintainable") },
     ]);
 
-    function detailAddress(primaryKey, tab) {
-      return panelAddress(DETAIL_PATH, {
-        selected: primaryKey,
-        ...(tab && tab !== "identity" ? { tab } : {}),
-      });
+    function detailAddress(primaryKey) {
+      return panelAddress(DETAIL_PATH, { selected: primaryKey });
     }
 
     let forwarding = false;
-    async function navigateToDetail(primaryKey, tab) {
+    async function navigateToDetail(primaryKey) {
       if (!primaryKey || forwarding) return;
       forwarding = true;
       try {
-        instance.state.setState({ selected: null, tab: null, creating: null });
-        await navigate(detailAddress(primaryKey, tab));
+        if (creating.value) instance.state.set("creating", null);
+        await navigate(detailAddress(primaryKey));
       } catch (reason) {
         notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
       } finally {
@@ -71,20 +68,6 @@ const ApplicationsCatalogPanel = {
         void navigateToDetail(saved.primaryKey);
       }
     }
-
-    // Forward catalogue detail deep links (?selected=...) directly to the dedicated detail entry.
-    watch(
-      () => ({
-        selectedKey: values.value.selected?.primaryKey ?? "",
-        tab: values.value.tab ?? "",
-      }),
-      ({ selectedKey, tab }) => {
-        if (selectedKey) {
-          void navigateToDetail(selectedKey, tab);
-        }
-      },
-      { immediate: true },
-    );
 
     // Route incoming assistant drafts: create drafts open the dialog; update drafts open the detail entry.
     watch(

@@ -351,22 +351,38 @@ function encodeFlatItem(value: PanelDeepLinkStateValue, type?: DirectPanelPortTy
   throw new Error(`Unsupported deep-link value in panel address: ${JSON.stringify(value)}`);
 }
 
+function hasNonEmptyDefault(field: PanelStateField): boolean {
+  if (field.default === undefined || field.default === null) return false;
+  if (field.type.kind === "scalar" && field.type.type === "string") return field.default !== "";
+  if (field.type.kind === "list") return Array.isArray(field.default) && field.default.length > 0;
+  return true;
+}
+
+/**
+ * Encode one state field into flat query values.
+ *
+ * Values equal to the field's declared default are omitted to keep URLs clean. Conversely, clearing a field that
+ * declares a non-empty / non-null default (`""` for string, `[]` for list, `null` for nullable scalar/object/list)
+ * emits an explicit empty marker (`[""]` -> `?name=`) so reloading or restoring the URL keeps the cleared value
+ * instead of snapping back to the default. For `list<string>`, a single empty query value `?name=` decodes to `[]`.
+ */
 function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStateField): string[] {
-  if (value === null || value === undefined) return [];
+  if (value === undefined) return [];
   if (field) {
     if (!field.deepLink) return [];
     if (field.default !== undefined && isPlainDeepEqual(value, field.default)) return [];
-    if (value === "" && (field.default === undefined || field.default === "")) return [];
-    if (
-      Array.isArray(value)
-      && value.length === 0
-      && (field.default === undefined || (Array.isArray(field.default) && field.default.length === 0))
-    ) {
-      return [];
+    if (value === null) {
+      return hasNonEmptyDefault(field) ? [""] : [];
+    }
+    if (value === "" && (field.default === undefined || field.default === null || field.default === "")) return [];
+    if (Array.isArray(value) && value.length === 0) {
+      return hasNonEmptyDefault(field) ? [""] : [];
     }
   } else {
-    if (value === "") return [];
+    if (value === null) return [];
     if (Array.isArray(value) && value.length === 0) return [];
+    // Without a manifest, preserve explicit `""` so round-tripping parsed flat query params
+    // (such as `?tags=` or `?frame.term=`) never drops an explicit empty-override marker.
   }
   if (Array.isArray(value)) {
     const itemType = field?.type.kind === "list" ? field.type.items : undefined;

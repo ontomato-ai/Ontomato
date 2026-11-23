@@ -11,7 +11,8 @@ import {
   parseApplicationPanelAddress,
 } from "@ontomato/contracts/panel-host";
 import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
-import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelDeepLinkStateValue, PanelManifest } from "@ontomato/contracts/panel-manifest";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationFrameContextOf, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
@@ -20,7 +21,7 @@ import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
-import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
+import { cachedApplicationFrameManifest, framePanelHost, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import EntryUnit from "./EntryUnit.vue";
 import { expandDeclaredComposer, hostThemeMode } from "../app-host";
 import { platformApplicationsKey } from "../apps";
@@ -82,17 +83,34 @@ const language = computed(() => ({ locale: locale.value, fallback: String(fallba
 type ShownInstance = Pick<PanelInstanceView, "refresh" | "applyState" | "applyAddress">;
 const host = ref<ShownInstance | null>(null);
 const frameHost = ref<ShownInstance | null>(null);
+let pendingControllerState: Record<string, RuntimeJsonValue> | null = null;
+watch(host, (nextHost) => {
+  if (!nextHost || !pendingControllerState) return;
+  const patch = pendingControllerState;
+  pendingControllerState = null;
+  try {
+    nextHost.applyState(patch);
+  } catch (error) {
+    emit("display-loaded", panelUnavailable(error));
+  }
+});
 if (props.registerPageController) {
   const unregister = props.registerPageController({
     applyState(patch) {
-      if (!host.value) throw new Error("Panel is not mounted yet");
+      if (!host.value) {
+        pendingControllerState = { ...(pendingControllerState ?? {}), ...patch };
+        return;
+      }
       host.value.applyState(patch);
     },
     applyAddress(url, options) {
       host.value?.applyAddress(url, options);
     },
   });
-  onBeforeUnmount(unregister);
+  onBeforeUnmount(() => {
+    pendingControllerState = null;
+    unregister();
+  });
 }
 /** The Manager's counts, where it is installed: told which object types a write changed, they decide whether to re-read. */
 const countedTypesChanged = inject(countedTypesChangedKey, null);
@@ -146,6 +164,7 @@ interface KeptPage {
 const kept = ref([]) as Ref<KeptPage[]>;
 let showings = 0;
 const failure = ref("");
+const frameManifest = shallowRef<{ framePanelId: string; manifest: Pick<PanelManifest, "state"> } | null>(null);
 const catalog = useApplicationCatalog();
 /**
  * Java's answer for the entry the reader opened (\`resolve-entry\`): its use relation, admitted for this reader, with the
@@ -175,9 +194,13 @@ const entryPath = computed(() => {
 // Another application is another set of pages: the kept ones of the application left are dropped. At once, as the
 // route's application changes: the same route instance serves the next application's entry (one panel route serves
 // every built-in application's entries), and the page it opens must not be dropped with the old ones.
-watch(() => props.applicationId, () => {
+watch(() => props.applicationId, (_next, previous) => {
   kept.value = [];
   failure.value = "";
+  if (previous !== undefined) {
+    pendingControllerState = null;
+    frameManifest.value = null;
+  }
   emit("display-loaded", { status: "loading" });
 }, { immediate: true, flush: "sync" });
 
@@ -243,6 +266,36 @@ watch(missing, (message) => {
  */
 type FrameState = ReturnType<typeof parseApplicationPanelAddress>["frame"];
 const lastFrame = shallowRef<{ framePanelId: string; addressState: FrameState; liveState: FrameState } | null>(null);
+watch(
+  [() => props.applicationId, () => props.navigate, () => resolution.value?.framePanelId, () => resolution.value?.use],
+  ([applicationId, navigate, framePanelId, resolvedUse], _, onCleanup) => {
+    let current = true;
+    onCleanup(() => { current = false; });
+    if (!framePanelId) {
+      frameManifest.value = null;
+      return;
+    }
+    if (frameManifest.value?.framePanelId === framePanelId) return;
+    // Beside a conversation (unframed), load the frame panel's manifest so declared deep-link defaults
+    // populate `frameState` even when omitted from the URL (and empty overrides decode against frame types).
+    if (!navigate || !resolvedUse) return;
+    void readApplicationFrameManifest(applicationId, resolvedUse, framePanelId).then((manifest) => {
+      if (!current) return;
+      frameManifest.value = manifest ? { framePanelId, manifest } : null;
+    });
+  },
+  { immediate: true },
+);
+function deepLinkDefaultsOf(manifest: Pick<PanelManifest, "state"> | undefined): FrameState {
+  if (!manifest) return {};
+  const defaults: FrameState = {};
+  for (const [name, field] of Object.entries(manifest.state)) {
+    if (field.deepLink && field.default !== undefined) {
+      defaults[name] = field.default as PanelDeepLinkStateValue;
+    }
+  }
+  return defaults;
+}
 function hasFrameParams(address: string): boolean {
   const search = address.split("?")[1];
   if (!search) return false;
@@ -251,21 +304,34 @@ function hasFrameParams(address: string): boolean {
   }
   return false;
 }
-/** The address's `frame.*` params merged over the live frame's state (which includes defaults omitted from the URL). */
+const activeFrameManifest = computed(() =>
+  resolution.value?.framePanelId && frameManifest.value?.framePanelId === resolution.value.framePanelId
+    ? frameManifest.value.manifest
+    : undefined,
+);
+/**
+ * The address's `frame.*` params merged over the live frame's state and the frame manifest's declared defaults,
+ * ensuring unframed (beside-conversation) opens receive the same frame defaults as full-page opens.
+ */
 const frameState = computed((): FrameState => {
   let named: FrameState;
   let hasSegment: boolean;
   try {
     hasSegment = hasFrameParams(opened.value);
-    named = parseApplicationPanelAddress(opened.value).frame;
+    named = parseApplicationPanelAddress(
+      opened.value,
+      activeFrameManifest.value ? { frameManifest: activeFrameManifest.value } : undefined,
+    ).frame;
   } catch {
     return {};
   }
+  const defaults = deepLinkDefaultsOf(activeFrameManifest.value);
   const live = lastFrame.value?.liveState;
-  // An address that names frame params overrides any kept value; defaults from the live frame fill the rest.
-  if (hasSegment) return live ? { ...live, ...named } : named;
+  const base = live ? { ...defaults, ...live } : defaults;
+  // An address that names frame params overrides any kept value or default; defaults fill the rest.
+  if (hasSegment) return { ...base, ...named };
   // While the next entry's answer is coming, the frame that stands is still the one that reported.
-  return live ?? named;
+  return Object.keys(base).length ? base : named;
 });
 const catalogApp = computed(() => catalog.applications.value.find((app) => app.id === props.applicationId) ?? null);
 const framed = computed(() => !props.navigate && Boolean(resolution.value?.framePanelId));
@@ -324,6 +390,10 @@ const frameAddress = computed(() => openedPath.value);
 function reportFrameState(state: FrameState) {
   const framePanelId = resolution.value?.framePanelId;
   if (!framePanelId) return;
+  if (frameManifest.value?.framePanelId !== framePanelId) {
+    const cached = cachedApplicationFrameManifest(props.applicationId, framePanelId);
+    if (cached) frameManifest.value = { framePanelId, manifest: cached };
+  }
   const prev = lastFrame.value?.framePanelId === framePanelId ? lastFrame.value : null;
   lastFrame.value = { framePanelId, addressState: prev?.addressState ?? {}, liveState: state };
 }
@@ -332,6 +402,10 @@ function reportFrameAddress(input: DisplayPageAddressInput) {
   const reported = panelAddressState(input.address) as FrameState;
   const framePanelId = resolution.value?.framePanelId;
   if (framePanelId) {
+    if (frameManifest.value?.framePanelId !== framePanelId) {
+      const cached = cachedApplicationFrameManifest(props.applicationId, framePanelId);
+      if (cached) frameManifest.value = { framePanelId, manifest: cached };
+    }
     const prev = lastFrame.value?.framePanelId === framePanelId ? lastFrame.value : null;
     lastFrame.value = { framePanelId, addressState: reported, liveState: prev?.liveState ?? reported };
   }

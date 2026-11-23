@@ -11,7 +11,6 @@ import type { PageContext } from "@ontomato/contracts/page-context";
 import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
-import { panelAddress } from "@ontomato/contracts/panel-host";
 import { panelStateValueSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { fileName } from "./artifacts";
@@ -133,6 +132,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   const objectRefresh = shallowRef<DisplayObjectRefresh | null>(null);
   const liveState = shallowRef<DisplayStateUpdate | null>(null);
   const controllers = new Map<string, DisplayPageController>();
+  const pendingStates = new Map<string, Record<string, RuntimeJsonValue>>();
   const formEditedListeners = new Set<(target: PanelFormEditedTarget) => void>();
   function refreshObjects(change: DisplayObjectChange) {
     objectRefresh.value = { seq: (objectRefresh.value?.seq ?? 0) + 1, ...change };
@@ -171,6 +171,9 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       unsaved = false;
       if (liveState.value && (next.target?.kind !== "page" || liveState.value.instance !== next.target.instance)) {
         liveState.value = null;
+      }
+      for (const instance of pendingStates.keys()) {
+        if (next.target?.kind !== "page" || instance !== next.target.instance) pendingStates.delete(instance);
       }
     }
     shown.value = next;
@@ -388,6 +391,22 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     /** A mounted panel page registers its in-place live state controller for `present`. */
     registerPageController(instance: string, controller: DisplayPageController): () => void {
       controllers.set(instance, controller);
+      const pending = pendingStates.get(instance);
+      if (pending) {
+        pendingStates.delete(instance);
+        if (liveState.value?.instance === instance) liveState.value = null;
+        try {
+          controller.applyState(pending);
+        } catch (error) {
+          load.value = {
+            status: "error",
+            error: {
+              code: "invalid_state",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          };
+        }
+      }
       return () => {
         if (controllers.get(instance) === controller) controllers.delete(instance);
       };
@@ -497,15 +516,15 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
                 });
               }
             } else {
-              try {
-                const withState = panelAddress(resolved.address, rawState);
-                resolved = host.resolve?.(withState) ?? { ...resolved, address: withState };
-              } catch (error) {
-                return notOpened("unsupported_target", {
-                  code: "invalid_state",
-                  message: error instanceof Error ? error.message : String(error),
-                });
-              }
+              // Never splice raw state into the URL without the panel manifest: buffer it until the page controller
+              // mounts so non-deepLink fields never leak into the address bar and still apply once mounted.
+              const merged = { ...(pendingStates.get(resolved.instance) ?? {}), ...rawState };
+              pendingStates.set(resolved.instance, merged);
+              liveState.value = {
+                seq: (liveState.value?.seq ?? 0) + 1,
+                instance: resolved.instance,
+                patch: merged,
+              };
             }
           }
           if (hasDraft && overwriteUnsavedDraft && controller?.applyAddress) {
@@ -527,12 +546,15 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
           await nextTick();
         } else {
           if (rawState !== undefined && Object.keys(rawState).length > 0) {
+            const patch = { ...rawState };
+            pendingStates.set(resolved.instance, patch);
             liveState.value = {
               seq: (liveState.value?.seq ?? 0) + 1,
               instance: resolved.instance,
-              patch: rawState,
+              patch,
             };
           } else {
+            pendingStates.delete(resolved.instance);
             liveState.value = null;
           }
           commit({ target: nextTarget, view: nextView, restorable: true });
