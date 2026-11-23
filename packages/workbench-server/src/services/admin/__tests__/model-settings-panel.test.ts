@@ -21,7 +21,6 @@ import { configureI18n } from "../../../i18n";
 import { en } from "../../../i18n/locales/en";
 import {
   createModelConnectionReads,
-  createModelEntryReads,
   createModelUsageReads,
   modelSettingsServerOperations,
   PROVIDER_SPECS,
@@ -43,10 +42,12 @@ vi.mock("../../assistant/skills", () => ({}));
 vi.mock("../../app-builder/panel-model", () => ({ builderModelOperations: [] }));
 vi.mock("../../ops-diagnosis/panel-model", () => ({ diagnosisModelOperations: [] }));
 
+type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
+
 const mockFetch = vi.fn();
 vi.mock("../../product-panels/operation-host", () => ({
   operationHost: () => ({
-    request: (path: string, init: RequestInit) => mockFetch(path, init),
+    request: (path: string, init: FetchInit) => mockFetch(path, init),
   }),
 }));
 
@@ -152,7 +153,7 @@ beforeEach(() => {
   ];
   storedRebuild = { configured: true, state: "PENDING", total: 10, done: 0, error: null };
 
-  mockFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+  mockFetch.mockImplementation(async (path: string, init?: FetchInit) => {
     if (path === "/api/data-query/model-settings" && init?.method === "GET") {
       return Response.json({ success: true, data: storedSettings });
     }
@@ -389,7 +390,7 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
     expect(tested).toEqual({ kind: "json", value: { type: "chat", content: "pong" } });
     const lastCall = mockFetch.mock.calls.at(-1)!;
     expect(lastCall[0]).toBe("/api/data-query/model-settings/test");
-    expect(JSON.parse(String((lastCall[1] as RequestInit).body)).connection.apiKey).toBe("sk-unsaved");
+    expect(JSON.parse(String((lastCall[1] as FetchInit).body)).connection.apiKey).toBe("sk-unsaved");
   });
 });
 
