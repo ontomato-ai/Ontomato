@@ -60,6 +60,10 @@ test("start-retrieval dispatches the retriever and recalls metrics concurrently"
 
   await withAssistantPackage((request, res) => {
     if (request.url === `/v1/channel/hosts/workbench/domains/a/runs/${runId}/commands`) {
+      if (request.body?.op === "list") {
+        reply(res, 200, { agents: [{ ref: retrieverRef, contextSchema: { properties: { queryIntent: { type: "object" } } } }] });
+        return;
+      }
       releaseWhenBothArrive("start", () => reply(res, 200, { taskId, sessionRef: { providerId: "ontology", sessionId }, status: "starting" }));
     } else if (request.url === "/ontology/query/metrics/recall") {
       releaseWhenBothArrive("recall", () => reply(res, 200, { items: [] }));
@@ -67,7 +71,9 @@ test("start-retrieval dispatches the retriever and recalls metrics concurrently"
       reply(res, 404, { error: "Unexpected request " + request.url });
     }
   }, async ({ requests, base, directory, script }) => {
-    const { stdout } = await run(process.execPath, [script, "start-retrieval", "How many active faculty?"], {
+    const intent = { schema: "ontomato.query-intent.v1", conditions: [{ id: "status", quote: "active", mapping: null }], outputs: ["Faculty count"] };
+    await writeFile(path.join(directory, "intent.json"), JSON.stringify(intent));
+    const { stdout } = await run(process.execPath, [script, "start-retrieval", "How many active faculty?", "--intent", "@intent.json"], {
       cwd: directory,
       env: {
         PATH: process.env.PATH,
@@ -83,12 +89,29 @@ test("start-retrieval dispatches the retriever and recalls metrics concurrently"
       retriever: { taskId, sessionRef: { providerId: "ontology", sessionId }, status: "starting" },
       recall: { items: [] },
     });
-    const startReq = requests.find((r) => r.url.endsWith("/commands"));
+    const startReq = requests.find((r) => r.url.endsWith("/commands") && r.body.op === "start");
     const recallReq = requests.find((r) => r.url === "/ontology/query/metrics/recall");
-    assert.deepEqual(startReq.body, { op: "start", agent: retrieverRef, message: "How many active faculty?" });
+    assert.deepEqual(startReq.body, { op: "start", agent: retrieverRef, message: "How many active faculty?", context: { queryIntent: intent } });
     assert.equal(startReq.headers["x-ontomato-callback-credential"], "channel-secret");
     assert.deepEqual(recallReq.body, { question: "How many active faculty?" });
     assert.equal(recallReq.headers["x-ontomato-callback-credential"], "business-callback");
+  });
+});
+
+test("an older retriever receives no intent extension and is started only once", async () => {
+  await withAssistantPackage((request, res) => {
+    if (request.url.endsWith("/commands")) return reply(res, 200, request.body.op === "list"
+      ? { agents: [{ ref: retrieverRef }] } : { taskId: "legacy-task", status: "starting" });
+    reply(res, 200, { items: [] });
+  }, async ({ requests, base, directory, script }) => {
+    await writeFile(path.join(directory, "intent.json"), JSON.stringify({ schema: "ontomato.query-intent.v1", conditions: [], outputs: ["Count"] }));
+    const { stdout } = await run(process.execPath, [script, "start-retrieval", "Count people", "--intent", "@intent.json"], {
+      cwd: directory, env: { PATH: process.env.PATH, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "fixture" },
+    });
+    const starts = requests.filter(request => request.body?.op === "start");
+    assert.equal(starts.length, 1);
+    assert.equal(starts[0].body.context, undefined);
+    assert.equal(JSON.parse(stdout).queryIntentApplied, false);
   });
 });
 

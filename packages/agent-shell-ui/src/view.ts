@@ -40,6 +40,7 @@ export interface ResponseItem {
   /** Everything the run did except its answer's text, in order; it streams here while the run is active. */
   process: ProcessBlock[];
   running: boolean;
+  retrievalProgress?: "retrieving" | "datasetReady" | "answering";
   /** Present once the run stopped; rendering decides how each PI reason is shown. */
   end: { stopReason: RuntimeStopReason | null; errorMessage: string | null } | null;
   /** The message the runtime named as the run's answer: the body, and the copy, feedback and action target. */
@@ -80,11 +81,16 @@ function userText(content: string | { type: string; text?: string }[]): string {
 export function conversationItems(state: ConversationState, tasks: AgentTasksSnapshot | null = null): ConversationItem[] {
   const items: ConversationItem[] = [];
   const retrievals = new Map<string, Array<ChannelAgentTask>>();
+  const datasetsByRun = new Map<string, ChannelAgentTask>();
+  const resultRuns = new Map<string, string>();
   const reviews = new Map<string, ResponseReview[]>();
   for (const task of tasks?.tasks ?? []) {
     if (task.kind === "agent") {
       if (task.kind === "agent" && task.parentTaskId !== null) continue;
       retrievals.set(task.root.runId, [...(retrievals.get(task.root.runId) ?? []), task]);
+      if (task.retrieval?.datasets.length && ["starting", "running", "completed"].includes(task.status)) {
+        datasetsByRun.set(task.runId, task);
+      }
       continue;
     }
     reviews.set(task.root.runId, [...(reviews.get(task.root.runId) ?? []), {
@@ -146,6 +152,10 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       continue;
     }
     if (message.role === "notification") {
+      if (entry.runId && message.kind === "agent-result" && "session" in message.source && datasetsByRun.has(message.source.runId)) {
+        resultRuns.set(message.source.runId, entry.runId);
+        if (state.runs[entry.runId]?.status === "running") openResponse(entry.runId).retrievalProgress = "answering";
+      }
       // A delegated agent's result or model-directed question is input to the requesting model, not a message in the main conversation.
       const userQuestion =
         message.kind === "agent-question" &&
@@ -165,17 +175,28 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     const settled = entry.messageSeq !== null;
     // Only the answer's text leaves the process; its thinking stays there with the rest of the work.
     const answer = entry.id === run?.answerMessageId;
+    // A delegation-only reply is a handoff, until its child result is consumed by this run.
+    const delegated = (tasks?.tasks ?? []).some((task) => task.kind === "agent" && task.root.runId === current.runId);
+    const receivedResult = Object.values(state.messages).some((record) =>
+      record.runId === current.runId && record.message.role === "notification" && record.message.kind === "agent-result");
+    const handoff = answer && delegated && !receivedResult && (tasks?.tasks ?? []).some((task) =>
+      task.kind === "agent" && task.root.runId === current.runId &&
+      (task.status === "starting" || task.status === "running" || Object.values(state.messages).some((record) =>
+        record.message.role === "notification" && record.message.kind === "agent-result" &&
+        "session" in record.message.source && record.message.source.runId === task.runId)));
     if (answer) {
-      current.answerMessageId = entry.id;
-      current.answerText = message.content
-        .map((block) => (block.type === "text" ? block.text : ""))
+      const blocks = message.content.filter((block) => block.type === "text");
+      current.answerMessageId = handoff ? null : entry.id;
+      current.answerText = blocks
+        .filter(() => !handoff)
+        .map((block) => block.text)
         .join("\n\n")
         .trim();
     }
     message.content.forEach((block, index) => {
       const key = `${entry.id}:${index}`;
       if (block.type === "text") {
-        if (!block.text || answer) return;
+        if (!block.text || (answer && !handoff)) return;
         current.process.push({ kind: "note", key, text: block.text, final: settled, runId: current.runId });
         return;
       }
@@ -220,6 +241,11 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     const run = state.runs[item.runId];
     item.running = run?.status === "running";
     place(item, null);
+    if (item.retrievalProgress !== "answering") {
+      const pending = item.process.flatMap(block => block.kind === "task" && block.task.retrieval && !resultRuns.has(block.task.runId) ? [block.task] : []);
+      if (pending.some(task => task.status === "starting" || task.status === "running")) item.retrievalProgress = "retrieving";
+      else if (pending.some(task => datasetsByRun.has(task.runId))) item.retrievalProgress = "datasetReady";
+    }
     item.workspaceCommit = run?.workspaceCommit ?? null;
     item.startedAt = run?.createdAt ? Date.parse(run.createdAt) : null;
     item.finishedAt = run?.finishedAt ? Date.parse(run.finishedAt) : null;

@@ -105,6 +105,7 @@ export function runtimeEnvironment(
       providers: ["ontology"],
       publishProviders: ["ontology"],
       domainHistory: true,
+      channelGateway: true,
     },
   ]);
   env.AGENT_RUNTIME_DATABASE ||= runtimeDatabase;

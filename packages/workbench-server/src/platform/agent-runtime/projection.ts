@@ -20,8 +20,10 @@ export function runStatusView(run: {
   id: string;
   status: AgentHostRunStatus["status"];
   stopReason: AgentHostRunStatus["stopReason"];
+  delegatedRunning?: boolean;
 }): AgentHostRunStatus {
-  return { id: run.id, status: run.status, stopReason: run.stopReason };
+  return { id: run.id, status: run.status, stopReason: run.stopReason,
+    ...(run.delegatedRunning !== undefined ? { delegatedRunning: run.delegatedRunning } : {}) };
 }
 /**
  * The business outcome of a run: the runtime only reports running/stopped, the stop reason says why.

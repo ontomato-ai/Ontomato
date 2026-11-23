@@ -21,6 +21,29 @@ const user = (content: string): Message => ({ role: "user", content, timestamp: 
 const chunk = (delta: unknown, finish_reason: string | null = null) => `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
 const response = (text: string) => new Response(text + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
 
+it("continues DeepSeek tool calls through a custom gateway with or without streamed reasoning", async () => {
+  const gateway = resolveModel("fixture", { api: "openai-completions", baseUrl: "http://fixture/v1", apiKey: "key" },
+    { id: "deepseek-flash", type: "chat" }, config.retry);
+  const call = (id: string) => ({ index: 0, id, type: "function", function: { name: "lookup", arguments: "{}" } });
+  const fetcher = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+    .mockResolvedValueOnce(response(chunk({ role: "assistant", tool_calls: [call("first")] }, "tool_calls")))
+    .mockResolvedValueOnce(response(chunk({ role: "assistant", reasoning_content: "Check the result" }) +
+      chunk({ tool_calls: [call("second")] }, "tool_calls")))
+    .mockResolvedValueOnce(response(chunk({ role: "assistant", content: "Done" }, "stop")));
+  const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "3109" }], details: {} }));
+  const result = await runAgentLoop([user("Count staff")], {
+    messages: [], tools: [{ name: "lookup", label: "Lookup", description: "Read a count", parameters: Type.Object({}), execute }],
+  }, { model: piModel(gateway), convertToLlm: messages => messages as Message[], fetch: fetcher },
+  () => {}, undefined, modelStream(gateway, store, scope, "run", "correlation", "conversation"));
+  const replay = JSON.parse(fetcher.mock.calls[2]![1]!.body as string);
+  expect(replay.messages.filter((message: { tool_calls?: unknown }) => message.tool_calls)).toMatchObject([
+    { tool_calls: [{ id: "first" }], reasoning_content: "" },
+    { tool_calls: [{ id: "second" }], reasoning_content: "Check the result" },
+  ]);
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(result.at(-1)).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "Done" }] });
+});
+
 it("stops during a tool execution, persists its result, then sends a legal next request", async () => {
   const controller = new AbortController();
   const saved: Message[] = [];

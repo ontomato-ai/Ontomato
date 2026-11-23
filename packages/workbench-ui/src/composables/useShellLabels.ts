@@ -99,6 +99,12 @@ return computed<ShellLabels>(() => ({
   filterEmpty: t("assistant.datasetFilterEmpty"),
   elapsed: (time) => t("assistant.elapsed", { time }),
   worked: (time) => t("assistant.worked", { time }),
+  retrievalProgress: {
+    retrieving: t("assistant.progressRetrieving"),
+    datasetReady: t("assistant.progressDatasetReady"),
+    answering: t("assistant.progressAnswering"),
+  },
+  graphZoom: { in: t("assistant.graphZoomIn"), out: t("assistant.graphZoomOut"), fit: t("assistant.graphZoomFit") },
   questionsWaiting: (count) => t("assistant.questionsWaiting", { n: count }, count),
   questionOptionDefault: t("assistant.questionOptionDefault"),
   questionOptionOther: t("assistant.questionOptionOther"),

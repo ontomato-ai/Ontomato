@@ -267,6 +267,7 @@ export interface ShellLabels {
   activityCompute: string;
   /** Heading of how a dataset was obtained, under its table: each query with its conditions, and the graph. */
   datasetLineage: string;
+  graphZoom?: { in: string; out: string; fit: string };
   showLineage: string;
   hideLineage: string;
   /** The graph's columns: the objects the data comes from, the fields used, the calculations and the result columns. */
@@ -285,6 +286,7 @@ export interface ShellLabels {
   elapsed: (time: string) => string;
   /** A finished response's folded process line; `time` is the run's duration, formatted as m:ss. */
   worked: (time: string) => string;
+  retrievalProgress?: { retrieving: string; datasetReady: string; answering: string };
   /** The head of the panel over the composer, its toggle: how many of the agents' questions wait for the reader. */
   questionsWaiting: (count: number) => string;
   /** Marks the option that is the agent's default. */

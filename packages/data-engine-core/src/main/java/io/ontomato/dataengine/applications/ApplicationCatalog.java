@@ -154,6 +154,10 @@ public class ApplicationCatalog {
             });
     }
     public PageSkills.Projection pageSkills(User user) {
+        return access.withPageSkillAuthorization(user, () -> projectPageSkills(user));
+    }
+
+    private PageSkills.Projection projectPageSkills(User user) {
         var domainId = user.getDomainId();
         var applications = applicationsInDomain(domainId);
         var pageKeys = new BuiltinPageKeys(applications);
