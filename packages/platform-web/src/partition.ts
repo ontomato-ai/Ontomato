@@ -57,6 +57,7 @@ export function appDeclarations(
   access: PlatformAccess,
   partition: readonly AppPartition[],
   t: (key: string) => string,
+  readCounts: (appId: string) => boolean = () => true,
 ): PlatformAppDeclaration[] {
   const pages = availablePages(navigation, access);
   // A page's address may carry a parameter (`/browser/data/:className?`); the column lists the address up to it, which is
@@ -64,14 +65,15 @@ export function appDeclarations(
   const base = (path: string) => path.split("/:")[0]!;
   const byPath = new Map(pages.map((page) => [base(page.path), page]));
   const entryRows = new Map((navigation.entries ?? []).map((row) => [row.path, row]));
-  const panelPage = (page: PlatformPage): PlatformPanelPage => ({
+  const panelPage = (page: PlatformPage, countsActive: boolean): PlatformPanelPage => ({
     id: base(page.path),
     label: t(page.titleKey),
     icon: page.icon ?? "pages",
-    count: page.count?.() ?? null,
+    count: countsActive ? (page.count?.() ?? null) : null,
   });
 
   return partition.map((app): PlatformAppDeclaration => {
+    const countsActive = readCounts(app.id);
     const groups: PlatformPanelGroup[] = app.sections
       .map((section) => "pages" in section ? section : ({
         key: section.key,
@@ -80,12 +82,16 @@ export function appDeclarations(
           .map((path) => {
             const entry = app.entries?.get(path);
             const listed = byPath.get(base(path));
-            if (!entry) return listed ? panelPage(listed) : undefined;
+            if (!entry) return listed ? panelPage(listed, countsActive) : undefined;
             // The entry stands where a native page stood: its row keeps that page's icon and count, from the page the
             // navigation still lists there or the row it declares for an entry whose page is gone.
             // Its count is the one the entry declares, read as its page reads it; an entry declaring none keeps the row's.
             const row = listed ?? entryRows.get(path);
-            return { ...entry, icon: row?.icon ?? "pages", count: "count" in entry ? entry.count ?? null : row?.count?.() ?? null };
+            return {
+              ...entry,
+              icon: row?.icon ?? "pages",
+              count: "count" in entry ? entry.count ?? null : (countsActive ? row?.count?.() ?? null : null),
+            };
           })
           .filter((page): page is PlatformPanelPage => page !== undefined),
       }))
@@ -117,7 +123,7 @@ export function appDeclarations(
       // opens an address no route serves.
       home: base(home ?? groups[0]?.pages[0]?.id ?? footPage?.path ?? app.entryHome ?? firstPath ?? app.prefix),
       groups,
-      foot: footPage ? panelPage(footPage) : null,
+      foot: footPage ? panelPage(footPage, countsActive) : null,
     };
   });
 }

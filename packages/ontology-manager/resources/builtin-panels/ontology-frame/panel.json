@@ -1,0 +1,228 @@
+{
+  "manifest": {
+    "state": {},
+    "members": {
+      "content": {
+        "target": {
+          "fromPlatform": "currentEntry",
+          "candidates": {
+            "rule": "applicationEntry"
+          }
+        }
+      },
+      "objectTypes": {
+        "component": "PanelData",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-om-frame-objects"
+      },
+      "attributes": {
+        "component": "PanelData",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-om-frame-attributes"
+      },
+      "relationships": {
+        "component": "PanelData",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-om-frame-relations"
+      },
+      "knowledge": {
+        "component": "PanelData",
+        "type": "platform:BusinessKnowledge",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "size": {
+                "literal": 1
+              }
+            }
+          }
+        },
+        "id": "builtin-product-om-frame-knowledge"
+      },
+      "metricViews": {
+        "component": "PanelData",
+        "type": "platform:MetricView",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "size": {
+                "literal": 1
+              }
+            }
+          }
+        },
+        "id": "builtin-product-om-frame-metrics"
+      },
+      "functions": {
+        "component": "PanelData",
+        "type": "platform:Function",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "size": {
+                "literal": 1
+              }
+            }
+          }
+        },
+        "id": "builtin-product-om-frame-functions"
+      },
+      "actions": {
+        "component": "PanelData",
+        "type": "platform:Action",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-om-frame-actions"
+      },
+      "workflows": {
+        "component": "PanelData",
+        "type": "platform:Workflow",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-om-frame-workflows"
+      },
+      "triggers": {
+        "component": "PanelData",
+        "type": "platform:Trigger",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "size": {
+                "literal": 1
+              }
+            }
+          }
+        },
+        "id": "builtin-product-om-frame-triggers"
+      },
+      "skills": {
+        "component": "PanelData",
+        "type": "platform:Skill",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "size": {
+                "literal": 1
+              }
+            }
+          }
+        },
+        "id": "builtin-product-om-frame-skills"
+      },
+      "sdkComponents": {
+        "component": "PanelData",
+        "type": "platform:SDKComponent",
+        "data": {
+          "rows": "catalogue"
+        },
+        "id": "builtin-product-om-frame-components"
+      },
+      "projections": {
+        "component": "PanelData",
+        "type": "platform:ProductProjection",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "size": {
+                "literal": 1
+              }
+            }
+          }
+        },
+        "id": "builtin-product-om-frame-projections"
+      },
+      "panels": {
+        "component": "PanelData",
+        "type": "platform:ProductPanel",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "size": {
+                "literal": 1
+              }
+            }
+          }
+        },
+        "id": "builtin-product-om-frame-panels"
+      },
+      "applications": {
+        "component": "PanelData",
+        "type": "platform:Application",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "size": {
+                "literal": 1
+              }
+            }
+          }
+        },
+        "id": "builtin-product-om-frame-applications"
+      },
+      "agents": {
+        "component": "PanelData",
+        "type": "platform:AgentDefinition",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-om-frame-agents"
+      }
+    },
+    "commands": {}
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Ontology manager",
+        "frame.title": "Ontology manager"
+      },
+      "zh-CN": {
+        "panel.name": "本体管理器",
+        "frame.title": "本体管理器"
+      },
+      "zh-TW": {
+        "panel.name": "本體管理器",
+        "frame.title": "本體管理器"
+      },
+      "ja": {
+        "panel.name": "オントロジー管理",
+        "frame.title": "オントロジー管理"
+      },
+      "ar": {
+        "panel.name": "إدارة الأنطولوجيا",
+        "frame.title": "إدارة الأنطولوجيا"
+      },
+      "fr": {
+        "panel.name": "Gestionnaire d'ontologie",
+        "frame.title": "Gestionnaire d'ontologie"
+      },
+      "de": {
+        "panel.name": "Ontologie-Manager",
+        "frame.title": "Ontologie-Manager"
+      },
+      "it": {
+        "panel.name": "Gestore ontologia",
+        "frame.title": "Gestore ontologia"
+      }
+    }
+  }
+}

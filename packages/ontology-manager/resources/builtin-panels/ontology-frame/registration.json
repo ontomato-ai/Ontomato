@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-frame",
+      "input": {
+        "name": "本体管理器外框",
+        "description": "本体管理器四层导航菜单外框，使用官方应用菜单组件展示目录条数与当前入口内容。"
+      }
+    }
+  ]
+}

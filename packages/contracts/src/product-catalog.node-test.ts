@@ -102,9 +102,10 @@ test("platform products use a reserved identity and are read-only without a doma
   assert.equal(registerProductProjectionRequestSchema.safeParse({ ...projectionInput, revision: 0 }).success, false);
 
   const summary = { ...definition, id: panelId, ownerId: null, editable: false, revision: 1, updatedAt: record.updatedAt };
-  assert.equal(productPanelListResponseSchema.safeParse({ items: [summary], nextCursor: null }).success, true);
+  assert.equal(productPanelListResponseSchema.safeParse({ items: [summary], nextCursor: null, total: 1 }).success, true);
+  assert.equal(productPanelListResponseSchema.safeParse({ items: [summary], nextCursor: null, total: -1 }).success, false);
   assert.equal(productProjectionListResponseSchema.safeParse({
-    items: [{ ...summary, id: projectionId, componentId: projectionInput.componentId }], nextCursor: null,
+    items: [{ ...summary, id: projectionId, componentId: projectionInput.componentId }], nextCursor: null, total: 1,
   }).success, true);
 
   assert.equal(builtinProductIdSchema.safeParse(BUILTIN_PRODUCT_ID_PREFIX).success, false);

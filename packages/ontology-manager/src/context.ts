@@ -1,6 +1,7 @@
 import { inject, onMounted, reactive, type App, type InjectionKey, type Ref } from "vue";
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from "vue-router";
 import { useI18n } from "vue-i18n";
+import { TRIGGER, WORKFLOW } from "@ontomato/contracts/platform-object-types";
 import {
   createManagerClient,
   type ManagerAuthFailureStatus,
@@ -10,7 +11,7 @@ import {
 } from "./api";
 import { metricViewsKey } from "./clients/metric-views";
 import type { MessageKey, SharedKey, TextParams } from "./i18n";
-import { emptyOntologyResourceCounts, type OntologyResourceCounts } from "./workspace";
+import { emptyOntologyResourceCounts, type OntologyResourceCountKey, type OntologyResourceCounts } from "./workspace";
 
 export type ManagerTheme = "light" | "dark";
 
@@ -69,10 +70,12 @@ export interface ManagerContext {
 /** Resource counts shown next to the ontology and asset navigation entries; null until read. */
 export interface ManagerCounts {
   readonly values: OntologyResourceCounts;
-  /** Reads every count again (after a page created, changed or deleted a resource). */
-  refresh(): Promise<void>;
-  /** Reads the counts once per page load. */
-  ensure(): void;
+  /** Reads the named count (or every started count when omitted) again after a page created, changed or deleted a resource. */
+  refresh(key?: OntologyResourceCountKey): Promise<void>;
+  /** Reads the named count (or every count when omitted) once per page load. */
+  ensure(key?: OntologyResourceCountKey): void;
+  /** Records a count the page just read from its own unfiltered list, avoiding a duplicate request. */
+  set(key: OntologyResourceCountKey, count: number): void;
   /**
    * A write changed objects of these types (an owner's `affected.objectTypes`): the counts are read again when one of
    * them is a type they count, once for the whole write.
@@ -80,11 +83,16 @@ export interface ManagerCounts {
   changed(objectTypes: readonly string[]): void;
 }
 
+const ALL_COUNT_KEYS: readonly OntologyResourceCountKey[] = ["workflows", "triggers", "products"];
+
 /**
- * The object types whose writes move a count: what `refresh` reads. The pages these counted are panel entries now,
- * counted by their own entries; the products count has no object type of its own.
+ * The object types whose writes move a native count: workflows and triggers are still native pages; the rest are panel
+ * entries counted by their own entries, and the legacy products count has no object type of its own.
  */
-const COUNTED_TYPES: ReadonlySet<string> = new Set();
+const COUNTED_TYPE_KEYS: Readonly<Record<string, OntologyResourceCountKey>> = {
+  [WORKFLOW]: "workflows",
+  [TRIGGER]: "triggers",
+};
 
 const contextKey: InjectionKey<ManagerContext> = Symbol("ontology-manager-context");
 const clientKey: InjectionKey<ManagerClient> = Symbol("ontology-manager-client");
@@ -97,22 +105,51 @@ export const countedTypesChangedKey: InjectionKey<ManagerCounts["changed"]> = Sy
 
 function createCounts(client: ManagerClient): ManagerCounts {
   const values = reactive(emptyOntologyResourceCounts());
-  let started = false;
-  async function refresh() {
-    started = true;
-    // Object types, attributes, relation types, functions and metric views are panel entries now: their counts are their
-    // entries' own; this area counts only the products it still owns.
-    const [products] = await Promise.allSettled([client.products.counts()]);
-    if (products.status === "fulfilled") values.products = Object.values(products.value).reduce((sum,count)=>sum+count,0);
+  const started = new Set<OntologyResourceCountKey>();
+  const loaders: Record<OntologyResourceCountKey, () => Promise<number>> = {
+    workflows: async () => (await client.loadWorkflows()).length,
+    triggers: async () => (await client.loadTriggers()).length,
+    products: async () => Object.values(await client.products.counts()).reduce((sum, count) => sum + count, 0),
+  };
+  async function readKeys(keys: readonly OntologyResourceCountKey[]) {
+    for (const key of keys) started.add(key);
+    await Promise.allSettled(
+      keys.map(async (key) => {
+        values[key] = await loaders[key]();
+      })
+    );
+  }
+  async function refresh(key?: OntologyResourceCountKey) {
+    if (key) {
+      await readKeys([key]);
+      return;
+    }
+    await readKeys(started.size ? [...started] : ALL_COUNT_KEYS);
   }
   return {
     values,
     refresh,
-    ensure: () => {
-      if (!started) void refresh();
+    ensure: (key?: OntologyResourceCountKey) => {
+      if (key) {
+        if (!started.has(key)) void readKeys([key]);
+        return;
+      }
+      const pending = ALL_COUNT_KEYS.filter((item) => !started.has(item));
+      if (pending.length) void readKeys(pending);
+    },
+    set: (key, count) => {
+      started.add(key);
+      values[key] = count;
     },
     changed: (objectTypes) => {
-      if (objectTypes.some(type => COUNTED_TYPES.has(type))) void refresh();
+      const affected = [
+        ...new Set(
+          objectTypes
+            .map((type) => COUNTED_TYPE_KEYS[type])
+            .filter((item): item is OntologyResourceCountKey => item !== undefined && started.has(item))
+        ),
+      ];
+      if (affected.length) void readKeys(affected);
     },
   };
 }

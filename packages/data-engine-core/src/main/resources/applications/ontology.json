@@ -15,6 +15,7 @@
     "skill-management"
   ],
   "scheduleAdapter": "java:ontology",
+  "framePanelId": "builtin-product-ontology-frame",
   "declaration": {
     "names": {
       "en": "Ontology manager",
@@ -25,88 +26,65 @@
       "zh-CN": "建模本体，管理指标、函数、动作、流程与技能"
     },
     "icon": "ontology",
-    "groups": [{"key": "products","names": {"en": "Products","zh-CN": "产品层"},"sort": 0}],
+    "groups": [
+      {"key": "facts", "names": {"en": "Facts", "zh-CN": "事实层"}, "sort": 0},
+      {"key": "capabilities", "names": {"en": "Capabilities", "zh-CN": "能力层"}, "sort": 1},
+      {"key": "governance", "names": {"en": "Governance", "zh-CN": "治理层"}, "sort": 2},
+      {"key": "products", "names": {"en": "Products", "zh-CN": "产品层"}, "sort": 3}
+    ],
     "permissions": [],
     "panelUses": [{
       "id": "ontology-playground", "pageKey": "ontology-playground", "panelId": "builtin-product-ontology-graph",
       "path": "/ontology/playground", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Explore object types, attributes, and relationships in the ontology", "zh-CN": "探索本体中对象类型、属性与关系的结构"},
-      "names": {"en": "Ontology graph", "zh-CN": "本体图谱"}
-    }, {
-      "id": "ontology-visual-modeling", "pageKey": "ontology-visual-modeling", "panelId": "builtin-product-ontology-visual-modeling",
-      "path": "/ontology/visual-modeling", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"en": "Edit this domain's object types, attributes and relations on one canvas: drag the layout, draw a relation between two types, select to edit or delete.", "zh-CN": "在一张画布上编辑本域的对象类型、属性与关系：拖动布局、连线建关系、选中编辑与删除。"},
-      "names": {"en": "Visual modeling", "zh-CN": "可视化建模"}
+      "names": {"en": "Ontology graph", "zh-CN": "本体图谱"}, "groupKey": "facts"
     }, {
       "id": "ontology-objects", "pageKey": "ontology-objects", "panelId": "builtin-product-ontology-objects",
       "path": "/ontology/objects", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Define business object types, attributes, and identifier fields", "zh-CN": "定义业务对象类型、属性与标识字段"},
-      "names": {"en": "Object types", "zh-CN": "对象类型"},
+      "names": {"en": "Object types", "zh-CN": "对象类型"}, "groupKey": "facts",
       "count": {"member": "catalog", "data": "rows"}
     }, {
       "id": "ontology-attributes", "pageKey": "ontology-attributes", "panelId": "builtin-product-ontology-attributes",
       "path": "/ontology/attributes", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Every object type's attributes: filter by type, then create, edit, set the primary key or delete one.", "zh-CN": "各对象类型的属性：按类筛选，新建、修改、设为主键和删除。"},
-      "names": {"en": "Attributes", "zh-CN": "属性"},
+      "names": {"en": "Attributes", "zh-CN": "属性"}, "groupKey": "facts",
       "count": {"member": "attributes", "data": "rows"}
     }, {
       "id": "ontology-relations", "pageKey": "ontology-relations", "panelId": "builtin-product-ontology-relations",
       "path": "/ontology/relations", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Define relationships and their endpoints between object types", "zh-CN": "定义对象类型之间的关系及其关联端点"},
-      "names": {"en": "Relation types", "zh-CN": "关系类型"},
+      "names": {"en": "Relation types", "zh-CN": "关系类型"}, "groupKey": "facts",
       "count": {"member": "catalogue", "data": "rows"}
     }, {
-      "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
-      "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
-      "descriptions": {"en": "Every action of this domain: its definition, the definition its code derives, the explanation of that code, status and deletion.", "zh-CN": "本域的全部动作：定义、由代码推导的定义、代码解释，以及状态和删除。"},
-      "names": {"en": "Actions", "zh-CN": "动作"}
+      "id": "ontology-visual-modeling", "pageKey": "ontology-visual-modeling", "panelId": "builtin-product-ontology-visual-modeling",
+      "path": "/ontology/visual-modeling", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Edit this domain's object types, attributes and relations on one canvas: drag the layout, draw a relation between two types, select to edit or delete.", "zh-CN": "在一张画布上编辑本域的对象类型、属性与关系：拖动布局、连线建关系、选中编辑与删除。"},
+      "names": {"en": "Visual modeling", "zh-CN": "可视化建模"}, "groupKey": "facts"
     }, {
-      "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
-      "path": "/ontology/assets/capability-map", "access": {"permissionCode": "action-management"},
-      "descriptions": {"en": "Explore four-layer platform types and how roles, processes, capabilities, and products relate", "zh-CN": "查看四层平台类型及角色、流程、能力与产品对象之间的关系"},
-      "names": {"en": "Capability map", "zh-CN": "能力图谱"}
-    }, {
-      "id": "ontology-components", "pageKey": "ontology-components", "panelId": "builtin-product-sdk-components",
-      "path": "/ontology/components", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"zh-CN": "当前部署的 SDK 发行声明的组件。组件随发行增改，这一页只读：可以搜索和查看声明，不能新增、修改或删除。", "zh-TW": "目前部署的 SDK 發行聲明的組件。組件隨發行增改，這一頁唯讀：可以搜尋和查看聲明，不能新增、修改或刪除。", "en": "The components the deployed SDK release declares. Components change with a release, so this page is read-only: search and read declarations; nothing is created, changed or deleted here."},
-      "names": {"zh-CN": "基础组件", "zh-TW": "基礎組件", "en": "Base components"}
-    }, {
-      "id": "use-ontology-projections", "pageKey": "ontology-projections", "panelId": "builtin-product-ontology-projections",
-      "path": "/ontology/projections", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"en": "The projections of this domain you can use. Select one to see what it reads, how it is configured, which operations its owner registered, and which panels use it.", "zh-CN": "本域里我能使用的投影。选中一条，看它读什么、怎么配置、属主登记了哪些操作，以及哪些面板在用它。"},
-      "names": {"en": "Projections","zh-CN": "投影"}, "groupKey": "products"
-    }, {
-      "id": "use-ontology-panels", "pageKey": "ontology-panels", "panelId": "builtin-product-ontology-panels",
-      "path": "/ontology/panels", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"en": "The panels this domain grants you: name, owner, sharing scope and template use; each panel's source, style, members, usage and grants.", "zh-CN": "本域授予你使用的面板：名称、所属人、共享范围与模板用途，以及每个面板的源码、样式、成员、引用与授权。"},
-      "names": {"en": "Panels","zh-CN": "面板"}, "groupKey": "products"
-    }, {
-      "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
-      "path": "/ontology/applications", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"en": "Every application visible in this domain, built-in and domain-built alike. Open one to see its identity, entries and the panels it uses.", "zh-CN": "本域可见的全部应用：内置的与域内建的同列。展开一行看它的身份、入口和用到的面板。"},
-      "names": {"en": "Applications","zh-CN": "应用"}, "groupKey": "products"
-    }, {
-      "id": "ontology-agent-settings", "pageKey": "agent-settings", "panelId": "builtin-product-agent-settings",
-      "path": "/ontology/agents", "access": {"permissionCode": "ontology-modeling"},
-      "descriptions": {"en": "The agents of this domain: choose one to read or change its name, avatar, instructions, model and skills, or create one.", "zh-CN": "本域的智能体：选中一个查看或修改它的名称、头像、提示词、模型和技能，也可以新建一个。"},
-      "names": {"en": "Agent settings", "zh-CN": "智能体设置"}, "groupKey": "products"
+      "id": "business-knowledge", "pageKey": "business-knowledge", "panelId": "builtin-product-business-knowledge",
+      "path": "/ontology/knowledge", "access": {"permissionCode": "business-knowledge"},
+      "descriptions": {"en": "Maintain business rules and terminology, and review pending knowledge", "zh-CN": "维护业务规则与术语，审核待确认的知识"},
+      "names": {"en": "Business knowledge", "zh-CN": "业务知识"}, "groupKey": "facts",
+      "count": {"member": "list", "data": "rows"}
     }, {
       "id": "ontology-metric-views", "pageKey": "metric-views", "panelId": "builtin-product-ontology-metric-views",
       "path": "/ontology/assets/metrics", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Define business metrics and the queries used to calculate them", "zh-CN": "定义业务指标及其计算查询"},
-      "names": {"en": "Metric Views", "zh-CN": "指标视图"},
+      "names": {"en": "Metric Views", "zh-CN": "指标视图"}, "groupKey": "capabilities",
       "count": {"member": "list", "data": "rows"}
     }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Read functions keep a query package and column labels; write functions keep parameters and Python code. A name is edited once, here.", "zh-CN": "读函数维护查询逻辑包和列标签，写函数维护参数和 Python 代码；名称只在这里编辑一次。"},
-      "names": {"en": "Functions", "zh-CN": "函数"},
+      "names": {"en": "Functions", "zh-CN": "函数"}, "groupKey": "capabilities",
       "count": {"member": "list", "data": "rows"}
     }, {
-      "id": "business-knowledge", "pageKey": "business-knowledge", "panelId": "builtin-product-business-knowledge",
-      "path": "/ontology/knowledge", "access": {"permissionCode": "business-knowledge"},
-      "descriptions": {"en": "Maintain business rules and terminology, and review pending knowledge", "zh-CN": "维护业务规则与术语，审核待确认的知识"},
-      "names": {"en": "Business knowledge", "zh-CN": "业务知识"}
+      "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
+      "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
+      "descriptions": {"en": "Every action of this domain: its definition, the definition its code derives, the explanation of that code, status and deletion.", "zh-CN": "本域的全部动作：定义、由代码推导的定义、代码解释，以及状态和删除。"},
+      "names": {"en": "Actions", "zh-CN": "动作"}, "groupKey": "capabilities",
+      "count": {"member": "catalog", "data": "rows"}
     }, {
       "id": "ontology-skills", "pageKey": "skills-library", "panelId": "builtin-product-skills-library",
       "path": "/ontology/skills", "access": {"permissionCode": "skill-management"},
@@ -129,7 +107,42 @@
         "fr": "Skill",
         "de": "Skill",
         "it": "Skill"
-      },
+      }, "groupKey": "capabilities",
+      "count": {"member": "list", "data": "rows"}
+    }, {
+      "id": "capability-map", "pageKey": "capability-map", "panelId": "builtin-product-capability-map",
+      "path": "/ontology/assets/capability-map", "access": {"permissionCode": "action-management"},
+      "descriptions": {"en": "Explore four-layer platform types and how roles, processes, capabilities, and products relate", "zh-CN": "查看四层平台类型及角色、流程、能力与产品对象之间的关系"},
+      "names": {"en": "Capability map", "zh-CN": "能力图谱"}, "groupKey": "governance"
+    }, {
+      "id": "ontology-components", "pageKey": "ontology-components", "panelId": "builtin-product-sdk-components",
+      "path": "/ontology/components", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"zh-CN": "当前部署的 SDK 发行声明的组件。组件随发行增改，这一页只读：可以搜索和查看声明，不能新增、修改或删除。", "zh-TW": "目前部署的 SDK 發行聲明的組件。組件隨發行增改，這一頁唯讀：可以搜尋和查看聲明，不能新增、修改或刪除。", "en": "The components the deployed SDK release declares. Components change with a release, so this page is read-only: search and read declarations; nothing is created, changed or deleted here."},
+      "names": {"zh-CN": "基础组件", "zh-TW": "基礎組件", "en": "Base components"}, "groupKey": "products",
+      "count": {"member": "list", "data": "rows"}
+    }, {
+      "id": "use-ontology-projections", "pageKey": "ontology-projections", "panelId": "builtin-product-ontology-projections",
+      "path": "/ontology/projections", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "The projections of this domain you can use. Select one to see what it reads, how it is configured, which operations its owner registered, and which panels use it.", "zh-CN": "本域里我能使用的投影。选中一条，看它读什么、怎么配置、属主登记了哪些操作，以及哪些面板在用它。"},
+      "names": {"en": "Projections","zh-CN": "投影"}, "groupKey": "products",
+      "count": {"member": "list", "data": "rows"}
+    }, {
+      "id": "use-ontology-panels", "pageKey": "ontology-panels", "panelId": "builtin-product-ontology-panels",
+      "path": "/ontology/panels", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "The panels this domain grants you: name, owner, sharing scope and template use; each panel's source, style, members, usage and grants.", "zh-CN": "本域授予你使用的面板：名称、所属人、共享范围与模板用途，以及每个面板的源码、样式、成员、引用与授权。"},
+      "names": {"en": "Panels","zh-CN": "面板"}, "groupKey": "products",
+      "count": {"member": "listRows", "data": "rows"}
+    }, {
+      "id": "use-ontology-applications", "pageKey": "ontology-applications", "panelId": "builtin-product-ontology-applications",
+      "path": "/ontology/applications", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "Every application visible in this domain, built-in and domain-built alike. Open one to see its identity, entries and the panels it uses.", "zh-CN": "本域可见的全部应用：内置的与域内建的同列。展开一行看它的身份、入口和用到的面板。"},
+      "names": {"en": "Applications","zh-CN": "应用"}, "groupKey": "products",
+      "count": {"member": "catalogue", "data": "rows"}
+    }, {
+      "id": "ontology-agent-settings", "pageKey": "agent-settings", "panelId": "builtin-product-agent-settings",
+      "path": "/ontology/agents", "access": {"permissionCode": "ontology-modeling"},
+      "descriptions": {"en": "The agents of this domain: choose one to read or change its name, avatar, instructions, model and skills, or create one.", "zh-CN": "本域的智能体：选中一个查看或修改它的名称、头像、提示词、模型和技能，也可以新建一个。"},
+      "names": {"en": "Agent settings", "zh-CN": "智能体设置"}, "groupKey": "products",
       "count": {"member": "list", "data": "rows"}
     }]
   }

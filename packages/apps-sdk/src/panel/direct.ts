@@ -3,7 +3,7 @@ import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
-import type { DirectPanelRun, PanelDetailHeader, PanelDetailHeaderAction, PlatformPageDraft } from "@ontomato/platform-shell";
+import type { AppMenuGroup, DirectPanelRun, PanelDetailHeader, PanelDetailHeaderAction, PlatformPageDraft } from "@ontomato/platform-shell";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
@@ -169,6 +169,8 @@ export interface DirectPanelInstance extends PanelInstance {
   readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
   /** In an application's frame, the menu the same resolution gave; null elsewhere. */
   readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
+  /** Optional host-supplied menu groups for hybrid built-in applications mixing panel entries and native pages. */
+  readonly hostMenu: ComputedRef<readonly AppMenuGroup[] | null>;
   /** Reads an installed component package's current release (see the options). */
   readonly readComponentPackage: ComponentPackageReader;
   readonly loadDomainComponent?: DirectPanelInstanceOptions["loadDomainComponent"];
@@ -628,6 +630,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   const directInstance: DirectPanelInstance = Object.assign(instance, {
     currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
     entryMenu: computed(() => options.currentEntry?.menu.value ?? null),
+    hostMenu: computed(() => options.currentEntry?.hostMenu?.value ?? null),
     direct,
     readComponentPackage: options.readComponentPackage,
     loadDomainComponent: options.loadDomainComponent,
@@ -888,6 +891,7 @@ export function directPanelContext(instance: DirectPanelInstance): PanelContext 
     instance,
     currentEntry: instance.currentEntry,
     entryMenu: instance.entryMenu,
+    hostMenu: instance.hostMenu,
     projection: frameOnly("Reading a projection record"),
     invoke: frameOnly("Running a frame operation"),
     projectionsChanged: () => () => {},

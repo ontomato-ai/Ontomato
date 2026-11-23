@@ -168,11 +168,40 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @Test void theShippedOntologyDeclarationContainsTheComponentsEntry() throws IOException {
         var ontology = ApplicationCatalogUpgrade.Builtins.readDeclaration(new ClassPathResource("applications/ontology.json"));
 
+        assertEquals("builtin-product-ontology-frame", ontology.framePanelId());
+        assertEquals(List.of("facts", "capabilities", "governance", "products"),
+            ontology.declaration().groups().stream().map(ApplicationCatalog.Group::key).toList());
         var components = ontology.declaration().panelUses().stream()
             .filter(use -> use.path().equals("/ontology/components"))
             .findFirst().orElseThrow();
         assertEquals("builtin-product-sdk-components", components.panelId());
         assertEquals("ontology-modeling", components.access().permissionCode());
+        assertEquals("products", components.groupKey());
+    }
+
+    @Test void builtinNativeApplicationResolvesItsDeclaredBuiltinFramePanelId() throws Exception {
+        var declared = builtin("native-framed-demo", "native");
+        var use = new ApplicationPanelUse("overview", "native-framed-demo-overview", "builtin-product-overview",
+            "/native-framed-demo/overview", new ApplicationPanelUse.Access(null, "domain-member"), null,
+            Map.of("en", "Overview"), null, null, null, null);
+        var metadata = new ApplicationCatalog.Declaration(Map.of("en", "Native framed"), Map.of(), "pages",
+            List.of(), List.of(), List.of(), List.of(use));
+        catalog.builtins("data-engine", List.of(new ApplicationCatalog.Builtin(declared.id(), declared.kind(),
+            declared.rail(), declared.category(), declared.sort(), declared.entry(), declared.entryAccess(),
+            declared.scheduleAdapter(), metadata, "builtin-product-native-frame")));
+
+        var viewer = new QueryAccessService.GrantUser("viewer", "domain");
+        when(identity.getCurrentUser()).thenReturn(viewer);
+        when(access.canEnter(any(), eq(viewer))).thenReturn(true);
+        when(access.panelUses(anyList(), eq(viewer))).thenAnswer(call -> call.getArgument(0));
+        when(grants.allowed(use.panelId(), "use")).thenReturn(true);
+
+        http.perform(get("/platform/applications/resolve-entry").param("path", use.path()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.framePanelId").value("builtin-product-native-frame"));
+        http.perform(get("/platform/applications").param("purpose", "navigation"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[?(@.id=='native-framed-demo')].framePanelId").value("builtin-product-native-frame"));
     }
 
     @Test void builtinDescriptionsRoundTripWithoutAddingANamelessEntryToTheMenu() throws Exception {

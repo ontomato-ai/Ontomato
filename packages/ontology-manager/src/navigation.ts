@@ -105,8 +105,8 @@ const pages = [
   page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology", MODELING),
   page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING),
   page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING),
-  page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
-  page(managerPaths.triggers, "nav.triggerManagement", AlarmClock, "ontology", ["action-management"]),
+  page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"], "workflows"),
+  page(managerPaths.triggers, "nav.triggerManagement", AlarmClock, "ontology", ["action-management"], "triggers"),
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
@@ -139,7 +139,7 @@ const entries: readonly { path: string; icon: Component; count?: keyof OntologyR
  */
 export function managerNavigation(counts: ManagerCounts) {
   const counted = (count: keyof OntologyResourceCounts) => () => {
-    counts.ensure();
+    counts.ensure(count);
     return counts.values[count];
   };
   return {

@@ -77,3 +77,33 @@ it("reads nothing for an entry that declares no count, and reads the declared on
   expect(entryCount("ontology", objects)).toBe(19);
   expect(request).toHaveBeenCalledTimes(2);
 });
+
+it("limits concurrent count reads and coalesces refreshes while a read is in flight", async () => {
+  const pending: Array<() => void> = [];
+  let maxConcurrent = 0;
+  let active = 0;
+  request.mockImplementation(() => {
+    active += 1;
+    maxConcurrent = Math.max(maxConcurrent, active);
+    return new Promise<Response>((resolve) => {
+      pending.push(() => {
+        active -= 1;
+        resolve(Response.json({ status: "ready", value: { items: [], total: 5 } }));
+      });
+    });
+  });
+  const entries = ["a", "b", "c", "d", "e", "f"].map((id) => use(id, { member: "list", data: "rows" }));
+  entries.forEach((entry) => entryCount("ontology", entry));
+  expect(request).toHaveBeenCalledTimes(4);
+  expect(maxConcurrent).toBe(4);
+  // Triggering a refresh while reads are still in flight queues one follow-up per in-flight entry and coalesces queued ones.
+  entryCountsChanged();
+  while (pending.length) {
+    pending.shift()!();
+    await settle();
+  }
+  expect(maxConcurrent).toBe(4);
+  expect(entries.map((entry) => entryCount("ontology", entry))).toEqual([5, 5, 5, 5, 5, 5]);
+  // 6 initial reads + 4 coalesced follow-ups for the 4 entries that were already in flight.
+  expect(request).toHaveBeenCalledTimes(10);
+});

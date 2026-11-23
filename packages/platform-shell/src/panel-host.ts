@@ -191,6 +191,11 @@ export interface DirectPanelRun {
     readonly entry: Readonly<Ref<CurrentApplicationEntry>>;
     /** The resolution's menu (its groups and the reader's visible entries), the same answer that admitted the entry. */
     readonly menu: Readonly<Ref<ApplicationEntryMenu>>;
+    /**
+     * Optional host-supplied menu groups for hybrid built-in applications that still mix panel entries and native pages
+     * inside one menu; absent for pure panel applications, which read `menu` directly.
+     */
+    readonly hostMenu?: Readonly<Ref<readonly import("./types").AppMenuGroup[] | null>>;
     /** Puts the content instance the host admitted and runs into `element`; never a new one. */
     place(element: HTMLElement): { dispose(): void };
   };

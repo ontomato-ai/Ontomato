@@ -17,6 +17,7 @@ export const builtinApplicationSchema = z.object({
   rail: z.enum(["top", "apps", "bottom"]), category: categories, sort: z.number().int(),
   entry: z.object({ path: z.string(), renderer: z.string(), home: z.string().optional() }),
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), declaration: applicationDeclarationSchema,
+  framePanelId: z.string().min(1).optional(),
 });
 export type BuiltinApplication = z.infer<typeof builtinApplicationSchema>;
 export const applicationCatalogSchema = z.array(z.object({
@@ -25,6 +26,7 @@ export const applicationCatalogSchema = z.array(z.object({
   entry: z.object({ path: z.string(), renderer: z.string().optional(), home: z.string().optional() }),
   entryAccess: z.array(z.string()).min(1), scheduleAdapter: z.string().nullable(), releaseId: z.string().nullable(),
   panelUses: z.array(applicationPanelUseSchema).optional(),
+  framePanelId: z.string().min(1).optional(),
 }));
 export type CatalogApplication = z.infer<typeof applicationCatalogSchema>[number];
 

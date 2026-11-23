@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, inject, ref, type App } from "vue";
 import type { ManagerAuthFailureStatus, ManagerClient, ManagerCredential } from "../api";
-import { FUNCTION, METRIC_VIEW, OBJECT_TYPE } from "@ontomato/contracts/platform-object-types";
+import { FUNCTION, METRIC_VIEW, OBJECT_TYPE, TRIGGER, WORKFLOW } from "@ontomato/contracts/platform-object-types";
 import { managerNavigation, managerPaths } from "../navigation";
 import { countedTypesChangedKey, createManager, useManagerClient, useManagerContext, useManagerCounts, type ManagerTheme } from "../context";
 
@@ -16,6 +16,8 @@ beforeEach(() => {
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     requests.push({ url, headers: init.headers as Record<string, string> });
     if (url.endsWith("/product-assets/counts")) return new Response(JSON.stringify({ counts: { dashboard: 2, report: 1 } }), { status });
+    if (url.endsWith("/workflow/query")) return new Response(JSON.stringify({ success: true, data: [{ id: "wf-1" }, { id: "wf-2" }] }), { status });
+    if (url.endsWith("/trigger/queryList")) return new Response(JSON.stringify({ success: true, data: [{ id: "tr-1" }] }), { status });
     return new Response(JSON.stringify({ success: true, data: [] }), { status });
   });
 });
@@ -147,26 +149,48 @@ describe("the Manager installed in the page", () => {
     expect(requests.filter((r) => /\/(admin\/getMetas|metricView\/queryList|function\/queryList)$/.test(r.url))).toEqual([]);
   });
 
-  it("the menu's counts are read by the menu itself, so a page load that opens no Manager page still shows them", async () => {
+  it("the menu's counts are read lazily per row, so an unrendered or unauthorized row never sends a request", async () => {
     // A panel entry of the ontology manager opened directly: no Manager page mounts, only the menu reads its rows.
     const page = mountPage();
     const navigation = managerNavigation(page.counts());
     const products = navigation.pages.find((entry) => entry.count && entry.path === managerPaths.products)!;
+    const workflows = navigation.pages.find((entry) => entry.count && entry.path === managerPaths.workflows)!;
+    const triggers = navigation.pages.find((entry) => entry.count && entry.path === managerPaths.triggers)!;
     expect(products.count!()).toBeNull();
     await vi.waitFor(() => expect(products.count!()).toBe(3));
+    expect(requests.filter((r) => r.url.endsWith("/product-assets/counts"))).toHaveLength(1);
+    expect(requests.filter((r) => /\/(workflow\/query|trigger\/queryList)$/.test(r.url))).toEqual([]);
+
+    expect(workflows.count!()).toBeNull();
+    expect(triggers.count!()).toBeNull();
+    await vi.waitFor(() => {
+      expect(workflows.count!()).toBe(2);
+      expect(triggers.count!()).toBe(1);
+    });
     navigation.pages.forEach((entry) => entry.count?.());
     expect(requests.filter((r) => r.url.endsWith("/product-assets/counts"))).toHaveLength(1);
+    expect(requests.filter((r) => r.url.endsWith("/workflow/query"))).toHaveLength(1);
+    expect(requests.filter((r) => r.url.endsWith("/trigger/queryList"))).toHaveLength(1);
     // The panel entries' rows count themselves from their entries' declarations, not from this tally.
-    expect(navigation.pages.filter((entry) => entry.count).map((entry) => entry.path)).toEqual([managerPaths.products]);
+    expect(navigation.pages.filter((entry) => entry.count).map((entry) => entry.path)).toEqual([
+      managerPaths.workflows,
+      managerPaths.triggers,
+      managerPaths.products,
+    ]);
   });
 
-  it("reads no counts again for a page's write: the pages those writes change count themselves", async () => {
+  it("reads only started native workflow/trigger counts again when their object types change", async () => {
     const page = mountPage();
-    // A page is handed the counts' one entry for its writes, not the counts themselves. Object types, functions and
-    // metric views no longer move these counts: their entries count themselves, and the products count has no type.
-    page.countedTypesChanged()(["Customer", "platform:ScheduledTask", OBJECT_TYPE, FUNCTION, METRIC_VIEW]);
+    // Panel-counted types do not trigger native Manager reads, and unstarted native types are not read either.
+    page.countedTypesChanged()(["Customer", "platform:ScheduledTask", OBJECT_TYPE, FUNCTION, METRIC_VIEW, WORKFLOW, TRIGGER]);
     await new Promise((resolve) => setTimeout(resolve));
     expect(requests).toEqual([]);
+
+    page.counts().ensure("workflows");
+    await vi.waitFor(() => expect(page.counts().values.workflows).toBe(2));
+    page.countedTypesChanged()([WORKFLOW, TRIGGER]);
+    await vi.waitFor(() => expect(requests.filter((r) => r.url.endsWith("/workflow/query"))).toHaveLength(2));
+    expect(requests.filter((r) => r.url.endsWith("/trigger/queryList"))).toEqual([]);
   });
 
   it("reports a clear error when used in an app the Manager is not installed in", () => {

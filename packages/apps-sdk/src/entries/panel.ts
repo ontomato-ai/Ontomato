@@ -35,6 +35,7 @@ export {
   type UsePanelFormDraftOptions,
 } from "../panel/form-draft";
 export type { PageHeaderDraft, PageHeaderLabels } from "../base/page-header-types";
+export type { AppMenuGroup, AppMenuIcon, AppMenuItem } from "../base/app-menu-types";
 export { usePanelDetailHeader } from "../panel/detail-header";
 export type { PanelInstance } from "../panel/instance";
 export { applyPanelRequest } from "../panel/instance";

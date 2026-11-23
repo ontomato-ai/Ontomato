@@ -19,7 +19,7 @@ import { fieldAt, valueAt } from "./form-values";
 import { projectionElement } from "./projection-element";
 import type { PanelReadPort } from "./direct";
 import type { PanelText } from "./text";
-import type { PanelBackHandlerRegistration, PanelDetailHeader, PanelDetailHeaderAction, PlatformPageDraft } from "@ontomato/platform-shell";
+import type { AppMenuGroup, PanelBackHandlerRegistration, PanelDetailHeader, PanelDetailHeaderAction, PlatformPageDraft } from "@ontomato/platform-shell";
 
 export type { PanelBackHandlerRegistration, PanelDetailHeader, PanelDetailHeaderAction };
 
@@ -63,6 +63,8 @@ export interface PanelContext {
    */
   readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
   readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
+  /** Optional host-supplied menu groups for hybrid built-in applications mixing panel entries and native pages. */
+  readonly hostMenu?: ComputedRef<readonly AppMenuGroup[] | null>;
   /** The projection record a slot's declaration names, read now from its owner. */
   projection(id: string): Promise<ProductProjection>;
   /** Runs one operation of this instance here, with the reader's own credential and the call it is given. */

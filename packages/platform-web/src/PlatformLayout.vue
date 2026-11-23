@@ -6,10 +6,11 @@ import { Link } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 import {
-  AppPanelPages,
+  AppMenu,
   PlatformPageHeader,
   PlatformShell,
   useAppTheme,
+  type AppMenuGroup,
   type PlatformAccount,
   type PlatformBrand,
   type PlatformPageActions,
@@ -122,6 +123,13 @@ const browserWorkspace = computed(() => route.path === "/browser/data" || route.
  * layout"). The current row is the page the address shows: a screen of a page (a detail) marks that page.
  */
 const menu = computed(() => (activeApp.value?.frame === "menu" && !props.appFramed ? activeApp.value : null));
+const menuGroups = computed<readonly AppMenuGroup[]>(() =>
+  (menu.value?.groups ?? []).map((group) => ({
+    key: group.key,
+    ...(group.label ? { label: group.label } : {}),
+    items: group.pages,
+  })),
+);
 const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
 function selectMenuPage(path:string){
   const external=activeApp.value?.id==='ontology'&&!path.startsWith('/ontology/');
@@ -168,17 +176,15 @@ const headerLabels = computed(() => ({
       catalog arrives, after the page has been drawn; a page area per case would mount the page a second time then.
     -->
     <div ref="appBody" class="platform-app-body" :class="{ 'has-menu': menu !== null && !blocked }">
-      <aside v-if="menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
-        <h2 class="app-menu-title">{{ menu.label }}</h2>
-        <select class="mobile-page-select" :aria-label="labels.pages" :value="activePageId" @change="selectMenuPage(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in menu.groups??[]" :key="group.key" :label="group.label||menu.label"><option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">{{page.label}}</option></optgroup><option v-if="menu.foot" :value="menu.foot.id">{{menu.foot.label}}</option></select>
-        <AppPanelPages
-          class="app-menu-pages"
-          :groups="menu.groups ?? []"
-          :foot="menu.foot"
-          :active-page-id="activePageId"
-          @select-page="selectMenuPage"
-        />
-      </aside>
+      <AppMenu
+        v-if="menu && !blocked"
+        :title="menu.label"
+        :groups="menuGroups"
+        :foot="menu.foot ?? null"
+        :active-id="activePageId"
+        :aria-label="labels.pages"
+        @select="selectMenuPage"
+      />
       <div class="platform-app-page">
         <PlatformPageHeader
           v-if="headerShown"
@@ -247,41 +253,6 @@ const headerLabels = computed(() => ({
   flex: 1;
   min-height: 0;
 }
-/* An application with a menu of its own: the menu in its band, the page on the application's surface. */
-.platform-app-menu {
-  display: flex;
-  flex-direction: column;
-  flex: 0 0 var(--shell-app-column);
-  width: var(--shell-app-column);
-  box-sizing: border-box;
-  padding: 14px 10px 12px;
-  background: var(--shell-panel-bg);
-  border-right: 1px solid var(--el-border-color);
-  overflow: hidden;
-  min-height: 0;
-}
-/* The groups fill the column, so the application's own entry sits at its foot. */
-/*
- * The pages' list fills the room the title leaves, so the foot sits at the bottom of the column. The list draws itself at
- * least as tall as its parent; under the title that is one title too tall and pushes the foot out of view.
- */
-.platform-app-menu > .app-menu-pages {
-  flex: 1 1 0;
-  min-height: 0;
-  height: auto;
-}
-.app-menu-title {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  min-height: 36px;
-  margin: 0;
-  padding: 0 10px;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  line-height: var(--leading-lg);
-}
 .platform-app-page {
   display: flex;
   flex-direction: column;
@@ -297,14 +268,8 @@ const headerLabels = computed(() => ({
   color: var(--el-text-color-secondary);
   font-size: var(--text-base);
 }
-.mobile-page-select{display:none}
 @media(max-width:600px){
   .platform-app-body.has-menu{flex-direction:column;min-width:0}
-  .platform-app-menu{flex:0 0 auto;width:100%;padding:var(--spacing-sm) var(--page-gutter);border-right:0;border-bottom:1px solid var(--el-border-color);flex-direction:row;align-items:center;gap:var(--spacing-md)}
-  .app-menu-title{min-height:28px;font-size:var(--text-sm);padding-inline:var(--spacing-sm)}
-  .platform-app-menu>.app-menu-pages{display:none}
-  .app-menu-title{padding:0;white-space:nowrap}
-  .mobile-page-select{display:block;flex:1;min-width:0;max-width:100%;height:var(--control-height);padding:var(--spacing-xs) var(--spacing-sm);border:1px solid var(--el-border-color);border-radius:var(--radius-sm);background:var(--el-bg-color);color:var(--el-text-color-primary);font:inherit;font-size:var(--text-sm)}
   .platform-app-page{flex:1;overflow:hidden}
 }
 </style>

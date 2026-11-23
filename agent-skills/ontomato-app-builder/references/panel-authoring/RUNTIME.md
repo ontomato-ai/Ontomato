@@ -185,6 +185,40 @@ interface PageHeaderDraft {
 }
 ```
 
+### AppMenuGroup
+
+A group of entries in an application menu column; omit `label` for an untitled section.
+
+```ts
+interface AppMenuGroup {
+  /** Stable group key. */
+  key: string;
+  /** Optional section heading shown above the group's entries. */
+  label?: string;
+  /** Entries in display order. */
+  items: readonly AppMenuItem[];
+}
+```
+
+### AppMenuItem
+
+One entry in an application menu column.
+
+```ts
+interface AppMenuItem {
+  /** Stable identifier of the entry (typically its route path). */
+  id: string;
+  /** Localized display label shown on the row. */
+  label: string;
+  /** Optional icon key from the platform's curated icon set or a Vue icon component. */
+  icon?: AppMenuIcon;
+  /** Optional directory count shown right-aligned; null or undefined hides the badge. */
+  count?: number | null;
+  /** When set, renders the row disabled with this tooltip hint instead of clickable. */
+  unavailableHint?: string;
+}
+```
+
 ### PanelFormHandle
 
 What one form holds, as the projections that edit one of its fields read and write it (`formField`): the owner's

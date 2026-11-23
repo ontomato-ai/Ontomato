@@ -5,6 +5,7 @@ export const baseComponents = {
   ObjectSummary: () => import("./base/ObjectSummary.vue").then(module => module.default),
   ObjectHeader: () => import("./base/ObjectHeader.vue").then(module => module.default),
   PageHeader: () => import("./base/PageHeader.vue").then(module => module.default),
+  AppMenu: () => import("./base/AppMenu.vue").then(module => module.default),
   ObjectForm: () => import("./base/ObjectForm.vue").then(module => module.default),
   OperationButton: () => import("./base/OperationButton.vue").then(module => module.default),
   FileUploadControl: () => import("./base/FileUploadControl.vue").then(module => module.default),

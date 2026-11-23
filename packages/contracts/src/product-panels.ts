@@ -524,6 +524,8 @@ export type ProductProjectionSummary = z.infer<typeof productProjectionSummarySc
 
 const productCataloguePageSchema = z.object({
   nextCursor: productCatalogCursorSchema.nullable(),
+  /** Total visible items matching the query filters, ignoring pagination cursor and page limit. */
+  total: z.number().int().nonnegative().optional(),
 }).strict();
 export const productPanelListResponseSchema = productCataloguePageSchema.extend({
   items: z.array(productPanelSummarySchema),

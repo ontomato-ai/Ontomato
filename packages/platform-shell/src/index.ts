@@ -5,6 +5,7 @@ import "./page.css";
 export { default as PlatformShell } from "./PlatformShell.vue";
 export { default as PlatformRail } from "./PlatformRail.vue";
 export { default as PlatformAccountMenu } from "./PlatformAccountMenu.vue";
+export { default as AppMenu } from "./AppMenu.vue";
 export { default as AppPanelPages } from "./AppPanelPages.vue";
 export { default as PanelHost } from "./PanelHost.vue";
 export { default as PlatformPageHeader } from "./PlatformPageHeader.vue";
@@ -85,6 +86,9 @@ export {
   type UnsavedChangesCheck,
 } from "./unsaved-changes";
 export type {
+  AppMenuGroup,
+  AppMenuIcon,
+  AppMenuItem,
   PlatformAccount,
   PlatformApp,
   PlatformBrand,
