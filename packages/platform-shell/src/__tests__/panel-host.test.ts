@@ -390,9 +390,12 @@ describe("the panel host", () => {
 
   it("shows the state its address names", () => {
     const state = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" }, search: "overdue" };
+    // Non-deepLink fields (`search`) are omitted from the URL when encoding with the manifest.
     const encoded = panelAddress("/a/schedules", state, panelP);
-    expect(encoded).toBe("/a/schedules?selectedTask=task-1&search=overdue");
-    expect(panelAddressState(encoded, panelP)).toEqual(state);
+    expect(encoded).toBe("/a/schedules?selectedTask=task-1");
+    expect(panelAddressState(encoded, panelP)).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" },
+    });
     expect(panelAddressState(panelAddress("/a/schedules", { selectedTask: null }, panelP), panelP)).toEqual({});
     expect(panelAddressState("/a/schedules?state=not-json", panelP)).toEqual({});
     expect(panelAddressState("/a/schedules?unknown=1", panelP)).toEqual({});
