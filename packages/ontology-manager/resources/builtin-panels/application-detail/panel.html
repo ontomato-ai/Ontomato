@@ -42,6 +42,12 @@
   .apps-tabs {
     margin-bottom: calc(var(--spacing-sm) * -1);
   }
+  .apps-tab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    min-width: 0;
+  }
 
   /* Two-column basics layout matching two-entry-catalog-detail */
   .apps-basics-grid {
@@ -239,7 +245,7 @@
       </sdk-tabs>
 
       <!-- Tab 1: Basics (Identity form + standalone toggle + copyable externalLink summary) -->
-      <template v-if="tabModel === 'identity'">
+      <div v-show="tabModel === 'identity'" class="apps-tab-panel" data-tab="identity">
         <div v-if="canMaintain" class="apps-basics-grid">
           <section class="apps-card">
             <h2 class="apps-card-title">{{ t('detail.identityTitle') }}</h2>
@@ -256,10 +262,10 @@
           <h2 class="apps-card-title">{{ t('detail.readonlyTitle') }}</h2>
           <projection slot="summary" @navigate="onNavigateReference"></projection>
         </section>
-      </template>
+      </div>
 
       <!-- Tab 2: Entries -->
-      <template v-else-if="tabModel === 'entries'">
+      <div v-show="tabModel === 'entries'" class="apps-tab-panel" data-tab="entries">
         <div v-if="entryTotal !== null || canEditEntries" class="apps-table-bar">
           <span class="apps-muted">{{ entryTotal !== null ? t('entries.count', { count: entryTotal }) : '' }}</span>
           <div v-if="canEditEntries" class="apps-table-bar-actions">
@@ -290,10 +296,10 @@
           @navigate="onNavigateReference"
           @row-action="onEntryRowAction"
         ></projection>
-      </template>
+      </div>
 
       <!-- Tab 3: Panels & Projections -->
-      <template v-else-if="tabModel === 'assets'">
+      <div v-show="tabModel === 'assets'" class="apps-tab-panel" data-tab="assets">
         <div class="apps-assets-grid">
           <section class="apps-card">
             <h2 class="apps-card-title">
@@ -324,10 +330,10 @@
             ></projection>
           </section>
         </div>
-      </template>
+      </div>
 
       <!-- Tab 4: Permissions & Sharing -->
-      <template v-else-if="tabModel === 'grants' && canGrant">
+      <div v-if="canGrant" v-show="tabModel === 'grants'" class="apps-tab-panel" data-tab="grants">
         <div class="apps-share-bar">
           <div class="apps-share-left">
             <strong class="apps-card-title">{{ t('grants.shareTitle') }}</strong>
@@ -341,7 +347,7 @@
         </div>
 
         <projection slot="grantsList"></projection>
-      </template>
+      </div>
     </div>
 
     <!-- Single-entry official ObjectForm dialog -->
@@ -365,13 +371,14 @@
 
     <!-- Add Grant dialog using official ReferencePicker & bound OperationButton -->
     <sdk-dialog
+      v-if="canGrant"
       v-model="grantDialogOpen"
       :title="t('grants.dialogTitle')"
       width="480px"
       append-to-body
       destroy-on-close
     >
-      <sdk-form label-position="top">
+      <sdk-form v-if="canGrant && grantDialogOpen" label-position="top">
         <sdk-form-item :label="t('grants.kind')">
           <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
         </sdk-form-item>
@@ -387,7 +394,7 @@
         </sdk-form-item>
       </sdk-form>
       <template #footer>
-        <div class="apps-dialog-footer">
+        <div v-if="canGrant && grantDialogOpen" class="apps-dialog-footer">
           <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
           <projection slot="grantSubmit" :disabled="!grantPrincipalId" @done="onGrantAdded"></projection>
         </div>
