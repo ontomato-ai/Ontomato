@@ -180,6 +180,9 @@ describe("Item 1.2 & 1.6: Batch expectedCheckedKeys verification and full-auto p
     state: {
       checked: {
         type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } },
+        personal: false,
+        deepLink: false,
+        external: false,
         default: [
           { className: SCHEDULED_TASK, primaryKey: "t-1" },
           { className: SCHEDULED_TASK, primaryKey: "t-2" },
@@ -400,6 +403,9 @@ describe("Item 1.3, 1.4 & 1.6: Mixed-type list composite rowKey and row confirma
       state: {
         app: {
           type: { kind: "object", objectType: APPLICATION },
+          personal: false,
+          deepLink: false,
+          external: false,
           default: { className: APPLICATION, primaryKey: "app-A" },
         },
       },
@@ -523,10 +529,16 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
     state: {
       task: {
         type: { kind: "object", objectType: SCHEDULED_TASK },
+        personal: false,
+        deepLink: false,
+        external: false,
         default: { className: SCHEDULED_TASK, primaryKey: "t-1" },
       },
       parentScope: {
         type: { kind: "scalar", type: "string" },
+        personal: false,
+        deepLink: false,
+        external: false,
         default: "Scope-A",
       },
     },
@@ -746,6 +758,9 @@ describe("Item 1.1 & 1.4: Nested panel expectedMemberInstanceId and disposal inv
       state: {
         task: {
           type: { kind: "object", objectType: SCHEDULED_TASK },
+          personal: false,
+          deepLink: false,
+          external: false,
           default: { className: SCHEDULED_TASK, primaryKey: "t-1" },
         },
       },
