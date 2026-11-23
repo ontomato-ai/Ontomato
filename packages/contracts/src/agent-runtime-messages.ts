@@ -253,6 +253,8 @@ export type RuntimeToolDeclaration = z.infer<
 >;
 export type RuntimeUsage = z.infer<typeof runtimeUsageSchema>;
 export type RuntimeUsageCount = z.infer<typeof runtimeUsageCountSchema>;
+export type RuntimeToolCall = z.infer<typeof runtimeToolCallSchema>;
+export type RuntimeToolResultMessage = z.infer<typeof runtimeToolResultMessageSchema>;
 export type RuntimeAssistantMessage = z.infer<
   typeof runtimeAssistantMessageSchema
 >;

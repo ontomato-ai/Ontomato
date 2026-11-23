@@ -1,9 +1,15 @@
 import type { Readable, Writable } from "node:stream";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
-import type { RuntimeMessage, RuntimeToolDeclaration } from "@ontomato/contracts/agent-runtime-messages";
+import type {
+  RuntimeAssistantMessage,
+  RuntimeAssistantStreamEvent,
+  RuntimeMessage,
+  RuntimeToolCall,
+  RuntimeToolDeclaration,
+  RuntimeToolResultMessage,
+} from "@ontomato/contracts/agent-runtime-messages";
 import type {
   RuntimeAgentEvent,
-  RuntimeToolOutcome,
   RuntimeToolResult,
   RuntimeUsageUpdate,
 } from "@ontomato/contracts/agent-runtime-events";
@@ -184,7 +190,11 @@ export interface HarnessTurnInput {
 export interface HarnessTurnHost {
   /** Report one event of this turn, in the order it happened. Awaited: later events must not overtake it. */
   emit(event: HarnessEvent): Promise<void>;
-  /** Run a platform tool. The runtime checks the current definition and permissions before it runs. */
+  /**
+   * Run a platform tool. The runtime checks the current definition and permissions before it runs. It
+   * rejects when the call ends without a result (the turn was interrupted); the engine then returns the call
+   * in `unsettledToolCalls` and reports no `tool_execution_end` for it.
+   */
   invokeTool(call: HarnessToolCall): Promise<HarnessToolCallResult>;
   /**
    * Report that the engine has put this input into its model context, at the position where that happened.
@@ -213,55 +223,90 @@ export interface HarnessToolResult {
 }
 export interface HarnessToolCallResult {
   readonly result: HarnessToolResult;
-  readonly outcome: RuntimeToolOutcome;
+  readonly isError: boolean;
 }
 
 export interface HarnessTurnResult {
   readonly stopReason: RuntimeStopReason;
   readonly errorMessage: string | null;
   /**
-   * Tool calls this turn dispatched and did not get a result for. The runtime settles them once as
-   * `unknown`, so a call's platform record is never split or doubled and is never replayed automatically.
+   * Tool calls this turn started (`tool_execution_start` was reported) and got no result for; they get no
+   * `tool_execution_end` from the engine. The runtime settles each once as `unknown`, from the start it
+   * recorded, so a call is never ended twice and is never replayed automatically. An engine that marks such a
+   * call failed itself (Codex on interrupt) still lists it here: the external effect is not known.
    */
   readonly unsettledToolCalls: readonly HarnessUnsettledToolCall[];
 }
-export type HarnessUnsettledToolCall = Omit<PublicEvent<"tool_execution_start">, "type">;
+export interface HarnessUnsettledToolCall {
+  readonly toolCallId: string;
+}
 
 export type HarnessSteerResult =
   | { readonly accepted: true }
   | { readonly accepted: false; readonly reason: string };
 
+/**
+ * A streamed change to an assistant message, in PI's `AssistantMessageEvent` shape as `pi --mode rpc` sends it:
+ * without PI's in-process `partial`, and with the values a reader needs to build the message from the changes
+ * alone (block end values, the tool call's id and name at its start, the complete call at its end). The
+ * runtime keeps the pending message from these and publishes the public delta, which carries fewer fields.
+ */
+export type HarnessAssistantMessageEvent =
+  | Exclude<RuntimeAssistantStreamEvent, { type: "text_end" | "thinking_end" | "toolcall_start" | "toolcall_end" }>
+  | (Delta<"text_end"> & { readonly content: string })
+  | (Delta<"thinking_end"> & { readonly content: string })
+  | (Delta<"toolcall_start"> & { readonly id: string; readonly toolName: string })
+  | (Delta<"toolcall_end"> & { readonly toolCall: RuntimeToolCall });
+type Delta<T extends RuntimeAssistantStreamEvent["type"]> = Extract<RuntimeAssistantStreamEvent, { type: T }>;
+
+/**
+ * A message an engine may report: its own assistant messages and the tool results in its context. Platform
+ * inputs are reported through `host.consumed`, never as new messages; notifications and runtime-authored
+ * messages are the runtime's. A tool result's `details` come from the same call's `tool_execution_end` and
+ * the artifacts the runtime registered for it.
+ */
+export type HarnessMessage = Omit<RuntimeAssistantMessage, "origin"> | Omit<RuntimeToolResultMessage, "details">;
+
 type PublicEvent<T extends RuntimeAgentEvent["type"]> = Extract<RuntimeAgentEvent, { type: T }>;
-type Native<E, PlatformFields extends keyof E> = Omit<E, PlatformFields> & { readonly nativeId: string };
 
 /**
  * The event face: what an engine may report, and all it may report. It is the public event contract, which is
  * PI's agent events, minus what only the runtime knows; the runtime adds those and gives every event its
- * sequence number and cursor. A PI plugin forwards PI's events nearly as they are; any other engine
+ * sequence number and cursor. A PI plugin forwards PI's RPC events nearly as they are; any other engine
  * translates into PI's shapes.
  *
  * Where it differs from the public events, and why:
- * - Messages are named by the engine's own item id (`nativeId`): an engine never invents a platform id. The
- *   runtime allocates `messageId` on `message_start` and the session sequence numbers on `message_end`.
- * - `message_update` keeps PI's partial `message`, the snapshot a reader may take at that point; the public
- *   event carries only the delta.
- * - A tool result has no artifact ids, and its `outcome` replaces `isError`, which the runtime derives
- *   (anything but `success` is an error to the model).
- * - Usage names its message by `nativeId`, null when it cannot be attributed to one; a `run_detail` with
- *   `message` scope names its message in `ref` by `nativeId` too. The runtime replaces both with `messageId`.
- * - `agent_start`, `agent_end`, `turn_start`, `turn_end`, `input_received`, `artifact_registered` and
- *   `pending_questions_changed` are the runtime's and are absent here.
+ * - `nativeId` is the plugin's stable key for a message within the run: the engine's item id where it has
+ *   one (Codex), otherwise one the plugin assigns at `message_start` (PI sends none). An engine never invents
+ *   a platform id; the runtime allocates `messageId` on `message_start` and the session sequence numbers on
+ *   `message_end`.
+ * - `message_update` carries the fuller change above and no snapshot; the runtime keeps the snapshot.
+ * - Messages are limited to `HarnessMessage`.
+ * - Turns are logical steps (one model call and the tools it asked for); the engine reports where they start
+ *   and end, the runtime numbers them and fills `turn_end` with the step's settled messages. The run's own
+ *   `agent_start` and `agent_end` are the runtime's.
+ * - A tool call is ended only with a result the engine has, so `isError` is PI's; a call without a result goes
+ *   to `unsettledToolCalls` and the runtime publishes its `unknown` end. The result has no artifact ids.
+ * - Usage that comes on an assistant message travels with that message and is not reported again.
+ *   `usage_updated` is only for a report that arrives on its own (Codex's token-usage notice); it names its
+ *   message by `nativeId` when it can be attributed to one, otherwise null.
+ * - A `run_detail` with `message` scope names its message in `ref` by `nativeId`; the runtime replaces it with
+ *   `messageId` before it validates the detail against the public contract. A `tool` ref is the `toolCallId`.
+ * - `input_received`, `artifact_registered` and `pending_questions_changed` are the runtime's.
  */
 export type HarnessEvent =
-  | Native<PublicEvent<"message_start">, "messageId">
-  | Native<PublicEvent<"message_update">, "messageId"> & { readonly message: RuntimeMessage }
-  | Native<PublicEvent<"message_end">, "messageId" | "messageSeq" | "contextSeq">
+  | { readonly type: "turn_start" }
+  | { readonly type: "turn_end" }
+  | { readonly type: "message_start"; readonly nativeId: string; readonly message: HarnessMessage }
+  | {
+      readonly type: "message_update";
+      readonly nativeId: string;
+      readonly assistantMessageEvent: HarnessAssistantMessageEvent;
+    }
+  | { readonly type: "message_end"; readonly nativeId: string; readonly message: HarnessMessage }
   | PublicEvent<"tool_execution_start">
   | PublicEvent<"tool_execution_update">
-  | Omit<PublicEvent<"tool_execution_end">, "result" | "isError" | "outcome"> & {
-      readonly result: HarnessToolResult;
-      readonly outcome: RuntimeToolOutcome;
-    }
+  | (Omit<PublicEvent<"tool_execution_end">, "result" | "outcome"> & { readonly result: HarnessToolResult })
   | PublicEvent<"run_detail">
   | {
       readonly type: "usage_updated";
