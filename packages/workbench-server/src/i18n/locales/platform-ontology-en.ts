@@ -149,6 +149,8 @@ export const platformOntologyEn = {
   "panels.platformOntology.countReason": "Reason",
   "panels.platformOntology.definition": "Definition",
   "panels.platformOntology.rules": "Creation and use rules",
+  "panels.platformOntology.noDefinition": "This type registers no one-line definition.",
+  "panels.platformOntology.noRules": "This type declares no creation or use rule.",
   "panels.platformOntology.directoryPath": "Instance directory",
   "panels.platformOntology.dirComponents": "Components",
   "panels.platformOntology.dirProjections": "Projections",

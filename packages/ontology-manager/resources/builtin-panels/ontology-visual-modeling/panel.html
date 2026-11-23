@@ -43,7 +43,7 @@
   .vm-canvas {
     flex: 1 1 auto;
     min-width: 0;
-    min-height: 20rem;
+    min-height: 0;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -63,6 +63,10 @@
     grid-template-columns: 100%;
     overflow: hidden;
   }
+  /* Let the graph fill short or stacked containers without clipping its bottom toolbar. */
+  .vm-canvas > [data-member] .sdk-object-graph-canvas {
+    min-height: 0;
+  }
   .vm-side {
     flex: 0 0 24rem;
     width: 24rem;
@@ -77,6 +81,10 @@
     background: var(--sdk-bg-color);
     padding: var(--spacing-md);
     overflow-y: auto;
+  }
+  .vm-side > *,
+  .vm-side-section > * {
+    flex: 0 0 auto;
   }
   .vm-side-header {
     display: flex;
@@ -110,19 +118,24 @@
     font-weight: var(--font-semibold);
     color: var(--sdk-text-color-secondary);
   }
+  .vm-side .sdk-panel-member,
   .vm-side .sdk-owner-form,
   .vm-side .sdk-owner-form-inner,
+  .vm-dialog-body .sdk-panel-member,
   .vm-dialog-body .sdk-owner-form,
   .vm-dialog-body .sdk-owner-form-inner {
+    flex: 0 0 auto;
     height: auto;
   }
   .vm-side .sdk-owner-form-body,
   .vm-dialog-body .sdk-owner-form-body {
+    flex: 0 0 auto;
     overflow: visible;
   }
   .vm-attributes .sdk-panel-member,
   .vm-attributes .sdk-object-list,
   .vm-attributes .sdk-object-list-items {
+    flex: 0 0 auto;
     height: auto;
     overflow: visible;
   }
@@ -133,18 +146,16 @@
   }
 
   @container visual-modeling (max-width: 860px) {
-    .visual-modeling {
-      overflow-y: auto;
-    }
     .vm-body {
-      flex: 1 0 auto;
+      flex: 1 1 auto;
+      min-height: 0;
       flex-direction: column;
-      overflow: visible;
+      overflow-y: auto;
+      overflow-x: hidden;
     }
     .vm-canvas {
-      flex: 0 0 auto;
-      height: 24rem;
-      min-height: 20rem;
+      flex: 1 0 min(22rem, 100%);
+      min-height: min(22rem, 100%);
     }
     .vm-side {
       flex: 0 0 auto;

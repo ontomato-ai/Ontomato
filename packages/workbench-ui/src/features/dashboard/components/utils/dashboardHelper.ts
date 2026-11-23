@@ -86,7 +86,7 @@ export function patchChartTitle(groups, chartId, nextTitle) {
     if (!g || !Array.isArray(g.charts)) return g;
     return {
       ...g,
-      charts: g.charts.map((c) => (normalizeId(c?.id) === cid ? { ...c, title } : c)),
+      charts: g.charts.map((c) => (normalizeId(c?.id) === cid ? { ...c, name: title, title } : c)),
     };
   });
 }
@@ -189,8 +189,10 @@ export function createDashboardLoader() {
   /**
    * @param {string} id
    * @param {(updater: any) => void} setGroups  - React setState or a similar signature: setGroups(next) / setGroups(prev => next)
+   * @param {{ preserveOnError?: boolean; throwOnError?: boolean }} [options]
    */
-  async function loadDashboardById(id, setGroups) {
+  async function loadDashboardById(id, setGroups, options = {}) {
+    const { preserveOnError = false, throwOnError = false } = options;
     if (abortController) abortController.abort();
     abortController = new globalThis.AbortController();
     const signal = abortController.signal;
@@ -204,11 +206,17 @@ export function createDashboardLoader() {
       detail = await fetchDashboardLocalDetail(id, { signal });
     } catch (e) {
       if (isAbortError(e)) return;
-      // If you want to clear the UI: setGroups([]) also works
-      setGroups([]);
+      if (!preserveOnError) setGroups([]);
+      if (throwOnError) throw e;
       return;
     }
     if (!guard()) return;
+    if (!detail) {
+      const missingError = new Error(`Dashboard '${id}' could not be loaded.`);
+      if (!preserveOnError) setGroups([]);
+      if (throwOnError) throw missingError;
+      return;
+    }
 
     const localGroups = Array.isArray(detail?.groups) ? detail.groups : [];
 
@@ -224,6 +232,7 @@ export function createDashboardLoader() {
     } catch (e) {
       // taskPool itself may throw on abort depending on your implementation; fall back here
       if (isAbortError(e)) return;
+      if (throwOnError) throw e;
     }
   }
 

@@ -6,17 +6,35 @@ import {
 import type { FormFieldRejection } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 
+/** Message shown and returned when the formal saved board changed after a preview was created. */
+export const BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE =
+  "The dashboard has been modified since this preview was created. Please review the latest board and reapply or discard your preview.";
+
 /**
  * In-memory unsaved whole-board preview applied over the currently loaded dashboard.
  * Holds only validated pending edits; saved query results stay on the loaded cards.
  */
 export interface BoardPreviewState {
   version: number;
+  /** Structural fingerprint of the formal saved board when this preview was created. */
+  baselineFingerprint?: string;
   boardName?: string;
   groupRenames: Record<string, string>;
   chartRenames: Record<string, string>;
   metricRenames: Record<string, string>;
   layoutGroups?: DashboardReplaceLayout["groups"];
+}
+
+export interface ActiveBoardInlineEdits {
+  boardName?: boolean;
+  groupId?: string | null;
+  cardId?: string | null;
+}
+
+export interface BoardInlineEditConflict {
+  kind: "boardName" | "groupName" | "cardName";
+  id?: string;
+  label: string;
 }
 
 export interface BoardSavePlan {
@@ -69,13 +87,76 @@ function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+    return `{${Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value ?? null);
 }
 
 function sameJson(left: unknown, right: unknown): boolean {
   return canonicalJson(left) === canonicalJson(right);
+}
+
+function normalizeLayoutSnapshot(layout: { colSpan?: number; rowSpan?: number } | undefined) {
+  return {
+    colSpan: layout?.colSpan ?? null,
+    rowSpan: layout?.rowSpan ?? null,
+  };
+}
+
+function normalizeQuerySnapshot(query: unknown) {
+  if (!isPlainRecord(query)) return null;
+  return {
+    kind: query.kind ?? null,
+    metricId: query.metricId ?? null,
+    parameters: isPlainRecord(query.parameters) ? query.parameters : {},
+  };
+}
+
+/**
+ * Computes a deterministic structural fingerprint of the formal persisted dashboard state
+ * (ignoring transient card query output / loading render fields) so preview fills and saves
+ * can detect concurrent board modifications from any source.
+ */
+export function computeDashboardBoardFingerprint(
+  boardName: string,
+  groups: readonly RuntimeGroup[],
+): string {
+  const safeGroups: readonly RuntimeGroup[] = Array.isArray(groups) ? groups : [];
+  return canonicalJson({
+    boardName: String(boardName || "").trim(),
+    groups: safeGroups.map((group) => ({
+      id: String(group.id || "").trim(),
+      title: String(group.title || "").trim(),
+      charts: (group.charts ?? []).map((chart) => {
+        const runtimeTitle = (chart as Record<string, unknown>).title;
+        return {
+          id: String(chart.id || "").trim(),
+          name: String(chart.name || (typeof runtimeTitle === "string" ? runtimeTitle : "")).trim(),
+          layout: normalizeLayoutSnapshot(chart.layout),
+          chartFile: chart.chartFile
+            ? { name: chart.chartFile.name, content: chart.chartFile.content }
+            : null,
+          query: normalizeQuerySnapshot(chart.query),
+        };
+      }),
+      metrics: (group.metrics ?? []).map((metric) => ({
+        id: String(metric.id || "").trim(),
+        name: String(metric.name || "").trim(),
+        valueField: String(metric.valueField || ""),
+        unit: metric.unit ?? null,
+        formats: metric.formats ?? null,
+        sort: metric.sort ?? null,
+        displayLimit: metric.displayLimit ?? null,
+        style: metric.style ?? null,
+        layout: normalizeLayoutSnapshot(metric.layout),
+        query: normalizeQuerySnapshot(metric.query),
+      })),
+    })),
+  });
 }
 
 function buildBoardIndex(groups: readonly RuntimeGroup[]) {
@@ -367,19 +448,30 @@ export function parseBoardPreviewFill(
   savedGroups: readonly RuntimeGroup[],
   rawValues: Readonly<Record<string, RuntimeJsonValue>>,
   nextVersion: number,
+  savedBoardName?: string,
 ): ParseBoardPreviewResult {
   const index = buildBoardIndex(savedGroups);
+  const baselineFingerprint =
+    savedBoardName !== undefined ? computeDashboardBoardFingerprint(savedBoardName, savedGroups) : undefined;
   const normalized: Record<string, unknown> = {};
   for (const [rawKey, value] of Object.entries(rawValues)) {
     normalized[normalizeTopKey(rawKey)] = value;
   }
 
   if ("operation" in normalized) {
-    return parseOperationShape(dashboardId, normalized, index, nextVersion);
+    const result = parseOperationShape(dashboardId, normalized, index, nextVersion);
+    if (result.ok && baselineFingerprint !== undefined) {
+      return {
+        ...result,
+        preview: { ...result.preview, baselineFingerprint },
+      };
+    }
+    return result;
   }
 
   const preview: BoardPreviewState = {
     version: nextVersion,
+    ...(baselineFingerprint !== undefined ? { baselineFingerprint } : {}),
     groupRenames: {},
     chartRenames: {},
     metricRenames: {},
@@ -634,45 +726,103 @@ function changedMetricFields(
 /**
  * Merges a new agent board preview fill into an existing unsaved preview so consecutive
  * fills accumulate rather than rejecting or clobbering untouched fields.
+ *
+ * When `incoming.layoutGroups` repeats baseline saved names or chart files while the
+ * existing preview already renamed those groups/cards or replaced a chart file, the
+ * existing preview edits are preserved unless `incoming` explicitly sets a new value
+ * that differs from the saved baseline.
  */
 export function mergeBoardPreview(
   existing: BoardPreviewState | null,
   incoming: BoardPreviewState,
+  savedGroups?: readonly RuntimeGroup[],
 ): BoardPreviewState {
   if (!existing) return incoming;
+  const baselineFingerprint = existing.baselineFingerprint ?? incoming.baselineFingerprint;
   const boardName = incoming.boardName !== undefined ? incoming.boardName : existing.boardName;
 
   if (incoming.layoutGroups) {
+    const savedIndex = savedGroups ? buildBoardIndex(savedGroups) : null;
+    const prevGroups = new Map<string, DashboardReplaceLayout["groups"][number]>();
     const prevCharts = new Map<string, DashboardReplaceLayout["groups"][number]["charts"][number]>();
     const prevMetrics = new Map<string, DashboardReplaceLayout["groups"][number]["metrics"][number]>();
     if (existing.layoutGroups) {
       for (const group of existing.layoutGroups) {
+        prevGroups.set(group.id, group);
         for (const chart of group.charts) prevCharts.set(chart.id, chart);
         for (const metric of group.metrics) prevMetrics.set(metric.id, metric);
       }
     }
-    const mergedGroups: DashboardReplaceLayout["groups"] = incoming.layoutGroups.map((group) => ({
-      ...group,
-      title: incoming.groupRenames[group.id] ?? group.title,
-      charts: group.charts.map((chart) => {
-        const prev = prevCharts.get(chart.id);
-        const merged = prev ? { ...prev, ...chart } : { ...chart };
-        if (chart.name === undefined && existing.chartRenames[chart.id] !== undefined) {
-          merged.name = existing.chartRenames[chart.id];
-        }
-        return merged;
-      }),
-      metrics: group.metrics.map((metric) => {
-        const prev = prevMetrics.get(metric.id);
-        const merged = prev ? { ...prev, ...metric } : { ...metric };
-        if (metric.name === undefined && existing.metricRenames[metric.id] !== undefined) {
-          merged.name = existing.metricRenames[metric.id];
-        }
-        return merged;
-      }),
-    }));
+    const mergedGroups: DashboardReplaceLayout["groups"] = incoming.layoutGroups.map((group) => {
+      const savedGroup = savedIndex?.groupMap.get(group.id);
+      const prevGroup = prevGroups.get(group.id);
+      const existingGroupTitle =
+        existing.groupRenames[group.id]
+        ?? (prevGroup && (!savedGroup || prevGroup.title !== savedGroup.title) ? prevGroup.title : undefined);
+      let mergedTitle = incoming.groupRenames[group.id] ?? group.title;
+      if (
+        incoming.groupRenames[group.id] === undefined
+        && existingGroupTitle !== undefined
+        && savedGroup
+        && group.title === savedGroup.title
+      ) {
+        mergedTitle = existingGroupTitle;
+      }
+
+      return {
+        ...group,
+        title: mergedTitle,
+        charts: group.charts.map((chart) => {
+          const savedChart = savedIndex?.chartMap.get(chart.id);
+          const prev = prevCharts.get(chart.id);
+          const merged = prev ? { ...prev, ...chart } : { ...chart };
+
+          const existingChartName =
+            existing.chartRenames[chart.id]
+            ?? (prev?.name !== undefined && (!savedChart || prev.name !== savedChart.name) ? prev.name : undefined);
+          if (incoming.chartRenames[chart.id] !== undefined) {
+            merged.name = incoming.chartRenames[chart.id];
+          } else if (chart.name === undefined) {
+            if (existingChartName !== undefined) merged.name = existingChartName;
+          } else if (existingChartName !== undefined && savedChart && chart.name === savedChart.name) {
+            merged.name = existingChartName;
+          }
+
+          const existingChartFile =
+            prev?.chartFile !== undefined && (!savedChart || !sameJson(prev.chartFile, savedChart.chartFile))
+              ? prev.chartFile
+              : undefined;
+          if (chart.chartFile === undefined) {
+            if (existingChartFile !== undefined) merged.chartFile = existingChartFile;
+          } else if (existingChartFile !== undefined && savedChart && sameJson(chart.chartFile, savedChart.chartFile)) {
+            merged.chartFile = existingChartFile;
+          }
+
+          return merged;
+        }),
+        metrics: group.metrics.map((metric) => {
+          const savedMetric = savedIndex?.metricMap.get(metric.id);
+          const prev = prevMetrics.get(metric.id);
+          const merged = prev ? { ...prev, ...metric } : { ...metric };
+
+          const existingMetricName =
+            existing.metricRenames[metric.id]
+            ?? (prev?.name !== undefined && (!savedMetric || prev.name !== savedMetric.name) ? prev.name : undefined);
+          if (incoming.metricRenames[metric.id] !== undefined) {
+            merged.name = incoming.metricRenames[metric.id];
+          } else if (metric.name === undefined) {
+            if (existingMetricName !== undefined) merged.name = existingMetricName;
+          } else if (existingMetricName !== undefined && savedMetric && metric.name === savedMetric.name) {
+            merged.name = existingMetricName;
+          }
+
+          return merged;
+        }),
+      };
+    });
     return {
       version: incoming.version,
+      ...(baselineFingerprint !== undefined ? { baselineFingerprint } : {}),
       ...(boardName !== undefined ? { boardName } : {}),
       groupRenames: { ...incoming.groupRenames },
       chartRenames: { ...incoming.chartRenames },
@@ -683,12 +833,87 @@ export function mergeBoardPreview(
 
   return {
     version: incoming.version,
+    ...(baselineFingerprint !== undefined ? { baselineFingerprint } : {}),
     ...(boardName !== undefined ? { boardName } : {}),
     groupRenames: { ...existing.groupRenames, ...incoming.groupRenames },
     chartRenames: { ...existing.chartRenames, ...incoming.chartRenames },
     metricRenames: { ...existing.metricRenames, ...incoming.metricRenames },
     ...(existing.layoutGroups ? { layoutGroups: existing.layoutGroups } : {}),
   };
+}
+
+/**
+ * Checks whether an incoming whole-board preview fill targets any item that the user
+ * currently has open in an uncommitted inline rename edit.
+ */
+export function findBoardInlineEditConflicts(
+  savedBoardName: string,
+  savedGroups: readonly RuntimeGroup[],
+  incoming: BoardPreviewState,
+  activeEdits: ActiveBoardInlineEdits,
+): BoardInlineEditConflict[] {
+  const conflicts: BoardInlineEditConflict[] = [];
+  const index = buildBoardIndex(savedGroups);
+
+  if (activeEdits.boardName && incoming.boardName !== undefined) {
+    conflicts.push({
+      kind: "boardName",
+      label: savedBoardName ? `dashboard name ("${savedBoardName}")` : "dashboard name",
+    });
+  }
+
+  const editingGroupId = activeEdits.groupId ? String(activeEdits.groupId).trim() : "";
+  if (editingGroupId) {
+    const savedGroup = index.groupMap.get(editingGroupId);
+    let touchesGroup = editingGroupId in incoming.groupRenames;
+    if (!touchesGroup && incoming.layoutGroups) {
+      const layoutGroup = incoming.layoutGroups.find((entry) => entry.id === editingGroupId);
+      if (!layoutGroup) {
+        touchesGroup = true;
+      } else if (savedGroup && layoutGroup.title !== savedGroup.title) {
+        touchesGroup = true;
+      }
+    }
+    if (touchesGroup) {
+      conflicts.push({
+        kind: "groupName",
+        id: editingGroupId,
+        label: `group "${savedGroup?.title || editingGroupId}" name`,
+      });
+    }
+  }
+
+  const editingCardId = activeEdits.cardId ? String(activeEdits.cardId).trim() : "";
+  if (editingCardId) {
+    const savedChart = index.chartMap.get(editingCardId);
+    const savedMetric = index.metricMap.get(editingCardId);
+    const savedCardName = savedChart?.name || savedMetric?.name || editingCardId;
+    let touchesCard = editingCardId in incoming.chartRenames || editingCardId in incoming.metricRenames;
+    if (!touchesCard && incoming.layoutGroups) {
+      let foundChart: DashboardReplaceLayout["groups"][number]["charts"][number] | undefined;
+      let foundMetric: DashboardReplaceLayout["groups"][number]["metrics"][number] | undefined;
+      for (const group of incoming.layoutGroups) {
+        if (!foundChart) foundChart = group.charts.find((entry) => entry.id === editingCardId);
+        if (!foundMetric) foundMetric = group.metrics.find((entry) => entry.id === editingCardId);
+      }
+      if (!foundChart && !foundMetric) {
+        touchesCard = true;
+      } else if (foundChart && foundChart.name !== undefined && (!savedChart || foundChart.name !== savedChart.name)) {
+        touchesCard = true;
+      } else if (foundMetric && foundMetric.name !== undefined && (!savedMetric || foundMetric.name !== savedMetric.name)) {
+        touchesCard = true;
+      }
+    }
+    if (touchesCard) {
+      conflicts.push({
+        kind: "cardName",
+        id: editingCardId,
+        label: `card "${savedCardName}" name`,
+      });
+    }
+  }
+
+  return conflicts;
 }
 
 /** True when a preview state still holds at least one pending change. */
@@ -977,6 +1202,7 @@ export function buildBoardSavePlan(
 /** Stable canonical snapshot of a board preview for stale-confirmation checks. */
 export function canonicalBoardPreviewSnapshot(preview: BoardPreviewState): string {
   return canonicalJson({
+    baselineFingerprint: preview.baselineFingerprint ?? null,
     boardName: preview.boardName ?? null,
     groupRenames: preview.groupRenames,
     chartRenames: preview.chartRenames,

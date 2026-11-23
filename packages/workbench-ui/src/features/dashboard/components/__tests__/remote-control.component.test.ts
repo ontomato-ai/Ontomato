@@ -9,6 +9,8 @@ import { FormFields } from "@ontomato/foundation-ui/form";
 import DashboardHome from "../DashboardHome.vue";
 import ChartCard from "../ChartCard.vue";
 import DropdownMenu from "../DropdownMenu.vue";
+import { BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE } from "../../board-preview";
+import { useDashboardStore } from "../../stores/dashboard";
 import { workbenchI18n } from "../../../../i18n";
 
 const api = vi.hoisted(() => ({
@@ -506,9 +508,15 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
     });
     await flushPromises();
 
-    // blocksNavigation blocks switching to another board (by address or state), but allows switching cardId on the same board.
+    // blocksNavigation blocks switching to another board (by address or state) AND bare /dashboards without dashboardId,
+    // while allowing same-board navigation or a bare cardId-only state patch.
     expect(controller.blocksNavigation?.({ address: "/dashboards?dashboardId=d2" })).toBe(true);
     expect(controller.blocksNavigation?.({ address: "/dashboards", state: { dashboardId: "d2" } })).toBe(true);
+    expect(controller.blocksNavigation?.({ address: "/dashboards" })).toBe(true);
+    expect(controller.blocksNavigation?.({ address: "/dashboards", state: {} })).toBe(true);
+    expect(controller.blocksNavigation?.({ address: "/dashboards?cardId=n1" })).toBe(true);
+    expect(controller.blocksNavigation?.({ address: "/dashboards", state: { dashboardId: "" } })).toBe(true);
+    expect(controller.blocksNavigation?.({ address: "/dashboards?dashboardId=d1" })).toBe(false);
     expect(controller.blocksNavigation?.({ address: "/dashboards?dashboardId=d1&cardId=n1" })).toBe(false);
     expect(controller.blocksNavigation?.({ address: "/dashboards", state: { cardId: "n1" } })).toBe(false);
 
@@ -641,12 +649,13 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
     expect(wrapper.find(".board-preview-bar__failure").text()).toContain("Group write failed");
     wrapper.unmount();
 
-    // 2. All writes succeed, only final reload fails -> clears preview and reports saved success (never save failure).
+    // 2. All writes succeed, only final reload fails -> clears preview, preserves rendered board, and reports reloadFailed: true.
     api.failGroupRenameMessage = null;
     api.confirmMode = { autoMode: true, nextSeq: 1 };
     api.detailReads = 0;
     const second = await mountDashboardHome();
-    api.failDetailAfterReads = api.detailReads; // Next detail read (the post-save reload) throws!
+    // Allow the pre-save freshness check (+1 read), then fail the first post-save reload detail read.
+    api.failDetailAfterReads = api.detailReads + 1;
 
     await second.controller.fillForm!({
       member: "board",
@@ -667,6 +676,8 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
     });
     expect(second.wrapper.find(".board-preview-bar").exists()).toBe(false);
     expect(second.dirtyEvents.at(-1)).toBe(false);
+    expect(second.wrapper.findAll(".chart-container")).toHaveLength(1);
+    expect(second.wrapper.findAll(".metric-container")).toHaveLength(1);
     second.wrapper.unmount();
 
     // 3. Target card deleted before approval -> isStillValid() and dispatch() reject as stale with zero writes.
@@ -693,5 +704,310 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
     expect(staleResult).toMatchObject({ ok: false, reason: "stale" });
     expect(api.renameChart).toEqual([]);
     third.wrapper.unmount();
+  });
+
+  it("rejects preview save (manual, auto, confirmed) and follow-up fills with zero writes when the formal board changed after preview creation", async () => {
+    const { wrapper, controller } = await mountDashboardHome();
+
+    // 1. Create a whole-board preview from the initial formal board.
+    const initialFill = await controller.fillForm!({
+      member: "board",
+      values: {
+        name: "Q4 Sales",
+        groups: [
+          {
+            id: "g1",
+            title: "Q4 Overview",
+            charts: [{ id: "c1", name: "Revenue Trend", chartFile: lineChartFile }],
+            metrics: [{ id: "n1", name: "Q4 Total" }],
+          },
+        ],
+      },
+    });
+    await flushPromises();
+    expect(initialFill).toEqual({ ok: true, member: "board", filledFields: ["name", "groups"] });
+
+    // Prepare a confirmation while the board is still fresh.
+    const pendingConfirm = await controller.executeAction!({ operation: "board.save", agentRun });
+    if (!pendingConfirm.ok || pendingConfirm.kind !== "awaiting_confirmation") {
+      throw new Error("Expected awaiting_confirmation");
+    }
+
+    // 2. Simulate external server mutation (e.g., conversation artifact "Add to dashboard" or another tab added a new card).
+    const mutatedBoard = structuredClone(board);
+    mutatedBoard.groups[0]!.charts.push({
+      id: "c-added-by-artifact",
+      name: "Added From Chat",
+      query: { kind: "metric", metricId: "m-9", parameters: {} },
+      chartFile: savedChartFile,
+      layout: { colSpan: 12, rowSpan: 1 },
+    });
+    api.boardOverride = mutatedBoard;
+
+    // 2a. Manual click on banner Save -> rejected, zero writes, preview preserved with clear stale message.
+    const saveBtn = wrapper.findAll(".board-preview-bar__actions button")[1]!;
+    await saveBtn.trigger("click");
+    await flushPromises();
+    expect(api.renameBoard).toEqual([]);
+    expect(api.layouts).toEqual([]);
+    expect(wrapper.find(".board-preview-bar").exists()).toBe(true);
+    expect(wrapper.find(".board-preview-bar__failure").text()).toContain(BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE);
+
+    // 2b. Confirmed dispatch -> rejected as stale with zero writes, preview preserved.
+    const confirmedResult = await pendingConfirm.confirmation.dispatch();
+    await flushPromises();
+    expect(confirmedResult).toMatchObject({
+      ok: false,
+      reason: "stale",
+      message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE,
+    });
+    expect(api.renameBoard).toEqual([]);
+    expect(api.layouts).toEqual([]);
+    expect(wrapper.find(".board-preview-bar").exists()).toBe(true);
+
+    // 2c. Auto-mode save -> rejected as stale with zero writes, preview preserved.
+    api.confirmMode = { autoMode: true, nextSeq: 10 };
+    const autoResult = await controller.executeAction!({ operation: "board.save", agentRun });
+    await flushPromises();
+    expect(autoResult).toMatchObject({
+      ok: false,
+      reason: "stale",
+      operation: "board.save",
+      message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE,
+    });
+    expect(api.renameBoard).toEqual([]);
+    expect(api.layouts).toEqual([]);
+    expect(wrapper.find(".board-preview-bar").exists()).toBe(true);
+
+    // 2d. Follow-up append fill on the stale preview -> rejected as stale without clobbering existing preview.
+    const appendResult = await controller.fillForm!({
+      member: "board",
+      values: { groupNames: { g1: "Another Name" } },
+    });
+    await flushPromises();
+    expect(appendResult).toMatchObject({
+      ok: false,
+      reason: "stale",
+      member: "board",
+      message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE,
+    });
+    expect(wrapper.find(".group-title").text()).toBe("Q4 Overview");
+
+    wrapper.unmount();
+
+    // 3. Pending drag/resize auto-save rejects incoming whole-board fillForm instead of overwriting with stale order.
+    api.boardOverride = null;
+    const dragCase = await mountDashboardHome();
+    dragCase.wrapper.findComponent(ChartCard).vm.$emit("layout-change", { colSpan: 24, rowSpan: 2 });
+    await flushPromises();
+
+    const blockedDuringDragSave = await dragCase.controller.fillForm!({
+      member: "board",
+      values: {
+        groups: [
+          {
+            id: "g1",
+            title: "Overview",
+            charts: [{ id: "c1", chartFile: lineChartFile }],
+            metrics: [{ id: "n1" }],
+          },
+        ],
+      },
+    });
+    expect(blockedDuringDragSave).toMatchObject({
+      ok: false,
+      reason: "stale",
+      member: "board",
+    });
+    expect(dragCase.wrapper.find(".board-preview-bar").exists()).toBe(false);
+    dragCase.wrapper.unmount();
+  });
+
+  it("preserves prior groupNames/cardNames when a follow-up groups layout swaps a chart, and respects active inline edits with overwriteUnsaved", async () => {
+    const { wrapper, controller } = await mountDashboardHome();
+
+    // 1. Consecutive fill: groupNames + cardNames first, then full groups carrying stale baseline names + new chartFile.
+    expect(await controller.fillForm!({
+      member: "board",
+      values: {
+        groupNames: { g1: "Q4 Overview" },
+        cardNames: { c1: "Revenue Trend", n1: "Q4 Total" },
+      },
+    })).toEqual({ ok: true, member: "board", filledFields: ["groupNames.g1", "cardNames.c1", "cardNames.n1"] });
+    await flushPromises();
+
+    expect(await controller.fillForm!({
+      member: "board",
+      values: {
+        groups: [
+          {
+            id: "g1",
+            title: "Overview",
+            charts: [{ id: "c1", name: "Revenue by region", chartFile: lineChartFile }],
+            metrics: [{ id: "n1", name: "Total revenue" }],
+          },
+        ],
+      },
+    })).toEqual({ ok: true, member: "board", filledFields: ["groups"] });
+    await flushPromises();
+
+    expect(wrapper.find(".group-title").text()).toBe("Q4 Overview");
+    expect(wrapper.find(".chart-container h3").text()).toBe("Revenue Trend");
+    expect(wrapper.find(".metric-container .title").text()).toBe("Q4 Total");
+    expect(wrapper.findComponent(MetricChart).props("file")).toEqual(lineChartFile.content);
+
+    // Save and confirm the persisted layout keeps the earlier group/card renames alongside the swapped chartFile.
+    api.confirmMode = { autoMode: true, nextSeq: 1 };
+    const saved = await controller.executeAction!({ operation: "board.save", agentRun });
+    await flushPromises();
+    expect(saved).toMatchObject({ ok: true, kind: "executed", operation: "board.save" });
+    expect(api.layouts).toEqual([
+      [
+        "d1",
+        [
+          {
+            id: "g1",
+            title: "Q4 Overview",
+            charts: [{ id: "c1", name: "Revenue Trend", chartFile: lineChartFile }],
+            metrics: [{ id: "n1", name: "Q4 Total" }],
+          },
+        ],
+      ],
+    ]);
+    wrapper.unmount();
+
+    // 2. Active inline board-name edit: non-conflicting field passes, conflicting field requires overwriteUnsaved: true.
+    const inlineCase = await mountDashboardHome();
+    const store = useDashboardStore();
+    store.startDashboardRename({ id: "d1", name: "Sales" });
+    await flushPromises();
+    expect(store.editingDashboardId).toBe("d1");
+
+    const nonConflicting = await inlineCase.controller.fillForm!({
+      member: "board",
+      values: { groupNames: { g1: "Non-Conflicting Group" } },
+    });
+    expect(nonConflicting).toEqual({ ok: true, member: "board", filledFields: ["groupNames.g1"] });
+    expect(store.editingDashboardId).toBe("d1");
+
+    const blockedBoard = await inlineCase.controller.fillForm!({
+      member: "board",
+      values: { name: "Agent Board Name" },
+    });
+    expect(blockedBoard).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "board" });
+    expect(store.editingDashboardId).toBe("d1");
+
+    const overwrittenBoard = await inlineCase.controller.fillForm!({
+      member: "board",
+      values: { name: "Agent Board Name" },
+      overwriteUnsaved: true,
+    });
+    await flushPromises();
+    expect(overwrittenBoard).toEqual({ ok: true, member: "board", filledFields: ["name"] });
+    expect(store.editingDashboardId).toBe("");
+    inlineCase.wrapper.unmount();
+
+    // 3. Active inline group rename prompt: blocks same group without overwriteUnsaved, cancels on overwriteUnsaved: true.
+    const groupPromptCase = await mountDashboardHome();
+    let resolveGroupPrompt!: (value: { value: string }) => void;
+    vi.spyOn(ElMessageBox, "prompt").mockImplementationOnce(
+      () => new Promise((resolve) => { resolveGroupPrompt = resolve as (value: { value: string }) => void; }) as never,
+    );
+    const groupMenu = groupPromptCase.wrapper
+      .findAllComponents(DropdownMenu)
+      .find((m) => (m.props() as { scene?: string }).scene === "dimension")!;
+    groupMenu.vm.$emit("command", "rename");
+    await flushPromises();
+
+    // Different item (card name) merges cleanly.
+    expect(await groupPromptCase.controller.fillForm!({
+      member: "board",
+      values: { cardNames: { c1: "Allowed Card Rename" } },
+    })).toEqual({ ok: true, member: "board", filledFields: ["cardNames.c1"] });
+
+    // Same group is blocked without overwriteUnsaved.
+    expect(await groupPromptCase.controller.fillForm!({
+      member: "board",
+      values: { groupNames: { g1: "Agent Group" } },
+    })).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "board" });
+
+    // overwriteUnsaved: true applies and invalidates the stale prompt so resolving it later never writes.
+    expect(await groupPromptCase.controller.fillForm!({
+      member: "board",
+      values: { groupNames: { g1: "Agent Group" } },
+      overwriteUnsaved: true,
+    })).toEqual({ ok: true, member: "board", filledFields: ["groupNames.g1"] });
+    resolveGroupPrompt({ value: "Late Human Group" });
+    await flushPromises();
+    expect(api.renameGroup).toEqual([]);
+    groupPromptCase.wrapper.unmount();
+
+    // 4. Active inline chart card rename prompt: blocks same card without overwriteUnsaved, cancels on overwriteUnsaved: true.
+    const cardPromptCase = await mountDashboardHome();
+    let resolveCardPrompt!: (value: { value: string }) => void;
+    vi.spyOn(ElMessageBox, "prompt").mockImplementationOnce(
+      () => new Promise((resolve) => { resolveCardPrompt = resolve as (value: { value: string }) => void; }) as never,
+    );
+    cardPromptCase.wrapper.findComponent(ChartCard).findComponent({ name: "ChartToolbar" }).vm.$emit("command", "rename");
+    await flushPromises();
+
+    expect(await cardPromptCase.controller.fillForm!({
+      member: "board",
+      values: { groupNames: { g1: "Allowed Group Rename" } },
+    })).toEqual({ ok: true, member: "board", filledFields: ["groupNames.g1"] });
+
+    expect(await cardPromptCase.controller.fillForm!({
+      member: "board",
+      values: { cardNames: { c1: "Agent Chart" } },
+    })).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "board" });
+
+    expect(await cardPromptCase.controller.fillForm!({
+      member: "board",
+      values: { cardNames: { c1: "Agent Chart" } },
+      overwriteUnsaved: true,
+    })).toEqual({ ok: true, member: "board", filledFields: ["cardNames.c1"] });
+    resolveCardPrompt({ value: "Late Human Chart" });
+    await flushPromises();
+    expect(api.renameChart).toEqual([]);
+    cardPromptCase.wrapper.unmount();
+  });
+
+  it("keeps rendered cards intact and reports reloadFailed: true when the second detail read inside loadDashboardAll fails after save", async () => {
+    api.confirmMode = { autoMode: true, nextSeq: 1 };
+    api.detailReads = 0;
+    const { wrapper, controller, dirtyEvents } = await mountDashboardHome();
+
+    // Mount consumed 2 reads. Save performs 1 pre-save freshness read (+1),
+    // then loadDashboardAll performs 1st detail read (+2, succeeds) and 2nd detail read inside loader (+3, fails!).
+    api.failDetailAfterReads = api.detailReads + 2;
+
+    await controller.fillForm!({
+      member: "board",
+      values: { name: "Saved With Second Read Failure" },
+    });
+    await flushPromises();
+
+    const executed = await controller.executeAction!({ operation: "board.save", agentRun });
+    await flushPromises();
+
+    expect(executed).toMatchObject({
+      ok: true,
+      kind: "executed",
+      operation: "board.save",
+      outcome: {
+        dashboardId: "d1",
+        reloadFailed: true,
+        reloadError: "Reload network timeout",
+      },
+    });
+    expect(wrapper.find(".board-preview-bar").exists()).toBe(false);
+    expect(dirtyEvents.at(-1)).toBe(false);
+    // Board must NOT be cleared into empty state; previously rendered chart and metric cards remain visible.
+    expect(wrapper.find(".empty-state").exists()).toBe(false);
+    expect(wrapper.findAll(".chart-container")).toHaveLength(1);
+    expect(wrapper.findAll(".metric-container")).toHaveLength(1);
+    expect(wrapper.find(".chart-container h3").text()).toBe("Revenue by region");
+
+    wrapper.unmount();
   });
 });

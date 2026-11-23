@@ -21,6 +21,7 @@ function setup(options: {
   admit?: Parameters<typeof useConversationDisplay>[0]["admit"];
   initial?: { page: DisplayPage; view: DisplayView };
   readinessTimeoutMs?: number;
+  confirmLeave?: () => Promise<boolean>;
 } = {}) {
   const serialized: { page: DisplayPage | null; view: DisplayView; history: string }[] = [];
   const pages: Record<string, string> = {
@@ -48,7 +49,7 @@ function setup(options: {
       ...(reported?.state ? { state: reported.state } : {}),
       ...(reported?.forms?.length ? { forms: reported.forms } : {}),
     }),
-    leave: { leaves: () => false, confirm: async () => true },
+    leave: { leaves: () => false, confirm: options.confirmLeave ?? (async () => true) },
     ...(options.initial ? { initial: options.initial } : {}),
     ...(options.readinessTimeoutMs !== undefined ? { readinessTimeoutMs: options.readinessTimeoutMs } : {}),
   });
@@ -716,6 +717,75 @@ describe("live agent page control (requirement-64995244)", () => {
       address: "/dashboards?dashboardId=board-b",
     }));
     expect(allowed).toMatchObject({ status: "opened", reason: "target_selected" });
+    expect(display.page.value?.address).toBe("/dashboards?dashboardId=board-b");
+
+    unregister();
+  });
+
+  it("prompts leave confirmation when a human clicks a same-instance link to another board and blocks bare /dashboards present while dirty", async () => {
+    const confirmLeave = vi.fn<[], Promise<boolean>>();
+    const { display, serialized } = setup({ confirmLeave });
+    await display.present(frame({ kind: "page", address: "/dashboards?dashboardId=board-a" }));
+    serialized.length = 0;
+
+    const applyState = vi.fn();
+    const unregister = display.registerPageController("/dashboards", {
+      blocksNavigation(next) {
+        const query = next.address.split("?")[1] ?? "";
+        const queryId = new URLSearchParams(query).get("dashboardId") ?? "";
+        const stateId = typeof next.state?.dashboardId === "string" ? next.state.dashboardId : "";
+        if (stateId) return stateId !== "board-a";
+        if (queryId) return queryId !== "board-a";
+        const isCardPatch =
+          Boolean(next.state && Object.keys(next.state).length === 1 && typeof next.state.cardId === "string")
+          && !next.address.includes("?");
+        return !isCardPatch;
+      },
+      applyState,
+    });
+    display.dirty(true);
+
+    // 1. Human clicks a conversation link to another board -> triggers leave confirmation; choosing Stay preserves board-a.
+    confirmLeave.mockResolvedValueOnce(false);
+    const stayed = await display.navigate("/dashboards?dashboardId=board-b", { view: "side", history: "push" });
+    expect(stayed).toBe(false);
+    expect(confirmLeave).toHaveBeenCalledTimes(1);
+    expect(display.page.value?.address).toBe("/dashboards?dashboardId=board-a");
+    expect(serialized).toEqual([]);
+
+    // 2. Human clicks a link to a card on the SAME board -> does not prompt leave confirmation.
+    const sameBoard = await display.navigate("/dashboards?dashboardId=board-a&cardId=c1", { view: "side", history: "push" });
+    expect(sameBoard).toBe(true);
+    expect(confirmLeave).toHaveBeenCalledTimes(1);
+    expect(display.page.value?.address).toBe("/dashboards?dashboardId=board-a&cardId=c1");
+    serialized.length = 0;
+
+    // 3. Agent calling present({ target: "/dashboards" }) without dashboardId is blocked as blocked_unsaved.
+    const bareBlocked = await display.present(frame({ kind: "page", address: "/dashboards" }));
+    expect(bareBlocked).toMatchObject({
+      status: "not_opened",
+      reason: "blocked_unsaved",
+      error: { code: "UNSAVED_CHANGES" },
+    });
+    expect(display.page.value?.address).toBe("/dashboards?dashboardId=board-a&cardId=c1");
+    expect(serialized).toEqual([]);
+    expect(applyState).not.toHaveBeenCalled();
+
+    // 4. Bare /dashboards with only a cardId state patch still passes through on the same board.
+    const cardPatch = await display.present(frame({
+      kind: "page",
+      address: "/dashboards",
+      state: { cardId: "c2" },
+    }));
+    expect(cardPatch).toMatchObject({ status: "opened", reason: "target_selected" });
+    expect(applyState).toHaveBeenCalledWith({ cardId: "c2" });
+    expect(display.page.value?.address).toBe("/dashboards?dashboardId=board-a&cardId=c1");
+
+    // 5. Human clicks link to board-b and confirms Leave -> switches to board-b.
+    confirmLeave.mockResolvedValueOnce(true);
+    const left = await display.navigate("/dashboards?dashboardId=board-b", { view: "side", history: "push" });
+    expect(left).toBe(true);
+    expect(confirmLeave).toHaveBeenCalledTimes(2);
     expect(display.page.value?.address).toBe("/dashboards?dashboardId=board-b");
 
     unregister();

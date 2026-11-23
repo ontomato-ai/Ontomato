@@ -4,7 +4,6 @@ import {
   usePanelBack,
   usePanelContext,
   usePanelOperation,
-  usePanelOutput,
 } from "@ontomato/sdk/panel";
 
 /*
@@ -12,8 +11,8 @@ import {
  *
  * Reads, form validation, read-only rules, deletion availability/impact, batch publication status and both unsaved-draft
  * trials live with the MetricView owner behind the declared official projections (no raw persisted record reads). This
- * script coordinates only view visibility, guarded back navigation, batch status toast feedback, and the test dialog
- * that reads unsaved form draft values for live trial execution without saving.
+ * script coordinates only view visibility, guarded back navigation, and the test dialog that reads unsaved form draft
+ * values for live trial execution without saving.
  */
 await mountPanel({
   setup() {
@@ -45,33 +44,12 @@ await mountPanel({
       if (next) setCreating(false);
     });
 
-    // Track whether the selected metric loaded once via ObjectHeader's declared status output; return to catalog if deleted.
-    const headerStatus = usePanelOutput("header", "status");
-    const formLabel = usePanelOutput("definition", "label");
-    let loadedPrimaryKey = null;
-    watch([selected, headerStatus], ([current, status]) => {
-      if (!current) {
-        loadedPrimaryKey = null;
-        return;
-      }
-      if (status === "ready") {
-        loadedPrimaryKey = current.primaryKey;
-      } else if ((status === "error" || status === "empty") && loadedPrimaryKey === current.primaryKey) {
-        loadedPrimaryKey = null;
-        closeDetail();
-      }
-    }, { immediate: true });
-
     // Unsaved form input is explicitly permitted for live draft preview and trial execution.
     const form = computed(() => instance.forms.handle("definition") ?? null);
     const formValues = computed(() => form.value?.values.value ?? {});
     const detailTitle = computed(() => {
-      if (!selected.value) {
-        const draftName = typeof formValues.value.name === "string" ? formValues.value.name.trim() : "";
-        return draftName || t("metricViews.new");
-      }
-      const label = typeof formLabel.value === "string" ? formLabel.value.trim() : "";
-      return label || selected.value.primaryKey;
+      const draftName = typeof formValues.value.name === "string" ? formValues.value.name.trim() : "";
+      return draftName || t("metricViews.new");
     });
 
     const functionRecord = computed(() => formValues.value.function ?? {});
@@ -92,18 +70,6 @@ await mountPanel({
 
     function onRemoveDone(outcome) {
       if (outcome?.kind === "success") closeDetail();
-    }
-
-    // ---- Batch publication status notification ----
-
-    function onBatchStatusDone(outcome) {
-      if (outcome?.kind !== "batch") return;
-      const total = outcome.items.length;
-      const done = outcome.items.filter((item) => item.outcome.kind === "success").length;
-      panel.notify({
-        kind: done === total ? "success" : "warning",
-        text: t("metricViews.batchDone", { done, total }),
-      });
     }
 
     // ---- Test current unsaved draft ----
@@ -227,7 +193,6 @@ await mountPanel({
       selected,
       creating,
       detailVisible,
-      headerStatus,
       detailTitle,
       batchStatus,
       parameterDefs,
@@ -238,7 +203,6 @@ await mountPanel({
       onSaved,
       onDiscarded,
       onRemoveDone,
-      onBatchStatusDone,
       testOpen,
       testSource,
       testValues,

@@ -19,7 +19,7 @@
         <el-button :disabled="savingBoardPreview" @click="discardBoardPreview">
           {{ t("common.cancel") }}
         </el-button>
-        <el-button type="primary" :loading="savingBoardPreview" @click="saveBoardPreview">
+        <el-button type="primary" :loading="savingBoardPreview" @click="() => saveBoardPreview()">
           {{ t("common.save") }}
         </el-button>
       </div>
@@ -161,9 +161,11 @@
                   :selected="isSelected(c.id, 'chart')"
                   :board-locked="hasBoardPreview"
                   :lock-reason="previewBlockedReason"
+                  :rename-cancel-seq="cardRenameCancelSeq"
                   @select="(card) => selectCard(card)"
                   @chart-renamed="handleChartRenamed"
                   @chart-deleted="handleChartDeleted"
+                  @rename-state="handleChartRenameState"
                   @view-metric="openMetricSource"
                   @edit-parameters="openParameters"
                   @layout-change="(layout) => handleLayoutChange(c, layout)"
@@ -218,10 +220,13 @@ import CardParameterDialog from "./CardParameterDialog.vue";
 import MetricSourceDialog from "./MetricSourceDialog.vue";
 import { cardError, cardErrorHeadline } from "./utils/metricCard";
 import {
+  BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE,
   applyBoardPreviewOverlay,
   boardPreviewModifiedCards,
   buildBoardSavePlan,
   canonicalBoardPreviewSnapshot,
+  computeDashboardBoardFingerprint,
+  findBoardInlineEditConflicts,
   findMissingPreviewTargets,
   hasBoardPreviewEntries,
   mergeBoardPreview,
@@ -269,8 +274,10 @@ const props = defineProps({
   dashboardId: { type: String, default: "" },
   /** The card the page's own address names as chosen, so a board reopened at that address shows the same one chosen. */
   cardId: { type: String, default: "" },
+  /** Whether the user is currently editing this dashboard's title inline in the tab strip. */
+  editingBoardName: { type: Boolean, default: false },
 });
-const emit = defineEmits(["select-card", "dirty", "preview-active", "board-saved"]);
+const emit = defineEmits(["select-card", "dirty", "preview-active", "board-saved", "cancel-board-rename"]);
 
 const dragDisabled = ref(false);
 const boardName = ref("");
@@ -282,6 +289,12 @@ const savingBoardPreview = ref(false);
 const boardPreviewFailure = ref(null);
 let boardPreviewVersion = 0;
 let unmounted = false;
+
+const activeGroupRenameId = ref(null);
+const activeCardRenameId = ref(null);
+const cardRenameCancelSeq = ref(0);
+let groupRenameToken = 0;
+let cardRenameToken = 0;
 
 const metricSourceOpen = ref(false);
 const metricSourceCard = ref(null);
@@ -411,8 +424,11 @@ function ensureLayoutObserver() {
 
 /* ======================== utils ======================== */
 
-async function reloadDashboardGroups(id) {
+async function reloadDashboardGroups(id, options = {}) {
   const detail = await fetchDashboardLocalDetail(id);
+  if (!detail && options.throwOnError) {
+    throw new Error(`Dashboard '${id}' could not be loaded.`);
+  }
   boardName.value = String(detail?.name || "");
   chartGroups.value = Array.isArray(detail?.groups) ? detail.groups : [];
 }
@@ -465,6 +481,10 @@ let persistTimer = null;
 let persistSaving = false;
 let persistDirty = false;
 let persistLastWarnAt = 0;
+
+function hasPendingLayoutSave() {
+  return Boolean(persistTimer || persistSaving || persistDirty);
+}
 
 function buildLayoutPersistPayload(groups) {
   const gs = Array.isArray(groups) ? groups : [];
@@ -621,12 +641,22 @@ function setGroups(updater) {
   chartGroups.value = typeof updater === "function" ? updater(chartGroups.value || []) : updater;
 }
 
-async function loadDashboardAll(id) {
-  // 1) Local detail
-  await reloadDashboardGroups(id);
+async function loadDashboardAll(id, options = {}) {
+  const prevBoardName = boardName.value;
+  const prevGroups = chartGroups.value;
+  try {
+    // 1) Local detail
+    await reloadDashboardGroups(id, options);
 
-  // 2) Remote merge (read every card's current result)
-  await loader.loadDashboardById(id, setGroups);
+    // 2) Remote merge (read every card's current result)
+    await loader.loadDashboardById(id, setGroups, options);
+  } catch (err) {
+    if (options.preserveOnError) {
+      boardName.value = prevBoardName;
+      chartGroups.value = prevGroups;
+    }
+    throw err;
+  }
 }
 
 function appendNewGroupsOnly(prevGroups, nextGroupsFromLocal) {
@@ -657,6 +687,8 @@ watch(
     const loadToken = ++dashboardLoadToken;
     boardPreview.value = null;
     boardPreviewFailure.value = null;
+    activeGroupRenameId.value = null;
+    activeCardRenameId.value = null;
     parametersOpen.value = false;
     parametersDirty.value = false;
 
@@ -699,6 +731,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   unmounted = true;
   boardPreview.value = null;
+  activeGroupRenameId.value = null;
+  activeCardRenameId.value = null;
   parametersDirty.value = false;
   emit("preview-active", false);
   emit("dirty", false);
@@ -738,6 +772,8 @@ async function handleDimensionCommand(cmd, g) {
   }
 
   if (cmd === "rename") {
+    const token = ++groupRenameToken;
+    activeGroupRenameId.value = groupId;
     try {
       const ret = await ElMessageBox.prompt(
         t("analysis.enterDimensionName"),
@@ -748,6 +784,7 @@ async function handleDimensionCommand(cmd, g) {
           inputValue: String(g?.title || "").trim(),
         }
       );
+      if (token !== groupRenameToken) return;
 
       const nextName = String(ret?.value || "").trim();
       if (!nextName) return;
@@ -758,8 +795,10 @@ async function handleDimensionCommand(cmd, g) {
       chartGroups.value = patchDimensionTitle(chartGroups.value, groupId, nextName);
       ElMessage.success(t("common.renamed"));
     } catch (e) {
-      if (e === "cancel") return;
+      if (e === "cancel" || e === "close") return;
       ElMessage.error(e instanceof Error ? e.message : t("common.renameFailed"));
+    } finally {
+      if (token === groupRenameToken) activeGroupRenameId.value = null;
     }
   }
 
@@ -809,6 +848,8 @@ async function handleMetricCommand(cmd, m) {
   if (hasBoardPreview.value) return;
 
   if (cmd === "rename") {
+    const token = ++cardRenameToken;
+    activeCardRenameId.value = metricId;
     try {
       const ret = await ElMessageBox.prompt(
         t("dashboard.enterMetricName"),
@@ -819,6 +860,7 @@ async function handleMetricCommand(cmd, m) {
           inputValue: metricTitle,
         }
       );
+      if (token !== cardRenameToken) return;
 
       const nextName = String(ret?.value || "").trim();
       if (!nextName) return;
@@ -829,8 +871,10 @@ async function handleMetricCommand(cmd, m) {
       chartGroups.value = patchMetricTitle(chartGroups.value, metricId, nextName);
       ElMessage.success(t("common.renamed"));
     } catch (e) {
-      if (e === "cancel") return;
+      if (e === "cancel" || e === "close") return;
       ElMessage.error(e instanceof Error ? e.message : t("common.renameFailed"));
+    } finally {
+      if (token === cardRenameToken) activeCardRenameId.value = null;
     }
   }
 
@@ -916,6 +960,29 @@ function handleChartDeleted(payload) {
   chartGroups.value = patchDeleteChart(chartGroups.value, payload?.chartId);
 }
 
+function handleChartRenameState(payload) {
+  const chartId = normalizeId(payload?.chartId);
+  if (!chartId) return;
+  if (payload?.active) {
+    activeCardRenameId.value = chartId;
+  } else if (activeCardRenameId.value === chartId) {
+    activeCardRenameId.value = null;
+  }
+}
+
+function cancelActiveGroupRename() {
+  groupRenameToken += 1;
+  activeGroupRenameId.value = null;
+  ElMessageBox.close();
+}
+
+function cancelActiveCardRename() {
+  cardRenameToken += 1;
+  cardRenameCancelSeq.value += 1;
+  activeCardRenameId.value = null;
+  ElMessageBox.close();
+}
+
 /* ======================== metric-reference parameters ======================== */
 
 function openMetricSource(card) {
@@ -985,7 +1052,54 @@ async function openParametersForCard(cardId, options = {}) {
   return { ok: true };
 }
 
-async function saveBoardPreview() {
+async function verifyBoardPreviewBaseline(id, baselineFingerprint) {
+  if (hasPendingLayoutSave()) {
+    return {
+      ok: false,
+      stale: true,
+      message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE,
+    };
+  }
+  const localGroups = Array.isArray(chartGroups.value) ? chartGroups.value : [];
+  const localFingerprint = computeDashboardBoardFingerprint(boardName.value, localGroups);
+  const expectedBaseline = baselineFingerprint || localFingerprint;
+  if (localFingerprint !== expectedBaseline) {
+    return {
+      ok: false,
+      stale: true,
+      message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE,
+    };
+  }
+  let latestDetail;
+  try {
+    latestDetail = await fetchDashboardLocalDetail(id);
+  } catch (error) {
+    return {
+      ok: false,
+      stale: false,
+      message: error instanceof Error ? error.message : t("dashboard.loadDashboardFailed"),
+    };
+  }
+  if (!latestDetail || !Array.isArray(latestDetail.groups)) {
+    return {
+      ok: false,
+      stale: true,
+      message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE,
+    };
+  }
+  const serverFingerprint = computeDashboardBoardFingerprint(String(latestDetail.name || ""), latestDetail.groups);
+  if (serverFingerprint !== expectedBaseline) {
+    return {
+      ok: false,
+      stale: true,
+      message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE,
+    };
+  }
+  return { ok: true };
+}
+
+async function saveBoardPreview(options = {}) {
+  const skipBaselineCheck = Boolean(options?.skipBaselineCheck);
   const id = normalizeId(props.dashboardId);
   const preview = boardPreview.value;
   if (!id || !preview) {
@@ -1018,6 +1132,22 @@ async function saveBoardPreview() {
   savingBoardPreview.value = true;
   boardPreviewFailure.value = null;
   try {
+    if (!skipBaselineCheck) {
+      const baselineCheck = await verifyBoardPreviewBaseline(id, preview.baselineFingerprint);
+      if (!baselineCheck.ok) {
+        boardPreviewFailure.value = { code: null, message: baselineCheck.message };
+        return {
+          ok: false,
+          stale: Boolean(baselineCheck.stale),
+          partial: false,
+          succeeded: [],
+          failed: [],
+          remaining: [],
+          message: baselineCheck.message,
+        };
+      }
+    }
+
     const groups = Array.isArray(chartGroups.value) ? chartGroups.value : [];
     const groupTitleOf = (groupId) =>
       groups.find((item) => item.id === groupId)?.title || groupId;
@@ -1029,6 +1159,7 @@ async function saveBoardPreview() {
     const plan = buildBoardSavePlan(boardName.value, preview);
     const remainingPreview = {
       version: preview.version,
+      ...(preview.baselineFingerprint !== undefined ? { baselineFingerprint: preview.baselineFingerprint } : {}),
       ...(preview.boardName !== undefined ? { boardName: preview.boardName } : {}),
       groupRenames: { ...preview.groupRenames },
       chartRenames: { ...preview.chartRenames },
@@ -1130,16 +1261,23 @@ async function saveBoardPreview() {
         const failedText = failed.map((item) => `${item.label} (${item.error})`).join(", ");
         const remainingText = remaining.length > 0 ? ` Not run: ${remaining.join(", ")}.` : "";
         const partialMessage = `Partially saved dashboard changes. Saved: ${succeeded.join(", ")}. Failed: ${failedText}.${remainingText}`;
-        boardPreview.value = hasBoardPreviewEntries(remainingPreview)
-          ? { ...remainingPreview, version: ++boardPreviewVersion }
-          : null;
-        boardPreviewFailure.value = { code: null, message: partialMessage };
         emit("board-saved");
         try {
-          await loadDashboardAll(id);
+          await loadDashboardAll(id, { preserveOnError: true, throwOnError: true });
         } catch {
           // Best-effort refresh after partial save; keep remaining unsaved preview visible.
         }
+        const refreshedBaseline = Array.isArray(chartGroups.value)
+          ? computeDashboardBoardFingerprint(boardName.value, chartGroups.value)
+          : preview.baselineFingerprint;
+        boardPreview.value = hasBoardPreviewEntries(remainingPreview)
+          ? {
+              ...remainingPreview,
+              version: ++boardPreviewVersion,
+              ...(refreshedBaseline ? { baselineFingerprint: refreshedBaseline } : {}),
+            }
+          : null;
+        boardPreviewFailure.value = { code: null, message: partialMessage };
         return {
           ok: false,
           partial: true,
@@ -1164,7 +1302,7 @@ async function saveBoardPreview() {
     boardPreviewFailure.value = null;
     emit("board-saved");
     try {
-      await loadDashboardAll(id);
+      await loadDashboardAll(id, { preserveOnError: true, throwOnError: true });
     } catch (reloadErr) {
       const reloadError = reloadErr instanceof Error ? reloadErr.message : String(reloadErr);
       const message = `Dashboard changes were saved, but refreshing the board failed: ${reloadError}`;
@@ -1210,6 +1348,17 @@ async function saveBoardFromAction(operation, agentRun) {
   }
   if (savingBoardPreview.value) {
     return { ok: false, reason: "action_not_ready", operation, message: "Dashboard changes are currently saving." };
+  }
+
+  const baselineCheck = await verifyBoardPreviewBaseline(id, boardPreview.value.baselineFingerprint);
+  if (!baselineCheck.ok) {
+    boardPreviewFailure.value = { code: null, message: baselineCheck.message };
+    return {
+      ok: false,
+      reason: baselineCheck.stale ? "stale" : "failed",
+      operation,
+      message: baselineCheck.message,
+    };
   }
 
   const capturedDashboardId = id;
@@ -1258,6 +1407,15 @@ async function saveBoardFromAction(operation, agentRun) {
     if (!Array.isArray(chartGroups.value)) {
       return { ok: false, reason: "stale", message: "The dashboard is not loaded." };
     }
+    if (hasPendingLayoutSave()) {
+      return { ok: false, reason: "stale", message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE };
+    }
+    if (
+      boardPreview.value.baselineFingerprint &&
+      computeDashboardBoardFingerprint(boardName.value, chartGroups.value) !== boardPreview.value.baselineFingerprint
+    ) {
+      return { ok: false, reason: "stale", message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE };
+    }
     const missingTargets = findMissingPreviewTargets(chartGroups.value, boardPreview.value);
     if (missingTargets.length > 0) {
       return {
@@ -1278,7 +1436,7 @@ async function saveBoardFromAction(operation, agentRun) {
       return { ok: false, reason: "stale", operation, intentId: prepared.intentId, message: check.message };
     }
     dispatched = true;
-    const saved = await saveBoardPreview();
+    const saved = await saveBoardPreview({ skipBaselineCheck: true });
     if (saved.ok) {
       return {
         ok: true,
@@ -1411,9 +1569,69 @@ async function fillForm(request) {
         message: "Dashboard changes are currently saving.",
       };
     }
-    const parsed = parseBoardPreviewFill(id, chartGroups.value, request.values, ++boardPreviewVersion);
+    if (hasPendingLayoutSave()) {
+      return {
+        ok: false,
+        reason: "stale",
+        member: "board",
+        message: "The dashboard has a pending layout auto-save in progress. Please wait for it to finish and re-read the board before applying changes.",
+      };
+    }
+    const parsed = parseBoardPreviewFill(id, chartGroups.value, request.values, ++boardPreviewVersion, boardName.value);
     if (!parsed.ok) return parsed;
-    boardPreview.value = mergeBoardPreview(boardPreview.value, parsed.preview);
+
+    const inlineConflicts = findBoardInlineEditConflicts(
+      boardName.value,
+      chartGroups.value,
+      parsed.preview,
+      {
+        boardName: Boolean(props.editingBoardName),
+        groupId: activeGroupRenameId.value,
+        cardId: activeCardRenameId.value,
+      },
+    );
+    if (inlineConflicts.length > 0 && !request.overwriteUnsaved) {
+      return {
+        ok: false,
+        reason: "blocked_unsaved",
+        member: "board",
+        message: `The user is currently editing ${inlineConflicts.map((item) => item.label).join(", ")}. Ask the user or retry with overwriteUnsaved: true to overwrite.`,
+      };
+    }
+
+    if (boardPreview.value || parsed.preview.layoutGroups) {
+      const expectedBaseline = boardPreview.value?.baselineFingerprint ?? parsed.preview.baselineFingerprint;
+      const baselineCheck = await verifyBoardPreviewBaseline(id, expectedBaseline);
+      if (!baselineCheck.ok) {
+        if (boardPreview.value) {
+          boardPreviewFailure.value = { code: null, message: baselineCheck.message };
+        }
+        return {
+          ok: false,
+          reason: "stale",
+          member: "board",
+          message: baselineCheck.message,
+        };
+      }
+      if (hasPendingLayoutSave()) {
+        return {
+          ok: false,
+          reason: "stale",
+          member: "board",
+          message: "The dashboard has a pending layout auto-save in progress. Please wait for it to finish and re-read the board before applying changes.",
+        };
+      }
+    }
+
+    if (inlineConflicts.length > 0 && request.overwriteUnsaved) {
+      for (const conflict of inlineConflicts) {
+        if (conflict.kind === "boardName") emit("cancel-board-rename");
+        if (conflict.kind === "groupName") cancelActiveGroupRename();
+        if (conflict.kind === "cardName") cancelActiveCardRename();
+      }
+    }
+
+    boardPreview.value = mergeBoardPreview(boardPreview.value, parsed.preview, chartGroups.value);
     boardPreviewFailure.value = null;
     return {
       ok: true,
