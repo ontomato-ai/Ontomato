@@ -206,20 +206,24 @@ export function resolveActionSaveWiring(
 }
 
 /**
- * Marks every non-hidden form field without a submit destination in `wiredPaths` read-only with `readOnlyReason`,
- * preserving any owner-declared or fixed-field read-only state and reasons untouched.
+ * Marks every non-hidden form field without a submit destination in `wiredPaths` read-only with `readOnlyReason`
+ * (when provided), preserving any owner-declared or fixed-field read-only state and reasons untouched.
+ * Recurses into `object` (fields and variants) and `object-array` (`itemFields`).
  */
 export function applyActionSaveReadOnly(
   fields: readonly PanelFormField[],
   wiredPaths: ReadonlySet<string>,
-  readOnlyReason: string,
+  readOnlyReason?: string,
   base = "",
 ): PanelFormField[] {
   return fields.map((field) => {
     const absolutePath = base + field.path;
-    if (field.readOnly || field.control.kind === "hidden") return field;
+    if (field.control.kind === "hidden") return field;
     if (isFormPathWired(absolutePath, wiredPaths)) return field;
-    if (field.control.kind === "object" && hasWiredDescendant(absolutePath, wiredPaths)) {
+
+    const reasonPatch = readOnlyReason === undefined ? {} : { readOnlyReason };
+    if (field.control.kind === "object") {
+      if (field.readOnly && hasWiredDescendant(absolutePath, wiredPaths)) return field;
       const nextFields = applyActionSaveReadOnly(field.control.fields, wiredPaths, readOnlyReason, absolutePath);
       const nextVariants = field.control.variants
         ? Object.fromEntries(Object.entries(field.control.variants).map(([key, variantFields]) => [
@@ -227,16 +231,27 @@ export function applyActionSaveReadOnly(
             applyActionSaveReadOnly(variantFields, wiredPaths, readOnlyReason, absolutePath),
           ]))
         : undefined;
-      return {
-        ...field,
-        control: {
-          ...field.control,
-          fields: nextFields,
-          ...(nextVariants ? { variants: nextVariants } : {}),
-        },
+      const nextControl = {
+        ...field.control,
+        fields: nextFields,
+        ...(nextVariants ? { variants: nextVariants } : {}),
       };
+      if (hasWiredDescendant(absolutePath, wiredPaths)) {
+        return { ...field, control: nextControl };
+      }
+      return field.readOnly
+        ? { ...field, control: nextControl }
+        : { ...field, readOnly: true, ...reasonPatch, control: nextControl };
     }
-    return { ...field, readOnly: true, readOnlyReason };
+    if (field.control.kind === "object-array") {
+      const nextItemFields = applyActionSaveReadOnly(field.control.itemFields, wiredPaths, readOnlyReason, absolutePath);
+      const nextControl = { ...field.control, itemFields: nextItemFields };
+      return field.readOnly
+        ? { ...field, control: nextControl }
+        : { ...field, readOnly: true, ...reasonPatch, control: nextControl };
+    }
+    if (field.readOnly) return field;
+    return { ...field, readOnly: true, ...reasonPatch };
   });
 }
 

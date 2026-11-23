@@ -14,8 +14,9 @@ an operation via `page_action`); this adds what the page does not show.
 - Opening a row writes it into the panel state `selected` (a `platform:Action` reference). The checked rows are in
   `checked`, the targets of the batch status change.
 - The details have three parts: the **definition** (the `form` read, saved by `platform:Action.save`), the **derived
-  definition** (the `definition` read) and the **code explanation** (the `explanation` read). The owner makes a system
-  action read-only and a published action's code read-only; do not work around either.
+  definition** (the `derivedSummary`, `derivedEffects`, `derivedParameters` and `derivedConditions` reads, or the raw
+  `definition` read) and the **code explanation** (the `annotatedExplanation` read, or the raw `explanation` read). The
+  owner makes a system action read-only and a published action's code read-only; do not work around either.
 
 ## Seeing what is on the page
 
@@ -25,10 +26,11 @@ an operation via `page_action`); this adds what the page does not show.
   including unsaved user edits). Read the action's `form` for its `fields` and `values`.
 - Before editing or continuing the reader's edit, check `observe_display` and read the form once; when it differs from
   what you were about to change, say how.
-- To explain what an action does, read its `explanation`: `codeSegments` are the explained parts of the code, each
-  with its `codeRange` lines, `kindLabel` and `title`; `businessMeaning.operations` are what it does and
-  `businessMeaning.negativeEffect` what can go wrong. `definition` is what the owner derives from the same code:
-  effects, parameters and submission conditions.
+- To explain what an action does, read its `annotatedExplanation` (or `explanation`): `segments` (`codeSegments`) are
+  the explained parts of the code, each with its line range, `kindLabel` and `title`; `summary` (`businessMeaning`)
+  lists what it does and what can go wrong. `derivedSummary`, `derivedEffects`, `derivedParameters` and
+  `derivedConditions` (or `definition`) are what the owner derives from the same code: effects, parameters and
+  submission conditions.
 
 ## Running a definition in the owner's sandbox
 

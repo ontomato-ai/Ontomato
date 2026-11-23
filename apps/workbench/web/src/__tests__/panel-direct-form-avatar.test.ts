@@ -39,6 +39,16 @@ const description = {
   save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.save" },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
+const saveDescriptor = {
+  kind: "form.save",
+  handlerRef: `${AGENT_DEFINITION}.save`,
+  label: "Save",
+  effect: "write",
+  target: { source: "input", input: "agent" },
+  inputSchema: {},
+  resultSchema: {},
+  batch: false,
+};
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -49,7 +59,7 @@ it("chooses an avatar's icon and swatch as the owner stores it, and names a refe
     pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: { agent },
     text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready(description)),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready(description)),
   });
   const element = document.createElement("div");
   document.body.append(element);

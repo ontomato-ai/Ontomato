@@ -48,6 +48,16 @@ const description = {
   save: { method: "PUT", path: "/applications/:id", bodySchema: {}, draftOperation: "application.save" },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
+const saveDescriptor = {
+  kind: "form.save",
+  handlerRef: `${FUNCTION}.save`,
+  label: "Save",
+  effect: "write",
+  target: { source: "input", input: "app" },
+  inputSchema: {},
+  resultSchema: {},
+  batch: false,
+};
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -58,7 +68,7 @@ it("edits a text in the languages the owner keeps: the reader's first, the rest 
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
     text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready(description)),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready(description)),
   });
   const element = document.createElement("div");
   document.body.append(element);
@@ -115,7 +125,7 @@ it("leaves an optional text out of the values once every language of it is empti
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
     text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready({ ...description, fields: [optional], values: { note: { "zh-CN": "备注" } }, errors: [] })),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready({ ...description, fields: [optional], values: { note: { "zh-CN": "备注" } }, errors: [] })),
   });
   const element = document.createElement("div");
   document.body.append(element);
@@ -140,7 +150,7 @@ it("leaves out an optional text that requires a language once no language of it 
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
     text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready({ ...description, fields: [optional], values: { note: { en: "Note", "zh-CN": "备注" } }, errors: [] })),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready({ ...description, fields: [optional], values: { note: { en: "Note", "zh-CN": "备注" } }, errors: [] })),
   });
   const element = document.createElement("div");
   document.body.append(element);

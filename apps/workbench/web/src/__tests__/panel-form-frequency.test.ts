@@ -43,6 +43,16 @@ const description = {
   save: { method: "PUT", path: "/schedules/tasks/:id", bodySchema: {}, draftOperation: "schedule.update" },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
+const saveDescriptor = {
+  kind: "form.save",
+  handlerRef: `${SCHEDULED_TASK}.save`,
+  label: "Save",
+  effect: "write",
+  target: { source: "input", input: "task" },
+  inputSchema: {},
+  resultSchema: {},
+  batch: false,
+};
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -67,7 +77,7 @@ it("edits an owner's frequency as the scheduled task page does, each kind with i
     pageKey: "schedules", url: () => "/schedules", label: () => "Schedules", initial: { task },
     text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready(description)),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready(description)),
   });
   const element = document.createElement("div");
   document.body.append(element);

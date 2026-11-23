@@ -186,6 +186,11 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       createForm: async (_selection, params) => (await actions()).createForm(formParams(params)),
       definition: async selection => (await actions()).definition(selection.primaryKey!),
       explanation: async selection => (await actions()).explanation(selection.primaryKey!),
+      derivedSummary: async selection => (await actions()).derivedSummary(selection.primaryKey!),
+      derivedEffects: async selection => (await actions()).derivedEffects(selection.primaryKey!),
+      derivedParameters: async selection => (await actions()).derivedParameters(selection.primaryKey!),
+      derivedConditions: async selection => (await actions()).derivedConditions(selection.primaryKey!),
+      annotatedExplanation: async selection => (await actions()).annotatedExplanation(selection.primaryKey!),
     },
     [TRIGGER]: {
       list: async () => (await triggers()).list(),

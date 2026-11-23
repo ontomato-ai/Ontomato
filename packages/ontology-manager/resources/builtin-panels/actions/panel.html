@@ -1,406 +1,149 @@
 <!--
-  Actions: the catalog on the left or above, the selected action's details on the right.
-
-  Every part reads platform:Action: the catalog from the list read, the selected action's facts from the record read,
-  the definition form from the form and createForm reads drawn by the ObjectForm (saved by platform:Action.save),
-  the derived definition and code explanation from the definition and explanation reads; the status change is a batch
-  setStatus operation and delete is the delete operation.
-  There is no blank manual creation: the new-action button opens this page's agent input; the agent opens create mode
-  via `present`, fills the live `ObjectForm` via `fill_form`, and submits via `page_action` when requested.
+  Actions: catalog table and selected action details (definition form, derived definition, and code explanation)
+  composed purely from official SDK projections.
+  There is no blank manual creation: the new-action ConversationEntry opens this page's agent input; the agent opens
+  create mode via `present`, fills the live `ObjectForm` via `fill_form`, and submits via `page_action` when requested.
 -->
 <style>
   [v-cloak] { display: none; }
-  .ac { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px); }
-  /* The page's one creation control sits at the right end of the filter row, not on a row of its own. */
-  .ac-create { margin-left: auto; }
-  .ac-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .ac-filter-input { max-width: 20rem; }
-  .ac-count { color: var(--sdk-text-color-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
-  .ac-batch {
-    display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm);
-    padding: var(--spacing-sm); border: 1px solid var(--ui-divider); border-radius: var(--radius-xs);
-    background: var(--ui-fill-tertiary);
+  .ac {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
   }
-  .ac-results { display: flex; flex-direction: column; gap: var(--spacing-xs); margin: 0; padding: 0; list-style: none; }
-  .ac-results li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-xs); font-size: var(--text-xs); line-height: 1.6; }
-  .ac-results li[data-outcome="success"] { color: var(--sdk-text-color-secondary); }
-  .ac-results li[data-outcome="failed"] { color: var(--sdk-color-danger-text); }
-  .ac-table-wrap { overflow-x: auto; }
-  .ac-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-  .ac-table th, .ac-table td {
-    padding: var(--spacing-xs) var(--spacing-sm); text-align: left; vertical-align: top;
+  .ac-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .ac-section h3 {
+    margin: var(--spacing-xs) 0 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+  }
+  .ac-hint {
+    margin: 0;
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+  }
+  .ac-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
+  .ac-detail-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
+  .ac-detail-header {
+    flex: 1 1 20rem;
+    min-width: 0;
+  }
+  .ac-draft-title {
+    margin: 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+  }
+  .ac-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
     border-bottom: 1px solid var(--ui-divider);
   }
-  .ac-table th { color: var(--sdk-text-color-secondary); font-weight: var(--font-medium); white-space: nowrap; }
-  .ac-table tbody tr { cursor: pointer; }
-  .ac-table tbody tr:hover { background: var(--ui-fill-tertiary); }
-  .ac-table tbody tr[data-selected="true"] { background: var(--ui-fill-secondary); }
-  .ac-table td.ac-check { width: 2rem; cursor: default; }
-  .ac-name { color: var(--sdk-text-color-primary); font-weight: var(--font-medium); }
-  /* The name column keeps a readable width; in a narrow host the table scrolls sideways instead of squeezing it. */
-  .ac-table td.ac-main { min-width: 14rem; }
-  .ac-sub { color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: 1.6; word-break: break-word; }
-  .ac-nowrap { white-space: nowrap; }
-  .ac-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
-  .ac-error { margin: 0; color: var(--sdk-color-danger-text); font-size: var(--text-sm); line-height: 1.6; }
-  .ac-detail { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
-  .ac-detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .ac-detail-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); min-width: 0; }
-  .ac-detail-title h2 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); }
-  .ac-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); margin-left: auto; }
-  .ac-tabs { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); border-bottom: 1px solid var(--ui-divider); }
   .ac-tab {
-    padding: var(--spacing-xs) var(--spacing-sm); border: none; border-bottom: 2px solid transparent; background: none; cursor: pointer;
-    color: var(--sdk-text-color-regular); font: inherit; font-size: var(--text-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    cursor: pointer;
+    color: var(--sdk-text-color-regular);
+    font: inherit;
+    font-size: var(--text-sm);
   }
-  .ac-tab[aria-selected="true"] { border-bottom-color: var(--sdk-color-primary); color: var(--brand-link); font-weight: var(--font-semibold); }
-  .ac-section { display: flex; flex-direction: column; gap: var(--spacing-sm); min-width: 0; }
-  .ac-section h3 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-sm); font-weight: var(--font-semibold); }
-  .ac-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-xs); font-size: var(--text-sm); line-height: 1.7; }
-  .ac-label { color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
-  .ac-value { color: var(--sdk-text-color-regular); word-break: break-word; }
-  .ac-code-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--spacing-sm); }
-  @media (max-width: 48rem) { .ac-code-body { grid-template-columns: minmax(0, 1fr); } }
-  .ac-code-lines {
-    max-height: 30rem; overflow: auto; border: 1px solid var(--ui-divider); border-radius: var(--radius-xs);
-    background: var(--sdk-fill-color-blank); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-xs);
+  .ac-tab[aria-selected="true"] {
+    border-bottom-color: var(--sdk-color-primary);
+    color: var(--brand-link);
+    font-weight: var(--font-semibold);
   }
-  .ac-line { display: flex; gap: var(--spacing-sm); padding: 0 var(--spacing-xs); line-height: var(--leading-sm); cursor: pointer; white-space: pre; }
-  .ac-line:hover { background: var(--ui-fill-tertiary); }
-  .ac-line[data-hit="true"] { background: var(--ui-fill-secondary); }
-  .ac-line-no { flex: none; width: 2.5rem; color: var(--sdk-text-color-placeholder); text-align: right; user-select: none; }
-  .ac-line-text { flex: 1 1 auto; color: var(--sdk-text-color-regular); }
-  .ac-segments { display: flex; flex-direction: column; gap: var(--spacing-xs); max-height: 30rem; overflow: auto; }
-  .ac-seg {
-    display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); padding: var(--spacing-xs) var(--spacing-sm);
-    border: 1px solid var(--ui-divider); border-left: 3px solid var(--kind-color, var(--ui-border));
-    border-radius: var(--radius-xs); background: none; text-align: left; cursor: pointer; font: inherit; font-size: var(--text-xs);
-  }
-  .ac-seg[aria-current="true"] { border-color: var(--sdk-color-primary); border-left-color: var(--kind-color, var(--sdk-color-primary)); background: var(--ui-fill-secondary); }
-  .ac-seg-toggle {
-    margin-left: auto; padding: 0 var(--spacing-xs); border: none; background: none; color: var(--brand-link);
-    cursor: pointer; font: inherit; font-size: var(--text-xs);
-  }
-  .ac-seg-detail {
-    display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: calc(var(--spacing-xs) / 2) var(--spacing-sm);
-    margin: calc(var(--spacing-xs) / 2) 0 0; padding-top: var(--spacing-xs); border-top: 1px solid var(--ui-divider);
-  }
-  .ac-seg-detail dt { color: var(--sdk-text-color-secondary); }
-  .ac-seg-detail dd { margin: 0; color: var(--sdk-text-color-regular); word-break: break-word; }
-  .ac-seg-pane { display: flex; flex-direction: column; gap: var(--spacing-xs); min-width: 0; }
-  .ac-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); font-size: var(--text-xs); }
-  .ac-legend-item { display: inline-flex; align-items: center; gap: calc(var(--spacing-xs) / 2); color: var(--sdk-text-color-secondary); }
-  .ac-legend-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; }
-  .ac-seg[data-depth="1"] { margin-left: var(--spacing-md); }
-  .ac-seg[data-depth="2"] { margin-left: var(--spacing-xl); }
-  .ac-seg[data-depth="3"] { margin-left: var(--spacing-2xl); }
-  .ac-seg-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-xs); }
-  .ac-seg-kind { color: var(--brand-link); }
-  .ac-seg-title { color: var(--sdk-text-color-primary); font-weight: var(--font-medium); }
-  .ac-seg-range, .ac-seg-note { color: var(--sdk-text-color-secondary); }
-  .ac-list { margin: 0; padding-left: var(--spacing-lg); color: var(--sdk-text-color-regular); font-size: var(--text-sm); line-height: 1.7; }
-  .ac-effect { display: flex; flex-direction: column; gap: calc(var(--spacing-xs) / 2); padding: var(--spacing-xs) var(--spacing-sm); border-left: 2px solid var(--ui-border); }
-  .ac-effect-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--spacing-xs); font-size: var(--text-sm); }
-  .ac-effect-kind { color: var(--brand-link); }
-  .ac-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-xs); word-break: break-word; }
-  /* A parameter named in a derived rule: clicking it takes the reader to the parameter table. */
-  .ac-param {
-    padding: 0 2px; border: none; border-radius: var(--radius-xs); background: none; color: var(--brand-link);
-    cursor: pointer; font: inherit;
-  }
-  .ac-param:hover, .ac-param:focus-visible { text-decoration: underline; }
-  .ac-join { margin-right: var(--spacing-xs); color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
-  .ac-table tbody tr.is-hit { background: var(--sdk-color-primary-light-9); transition: background-color var(--transition-fast); }
-  .ac-chevron-head { width: 1.5rem; }
-  .ac-chevron { width: 1.5rem; color: var(--sdk-text-color-placeholder); text-align: right; }
 </style>
 <div id="app" v-cloak>
-  <page-header title="动作" description="维护域内动作定义、状态与代码解释">
+  <page-header :title="t('pageTitle')" :description="t('pageDescription')">
     <template #actions>
-      <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
+      <sdk-button text :aria-label="t('refresh')" :title="t('refresh')" @click="refresh">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
       </sdk-button>
     </template>
   </page-header>
   <section class="ac">
-    <!-- Catalog: all actions of the domain, filtered by name or description; checked ones change status together. -->
+    <!-- Catalog: all domain actions with local search, batch status update, and ConversationEntry creation. -->
     <section class="ac-section" v-show="!detailVisible">
-      <div class="ac-filter">
-        <sdk-input class="ac-filter-input" size="small" clearable v-model="keywordModel"
-          :placeholder="t('keywordPlaceholder')" :aria-label="t('keyword')"></sdk-input>
-        <span class="ac-count">{{ t("count", { n: visibleRows.length }) }}</span>
-        <!-- The one way to create: open this page's agent input; nothing is sent until the reader sends it. -->
-        <span class="ac-create"><projection slot="newAction"></projection></span>
-      </div>
-
-      <div class="ac-batch" v-show="checked.length > 0">
-        <span class="ac-count">{{ t("checked", { n: checked.length }) }}</span>
-        <sdk-select size="small" style="width: 10rem" v-model="statusToSet" :placeholder="t('chooseStatus')">
-          <sdk-option v-for="option in statusOptions" :key="option.value" :value="option.value" :label="option.label"></sdk-option>
-        </sdk-select>
-        <sdk-button size="small" type="primary" :loading="statusRunning" :disabled="!statusToSet || !statusAdmitted" @click="applyStatus">
-          {{ statusLabel }}
-        </sdk-button>
-        <sdk-button size="small" text @click="clearChecked">{{ t("clearChecked") }}</sdk-button>
-      </div>
-
-      <ul class="ac-results" v-show="statusResults.length > 0" role="status">
-        <li v-for="result in statusResults" :key="result.key" :data-outcome="result.ok ? 'success' : 'failed'">
-          <strong v-if="result.name">{{ result.name }}</strong>
-          <span>{{ result.message }}</span>
-        </li>
-      </ul>
-
-      <p class="ac-hint" v-if="rowsRead.status === 'loading'">{{ t("loading") }}</p>
-      <p class="ac-hint" v-else-if="rowsRead.status === 'empty'">{{ t("empty") }}</p>
-      <p class="ac-error" v-else-if="rowsRead.status === 'forbidden'">{{ t("forbidden") }}</p>
-      <p class="ac-error" v-else-if="rowsRead.status === 'error'" role="alert">{{ rowsRead.message }}</p>
-      <template v-else-if="rowsRead.status === 'ready'">
-        <p class="ac-hint" v-if="visibleRows.length === 0">{{ t("noMatch") }}</p>
-        <div class="ac-table-wrap" v-else>
-          <table class="ac-table">
-            <thead>
-              <tr>
-                <th class="ac-check"><input type="checkbox" :checked="allChecked" :aria-label="t('checked', { n: visibleRows.length })" @change="toggleAll"></th>
-                <th>{{ t("name") }}</th>
-                <th>{{ columnLabel("function") }}</th>
-                <th>{{ columnLabel("origin") }}</th>
-                <th>{{ columnLabel("status") }}</th>
-                <th>{{ columnLabel("createdBy") }}</th>
-                <th>{{ columnLabel("reviewedBy") }}</th>
-                <th>{{ columnLabel("updatedAt") }}</th>
-                <th class="ac-chevron-head" aria-label=""></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in visibleRows" :key="row.primaryKey" :data-selected="row.primaryKey === selectedKey" @click="selectRow(row)">
-                <td class="ac-check" @click.stop>
-                  <input type="checkbox" :checked="isChecked(row)" :aria-label="row.label" @change="toggleChecked(row)">
-                </td>
-                <td class="ac-main">
-                  <div class="ac-name">{{ row.label }}</div>
-                  <div class="ac-sub">{{ row.subtitle || t("noDescription") }}</div>
-                </td>
-                <td class="ac-nowrap">{{ row.fields.function }}</td>
-                <td class="ac-nowrap">{{ row.fields.origin }}</td>
-                <td class="ac-nowrap"><sdk-tag v-if="row.fields.status" size="small" :type="statusTagType(row)">{{ row.fields.status }}</sdk-tag></td>
-                <td class="ac-nowrap">{{ row.fields.createdBy }}</td>
-                <td class="ac-nowrap">{{ row.fields.reviewedBy }}</td>
-                <td class="ac-nowrap">{{ formatTime(row.fields.updatedAt) }}</td>
-                <!-- The whole row opens the action; the chevron says so, as the original page's row did. -->
-                <td class="ac-chevron" aria-hidden="true">›</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </template>
-      <p class="ac-hint" v-else>{{ t("awaiting") }}</p>
+      <projection slot="catalog" @choose="onChooseAction">
+        <template #toolbar-actions>
+          <projection slot="newAction"></projection>
+        </template>
+        <template #batch-actions>
+          <projection slot="setStatus" @done="onStatusDone"></projection>
+        </template>
+      </projection>
     </section>
 
-    <!-- Details: one action's definition, derived definition, code explanation, and delete. -->
+    <!-- Details: selected action header, definition form, derived definition tables, and annotated code explanation. -->
     <section class="ac-detail" v-show="detailVisible">
       <div class="ac-detail-head">
         <sdk-button size="small" text @click="back">{{ t("back") }}</sdk-button>
-        <div class="ac-detail-title">
-          <h2>{{ recordLabel }}</h2>
-          <sdk-tag v-if="recordStatus" size="small" :type="statusTagType(record)">{{ recordStatus }}</sdk-tag>
-          <sdk-tag v-if="recordOrigin" size="small" type="info">{{ recordOrigin }}</sdk-tag>
-        </div>
-        <div class="ac-detail-actions" v-if="selected && !systemAction">
-          <projection slot="remove"></projection>
-        </div>
+        <projection v-if="selected" slot="header" class="ac-detail-header">
+          <template #actions>
+            <projection slot="remove" @done="onRemoveDone"></projection>
+          </template>
+        </projection>
+        <h2 v-else class="ac-draft-title">{{ t("newAction") }}</h2>
       </div>
 
       <div class="ac-tabs" role="tablist">
-        <button type="button" class="ac-tab" role="tab" v-for="tab in tabs" :key="tab.key"
-          :aria-selected="activeTab === tab.key" @click="activeTab = tab.key">{{ t(tab.label) }}</button>
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          type="button"
+          class="ac-tab"
+          role="tab"
+          :aria-selected="activeTab === tab.key"
+          @click="activeTab = tab.key"
+        >
+          {{ t(tab.label) }}
+        </button>
       </div>
 
-      <!-- Definition: drawn as the owner declares it; the owner makes a system action read-only and a published action's code read-only. -->
+      <!-- Definition tab: owner-declared ObjectForm for viewing, editing, or agent-driven creation via fill_form. -->
       <projection slot="form" v-show="activeTab === 'definition'" @saved="onFormSaved" @discarded="onFormDiscarded" @cancel="onFormDiscarded"></projection>
 
-      <!-- Derived definition: the effects, parameters and submission conditions the owner derives from the code. -->
+      <!-- Derived definition tab: summary, grouped effects, selectable parameters, and submission conditions. -->
       <section class="ac-section" v-show="activeTab === 'derived'">
         <p class="ac-hint">{{ t("derivedHint") }}</p>
-        <p class="ac-hint" v-if="definitionRead.status === 'loading' || definitionRead.status === 'awaiting'">{{ t("loading") }}</p>
-        <p class="ac-error" v-else-if="definitionRead.status === 'forbidden'">{{ t("forbidden") }}</p>
-        <p class="ac-error" v-else-if="definitionRead.status === 'error'" role="alert">{{ definitionRead.message }}</p>
-        <template v-else-if="definitionRead.status === 'ready'">
-          <div class="ac-row" v-if="declaredTarget">
-            <span class="ac-label">{{ t("declaredTarget") }}</span>
-            <span class="ac-value ac-mono">{{ declaredTarget.className }} ← {{ declaredTarget.keyParameter }}</span>
-          </div>
-          <p class="ac-hint" v-else>{{ t("noTarget") }}</p>
-          <div class="ac-row" v-if="affects.length > 0">
-            <span class="ac-label">{{ t("affects") }}</span>
-            <sdk-tag v-for="className in affects" :key="className" size="small" type="info">{{ className }}</sdk-tag>
-          </div>
+        <projection slot="derivedSummary"></projection>
 
-          <h3>{{ t("effects") }}</h3>
-          <p class="ac-hint" v-if="effectGroups.length === 0">{{ t("noEffects") }}</p>
-          <div class="ac-section" v-for="group in effectGroups" :key="group.key">
-            <h3>{{ t(group.label) }} <span class="ac-count">{{ group.items.length }}</span></h3>
-            <div class="ac-effect" v-for="(effect, index) in group.items" :key="group.key + '-' + index">
-              <div class="ac-effect-head">
-                <span class="ac-effect-kind">{{ effect.kindLabel }}</span>
-                <span class="ac-value" v-if="effect.title">{{ effect.title }}</span>
-                <span class="ac-mono" v-if="effect.className">{{ effect.className }}</span>
-                <span class="ac-mono" v-if="effect.relation">{{ effect.relation }}</span>
-              </div>
-              <div class="ac-row" v-if="effectLine(effect)">
-                <span class="ac-value ac-mono">{{ effectLine(effect) }}</span>
-              </div>
-              <div class="ac-row" v-if="effectFields(effect)">
-                <span class="ac-label">{{ t("fields") }}</span>
-                <span class="ac-value ac-mono">
-                  <template v-for="(part, partIndex) in textParts(effectFields(effect))" :key="'field-' + partIndex">
-                    <button v-if="part.parameter" type="button" class="ac-param" :title="t('paramLocate')"
-                      @click="locateParameter(part.parameter)">{{ part.text }}</button>
-                    <span v-else>{{ part.text }}</span>
-                  </template>
-                </span>
-              </div>
-              <div class="ac-row" v-if="effectChecks(effect)">
-                <span class="ac-label">{{ t("checks") }}</span>
-                <span class="ac-value ac-mono">
-                  <template v-for="(part, partIndex) in textParts(effectChecks(effect))" :key="'check-' + partIndex">
-                    <button v-if="part.parameter" type="button" class="ac-param" :title="t('paramLocate')"
-                      @click="locateParameter(part.parameter)">{{ part.text }}</button>
-                    <span v-else>{{ part.text }}</span>
-                  </template>
-                </span>
-              </div>
-              <p class="ac-hint" v-if="effect.narrative">{{ effect.narrative }}</p>
-            </div>
-          </div>
+        <h3>{{ t("effects") }}</h3>
+        <projection slot="derivedEffects"></projection>
 
-          <h3>{{ t("parameters") }}</h3>
-          <p class="ac-hint" v-if="parameters.length === 0">{{ t("noParameters") }}</p>
-          <div class="ac-table-wrap" v-else>
-            <table class="ac-table">
-              <thead>
-                <tr>
-                  <th>{{ t("name") }}</th>
-                  <th>{{ t("kind") }}</th>
-                  <th>{{ t("description") }}</th>
-                  <th>{{ t("object") }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="parameter in parameters" :key="parameter.name" :data-parameter-row="parameter.name">
-                  <td class="ac-name ac-mono">{{ parameter.name }}</td>
-                  <td class="ac-mono">{{ parameter.type }}</td>
-                  <td>{{ parameter.description }}</td>
-                  <td class="ac-mono">{{ (parameter.objectTypes || []).join(", ") }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+        <h3>{{ t("parameters") }}</h3>
+        <projection slot="derivedParameters"></projection>
 
-          <h3>{{ t("conditions") }}</h3>
-          <p class="ac-hint" v-if="conditions.length === 0">{{ t("noConditions") }}</p>
-          <ul class="ac-list" v-else>
-            <li v-for="(condition, index) in conditions" :key="'condition-' + index">
-              <span v-if="index > 0" class="ac-join">{{ conditionJoin }}</span>
-              <span class="ac-mono">
-                <template v-for="(part, partIndex) in textParts(conditionText(condition))" :key="'cond-' + partIndex">
-                  <button v-if="part.parameter" type="button" class="ac-param" :title="t('paramLocate')"
-                    @click="locateParameter(part.parameter)">{{ part.text }}</button>
-                  <span v-else>{{ part.text }}</span>
-                </template>
-              </span>
-              <span v-if="condition.message || condition.failureMessage"> — {{ condition.message || condition.failureMessage }}</span>
-            </li>
-          </ul>
-          <!-- What the owner could not express as a condition, in its own words. -->
-          <template v-if="customChecks.length > 0">
-            <h3>{{ t("customChecks") }}</h3>
-            <ul class="ac-list">
-              <li v-for="(check, index) in customChecks" :key="'check-' + index">
-                <span>{{ check.description }}</span>
-                <span class="ac-hint" v-if="check.reason">（{{ check.reason }}）</span>
-              </li>
-            </ul>
-          </template>
-        </template>
+        <h3>{{ t("conditions") }}</h3>
+        <projection slot="derivedConditions"></projection>
       </section>
 
-      <!-- Code explanation: code lines on the left, explained segments on the right; either side locates the other. -->
+      <!-- Code explanation tab: generic AnnotatedCode bound to owner-projected annotatedExplanation. -->
       <section class="ac-section" v-show="activeTab === 'code'">
-        <div class="ac-row">
-          <span class="ac-label">{{ t("segments") }}</span>
-          <sdk-tag v-if="explanationStale" size="small" type="warning">{{ t("codeStale") }}</sdk-tag>
-        </div>
-        <p class="ac-hint" v-if="explanationStale">{{ t("codeStaleHint") }}</p>
-        <p class="ac-hint" v-if="explanationRead.status === 'loading' || explanationRead.status === 'awaiting'">{{ t("loading") }}</p>
-        <p class="ac-error" v-else-if="explanationRead.status === 'forbidden'">{{ t("forbidden") }}</p>
-        <p class="ac-error" v-else-if="explanationRead.status === 'error'" role="alert">{{ explanationRead.message }}</p>
-        <p class="ac-hint" v-else-if="!hasExplanation">{{ t("noExplanation") }}</p>
-        <template v-else>
-          <div class="ac-code-body">
-            <div class="ac-code-lines" ref="codeBox">
-              <div class="ac-line" v-for="line in codeLines" :key="line.number" :data-line="line.number"
-                :data-hit="activeRange ? line.number >= activeRange.start && line.number <= activeRange.end : false"
-                @click="pickLine(line.number)">
-                <span class="ac-line-no">{{ line.number }}</span>
-                <span class="ac-line-text">{{ line.text }}</span>
-              </div>
-            </div>
-            <div class="ac-seg-pane">
-              <!-- The kinds this explanation uses, each with the colour its card carries, as the original page listed them. -->
-              <div class="ac-legend" v-if="presentKinds.length > 0">
-                <span class="ac-hint">{{ t("segKinds") }}</span>
-                <span class="ac-legend-item" v-for="item in presentKinds" :key="item.kind">
-                  <span class="ac-legend-dot" :style="{ background: item.color }"></span>
-                  {{ item.label }}
-                </span>
-              </div>
-              <div class="ac-segments">
-                <div class="ac-seg" v-for="segment in segments" :key="segment.id" :data-depth="segment.depth"
-                  :data-open="segmentOpen(segment)" :aria-current="activeSegmentId === segment.id" tabindex="0"
-                  :style="{ '--kind-color': kindColor(segment.kind) }"
-                  @click="pickSegment(segment)" @keydown.enter.prevent="pickSegment(segment)" @keydown.space.prevent="pickSegment(segment)">
-                  <span class="ac-seg-head">
-                    <span class="ac-seg-kind">{{ segment.kindLabel }}</span>
-                    <span class="ac-seg-title">{{ segment.title }}</span>
-                    <span class="ac-seg-range">{{ t("segLine", { start: segment.codeRange.start, end: segment.codeRange.end }) }}</span>
-                    <button v-if="segmentDetails(segment).length" type="button" class="ac-seg-toggle"
-                      :aria-expanded="segmentOpen(segment)" @click.stop="toggleSegment(segment)">
-                      {{ segmentOpen(segment) ? t("segCollapse") : t("segExpand") }}
-                    </button>
-                  </span>
-                  <span class="ac-seg-note" v-if="segment.note">{{ segment.note }}</span>
-                  <!-- What the owner wrote into this part: only what it carries, in its own wording. -->
-                  <dl class="ac-seg-detail" v-if="segmentOpen(segment)" @click.stop>
-                    <template v-for="(row, rowIndex) in segmentDetails(segment)" :key="'detail-' + rowIndex">
-                      <dt>{{ t(row.label) }}</dt>
-                      <dd class="ac-mono">
-                        <template v-for="(part, partIndex) in textParts(row.text)" :key="'seg-' + rowIndex + '-' + partIndex">
-                          <button v-if="part.parameter" type="button" class="ac-param" :title="t('paramLocate')"
-                            @click="locateParameter(part.parameter)">{{ part.text }}</button>
-                          <span v-else>{{ part.text }}</span>
-                        </template>
-                      </dd>
-                    </template>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <h3>{{ t("businessMeaning") }}</h3>
-          <p class="ac-hint" v-if="!meaning">{{ t("noMeaning") }}</p>
-          <template v-else>
-            <div class="ac-row">
-              <span class="ac-label">{{ t("operations") }}</span>
-            </div>
-            <ul class="ac-list"><li v-for="(operation, index) in meaning.operations" :key="'operation-' + index">{{ operation }}</li></ul>
-            <div class="ac-row" v-if="meaning.negativeEffect">
-              <span class="ac-label">{{ t("negativeEffect") }}</span>
-              <span class="ac-value">{{ meaning.negativeEffect }}</span>
-            </div>
-          </template>
-        </template>
+        <projection slot="explanation" @select-ref="onSelectRef"></projection>
       </section>
     </section>
   </section>

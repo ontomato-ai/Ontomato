@@ -12,7 +12,7 @@ import type { PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadReq
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
 import { createPanelInstance, type PanelInstance, type PanelInstanceOptions, type PanelOperationCompletion, type PublisherPath } from "./instance";
 import type { ComponentPackageReader } from "./component-packages";
-import { stateObject, type PanelFieldValue } from "./state";
+import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "./state";
 import type { PanelText } from "./text";
 import type { PanelContext } from "./context";
 import { admittedOperations, watchMemberOperations, type MemberOperationsState } from "./member-operations";
@@ -331,6 +331,46 @@ function sourceObject(data: DirectProjectionData, inputs: MemberInputs): PanelFi
   return "literal" in object ? object.literal : (inputs[object.input] as PanelFieldValue | undefined);
 }
 
+/** Whether a member's admitted operations may have changed for the object types reported by an operation's refresh. */
+function shouldRereadOperations(
+  projection: DirectProjection,
+  inputs: MemberInputs,
+  affectedTypes: ReadonlySet<string>,
+): boolean {
+  const operations = projection.operations;
+  if (!operations || Object.keys(operations).length === 0) return false;
+
+  for (const data of Object.values(projection.data)) {
+    if ("type" in data.source && affectedTypes.has(data.source.type.id)) return true;
+    if ("object" in data.source && "literal" in data.source.object && affectedTypes.has(data.source.object.literal.className)) {
+      return true;
+    }
+  }
+
+  for (const value of Object.values(inputs)) {
+    const object = stateObject(value);
+    if (object && affectedTypes.has(object.className)) return true;
+    const child = stateChildObject(value);
+    if (child && affectedTypes.has(child.parent.objectType)) return true;
+    for (const item of stateObjects(value)) {
+      const entry = stateObject(item as PanelFieldValue);
+      if (entry && affectedTypes.has(entry.className)) return true;
+      const childEntry = stateChildObject(item as PanelFieldValue);
+      if (childEntry && affectedTypes.has(childEntry.parent.objectType)) return true;
+    }
+  }
+
+  for (const binding of Object.values(operations)) {
+    if (!binding.target) return true;
+    if ("literal" in binding.target && affectedTypes.has(binding.target.literal.className)) return true;
+    if (("row" in binding.target || "rowField" in binding.target) && Object.keys(projection.data).length === 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function createDirectPanelInstance(direct: PanelManifest, options: DirectPanelInstanceOptions): DirectPanelInstance {
   const projections = new Map<string, Promise<DirectProjection>>();
   /** Cached projection + component resolution per member so repeated slot instances load each definition once. */
@@ -373,8 +413,12 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     reread(): void;
     markInactive(): void;
   }>();
-  /** Every member's operations read now, read again with everything shown. */
-  const operationReads = new Set<() => void>();
+  /** Every member's operations read now, read again when refreshed or when an affected type matches. */
+  const operationReads = new Set<{
+    projection: DirectProjection;
+    inputs: () => MemberInputs;
+    reread(): void;
+  }>();
   /** Where the members the instance holds live, each in its own scope, so a member held anew ends the old one. */
   const membersScope = effectScope();
   const members = new Map<string, { scope: EffectScope; placing: Promise<MemberPlacing> }>();
@@ -386,7 +430,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   instance.onObjectChanged((object) => {
     if (object !== null) return;
     for (const { reread } of shown) reread();
-    for (const reread of operationReads) reread();
+    for (const { reread } of operationReads) reread();
     for (const mount of nestedMounts) mount.refresh(null);
   });
   /** The projection a member places now: its fixed one, or the one the panel's state chose; none for a panel. */
@@ -722,8 +766,9 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     },
     memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs) {
       const { state, reread } = watchMemberOperations(options.read, projection, () => instance.memberPathOf(member), inputs, () => active);
-      operationReads.add(reread);
-      onScopeDispose(() => operationReads.delete(reread));
+      const entry = { projection, inputs, reread };
+      operationReads.add(entry);
+      onScopeDispose(() => operationReads.delete(entry));
       return state;
     },
     operationCompleted(event: PanelOperationCompletion) {
@@ -737,6 +782,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       const affectedTypes = new Set<string>([
         ...affected.objectTypes,
         ...affected.objects.map((changed) => changed.objectType),
+        ...(affected.removed?.map((removed) => removed.objectType) ?? []),
       ]);
       for (const { data, inputs, isMetricOutput, sourceObjectTypes, reread } of shown) {
         const object = stateObject(sourceObject(data, inputs()));
@@ -748,6 +794,13 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           const dependencies = sourceObjectTypes();
           if (dependencies === undefined || dependencies.some((type) => affectedTypes.has(type))) {
             reread();
+          }
+        }
+      }
+      if (affectedTypes.size > 0) {
+        for (const entry of operationReads) {
+          if (shouldRereadOperations(entry.projection, entry.inputs(), affectedTypes)) {
+            entry.reread();
           }
         }
       }

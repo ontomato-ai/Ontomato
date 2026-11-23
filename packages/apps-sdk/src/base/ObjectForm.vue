@@ -38,7 +38,6 @@ import {
   MemberDataUnavailable,
   resolveActionSaveWiring,
   resolveFormSaveAnswer,
-  type ActionSaveWiring,
   type FormSource,
   type FormSaveResult,
 } from "../panel/member-forms";
@@ -275,13 +274,24 @@ const admittedSave = computed(() => {
   return currentTarget ? formSave(member.operations.value, currentTarget, member.projection.operations) : null;
 });
 const saveUnavailable = computed(() => admittedSave.value === null);
-const customerSaveUnavailable = computed(() => isCustomerForm && saveUnavailable.value);
 
-/** Only the form's save Action supplies field wiring. */
-const actionSaveWiring = computed<ActionSaveWiring | null>(() => {
+/**
+ * Field-level read-only overlay derived from the form's admitted save operation:
+ * - Without an admitted save (`admittedSave === null`), every non-hidden field becomes read-only (attaching the
+ *   Action reason only for customer Action forms, never misleadingly for platform `form.save` forms).
+ * - With an admitted customer Action save, only unwired fields become read-only with the Action reason.
+ * - With an admitted platform `form.save`, only `fixedFields` and owner-declared read-only rules apply.
+ */
+const actionSaveReadOnlyOverlay = computed<{ wiredPaths: ReadonlySet<string>; readOnlyReason?: string } | null>(() => {
   const save = admittedSave.value;
-  if (!save) return customerSaveUnavailable.value ? emptyActionSaveWiring() : null;
-  return resolveActionSaveWiring(save.descriptor, member.projection.operations?.[save.name]);
+  if (!save) {
+    return {
+      wiredPaths: emptyActionSaveWiring().wiredPaths,
+      ...(isCustomerForm ? { readOnlyReason: actionFieldReadOnlyReason.value } : {}),
+    };
+  }
+  const wiring = resolveActionSaveWiring(save.descriptor, member.projection.operations?.[save.name]);
+  return wiring ? { wiredPaths: wiring.wiredPaths, readOnlyReason: actionFieldReadOnlyReason.value } : null;
 });
 
 /** Whether a path is a fixed field or inside one. */
@@ -290,13 +300,13 @@ const isFixed = (path: string) => Object.keys(fixedValues.value).some((fixed) =>
 function fixValues(next: PanelFormValues): PanelFormValues {
   return Object.entries(fixedValues.value).reduce((all, [path, value]) => withValueAt(all, path, value) as PanelFormValues, next);
 }
-/** An owner's description with fixed fields and customer Action save-wiring read-only overlays applied. */
+/** An owner's description with fixed fields and save-permission / Action-wiring read-only overlays applied. */
 function fixDescription(next: PanelFormDescription): PanelFormDescription {
   const withFixed = next.fields.map((field) => (field.path in fixedValues.value ? { ...field, readOnly: true } : field));
-  const wiring = actionSaveWiring.value;
-  const effectiveFields = wiring === null
+  const overlay = actionSaveReadOnlyOverlay.value;
+  const effectiveFields = overlay === null
     ? withFixed
-    : applyActionSaveReadOnly(withFixed, wiring.wiredPaths, actionFieldReadOnlyReason.value);
+    : applyActionSaveReadOnly(withFixed, overlay.wiredPaths, overlay.readOnlyReason);
   return {
     ...next,
     fields: effectiveFields,
@@ -597,7 +607,7 @@ watch(fixedValues, (next, previous) => {
   description.value = fixDescription(ownerShown.value);
   values.value = fixValues(released.reduce((all, path) => withValueAt(all, path, valueAt(baseline, path) ?? null), values.value));
 });
-watch([actionSaveWiring, actionFieldReadOnlyReason], () => {
+watch(actionSaveReadOnlyOverlay, () => {
   if (!ownerOpened.value || !ownerShown.value) return;
   opened.value = fixDescription(ownerOpened.value);
   description.value = fixDescription(ownerShown.value);
