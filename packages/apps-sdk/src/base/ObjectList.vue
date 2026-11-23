@@ -493,7 +493,6 @@ const filterSignature = computed(() =>
 );
 let initialLoadDone = false;
 let pendingFilterFallback = false;
-let clearedByEmptyFilter = false;
 let pendingScrollToTop = false;
 
 // Synchronously clear local search and reset paging when switching dynamic type, so useMemberData issues one read.
@@ -1004,32 +1003,15 @@ function applyFallback(listed: readonly PlatformObjectRecord[]) {
   // (a) First showing with no selection yet: pick the first row when non-empty.
   if (isInitialLoad) {
     if (chosenIdentity.value === null && listed.length > 0) {
-      clearedByEmptyFilter = false;
       setSelected(rowSelectionValue(listed[0]!));
     }
     return;
   }
 
-  if (chosenIdentity.value !== null) {
-    clearedByEmptyFilter = false;
-  }
-
-  // (b) After search/filters changed: if the previously selected item disappeared, pick the first match or clear to
-  // null; if an earlier empty filter cleared selection and results returned, restore the first match.
-  if (filterChanged) {
-    if (chosenIdentity.value !== null) {
-      if (listed.some((row) => rowIdentityKey(row) === chosenIdentity.value)) return;
-      if (listed.length > 0) {
-        clearedByEmptyFilter = false;
-        setSelected(rowSelectionValue(listed[0]!));
-      } else {
-        clearedByEmptyFilter = true;
-        setSelected(null);
-      }
-    } else if (clearedByEmptyFilter && listed.length > 0) {
-      clearedByEmptyFilter = false;
-      setSelected(rowSelectionValue(listed[0]!));
-    }
+  // (b) After search/filters changed and the previously selected item disappeared: pick the first match or clear to null.
+  if (filterChanged && chosenIdentity.value !== null) {
+    if (listed.some((row) => rowIdentityKey(row) === chosenIdentity.value)) return;
+    setSelected(listed.length > 0 ? rowSelectionValue(listed[0]!) : null);
   }
 }
 
