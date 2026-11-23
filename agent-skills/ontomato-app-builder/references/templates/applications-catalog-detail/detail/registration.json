@@ -1,0 +1,65 @@
+{
+  "panels": [
+    {
+      "id": "template-applications-detail",
+      "mode": "create",
+      "input": {
+        "name": "Application detail",
+        "description": "Multi-tab detail with sub-lists, dialogs, and owner-declared outputs",
+        "visibility": "domain"
+      }
+    }
+  ],
+  "applications": [
+    {
+      "id": "app-template-applications",
+      "mode": "create",
+      "input": {
+        "entry": {
+          "path": "/applications/app-template-applications",
+          "renderer": "panels"
+        },
+        "entryAccess": [
+          "domain-member"
+        ],
+        "declaration": {
+          "names": {
+            "en": "Applications",
+            "zh-CN": "应用管理"
+          },
+          "descriptions": {
+            "en": "Two-entry catalog and multi-tab detail template",
+            "zh-CN": "列表详情互切与多页签维护模板"
+          },
+          "icon": "app-window",
+          "groups": [],
+          "permissions": []
+        },
+        "panelUses": [
+          {
+            "id": "template-applications-catalog-use",
+            "pageKey": "app-template-applications-catalog",
+            "panelId": "template-applications-catalog",
+            "path": "/applications/app-template-applications/catalog",
+            "access": {
+              "kind": "domain-member"
+            },
+            "names": {
+              "en": "Applications",
+              "zh-CN": "应用"
+            }
+          },
+          {
+            "id": "template-applications-detail-use",
+            "pageKey": "app-template-applications-detail",
+            "panelId": "template-applications-detail",
+            "path": "/applications/app-template-applications/detail",
+            "access": {
+              "kind": "domain-member"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

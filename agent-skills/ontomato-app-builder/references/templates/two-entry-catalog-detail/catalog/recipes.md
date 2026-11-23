@@ -1,2 +1,2 @@
-- Browse records in the catalog list; clicking a row navigates to the detail entry.
-- To create a new record, open the create dialog (`creating: true`) or produce a creation draft for `createForm`.
+- Browse records in the catalog list; clicking a row navigates to the detail entry using flat query parameters (`?selected=<primaryKey>`).
+- To create a new record, set public state `creating: true` (non-`deepLink`) or fill `createForm` directly in the live conversation display via `present`.

@@ -1,0 +1,197 @@
+{
+  "manifest": {
+    "state": {
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        }
+      },
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Application"
+        },
+        "deepLink": true
+      },
+      "tab": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "scope": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "visible"
+      },
+      "sort": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "id"
+      }
+    },
+    "members": {
+      "catalogue": {
+        "component": "ObjectList",
+        "type": "platform:Application",
+        "data": {
+          "rows": {
+            "read": "query",
+            "params": {
+              "scope": {
+                "state": "scope"
+              },
+              "sort": {
+                "state": "sort"
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "selected",
+          "search": "search"
+        },
+        "config": {
+          "layout": "table",
+          "pagination": "pages",
+          "showChevron": true,
+          "pageSize": 20,
+          "fallbackToFirst": false,
+          "searchPlaceholder": "search.placeholder",
+          "emptyText": "list.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "col.name",
+              "subtitleKey": "subtitle",
+              "iconKey": "icon",
+              "minWidth": 240
+            },
+            {
+              "key": "source",
+              "labelKey": "col.source",
+              "kind": "tag",
+              "width": 100
+            },
+            {
+              "key": "entryCount",
+              "labelKey": "col.entries",
+              "width": 84
+            },
+            {
+              "key": "maintenance",
+              "labelKey": "col.maintenance",
+              "kind": "tag",
+              "width": 112
+            },
+            {
+              "key": "owner",
+              "labelKey": "col.owner",
+              "width": 130
+            },
+            {
+              "key": "updatedAt",
+              "labelKey": "col.updatedAt",
+              "kind": "time",
+              "timeFormat": "datetime",
+              "width": 168
+            }
+          ]
+        }
+      },
+      "createForm": {
+        "component": "ObjectForm",
+        "type": "platform:Application",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:Application.save",
+        "config": {
+          "actions": "create-only"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "zh-CN": {
+        "panel.name": "应用",
+        "panel.description": "本域可见的全部应用：内置的与域内建的同列。点击一行查看并维护它的身份、入口、面板引用与授权。",
+        "action.create": "新建应用",
+        "action.refresh": "刷新",
+        "search.placeholder": "搜索应用名称",
+        "scope.visible": "全部可见",
+        "scope.maintainable": "我能维护的",
+        "sort.label": "排序",
+        "sort.id": "产品结构顺序",
+        "sort.name": "名称",
+        "sort.updated": "最近更新",
+        "col.name": "名称",
+        "col.source": "来源",
+        "col.entries": "入口",
+        "col.maintenance": "当前授权",
+        "col.owner": "所有者",
+        "col.updatedAt": "更新时间",
+        "list.empty": "暂无匹配应用",
+        "notify.created": "应用已创建。"
+      },
+      "en": {
+        "panel.name": "Applications",
+        "panel.description": "Every application visible in this domain, built-in and domain-built alike. Open one to inspect and maintain its identity, entries, panels and grants.",
+        "action.create": "New application",
+        "action.refresh": "Refresh",
+        "search.placeholder": "Search applications",
+        "scope.visible": "All visible",
+        "scope.maintainable": "Maintainable",
+        "sort.label": "Sort",
+        "sort.id": "Default order",
+        "sort.name": "Name",
+        "sort.updated": "Recently updated",
+        "col.name": "Name",
+        "col.source": "Source",
+        "col.entries": "Entries",
+        "col.maintenance": "Access",
+        "col.owner": "Owner",
+        "col.updatedAt": "Updated",
+        "list.empty": "No matching applications",
+        "notify.created": "Application created."
+      },
+      "zh-TW": {
+        "panel.name": "應用",
+        "panel.description": "本域可見的全部應用：內建的與域內建的同列。點擊一行檢視並維護它的身分、入口、面板引用與授權。",
+        "action.create": "新建應用",
+        "action.refresh": "重新整理",
+        "search.placeholder": "搜尋應用名稱",
+        "scope.visible": "全部可見",
+        "scope.maintainable": "我能維護的",
+        "sort.label": "排序",
+        "sort.id": "產品結構順序",
+        "sort.name": "名稱",
+        "sort.updated": "最近更新",
+        "col.name": "名稱",
+        "col.source": "來源",
+        "col.entries": "入口",
+        "col.maintenance": "目前授權",
+        "col.owner": "擁有者",
+        "col.updatedAt": "更新時間",
+        "list.empty": "暫無符合的應用",
+        "notify.created": "應用已建立。"
+      }
+    }
+  }
+}

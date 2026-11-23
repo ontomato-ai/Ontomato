@@ -1,0 +1,65 @@
+{
+  "panels": [
+    {
+      "id": "template-relations-detail",
+      "mode": "create",
+      "input": {
+        "name": "Relationship type detail",
+        "description": "Side-by-side form and endpoint cards",
+        "visibility": "domain"
+      }
+    }
+  ],
+  "applications": [
+    {
+      "id": "app-template-relations",
+      "mode": "create",
+      "input": {
+        "entry": {
+          "path": "/applications/app-template-relations",
+          "renderer": "panels"
+        },
+        "entryAccess": [
+          "domain-member"
+        ],
+        "declaration": {
+          "names": {
+            "en": "Relationship Types",
+            "zh-CN": "关系类型"
+          },
+          "descriptions": {
+            "en": "Catalog and side-by-side detail cards",
+            "zh-CN": "目录列表与双栏详情卡片模板"
+          },
+          "icon": "ontology",
+          "groups": [],
+          "permissions": []
+        },
+        "panelUses": [
+          {
+            "id": "template-relations-catalog-use",
+            "pageKey": "app-template-relations-catalog",
+            "panelId": "template-relations-catalog",
+            "path": "/applications/app-template-relations/catalog",
+            "access": {
+              "kind": "domain-member"
+            },
+            "names": {
+              "en": "Relationship Types",
+              "zh-CN": "关系类型"
+            }
+          },
+          {
+            "id": "template-relations-detail-use",
+            "pageKey": "app-template-relations-detail",
+            "panelId": "template-relations-detail",
+            "path": "/applications/app-template-relations/detail",
+            "access": {
+              "kind": "domain-member"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

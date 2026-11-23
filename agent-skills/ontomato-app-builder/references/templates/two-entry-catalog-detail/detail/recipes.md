@@ -1,2 +1,2 @@
 - Inspect and edit the selected record in `form`; save or discard changes from `<page-header>`.
-- When proposing edits as the assistant, produce a draft for `form` targeting the selected record's `objectType` and `id`.
+- Humans and agents share the same form, button, API, and permission: when proposing edits, fill `form` directly in the live conversation display via `present` targeting the selected record's `objectType` and `id` (respecting `UNSAVED_FORM_CONFLICT` if the user has unsaved edits).

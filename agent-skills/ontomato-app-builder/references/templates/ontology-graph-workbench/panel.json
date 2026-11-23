@@ -1,0 +1,357 @@
+{
+  "manifest": {
+    "state": {
+      "objectType": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        },
+        "deepLink": true
+      },
+      "relation": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        },
+        "deepLink": true
+      },
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": ""
+      },
+      "filter": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "all"
+      },
+      "positions": {
+        "type": {
+          "kind": "json"
+        },
+        "personal": true
+      },
+      "highlightedNodes": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:ObjectType"
+          }
+        }
+      },
+      "highlightedEdges": {
+        "type": {
+          "kind": "list",
+          "items": {
+            "kind": "object",
+            "objectType": "platform:Relationship"
+          }
+        }
+      },
+      "pathFrom": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      },
+      "pathTo": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:ObjectType"
+        }
+      }
+    },
+    "members": {
+      "objectStats": {
+        "component": "ObjectCount",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "config": {
+          "label": "对象类型"
+        }
+      },
+      "attributeStats": {
+        "component": "ObjectCount",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": "list"
+        },
+        "config": {
+          "label": "属性"
+        }
+      },
+      "relationStats": {
+        "component": "ObjectCount",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": "list"
+        },
+        "config": {
+          "label": "关系类型"
+        }
+      },
+      "objectList": {
+        "component": "ObjectList",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "objectType",
+          "search": "search"
+        },
+        "config": {
+          "layout": "list",
+          "subtitleField": "className",
+          "searchable": false,
+          "showFooter": false,
+          "showChevron": true,
+          "searchFields": [
+            "label",
+            "primaryKey",
+            "className",
+            "showName",
+            "classDesc",
+            "searchableAttributes"
+          ],
+          "emptyText": ""
+        }
+      },
+      "relationList": {
+        "component": "ObjectList",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "relation",
+          "search": "search"
+        },
+        "config": {
+          "layout": "list",
+          "subtitleField": "",
+          "searchable": false,
+          "showFooter": false,
+          "showChevron": true,
+          "searchFields": [
+            "label",
+            "primaryKey",
+            "desc"
+          ],
+          "emptyText": ""
+        }
+      },
+      "graph": {
+        "component": "ObjectGraph",
+        "data": {
+          "nodes": {
+            "type": "platform:ObjectType",
+            "read": "list"
+          },
+          "edges": {
+            "type": "platform:Relationship",
+            "read": "list"
+          }
+        },
+        "state": {
+          "selectedNode": "objectType",
+          "selectedEdge": "relation",
+          "positions": "positions",
+          "highlightedNodes": "highlightedNodes",
+          "highlightedEdges": "highlightedEdges",
+          "pathFrom": "pathFrom",
+          "pathTo": "pathTo"
+        },
+        "config": {
+          "edgeEnds": {
+            "source": "/fromclass",
+            "target": "/toclass"
+          },
+          "nodeCategory": "/className",
+          "nodeSize": 62,
+          "labelSize": 13,
+          "layout": "force",
+          "highlightBanner": false,
+          "showFocusButton": false,
+          "hint": "单击节点查看详情，拖动可调整布局"
+        }
+      },
+      "pathFromPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "pathFrom"
+        },
+        "config": {
+          "placeholder": "来源对象",
+          "size": "default",
+          "clearable": true
+        }
+      },
+      "pathToPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "pathTo"
+        },
+        "config": {
+          "placeholder": "目标对象",
+          "size": "default",
+          "clearable": true
+        }
+      },
+      "objectHeader": {
+        "component": "ObjectHeader",
+        "target": "objectType",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitleField": "className"
+        }
+      },
+      "objectDesc": {
+        "component": "TypedValue",
+        "target": "objectType",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "classDesc",
+          "emptyText": ""
+        }
+      },
+      "objectAttributes": {
+        "component": "ObjectList",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "fromSlot": true
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "showHeader": false,
+          "showFooter": false,
+          "searchable": false,
+          "emptyText": "暂无属性",
+          "columns": [
+            {
+              "key": "label",
+              "subtitleKey": "name"
+            },
+            {
+              "key": "type",
+              "kind": "tag",
+              "width": "96px",
+              "align": "right"
+            }
+          ]
+        }
+      },
+      "objectRelations": {
+        "component": "ObjectList",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "fromSlot": true
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "relation"
+        },
+        "config": {
+          "layout": "list",
+          "showFooter": false,
+          "searchable": false,
+          "showChevron": true,
+          "emptyText": "暂无关联关系"
+        }
+      },
+      "relationHeader": {
+        "component": "ObjectHeader",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitle": ""
+        }
+      },
+      "relationFrom": {
+        "component": "ObjectRefCard",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "fromObject",
+          "caption": "来源对象",
+          "compact": true
+        }
+      },
+      "relationName": {
+        "component": "TypedValue",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "label",
+          "emptyText": ""
+        }
+      },
+      "relationTo": {
+        "component": "ObjectRefCard",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "toObject",
+          "caption": "目标对象",
+          "compact": true
+        }
+      },
+      "relationDesc": {
+        "component": "TypedValue",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "desc",
+          "emptyText": ""
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {}
+  }
+}

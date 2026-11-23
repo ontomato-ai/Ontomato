@@ -280,10 +280,14 @@ async function workspaceDefinition(
 function checkOperations(id, projection, typeTable, placements, state, checks) {
   for (const [name, binding] of Object.entries(projection.operations ?? {})) {
     const { id: operationId, kind } = binding.operation;
-    const declarations = Object.entries(typeTable.objectTypes).flatMap(([type, owner]) => {
+    const typedDeclarations = Object.entries(typeTable.objectTypes).flatMap(([type, owner]) => {
       if (kind !== (type.startsWith("platform:") ? "PlatformOperation" : "Action")) return [];
       return (owner.operations ?? []).filter(operation => operation.id === operationId).map(operation => [type, operation]);
     });
+    const globalDeclarations = kind === "Action"
+      ? (typeTable.operations ?? []).filter(operation => operation.id === operationId).map(operation => [undefined, operation])
+      : [];
+    const declarations = [...typedDeclarations, ...globalDeclarations];
     const label = `operation ${name} (${operationId})`;
     if (declarations.length === 0) throw new Error(`projection ${id}: ${label} is not declared in the type table`);
     const matched = declarations.filter(([type, operation]) => checks.projectionOperationTargetMatches(projection, binding, operation, type));

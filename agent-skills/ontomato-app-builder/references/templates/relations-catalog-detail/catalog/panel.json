@@ -1,0 +1,92 @@
+{
+  "manifest": {
+    "state": {
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        }
+      }
+    },
+    "members": {
+      "catalogue": {
+        "component": "ObjectList",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "search": "search"
+        },
+        "config": {
+          "layout": "table",
+          "showChevron": true,
+          "searchable": false,
+          "emptyText": "list.empty",
+          "noMatchText": "list.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "col.relation",
+              "minWidth": 180
+            },
+            {
+              "key": "fromclassLabel",
+              "labelKey": "col.from",
+              "minWidth": 120
+            },
+            {
+              "key": "toclassLabel",
+              "labelKey": "col.to",
+              "minWidth": 120
+            },
+            {
+              "key": "desc",
+              "labelKey": "col.desc",
+              "emptyKey": "col.emptyDash",
+              "minWidth": 160
+            }
+          ]
+        }
+      },
+      "form": {
+        "component": "ObjectForm",
+        "type": "platform:Relationship",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:Relationship.save",
+        "config": {
+          "actions": "create-only"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "list.empty": "No relationship types found",
+        "col.relation": "Relationship type",
+        "col.from": "Source object",
+        "col.to": "Target object",
+        "col.desc": "Description",
+        "col.emptyDash": "-"
+      },
+      "zh-CN": {
+        "list.empty": "未找到关系类型",
+        "col.relation": "关系类型",
+        "col.from": "来源对象",
+        "col.to": "目标对象",
+        "col.desc": "说明",
+        "col.emptyDash": "-"
+      }
+    }
+  }
+}

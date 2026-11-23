@@ -2,8 +2,7 @@
 
 Follow the [Product Layer and Application Composition Standard](references/app-standard/references/standard.md) and the current SDK guide. Use current product records. Keep business logic and permission checks with the resource owners. Use the deployment, domain and authorized business scope already established with the user. Obtain technical names, IDs, parameters and relationships from the platform through its discovery commands and owner interfaces.
 
-Start with the [Vue panel skill](references/panel-authoring/SKILL.md) and choose a matching [page template](references/templates/README.md). When planning how to
-bring an existing application onto the platform, use the [application decomposition skill](references/app-standard/SKILL.md).
+Start with the [Vue panel skill](references/panel-authoring/SKILL.md) and choose a matching [page template](references/templates/README.md). When moving an already-built page into the product layer, read [Migrating an existing page into the product layer](references/migrate-existing-page.md) alongside the [application decomposition skill](references/app-standard/SKILL.md).
 
 ## Connection and workspace
 
@@ -22,26 +21,30 @@ full-width detail), read the [management page wiring recipes](references/managem
 
 1. **Discover read functions and operations.** Run `panel type <type-id>` and compare result shapes with official
    component data ports in `sdk read docs/components.md`.
-   - For customer ontology classes (e.g. `Student`), projections only bind read and write functions: bind the platform's
-     generic read functions parameterized by class (list objects of a class / get one object by ID, shown under
-     `panel type <class>`), MetricViews for filtered/calculated reads, and Actions for writes.
-   - For `platform:*` types, bind their built-in platform reads and management operations.
+   - For customer ontology classes (e.g. `Student`, `Order`), projections only bind read and write functions —
+     `bindsElement` indicates applicable ontology element types, while every actual binding must go through a
+     projection's declared read or operation (binding a class alone is rejected). Bind the platform's generic read
+     functions (`query`, `record`, `form`, `createForm` shown under `panel type <class>`), MetricViews for
+     filtered/calculated reads (declare `sourceObjectTypes` so writes auto-refresh metrics), and Actions for writes
+     (including object-targeted Actions for edits and top-level targetless Actions with `target: { source: "none" }`
+     for object creation and global operations).
+   - For `platform:*` types (e.g. `platform:Relationship`, `platform:Application`), bind their built-in platform reads
+     and management operations.
 2. **Respect boundaries and lookup order.**
-   - **Hierarchy**: platform sidebar → default application menu (do not hand-author custom frame panels yet) → current
-     entry panel → nested panels and components.
-   - **Components first**: start with official component defaults, then `config` (such as `ObjectList` `config.columns`
-     with column widths and `config.rowActions`, `ObjectSummary` `config.fields` / `showTitle` / `copyableFields`,
-     `ObjectForm` `config.presentation` / `groups` / `actions: "footer" | "header" | "create-only" | "none"` /
-     `fixedFields`, or `OperationButton` `config.label` / `type` / `plain` / `icon`), and use standard Vue slots
-     (`#cell-<key>`, `#actions`, `#row-detail`, `#card`, `#field-<dotPath>`, `#toolbar`, `#overlay`, `#option`) with a
-     focused domain component (declared in `manifest.components`) or nested `<projection>` only when a specific piece
-     still cannot be configured. Legacy `listColumn` / `listRowDetail` / `formField` bindings are removed.
+   - **Hierarchy**: platform sidebar → default application menu (do not hand-author custom frame panels unless needed) →
+     current entry panel → nested panels, projections, and data-free SDK UI primitives.
+   - **Components first**: follow the four-step order — (1) official defaults, (2) `config` (`ObjectList` `columns` /
+     `valueMap` / `rowActions`, `ObjectSummary`, `ObjectHeader`, `ObjectForm` `presentation` / `groups` / `actions`,
+     `OperationButton` `hideWhenUnavailable`), (3) standard Vue slots (`#cell-<key>`, `#actions`, `#row-detail`,
+     `#field-<dotPath>`) with a slot-only domain component in `manifest.components` or nested `<projection :inputs="{ target: ref }">`,
+     (4) a dedicated domain component only as a last resort.
    - **Panels lay out and wire**: write layout in normal HTML, CSS (`@container`), and Vue (no layout components). Place
-     pure presentational `<page-header>` at the top of `panel.html` when needed and wire edit Save/Discard with
-     `usePanelFormDraft("form")`. Use `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` tokens, `usePanelOutput` /
-     `usePanelOutputs` for read-only component outputs, and `usePanelContext().notify()`. Never read business record
-     fields directly in the panel, never compute business calculations in panel/component code, and never write `el-*`
-     tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
+     `<page-header>` at the top of `panel.html` when needed and wire edit Save/Discard with `usePanelFormDraft("form")`.
+     Use `panelAddress(path, state)` for flat named URL query parameters (never mark dialog/edit toggles with
+     `deepLink: true`), `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` tokens, `usePanelOutput` / `usePanelOutputs` for
+     read-only component outputs, and `usePanelContext().notify()`. Never read raw business record fields in the panel,
+     never compute business calculations in panel/component code, never call `fetch`/`XMLHttpRequest`, and never write
+     `el-*` tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations, and references.
 4. Submit projections, panels, and application uses with `panel register`, then open the application's declared entry.
 
@@ -87,7 +90,7 @@ owner's read signatures, result shapes and operations. A member uses the parts t
 | **Component.** Set `component` to the name in the SDK catalogue. | `componentId` is the qualified SDK identifier. Picking a different component changes its available data names, settings and ports. |
 | **Data source.** Set `type` or connect the object state via `target`. For each component datum in `data`, choose an owner read with an accepted result and bind its read parameters as needed. | Stored `data` expands to names with `source`, `read` and `params`. The owner type, object target, read and bindings determine those fields. |
 | **Component settings.** Use the component's Configuration section for `config` keys and values. | Stored `config` takes those settings. For a component with an operation setting, the tool derives `config.operation` from the selected owner's operation. |
-| **Operation.** Use the type table's full `operation` ID. Set `target` for an object target and `draft` when the operation reads a form draft. | Stored `operations` identifies the owner operation and target. Where required, the placement gains `readOperationInputs` for its draft and parameters. Changing the operation or its bindings changes these fields. |
+| **Operation.** Use the type table's full `operation` ID (object-targeted or top-level targetless `target: { source: "none" }`). Set `target` for an object target, `operationParams` / `operations.<name>.params` (including `{ formField: "/ptr" }` and `{ formFields: { key: "/ptr" } }` for customer Action forms), and `draft: "<formMember>"` when an operation reads or submits another form member's draft. | Stored `operations` identifies the owner operation, target, parameter wiring, and optional draft form member. Changing the operation or its bindings updates these fields. |
 | **State connections.** Map the component ports and named read parameters to declared fields using `state`. | The tool derives projection `inputs` and `outputs` from the state types, selected owner type and component ports. Changing bindings or their types can change those fields and the member's placement connections. |
 
 Run `panel projection <id>` after registration to inspect the resulting projection. Use the

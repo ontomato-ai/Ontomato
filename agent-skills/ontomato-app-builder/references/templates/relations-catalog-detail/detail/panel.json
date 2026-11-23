@@ -1,0 +1,81 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "headerTitle": {
+        "component": "ObjectHeader",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitle": ""
+        }
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:Relationship.save",
+        "config": {
+          "actions": "none"
+        }
+      },
+      "fromCard": {
+        "component": "ObjectRefCard",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "fromObject",
+          "captionKey": "card.from"
+        }
+      },
+      "toCard": {
+        "component": "ObjectRefCard",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "toObject",
+          "captionKey": "card.to"
+        }
+      },
+      "remove": {
+        "component": "OperationButton",
+        "operation": "relationships.delete",
+        "target": "selected",
+        "config": {
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "label": "删除"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "card.from": "Source object",
+        "card.to": "Target object"
+      },
+      "zh-CN": {
+        "card.from": "来源对象",
+        "card.to": "目标对象"
+      }
+    }
+  }
+}

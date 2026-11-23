@@ -1,0 +1,13 @@
+{
+  "panels": [
+    {
+      "id": "template-relations-catalog",
+      "mode": "create",
+      "input": {
+        "name": "Relationship types catalog",
+        "description": "Catalog list with create dialog",
+        "visibility": "domain"
+      }
+    }
+  ]
+}

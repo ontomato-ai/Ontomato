@@ -81,7 +81,7 @@ export function managementPanel(type, checks, typeTable, {
   const create = edit && reads.createForm?.result === "panelFormDescription";
   if (requestedSaves.length && !edit) throw new Error(`${save.id} has no declared form read`);
   if (create) {
-    state.creating = { type: { kind: "scalar", type: "boolean" }, default: false, deepLink: true };
+    state.creating = { type: { kind: "scalar", type: "boolean" }, default: false };
   }
   if (edit) {
     members.form = {
