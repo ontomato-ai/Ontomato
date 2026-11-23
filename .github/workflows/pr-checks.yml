@@ -87,7 +87,8 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          # The runtime image's interpreter: the integration tests start the runtime as it is deployed.
+          python-version: "3.10"
 
       - uses: actions/setup-node@v5
         with:
@@ -97,6 +98,10 @@ jobs:
         run: |
           npm install --global pnpm@9.15.9
           pnpm install --frozen-lockfile
+
+      # The runtime starts its model gateway from the same pinned environment the image installs.
+      - name: Install the runtime's Python dependencies
+        run: python3 -m pip install -r packages/agent-runtime/requirements-py310.txt
 
       - name: Test workbench server integration
         run: pnpm --filter @ontomato/workbench-server test:integration
