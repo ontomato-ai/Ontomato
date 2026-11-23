@@ -89,6 +89,7 @@ export interface NestedPanelMount {
   refresh(target: null, affected?: PanelOperationAffected): void;
   projectionsChanged(projections: readonly { id: string; revision?: number }[]): void;
   activate(active: boolean): void;
+  isLoading?(): boolean;
   dispose(): void;
 }
 
@@ -204,6 +205,8 @@ export interface DirectPanelInstance extends PanelInstance {
   projectionChanged(id: string, revision?: number): void;
   /** How many times a member's projection was read anew, which its drawing is keyed by. */
   projectionVersion(member: string): number;
+  /** True while any declared projection or nested panel member is still resolving asynchronously. */
+  isLoading(): boolean;
   /** Registers a panel-local back/close step (LIFO) with the enclosing host. */
   readonly registerBackHandler?: DirectPanelRun["registerBackHandler"];
   /** Unified host confirmation for leaving unsaved edits. */
@@ -422,6 +425,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   /** Where the members the instance holds live, each in its own scope, so a member held anew ends the old one. */
   const membersScope = effectScope();
   const members = new Map<string, { scope: EffectScope; placing: Promise<MemberPlacing> }>();
+  let pendingPlacings = 0;
   /** The panels placed in this instance's members, which follow it as it is refreshed, seen and changed. */
   const nestedMounts = new Set<NestedPanelMount>();
   // That anything may have changed — the page header's refresh, or the page's own code keeping what it shows current
@@ -515,9 +519,13 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       nestedMounts.add(mount);
       const placed = mount.instance;
       onScopeDispose(instance.publish(member, computed(() => ({
+        instanceId: placed.instanceId,
         operations: placed.operations.value,
         dirty: () => placed.dirty(),
         context: placed.pageContext.value,
+        memberInstances: () => placed.memberInstances(),
+        checkedKeys: () => placed.checkedKeys(),
+        isLoading: () => mount.isLoading?.() ?? false,
         fillForm: (request) => placed.fillForm(request),
         executeAction: (request) => placed.executeAction(request),
       }))));
@@ -527,6 +535,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         watch(() => placed.state.values.value[name], (value) => instance.state.set(to.state, (value ?? null) as never), { immediate: true });
       onScopeDispose(() => {
         nestedMounts.delete(mount);
+        placed.markDisposed();
         mount.dispose();
       });
     });
@@ -609,6 +618,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         return placing;
       }
       const chosen = "fromState" in target ? chosenTarget(direct, member, instance.state.values.value[target.fromState] ?? null) : undefined;
+      const isAsyncPlacement = chosen !== null;
+      if (isAsyncPlacement) pendingPlacings += 1;
       const placing: Promise<MemberPlacing> = chosen === null
         ? Promise.resolve({ kind: "awaiting" })
         : chosen === "objectDetail" || (chosen !== undefined && "panelId" in chosen)
@@ -620,6 +631,8 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           members.delete(member);
         }
         throw reason;
+      }).finally(() => {
+        if (isAsyncPlacement) pendingPlacings -= 1;
       });
       members.set(member, { scope, placing: tracked });
       return tracked;
@@ -842,6 +855,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         mount.projectionsChanged([revision === undefined ? { id } : { id, revision }]);
     },
     projectionVersion: (member: string) => versions.get(member) ?? 0,
+    isLoading: () => pendingPlacings > 0 || [...nestedMounts].some((mount) => mount.isLoading?.() ?? false),
     ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
     ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
   });

@@ -8,6 +8,7 @@ import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-st
 import { panelContextKey, projectionKey } from "../panel/context";
 import { panelMemberKey, readerDataState, useMemberOutput } from "../panel/member";
 import { missingOperationDescriptorResult } from "../panel/member-operations";
+import { matchesExpectedCheckedKeys, matchesExpectedTarget } from "../panel/operation-binding";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
 import { useDataStateLabels } from "./data-state-labels";
@@ -205,6 +206,16 @@ const {
   slot: () => slot,
   member: () => member.value,
   t,
+  isEntryAvailable: (operationName) => {
+    const item = moreOperations.value.find((entry) => entry.name === operationName);
+    if (!item) {
+      return { ok: false, message: `Operation '${operationName}' is no longer shown in the header menu.` };
+    }
+    if (item.disabled) {
+      return { ok: false, message: item.descriptor.unavailable?.reason ?? `Operation '${operationName}' is currently disabled.` };
+    }
+    return { ok: true };
+  },
   onDone: (operationName, answered) => emit("done", operationName, answered),
 });
 
@@ -298,7 +309,7 @@ watch(
     unregisterHeaderActions = names.map((operationName) =>
       panel.instance.registerActionHandler(
         panel.instance.operationIdOf(slot.slot, operationName),
-        async ({ input, agentContext }) => {
+        async ({ input, expectedTarget, expectedCheckedKeys, agentContext }) => {
           const currentMember = member.value;
           if (!currentMember) {
             return { ok: false, reason: "action_not_ready", message: `Operation '${operationName}' is not ready yet.` };
@@ -306,6 +317,29 @@ watch(
           const item = moreOperations.value.find((entry) => entry.name === operationName);
           if (!item) {
             return missingOperationDescriptorResult(currentMember.operations.value, operationName);
+          }
+          const currentTargetInfo = resolveOperationTarget(panel, slot, currentMember, item.descriptor, stateValues.value);
+          if (expectedCheckedKeys !== undefined && currentTargetInfo.checkedState !== null) {
+            if (!matchesExpectedCheckedKeys(currentTargetInfo.checkedTargets, expectedCheckedKeys)) {
+              return {
+                ok: false,
+                reason: "stale",
+                message: "The checked batch selection changed since your last observation.",
+              };
+            }
+          }
+          if (expectedTarget !== undefined) {
+            const declaredDraftSlot = panel.manifest.members[slot.slot]?.operationDrafts?.[operationName]?.slot;
+            const currentTarget = declaredDraftSlot
+              ? (panel.instance.forms.snapshot(declaredDraftSlot)?.target ?? null)
+              : currentTargetInfo.target;
+            if (!matchesExpectedTarget(currentTarget, expectedTarget)) {
+              return {
+                ok: false,
+                reason: "stale",
+                message: "The target object or draft changed since your last observation.",
+              };
+            }
           }
           if (item.disabled || moreRunning.value) {
             return {

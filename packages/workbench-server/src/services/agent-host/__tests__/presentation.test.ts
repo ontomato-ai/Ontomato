@@ -282,3 +282,118 @@ it("forwards fill_form and recovers page_action intent status when receipt is lo
     view.abort();
   }
 });
+
+it("forwards expected page/member/target/checked binding parameters on fill_form and page_action frames", async () => {
+  const view = new AbortController();
+  const binding = { viewId: "55555555-5555-4555-8555-555555555555" };
+  const frames: unknown[] = [];
+  const selected = {
+    known: true as const,
+    observedAt: new Date().toISOString(),
+    placement: "side" as const,
+    target: { kind: "page" as const, url: "/actions", label: "Actions", selection: [] },
+    load: { status: "ready" as const },
+  };
+  const service = {
+    ownRun: vi.fn(async () => {}),
+    resolve: vi.fn(async () => ({ artifact: null })),
+  } as unknown as Parameters<typeof requestPresentation>[0];
+  const connectionId = openPresentationView("workbench", owner, binding.viewId, (frame) => {
+    if (frame.type !== "presentation") return;
+    frames.push(frame);
+    if (frame.target.kind === "fill_form") {
+      receivePresentation("workbench", owner, session.sessionId, runId, {
+        connectionId,
+        toolCallId: frame.toolCallId,
+        result: {
+          status: "filled",
+          reason: "form_updated",
+          member: "form",
+          filledFields: ["/name"],
+          current: selected,
+        },
+      });
+    } else if (frame.target.kind === "page_action") {
+      receivePresentation("workbench", owner, session.sessionId, runId, {
+        connectionId,
+        toolCallId: frame.toolCallId,
+        result: {
+          status: "executed",
+          reason: "action_completed",
+          operation: "list.batchDelete",
+          current: selected,
+        },
+      });
+    }
+  }, view.signal);
+  try {
+    await requestPresentation(
+      service,
+      "workbench",
+      owner,
+      {
+        viewId: binding.viewId,
+        sessionId: session.sessionId,
+        runId,
+        toolCallId: "call-fill-bound",
+        input: {
+          mode: "fill_form",
+          member: "form",
+          values: { "/name": "Bound" },
+          expectedPageInstanceId: "page-inst-1",
+          expectedMemberInstanceId: "nested-inst-1",
+          expectedTarget: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+        },
+      },
+      new AbortController().signal,
+    );
+    await requestPresentation(
+      service,
+      "workbench",
+      owner,
+      {
+        viewId: binding.viewId,
+        sessionId: session.sessionId,
+        runId,
+        toolCallId: "call-action-bound",
+        input: {
+          mode: "page_action",
+          operation: "list.batchDelete",
+          rowKey: "platform:ScheduledTask:task-1",
+          expectedPageInstanceId: "page-inst-1",
+          expectedMemberInstanceId: "nested-inst-1",
+          expectedTarget: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+          expectedCheckedKeys: ["platform:ScheduledTask:task-1", "platform:ScheduledTask:task-2"],
+        },
+      },
+      new AbortController().signal,
+    );
+    expect(frames).toEqual([
+      expect.objectContaining({
+        toolCallId: "call-fill-bound",
+        target: {
+          kind: "fill_form",
+          member: "form",
+          values: { "/name": "Bound" },
+          expectedPageInstanceId: "page-inst-1",
+          expectedMemberInstanceId: "nested-inst-1",
+          expectedTarget: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+        },
+      }),
+      expect.objectContaining({
+        toolCallId: "call-action-bound",
+        target: {
+          kind: "page_action",
+          operation: "list.batchDelete",
+          rowKey: "platform:ScheduledTask:task-1",
+          expectedPageInstanceId: "page-inst-1",
+          expectedMemberInstanceId: "nested-inst-1",
+          expectedTarget: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "task-1" },
+          expectedCheckedKeys: ["platform:ScheduledTask:task-1", "platform:ScheduledTask:task-2"],
+        },
+      }),
+    ]);
+  } finally {
+    view.abort();
+  }
+});

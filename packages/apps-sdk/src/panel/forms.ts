@@ -1,5 +1,5 @@
 import { shallowReactive, type Ref } from "vue";
-import type { FormFieldRejection, FormFillOutcome } from "@ontomato/contracts/agent-presentation";
+import type { ExpectedPageTarget, FormFieldRejection, FormFillOutcome } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
@@ -48,6 +48,10 @@ export interface FormSubmitOverride {
   readonly descriptor: PanelOwnerOperationDescriptor;
   readonly binding?: ProjectionOperationBinding;
   readonly memberInputs?: Readonly<Record<string, unknown>>;
+  /** Live reader for the originating member's inputs so pre-dispatch / confirmation verification checks live values. */
+  readonly readMemberInputs?: () => Readonly<Record<string, unknown>> | undefined;
+  /** Checks whether the originating button / menu entry is still mounted, visible, and enabled. */
+  readonly evaluateOrigin?: () => { readonly ok: true } | { readonly ok: false; readonly message: string };
   readonly agentContext?: PanelAgentActionContext;
 }
 
@@ -60,7 +64,7 @@ export type PanelFormAdapterFillResult =
     }
   | {
       readonly ok: false;
-      readonly reason: "form_not_ready" | "blocked_unsaved" | "all_fields_rejected";
+      readonly reason: "form_not_ready" | "blocked_unsaved" | "all_fields_rejected" | "stale";
       readonly rejectedFields?: readonly FormFieldRejection[];
       readonly message?: string;
     };
@@ -71,11 +75,11 @@ export interface PanelFormAdapter {
   /**
    * Fills explicit field values into this live form through its own editing entry, marking modified fields and keeping
    * the form unsaved. Refuses with `blocked_unsaved` when the form already has unsaved edits unless `overwriteUnsaved`
-   * is true. Never reloads or discards untouched fields.
+   * is true, and `stale` when `expectedTarget` does not match the mounted form target. Never reloads or discards untouched fields.
    */
   fill?(
     values: Readonly<Record<string, RuntimeJsonValue>>,
-    options?: { overwriteUnsaved?: boolean },
+    options?: { overwriteUnsaved?: boolean; expectedTarget?: ExpectedPageTarget },
   ): Promise<PanelFormAdapterFillResult>;
   /** Saves what the form holds now, through the owner, at the revision it was read at where the owner has one. */
   submit(override?: FormSubmitOverride): Promise<unknown>;
@@ -124,7 +128,7 @@ export class PanelFormAdapters {
   async fill(
     slot: string,
     values: Readonly<Record<string, RuntimeJsonValue>>,
-    options?: { overwriteUnsaved?: boolean },
+    options?: { overwriteUnsaved?: boolean; expectedTarget?: ExpectedPageTarget },
   ): Promise<FormFillOutcome> {
     const adapter = this.#bySlot.get(slot);
     if (!adapter) return { ok: false, reason: "form_not_found", member: slot, message: `Form '${slot}' is not mounted` };
@@ -185,6 +189,21 @@ export class PanelFormAdapters {
     const adapter = this.#bySlot.get(slot);
     if (!adapter) return Promise.resolve(false);
     return adapter.handle.reset(options);
+  }
+
+  /** Returns the current snapshot for a single mounted form slot, or null if not mounted or still loading. */
+  snapshot(slot: string): Omit<PageFormSnapshot, "member" | "memberPath"> | null {
+    const adapter = this.#bySlot.get(slot);
+    if (!adapter) return null;
+    if (adapter.snapshot) return adapter.snapshot();
+    if (!adapter.handle?.values) return null;
+    return {
+      dirty: adapter.dirty(),
+      ...(adapter.handle.dirtyFields.value.size
+        ? { dirtyFields: [...adapter.handle.dirtyFields.value] }
+        : {}),
+      values: adapter.handle.values.value,
+    };
   }
 
   /** Reactive snapshots of currently mounted forms (in declaration order), including unsaved user edits. */

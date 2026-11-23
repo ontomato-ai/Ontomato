@@ -20,6 +20,7 @@ import type { FormSubmitOverride } from "./forms";
 import type { MemberOperationsState } from "./member-operations";
 import { serializeActionParamValue } from "../base/operation-input-schema";
 import { jsonValuesEqual, valueAt } from "./form-values";
+import type { SubmissionEvaluator } from "./operation-binding";
 
 /*
  * Where an owner form reads its description and saves: in a panel's frame, the resource module of the bound type; in a
@@ -33,6 +34,7 @@ export interface FormSaveContext {
   readonly changedFields?: readonly string[];
   readonly baselineValues?: PanelFormValues;
   readonly agentContext?: PanelAgentActionContext;
+  readonly evaluateSubmission?: SubmissionEvaluator;
   readonly formatUnwiredFieldRefusal?: (paths: readonly string[]) => {
     readonly message: string;
     readonly fieldMessage: (path: string) => string;
@@ -489,7 +491,11 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       const callTarget = descriptor.target.source === "none" ? null : target;
       const agentContext = context?.agentContext ?? override?.agentContext;
       const answer = agentContext
-        ? await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } }, { agentContext })
+        ? await instance.writeOperation(
+            operationId,
+            { call: { target: callTarget, input: prepared.input } },
+            { agentContext, ...(context?.evaluateSubmission ? { evaluateSubmission: context.evaluateSubmission } : {}) },
+          )
         : await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } });
       const { type } = target.kind === "object" ? { type: target.objectType } : formRead(target, undefined, null);
       return resolveFormSaveAnswer(answer, target, descriptor.kind, type);
