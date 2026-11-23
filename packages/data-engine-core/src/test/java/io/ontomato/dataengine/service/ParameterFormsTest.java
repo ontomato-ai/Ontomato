@@ -113,6 +113,31 @@ class ParameterFormsTest {
         List.of("invalid_number", "invalid_array", "invalid_array", "invalid_object"),
         invalid.errors().findValuesAsText("code"));
     assertTrue(invalid.values().containsKey("note"));
+
+    var cleared =
+        ParameterForms.interactive(
+            parameters,
+            object(
+                "note", "",
+                "at", "",
+                "amount", "null",
+                "tags", "null",
+                "rows", "null",
+                "order", "null"),
+            Map.of(),
+            List.of(),
+            "en");
+    assertEquals(0, cleared.errors().size());
+    assertEquals("", cleared.values().get("note"));
+    assertEquals("", cleared.values().get("at"));
+    assertTrue(cleared.values().containsKey("amount"));
+    assertNull(cleared.values().get("amount"));
+    assertTrue(cleared.values().containsKey("tags"));
+    assertNull(cleared.values().get("tags"));
+    assertTrue(cleared.values().containsKey("rows"));
+    assertNull(cleared.values().get("rows"));
+    assertTrue(cleared.values().containsKey("order"));
+    assertNull(cleared.values().get("order"));
   }
 
   @Test

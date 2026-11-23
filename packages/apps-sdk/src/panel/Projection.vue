@@ -83,6 +83,7 @@ function start(revision = 0) {
       projectionId: projection.id,
       ports: portsOf(projection),
       get operations() { return admittedOperations(operations.value); },
+      ...(projection.operations ? { operationBindings: projection.operations } : {}),
       takesDrafts: readsOwnerForm(projection),
     });
     requestedRevision = 0;

@@ -3,6 +3,7 @@ import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime
 import { dashboardCardRequestSchema } from "./dashboard";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntryFields } from "./panel-conversation-entry";
+import { formFieldErrorSchema } from "./form-fields";
 import { panelManifestSchema, panelMemberInputSchema, panelMemberSchema, panelObjectRefSchema, panelReadOperationInputsSchema, panelStateRefSchema } from "./panel-manifest";
 import { panelOperationDeclarationSchema } from "./panel-operations";
 import { directProjectionDataSchema, directProjectionPortsSchema } from "./panel-projection";
@@ -25,11 +26,16 @@ const authoringOperationTargetSchema = z.union([
   panelStateRefSchema,
   z.object({ literal: panelObjectRefSchema }).strict(),
 ]);
+const fieldPath = formFieldErrorSchema.shape.field;
+const authoringOperationFormFieldsSchema = z.record(z.string().min(1), fieldPath)
+  .refine(fields => Object.keys(fields).length > 0, "Expected at least one form field mapping");
 const authoringOperationParamSchema = z.union([
   panelMemberInputSchema,
   z.object({ input: stateKey }).strict(),
   z.object({ row: z.enum(["primaryKey", "label"]) }).strict(),
   z.object({ rowField: readName }).strict(),
+  z.object({ formField: fieldPath }).strict(),
+  z.object({ formFields: authoringOperationFormFieldsSchema }).strict(),
 ]);
 const authoringOperationEntrySchema = z.union([
   panelOperationDeclarationSchema.shape.id,
@@ -72,7 +78,7 @@ const inlineMemberSchema = z.object({
   ]).optional().describe("Panel state field holding the target object (or object list), or {fromSlot: true} when supplied by an enclosing Vue slot via <Projection :inputs=\"{ target: ref }\">."),
   data: z.record(readName, authoringDataSchema).optional().describe("Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: fieldName}, {literal: value}, or {fromSlot: true}."),
   operation: panelOperationDeclarationSchema.shape.id.optional().describe("Single operation ID from the owner's entry in the type table."),
-  operationParams: z.record(readName, authoringOperationParamSchema).optional().describe("Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' | 'label'}, or {rowField: fieldKey}."),
+  operationParams: z.record(readName, authoringOperationParamSchema).optional().describe("Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' | 'label'}, {rowField: fieldKey}, {formField: '/fieldPath'}, or {formFields: {key: '/fieldPath'}}."),
   operations: z.record(readName, authoringOperationEntrySchema).optional().describe("Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?, draft?} where target may be 'row', {row: true}, {rowField: key}, a state field name, {state: fieldName}, or {literal: ref}, and draft names a form member in this panel."),
   draft: panelReadOperationInputsSchema.shape.draft.unwrap().shape.slot.optional()
     .describe("Form member key in this panel. Required when the declared read operation takes a draft; optional on a write operation to submit that form member's draft."),

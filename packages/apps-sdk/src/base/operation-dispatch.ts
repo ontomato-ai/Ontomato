@@ -272,9 +272,11 @@ export function useOperationRunner(options: {
         if (descriptor.kind === "form.save" && declaredDraftSlot === slot.slot) {
           await panel.instance.forms.submit(slot.slot);
         } else {
+          const binding = slot.projection.operations?.[operationName];
           await panel.instance.forms.submit(declaredDraftSlot, {
             operationId,
             descriptor,
+            ...(binding ? { binding } : {}),
             ...(Object.keys(effectiveInput).length ? { extraInput: effectiveInput } : {}),
           });
         }

@@ -57,7 +57,7 @@ Use these fields for a new member inside `manifest.members` in `panel.json`.
 | `target` | No | Panel state field holding the target object (or object list), or {fromSlot: true} when supplied by an enclosing Vue slot via <Projection :inputs="{ target: ref }">. |
 | `data` | No | Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: fieldName}, {literal: value}, or {fromSlot: true}. |
 | `operation` | No | Single operation ID from the owner's entry in the type table. |
-| `operationParams` | No | Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' \| 'label'}, or {rowField: fieldKey}. |
+| `operationParams` | No | Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' \| 'label'}, {rowField: fieldKey}, {formField: '/fieldPath'}, or {formFields: {key: '/fieldPath'}}. |
 | `operations` | No | Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?, draft?} where target may be 'row', {row: true}, {rowField: key}, a state field name, {state: fieldName}, or {literal: ref}, and draft names a form member in this panel. |
 | `draft` | No | Form member key in this panel. Required when the declared read operation takes a draft; optional on a write operation to submit that form member's draft. |
 | `parameters` | No | Parameters for a draft read operation. Use {state: fieldName}, {formField: {slot, path}}, or {fields: {parameterName: source}}. Defaults to an empty object. |

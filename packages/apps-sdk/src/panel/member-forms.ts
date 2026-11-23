@@ -3,7 +3,15 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PageDraft } from "@ontomato/contracts/page-draft";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-object-ref";
-import type { PanelFormDescription, PanelFormRequest, PanelFormSaveInput, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import { formFieldPointer } from "@ontomato/contracts/form-fields";
+import type {
+  PanelFormDescription,
+  PanelFormField,
+  PanelFormRequest,
+  PanelFormSaveInput,
+  PanelFormValues,
+  ProjectionOperationBinding,
+} from "@ontomato/contracts/panel-projection";
 import type { MemberDataState } from "./direct";
 import type { PanelInstance } from "./instance";
 import type { PanelMemberContext } from "./member";
@@ -13,7 +21,7 @@ import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-op
 import type { FormSubmitOverride } from "./draft";
 import type { MemberOperationsState } from "./member-operations";
 import { slotInputState } from "./context";
-import { changedPaths, valueAt } from "./form-values";
+import { changedPaths, jsonValuesEqual, valueAt } from "./form-values";
 import { projectionElement } from "./projection-element";
 import type { PanelFieldValue } from "./state";
 
@@ -23,10 +31,25 @@ import type { PanelFieldValue } from "./state";
  * save operation, received by the platform's coordinator as an agent's call is. The form itself is the same either way.
  */
 
+/** Extra context passed by ObjectForm when saving through a customer Action (kept off the wire for `form.save`). */
+export interface FormSaveContext {
+  readonly changedFields?: readonly string[];
+  readonly baselineValues?: PanelFormValues;
+  readonly formatUnwiredFieldRefusal?: (paths: readonly string[]) => {
+    readonly message: string;
+    readonly fieldMessage: (path: string) => string;
+  };
+}
+
 /** What an owner form asks of where it reads and saves. */
 export interface FormSource {
   describe(request: PanelFormRequest): Promise<PanelFormDescription>;
-  save(target: PanelFormTarget, input: PanelFormSaveInput, override?: FormSubmitOverride): Promise<{ primaryKey: string }>;
+  save(
+    target: PanelFormTarget,
+    input: PanelFormSaveInput,
+    override?: FormSubmitOverride,
+    context?: FormSaveContext,
+  ): Promise<{ primaryKey: string }>;
 }
 
 /** The input a form's `form` datum reads its object from: the panel state the edited object is held in. */
@@ -213,33 +236,269 @@ function fieldMessages(errors: readonly { field: string; message: string }[] = [
   return Object.fromEntries(errors.map(({ field, message }) => [field.startsWith("/") ? field : `/${field}`, message]));
 }
 
+/** One declared parameter's resolved source on a customer Action save operation. */
+export type ActionSaveParamWiring =
+  | { readonly kind: "field"; readonly path: string; readonly isJson: boolean }
+  | { readonly kind: "fields"; readonly fields: Readonly<Record<string, string>>; readonly isJson: true }
+  | { readonly kind: "literal"; readonly value: RuntimeJsonValue; readonly isJson: boolean }
+  | { readonly kind: "input"; readonly input: string; readonly isJson: boolean };
+
+/** Resolved parameter wiring and editable form field JSON Pointers for a customer Action save operation. */
+export interface ActionSaveWiring {
+  readonly params: Readonly<Record<string, ActionSaveParamWiring>>;
+  readonly wiredPaths: ReadonlySet<string>;
+}
+
+/** Empty wiring for a customer edit form whose declared save Action was not admitted for the current caller. */
+export function emptyActionSaveWiring(): ActionSaveWiring {
+  return { params: {}, wiredPaths: new Set() };
+}
+
+/** Whether the projection statically declares a customer write Action as its form save operation. */
+export function hasDeclaredCustomerActionSave(projection: Pick<ProductProjection, "operations">): boolean {
+  const entries = Object.entries(projection.operations ?? {});
+  if (entries.some(([, binding]) => binding.operation.kind === "PlatformOperation")) return false;
+  const actions = entries.filter(([, binding]) => binding.operation.kind === "Action");
+  return actions.length === 1 || actions.some(([name]) => name === "save");
+}
+
+function isPlainRecord(value: unknown): value is Record<string, RuntimeJsonValue> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function escapePointerSegment(segment: string): string {
+  return segment.replaceAll("~", "~0").replaceAll("/", "~1");
+}
+
+/** Whether a form field JSON Pointer is directly wired or lives under a wired parent pointer. */
+export function isFormPathWired(path: string, wiredPaths: ReadonlySet<string>): boolean {
+  if (wiredPaths.has(path)) return true;
+  for (const wired of wiredPaths) {
+    if (path.startsWith(`${wired}/`)) return true;
+  }
+  return false;
+}
+
+function hasWiredDescendant(path: string, wiredPaths: ReadonlySet<string>): boolean {
+  const prefix = `${path}/`;
+  for (const wired of wiredPaths) {
+    if (wired.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 /**
- * Converts live form values into a customer Action's `{ values: Record<string, string> }` payload according to the
- * Action's declared `inputSchema.properties.values.properties`, keeping only parameters accepted by the Action.
+ * Resolves how a customer Action's declared `values` parameters map to form field JSON Pointers:
+ * - Parameters explicitly bound in `binding.params` follow `{ formField }`, `{ formFields }`, `{ literal }`, or `{ input }`.
+ * - Unbound declared parameters connect directly by same name to `/<escaped-param>`.
+ * Returns `null` when the operation is not a parameterised `values` Action (such as platform `form.save`).
  */
-function buildActionSaveInput(
+export function resolveActionSaveWiring(
   descriptor: PanelOwnerOperationDescriptor,
-  formValues: PanelFormValues,
-  extraInput?: Readonly<Record<string, unknown>>,
-): Record<string, unknown> {
-  const schemaProps = (descriptor.inputSchema.properties as Record<string, unknown> | undefined);
+  binding?: ProjectionOperationBinding,
+): ActionSaveWiring | null {
+  if (descriptor.kind === "form.save") return null;
+  const schemaProps = descriptor.inputSchema.properties as Record<string, unknown> | undefined;
   const valuesSchema = schemaProps?.values as { properties?: Record<string, { contentMediaType?: string }> } | undefined;
   const declared = valuesSchema?.properties;
-  if (!declared) {
-    return { ...formValues, ...(extraInput ?? {}) };
-  }
-  const extraValues = (extraInput && typeof extraInput.values === "object" && extraInput.values !== null && !Array.isArray(extraInput.values))
-    ? (extraInput.values as Record<string, unknown>)
-    : undefined;
-  const serialized: Record<string, string> = {};
+  if (!declared) return null;
+
+  const params: Record<string, ActionSaveParamWiring> = {};
+  const wiredPaths = new Set<string>();
+  const boundParams = binding?.params;
+
   for (const [param, paramSchema] of Object.entries(declared)) {
-    const raw = extraValues && Object.hasOwn(extraValues, param)
-      ? extraValues[param]
-      : Object.hasOwn(formValues, param) ? formValues[param] : undefined;
-    if (raw === undefined || raw === null) continue;
-    serialized[param] = paramSchema?.contentMediaType === "application/json" || typeof raw === "object"
-      ? JSON.stringify(raw)
-      : String(raw);
+    const isJson = paramSchema?.contentMediaType === "application/json";
+    if (boundParams && Object.hasOwn(boundParams, param)) {
+      const spec = boundParams[param]!;
+      if ("formField" in spec) {
+        params[param] = { kind: "field", path: spec.formField, isJson };
+        wiredPaths.add(spec.formField);
+      } else if ("formFields" in spec) {
+        params[param] = { kind: "fields", fields: spec.formFields, isJson: true };
+        for (const fieldPointer of Object.values(spec.formFields)) wiredPaths.add(fieldPointer);
+      } else if ("literal" in spec) {
+        params[param] = { kind: "literal", value: spec.literal, isJson };
+      } else if ("input" in spec) {
+        params[param] = { kind: "input", input: spec.input, isJson };
+      }
+      continue;
+    }
+    const path = formFieldPointer("/", param);
+    params[param] = { kind: "field", path, isJson };
+    wiredPaths.add(path);
+  }
+  return { params, wiredPaths };
+}
+
+/**
+ * Marks every non-hidden form field without a submit destination in `wiredPaths` read-only with `readOnlyReason`,
+ * preserving any owner-declared or fixed-field read-only state and reasons untouched.
+ */
+export function applyActionSaveReadOnly(
+  fields: readonly PanelFormField[],
+  wiredPaths: ReadonlySet<string>,
+  readOnlyReason: string,
+  base = "",
+): PanelFormField[] {
+  return fields.map((field) => {
+    const absolutePath = base + field.path;
+    if (field.readOnly || field.control.kind === "hidden") return field;
+    if (isFormPathWired(absolutePath, wiredPaths)) return field;
+    if (field.control.kind === "object" && hasWiredDescendant(absolutePath, wiredPaths)) {
+      const nextFields = applyActionSaveReadOnly(field.control.fields, wiredPaths, readOnlyReason, absolutePath);
+      const nextVariants = field.control.variants
+        ? Object.fromEntries(Object.entries(field.control.variants).map(([key, variantFields]) => [
+            key,
+            applyActionSaveReadOnly(variantFields, wiredPaths, readOnlyReason, absolutePath),
+          ]))
+        : undefined;
+      return {
+        ...field,
+        control: {
+          ...field.control,
+          fields: nextFields,
+          ...(nextVariants ? { variants: nextVariants } : {}),
+        },
+      };
+    }
+    return { ...field, readOnly: true, readOnlyReason };
+  });
+}
+
+function collectUnwiredObjectDiffs(
+  path: string,
+  before: RuntimeJsonValue | undefined,
+  after: RuntimeJsonValue | undefined,
+  wiredPaths: ReadonlySet<string>,
+  unwired: Set<string>,
+): void {
+  if (isFormPathWired(path, wiredPaths)) return;
+  if (jsonValuesEqual(before, after)) return;
+  if (!hasWiredDescendant(path, wiredPaths) || !isPlainRecord(before) || !isPlainRecord(after)) {
+    unwired.add(path);
+    return;
+  }
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const key of keys) {
+    const childPath = `${path}/${escapePointerSegment(key)}`;
+    collectUnwiredObjectDiffs(childPath, before[key], after[key], wiredPaths, unwired);
+  }
+}
+
+/** Returns every modified or submitted field JSON Pointer that has no destination in the Action save wiring. */
+export function unwiredModifiedPaths(
+  wiredPaths: ReadonlySet<string>,
+  modifiedPaths: Iterable<string>,
+  formValues: PanelFormValues,
+  baselineValues?: PanelFormValues,
+): string[] {
+  const unwired = new Set<string>();
+  for (const path of modifiedPaths) {
+    if (isFormPathWired(path, wiredPaths)) continue;
+    if (hasWiredDescendant(path, wiredPaths) && baselineValues !== undefined) {
+      collectUnwiredObjectDiffs(path, valueAt(baselineValues, path), valueAt(formValues, path), wiredPaths, unwired);
+      continue;
+    }
+    unwired.add(path);
+  }
+  return [...unwired];
+}
+
+/**
+ * Serializes a single Action parameter value for `/action/form`:
+ * - JSON-typed parameters (`contentMediaType: "application/json"`, e.g. numbers, arrays, objects) encode `null` as
+ *   `"null"` so `ParameterForms.interactive` parses an explicit null without rejecting empty text.
+ * - Text parameters (`TYPE_STRING`, `TYPE_TIME`) encode `null` as `""`.
+ */
+function serializeActionParamValue(raw: unknown, isJson: boolean): string {
+  if (raw === null || raw === undefined) return isJson ? "null" : "";
+  if (isJson || typeof raw === "object") return JSON.stringify(raw);
+  return String(raw);
+}
+
+/**
+ * Validates that every modified/submitted form field has a submit destination in the customer Action and converts live
+ * form values into `{ values: Record<string, string> }` without silently dropping cleared `null`/empty values.
+ */
+export function buildActionSaveInput(
+  descriptor: PanelOwnerOperationDescriptor,
+  formValues: PanelFormValues,
+  options: {
+    readonly binding?: ProjectionOperationBinding;
+    readonly submittedFields?: readonly string[];
+    readonly changedFields?: readonly string[];
+    readonly baselineValues?: PanelFormValues;
+    readonly extraInput?: Readonly<Record<string, unknown>>;
+    readonly memberInputs?: Readonly<Record<string, unknown>>;
+    readonly formatUnwiredFieldRefusal?: FormSaveContext["formatUnwiredFieldRefusal"];
+  } = {},
+): Record<string, unknown> {
+  const wiring = resolveActionSaveWiring(descriptor, options.binding);
+  if (!wiring) {
+    return { ...formValues, ...(options.extraInput ?? {}) };
+  }
+
+  const modifiedSet = new Set<string>([
+    ...(options.submittedFields ?? []),
+    ...(options.changedFields ?? []),
+  ]);
+  const unwired = unwiredModifiedPaths(wiring.wiredPaths, modifiedSet, formValues, options.baselineValues);
+  if (unwired.length > 0) {
+    const formatted = options.formatUnwiredFieldRefusal?.(unwired);
+    const message = formatted?.message
+      ?? `Cannot save: the current save action does not accept changes to ${unwired.join(", ")}`;
+    const fieldErrors = Object.fromEntries(unwired.map((path) => [
+      path,
+      formatted?.fieldMessage(path) ?? "Not modified by the current save action",
+    ]));
+    throw new PlatformObjectRefusal(message, fieldErrors);
+  }
+
+  const extraValues = (
+    options.extraInput
+    && typeof options.extraInput.values === "object"
+    && options.extraInput.values !== null
+    && !Array.isArray(options.extraInput.values)
+  )
+    ? (options.extraInput.values as Record<string, unknown>)
+    : undefined;
+
+  const serialized: Record<string, string> = {};
+  for (const [param, source] of Object.entries(wiring.params)) {
+    if (extraValues && Object.hasOwn(extraValues, param)) {
+      if (extraValues[param] !== undefined) {
+        serialized[param] = serializeActionParamValue(extraValues[param], source.isJson);
+      }
+      continue;
+    }
+    if (source.kind === "field") {
+      const raw = valueAt(formValues, source.path);
+      if (raw === undefined) {
+        if (modifiedSet.has(source.path)) {
+          serialized[param] = serializeActionParamValue(null, source.isJson);
+        }
+        continue;
+      }
+      serialized[param] = serializeActionParamValue(raw, source.isJson);
+    } else if (source.kind === "fields") {
+      const packed: Record<string, RuntimeJsonValue> = {};
+      for (const [key, fieldPointer] of Object.entries(source.fields)) {
+        const raw = valueAt(formValues, fieldPointer);
+        if (raw !== undefined) {
+          packed[key] = raw;
+        } else if (modifiedSet.has(fieldPointer)) {
+          packed[key] = null;
+        }
+      }
+      serialized[param] = JSON.stringify(packed);
+    } else if (source.kind === "literal") {
+      serialized[param] = serializeActionParamValue(source.value, source.isJson);
+    } else if (source.kind === "input") {
+      if (options.memberInputs && Object.hasOwn(options.memberInputs, source.input) && options.memberInputs[source.input] !== undefined) {
+        serialized[param] = serializeActionParamValue(options.memberInputs[source.input], source.isJson);
+      }
+    }
   }
   return { values: serialized };
 }
@@ -268,21 +527,32 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       if (result.status !== "ready") throw new MemberDataUnavailable(result);
       return result.value as PanelFormDescription;
     },
-    async save(target, input, override) {
+    async save(target, input, override, context) {
       let operationId: string;
       let descriptor: PanelOwnerOperationDescriptor;
+      let binding: ProjectionOperationBinding | undefined;
       if (override) {
         operationId = override.operationId;
         descriptor = override.descriptor;
+        binding = override.binding;
       } else {
         const save = formSave(member.operations.value);
         if (!save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
         operationId = instance.operationIdOf(member.key, save.name);
         descriptor = save.descriptor;
+        binding = projection.operations?.[save.name];
       }
       const payload = descriptor.kind === "form.save"
         ? input
-        : buildActionSaveInput(descriptor, input.values, override?.extraInput);
+        : buildActionSaveInput(descriptor, input.values, {
+            binding,
+            submittedFields: input.submittedFields,
+            changedFields: context?.changedFields,
+            baselineValues: context?.baselineValues,
+            extraInput: override?.extraInput,
+            memberInputs: member.inputs.value,
+            formatUnwiredFieldRefusal: context?.formatUnwiredFieldRefusal,
+          });
       const answer = await instance.writeOperation(operationId, { call: { target, input: payload } });
       if (answer.decision === "cancel") throw new Error("The save was cancelled");
       const { response } = answer;

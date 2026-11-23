@@ -660,3 +660,83 @@ test("cross-type collection reads declare rowType so ObjectList state.selected b
     /State 'selected' cannot receive component output 'selected'/,
   );
 });
+
+test("operation params support declarative formField and formFields wiring for customer Action saves", async () => {
+  const { customerOntologyReads } = await import("./platform-object-types");
+  const { platformTypeTableResponseSchema } = await import("./platform-type-table");
+  const { productProjectionInputSchema } = await import("./product-panels");
+  const customerState = panelManifestSchema.parse({
+    state: {
+      selectedCustomer: { type: { kind: "object", objectType: "Customer" } },
+    },
+    members: {},
+  }).state;
+  const updateAction = panelOperationDeclarationSchema.parse({
+    id: "action-update-customer",
+    kind: "action",
+    effect: "write",
+    target: { source: "input", input: "target" },
+    inputSchema: { type: "object", properties: { values: { type: "object", properties: {} } } },
+    batch: false,
+  });
+  const table = platformTypeTableResponseSchema.parse({
+    objectTypes: {
+      ...typeTable.objectTypes,
+      Customer: { reads: customerOntologyReads, operations: [updateAction] },
+    },
+    resultSchemas: {
+      panelRecordQuery: {},
+      panelGroupCounts: {},
+      panelRecord: {},
+      panelFormDescription: {},
+    },
+  });
+
+  const member = panelAuthoringMemberSchema.parse({
+    component: "ObjectForm",
+    type: "Customer",
+    target: "selectedCustomer",
+    data: { form: "form" },
+    operations: {
+      save: {
+        operation: updateAction.id,
+        params: {
+          customer_name: { formField: "/name" },
+          payload: { formFields: { level: "/grade", note: "/remark" } },
+        },
+      },
+    },
+  });
+  assert("component" in member);
+  const expanded = expandPanelAuthoringMember("customerForm", member, {
+    state: customerState,
+    components,
+    typeTable: table,
+  });
+  assert.deepEqual(expanded.projection.operations?.save?.params, {
+    customer_name: { formField: "/name" },
+    payload: { formFields: { level: "/grade", note: "/remark" } },
+  });
+  assert.doesNotThrow(() => productProjectionInputSchema.parse({
+    ...expanded.projection,
+    name: "Customer form",
+    description: "",
+    visibility: "domain",
+  }));
+
+  // Non-pointer formField and empty formFields maps are rejected by the schema.
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    component: "ObjectForm",
+    type: "Customer",
+    target: "selectedCustomer",
+    data: { form: "form" },
+    operations: { save: { operation: updateAction.id, params: { customer_name: { formField: "name" } } } },
+  }).success, false);
+  assert.equal(panelAuthoringMemberSchema.safeParse({
+    component: "ObjectForm",
+    type: "Customer",
+    target: "selectedCustomer",
+    data: { form: "form" },
+    operations: { save: { operation: updateAction.id, params: { payload: { formFields: {} } } } },
+  }).success, false);
+});

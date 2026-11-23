@@ -148,11 +148,15 @@ export const projectionOperationTargetSchema = z.union([
   z.object({ row: z.literal(true) }).strict(),
   z.object({ rowField: readKey }).strict(),
 ]);
+const projectionOperationFormFieldsSchema = z.record(z.string().min(1), fieldPath)
+  .refine(fields => Object.keys(fields).length > 0, "Expected at least one form field mapping");
 export const projectionOperationParamSchema = z.union([
   z.object({ literal: runtimeJsonValueSchema }).strict(),
   inputRef,
   z.object({ row: z.enum(["primaryKey", "label"]) }).strict(),
   z.object({ rowField: readKey }).strict(),
+  z.object({ formField: fieldPath }).strict(),
+  z.object({ formFields: projectionOperationFormFieldsSchema }).strict(),
 ]);
 export type ProjectionOperationParam = z.infer<typeof projectionOperationParamSchema>;
 
@@ -160,7 +164,7 @@ export const panelLocalOperationNameSchema = readKey.refine(name => !name.includ
 export const projectionOperationBindingSchema = z.object({
   operation: operationRef,
   target: projectionOperationTargetSchema.optional(),
-  /** Author-bound operation input parameters resolved from projection inputs, row values, or fixed literals. */
+  /** Author-bound operation input parameters resolved from projection inputs, form fields, row values, or fixed literals. */
   params: z.record(readKey, projectionOperationParamSchema).optional(),
 }).strict();
 export type ProjectionOperationBinding = z.infer<typeof projectionOperationBindingSchema>;

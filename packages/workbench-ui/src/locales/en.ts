@@ -306,6 +306,8 @@ export default {
     "formInvalidJson": "Not valid JSON: {message}",
     "formFixInvalid": "Correct the marked fields before saving",
     "formControlUnavailable": "This field cannot be edited here yet",
+    "formFieldNotSavedByAction": "Not modified by the current save action",
+    "formActionUnwiredFields": "Cannot save: the current save action does not accept changes to {fields}",
     "formOptionNoLonger": "No longer offered",
     "formAvatarIcon": "Avatar icon",
     "formAvatarColor": "Avatar colour",
