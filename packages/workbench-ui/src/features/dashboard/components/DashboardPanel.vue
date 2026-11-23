@@ -110,11 +110,8 @@
                 <ChartCard
                   :chart="c"
                   :data-card-id="c.id"
-                  :style="gridSpanStyle((draftChange(c.id) || {}).layout || c.layout)"
+                  :style="gridSpanStyle(c.layout)"
                   :dashboard-id="normalizeId(props.dashboardId)"
-                  :preview-file="(draftChange(c.id) || {}).chartFile || null"
-                  :preview-name="(draftChange(c.id) || {}).name || ''"
-                  :draft="Boolean(draft)"
                   :selected="isSelected(c.id, 'chart')"
                   @select="(card) => selectCard(card)"
                   @chart-renamed="handleChartRenamed"
@@ -148,44 +145,20 @@
     <!-- Dashboard not loaded -->
     <div v-else class="empty">{{ t("hotData.noDashboardData") }}</div>
 
-    <!-- A draft the reader has not saved yet: what it changes, and the ways to save or discard it. -->
-    <div v-if="draft" class="draft-bar" role="region" :aria-label="t('dashboard.draft.title')">
-      <div class="draft-bar__text">
-        <strong>{{ t("dashboard.draft.title") }}</strong>
-        <span>{{ draftSummary }}</span>
-        <span v-if="draftBoardName" class="draft-bar__board">{{ t("dashboard.draft.boardWas", { from: boardName, to: draftBoardName }) }}</span>
-      </div>
-      <div v-if="draftFailure" class="draft-bar__failure" role="alert">
-        <strong v-if="draftFailureHeadline">{{ draftFailureHeadline }}</strong>
-        <span>{{ draftFailure.message }}</span>
-      </div>
-      <div class="draft-bar__actions">
-        <el-button :disabled="savingDraft" @click="emit('discard-draft')">{{ t("common.cancel") }}</el-button>
-        <el-button
-          type="primary"
-          :loading="savingDraft"
-          :disabled="draft.operation === 'dashboard.card.parameters' && !parametersOpen"
-          @click="saveDraft"
-        >
-          {{ t("common.save") }}
-        </el-button>
-      </div>
-    </div>
-
     <MetricSourceDialog v-model="metricSourceOpen" :card="metricSourceCard" />
 
     <CardParameterDialog
+      ref="parameterDialogRef"
       v-model="parametersOpen"
       :dashboard-id="normalizeId(props.dashboardId)"
       :card="parametersCard"
-      :draft="parameterDraft"
       @saved="handleParametersSaved"
     />
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { GripVertical, Plus } from "lucide-vue-next";
 import Draggable from "vuedraggable";
@@ -194,8 +167,6 @@ import MetricCard from "./MetricCard.vue";
 import DropdownMenu from "./DropdownMenu.vue";
 import CardParameterDialog from "./CardParameterDialog.vue";
 import MetricSourceDialog from "./MetricSourceDialog.vue";
-import { cardError, cardErrorHeadline } from "./utils/metricCard";
-import { applyDraft } from "../draft";
 
 import {
   normalizeId,
@@ -218,9 +189,6 @@ import {
   modifyDashboardLayout,
   modifyDimensionName,
   modifyMetricName,
-  modifyResultSetName,
-  renameDashboard,
-  saveCardParameters,
   createDimension,
 } from "../api";
 
@@ -231,17 +199,14 @@ const { t } = useI18n();
 /* ======================== props & state ======================== */
 
 /**
- * One dashboard: its groups and cards, each card drawn from the metric it references. A draft an agent wrote may be
- * open on it: the board then shows the draft's changes over the saved ones, saves nothing by itself, and waits for the
- * reader to save or discard it.
+ * One dashboard: its groups and cards, each card drawn from the metric it references.
  */
 const props = defineProps({
   dashboardId: { type: String, default: "" },
-  draft: { type: Object, default: null },
   /** The card the page's own address names as chosen, so a board reopened at that address shows the same one chosen. */
   cardId: { type: String, default: "" },
 });
-const emit = defineEmits(["discard-draft", "select-card"]);
+const emit = defineEmits(["select-card"]);
 
 const dragDisabled = ref(false);
 const chartGroups = ref(null);
@@ -252,105 +217,9 @@ const metricSourceCard = ref(null);
 
 const parametersOpen = ref(false);
 const parametersCard = ref(null);
+const parameterDialogRef = ref(null);
 
 const loader = createDashboardLoader();
-
-/* ======================== draft ======================== */
-
-const draftChanges = ref(new Map());
-const draftGroupsRenamed = ref(new Map());
-const draftBoardName = ref("");
-/** The board's saved name, so a draft's own name stands beside it. */
-const boardName = ref("");
-const savingDraft = ref(false);
-const draftFailure = ref(null);
-const draftFailureHeadline = computed(() => (draftFailure.value ? cardErrorHeadline(draftFailure.value, t) : null));
-
-function draftChange(cardId) {
-  return draftChanges.value.get(cardId);
-}
-
-const draftSummary = computed(() => {
-  if (!props.draft) return "";
-  const names = [...draftChanges.value.values()].filter((change) => change.name).length;
-  const files = [...draftChanges.value.values()].filter((change) => change.chartFile).length;
-  const layouts = [...draftChanges.value.values()].filter((change) => change.layout).length;
-  const groups = draftGroupsRenamed.value.size;
-  const parts = [];
-  if (names) parts.push(t("dashboard.draft.names", { n: names }, names));
-  if (files) parts.push(t("dashboard.draft.charts", { n: files }, files));
-  if (layouts) parts.push(t("dashboard.draft.layouts", { n: layouts }, layouts));
-  if (draftBoardName.value) parts.push(t("dashboard.draft.boardName", { name: draftBoardName.value }));
-  if (groups) parts.push(t("dashboard.draft.groups", { n: groups }, groups));
-  if (props.draft.operation === "dashboard.card.parameters") parts.push(t("dashboard.draft.parameters"));
-  return parts.join(t("dashboard.draft.separator"));
-});
-
-/** The draft's parameter change, handed to the parameter form as the values to show and the revision it was written on. */
-const parameterDraft = computed(() => {
-  const form = props.draft ? props.draft.form : null;
-  return form ? { revision: form.revision, values: form.values } : null;
-});
-
-/**
- * Lays the draft over a freshly read board: the draft's names, chart files and layouts show, and nothing is posted.
- * Each card's rows still come from its saved query, so a chart file is previewed with this card's current data.
- */
-async function applyDraftToBoard() {
-  if (!props.draft) return;
-  const detail = await fetchDashboardLocalDetail(normalizeId(props.dashboardId));
-  boardName.value = detail.name;
-  const applied = applyDraft(detail, props.draft);
-  draftChanges.value = applied.cards;
-  draftGroupsRenamed.value = applied.groupsRenamed;
-  draftBoardName.value = applied.boardName ?? "";
-  chartGroups.value = applied.groups.map((group) => ({
-    ...group,
-    charts: group.charts.map((card) => ({ ...card, title: card.name, state: "loading" })),
-    metrics: group.metrics.map((card) => ({ ...card, state: "loading" })),
-  }));
-  await Promise.all(
-    [...applied.groups.flatMap((group) => group.charts), ...applied.groups.flatMap((group) => group.metrics)].map((card) =>
-      metricCardTask(normalizeId(props.dashboardId), card.id, setGroups)(),
-    ),
-  );
-}
-
-/** Saves the draft through the page's own action for its operation; the saved board then replaces the draft. */
-async function saveDraft() {
-  const draft = props.draft;
-  if (!draft) return;
-  const id = normalizeId(props.dashboardId);
-  savingDraft.value = true;
-  draftFailure.value = null;
-  try {
-    if (draft.operation === "dashboard.layout") {
-      if (!(await modifyDashboardLayout(id, draft.form.groups))) throw new Error(t("dashboard.layoutSaveFailedRetry"));
-    } else if (draft.operation === "dashboard.rename") {
-      const form = draft.form;
-      if (!(await renameDashboard(id, form.name))) throw new Error(t("common.renameFailed"));
-    } else if (draft.operation === "dashboard.group.rename") {
-      const form = draft.form;
-      if (!(await modifyDimensionName(id, form.groupId, form.dimensionName))) throw new Error(t("common.renameFailed"));
-    } else if (draft.operation === "dashboard.chart.rename") {
-      const form = draft.form;
-      if (!(await modifyResultSetName(id, form.chartId, form.resultSetName))) throw new Error(t("common.renameFailed"));
-    } else if (draft.operation === "dashboard.metric.rename") {
-      const form = draft.form;
-      if (!(await modifyMetricName(id, form.metricId, form.metricName))) throw new Error(t("common.renameFailed"));
-    } else {
-      const form = draft.form;
-      await saveCardParameters({ dashboardId: id, cardId: form.cardId, revision: form.revision, values: form.values });
-    }
-    ElMessage.success(t("dashboard.draft.saved"));
-    emit("discard-draft");
-    await loadDashboardAll(id);
-  } catch (error) {
-    draftFailure.value = cardError(error);
-  } finally {
-    savingDraft.value = false;
-  }
-}
 
 /* ======================== Layout Gate (allow through once after the first-screen stabilizes, no rollback) ======================== */
 
@@ -452,7 +321,6 @@ function ensureLayoutObserver() {
 
 async function reloadDashboardGroups(id) {
   const detail = await fetchDashboardLocalDetail(id);
-  boardName.value = detail?.name ?? "";
   chartGroups.value = Array.isArray(detail?.groups) ? detail.groups : [];
 }
 
@@ -496,7 +364,7 @@ function buildLayoutPersistPayload(groups) {
     rowSpan: clamp(layout?.rowSpan ?? 1, 1, 6),
   });
 
-  // A card sends only its presentation: its query and its chart file stay as saved, and a draft changes the file.
+  // A card sends only its presentation: its query and its chart file stay as saved.
   const pickMetricChart = (c) => ({
     id: c.id,
     name: c.title || c.name,
@@ -530,8 +398,6 @@ function buildLayoutPersistPayload(groups) {
 async function flushPersistLayout() {
   const id = normalizeId(props.dashboardId);
   if (!id) return;
-  // A draft's preview is not a saved layout: nothing is posted while it is open.
-  if (props.draft) return;
   if (persistSaving) return;
 
   persistSaving = true;
@@ -555,7 +421,7 @@ async function flushPersistLayout() {
 
 function persistLayoutDebounced() {
   const id = normalizeId(props.dashboardId);
-  if (!id || props.draft) return;
+  if (!id) return;
   persistDirty = true;
 
   if (persistTimer) clearTimeout(persistTimer);
@@ -674,8 +540,8 @@ async function reloadAndAppendOnly(id) {
 /* ======================== watch dashboard ======================== */
 
 watch(
-  () => [normalizeId(props.dashboardId), props.draft],
-  async ([id]) => {
+  () => normalizeId(props.dashboardId),
+  async (id) => {
     const loadToken = ++dashboardLoadToken;
 
     // Reset the dashboard reset gate
@@ -688,15 +554,8 @@ watch(
     }
 
     try {
-      if (props.draft) {
-        // The board under a draft is read again and drawn with the draft's own changes; its rows still come from the
-        // saved query, so the preview is this card's data with the draft's file, not a save.
-        await applyDraftToBoard();
-        if (loadToken !== dashboardLoadToken) return;
-      } else {
-        await loadDashboardAll(id);
-        if (loadToken !== dashboardLoadToken) return;
-      }
+      await loadDashboardAll(id);
+      if (loadToken !== dashboardLoadToken) return;
 
       await nextTick();
       scheduleStableCheckOnce();
@@ -708,12 +567,6 @@ watch(
   },
   { immediate: true }
 );
-
-/** The name a card is shown under in the draft's board. */
-function cardName(cardId) {
-  const cards = Array.isArray(chartGroups.value) ? chartGroups.value.flatMap((group) => [...group.charts, ...group.metrics]) : [];
-  return String(cards.find((card) => card.id === cardId)?.name ?? "");
-}
 
 /* ======================== lifecycle ======================== */
 
@@ -901,10 +754,10 @@ function selectCard(card) {
   nextTick(() => document.querySelector(`[data-card-id="${card.id}"]`)?.scrollIntoView?.({ block: "nearest", behavior: "smooth" }));
 }
 
-/** The card's name as the board shows it: a draft's name while the draft is open, the saved one otherwise. */
+/** The card's name as the board shows it. */
 function shownName(cardId) {
   const card = [...(chartGroups.value || []).flatMap((group) => [...group.charts, ...group.metrics])].find((item) => item.id === cardId);
-  return (draftChange(cardId) || {}).name || card?.name || card?.title || String(cardId);
+  return card?.name || card?.title || String(cardId);
 }
 
 /** A board is a fresh page: the card chosen on the last one is not this one's. */
@@ -951,20 +804,118 @@ function openParameters(card) {
 
 /** The saved parameters become the card's query; the card then asks the metric again. */
 function handleParametersSaved(cardId) {
-  if (!props.draft) metricCardTask(normalizeId(props.dashboardId), cardId, setGroups)();
-  else emit("discard-draft");
+  metricCardTask(normalizeId(props.dashboardId), cardId, setGroups)();
 }
 
-/** A draft of a card's parameters opens its form with the draft's values; nothing else in it changes. */
-watch(
-  () => props.draft,
-  (draft) => {
-    if (draft?.operation !== "dashboard.card.parameters") return;
-    parametersCard.value = { id: draft.form.cardId, name: cardName(draft.form.cardId) };
-    parametersOpen.value = true;
+function findCard(cardId) {
+  const groups = Array.isArray(chartGroups.value) ? chartGroups.value : [];
+  for (const group of groups) {
+    const chart = (group.charts || []).find((item) => item.id === cardId);
+    if (chart) return { card: chart, kind: "chart" };
+    const metric = (group.metrics || []).find((item) => item.id === cardId);
+    if (metric) return { card: metric, kind: "metric" };
+  }
+  return null;
+}
+
+function selectedCardId() {
+  if (chosen.value.includes(":")) return chosen.value.slice(chosen.value.indexOf(":") + 1);
+  return props.cardId || "";
+}
+
+function selectCardById(cardId) {
+  const found = findCard(cardId);
+  if (!found) return false;
+  selectCard({ id: found.card.id, name: shownName(found.card.id), kind: found.kind });
+  return true;
+}
+
+async function openParametersForCard(cardId) {
+  const targetId = cardId || selectedCardId();
+  if (!targetId) return false;
+  const found = findCard(targetId);
+  if (!found) return false;
+  openParameters(found.card);
+  await nextTick();
+  return true;
+}
+
+async function fillForm(request) {
+  if (request.member && request.member !== "card.parameters") {
+    return {
+      ok: false,
+      reason: "form_not_found",
+      member: request.member,
+      message: `No form '${request.member}' exists on this dashboard page.`,
+    };
+  }
+  if (!parametersOpen.value) {
+    const opened = await openParametersForCard();
+    if (!opened) {
+      return {
+        ok: false,
+        reason: "form_not_ready",
+        member: "card.parameters",
+        message: "Select a dashboard card or open its parameter dialog before filling parameters.",
+      };
+    }
+  }
+  if (!parameterDialogRef.value) {
+    return {
+      ok: false,
+      reason: "form_not_ready",
+      member: "card.parameters",
+      message: "The card parameter dialog is not mounted.",
+    };
+  }
+  return parameterDialogRef.value.fillValues(request.values, request.overwriteUnsaved);
+}
+
+async function executeAction(request) {
+  const operation = request.operation;
+  if (operation === "page.refresh") {
+    const id = normalizeId(props.dashboardId);
+    if (id) await loadDashboardAll(id);
+    return { ok: true, kind: "executed", operation };
+  }
+  if (operation === "card.parameters.open") {
+    const requestedCardId = typeof request.input?.cardId === "string" ? request.input.cardId : undefined;
+    const opened = await openParametersForCard(requestedCardId);
+    return opened
+      ? { ok: true, kind: "executed", operation }
+      : { ok: false, reason: "action_unavailable", operation, message: "No dashboard card is selected to edit parameters." };
+  }
+  if (operation === "card.parameters.save" || operation === "form.save") {
+    if (!parameterDialogRef.value) {
+      return { ok: false, reason: "action_not_ready", operation, message: "The card parameter dialog is not open." };
+    }
+    return parameterDialogRef.value.saveFromAction(operation);
+  }
+  if (operation === "card.parameters.discard" || operation === "form.discard") {
+    if (!parametersOpen.value || !parameterDialogRef.value) {
+      return { ok: false, reason: "action_not_ready", operation, message: "The card parameter dialog is not open." };
+    }
+    parameterDialogRef.value.discard();
+    return { ok: true, kind: "executed", operation };
+  }
+  return {
+    ok: false,
+    reason: "action_not_found",
+    operation,
+    message: `Unsupported dashboard action '${operation}'.`,
+  };
+}
+
+defineExpose({
+  reload: () => {
+    const id = normalizeId(props.dashboardId);
+    return id ? loadDashboardAll(id) : Promise.resolve();
   },
-  { immediate: true },
-);
+  selectCardById,
+  openParametersForCard,
+  fillForm,
+  executeAction,
+});
 </script>
 
 <style scoped>
@@ -1202,57 +1153,6 @@ watch(
 .drag-dragging {
   cursor: grabbing !important;
   border-radius: var(--radius-md);
-}
-
-/* ===============================
-   a draft's bar: what it changes, and the ways out
-================================ */
-.draft-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  flex-wrap: wrap;
-  padding: var(--spacing-md);
-  margin-top: var(--spacing-lg);
-  background: var(--el-bg-color);
-  border-top: 1px solid var(--el-color-primary);
-  box-shadow: var(--shadow-card);
-}
-
-.draft-bar__text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 200px;
-  font-size: var(--text-sm);
-  color: var(--el-text-color-secondary);
-}
-
-.draft-bar__text strong {
-  color: var(--el-text-color-primary);
-}
-
-.draft-bar__board {
-  color: var(--el-text-color-primary);
-}
-
-.draft-bar__failure {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex-basis: 100%;
-  font-size: var(--text-sm);
-  color: var(--el-color-danger);
-}
-
-.draft-bar__actions {
-  display: flex;
-  gap: var(--spacing-sm);
-  flex-shrink: 0;
 }
 
 /* Others */

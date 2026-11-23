@@ -9,7 +9,7 @@ import { workbenchI18n } from "@ontomato/workbench-ui/i18n";
 import { BusinessWorkbench } from "@ontomato/workbench-ui/features/workbench";
 import { pilotPageResolver } from "../../../../../packages/platform-web/src/pilot-pages";
 import { SESSION, noticeStreamDouble } from "../../../../../packages/workbench-ui/src/features/workbench/__tests__/host-double";
-import { draftScenario, installPlatform, leaveFrame } from "./panel-frame";
+import { liveFormScenario, installPlatform, leaveFrame } from "./panel-frame";
 
 /*
  * An agent asks to show another page while the panel beside the conversation holds the reader's unsaved form. The real
@@ -34,7 +34,7 @@ afterEach(leaveFrame);
 describe("an agent's presentation over a panel's unsaved form", () => {
   it("is refused at once, and the panel and its address stay", { timeout: 20000 }, async () => {
     host.stream = noticeStreamDouble();
-    const scenario = draftScenario();
+    const scenario = liveFormScenario();
     installPlatform(scenario.answer);
     // The conversation the reader is in, by its address, with the panel beside it.
     const router = createRouter({ history: createMemoryHistory(), routes: [{ ...platformRoutes.chat, component: { render: () => null } }] });
@@ -55,22 +55,34 @@ describe("an agent's presentation over a panel's unsaved form", () => {
     document.body.append(root);
     app.mount(root);
 
-    // The panel runs and takes the draft: its form is unsaved, which the page reports to the display.
-    await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true), { timeout: 5000 });
+    // Wait for the panel's form to mount and register its live controller.
+    await vi.waitFor(() => expect(document.querySelector('[data-field="/caseSetId"]')).not.toBeNull(), { timeout: 5000 });
     const panel = document.querySelector(".panel-host-coded > *");
 
-    // The page view's stream is ready, and a run of this conversation asks.
+    // The page view's stream is ready; the agent fills the form live, leaving it unsaved and marked changed.
     await host.stream.current().frame({ type: "ready", connectionId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1" });
+    host.stream.current().view!.frame({
+      type: "presentation", sessionId: SESSION, runId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", toolCallId: "call-fill",
+      target: { kind: "fill_form", member: "form", values: { "/caseSetId": "set-smoke" } },
+    });
+    await vi.waitFor(() => expect(host.stream.receipts).toHaveLength(1), { timeout: 5000 });
+    expect(host.stream.receipts[0]!.receipt.result).toMatchObject({
+      status: "filled",
+      member: "form",
+      filledFields: ["/caseSetId"],
+    });
+    await vi.waitFor(() => expect(onDisplayDirty).toHaveBeenLastCalledWith(true), { timeout: 5000 });
+
     const address = router.currentRoute.value.fullPath;
     const asked = Date.now();
     host.stream.current().view!.frame({
       type: "presentation", sessionId: SESSION, runId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", toolCallId: "call-1",
       target: { kind: "page", address: "/dashboards" },
     });
-    await vi.waitFor(() => expect(host.stream.receipts).toHaveLength(1), { timeout: 1000 });
+    await vi.waitFor(() => expect(host.stream.receipts).toHaveLength(2), { timeout: 1000 });
 
     expect(Date.now() - asked).toBeLessThan(1000);
-    expect(host.stream.receipts[0]!.receipt.result).toMatchObject({
+    expect(host.stream.receipts[1]!.receipt.result).toMatchObject({
       status: "not_opened",
       reason: "blocked_unsaved",
       current: { known: true, target: { kind: "page" } },

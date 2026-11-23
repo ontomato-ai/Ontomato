@@ -44,7 +44,7 @@ it("sends what the panel's state binds as the author's input and what the member
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "knowledge", url: () => "/ontology/knowledge", label: () => "Knowledge", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async () => knowledge,
     read: async (request) => {
       reads.push(request);

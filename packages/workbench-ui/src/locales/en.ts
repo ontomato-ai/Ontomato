@@ -207,25 +207,7 @@ export default {
     "panelScriptRejected": "The panel's script failed",
     "panelStyleOutside": "This panel's CSS reaches outside the panel, so none of it applies. A panel's CSS styles only its own panel.",
     "panelAddressUnavailable": "{address} is not a page you can open: it does not exist, or you may not open it.",
-    "panelDraftUnclaimed": "This page has no form that takes this draft for {objectType} ({operation})",
-    "panelDraftClose": "Close this notice",
-    "panelDraftOpening": "Opening the draft…",
-    "panelDraftToAgent": "Hand back to the agent",
-    "panelDraftToAgentText": "The draft couldn't be used: {reason}",
     "panelDraftChanged": "Changed: {fields}",
-    "draftUnusableFields": "The draft {file} cannot be used: it lacks or gets wrong {fields}. The page opens without it.",
-    "draftUnreadable": "The draft {file} could not be read ({reason}). The page opens without it.",
-    "draftRunMissing": "The draft {file} cannot be used: the conversation that wrote this draft cannot be found. The page opens without it.",
-    "draftFileMissing": "The draft {file} cannot be used because the linked run has no such file. The page opens without it.",
-    "draftFileInAnotherRun": "The linked run has no draft {file}. Another run in this conversation has the file. Ask the agent to send the link from that run. The page opens without the draft.",
-    "draftForbidden": "The draft {file} cannot be used: you are not allowed to read this draft. The page opens without it.",
-    "draftOtherPage": "The draft {file} was written for another page. The page opens without it.",
-    "draftFailed": "The draft could not be opened: {reason}. The page opens without it.",
-    "draftFieldObjectType": "the type of the object it is for",
-    "draftFieldId": "the object it is for",
-    "draftFieldOperation": "the operation",
-    "draftFieldPageKey": "the page it is for",
-    "draftFieldForm": "its values",
     "graphIncludeAdjacent": "Include adjacent ({count})",
     "graphChosenNone": "None chosen",
     "graphChosenCount": "{count} chosen",
@@ -618,21 +600,6 @@ export default {
       "PUBLISHED": "Published"
     },
     "openMetric": "Open in metric management",
-    "draft": {
-      "title": "An agent's draft",
-      "names": "{n} name | {n} names",
-      "charts": "{n} chart file | {n} chart files",
-      "layouts": "{n} layout change | {n} layout changes",
-      "groups": "{n} group | {n} groups",
-      "boardName": "the dashboard's name",
-      "boardWas": "Dashboard name: {from} → {to}",
-      "parameters": "card parameters",
-      "separator": ", ",
-      "chartChanged": "Chart changed",
-      "revisionChanged": "The metric changed since this draft was written. Read the current parameters again; nothing is saved under the changed definition.",
-      "unavailable": "The dashboard this draft names is no longer available to you.",
-      "saved": "Draft saved"
-    },
     "cardErrors": {
       "CARD_OUTPUT_MISMATCH": "The metric's output no longer matches this card's fields.",
       "METRIC_UNAVAILABLE": "The metric is unavailable.",
@@ -1074,8 +1041,6 @@ export default {
     "dataScopeNoClasses": "This domain has no object types yet",
     "dataScopeReset": "Reset view",
     "discardConfirm": "Discard the unsaved changes to this agent?",
-    "draftChanged": "Filled from the conversation; changed: {fields}. Review and save.",
-    "draftOtherAgent": "This draft was written for another agent; open that agent's page to save it.",
     "executionUser": "Execution permission",
     "executionUserHint": "The permissions the agent runs with. A domain governance administrator may run it as one member of this domain; every other reader runs it with their own.",
     "executionOwn": "The reader's own permissions",
@@ -1087,7 +1052,6 @@ export default {
       "not-member": "the member is no longer in this domain"
     },
     "executionReasonUnknown": "the domain no longer accepts this member",
-    "executionDraftUnauthorized": "This draft changes whose permissions the agent runs with. Only a domain governance administrator can save that change, so it is shown here but not saved with the rest.",
     "executionOptionsFailed": "Couldn't read who may execute this agent."
   },
   "scheduledTasks": {
@@ -1331,7 +1295,7 @@ export default {
           "skills": "The skill references selected for the agent.",
           "classNames": "The ontology class names in the agent's configured data scope.",
           "enabledMcpServiceIds": "The IDs of MCP services enabled for the agent.",
-          "executionUserId": "The specified execution user's ID, or null to run as the initiating user.",
+          "executionUserId": "Default execution user ID for automated/unattended runs, or null. Interactive runs with a logged-in user inherit that user's permissions.",
           "sortOrder": "The position used to order the definition in agent lists."
         }
       },

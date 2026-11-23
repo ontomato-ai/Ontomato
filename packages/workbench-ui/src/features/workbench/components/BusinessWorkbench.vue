@@ -157,8 +157,8 @@ const shell = ref<InstanceType<typeof AgentShell> | null>(null);
  * another application's routes. The pages the display opens beside the conversation never reach here.
  *
  * Any other page of the platform that the router can resolve opens at its real address, its query kept as it was
- * written, so a draft handoff's parameters travel with it; an address the router does not resolve is no page and stays
- * text. A host outside the platform (another scheme, another host) is never one of these.
+ * written; an address the router does not resolve is no page and stays text. A host outside the platform (another
+ * scheme, another host) is never one of these.
  */
 function pageLinks(href: string): (() => void) | null {
   const address = href.replace(/^#/, "");
@@ -461,7 +461,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
         @display-loaded="display.loaded"
         @display-dirty="display.dirty"
         @display-skill="display.skill"
-        @form-edited="display.formEdited"
       />
       <slot v-else name="feature" :feature-id="page" />
     </template>

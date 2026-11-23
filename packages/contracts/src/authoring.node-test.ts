@@ -4,7 +4,6 @@ import test from "node:test";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import {
-  actionAuthoringPageDraftSchema,
   actionExplanationEvidenceSchema,
   authoringAdoptionResponseSchema,
   authoringHostRunSchema,
@@ -13,7 +12,6 @@ import {
   authoringWireSchemas,
   platformAuthoringEvidenceOperations,
 } from "./authoring";
-import { pageDraftSchema } from "./page-draft";
 
 const sessionId = "bda3d9bd-afc1-4dfa-92c2-41efda234bad";
 const runId = "959c449b-afd0-4af9-9f2d-663fecfce14a";
@@ -61,7 +59,7 @@ test("MetricView tests take the complete existing QueryPackage", () => {
   assert.equal("prepare" in authoringOperations["metric-view"], false);
 });
 
-test("test rereads preserve the same evidence and Action drafts retain the existing envelope", () => {
+test("test rereads and adoption preserve the same evidence", () => {
   const evidence = { executionId, digest: "a".repeat(64) };
   const record = {
     ...evidence,
@@ -76,10 +74,6 @@ test("test rereads preserve the same evidence and Action drafts retain the exist
   assert.deepEqual(authoringOperations["metric-view"]["read-test"].response.parse(record), record);
   const definition = { name: "Action", explanationRef: runId };
   assert.deepEqual(authoringAdoptionResponseSchema.parse({ definition, ...evidence }), { definition, ...evidence });
-
-  const draft = { pageKey: "actions", operation: "action.create", target: { objectType: "platform:Action" }, form: definition };
-  assert.deepEqual(actionAuthoringPageDraftSchema.parse(draft), pageDraftSchema.parse(draft));
-  assert.equal(actionAuthoringPageDraftSchema.safeParse({ ...draft, ...evidence }).success, false);
 });
 
 test("historical evidence requests carry only the original host facts and their declared input", () => {

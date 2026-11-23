@@ -79,7 +79,6 @@ function open(initial: Record<string, RuntimeJsonValue>) {
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: {
       kind: "success", data: {}, affected: { objects: [{ objectType: ATTRIBUTE, primaryKey: "Device.site_id" }], objectTypes: [ATTRIBUTE] },
     } as never } }),
-    recordDraftCreated: async () => {},
     readProjection: async () => projection,
     read: async (request: PanelMemberReadRequest) => (request.operations ? ready({ save }) : ready(createForm)),
   });

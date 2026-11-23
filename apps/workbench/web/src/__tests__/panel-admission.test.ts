@@ -3,7 +3,7 @@ import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost, type PanelObjectChange } from "../../../../../packages/platform-web/src/panel-host";
 import { contextTransport } from "../../../../../packages/apps-sdk/src/context";
 import { mountPanel } from "../../../../../packages/apps-sdk/src/panel/mount";
-import { formSaveCalls, ignoreChanges,
+import { formSaveCalls,
   READER,
   SCHEDULED_TASK,
   humanIntents,
@@ -27,25 +27,19 @@ import { formSaveCalls, ignoreChanges,
 
 /*
  * What a panel's frame may ask the platform for (overall design 5.1, 7): exactly what its declaration covers — the
- * projections it names, the requests of the SDK clients their bindings reach, and the drafts written for its page — and
- * nothing else, whatever the reader's own permissions would allow. Both ends are real: the platform's app host and
- * bridge, the frame registered by the platform's panel host with the trial's panel P, and the SDK's `mountPanel`.
+ * projections it names and the requests of the SDK clients their bindings reach — and nothing else, whatever the
+ * reader's own permissions would allow. Both ends are real: the platform's app host and bridge, the frame registered by
+ * the platform's panel host with the trial's panel P, and the SDK's `mountPanel`.
  *
- * The mistakes this rules out: a panel that cannot do what it is for (list, read, open the form, save, run now, read its
- * draft) because the narrowing missed one of its requests; and a panel that can do more — write product definitions,
- * talk to the assistant, run another MetricView, delete a task, read a projection or a draft that is not its own —
- * because the reader's credential would have been accepted.
+ * The mistakes this rules out: a panel that cannot do what it is for (list, read, open the form, save, run now) because
+ * the narrowing missed one of its requests; and a panel that can do more — write product definitions, talk to the
+ * assistant, run another MetricView, delete a task, read a projection that is not its own — because the reader's
+ * credential would have been accepted.
  */
 
 const panelP = panelRecord("panel-schedules-trial", "Scheduled tasks (trial)", manifestP);
 const useOfP = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panelP.id, "/applications/app-panels-trial-a/tasks");
 const tasks = "/api/data-query/platform/scheduled-tasks";
-const draftOf = (pageKey: string) => ({
-  pageKey,
-  operation: "platform:ScheduledTask.save",
-  target: { objectType: SCHEDULED_TASK, id: task.id },
-  form: { ...task.content, caseSetId: "set-regression" },
-});
 
 const affected = { objects: [{ objectType: SCHEDULED_TASK, primaryKey: task.id }], objectTypes: [SCHEDULED_TASK] };
 const owned = (kind: "form.save" | "action", handlerRef: string) => ({
@@ -67,11 +61,6 @@ function answer(request: Sent) {
   if (request.path === tasks && request.method === "GET") return Response.json({ tasks: [task], timeZone: task.timeZone });
   if (request.path === `${tasks}/${task.id}` && request.method === "GET") return Response.json(task);
   if (request.path === `${tasks}/applications/${task.appId}/form`) return Response.json(taskForm);
-  if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft") return Response.json(draftOf(useOfP.pageKey));
-  if (request.path === "/api/assistant/sessions/session-1/runs/run-2/page-draft") return Response.json(draftOf("dashboard"));
-  if (request.path === "/api/assistant/sessions/session-1/runs/run-3/page-draft")
-    return Response.json({ ...draftOf(useOfP.pageKey), target: { objectType: SCHEDULED_TASK } });
-  if (request.path === "/api/assistant/sessions/session-1/runs/run-3/page-draft/created") return new Response(null, { status: 204 });
   return nothingAt(request);
 }
 
@@ -122,10 +111,7 @@ describe("what a panel's frame may ask the platform for", () => {
       context.instance.invoke(operations.find((operation) => operation.handlerRef === "schedules.runNow")!.id),
     ).resolves.toMatchObject({ decision: "confirm", response: { kind: "dispatched", outcome: { kind: "success", data: { runId: run.id } } } });
     expect(sent.some((request) => request.path === `${tasks}/${task.id}/runs`)).toBe(false);
-    // A draft an agent wrote for this page is read the way the SDK reads one.
     const transport = contextTransport(appContext);
-    const draft = await transport.request("/assistant/sessions/session-1/runs/run-1/page-draft?path=drafts%2Ftask.json", {}, "");
-    expect(await draft.json()).toEqual(draftOf(useOfP.pageKey));
 
     // An intent's ID is Node's; the requests are the same whichever it is.
     const line = ({ method, path }: Sent) => `${method} ${path.replace(/^(\/api\/panel-operation[^/]*\/(?:intents\/)?)[0-9a-f-]{36}/, "$1:intent")}`;
@@ -142,7 +128,6 @@ describe("what a panel's frame may ask the platform for", () => {
         "POST /api/panel-operations/intents",
         "GET /api/panel-operation-intents/:intent",
         "POST /api/panel-operations/intents/:intent/dispatch",
-        "GET /api/assistant/sessions/session-1/runs/run-1/page-draft",
       ]),
     );
     expect(sent.every((request) => request.credential === READER)).toBe(true);
@@ -153,7 +138,6 @@ describe("what a panel's frame may ask the platform for", () => {
       ["/product-assets/subscriptions", { method: "POST", body: "{}" }, ""],
       ["/assistant/agents", {}, ""],
       ["/assistant/sessions", { method: "POST", body: "{}" }, ""],
-      ["/assistant/sessions/session-1/runs/run-1/page-draft/created", { method: "POST", body: "{}" }, ""],
       ["/metricView/execute", { method: "POST", body: JSON.stringify({ id: "revenue" }) }, "/data-query"],
       ["/action/execute", { method: "POST", body: JSON.stringify({ id: "delete-customer" }) }, "/data-query"],
       [`/platform/scheduled-tasks/${task.id}`, { method: "DELETE" }, "/data-query"],
@@ -166,36 +150,6 @@ describe("what a panel's frame may ask the platform for", () => {
       await expect(transport.request(path, init, service), `${init.method ?? "GET"} ${service}${path}`).rejects.toThrow(
         "Outside what this panel's projections declare",
       );
-    // A draft is the page's only when it was written for this page: another page's is read, and not handed over.
-    await expect(
-      transport.request("/assistant/sessions/session-1/runs/run-2/page-draft?path=drafts%2Fboard.json", {}, ""),
-    ).rejects.toThrow("written for another page");
-    expect(sent.map(line)).toEqual([
-      ...allowed,
-      "GET /api/assistant/sessions/session-1/runs/run-2/page-draft",
-    ]);
-  });
-
-  it("records the object a create draft of its own page created, and no other draft's", { timeout: 20000 }, async () => {
-    const sent = installPlatform(answer);
-    const frame = panelFrame();
-    platformPanelHost("app-panels-trial-a", useOfP, ignoreChanges).frame(frame, registered("app-panels-trial-a", useOfP, panelP), true);
-    writePanelDocument(registered("app-panels-trial-a", useOfP, panelP), "/applications/app-panels-trial-a/tasks", {});
-    inside(frame);
-    const { appContext } = await mountPanel(panelOf());
-    const transport = contextTransport(appContext);
-    const created = (run: string, path: string) =>
-      transport.request(`/assistant/sessions/session-1/runs/${run}/page-draft/created`, { method: "POST", body: JSON.stringify({ path, id: task.id }) }, "");
-
-    // Before the frame has read the draft, and for a draft it read that changes an existing task, nothing is recorded.
-    await expect(created("run-3", "outputs/drafts/task.page-draft.json")).rejects.toThrow("Outside what this panel's projections declare");
-    await transport.request("/assistant/sessions/session-1/runs/run-1/page-draft?path=outputs%2Fdrafts%2Ftask.page-draft.json", {}, "");
-    await expect(created("run-1", "outputs/drafts/task.page-draft.json")).rejects.toThrow("Outside what this panel's projections declare");
-    // The create draft written for this page, once read: its first save records what it created, at that draft alone.
-    await transport.request("/assistant/sessions/session-1/runs/run-3/page-draft?path=outputs%2Fdrafts%2Ftask.page-draft.json", {}, "");
-    expect((await created("run-3", "outputs/drafts/task.page-draft.json")).status).toBe(204);
-    await expect(created("run-3", "outputs/drafts/other.page-draft.json")).rejects.toThrow("Outside what this panel's projections declare");
-    expect(sent.filter(request => request.path.endsWith("/created")).map(request => request.body))
-      .toEqual([{ path: "outputs/drafts/task.page-draft.json", id: task.id }]);
+    expect(sent.map(line)).toEqual(allowed);
   });
 });

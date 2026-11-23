@@ -171,7 +171,6 @@ function ownerSaveBody(target: PanelOperationTarget, input: Record<string, unkno
   return { ...valuesForTarget(target, values), ...(submittedFields && { submittedFields }) };
 }
 
-const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 export const m5ServerOperations = [
   {
@@ -187,7 +186,7 @@ export const m5ServerOperations = [
     resultSchema: savedIdSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "metric-view.create" : "metric-view.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     create: {
       draftValues(values: unknown) {
         return runtimeJsonObjectSchema.parse(values);
@@ -278,7 +277,7 @@ export const m5ServerOperations = [
     resultSchema: savedIdSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "function.create" : "function.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     create: {
       draftValues(values: unknown) {
         return runtimeJsonObjectSchema.parse(values);

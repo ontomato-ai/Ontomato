@@ -152,7 +152,7 @@ function mount(
   const projection = graph(editable, look);
   const instance = createDirectPanelInstance(manifest(projection.id), {
     pageKey: "modeling", url: () => "/modeling", label: () => "Modeling", initial: initial as never,
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => {
       if (request.operations) return ready({});

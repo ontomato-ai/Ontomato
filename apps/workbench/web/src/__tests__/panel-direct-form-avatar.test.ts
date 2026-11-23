@@ -57,7 +57,7 @@ afterEach(() => {
 it("chooses an avatar's icon and swatch as the owner stores it, and names a reference nothing here draws", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: { agent },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready(description)),
   });

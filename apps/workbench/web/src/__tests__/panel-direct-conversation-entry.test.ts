@@ -40,7 +40,7 @@ it("opens the page's composer with the member's declared agent and sentence, onc
     state: {}, members: { governance: { target: { projectionId: projection.id } } },
   }), {
     pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     expandPageComposer: (entry) => { expanded.push(entry); },
     readProjection: async () => projection,
     read: async () => { throw new Error("A conversation entry reads nothing"); },
@@ -74,7 +74,7 @@ it("opens the composer with the opening sentence its key names, in the reader's 
       state: {}, members: { governance: { target: { projectionId: keyed.id } } },
     }), {
       pageKey: "actions", url: () => "/actions", label: () => "Actions", initial: {},
-      text: createPanelText(words, ref(locale), "en"), ...noOperations, recordDraftCreated: async () => {},
+      text: createPanelText(words, ref(locale), "en"), ...noOperations,
       expandPageComposer: (entry) => { expanded.push(entry); },
       readProjection: async () => keyed,
       read: async () => { throw new Error("A conversation entry reads nothing"); },

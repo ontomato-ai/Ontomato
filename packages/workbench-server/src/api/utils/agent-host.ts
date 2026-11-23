@@ -45,7 +45,7 @@ export const wrap =
                 ? "Invalid request"
                 : "Service unavailable",
         },
-        // What a refusal names beyond its message (the fields a page draft gets wrong), for the page to say in words.
+        // What a refusal names beyond its message (the fields a form submission gets wrong), for the page to say in words.
         ...(e instanceof HttpError && e.details !== undefined ? { details: e.details } : {}),
         correlationId: getRequestId() ?? "assistant",
       });

@@ -26,12 +26,12 @@
 - 同步到 URL 的扁平具名参数（`deepLink: true`）：`selected`、`search`、`scope`、`sort`、`templateFilter`、`tab`、`detailMode`、`sourceFile`。
 - 仅用于页面交互或操作入参、不写入 URL 的公开状态：`creating`、`selectedRevision`、`copyDialog`、`copyMode`、`copyId`、`copyName`、`copyTemplate`、`grantDialog`、`grantPrincipalKind`、`grantUser`、`grantRole`、`grantPrincipalId`、`grantVerb`。
 
-## 人与智能体怎么起草
+## 人与智能体怎么填写表单
 
 - 编辑与新建都使用 `ObjectForm`（`form`）及 `platform:ProductPanel.save`。
-- 编辑草稿的 `target` 设为 `{ "objectType": "platform:ProductPanel", "id": "<panelId>" }`，只放改动字段；打开草稿链接后页面自动定位到 `selected` 并切入 `detailMode = "edit"`。
-- 新建草稿省略 `target.id`，至少提供 `name`、`content.html`、`content.module` 和 `manifest`；打开草稿链接后自动进入 `creating = true`。
-- 草稿未保存前不会产生写入。
+- 编辑时先用 `present` 选中目标面板并切入 `detailMode = "edit"`，再用 `fill_form` 直接填入需要改动的字段。
+- 新建时先用 `present` 置 `creating = true`，再用 `fill_form` 至少填入 `name`、`content.html`、`content.module` 和 `manifest`。
+- 需要保存时调用 `page_action({ operation: "form.save" })`（默认经读者在对话中确认后才提交）；未保存前不会产生写入。
 
 ## 人与智能体怎么执行操作
 

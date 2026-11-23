@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
-import type { AgentHostObjectChangedFrame, AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
-import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
-import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
+import type { AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
   FillFormRequest, ObserveDisplayRequest, PageActionRequest, PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
@@ -54,23 +52,6 @@ export function openPresentationView(
     if (views.get(key) === connection) views.delete(key);
   }, { once: true });
   return connection.id;
-}
-
-export function publishObjectChanged(input: {
-  domainId: string;
-  initiator: string;
-  rootSession: AgentHostObjectChangedFrame["session"];
-  operation?: PanelCompletedOperation;
-} & (
-  | { target: PanelObjectIdentity; affected?: PanelOperationAffected }
-  | { target: null; affected: PanelOperationAffected }
-)): void {
-  const { domainId, initiator, rootSession, ...change } = input;
-  const frame: AgentHostObjectChangedFrame = { type: "object-changed", session: rootSession, ...change };
-  for (const { host, owner, send } of views.values()) {
-    if (host === rootSession.providerId && owner.domainId === domainId && owner.userId === initiator)
-      send(frame);
-  }
 }
 
 export function visibilityReader(body: AgentPrepareRequest): AgentVisibilityReader | undefined {
@@ -176,7 +157,6 @@ export async function requestPresentation(
         kind: "page",
         address: input.target,
         ...(input.state === undefined ? {} : { state: input.state }),
-        ...(input.overwriteUnsavedDraft ? { overwriteUnsavedDraft: true } : {}),
       };
     }
   } catch (error) {

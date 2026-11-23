@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 import {parseArgs} from "node:util";
-import {readFile,mkdir,writeFile} from "node:fs/promises";
-import path from "node:path";
+import {readFile} from "node:fs/promises";
 import {dashboardAuthoring,dashboardOperationSchema,dashboardCardRequestSchema} from "../../contracts/src/dashboard.ts";
-import {pageDraftSchema,pageDraftPathSchema} from "../../contracts/src/page-draft.ts";
-import {runtimeIdSchema} from "../../contracts/src/agent-runtime-values.ts";
-import {DASHBOARD} from "../../contracts/src/platform-object-types.ts";
 
 const {values,positionals}=parseArgs({allowPositionals:true,options:{
-  "dashboard-id":{type:"string"},"card-id":{type:"string"},operation:{type:"string"},form:{type:"string"},out:{type:"string"},
+  "dashboard-id":{type:"string"},"card-id":{type:"string"},operation:{type:"string"},form:{type:"string"},
 }});
 const [command]=positionals,env=process.env;
 async function call(endpoint,body){
@@ -45,17 +41,10 @@ async function run(){
     const body=dashboardCardRequestSchema.parse({dashboardId:values["dashboard-id"],cardId:values["card-id"]});
     return call(command==="card"?"/query-card":"/card-parameter-form",body);
   }
-  if(command!=="draft"&&command!=="save")throw new Error("Use list, read, link, card, parameters, draft or save; see SKILL.md");
+  if(command!=="save")throw new Error("Use list, read, link, card, parameters or save; see SKILL.md");
   const operation=dashboardOperationSchema.parse(values.operation);
   const input=JSON.parse(await readFile(values.form.replace(/^@/,""),"utf8"));
   const action=dashboardAuthoring[operation],form=action.schema.parse(input);
-  if(command==="save")return call(action.path,form);
-  const out=pageDraftPathSchema.parse(values.out);
-  const sessionId=runtimeIdSchema.parse(env.ONTOMATO_SESSION_ID),runId=runtimeIdSchema.parse(env.ONTOMATO_RUN_ID);
-  const draft=pageDraftSchema.parse({pageKey:"dashboard",operation,target:{objectType:DASHBOARD,id:"dashboardId" in form?form.dashboardId:form.id},form});
-  await mkdir(path.dirname(out),{recursive:true});
-  await writeFile(out,JSON.stringify(draft,null,2)+"\n");
-  const query=new URLSearchParams({draftSessionId:sessionId,draftRunId:runId,draftPath:out});
-  return {link:dashboardLink("Review dashboard changes",query)};
+  return call(action.path,form);
 }
 run().then(result=>console.log(JSON.stringify(result,null,2))).catch(error=>{console.error(error.message);process.exitCode=1;});

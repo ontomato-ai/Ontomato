@@ -22,8 +22,6 @@ export interface PanelProjectionRegistration {
   readonly operations: MemberOperations;
   /** The projection's authored operation bindings, by local name, carrying parameter wiring where declared. */
   readonly operationBindings?: Readonly<Record<string, ProjectionOperationBinding>>;
-  /** Whether it reads an owner's form, which a draft is offered to. */
-  takesDrafts: boolean;
 }
 
 /** The values a slot passes its projection now, by the parameter each fills; a field with no value passes null. */

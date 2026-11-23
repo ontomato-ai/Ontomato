@@ -5,18 +5,14 @@ Read `skills` and `models` first; they are also what a save validates against. U
 ## Create an agent
 
 1. Read `skills` and `models`. Ask for whatever the user has not decided: the job of the agent, its prompt, which skills it may use and which model.
-2. Write the whole form in `work/agent.json` with no `id` — a creation names its fields, its skills included (`[]` for none) — and `"executionUserId": null` unless the user asked to run it as another user: then read `execution-users` and use the chosen real user.
-3. Inside the platform: `draft create @work/agent.json`, `validate-draft @outputs/drafts/agent.page-draft.json`, then give the user the `draft-link` line. The page opens as a new agent with the form filled; the user saves it.
-4. Outside the platform: `create @work/agent.json`. The reply names the new agent and links `/agents/settings/<id>`.
+2. Inside the platform: open the Agent Settings page in create mode with `present`, fill the fields with `fill_form`, and save via `page_action` (or leave it unsaved for the user to save). Leave `executionUserId` as `null` unless the user wants a default identity for automated/unattended runs.
+3. Outside the platform: write the whole form in `work/agent.json` with no `id` and run `create @work/agent.json`. The reply names the new agent and links `/agents/settings/<id>`.
 
 ## Change a prompt, skill or model
 
-1. `get <id>`; copy the definition to `work/agent.json` and remove `id`.
-2. Read `skills` and `models` if the change selects one, and edit only the fields the user asked about. Keep `executionUserId` exactly as `get` returned it. Remove `skills` from the copy unless the user is changing the agent's skills.
-3. Inside the platform: `draft update <id> @work/agent.json`, validate it, and give the user the draft link. The page marks the changed fields and stays unsaved.
-4. Outside the platform: `update <id> @work/agent.json`.
-
-If the user asks to change one thing after seeing the draft, edit the same form and run the three draft commands again; do not claim the earlier draft was saved.
+1. `get <id>`; read `skills` and `models` if the change selects one.
+2. Inside the platform: open the agent on the Agent Settings page with `present`, call `fill_form` with only the fields being changed, and save via `page_action` (or let the user save on the page).
+3. Outside the platform: copy the definition to `work/agent.json` without `id`, keep `executionUserId` as returned, omit `skills` unless changing them, and run `update <id> @work/agent.json`.
 
 ## Change the skills
 
@@ -29,10 +25,10 @@ An agent may hold protected skills this caller cannot see, and `get`, the page a
 ## Change the execution permission
 
 1. Run `execution-users [keyword]`. If `canSetExecutionUser` is false, only a domain governance administrator can change this field: say so and leave it alone.
-2. Otherwise pick the user by `id` from the result, and set `executionUserId` to that ID (or to `null` for the reader's own permission).
-3. Update the definition as above. A save or draft that changes the field is rejected with 403 for anyone else; a form that keeps the stored value passes.
+2. Otherwise pick the user by `id` from the result, and set `executionUserId` to that ID (or to `null`).
+3. Update the definition as above. A save that changes the field is rejected with 403 for anyone else; a form that keeps the stored value passes.
 
-The agent runs with that user's current permissions from the next run; a user who later stops being an enabled member makes the run fail explicitly, not fall back to the reader. List results show the stored user by ID; do not claim a user's data access without running the agent as them.
+`executionUserId` applies only to automated/unattended runs (interactive sessions with a logged-in user always inherit that user's permissions). If the configured user later stops being an enabled member, unattended runs fail explicitly. List results show the stored user by ID; do not claim a user's data access without running the agent as them.
 
 ## Delete an agent
 

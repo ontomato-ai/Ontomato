@@ -114,7 +114,6 @@ it("rereads affected member operations on refresh(affected) to update unavailabl
     navigate: noOperations.navigate,
     nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
-    recordDraftCreated: async () => {},
     readProjection: async (id) => {
       const projection = projections[id];
       if (!projection) throw new Error(`Missing projection ${id}`);
@@ -285,7 +284,6 @@ it("rereads operations on a projection whose data source matches the affected ty
     navigate: noOperations.navigate,
     nested: noOperations.nested,
     confirmOperation: noOperations.confirmOperation,
-    recordDraftCreated: async () => {},
     readProjection: async () => listWithRowOp,
     read: async (request) => {
       reads.push(request);

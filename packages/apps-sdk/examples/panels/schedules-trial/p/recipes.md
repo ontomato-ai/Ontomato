@@ -28,8 +28,9 @@ running automated tests and running an inspection, each with its own fields.
 
 ## How a change gets here from an agent
 
-A run may write a draft for this page and hand the reader a link. Opening it fills the form, marks the fields the draft
-changed, and leaves them unsaved; the reader saves. Nothing is written until they do.
+An assistant beside this page selects the task via `present`, fills explicit fields in the mounted form via `fill_form`
+(marking changed fields and keeping the form unsaved), and submits via `page_action` when requested (confirming in
+conversation by default). Nothing is written until saved.
 
 ## What a save and a run act on
 

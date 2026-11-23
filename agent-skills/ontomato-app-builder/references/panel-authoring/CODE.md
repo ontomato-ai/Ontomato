@@ -77,7 +77,7 @@ await mountPanel({
 ## Panel controls and platform behavior
 
 - **Allowed imports in `panel.mjs`.** Only `vue` and `@ontomato/sdk/panel` (`mountPanel`, `usePanelContext`,
-  `usePanelFormDraft`, `usePanelBack`, `usePanelData`, `usePanelOperation`, `savePanelFile`, `draftTarget`,
+  `usePanelFormDraft`, `usePanelBack`, `usePanelData`, `usePanelOperation`, `savePanelFile`,
   `appIcon`). Never import `element-plus` or any third-party UI library, and never write `<el-*>` tags, `v-loading`,
   or `--el-*` CSS tokens.
 - **Overlays & notifications.** Use `<sdk-dialog>` / `<sdk-drawer>` for modal/drawer overlays (such as centered create
@@ -355,61 +355,14 @@ An `ObjectForm` projection binds one `form.save` operation and submits `values`,
   or `{"literal":"..."}`) so they display read-only and submit with every save.
 - `ObjectForm` automatically renders word counters for schema `maxLength` fields and disables cascading select fields
   when the owner declares `disabledWhenEmpty`.
+- The `saved` event carries `{ className, primaryKey }`.
 
-The SDK evaluates incoming drafts against declared form members even before `ObjectForm` mounts, so you can mount
-`<projection slot="form">` conditionally (`v-if`) inside a detail view or create `<sdk-dialog>` and watch
-`instance.draft`. The `saved` event carries `{ className, primaryKey }`.
+### Assistant live form filling and saving
 
-Always use `draftTarget(draft)` to inspect an accepted draft's effective target (`{ kind: "create", objectType }` vs.
-`{ kind: "update", objectType, id }`, including reopened saved creation drafts):
-
-```js
-import { draftTarget, usePanelContext } from "@ontomato/sdk/panel";
-import { watch } from "vue";
-
-const { instance } = usePanelContext();
-watch(instance.draft, (draft) => {
-  if (!draft) return;
-  const target = draftTarget(draft);
-  if (target.kind === "update") {
-    // open detail view for target.id
-  } else {
-    // open create dialog
-  }
-}, { immediate: true });
-```
-
-### Assistant draft format
-
-For an assistant draft artifact (`outputs/drafts/<name>.page-draft.json`), copy `save.draftOperation` from the owner
-form into `operation`, set `pageKey` to the entry's `pageKey`, set `target` to `{ "objectType": "...", "id": "..." }`
-(omit `id` for creation; include `itemKey` for row-attached child forms), and place only changed fields as nested
-objects in `form` (never flat JSON Pointer keys like `"/modelConfig/modelId"`):
-
-```json
-{
-  "pageKey": "app-template-two-entry-detail",
-  "operation": "platform:AgentDefinition.save",
-  "target": { "objectType": "platform:AgentDefinition", "id": "<selected ID>" },
-  "form": {
-    "name": "Review assistant",
-    "modelConfig": { "modelId": "default" }
-  }
-}
-```
-
-Build the site-relative reader link with `URLSearchParams` (one encoding pass; `draftPath` must start with
-`outputs/drafts/` with no leading slash):
-
-```js
-const entry = new URL(usePath, window.location.origin);
-entry.searchParams.set("draftSessionId", sessionId);
-entry.searchParams.set("draftRunId", runId);
-entry.searchParams.set("draftPath", "outputs/drafts/edit.page-draft.json");
-const draftLink = `${entry.pathname}${entry.search}`;
-```
-
-See [draft links and instance state](RUNTIME.md#draft-links-and-instance-state) for invalid path examples.
+Assistants do not write `.page-draft.json` files or draft query links. Instead, once the target page/tab/dialog is open
+beside the conversation via `present`, the assistant calls `fill_form` to edit fields directly in the mounted
+`ObjectForm` (highlighting changed fields and keeping the form unsaved) and `page_action` to invoke the form's declared
+save operation (confirming in conversation by default, or saving immediately in full-auto sessions).
 
 ### Metric charts from dashboard cards
 
@@ -451,9 +404,7 @@ reload, and inspect the first failing request or error:
   `panel check <directory>`.
 - **List is empty or waiting.** Check `POST /api/product-panels/read` for `memberPath` and `dataName` against
   `panel type <type-id> --read <name>`. Missing required inputs leave a datum `awaiting`.
-- **Draft does not fill or shows `Required`.** Inspect `GET /api/assistant/sessions/<session-id>/runs/<run-id>/page-draft?path=…`
-  and the form's `POST /api/product-panels/read`. Verify `pageKey`, `target.objectType`, `target.id`, `save.draftOperation`,
-  and `watch(instance.draft, ...)` using `draftTarget(draft)`.
+- **Form does not fill or save.** Verify the form member is mounted (`observe_display`), check field paths and read-only status from the `fill_form` receipt, and verify the save operation is admitted for the current target.
 
 ## What the assistant receives
 

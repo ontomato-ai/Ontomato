@@ -61,7 +61,6 @@ it("draws the owner's field names, button name and run message in a directly ren
     },
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async () => ({ decision: "confirm", response: ownerAnswered.runNowReceipt as never }),
-    recordDraftCreated: async () => {},
     readProjection: async (id) => (id === summary.id ? summary : run),
     read: async ({ dataName }) => (dataName === "record" ? ownerAnswered.record : ownerAnswered.operation) as never,
   });

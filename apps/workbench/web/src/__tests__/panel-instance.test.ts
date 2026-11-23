@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { computed, createApp, defineComponent, h, nextTick, ref, shallowRef } from "vue";
+import { computed, createApp, defineComponent, h, nextTick, ref } from "vue";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
 import type { PanelDefinitionContent, ProductProjection } from "@ontomato/contracts/product-panels";
 import { createPanelInstance, applyPanelRequest } from "../../../../../packages/apps-sdk/src/panel/instance";
@@ -59,7 +59,6 @@ function instance(initial?: Record<string, unknown>, coordinator: Pick<typeof no
     url: () => "/a/schedules",
     label: () => "Scheduled tasks",
     initial: initial as never,
-    recordDraftCreated: async () => {},
     readProjection: async (id) => records[id]!,
   });
 }
@@ -132,7 +131,6 @@ describe("a panel's instance", () => {
         kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
         inputSchema: {}, resultSchema: {}, batch: false,
       } },
-      takesDrafts: false,
     });
     const [operation] = panelInstance.operations.value.filter((candidate) => candidate.slot === "runTask");
     await panelInstance.invoke(operation!.id);
@@ -142,42 +140,6 @@ describe("a panel's instance", () => {
     expect(registeredHandlers()).not.toContain("schedules.runNow");
     // What the owner reported changed comes back through the host's refresh port; the receipt rereads nothing itself.
     expect(changed).toEqual([]);
-  });
-
-  it("calls a draft unclaimed only once every form slot has registered and declined it", async () => {
-    const panelInstance = instance();
-    const declining = {
-      handle: {
-        fields: shallowRef([]),
-        values: shallowRef({}),
-        errors: shallowRef({}),
-        changed: shallowRef(new Set<string>()),
-        busy: ref(false),
-        dirty: ref(false),
-        dirtyFields: shallowRef(new Set<string>()),
-        submitting: ref(false),
-        canSubmit: ref(false),
-        set: () => {},
-        submit: async () => ({}),
-        reset: async () => true,
-      },
-      // The owner's form for the draft's target performs another operation.
-      receive: async () => null,
-      submit: async () => ({}),
-      dirty: () => false,
-      discard: () => {},
-    };
-    const ports = { binding: `PlatformObjectType:${SCHEDULED_TASK}`, inputs: {} };
-    panelInstance.forms.hold({ pageKey: "schedules", operation: "agent.update", target: { objectType: SCHEDULED_TASK, id: "a-1" }, form: {} }, { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/a.page-draft.json" }, () => {});
-    panelInstance.forms.register("taskForm", declining);
-    await vi.waitFor(() => expect(panelInstance.forms.unclaimed(["taskForm"])).toEqual({ objectType: SCHEDULED_TASK, operation: "agent.update" }));
-    // A declared slot still to register may be the form that takes it.
-    // The form's member reads the owner's form, so a draft is offered to it; the others read none.
-    panelInstance.register({ slot: "taskForm", projectionId: "projection-task-form", ports, operations: {}, takesDrafts: true });
-    panelInstance.register({ slot: "tasks", projectionId: "projection-x", ports, operations: {}, takesDrafts: false });
-    expect(panelInstance.unclaimedDraft.value).toBeNull();
-    panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports, operations: {}, takesDrafts: false });
-    expect(panelInstance.unclaimedDraft.value).toEqual({ objectType: SCHEDULED_TASK, operation: "agent.update" });
   });
 
   it("keeps a value the panel does not offer in an address out of one", () => {
@@ -223,7 +185,6 @@ describe("a panel's module", () => {
       projection: (id: string) => panelInstance.projection(id),
       invoke: (handlerRef: string, call: PanelOperationCall) => panelInstance.runHandler(handlerRef, call),
       projectionsChanged: () => () => {},
-      draft: ref(null),
       holdUnsaved: () => () => {},
       t: (key: string) => key,
       resources: async () => {},

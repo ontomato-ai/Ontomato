@@ -129,34 +129,21 @@ describe("live agent page control (requirement-64995244)", () => {
     unregister();
   });
 
-  it("blocks draft fill on a dirty form without silently overwriting, and allows it only after overwriteUnsavedDraft: true", async () => {
+  it("passes explicit overwrite permission only to the mounted form", async () => {
     const { display } = setup();
     await display.present(frame({ kind: "page", address: "/actions" }));
-    display.dirty(true);
+    const fillForm = vi.fn()
+      .mockResolvedValueOnce({ ok: false, reason: "blocked_unsaved", code: "UNSAVED_FORM_CONFLICT", message: "Unsaved edits" })
+      .mockResolvedValueOnce({ ok: true, member: "form", filledFields: ["/name"] });
+    const unregister = display.registerPageController("/actions", { applyState: vi.fn(), fillForm });
+    const request = { kind: "fill_form" as const, member: "form", values: { "/name": "New name" } };
 
-    const applyAddress = vi.fn();
-    const unregister = display.registerPageController("/actions", { applyState: vi.fn(), applyAddress });
-
-    const draftAddress = "/actions?draftSessionId=s1&draftRunId=r1&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json";
-    const blocked = await display.present(frame({ kind: "page", address: draftAddress }));
-    expect(blocked).toMatchObject({
-      status: "not_opened",
-      reason: "blocked_unsaved",
-      error: { code: "UNSAVED_FORM_CONFLICT" },
-      current: { target: { kind: "page", url: "/actions" } },
+    expect(await display.present(frame(request))).toMatchObject({ status: "not_filled", reason: "blocked_unsaved" });
+    expect(fillForm).toHaveBeenLastCalledWith({ member: "form", values: request.values });
+    expect(await display.present(frame({ ...request, overwriteUnsaved: true }))).toMatchObject({
+      status: "filled", member: "form", filledFields: ["/name"],
     });
-    expect(display.page.value?.address).toBe("/actions");
-    expect(applyAddress).not.toHaveBeenCalled();
-
-    // After user explicitly confirms in chat, agent calls present again with overwriteUnsavedDraft: true.
-    const overwritten = await display.present(frame({ kind: "page", address: draftAddress, overwriteUnsavedDraft: true }));
-    await nextTick();
-    expect(overwritten).toMatchObject({
-      status: "opened",
-      reason: "target_selected",
-      current: { target: { kind: "page", url: draftAddress } },
-    });
-    expect(applyAddress).toHaveBeenCalledWith(draftAddress, { overwriteUnsavedDraft: true });
+    expect(fillForm).toHaveBeenLastCalledWith({ member: "form", values: request.values, overwriteUnsaved: true });
     unregister();
   });
 

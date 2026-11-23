@@ -241,7 +241,6 @@ describe("personal state with external-only entry inputs", () => {
     notStarted: "Not started",
     failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
     content: { styleOutside: "Style outside" },
-    draft: { opening: "Opening the draft", close: "Close", toAgent: "To agent", toAgentText: "Unused: {reason}" },
     refresh: "Refresh",
   };
   const use = {

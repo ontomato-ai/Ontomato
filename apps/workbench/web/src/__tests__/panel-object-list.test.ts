@@ -90,7 +90,6 @@ function mountDirect(
     url: () => "/panels/object-list",
     label: () => "Object list test",
     initial: options.initial as never,
-    recordDraftCreated: async () => {},
     text: createPanelText(options.messages ?? {}, ref(activeLocale), "en"),
     ...noOperations,
     readProjection: async (id) => projections[id]!,
@@ -972,7 +971,6 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
     label: () => "Frame picker",
     initial: { selectedType: ACTION },
     ...noOperations,
-    recordDraftCreated: async () => {},
     readProjection: async () => pickerProj,
   });
 
@@ -987,7 +985,6 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
         projection: (id: string) => instance.projection(id),
         invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
         projectionsChanged: () => () => {},
-        draft: instance.draft,
         holdUnsaved: () => () => {},
         t: (key: string) => key,
         resources: async () => {},
@@ -2078,7 +2075,6 @@ it("renders #filters, #batch-actions, #toolbar-actions, and #create-row inline c
     pageKey: "slotted-list-test",
     url: () => "/panels/slotted-list",
     label: () => "Slotted list test",
-    recordDraftCreated: async () => {},
     text: createPanelText({}, ref("en"), "en"),
     ...noOperations,
     readProjection: async (id) => projections[id]!,

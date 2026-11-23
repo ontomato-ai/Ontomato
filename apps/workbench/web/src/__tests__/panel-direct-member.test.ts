@@ -68,7 +68,6 @@ function open(
   formListeners: Record<string, (...args: never[]) => void> = {},
 ) {
   const reads: Read[] = [];
-  const draftErrors: unknown[] = [];
   const prepared: [string, unknown][] = [];
   let outcome: unknown = { kind: "success", data: {}, affected: { objects: [task("t-1")], objectTypes: [SCHEDULED_TASK] } };
   const prepare = vi.fn(async (operationId: string, invocation: unknown): Promise<PanelHumanOperationPreparation> => {
@@ -82,8 +81,6 @@ function open(
     operations: { ...noOperations.operations, prepare },
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: outcome as never } }),
-    recordDraftCreated: async () => {},
-    reportDraftError: (reason) => draftErrors.push(reason),
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
       reads.push(request);
@@ -94,7 +91,7 @@ function open(
   document.body.append(element);
   const app = createApp({ render: () => h("div", [h(PanelMember, { instance, member: "form", ...formListeners }), h(PanelMember, { instance, member: "run" })]) });
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
-  return { instance, element, reads, prepared, draftErrors, setOutcome: (next: unknown) => { outcome = next; }, unmount: () => app.unmount() };
+  return { instance, element, reads, prepared, setOutcome: (next: unknown) => { outcome = next; }, unmount: () => app.unmount() };
 }
 
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
@@ -216,31 +213,6 @@ it("shows the fields the owner does not accept in the form it read, keeping the 
     : ready({ ...form("t-1"), values: { name: "t-1", note: "x" }, errors })), { selectedTask: task("t-1") });
   await vi.waitFor(() => expect(element.querySelector('[data-field="/note"] .el-form-item__error')?.textContent).toBe("A note is a sentence"));
   expect(input(element, "/note").value).toBe("x");
-});
-
-it("refuses a draft whole on its form when the owner's check of it names fields it does not accept, the rest of the panel going on", async () => {
-  const { receivePanelDraft } = await import("../../../../../packages/apps-sdk/src/panel/draft");
-  const errors = [{ field: "/note", code: "value_too_long", message: "A note is a sentence" }];
-  const { instance, element, reads, draftErrors } = open((request) => {
-    if (request.operations) return admitted(request);
-    // The owner checks the draft's values and answers its form with what it does not accept.
-    return ready(request.inputs.values ? { ...form("t-1"), values: request.inputs.values, errors } : form("t-1"));
-  }, { selectedTask: task("t-1") });
-  await vi.waitFor(() => expect(input(element, "/name")?.value).toBe("t-1"));
-  const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/task.page-draft.json" };
-  await receivePanelDraft("tasks", instance.forms, {
-    readPageDraft: async () => ({ pageKey: "tasks", operation: `${SCHEDULED_TASK}.save`, target: { objectType: SCHEDULED_TASK, id: "t-1" }, form: { name: "t-1", note: "x" } }),
-  }, link, instance.receiveDraft);
-  // The refusal is the form's to say, on the field it names and, below the form, as the count of fields to change; the
-  // panel itself has not failed, and its other member is drawn as it was.
-  await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent?.trim()).toBe("1 field needs changing"));
-  await vi.waitFor(() => expect(element.querySelector('[data-field="/note"] .el-form-item__error')?.textContent?.trim()).toBe("A note is a sentence"));
-  expect(draftErrors).toEqual([]);
-  expect(element.querySelector(".sdk-operation-button")).not.toBeNull();
-  expect(reads.find((read) => read.inputs.values)?.inputs).toMatchObject({ values: { name: "t-1", note: "x" }, changedField: null });
-  // Nothing of the refused draft is shown as the form's.
-  expect(instance.dirty()).toBe(false);
-  expect(input(element, "/note").value).toBe("");
 });
 
 it("keeps what the reader types when the first read of the form is answered after a refresh's, and holds a refresh while they type", async () => {

@@ -1,14 +1,11 @@
 import { computed, ref, watch } from "vue";
 import {
-  draftTarget,
   mountPanel,
   usePanelBack,
   usePanelContext,
   usePanelOperation,
   usePanelOutput,
 } from "@ontomato/sdk/panel";
-
-const TYPE = "platform:MetricView";
 
 /*
  * Metric views panel: full-width catalog switching to a full-width detail view.
@@ -43,22 +40,6 @@ await mountPanel({
     function backToCatalog() {
       void detailBack.back();
     }
-
-    // Open the matching metric (or create mode) when an assistant draft arrives.
-    watch(instance.draft, (draft) => {
-      if (!draft) return;
-      const target = draftTarget(draft);
-      if (target.kind === "update") {
-        if (selected.value?.primaryKey !== target.id) {
-          instance.state.setState({
-            selected: { className: TYPE, primaryKey: target.id },
-            creating: false,
-          });
-        }
-      } else if (!selected.value) {
-        setCreating(true);
-      }
-    }, { immediate: true });
 
     watch(selected, (next) => {
       if (next) setCreating(false);

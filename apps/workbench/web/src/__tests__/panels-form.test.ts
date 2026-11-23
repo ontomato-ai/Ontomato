@@ -77,7 +77,6 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
     url: () => "/applications/app-panels-trial-a/tasks",
     label: () => "Scheduled tasks (trial)",
     initial: { selectedTask: task },
-    recordDraftCreated: async () => {},
     readProjection: async () => projection,
   });
   // The owner, as the scheduled tasks' typed adapter answers: the operation decides which other fields exist.
@@ -102,7 +101,7 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
     target: { source: "input" as const, input: "task" }, inputSchema: {}, resultSchema: {}, batch: false,
   } } }));
   const unregister = instance.register({
-    slot: "form", projectionId: projection.id, ports: portsOf(projection), operations: operations.value.value, takesDrafts: true,
+    slot: "form", projectionId: projection.id, ports: portsOf(projection), operations: operations.value.value,
   });
 
   const inputs = computed(() => ({ task }));
@@ -131,7 +130,6 @@ function mounted(save: (input: PanelFormSaveInput) => Promise<PanelOperationOutc
           projection: (id: string) => instance.projection(id),
           invoke: (handlerRef: string, call) => instance.runHandler(handlerRef, call),
           projectionsChanged: () => () => {},
-          draft: instance.draft,
           holdUnsaved: () => () => {},
           t: (key: string) => key,
           resources: async () => {},
@@ -171,32 +169,27 @@ describe("the form a panel shows", () => {
     app.unmount();
   });
 
-  it("takes a draft: its values in the form, its changed fields marked, and nothing written", async () => {
+  it("fills fields live (including refreshOnChange): its values in the form, its changed fields marked, and nothing written until Save", async () => {
     const written: unknown[] = [];
     const mountedForm = mounted(async (...args) => void written.push(args));
     const { app, element } = mountedForm;
     const M = mountedForm.instance;
     await vi.waitFor(() => expect(element.textContent).toContain("Run automated tests"));
 
-    // The draft an agent wrote for this panel: it switches the operation and gives an instruction.
-    M.forms.hold(
-      {
-        pageKey: "panels-trial-a-tasks",
-        operation: `${SCHEDULED_TASK}.save`,
-        target: { objectType: SCHEDULED_TASK, id: "task-1" },
-        form: { operation: "inspection", instruction: "look at tonight's failures" },
-      },
-      { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/a.page-draft.json" },
-      () => {},
-    );
+    // Live fill switches the operation (refreshOnChange) and fills the dependent instruction field in one call.
+    const outcome = await M.fillForm({
+      member: "form",
+      values: { "/operation": "inspection", "/instruction": "look at tonight's failures" },
+    });
+    expect(outcome).toMatchObject({ ok: true, member: "form", filledFields: ["/operation", "/instruction"] });
     await vi.waitFor(() => expect(shown(element)["/instruction"]).toBe("look at tonight's failures"));
-    // The form shows the draft's values, and the fields it changed are marked.
-    // The field set is the owner's answer for the draft's operation: the instruction the draft switched to.
+    // The form shows the filled values, and the fields it changed are marked.
+    // The field set is the owner's answer for the switched operation: the instruction field unlocked by refreshOnChange.
     expect(Object.keys(shown(element))).toEqual(["/operation", "/instruction"]);
     expect([...element.querySelectorAll(".sdk-owner-form-field-changed")].map((item) => item.getAttribute("data-field")))
       .toEqual(["/operation", "/instruction"]);
     expect(element.querySelector(".sdk-owner-form-changed")?.textContent?.trim()).toBe("Changed: Operation, Instruction");
-    // Nothing was written: the draft is the reader's to save.
+    // Nothing was written: the reader saves explicitly.
     expect(written).toEqual([]);
     expect(M.operations.value).toEqual([expect.objectContaining({ id: "form.save", handlerRef: `${SCHEDULED_TASK}.save` })]);
 

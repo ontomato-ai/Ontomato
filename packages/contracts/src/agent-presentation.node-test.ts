@@ -35,15 +35,11 @@ test("present accepts only workspace outputs or a site-relative page and rejects
     target: "outputs/result.dataset.json",
   });
   assert.deepEqual(presentRequestSchema.parse({ target: address, state }), { target: address, state });
-  assert.deepEqual(presentRequestSchema.parse({ target: address, overwriteUnsavedDraft: true }), {
-    target: address, overwriteUnsavedDraft: true,
-  });
   for (const invalid of [
     { target: "result.dataset.json" },
     { target: "outputs/../result.dataset.json" },
     { target: "outputs/", state },
     { target: "outputs/result.dataset.json", state },
-    { target: "outputs/result.dataset.json", overwriteUnsavedDraft: true },
     { target: "https://example.com/page" },
     { target: "//[", state },
     { target: "/\\example.com/page" },

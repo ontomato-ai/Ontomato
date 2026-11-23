@@ -40,17 +40,14 @@ Run `close` when finished. Expired or closed writes fail with HTTP 409; begin a 
 
 Commands save governance work and source references. When the user asks to draft, add or change
 business knowledge, including a definition not yet recorded, use `import-knowledge`.
-In platform runs it writes one `outputs/drafts/*.page-draft.json` file per item and prints its
-business-knowledge page link; include that link in your reply. A recommendation in the report
-is not a knowledge draft.
-It reads existing knowledge to select create/update; the entry an update changes is named in the
-draft's target, never repeated in the form. A new item is written as pending; an update keeps the
-entry's status. Outside the platform it calls Java import
+In platform runs it inspects existing knowledge and prints structured items (`mode: "create" | "update"`,
+target `id` on update, `status: 0` for new items or existing status on update). Open `/ontology/knowledge`
+with `present`, switch the form to `create` or `edit` for each item, fill the live form with `fill_form`,
+and save via `page_action` (or leave it unsaved for the user to review on the page). A recommendation
+in the report is not a saved knowledge entry. Outside the platform it calls Java import
 with your credential. Report imported knowledge only after that interface confirms it.
 
-In platform replies, keep the link targets in each draft's `link` (`#/ontology/knowledge?draft...`)
-and your `outputs/reports/<name>/report.md` links accurate; you may adapt the link text to the
-reader's language.
+In platform replies, keep your `outputs/reports/<name>/report.md` and `#/ontology/knowledge` links
+accurate; you may adapt the link text to the reader's language.
 Page links are ready-to-paste Markdown links with in-app relative addresses (`#/...`): do not add a
-host or construct them with any `ONTOMATO_*_URL`. Do not use image syntax or link to or embed
-draft files themselves.
+host or construct them with any `ONTOMATO_*_URL`. Do not use image syntax.

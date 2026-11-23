@@ -253,7 +253,7 @@ export async function prepareAssistantSkills(domainId: string, agent: { kind: st
   }
   // Unknown dependencies do not authorize details about a source.
   const sourceUnavailable = regular && (view.diagnostics?.sourceUnavailable ?? false);
-  return { skills, pageDrafts: skills.some(({ skill }) => view.pageSkillIsAvailable(skill)),
+  return { skills, pageControl: skills.some(({ skill }) => view.pageSkillIsAvailable(skill)),
     currentPage: currentPage && loadedPageSkillVersion(currentPage.member.ref, skills) ? currentPage : null,
     ...((skipped.length > 0 || sourceUnavailable) && { skippedPageSkills: { items: skipped, sourceUnavailable } }) };
 }

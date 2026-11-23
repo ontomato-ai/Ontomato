@@ -19,9 +19,10 @@
   说明哪些字段为什么不能改。
 - 想按操作类型或类名找函数，用平台的 `function list` 过滤，不要自己遍历全部再筛。
 
-## 起草改动
+## 填写修改与新建表单
 
-草稿怎么写见本页生成的技能。
+修改时先用 `present` 选中目标函数（`selected`），新建时用 `present` 设 `{ selected: null, creating: true }`；再用
+`fill_form` 往 `form` 里填入要改的字段（页面标出改动并保持未保存），需要保存时用 `page_action` 调用表单保存操作。
 
 读函数的 `queryPackage` 要写整份查询逻辑包（含 `manifest` 和 `files`）；写函数的 `parameters` 是
 `[{name, type, description, sample, classNames}]` 的数组，`type` 只能是 `TYPE_STRING`、`TYPE_NUMBER`、`TYPE_TIME`、

@@ -53,5 +53,5 @@ and `--batch <owner operation ID>` for a toolbar button targeting checked rows. 
 Write the Vue template inside `<div id="app">` in `panel.html`, placing each member with `<projection slot="name">`.
 Write layout in normal HTML, CSS, and Vue (no layout components) using platform design tokens (`--page-gutter`,
 `--page-content-gap`, `--spacing-*`, `--sdk-border-color`) and CSS `@container` for responsive layouts. In `panel.mjs`,
-call `mountPanel` with `usePanelContext`, `usePanelFormDraft`, `draftTarget`, and (when needed) `usePanelBack`. Put
+call `mountPanel` with `usePanelContext`, `usePanelFormDraft`, and (when needed) `usePanelBack`. Put
 assistant guidance in `recipes.md`.

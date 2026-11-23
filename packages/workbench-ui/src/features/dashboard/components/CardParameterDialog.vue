@@ -2,79 +2,144 @@
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { FormFields } from "@ontomato/foundation-ui/form";
+import type { FormFieldRejection, FormFillOutcome, PageActionOutcome } from "@ontomato/contracts/agent-presentation";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldKey } from "@ontomato/contracts/form-fields";
 import type { DashboardParameterForm } from "@ontomato/contracts/dashboard";
 import { ApiRequestError } from "../../../utils/api";
 import { fetchCardParameterForm, saveCardParameters } from "../api";
 import { cardError, cardErrorHeadline, type CardError } from "./utils/metricCard";
-import { parameterText } from "../draft";
 
 /**
  * Edits one card's parameters through the metric's own form: the fields, values, read-only keys and validation are
- * the metric's; only the keys the reader edited are sent, and the metric interprets the text.
- *
- * A draft fills the first values and keeps its own revision: when the metric moved since the draft was written, the
- * draft's text stays, the reader is told to read the form again, and nothing is saved under the new definition.
+ * the metric's; only the keys the reader (or a live agent `fill_form` call) edited are sent, and the metric interprets
+ * the text.
  */
 const props = defineProps<{
   dashboardId: string;
   card: { id: string; name: string } | null;
-  /** A draft's parameter body for this card: the revision it was written against and the values it changes. */
-  draft?: { revision: string; values: Record<string, unknown> } | null;
 }>();
 const visible = defineModel<boolean>({ required: true });
 const emit = defineEmits<{ saved: [cardId: string] }>();
 const { t } = useI18n();
 
 const form = ref<DashboardParameterForm | null>(null);
-const draftValues = ref<Record<string, string>>({});
+const values = ref<Record<string, string>>({});
 const original = ref<Record<string, string>>({});
 const edited = ref(new Set<string>());
 const fieldErrors = ref<Record<string, string>>({});
 const failure = ref<CardError | null>(null);
 const loading = ref(false);
 const saving = ref(false);
+let loadPromise: Promise<void> | null = null;
+let loadSeq = 0;
 const failureHeadline = computed(() => (failure.value ? cardErrorHeadline(failure.value, t) : null));
 
-/** The revision the form was written against says whether this draft still addresses the same definition. */
-const unchanged = computed(() => !props.draft || !form.value || props.draft.revision === form.value.revision);
-/** The draft's changes, original value beside new, for the keys the form does not show or the reader cannot type into. */
+/** Edited values, original value beside new, so both human edits and live fills stay reviewable before saving. */
 const changes = computed(() => {
   if (!form.value) return [];
   return form.value.fields
     .filter((field) => edited.value.has(field.key))
-    .map((field) => ({ key: field.key, label: field.label, from: original.value[field.key] ?? "", to: draftValues.value[field.key] ?? "" }));
+    .map((field) => ({ key: field.key, label: field.label, from: original.value[field.key] ?? "", to: values.value[field.key] ?? "" }));
 });
 
-watch(visible, async (open) => {
+watch(visible, (open) => {
   if (!open || !props.card) return;
   form.value = null;
-  draftValues.value = {};
+  values.value = {};
   original.value = {};
   edited.value = new Set();
   fieldErrors.value = {};
   failure.value = null;
   loading.value = true;
-  try {
-    form.value = await fetchCardParameterForm(props.dashboardId, props.card.id);
-    original.value = { ...form.value.values };
-    draftValues.value = { ...form.value.values, ...parameterText(form.value.readOnly, props.draft?.values) };
-    edited.value = new Set(Object.keys(parameterText(form.value.readOnly, props.draft?.values)));
-  } catch (error) {
-    failure.value = cardError(error);
-  } finally {
-    loading.value = false;
-  }
+  const seq = ++loadSeq;
+  loadPromise = (async () => {
+    try {
+      form.value = await fetchCardParameterForm(props.dashboardId, props.card!.id);
+      original.value = { ...form.value.values };
+      values.value = { ...form.value.values };
+    } catch (error) {
+      failure.value = cardError(error);
+    } finally {
+      loading.value = false;
+      if (loadSeq === seq) loadPromise = null;
+    }
+  })();
 }, { immediate: true });
 
 function edit(key: string, value: string) {
-  draftValues.value = { ...draftValues.value, [key]: value };
+  values.value = { ...values.value, [key]: value };
   edited.value = new Set(edited.value).add(key);
   const { [key]: _, ...rest } = fieldErrors.value;
   fieldErrors.value = rest;
 }
 
-async function save() {
+function normalizeParameterKey(rawKey: string): string {
+  if (rawKey.startsWith("/values/")) return rawKey.slice("/values/".length);
+  if (rawKey.startsWith("/")) return rawKey.slice(1);
+  return rawKey;
+}
+
+async function fillValues(
+  patch: Readonly<Record<string, RuntimeJsonValue>>,
+  overwriteUnsaved?: boolean,
+): Promise<FormFillOutcome> {
+  if (loadPromise) await loadPromise;
+  if (!visible.value || !form.value) {
+    return {
+      ok: false,
+      reason: "form_not_ready",
+      member: "card.parameters",
+      message: "The card parameter form is not loaded.",
+    };
+  }
+  if (edited.value.size > 0 && !overwriteUnsaved) {
+    return {
+      ok: false,
+      reason: "blocked_unsaved",
+      member: "card.parameters",
+      message: "The card parameter form already has unsaved edits.",
+    };
+  }
+  const known = new Set(form.value.fields.map((field) => field.key));
+  const readOnly = new Set(form.value.readOnly);
+  const filledFields: string[] = [];
+  const rejectedFields: FormFieldRejection[] = [];
+  for (const [rawKey, rawValue] of Object.entries(patch)) {
+    const key = normalizeParameterKey(rawKey);
+    if (!known.has(key)) {
+      rejectedFields.push({ path: rawKey, reason: "unknown_field", message: `Unknown parameter '${key}'.` });
+      continue;
+    }
+    if (readOnly.has(key)) {
+      rejectedFields.push({ path: rawKey, reason: "read_only", message: `Parameter '${key}' is read-only.` });
+      continue;
+    }
+    if (rawValue !== null && typeof rawValue !== "string" && typeof rawValue !== "number" && typeof rawValue !== "boolean") {
+      rejectedFields.push({ path: rawKey, reason: "invalid_value", message: `Parameter '${key}' must be a scalar value.` });
+      continue;
+    }
+    edit(key, rawValue === null ? "" : String(rawValue));
+    filledFields.push(key);
+  }
+  if (!filledFields.length) {
+    return {
+      ok: false,
+      reason: "all_fields_rejected",
+      member: "card.parameters",
+      rejectedFields,
+      message: "No parameter fields could be filled.",
+    };
+  }
+  return {
+    ok: true,
+    member: "card.parameters",
+    filledFields,
+    ...(rejectedFields.length ? { rejectedFields } : {}),
+  };
+}
+
+async function save(): Promise<boolean> {
   const card = props.card!;
   saving.value = true;
   failure.value = null;
@@ -83,10 +148,11 @@ async function save() {
       dashboardId: props.dashboardId,
       cardId: card.id,
       revision: form.value!.revision,
-      values: Object.fromEntries([...edited.value].map((key) => [key, draftValues.value[key]!])),
+      values: Object.fromEntries([...edited.value].map((key) => [key, values.value[key]!])),
     });
     emit("saved", card.id);
     visible.value = false;
+    return true;
   } catch (error) {
     const details = error instanceof ApiRequestError ? (error.payload.details as { errors?: { field: string; message: string }[] }) : undefined;
     if (error instanceof ApiRequestError && error.code === "METRIC_PARAMETERS_INVALID" && details?.errors) {
@@ -105,10 +171,39 @@ async function save() {
     } else {
       failure.value = cardError(error);
     }
+    return false;
   } finally {
     saving.value = false;
   }
 }
+
+async function saveFromAction(operation: string): Promise<PageActionOutcome> {
+  if (loadPromise) await loadPromise;
+  if (!visible.value || !form.value) {
+    return { ok: false, reason: "action_not_ready", operation, message: "The card parameter form is not open." };
+  }
+  if (edited.value.size === 0) {
+    return { ok: false, reason: "action_unavailable", operation, message: "There are no parameter changes to save." };
+  }
+  const ok = await save();
+  if (ok) return { ok: true, kind: "executed", operation };
+  const fieldMessages = Object.values(fieldErrors.value);
+  if (fieldMessages.length) {
+    return { ok: false, reason: "validation_failed", operation, message: fieldMessages.join(" ") };
+  }
+  return { ok: false, reason: "failed", operation, message: failure.value?.message ?? "Failed to save parameters." };
+}
+
+function discard() {
+  visible.value = false;
+}
+
+defineExpose({
+  isOpen: visible,
+  fillValues,
+  saveFromAction,
+  discard,
+});
 </script>
 
 <template>
@@ -122,9 +217,9 @@ async function save() {
       <el-form v-if="form && form.fields.length" label-position="top" @submit.prevent>
         <FormFields
           :fields="form.fields"
-          :values="draftValues"
+          :values="values"
           :errors="fieldErrors"
-          :disabled="saving || !unchanged"
+          :disabled="saving"
           :choose-placeholder="t('dashboard.choose')"
           :read-only="form.readOnly"
           @input="edit"
@@ -139,7 +234,6 @@ async function save() {
           <span class="now">{{ change.to || "—" }}</span>
         </el-descriptions-item>
       </el-descriptions>
-      <p v-if="!unchanged" class="note" role="note">{{ t("dashboard.draft.revisionChanged") }}</p>
       <div v-if="failure" class="failure" role="alert">
         <strong v-if="failureHeadline">{{ failureHeadline }}</strong>
         <span>{{ failure.message }}</span>
@@ -147,7 +241,7 @@ async function save() {
     </div>
     <template #footer>
       <el-button :disabled="saving" @click="visible = false">{{ t("common.cancel") }}</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!form || edited.size === 0 || !unchanged" @click="save">
+      <el-button type="primary" :loading="saving" :disabled="!form || edited.size === 0" @click="save">
         {{ t("common.save") }}
       </el-button>
     </template>

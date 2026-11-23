@@ -19,7 +19,7 @@ a new agent, and saving creates it and selects it.
 ## One form, several groups
 
 The model, the skills, who the agent runs as and the data scope are fields of the same form, drawn in their own groups:
-choosing one changes the form, marks it unsaved and is saved, discarded or drafted with it. The service decides which
+choosing one changes the form, marks it unsaved and is saved or discarded with it. The service decides which
 fields may change; who an agent runs as is read-only unless the identity service lets this reader change it, and the
 field says why.
 
@@ -28,6 +28,6 @@ the classes one relationship away are marked, and one action adds them all. Noth
 
 ## How a change gets here from an agent
 
-A run may write a draft for this page (`agent.update` for an existing agent, `agent.create` for a new one) and hand the
-reader a link. Opening it fills the form after the service has checked the whole draft, marks the fields it changed and
-leaves them unsaved; the reader saves. A draft the service refuses is refused whole, with the fields and the reasons.
+An assistant beside this page opens the target agent (or sets `mode: "create"` for a new one) via `present`, fills
+explicit fields in the mounted form via `fill_form` (marking changed fields and keeping the form unsaved), and submits
+via `page_action` when requested (confirming in conversation by default).

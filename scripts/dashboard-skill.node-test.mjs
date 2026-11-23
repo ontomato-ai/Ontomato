@@ -3,7 +3,7 @@ import {before,test} from "node:test";
 import {createServer} from "node:http";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {mkdtemp,readFile,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
@@ -22,31 +22,6 @@ async function server(t,reply={success:true,data:{rows:[{value:0},{value:null}],
 function invoke(dir,base,args){return run(process.execPath,[cli,...args],{cwd:dir,env:{...process.env,ONTOMATO_WORKBENCH_URL:base,ONTOMATO_TK:"fixture-reader",ONTOMATO_API_KEY:"",ONTOMATO_SESSION_ID:sessionId,ONTOMATO_RUN_ID:runId,ONTOMATO_SKILL_SCENARIO:"platform"}});}
 
 before(async()=>{await run(process.execPath,[path.join(root,"packages/workbench-server/dashboard-skill/build.mjs")],{cwd:root});});
-test("draft returns only the page link for a combined card edit",async t=>{
-  const dir=await workspace(t),api=await server(t);
-  const chartFile={name:"staff.chart.json",content:{
-    dataset:[{id:"metric",dimensions:["department","headcount"],source:[]}],
-    series:[{id:"main",type:"bar",datasetId:"metric",encode:{x:"department",y:"headcount"}}],
-    ontomato:{display:{displayLimit:3}},
-  }};
-  const form={id:"board:custom",groups:[{id:"group",title:"Staff",metrics:[],charts:[
-    {id:"card",name:"Top three departments",chartFile,layout:{colSpan:6,rowSpan:1}},
-  ]}]};
-  const out="outputs/drafts/combined.page-draft.json";
-  await writeFile(path.join(dir,"form.json"),JSON.stringify(form));
-  const result=JSON.parse((await invoke(dir,api.base,["draft","--operation","dashboard.layout","--form","form.json","--out",out])).stdout);
-  assert.deepEqual(Object.keys(result),["link"]);
-  const draft=JSON.parse(await readFile(path.join(dir,out),"utf8"));
-  assert.deepEqual(draft,{pageKey:"dashboard",operation:"dashboard.layout",target:{objectType:"platform:Dashboard",id:form.id},form});
-  const href=result.link.match(/^\[[^\]]+\]\(([^)]+)\)$/)?.[1];
-  assert.ok(href,"Draft output must include a clickable page link, not a file preview");
-  const link=new URL(href,"http://page.test/");
-  assert.equal(link.hash.split("?")[0],"#/dashboards");
-  const query=new URLSearchParams(link.hash.split("?")[1]);
-  assert.deepEqual([...query.keys()].sort(),["draftPath","draftRunId","draftSessionId"]);
-  assert.equal(query.get("draftPath"),out);
-  assert.equal(api.calls.length,0);
-});
 test("link addresses the saved dashboard and optionally its selected card",async t=>{
   const dir=await workspace(t);
   const dashboard={id:"board:1",name:"教职工 & 规模"};
@@ -67,19 +42,11 @@ test("link addresses the saved dashboard and optionally its selected card",async
   }
   assert.ok(api.calls.every(call=>call.method==="GET" && call.path==="/api/dashboards/board%3A1"));
 });
-test("parameter drafts keep text and address the dashboard from dashboardId",async t=>{
-  const dir=await workspace(t),api=await server(t);
-  const form={dashboardId:"board",cardId:"card",revision:"r",values:{year:"2026"}};
-  await writeFile(path.join(dir,"form.json"),JSON.stringify(form));
-  await invoke(dir,api.base,["draft","--operation","dashboard.card.parameters","--form","form.json","--out","outputs/drafts/parameters.page-draft.json"]);
-  const draft=JSON.parse(await readFile(path.join(dir,"outputs/drafts/parameters.page-draft.json"),"utf8"));
-  assert.deepEqual(draft.target,{objectType:"platform:Dashboard",id:"board"});assert.deepEqual(draft.form,form);assert.equal(api.calls.length,0);
-});
-test("invalid forms fail before draft output or a save request",async t=>{
+test("invalid forms fail before a save request and draft command is rejected",async t=>{
   const dir=await workspace(t),api=await server(t);
   await writeFile(path.join(dir,"form.json"),JSON.stringify({id:"board",chartId:"card",resultSetName:12}));
-  for(const command of ["draft","save"])await assert.rejects(invoke(dir,api.base,[command,"--operation","dashboard.chart.rename","--form","form.json","--out","outputs/drafts/invalid.page-draft.json"]));
-  await assert.rejects(readFile(path.join(dir,"outputs/drafts/invalid.page-draft.json")),{code:"ENOENT"});
+  await assert.rejects(invoke(dir,api.base,["save","--operation","dashboard.chart.rename","--form","form.json"]));
+  await assert.rejects(invoke(dir,api.base,["draft","--operation","dashboard.chart.rename","--form","form.json"]));
   assert.equal(api.calls.length,0);
 });
 test("save uses the original APIs and bodies without scenario blocking",async t=>{
