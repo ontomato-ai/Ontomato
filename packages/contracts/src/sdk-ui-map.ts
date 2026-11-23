@@ -179,7 +179,7 @@ export const SDK_UI_COMPONENTS: readonly SdkUiComponentMapping[] = [
 /** Excluded UI primitives and imperative services that remain platform-owned. */
 export const SDK_UI_FORBIDDEN_COMPONENTS: readonly SdkUiForbiddenComponent[] = [
   { implTag: "el-config-provider", implExport: "ElConfigProvider", replacement: "Platform host manages locale and theme configuration automatically" },
-  { implTag: "el-page-header", implExport: "ElPageHeader", replacement: "Platform host manages page headers; declare panel commands under manifest.commands" },
+  { implTag: "el-page-header", implExport: "ElPageHeader", replacement: "Use the official <page-header> component (PageHeader from @ontomato/sdk/base)" },
   { implTag: "el-popper", implExport: "ElPopper", replacement: "Use <sdk-popover> or <sdk-tooltip> instead of internal floating primitives" },
   { implTag: "el-popconfirm", implExport: "ElPopconfirm", replacement: "Declare a write operation so the platform host confirms and dispatches it" },
   { implExport: "ElMessage", replacement: "usePanelContext().notify({ kind, text }) from @ontomato/sdk/panel" },

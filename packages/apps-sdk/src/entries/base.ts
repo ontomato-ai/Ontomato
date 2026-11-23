@@ -12,6 +12,8 @@ export type { ObjectCountItem } from "../base/object-count-types";
 export { default as ObjectRelations } from "../base/ObjectRelations.vue";
 export { default as ObjectSummary } from "../base/ObjectSummary.vue";
 export { default as ObjectHeader } from "../base/ObjectHeader.vue";
+export { default as PageHeader } from "../base/PageHeader.vue";
+export type { PageHeaderDraft, PageHeaderLabels } from "../base/page-header-types";
 export { default as ObjectForm } from "../base/ObjectForm.vue";
 export { default as OperationButton } from "../base/OperationButton.vue";
 export { default as FileUploadControl } from "../base/FileUploadControl.vue";

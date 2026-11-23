@@ -34,8 +34,23 @@ export interface PanelFormHandle {
   readonly errors: Readonly<Ref<Readonly<Record<string, string>>>>;
   readonly changed: Readonly<Ref<ReadonlySet<string>>>;
   readonly busy: Readonly<Ref<boolean>>;
+  /** Whether this form currently holds unsaved edits (changed values, an active draft, or modified fields). */
+  readonly dirty: Readonly<Ref<boolean>>;
+  /** Distinct top-level field paths currently modified relative to the opened baseline. */
+  readonly dirtyFields: Readonly<Ref<ReadonlySet<string>>>;
+  /** Whether a save is currently in flight (alias of `busy`). */
+  readonly submitting: Readonly<Ref<boolean>>;
+  /** Whether the form is ready and has unsaved edits that can currently be submitted. */
+  readonly canSubmit: Readonly<Ref<boolean>>;
   /** Sets one field's value; a field the owner marks `refreshOnChange` has the owner asked again. */
   set(path: string, value: RuntimeJsonValue): void;
+  /** Submits the form through its owner. */
+  submit(): Promise<unknown>;
+  /**
+   * Discards unsaved edits and restores the owner baseline. Pass `{ confirm: true }` to ask the platform's
+   * confirmation dialog first; resolves `true` when discarded, `false` when cancelled.
+   */
+  reset(options?: { confirm?: boolean }): Promise<boolean>;
 }
 
 /**
@@ -286,15 +301,33 @@ export class PanelFormAdapters {
     return this.#bySlot.get(slot)?.handle;
   }
 
-  /** Whether any registered form holds unsaved changes of the reader's. */
-  dirty(): boolean {
-    return [...this.#bySlot.values()].some((adapter) => adapter.dirty());
+  /**
+   * Whether registered forms hold unsaved changes: checks every registered form when `slots` is omitted, or only the
+   * named form slot(s) when provided.
+   */
+  dirty(slots?: string | readonly string[]): boolean {
+    if (slots === undefined) return [...this.#bySlot.values()].some((adapter) => adapter.dirty());
+    const list = typeof slots === "string" ? [slots] : slots;
+    return list.some((slot) => Boolean(this.#bySlot.get(slot)?.dirty()));
   }
 
-  /** Drops unsaved edits on every dirty registered form (used once leaving unsaved changes has been confirmed). */
-  discardAll(): void {
-    for (const adapter of this.#bySlot.values()) {
-      if (adapter.dirty()) adapter.discard();
+  /**
+   * Drops unsaved edits on dirty registered forms (used once leaving unsaved changes has been confirmed). When `slots`
+   * is provided, only dirty forms among those slots are discarded so sibling forms on the same panel stay intact.
+   */
+  discardAll(slots?: readonly string[]): void {
+    if (slots === undefined) {
+      for (const adapter of this.#bySlot.values()) {
+        if (adapter.dirty()) adapter.discard();
+      }
+      return;
+    }
+    const seen = new Set<string>();
+    for (const slot of slots) {
+      if (seen.has(slot)) continue;
+      seen.add(slot);
+      const adapter = this.#bySlot.get(slot);
+      if (adapter?.dirty()) adapter.discard();
     }
   }
 
@@ -308,6 +341,16 @@ export class PanelFormAdapters {
   /** Drops unsaved edits in a slot's form, restoring its owner baseline. */
   discard(slot: string): void {
     this.#bySlot.get(slot)?.discard();
+  }
+
+  /**
+   * Resets a slot's form to its owner baseline, optionally asking the platform's discard confirmation first when
+   * `options.confirm` is `true`. Resolves `false` when the slot has no mounted form or the reader cancels.
+   */
+  reset(slot: string, options?: { confirm?: boolean }): Promise<boolean> {
+    const adapter = this.#bySlot.get(slot);
+    if (!adapter) return Promise.resolve(false);
+    return adapter.handle.reset(options);
   }
 }
 
