@@ -25,6 +25,8 @@ const uses: ApplicationPanelUse[] = [
 
 /** Every panel instance the route mounted, and the address each last reported. */
 const mountedInstances: { useId: string; address: ReturnType<typeof ref<string>>; initial: Record<string, unknown> }[] = [];
+let framePanelId: string | undefined;
+const readFrameManifest = vi.fn();
 
 import { useApplicationCatalog } from "../catalog";
 
@@ -33,8 +35,9 @@ vi.mock("../panel-host", () => ({
   resolveApplicationEntry: async ({ path }: { path: string }) => {
     const use = uses.find((candidate) => candidate.path.replace(/^#/, "") === path || candidate.path === path);
     if (!use) throw new Error(`No entry at ${path}`);
-    return { applicationId: path.split("/")[2], use, menu: { groups: [], panelUses: uses } };
+    return { applicationId: path.split("/")[2], use, framePanelId, menu: { groups: [], panelUses: uses } };
   },
+  readApplicationFrameManifest: readFrameManifest,
   // The host the route builds is the one for the use relation its address names.
   platformPanelHost: (_applicationId: string, use: ApplicationPanelUse) => ({ use }),
 }));
@@ -43,14 +46,14 @@ vi.mock("@ontomato/platform-shell", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@ontomato/platform-shell")>()),
   // Stands in for the frame: it reports an address the way a panel's own state report does.
   PanelHost: defineComponent({
-    props: { port: { type: Object, required: true }, address: { type: String, required: true }, initial: { type: Object, default: () => ({}) }, label: { type: String, default: "" }, labels: Object },
+    props: { port: { type: Object, required: true }, address: { type: String, required: true }, initial: { type: Object, default: () => ({}) }, label: { type: String, default: "" }, labels: Object, frameState: Object },
     emits: ["display-address", "display-loaded", "display-dirty"],
     setup(props, { emit }) {
       const address = ref(props.address);
       const useId = (props.port as { use: ApplicationPanelUse }).use.id;
       mountedInstances.push({ useId, address, initial: props.initial });
       return () =>
-        h("div", { "data-use": useId }, [
+        h("div", { "data-use": useId, "data-term": props.frameState?.term }, [
           h("button", { "data-select": "task-2", onClick: () => {
             const address = `${props.address}?selectedTask=task-2`;
             emit("display-address", { kind: "state", address });
@@ -73,6 +76,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   mountedInstances.length = 0;
+  framePanelId = undefined;
+  readFrameManifest.mockReset();
 });
 
 async function mountAt(path: string, props: Record<string, unknown> = {}) {
@@ -174,6 +179,21 @@ describe("a panel application's page", () => {
     expect(route.emitted("display-dirty")).toEqual(onDisplayDirty.mock.calls);
     expect(router.currentRoute.value.fullPath).toBe(page);
     expect(mountedInstances).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("clears the previous frame default if the next entry cannot read the frame beside a conversation", async () => {
+    framePanelId = "term-frame";
+    readFrameManifest
+      .mockResolvedValueOnce({ state: { term: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "fall" } } })
+      .mockRejectedValueOnce(new Error("Frame snapshot unavailable"));
+
+    const { router, wrapper } = await mountAt("/applications/app-a/tasks", { navigate: vi.fn() });
+    expect(wrapper.get('[data-use="use-tasks"]').attributes("data-term")).toBe("fall");
+
+    await router.push("/applications/app-a/summary");
+    await flushPromises();
+    expect(wrapper.get('[data-use="use-summary"]').attributes("data-term")).toBeUndefined();
     wrapper.unmount();
   });
 });

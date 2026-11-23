@@ -861,6 +861,28 @@ test("application addresses carry flat named frame and entry state while preserv
   assert.throws(() => validateApplicationPanelAddressState("state", { privateSelection: "x" }, manifest), /state\.privateSelection/);
 });
 
+test("flat panel URLs distinguish an empty string list from a list containing empty strings", async () => {
+  const { applicationPanelAddress, panelAddress, panelAddressState, parseApplicationPanelAddress } = await import("./panel-host");
+  const path = "/applications/app-school/orders";
+  const type = { kind: "list", items: { kind: "scalar", type: "string" } };
+  for (const defaultValue of [undefined, ["default"]]) {
+    const manifest = panelManifestSchema.parse({ state: { tags: { type, deepLink: true, default: defaultValue } }, members: {} });
+    for (const tags of [[], [""], ["", "a"], ["a", ""], ["", ""], ["a"], ["a", "b"]]) {
+      const state = { tags };
+      const panelUrl = panelAddress(path, state, manifest);
+      assert.deepEqual(panelAddressState(panelUrl, manifest), state, panelUrl);
+      const url = applicationPanelAddress(path, { frame: state, state, frameManifest: manifest, stateManifest: manifest });
+      const raw = parseApplicationPanelAddress(url);
+      const forwarded = applicationPanelAddress(raw.path, raw);
+      const parsed = parseApplicationPanelAddress(forwarded, { frameManifest: manifest, stateManifest: manifest });
+      assert.deepEqual(parsed.frame, state, forwarded);
+      assert.deepEqual(parsed.state, state, forwarded);
+    }
+    assert.deepEqual(panelAddressState(`${path}?tags=&tags=`, manifest), { tags: ["", ""] });
+    assert.equal(panelAddress(panelAddress(path, { tags: [""] }, manifest), { tags: [] }, manifest), `${path}?tags=`);
+  }
+});
+
 test("clearing non-empty defaults encodes explicit empty markers and round-trips without snapping back", async () => {
   const {
     applicationPanelAddress,
