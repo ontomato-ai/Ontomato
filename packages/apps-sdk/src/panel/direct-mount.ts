@@ -163,10 +163,13 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
         for (const [name, value] of entries) checked[name] = checkPanelValue(options.manifest, name, value);
         instance.state.setState(checked);
       },
-      refresh(target, affected) {
+      refresh(target, affected, operation) {
         // Unseen, what an operation changed is held as everything; seen, only the data it concerns are read again.
-        if (affected && active) instance.refresh(affected);
-        else panelRun.objectChanged(affected ? null : target);
+        if (affected && active) instance.refresh(affected, operation);
+        else {
+          if (operation) instance.operationCompleted({ operation, affected });
+          panelRun.objectChanged(affected ? null : target);
+        }
       },
       projectionsChanged: (revisions) => panelRun.projectionsChanged(revisions),
       activate(next) {

@@ -283,7 +283,7 @@ export function directObjectSourceType(projection: Pick<DirectProjectionPorts, "
   return input?.kind === "object" ? input.objectType : undefined;
 }
 
-function projectionReadReference(projection: DirectProjectionPorts, source: DirectProjectionData["source"]): OntologyElementRef | undefined {
+export function projectionReadReference(projection: DirectProjectionPorts, source: DirectProjectionData["source"]): OntologyElementRef | undefined {
   if ("type" in source) return source.type;
   const id = directObjectSourceType(projection, source.object);
   return id === undefined ? undefined : { kind: id.startsWith("platform:") ? "PlatformObjectType" : "ObjectType", id };

@@ -246,6 +246,15 @@ type ObjectActionOperationFor<T extends ResolvedObjectAction> =
       : TargetedObjectActionOperation | UntargetedObjectActionOperation;
 
 export function objectActionOperation<T extends ResolvedObjectAction>(resolved: T): ObjectActionOperationFor<T> {
+  const values = resolved.declaration.inputSchema.properties as { values: { properties: Record<string, unknown> } };
+  const parameters = new Set(Object.keys(values.values.properties));
+  const inputSchema = objectActionInputSchema.superRefine(({ values }, ctx) => {
+    for (const name of Object.keys(values)) {
+      if (!parameters.has(name)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["values", name], message: "Unknown Action parameter" });
+      }
+    }
+  });
   if (resolved.object === null) {
     const operation = {
       handlerRef: ACTIONS_EXECUTE,
@@ -254,10 +263,10 @@ export function objectActionOperation<T extends ResolvedObjectAction>(resolved: 
       effect: "write",
       batch: false,
       targetSchema: z.null(),
-      inputSchema: objectActionInputSchema,
+      inputSchema,
       resultSchema: objectActionResultSchema,
       execute: (host: PanelOperationHost, _target: null, input: Record<string, unknown>) =>
-        execute(host, resolved, objectActionInputSchema.parse(input).values),
+        execute(host, resolved, (input as z.infer<typeof objectActionInputSchema>).values),
     } satisfies UntargetedObjectActionOperation;
     return operation as unknown as ObjectActionOperationFor<T>;
   }
@@ -273,13 +282,13 @@ export function objectActionOperation<T extends ResolvedObjectAction>(resolved: 
     targetSchema: z.object({
       kind: z.literal("object"), objectType: z.literal(objectType), primaryKey: z.literal(primaryKey),
     }).strict(),
-    inputSchema: objectActionInputSchema,
+    inputSchema,
     resultSchema: objectActionResultSchema,
     // The object's name as the confirming person reads it; the customer ontology owner answers a refusal or a missing one.
     targetLabel: async (host: PanelOperationHost) =>
       (await createCustomerOntologyReadAdapter(host.initiator.owner, host.initiator.credentials).record(objectType, primaryKey)).label,
     execute: (host: PanelOperationHost, _target: { kind: "object"; objectType: string; primaryKey: string }, input: Record<string, unknown>) =>
-      execute(host, resolved, objectActionInputSchema.parse(input).values),
+      execute(host, resolved, (input as z.infer<typeof objectActionInputSchema>).values),
   } satisfies TargetedObjectActionOperation;
   return operation as unknown as ObjectActionOperationFor<T>;
 }

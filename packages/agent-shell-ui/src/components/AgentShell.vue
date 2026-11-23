@@ -158,8 +158,14 @@ if (sessionStream) {
             ? display.present(frame)
             : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() };
       },
-      objectChanged: ({ session, target, affected }) => {
-        if (session.sessionId === conversation.state.sessionId) display.refreshObjects(affected ? { target, affected } : { target });
+      objectChanged: ({ session, target, affected, operation }) => {
+        if (session.sessionId === conversation.state.sessionId) {
+          display.refreshObjects({
+            target,
+            ...(affected ? { affected } : {}),
+            ...(operation ? { operation } : {}),
+          });
+        }
       },
       ready: () => display.refreshObjects({ target: null }),
     }),

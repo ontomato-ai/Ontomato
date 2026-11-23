@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema, runtimeKeySchema } from "./agent-runtime-values";
 import { panelDownloadReceiptSchema } from "./panel-download";
 import { panelUploadDeclarationSchema } from "./panel-upload";
-import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema, panelOperationUnavailableSchema } from "./panel-manifest";
+import { panelFormTargetSchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationCallSchema, panelOperationIdSchema, panelOperationUnavailableSchema } from "./panel-manifest";
 import {
   panelFormDescriptionSchema, panelFormValuesSchema, panelGroupCountsSchema, panelOptionListSchema,
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
@@ -178,3 +178,12 @@ export const panelOperationAffectedSchema = z.object({
   removed: z.array(panelObjectIdentitySchema).optional(),
 }).strict();
 export type PanelOperationAffected = z.infer<typeof panelOperationAffectedSchema>;
+
+/** Identifies the panel member operation whose completion triggered an object-change notification. */
+export const panelCompletedOperationSchema = z.object({
+  operationId: panelOperationIdSchema,
+  panelId: runtimeKeySchema,
+  target: panelObjectIdentitySchema.nullable(),
+  message: z.string().optional(),
+}).strict();
+export type PanelCompletedOperation = z.infer<typeof panelCompletedOperationSchema>;

@@ -21,7 +21,7 @@ import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelOperationBinding } from "./types";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
 import type { PanelHumanOperationPreparation, PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
-import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
+import type { PanelCompletedOperation, PanelOperationAffected, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelReadCall, PanelWriteInvocation } from "./human-operations";
 
 /*
@@ -77,6 +77,12 @@ export interface NestedPublisher {
   readonly operations: readonly PanelOperationBinding[];
   dirty(): boolean;
   readonly context: PageContext | null;
+}
+
+/** A completed panel write operation reported by the host (e.g. an agent `/operate` dispatch). */
+export interface PanelOperationCompletion {
+  readonly operation: PanelCompletedOperation;
+  readonly affected?: PanelOperationAffected;
 }
 
 export interface PanelInstance {
@@ -193,6 +199,9 @@ export interface PanelInstance {
   /** Notifies the host that the user manually edited an unsaved form, invalidating pending agent save confirmations. */
   notifyFormEdited(target: PanelFormEditedTarget): void;
   onFormEdited(listener: (target: PanelFormEditedTarget) => void): () => void;
+  /** Notifies mounted members that a panel operation completed remotely (e.g. via agent `/operate`). */
+  operationCompleted(event: PanelOperationCompletion): void;
+  onOperationCompleted(listener: (event: PanelOperationCompletion) => void): () => void;
 }
 
 /**
@@ -214,6 +223,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
   const settledListeners = new Set<(link: PageDraftLink) => void>();
   const formEditedListeners = new Set<(target: PanelFormEditedTarget) => void>();
+  const operationCompletedListeners = new Set<(event: PanelOperationCompletion) => void>();
   const objectChanged = (object: PanelObjectIdentity | null) => {
     for (const listener of objectListeners) listener(object);
   };
@@ -460,6 +470,13 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     onFormEdited(listener) {
       formEditedListeners.add(listener);
       return () => formEditedListeners.delete(listener);
+    },
+    operationCompleted(event) {
+      for (const listener of operationCompletedListeners) listener(event);
+    },
+    onOperationCompleted(listener) {
+      operationCompletedListeners.add(listener);
+      return () => operationCompletedListeners.delete(listener);
     },
   };
 }

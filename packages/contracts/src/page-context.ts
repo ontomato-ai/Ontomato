@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema } from "./agent-runtime-values";
-import { panelChildObjectIdentitySchema, panelMemberPathSchema } from "./panel-manifest";
+import { panelChildObjectIdentitySchema, panelMemberPathSchema, panelOperationCallSchema, panelOperationIdSchema } from "./panel-manifest";
 import { platformHasChildCollection } from "./platform-object-types";
 
 /*
@@ -126,6 +126,11 @@ export const pageFormSnapshotSchema = z
     dirtyFields: z.array(z.string().min(1).max(500)).max(200).readonly().optional(),
     /** Current live field values in the form, including unsaved user edits. */
     values: runtimeJsonObjectSchema,
+    /** The current customer Action save call, prepared by the form's own field wiring. */
+    save: z.object({
+      operationId: panelOperationIdSchema,
+      call: panelOperationCallSchema,
+    }).strict().optional(),
   })
   .strict();
 export type PageFormSnapshot = z.infer<typeof pageFormSnapshotSchema>;

@@ -1,7 +1,7 @@
 import { agentInputDeliverySchema, agentPendingQuestionSchema, agentSessionRefSchema } from "./agent-channel";
 import { presentationBindingSchema, presentationFrameSchema, presentationReceiptSchema } from "./agent-presentation";
 import { panelObjectIdentitySchema } from "./panel-manifest";
-import { panelOperationAffectedSchema } from "./panel-operations";
+import { panelCompletedOperationSchema, panelOperationAffectedSchema } from "./panel-operations";
 import { z } from "zod";
 import { pageSkillContextSchema } from "./page-skills";
 import {
@@ -58,6 +58,7 @@ export const agentHostSessionRunFrameSchema = z.union([
 const objectChangedFrame = z.object({
   type: z.literal("object-changed"),
   session: agentSessionRefSchema,
+  operation: panelCompletedOperationSchema.optional(),
 }).strict();
 /** A batch or a type-only invalidation can carry the owner result without a single target. */
 export const agentHostObjectChangedFrameSchema = z.union([

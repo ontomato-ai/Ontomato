@@ -82,7 +82,7 @@ describe("page header actions", () => {
     });
     try {
       const refreshButton = wrapper.get<HTMLButtonElement>('.page-actions > button.icon-action[aria-label="Refresh"]');
-      expect(refreshButton.exists()).toBe(true);
+      expect(refreshButton.element).toBeInstanceOf(HTMLButtonElement);
       const visible = wrapper.findAll<HTMLButtonElement>(".page-actions > button.action:not(.icon-action)");
       expect(visible.map((button) => button.text().trim())).toEqual(["Create", "Import"]);
       expect(visible[0]!.classes()).toContain("primary");

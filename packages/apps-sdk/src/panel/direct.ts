@@ -5,12 +5,12 @@ import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-m
 import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import type { AppMenuGroup, DirectPanelRun } from "@ontomato/platform-shell";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
-import { panelOperationAffectedSchema, panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
+import { panelOperationAffectedSchema, panelReadResultSchemas, type PanelCompletedOperation } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import type { ApplicationEntryMenu, CurrentApplicationEntry, DirectProjection } from "@ontomato/contracts/product-panels";
 import type { PanelDataState, ProductPanelNestedReadRequest, ProductPanelReadRequest, ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { isDomainComponentId } from "@ontomato/contracts/product-record-id";
-import { createPanelInstance, type PanelInstance, type PanelInstanceOptions, type PublisherPath } from "./instance";
+import { createPanelInstance, type PanelInstance, type PanelInstanceOptions, type PanelOperationCompletion, type PublisherPath } from "./instance";
 import type { ComponentPackageReader } from "./component-packages";
 import { stateObject, type PanelFieldValue } from "./state";
 import type { PanelText } from "./text";
@@ -197,7 +197,7 @@ export interface DirectPanelInstance extends PanelInstance {
   /** The operations one member can do now, as the owner admits them for its inputs; kept current while it is drawn. */
   memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs): ComputedRef<MemberOperationsState>;
   /** An operation's reported changes: the shown data they concern are read again. */
-  refresh(affected: PanelOperationAffected): void;
+  refresh(affected: PanelOperationAffected, operation?: PanelCompletedOperation): void;
   /** True while a new external address with changed deep-link state is held pending reactivation. */
   readonly addressPending: Readonly<Ref<boolean>>;
   /** Updates whether a new external address is held pending reactivation. */
@@ -546,6 +546,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   const drawnCounts = new Map<string, number>();
   const addressPending = shallowRef(false);
 
+  const notifyOperationCompleted = instance.operationCompleted;
   const directInstance: DirectPanelInstance = Object.assign(instance, {
     currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
     entryMenu: computed(() => options.currentEntry?.menu.value ?? null),
@@ -780,7 +781,12 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       onScopeDispose(() => operationReads.delete(reread));
       return state;
     },
-    refresh(affected: PanelOperationAffected) {
+    operationCompleted(event: PanelOperationCompletion) {
+      notifyOperationCompleted(event);
+      for (const mount of nestedMounts) mount.instance.operationCompleted(event);
+    },
+    refresh(affected: PanelOperationAffected, operation?: PanelCompletedOperation) {
+      if (operation) instance.operationCompleted({ operation, affected });
       // What the write removed is let go of first, so nothing below reads it again.
       if (affected.removed) instance.letGo(affected.removed);
       const affectedTypes = new Set<string>([

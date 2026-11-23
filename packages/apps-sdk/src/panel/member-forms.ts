@@ -1,7 +1,7 @@
 import { readonly, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageDraft } from "@ontomato/contracts/page-draft";
-import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
+import type { PanelFormTarget, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-object-ref";
 import { formFieldPointer } from "@ontomato/contracts/form-fields";
 import type {
@@ -50,6 +50,8 @@ export interface FormSaveResult {
 /** What an owner form asks of where it reads and saves. */
 export interface FormSource {
   describe(request: PanelFormRequest): Promise<PanelFormDescription>;
+  prepareActionSave(target: PanelFormTarget, input: PanelFormSaveInput, context: FormSaveContext):
+    { operationId: string; call: PanelOperationCall } | null;
   save(
     target: PanelFormTarget,
     input: PanelFormSaveInput,
@@ -435,7 +437,7 @@ function serializeActionParamValue(raw: unknown, isJson: boolean): string {
  * Validates that every modified/submitted form field has a submit destination in the customer Action and converts live
  * form values into `{ values: Record<string, string> }` without silently dropping cleared `null`/empty values.
  */
-export function buildActionSaveInput(
+function prepareActionSaveInput(
   descriptor: PanelOwnerOperationDescriptor,
   formValues: PanelFormValues,
   options: {
@@ -447,10 +449,10 @@ export function buildActionSaveInput(
     readonly memberInputs?: Readonly<Record<string, unknown>>;
     readonly formatUnwiredFieldRefusal?: FormSaveContext["formatUnwiredFieldRefusal"];
   } = {},
-): Record<string, unknown> {
+): { input: Record<string, unknown> } | { refusal: PlatformObjectRefusal } {
   const wiring = resolveActionSaveWiring(descriptor, options.binding);
   if (!wiring) {
-    return { ...formValues, ...(options.extraInput ?? {}) };
+    return { input: { ...formValues, ...(options.extraInput ?? {}) } };
   }
 
   const modifiedSet = new Set<string>([
@@ -466,7 +468,7 @@ export function buildActionSaveInput(
       path,
       formatted?.fieldMessage(path) ?? "Not modified by the current save action",
     ]));
-    throw new PlatformObjectRefusal(message, fieldErrors);
+    return { refusal: new PlatformObjectRefusal(message, fieldErrors) };
   }
 
   const extraValues = (
@@ -514,7 +516,7 @@ export function buildActionSaveInput(
       }
     }
   }
-  return { values: serialized };
+  return { input: { values: serialized } };
 }
 
 export function memberFormSource(member: PanelMemberContext, instance: PanelInstance): FormSource {
@@ -534,6 +536,24 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
     return { name, params, inputs, type: "type" in data.source ? data.source.type.id : null };
   }
 
+  function actionSaveInput(
+    descriptor: PanelOwnerOperationDescriptor,
+    binding: ProjectionOperationBinding | undefined,
+    input: PanelFormSaveInput,
+    context?: FormSaveContext,
+    extraInput?: Readonly<Record<string, unknown>>,
+  ) {
+    return prepareActionSaveInput(descriptor, input.values, {
+      binding,
+      submittedFields: input.submittedFields,
+      changedFields: context?.changedFields,
+      baselineValues: context?.baselineValues,
+      extraInput,
+      memberInputs: member.inputs.value,
+      formatUnwiredFieldRefusal: context?.formatUnwiredFieldRefusal,
+    });
+  }
+
   return {
     async describe({ target, values, changedField }) {
       const { name, params, inputs } = formRead(target, values, changedField);
@@ -541,34 +561,28 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       if (result.status !== "ready") throw new MemberDataUnavailable(result);
       return result.value as PanelFormDescription;
     },
+    prepareActionSave(target, input, context) {
+      const save = formSave(member.operations.value, target);
+      if (!save || save.descriptor.kind !== "action") return null;
+      const prepared = actionSaveInput(save.descriptor, projection.operations?.[save.name], input, context);
+      if ("refusal" in prepared) return null;
+      return {
+        operationId: instance.operationIdOf(member.key, save.name),
+        call: { target: save.descriptor.target.source === "none" ? null : target, input: prepared.input },
+      };
+    },
     async save(target, input, override, context) {
-      let operationId: string;
-      let descriptor: PanelOwnerOperationDescriptor;
-      let binding: ProjectionOperationBinding | undefined;
-      if (override) {
-        operationId = override.operationId;
-        descriptor = override.descriptor;
-        binding = override.binding;
-      } else {
-        const save = formSave(member.operations.value, target);
-        if (!save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
-        operationId = instance.operationIdOf(member.key, save.name);
-        descriptor = save.descriptor;
-        binding = projection.operations?.[save.name];
-      }
-      const payload = descriptor.kind === "form.save"
-        ? input
-        : buildActionSaveInput(descriptor, input.values, {
-            binding,
-            submittedFields: input.submittedFields,
-            changedFields: context?.changedFields,
-            baselineValues: context?.baselineValues,
-            extraInput: override?.extraInput,
-            memberInputs: member.inputs.value,
-            formatUnwiredFieldRefusal: context?.formatUnwiredFieldRefusal,
-          });
+      const save = override ? null : formSave(member.operations.value, target);
+      if (!override && !save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
+      const operationId = override?.operationId ?? instance.operationIdOf(member.key, save!.name);
+      const descriptor = override?.descriptor ?? save!.descriptor;
+      const binding = override ? override.binding : projection.operations?.[save!.name];
+      const prepared = descriptor.kind === "form.save"
+        ? { input }
+        : actionSaveInput(descriptor, binding, input, context, override?.extraInput);
+      if ("refusal" in prepared) throw prepared.refusal;
       const callTarget = descriptor.target.source === "none" ? null : target;
-      const answer = await instance.writeOperation(operationId, { call: { target: callTarget, input: payload } });
+      const answer = await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } });
       if (answer.decision === "cancel") throw new Error("The save was cancelled");
       const { response } = answer;
       if (response.kind === "not-dispatched") throw new Error(response.message);

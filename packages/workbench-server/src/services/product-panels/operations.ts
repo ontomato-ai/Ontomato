@@ -114,6 +114,18 @@ function invocationTarget(
   return "call" in input ? input.call.target : undefined;
 }
 
+function serializeActionParamValue(raw: unknown, isJson: boolean): string {
+  if (raw === null || raw === undefined) return isJson ? "null" : "";
+  if (isJson || typeof raw === "object") return JSON.stringify(raw);
+  return String(raw);
+}
+
+function actionParamSchemas(descriptor: ReturnType<typeof writeOperation>["descriptor"]) {
+  const schemaProps = descriptor.inputSchema.properties as Record<string, unknown> | undefined;
+  const valuesSchema = schemaProps?.values as { properties?: Record<string, { contentMediaType?: string }> } | undefined;
+  return valuesSchema?.properties;
+}
+
 function mergeBoundParams(
   supplied: Record<string, unknown>,
   boundParams: Readonly<Record<string, unknown>> | undefined,
@@ -130,10 +142,63 @@ function mergeBoundParams(
   return merged;
 }
 
+function mergeWriteInput(
+  supplied: Record<string, unknown>,
+  resolved: Pick<ReturnType<typeof writeOperation>, "boundParams" | "bindingParams" | "handler" | "descriptor">,
+  onMismatch: (key: string) => never,
+): Record<string, unknown> {
+  if (resolved.handler.handlerRef !== EXECUTE_OBJECT_ACTION) {
+    return mergeBoundParams(supplied, resolved.boundParams, onMismatch);
+  }
+  const rawValues = supplied.values;
+  const valuesRecord = rawValues && typeof rawValues === "object" && !Array.isArray(rawValues)
+    ? { ...(rawValues as Record<string, unknown>) }
+    : undefined;
+  const paramSchemas = actionParamSchemas(resolved.descriptor);
+  if (resolved.boundParams && Object.keys(resolved.boundParams).length > 0 && valuesRecord) {
+    for (const [key, expected] of Object.entries(resolved.boundParams)) {
+      const isJson = paramSchemas?.[key]?.contentMediaType === "application/json";
+      const serialized = serializeActionParamValue(expected, isJson);
+      if (Object.hasOwn(valuesRecord, key) && valuesRecord[key] !== undefined && valuesRecord[key] !== serialized) {
+        onMismatch(key);
+      }
+      valuesRecord[key] = serialized;
+    }
+  }
+  if (resolved.bindingParams && valuesRecord) {
+    for (const [paramKey, spec] of Object.entries(resolved.bindingParams)) {
+      if (!("formFields" in spec)) continue;
+      if (!Object.hasOwn(valuesRecord, paramKey) || valuesRecord[paramKey] === undefined) continue;
+      const raw = valuesRecord[paramKey];
+      if (typeof raw !== "string") continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new HttpError(400, `Operation input '${paramKey}' must be valid JSON`, "ACTION_INPUT_INVALID");
+      }
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new HttpError(400, `Operation input '${paramKey}' must be a JSON object`, "ACTION_INPUT_INVALID");
+      }
+      const allowedKeys = new Set(Object.keys(spec.formFields));
+      for (const fieldKey of Object.keys(parsed as Record<string, unknown>)) {
+        if (!allowedKeys.has(fieldKey)) {
+          throw new HttpError(
+            400,
+            `Operation input '${paramKey}' contains undeclared field '${fieldKey}'`,
+            "ACTION_INPUT_INVALID",
+          );
+        }
+      }
+    }
+  }
+  return valuesRecord ? { ...supplied, values: valuesRecord } : supplied;
+}
+
 /** Shared server-side materialization for both human and agent write operations. */
 function materializeWriteInvocation(
   input: CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest | z.infer<typeof inspectPanelOperationImpactRequestSchema>,
-  resolved: Pick<ReturnType<typeof writeOperation>, "boundParams">,
+  resolved: Pick<ReturnType<typeof writeOperation>, "boundParams" | "bindingParams" | "handler" | "descriptor">,
 ): PanelOperationInvocation {
   const rejectParamMismatch = (key: string): never => {
     throw new HttpError(403, `Operation input '${key}' does not match the panel member binding`, "OPERATION_PARAM_MISMATCH");
@@ -141,14 +206,14 @@ function materializeWriteInvocation(
   if ("calls" in input) {
     const calls = input.calls.map(call => ({
       ...call,
-      input: mergeBoundParams(call.input, resolved.boundParams, rejectParamMismatch),
+      input: mergeWriteInput(call.input, resolved, rejectParamMismatch),
     }));
     return { calls } as PanelOperationInvocation;
   }
   return {
     call: {
       ...input.call,
-      input: mergeBoundParams(input.call.input, resolved.boundParams, rejectParamMismatch),
+      input: mergeWriteInput(input.call.input, resolved, rejectParamMismatch),
     },
   };
 }
@@ -188,9 +253,9 @@ function requireFrozenOperation(
     throw new HttpError(409, "Operation definition changed; create a new intent", "INTENT_CHANGED");
   };
   if ("calls" in intent) {
-    for (const call of intent.calls) mergeBoundParams(call.input, current.boundParams, rejectChanged);
+    for (const call of intent.calls) mergeWriteInput(call.input, current, rejectChanged);
   } else {
-    mergeBoundParams(intent.call.input, current.boundParams, rejectChanged);
+    mergeWriteInput(intent.call.input, current, rejectChanged);
   }
 }
 
@@ -274,6 +339,14 @@ async function replay(record: StoredPanelOperationIntent, owner: AssistantOwner,
     kind: "not-dispatched", intentId: record.intentId, code: PANEL_CONFIRMATION_EXPIRED,
     message: "This confirmation expired. Start a new operation.",
   };
+  if (record.kind === "current" && !isPanelHumanOperationIntent(record.intent) && record.intent.invalidated) {
+    return {
+      kind: "not-dispatched",
+      intentId: record.intent.intentId,
+      code: record.intent.invalidated.code,
+      message: record.intent.invalidated.message,
+    };
+  }
   return { kind: "dispatched", intentId: record.intent.intentId, outcome: await presentOutcome(record.intent, owner, credentials) };
 }
 function invocationOf(input: PanelOperationInvocation): PanelOperationInvocation {
@@ -619,12 +692,23 @@ export async function dispatchPanel(owner: AssistantOwner, credentials: Assistan
   if ("affected" in outcome && outcome.affected) {
     const { affected } = outcome;
     const target = "call" in intent && affected.objects.length === 1 ? affected.objects[0]! : null;
+    const operation = outcome.kind === "success" && "call" in prepared && current.handler.handlerRef === EXECUTE_OBJECT_ACTION
+      ? {
+          operationId: intent.operation.id,
+          panelId: intent.panelId,
+          target: prepared.target?.kind === "object"
+            ? { objectType: prepared.target.objectType, primaryKey: prepared.target.primaryKey }
+            : null,
+          ...(outcome.message ? { message: outcome.message } : {}),
+        }
+      : undefined;
     publishObjectChanged({
       domainId: intent.initiator.domainId,
       initiator: intent.initiator.userId,
       rootSession: intent.rootSession,
       target,
       affected,
+      ...(operation ? { operation } : {}),
     });
   }
   return { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome }, owner, credentials, current.view) };
