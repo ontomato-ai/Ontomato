@@ -187,11 +187,16 @@ export async function deleteCurrentProduct(owner: ProductOwner, credentials: Ass
 }
 
 export async function copyCurrentProduct(owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, sourceId: string,
-  copy: { id: string; name: string }) {
+  copy: { id: string; name: string; template?: boolean }) {
   const row = await transaction(async client => {
     await lockProducts(client, owner);
     const source = await requireCurrentProduct(owner, credentials, kind, sourceId, "use", client);
-    const definition = { ...source.definition, name: copy.name, visibility: "private" };
+    const definition = {
+      ...source.definition,
+      name: copy.name,
+      visibility: "private",
+      ...(kind === "panel" && copy.template !== undefined ? { template: copy.template } : {}),
+    };
     const input = kind === "projection" ? productProjectionInputSchema.parse(definition) : productPanelInputSchema.parse(definition);
     if ("componentId" in input) requireOrdinaryProjection(input);
     if (await findCurrentProduct(owner.domainId, kind, copy.id, client))

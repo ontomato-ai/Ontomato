@@ -326,7 +326,7 @@ describe("platform-ontology composite query", () => {
     const panel = byId.get(PRODUCT_PANEL);
     expect(panel?.definition).toBe(platformTypeDetails[PRODUCT_PANEL]?.definition);
     expect(Object.keys(panel?.reads ?? {}).sort()).toEqual([
-      "createForm", "form", "grants", "memberRows", "members", "query", "record", "usedBy",
+      "createForm", "form", "grantRows", "grants", "memberRows", "members", "query", "record", "sourceFile", "sourceFiles", "usedBy", "usedByRows",
     ]);
     expect(panel?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PANEL}.save`);
 

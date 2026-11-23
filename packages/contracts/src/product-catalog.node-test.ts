@@ -240,7 +240,14 @@ test("declares typed catalogue reads that reuse the current product records and 
   assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.inputRows.result, "panelRecordList");
   assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.outputRows.result, "panelRecordList");
   assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.operationRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.query.result, "panelRecordQuery");
+  assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.record.result, "panelRecord");
   assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.usedBy.result, "productPanelUsedBy");
+  assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.usedByRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.grantRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.memberRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.sourceFiles.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.sourceFile.result, "panelRecord");
   assert.equal(platformObjectTypes[APPLICATION].reads?.form.result, "panelFormDescription");
   assert.equal(platformObjectTypes[APPLICATION].reads?.query.result, "panelRecordQuery");
   assert.equal(platformObjectTypes[APPLICATION].reads?.record.result, "panelRecord");
