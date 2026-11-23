@@ -239,17 +239,18 @@ async function admitBoundOperation(
   }
   if (!owner) throw new HttpError(422, `Operation '${binding.operation.id}' has no server owner client`, "OPERATION_UNAVAILABLE");
   const { handler } = owner;
+  const host = operationHost(actor);
   if (handler.effect === "read") {
     if (handler.target.source === "draft") {
       const draftSlot = placement.member.readOperationInputs?.[bound.name]?.draft?.slot;
       if (!draftSlot || !Object.hasOwn(placement.panel.manifest.members, draftSlot)) {
         throw new HttpError(422, `Member '${slot}', operation '${bound.name}' must declare a form member in readOperationInputs.${bound.name}.draft.slot`, "PANEL_OPERATION_DRAFT_UNBOUND");
       }
-      const described = describeServerOperation(handler, actor.credentials.locale, slot, { source: "draft", slot: draftSlot });
+      const described = await describeServerOperation(handler, host, slot, { source: "draft", slot: draftSlot });
       return { effect: "read" as const, handler, descriptor: described, fixedTarget: undefined, selected: undefined };
     }
     if (handler.target.source === "input" && selected?.kind !== "object") return undefined;
-    const described = describeServerOperation(handler, actor.credentials.locale, slot, descriptor);
+    const described = await describeServerOperation(handler, host, slot, descriptor);
     return { effect: "read" as const, handler, descriptor: described, fixedTarget: fixed, selected };
   }
   const writeDraftSlot = placement.member.operationDrafts?.[bound.name]?.slot;
@@ -258,7 +259,7 @@ async function admitBoundOperation(
   }
   const draft = handler.kind === "form.save" && selected?.kind !== "object";
   if (draft && !allowsOperationDraft(projection, handler) && !(handler.create && writeDraftSlot)) return undefined;
-  const described = describeServerOperation(handler, actor.credentials.locale, slot,
+  const described = await describeServerOperation(handler, host, slot,
     draft ? { source: "draft", slot: writeDraftSlot ?? slot } : descriptor);
   const operation = panelWriteOperationSnapshotSchema.parse({ ...described, ...placement.nested, id, slot });
   return {
