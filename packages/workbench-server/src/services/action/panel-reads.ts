@@ -22,6 +22,7 @@ import { backendPost, buildBackendHeaders } from "../../utils/backend-client";
 import { ownerEnvelopeSchema } from "../product-panels/data-query-operations";
 import type { ProductOwner } from "../product-governance/grants";
 import { objectActionDeclaration, readRefusal, storedObjectActionSchema } from "./object-actions";
+import { operationHost } from "../product-panels/operation-host";
 import { describeServerOperation, panelServerOperation } from "../product-panels/server-operations";
 
 /*
@@ -388,7 +389,7 @@ export async function readObjectActions(viewer: AssistantCredentials, objectType
   return { actions, unavailableActions };
 }
 
-export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
+export function createActionReadAdapter(reader: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
   const owner = actionOwner(viewer);
   const readActions = () => owner("action-list", "/action/queryList", {}, z.array(actionSchema));
   const translate = (key: string) => tForLocale(viewer.locale, key);
@@ -660,10 +661,10 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
     /** The published object Actions for an author's type table: `readObjectActions` as this viewer. */
     objectActions: (objectType?: string) => readObjectActions(viewer, objectType),
     [`${SET_ACTION_STATUS}.describe`]() {
-      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), viewer.locale);
+      return describeServerOperation(panelServerOperation(SET_ACTION_STATUS), operationHost({ owner: reader, credentials: viewer }));
     },
     [`${DELETE_ACTION}.describe`]() {
-      return describeServerOperation(panelServerOperation(DELETE_ACTION), viewer.locale);
+      return describeServerOperation(panelServerOperation(DELETE_ACTION), operationHost({ owner: reader, credentials: viewer }));
     },
   };
 }

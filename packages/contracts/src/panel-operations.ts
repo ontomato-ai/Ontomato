@@ -68,15 +68,16 @@ export type PanelOwnerOperationDescriptor = z.infer<typeof panelOwnerOperationDe
 
 /** Combine the same declaration shown to authors with facts of the admitted runtime operation. */
 export function describePanelOperationFromDeclaration(
-  { id, target, ...staticFields }: PanelOperationDeclaration,
-  { handlerRef = id, slot, target: placedTarget, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact" | "unavailable"> & {
+  { id, target, inputSchema: declaredInputSchema, ...staticFields }: PanelOperationDeclaration,
+  { handlerRef = id, slot, target: placedTarget, inputSchema = declaredInputSchema, ...runtime }: Pick<PanelOwnerOperationDescriptor, "label" | "resultSchema" | "inspectImpact" | "unavailable"> & {
     handlerRef?: string;
     slot?: string;
     target?: PanelOwnerOperationDescriptor["target"];
+    inputSchema?: PanelOwnerOperationDescriptor["inputSchema"];
   },
 ): PanelOwnerOperationDescriptor {
   return panelOwnerOperationDescriptorSchema.parse({
-    ...staticFields, ...runtime, handlerRef,
+    ...staticFields, ...runtime, handlerRef, inputSchema,
     target: placedTarget ?? (target.source === "draft" ? { ...target, slot } : target),
   });
 }

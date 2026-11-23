@@ -58,6 +58,13 @@ vi.mock("../../identity/installed", async original => ({
 const database = process.env.RUNTIME_TEST_DATABASE_URL;
 if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable PostgreSQL database");
 
+const actionStatusTitle = "状态";
+const actionStatusOptions = [
+  { value: "PENDING_REVIEW", label: "待审核" },
+  { value: "PUBLISHED", label: "已发布" },
+  { value: "UNUSED", label: "已停用" },
+];
+
 let server: Server;
 let contentRoot: string;
 let cataloguePath: string;
@@ -343,9 +350,19 @@ beforeAll(async () => {
         expect(req.body).toEqual({ id: action.id });
         res.json({ success: true, data: action });
       } else if (req.body.target.kind === "draft") {
-        expect(req.body).toEqual({ target: { kind: "draft" }, values: { name: "New review" }, changedField: null });
+        const { values = {} } = req.body;
+        expect(req.body).toEqual({
+          target: { kind: "draft" }, changedField: null, ...(req.body.values && { values: { name: "New review" } }),
+        });
         res.json({ success: true, data: {
-          fields: [], values: req.body.values, errors: [],
+          fields: [{
+            path: "/status", label: actionStatusTitle, required: false, readOnly: false,
+            valueSchema: { type: "string", enum: actionStatusOptions.map(option => option.value) },
+            control: { kind: "select", options: actionStatusOptions.map(option => ({
+              ...option, description: null, disabled: false, disabledReason: null,
+            })) },
+          }],
+          values, errors: [],
           save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.create" },
         } });
       } else {
@@ -1296,7 +1313,13 @@ it("dispatches the action catalog's reads and both operation descriptions", asyn
     memberPath: [{ member }], operations: true, inputs: { action: selectedAction },
   })).json();
   expect(await readOperations("status")).toMatchObject({
-    status: "ready", value: { change: { handlerRef: "actions.setStatus", batch: true } },
+    status: "ready", value: { change: {
+      handlerRef: "actions.setStatus", batch: true,
+      inputSchema: { properties: { status: {
+        title: actionStatusTitle,
+        oneOf: actionStatusOptions.map(option => ({ const: option.value, title: option.label })),
+      } } },
+    } },
   });
   const ordinaryDelete = await readOperations("remove");
   expect(ordinaryDelete).toMatchObject({

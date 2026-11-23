@@ -57,7 +57,12 @@ export interface PanelOperationHost {
   requestWorkbench(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
   request(path: string, init: NonNullable<Parameters<typeof fetch>[1]>): Promise<Response>;
 }
-interface ServerOperation {
+interface OperationInputDescription {
+  /** The owner's input schema with presentation annotations in the reader's locale. */
+  describeInputSchema?(host: PanelOperationHost, locale?: string):
+    PanelOwnerOperationDescriptor["inputSchema"] | Promise<PanelOwnerOperationDescriptor["inputSchema"]>;
+}
+interface ServerOperation extends OperationInputDescription {
   handlerRef: string;
   binding: OntologyElementRef;
   labelKey?: string;
@@ -129,7 +134,7 @@ type ReadCall = z.infer<typeof panelReadOperationCallSchema>;
 type ReadTarget = Extract<PanelOwnerOperationDescriptor["target"], { source: "input" | "none" }> | { source: "draft" };
 type ReadResult = z.infer<typeof panelReadOperationJsonResultSchema> | ({ kind: "file" } & PanelDownloadFile);
 
-export interface PanelReadServerOperation {
+export interface PanelReadServerOperation extends OperationInputDescription {
   handlerRef: string;
   binding: OntologyElementRef;
   labelKey?: string;
@@ -230,11 +235,12 @@ export function panelServerOperationLabel(handler: PanelServerOperation, locale?
   return label;
 }
 
-export function describeServerOperation(handler: PanelServerOperation, locale: string | undefined, slot?: string,
+export async function describeServerOperation(handler: PanelServerOperation, host: PanelOperationHost, slot?: string,
   target?: PanelOwnerOperationDescriptor["target"],
 ) {
   return describePanelOperationFromDeclaration(operationDeclaration(handler), {
-    label: panelServerOperationLabel(handler, locale), slot, target,
+    label: panelServerOperationLabel(handler, host.locale), slot, target,
+    inputSchema: await handler.describeInputSchema?.(host, host.locale),
     resultSchema: runtimeJsonSchema(handler.resultSchema),
     ...(handler.effect === "write" && handler.inspectImpact && { inspectImpact: { handlerRef: handler.inspectImpact.handlerRef } }),
   });

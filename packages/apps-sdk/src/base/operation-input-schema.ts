@@ -1,7 +1,12 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { cloneJsonValue } from "../panel/form-values";
+import { cloneJsonValue, jsonValuesEqual } from "../panel/form-values";
 
 export type OperationInputFieldKind = "text" | "textarea" | "select" | "number" | "integer" | "boolean";
+
+export interface OperationInputOption {
+  readonly value: RuntimeJsonValue;
+  readonly label: string;
+}
 
 export interface OperationInputField {
   readonly name: string;
@@ -10,7 +15,7 @@ export interface OperationInputField {
   readonly kind: OperationInputFieldKind;
   readonly required: boolean;
   readonly defaultValue: RuntimeJsonValue | undefined;
-  readonly options?: readonly RuntimeJsonValue[];
+  readonly options?: readonly OperationInputOption[];
   readonly min?: number;
   readonly max?: number;
 }
@@ -34,18 +39,22 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function isNullBranch(branch: unknown): boolean {
+  return isObjectRecord(branch)
+    && (branch.type === "null" || (Object.hasOwn(branch, "const") && branch.const === null));
+}
+
 function unwrapNullableSchema(schema: RawSchema): RawSchema {
-  const branches = Array.isArray(schema.anyOf)
-    ? schema.anyOf
-    : Array.isArray(schema.oneOf)
-      ? schema.oneOf
-      : null;
-  if (!branches) return schema;
-  const nonNull = branches.filter(
-    (branch): branch is RawSchema => isObjectRecord(branch) && branch.type !== "null",
-  );
-  if (nonNull.length !== 1) return schema;
-  return { ...nonNull[0], ...schema, type: nonNull[0]!.type ?? schema.type };
+  for (const keyword of ["anyOf", "oneOf"] as const) {
+    const { [keyword]: branches, ...outer } = schema;
+    if (!Array.isArray(branches)) continue;
+    const nonNull = branches.filter(branch => !isNullBranch(branch));
+    const [inner] = nonNull;
+    if (nonNull.length === 1 && isObjectRecord(inner) && !Object.hasOwn(inner, "const")) {
+      return unwrapNullableSchema({ ...inner, ...outer, type: inner.type ?? outer.type });
+    }
+  }
+  return schema;
 }
 
 function primaryType(type: unknown): string | undefined {
@@ -54,10 +63,32 @@ function primaryType(type: unknown): string | undefined {
   return undefined;
 }
 
-function resolveKind(schema: RawSchema): { kind: OperationInputFieldKind; options?: readonly RuntimeJsonValue[] } {
-  if (Array.isArray(schema.enum) && schema.enum.length > 0) {
-    return { kind: "select", options: schema.enum as RuntimeJsonValue[] };
+function enumOptions(schema: RawSchema): readonly OperationInputOption[] {
+  const enumValues = Array.isArray(schema.enum) ? schema.enum as RuntimeJsonValue[] : [];
+  const titledOptions: OperationInputOption[] = [];
+  for (const branches of [schema.oneOf, schema.anyOf]) {
+    if (!Array.isArray(branches)) continue;
+    const candidates = enumValues.length ? branches : branches.filter(branch => !isNullBranch(branch));
+    const choices = candidates.filter(
+      (branch): branch is { const: RuntimeJsonValue; title?: unknown } =>
+        isObjectRecord(branch) && Object.hasOwn(branch, "const"),
+    );
+    if (enumValues.length === 0 && choices.length > 0 && choices.length === candidates.length) {
+      return choices.map(({ const: value, title }) => ({ value, label: typeof title === "string" ? title : String(value) }));
+    }
+    for (const { const: value, title } of choices) {
+      if (typeof title === "string") titledOptions.push({ value, label: title });
+    }
   }
+  return enumValues.map(value => ({
+    value,
+    label: titledOptions.find(option => jsonValuesEqual(option.value, value))?.label ?? String(value),
+  }));
+}
+
+function resolveKind(schema: RawSchema): { kind: OperationInputFieldKind; options?: readonly OperationInputOption[] } {
+  const options = enumOptions(schema);
+  if (options.length > 0) return { kind: "select", options };
   const type = primaryType(schema.type);
   if (type === "boolean") return { kind: "boolean" };
   if (type === "integer") return { kind: "integer" };
@@ -163,7 +194,7 @@ export function operationInputFields(
     const { kind, options } = resolveKind(schema);
     fields.push({
       name,
-      label: typeof schema.title === "string" && schema.title.trim() ? schema.title : name,
+      label: (typeof schema.title === "string" && schema.title.trim()) || name,
       ...(typeof schema.description === "string" && schema.description.trim() ? { description: schema.description } : {}),
       kind,
       required: required.has(name),
