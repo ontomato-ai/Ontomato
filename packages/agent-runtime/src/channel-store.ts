@@ -22,7 +22,7 @@ export class ChannelStore {
     return this.store.transaction(async c => {
       const row = (await c.query(`UPDATE ${this.store.table("sessions")} SET message_seq=message_seq+1,updated_at=now() WHERE host_id=$1 AND domain_id=$2 AND id=$3 RETURNING message_seq`, [...this.key(scope), sessionId])).rows[0];
       const record = { id: options.id ?? randomUUID(), contextSeq: null, runId: options.outputRunId ?? null, messageSeq: Number(row.message_seq), message };
-      await c.query(`INSERT INTO ${this.store.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message,intent_id,input_mode) VALUES($1,$2,$3,$4,$7,$5,$6,COALESCE($9::uuid,(SELECT preparing_run_id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$4)),$8)`, [...this.key(scope), record.id, sessionId, record.messageSeq, message,record.runId,options.mode ?? "followup",options.intentId ?? null]);
+      await c.query(`INSERT INTO ${this.store.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message,intent_id,input_mode) VALUES($1,$2,$3,$4,$7,$5,$6,$9,$8)`, [...this.key(scope), record.id, sessionId, record.messageSeq, message,record.runId,options.mode ?? "followup",options.intentId ?? null]);
       return record;
     });
   }
@@ -86,7 +86,7 @@ export class ChannelStore {
       AND q.message->>'kind'='agent-question' AND q.message->'source'=$2::jsonb ORDER BY q.seq`,[scope.domainId,JSON.stringify(execution),scope.hostId,execution.session.sessionId]);
     return rows.map(row=>({id:row.id,message:row.message.content as string,defaultAssumption:row.message.defaultAssumption as string,answered:row.answered as boolean,...(row.message.options ? {options:row.message.options} : {})}));
   }
-  async reserve(scope: Scope, sessionId: string, runId: string, inputId: string, channel: AgentRunContext, options: { language: string; context?: AgentRunIntent["context"]; title?: string; executionUserId?:string|null; afterRunId?: string; create?: { binding: ChannelBinding; input: AgentNotification } }) {
+  async reserve(scope: Scope, sessionId: string, runId: string, inputId: string, channel: AgentRunContext, options: { language: string; context?: AgentRunIntent["context"]; title?: string; executionUserId?:string|null; queued?: boolean; create?: { binding: ChannelBinding; input: AgentNotification } }) {
     const intent: AgentRunIntent = { id: runId, session: { providerId: channel.agent.providerId, sessionId }, channel, language: options.language, inputId, context: options.context, title: options.title, status: "starting", createdAt: new Date().toISOString(), error: null, cancelled: false,executionUserId:options.executionUserId };
     await this.store.transaction(async c => {
       if (channel.requestedBy) {
@@ -98,16 +98,32 @@ export class ChannelStore {
         await c.query(`INSERT INTO ${this.store.table("sessions")} (host_id,domain_id,id,channel,message_seq) VALUES($1,$2,$3,$4,1)`,[...this.key(scope),sessionId,options.create.binding]);
         await c.query(`INSERT INTO ${this.store.table("messages")} (host_id,domain_id,id,session_id,run_id,seq,message) VALUES($1,$2,$3,$4,NULL,1,$5)`,[...this.key(scope),inputId,sessionId,options.create.input]);
       }
-      const occupied = await c.query(`UPDATE ${this.store.table("sessions")} SET preparing_run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND (active_run_id IS NULL OR active_run_id=$5) AND preparing_run_id IS NULL RETURNING id`, [...this.key(scope), sessionId, intent.cancelled ? null : runId, options.afterRunId ?? null]);
-      if (!occupied.rowCount) throw new RuntimeError(409, "SESSION_BUSY", "Session already has an execution intent");
+      if (!options.queued) {
+        const occupied = await c.query(`UPDATE ${this.store.table("sessions")} SET preparing_run_id=$4 WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id IS NULL AND preparing_run_id IS NULL RETURNING id`, [...this.key(scope), sessionId, intent.cancelled ? null : runId]);
+        if (!occupied.rowCount) throw new RuntimeError(409, "SESSION_BUSY", "Session already has an execution intent");
+      }
       await c.query(`UPDATE ${this.store.table("messages")} SET intent_id=$4 WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND run_id IS NULL AND intent_id IS NULL`, [...this.key(scope),sessionId,runId]);
       await this.store.lockOpenAdmission(c, scope, runId);
       await c.query(`INSERT INTO ${this.store.table("admissions")} (host_id,domain_id,key,operation,fingerprint,session_id,intent) VALUES($1,$2,$3,'run','',$4,$5)`, [...this.key(scope), runId, sessionId, intent]);
     });
     return intent;
   }
-  async preparing(scope: Scope, sessionId: string): Promise<string | null> {
-    return (await this.store.pool.query(`SELECT preparing_run_id FROM ${this.store.table("sessions")} WHERE host_id=$1 AND domain_id=$2 AND id=$3`, [...this.key(scope), sessionId])).rows[0].preparing_run_id;
+  private nextStarting() {
+    return `SELECT a.key FROM ${this.store.table("admissions")} a
+    JOIN ${this.store.table("messages")} m ON m.host_id=a.host_id AND m.domain_id=a.domain_id AND m.id=(a.intent->>'inputId')::uuid
+    WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3 AND a.intent->>'status'='starting'
+    ORDER BY m.seq LIMIT 1`;
+  }
+  async waiting(scope: Scope, sessionId: string): Promise<string | null> {
+    const { rows } = await this.store.pool.query(this.nextStarting(), [...this.key(scope), sessionId]);
+    return rows[0]?.key ?? null;
+  }
+  async claimNext(scope: Scope, sessionId: string): Promise<AgentRunIntent | undefined> {
+    const { rows } = await this.store.pool.query(`UPDATE ${this.store.table("sessions")}
+      SET preparing_run_id=(${this.nextStarting()})
+      WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id IS NULL AND preparing_run_id IS NULL
+      RETURNING preparing_run_id`, [...this.key(scope), sessionId]);
+    if (rows[0]?.preparing_run_id) return this.intent(scope, rows[0].preparing_run_id);
   }
   async intent(scope: Scope, id: string): Promise<AgentRunIntent> {
     const row = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3 AND intent IS NOT NULL`, [...this.key(scope), id])).rows[0];

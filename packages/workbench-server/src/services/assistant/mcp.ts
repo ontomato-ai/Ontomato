@@ -89,7 +89,17 @@ export async function startAnalysis(
     });
   }
   const runId = randomUUID();
-  const sent = await assistantService.send(sessionId, runId, {message}, owner, credentials, "external");
-  const task = await analysisTask(sent.delivery.runId, owner);
+  const { delivery } = await assistantService.send(sessionId, runId, {message}, owner, credentials, "external");
+  if (delivery.status === "starting") {
+    return {
+      id: delivery.runId,
+      agentId,
+      userId: owner.userId,
+      threadId: threadId ?? sessionId,
+      question: message,
+      status: delivery.status,
+    };
+  }
+  const task = await analysisTask(delivery.runId, owner);
   return { ...task, threadId: threadId ?? sessionId };
 }

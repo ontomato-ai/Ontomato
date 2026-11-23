@@ -50,8 +50,11 @@ export function watchMemberOperations(
 ): { state: ComputedRef<MemberOperationsState>; reread(): void } {
   const state = shallowRef<MemberOperationsState>({ status: "loading" });
   let sequence = 0;
+  let lastInputsKey: string | undefined;
+  const keyOf = () => JSON.stringify(operationInputs(projection, inputs()));
   const reread = () => {
     if (!active()) return;
+    lastInputsKey = keyOf();
     const reading = ++sequence;
     // A read that fails is the member's to show, as a datum's is: its buttons say why there is nothing to press.
     void readMemberOperations(read, projection, memberPath(), inputs()).then(
@@ -59,6 +62,10 @@ export function watchMemberOperations(
       (reason: unknown) => { if (reading === sequence) state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) }; },
     );
   };
-  watch(() => JSON.stringify(operationInputs(projection, inputs())), reread, { immediate: true });
+  watch(keyOf, (key) => {
+    // Skip redundant watch flushes when an explicit reread already requested the same serialized inputs.
+    if (key === lastInputsKey) return;
+    reread();
+  }, { immediate: true });
   return { state: computed(() => state.value), reread };
 }
