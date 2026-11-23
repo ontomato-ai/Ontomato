@@ -33,8 +33,9 @@ import type { PanelFieldValue } from "./state";
  * save operation, received by the platform's coordinator as an agent's call is. The form itself is the same either way.
  */
 
-/** Extra context passed by ObjectForm when saving through a customer Action (kept off the wire for `form.save`). */
+/** Extra context for routing a form submission to its save operation. */
 export interface FormSaveContext {
+  readonly fixedFieldPaths?: readonly string[];
   readonly changedFields?: readonly string[];
   readonly baselineValues?: PanelFormValues;
   readonly formatUnwiredFieldRefusal?: (paths: readonly string[]) => {
@@ -275,9 +276,7 @@ export function emptyActionSaveWiring(): ActionSaveWiring {
 
 /** Whether a customer-class form relies on an Action for saving. */
 export function isCustomerActionForm(projection: Pick<ProductProjection, "operations">, objectType: string): boolean {
-  const entries = Object.entries(projection.operations ?? {});
-  if (entries.some(([, binding]) => binding.operation.kind === "PlatformOperation")) return false;
-  const actions = entries.filter(([, binding]) => binding.operation.kind === "Action");
+  const actions = Object.entries(projection.operations ?? {}).filter(([, binding]) => binding.operation.kind === "Action");
   return !objectType.startsWith("platform:") || actions.length === 1 || actions.some(([name]) => name === "save" || name === "create");
 }
 
@@ -602,8 +601,11 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       const operationId = override?.operationId ?? instance.operationIdOf(member.key, save!.name);
       const descriptor = override?.descriptor ?? save!.descriptor;
       const binding = override ? override.binding : projection.operations?.[save!.name];
+      const fixedPaths = context?.fixedFieldPaths;
       const prepared = descriptor.kind === "form.save"
-        ? { input }
+        ? { input: fixedPaths?.length
+            ? { ...input, submittedFields: [...new Set([...(input.submittedFields ?? []), ...fixedPaths])] }
+            : input }
         : actionSaveInput(descriptor, binding, input, context, override?.extraInput);
       if ("refusal" in prepared) throw prepared.refusal;
       const callTarget = descriptor.target.source === "none" ? null : target;
