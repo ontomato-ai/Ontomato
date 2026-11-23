@@ -212,6 +212,71 @@ it("forwards fill_form and recovers page_action intent status when receipt is lo
       questionId,
       operation: "form.save",
     });
+
+    // Dispatched intent whose outcome is not recorded yet must report unknown (never action_completed).
+    const baseIntent = {
+      intentId,
+      source: { kind: "agent-page" as const, sessionId: session.sessionId, runId, toolCallId: "act-dispatched", autoMode: true, questionId: null },
+      initiator: owner,
+      use: { applicationId: "app", useId: "use" },
+      panelId: "panel",
+      projectionId: "proj",
+      binding: { kind: "object-type" as const, id: "platform:Action" },
+      operation: { id: "form.save", kind: "form.save" as const, slot: "form", effect: "write" as const, handlerRef: "form.save", label: "Save", target: { source: "draft" as const } },
+      call: { input: {} },
+      confirmation: { kind: "none" as const },
+    };
+    const abortRecover = async (toolCallId: string, intent: Record<string, unknown>) => {
+      findSpy.mockResolvedValueOnce({ kind: "current", intent } as never);
+      const signal = new AbortController();
+      const pending = requestPresentation(
+        service, "workbench", owner,
+        { viewId: binding.viewId, sessionId: session.sessionId, runId, toolCallId, input: { mode: "page_action", operation: "form.save" } },
+        signal.signal,
+      );
+      await vi.waitFor(() => expect(sent.some(frame => (frame as { toolCallId?: string }).toolCallId === toolCallId)).toBe(true));
+      signal.abort();
+      return pending;
+    };
+
+    expect(await abortRecover("act-null-outcome", { ...baseIntent, dispatched: true, outcome: null })).toMatchObject({
+      status: "unknown",
+      reason: "receipt_missing",
+      intentId,
+      error: { code: "ACTION_OUTCOME_UNKNOWN" },
+    });
+    expect(await abortRecover("act-refused", {
+      ...baseIntent, dispatched: true, outcome: { kind: "refusal", code: "REVISION_CONFLICT", message: "Changed" },
+    })).toMatchObject({
+      status: "not_executed",
+      reason: "failed",
+      intentId,
+      error: { code: "REVISION_CONFLICT", message: "Changed" },
+    });
+    expect(await abortRecover("act-unknown", {
+      ...baseIntent, dispatched: true, outcome: { kind: "unknown", message: "Upstream timed out" },
+    })).toMatchObject({
+      status: "unknown",
+      reason: "receipt_missing",
+      intentId,
+      error: { code: "ACTION_OUTCOME_UNKNOWN", message: "Upstream timed out" },
+    });
+    expect(await abortRecover("act-success", {
+      ...baseIntent, dispatched: true, outcome: { kind: "success", data: { id: "1" } },
+    })).toMatchObject({
+      status: "executed",
+      reason: "action_completed",
+      intentId,
+      outcome: { kind: "success", data: { id: "1" } },
+    });
+    expect(await abortRecover("act-stale", {
+      ...baseIntent, dispatched: false, invalidated: { code: "FORM_CONFIRMATION_STALE", message: "Already saved" },
+    })).toMatchObject({
+      status: "not_executed",
+      reason: "stale",
+      intentId,
+      error: { code: "FORM_CONFIRMATION_STALE" },
+    });
   } finally {
     findSpy.mockRestore();
     view.abort();

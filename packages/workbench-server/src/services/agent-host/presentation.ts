@@ -6,7 +6,6 @@ import type {
   FillFormRequest, ObserveDisplayRequest, PageActionRequest, PresentationBinding, PresentationFrame, PresentationReceipt, PresentationResult,
   PresentRequest, RuntimePresentationCallback,
 } from "@ontomato/contracts/agent-presentation";
-import { isPanelHumanOperationIntent } from "@ontomato/contracts/panel-agent";
 import { environment } from "../../config/environment";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
@@ -182,21 +181,96 @@ export async function requestPresentation(
       }
       // Recover the authoritative server intent status when a page_action receipt is lost so the agent never retries.
       void panelOperationStore.findByAgentToolCall(owner, runId, toolCallId).then((stored) => {
-        if (stored?.kind === "current" && isPanelHumanOperationIntent(stored.intent)) {
+        if (stored?.kind === "current") {
           const { intent } = stored;
           if (intent.source.kind === "agent-page") {
             if (intent.dispatched) {
+              const { outcome } = intent;
+              if (outcome === null) {
+                finish({
+                  status: "unknown",
+                  reason: "receipt_missing",
+                  intentId: intent.intentId,
+                  current: { known: false, reason: "receipt_missing" },
+                  error: {
+                    code: "ACTION_OUTCOME_UNKNOWN",
+                    message: `Operation was dispatched, but its outcome is not yet recorded. Check /api/panel-operation-intents/${intent.intentId} without retrying.`,
+                  },
+                });
+                return;
+              }
+              if (outcome.kind === "unknown") {
+                finish({
+                  status: "unknown",
+                  reason: "receipt_missing",
+                  intentId: intent.intentId,
+                  current: { known: false, reason: "receipt_missing" },
+                  error: { code: "ACTION_OUTCOME_UNKNOWN", message: outcome.message },
+                });
+                return;
+              }
+              if (outcome.kind === "refusal" || outcome.kind === "failure") {
+                finish({
+                  status: "not_executed",
+                  reason: "failed",
+                  operation: intent.operation.id,
+                  intentId: intent.intentId,
+                  current: { known: false, reason: "receipt_missing" },
+                  error: { code: outcome.code, message: outcome.message },
+                });
+                return;
+              }
+              if (outcome.kind === "batch") {
+                if (outcome.items.some(item => item.outcome.kind === "unknown")) {
+                  finish({
+                    status: "unknown",
+                    reason: "receipt_missing",
+                    intentId: intent.intentId,
+                    current: { known: false, reason: "receipt_missing" },
+                    error: {
+                      code: "ACTION_OUTCOME_UNKNOWN",
+                      message: `Batch operation was dispatched with an unknown item outcome. Check /api/panel-operation-intents/${intent.intentId} without retrying.`,
+                    },
+                  });
+                  return;
+                }
+                const firstProblem = outcome.items.map(item => item.outcome).find(
+                  item => item.kind === "refusal" || item.kind === "failure",
+                );
+                if (firstProblem && !outcome.items.some(item => item.outcome.kind === "success")) {
+                  finish({
+                    status: "not_executed",
+                    reason: "failed",
+                    operation: intent.operation.id,
+                    intentId: intent.intentId,
+                    current: { known: false, reason: "receipt_missing" },
+                    error: { code: firstProblem.code, message: firstProblem.message },
+                  });
+                  return;
+                }
+              }
               finish({
                 status: "executed",
                 reason: "action_completed",
                 operation: intent.operation.id,
                 intentId: intent.intentId,
-                ...(intent.outcome !== null ? { outcome: intent.outcome } : {}),
+                outcome,
                 current: { known: false, reason: "receipt_missing" },
               });
               return;
             }
-            if (!intent.invalidated && intent.source.questionId) {
+            if (intent.invalidated) {
+              finish({
+                status: "not_executed",
+                reason: intent.invalidated.code === "FORM_CONFIRMATION_STALE" ? "stale" : "cancelled",
+                operation: intent.operation.id,
+                intentId: intent.intentId,
+                current: { known: false, reason: "receipt_missing" },
+                error: intent.invalidated,
+              });
+              return;
+            }
+            if (intent.source.questionId) {
               finish({
                 status: "awaiting_confirmation",
                 reason: "confirmation_required",
