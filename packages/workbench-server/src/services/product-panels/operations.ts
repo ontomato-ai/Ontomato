@@ -32,6 +32,7 @@ import { credentialsForRun, runForOwner } from "../assistant/execution";
 import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource, type AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
+import { mergeObjectActionBoundParams } from "../action/object-actions";
 import { readCurrentPanelRecord } from "./current";
 import {
   declaredDirectOperation, type DeclaredDirectOperationOptions, type PlacedOperationTarget,
@@ -114,12 +115,22 @@ function invocationTarget(
   return "call" in input ? input.call.target : undefined;
 }
 
+interface BoundParamTarget {
+  readonly boundParams?: Readonly<Record<string, unknown>>;
+  readonly handler: { readonly handlerRef: string };
+  readonly descriptor: { readonly inputSchema: Record<string, unknown> };
+}
+
 function mergeBoundParams(
   supplied: Record<string, unknown>,
-  boundParams: Readonly<Record<string, unknown>> | undefined,
+  resolved: BoundParamTarget,
   onMismatch: (key: string) => never,
 ): Record<string, unknown> {
+  const { boundParams } = resolved;
   if (!boundParams || !Object.keys(boundParams).length) return supplied;
+  if (resolved.handler.handlerRef === EXECUTE_OBJECT_ACTION) {
+    return mergeObjectActionBoundParams(supplied, boundParams, resolved.descriptor.inputSchema, onMismatch);
+  }
   const merged: Record<string, unknown> = { ...supplied };
   for (const [key, expected] of Object.entries(boundParams)) {
     if (Object.hasOwn(supplied, key) && supplied[key] !== undefined && !isDeepStrictEqual(supplied[key], expected)) {
@@ -133,7 +144,7 @@ function mergeBoundParams(
 /** Shared server-side materialization for both human and agent write operations. */
 function materializeWriteInvocation(
   input: CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest | z.infer<typeof inspectPanelOperationImpactRequestSchema>,
-  resolved: Pick<ReturnType<typeof writeOperation>, "boundParams">,
+  resolved: BoundParamTarget,
 ): PanelOperationInvocation {
   const rejectParamMismatch = (key: string): never => {
     throw new HttpError(403, `Operation input '${key}' does not match the panel member binding`, "OPERATION_PARAM_MISMATCH");
@@ -141,14 +152,14 @@ function materializeWriteInvocation(
   if ("calls" in input) {
     const calls = input.calls.map(call => ({
       ...call,
-      input: mergeBoundParams(call.input, resolved.boundParams, rejectParamMismatch),
+      input: mergeBoundParams(call.input, resolved, rejectParamMismatch),
     }));
     return { calls } as PanelOperationInvocation;
   }
   return {
     call: {
       ...input.call,
-      input: mergeBoundParams(input.call.input, resolved.boundParams, rejectParamMismatch),
+      input: mergeBoundParams(input.call.input, resolved, rejectParamMismatch),
     },
   };
 }
@@ -166,11 +177,11 @@ export async function readPanelOperationDescriptor(owner: AssistantOwner, creden
 export async function readPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, request: ReadPanelOperationRequest) {
   const current = await operationForUse(owner, credentials, request, request.call.target, { mode: "read" });
   if (current.effect !== "read") throw new HttpError(422, "This operation requires a write intent", "OPERATION_READ_REQUIRED");
-  const { handler, fixedTarget, boundParams } = current;
+  const { handler, fixedTarget } = current;
   const target = handler.targetSchema.parse(request.call.target);
   if (fixedTarget !== undefined && !isDeepStrictEqual(target, fixedTarget))
     throw new HttpError(400, "Operation target does not match this panel member", "TARGET_ID_MISMATCH");
-  const mergedInput = mergeBoundParams(request.call.input, boundParams, key => {
+  const mergedInput = mergeBoundParams(request.call.input, current, key => {
     throw new HttpError(403, `Operation input '${key}' does not match the panel member binding`, "OPERATION_PARAM_MISMATCH");
   });
   const call = { target, input: handler.inputSchema.parse(mergedInput) };
@@ -188,9 +199,9 @@ function requireFrozenOperation(
     throw new HttpError(409, "Operation definition changed; create a new intent", "INTENT_CHANGED");
   };
   if ("calls" in intent) {
-    for (const call of intent.calls) mergeBoundParams(call.input, current.boundParams, rejectChanged);
+    for (const call of intent.calls) mergeBoundParams(call.input, current, rejectChanged);
   } else {
-    mergeBoundParams(intent.call.input, current.boundParams, rejectChanged);
+    mergeBoundParams(intent.call.input, current, rejectChanged);
   }
 }
 

@@ -45,7 +45,11 @@ import {
   type OperationOutcome,
   type SingleOperationOutcome,
 } from "./operation-dispatch";
-import type { OperationInputField } from "./operation-input-schema";
+import {
+  isActionValuesEnvelope,
+  wrapActionOperationInput,
+  type OperationInputField,
+} from "./operation-input-schema";
 import {
   allowedRowOperationInputKeys,
   filterAllowedRowOperationInput,
@@ -1961,6 +1965,7 @@ const rowOpPendingRow = shallowRef<PlatformObjectRecord | null>(null);
 const rowOpPendingName = ref<string | null>(null);
 const rowOpPendingDescriptor = shallowRef<PanelOwnerOperationDescriptor | null>(null);
 const rowOpPendingBaseInput = shallowRef<Record<string, RuntimeJsonValue>>({});
+const rowOpPendingExtraInput = shallowRef<Record<string, RuntimeJsonValue>>({});
 
 const rowOpPendingInputFields = computed<readonly OperationInputField[]>(() => {
   if (!rowOpPendingName.value || !rowOpPendingDescriptor.value) return [];
@@ -1986,7 +1991,8 @@ async function executeRowOperation(
   row: PlatformObjectRecord,
   operationName: string,
   descriptor: PanelOwnerOperationDescriptor,
-  input: Record<string, RuntimeJsonValue>,
+  boundInput: Record<string, RuntimeJsonValue>,
+  providedInput: Record<string, RuntimeJsonValue>,
 ) {
   if (rowOpRunning.value) return;
   const binding = member.projection.operations?.[operationName];
@@ -1995,6 +2001,9 @@ async function executeRowOperation(
   const target = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
   if (target === undefined) return;
   const operationId = panel.instance.operationIdOf(slot.slot, operationName);
+  const input: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
+    ? wrapActionOperationInput(descriptor.inputSchema, boundInput, providedInput)
+    : { ...providedInput, ...boundInput };
 
   rowOpRunning.value = true;
   rowOpFailure.value = null;
@@ -2051,10 +2060,11 @@ async function runRowOperation(
     rowOpPendingName.value = operationName;
     rowOpPendingDescriptor.value = descriptor;
     rowOpPendingBaseInput.value = baseInput;
+    rowOpPendingExtraInput.value = filteredExtra;
     rowOpInputDialogOpen.value = true;
     return;
   }
-  await executeRowOperation(row, operationName, descriptor, baseInput);
+  await executeRowOperation(row, operationName, descriptor, boundInput, filteredExtra);
 }
 
 async function confirmRowOpInput(providedInput: Record<string, RuntimeJsonValue>) {
@@ -2069,13 +2079,12 @@ async function confirmRowOpInput(providedInput: Record<string, RuntimeJsonValue>
   const filteredProvided = filterAllowedRowOperationInput(providedInput, allowedKeys);
   const boundInput = resolveRowOperationParams(binding, row, member.inputs.value);
   // Dialog input can only populate unbound editable fields and never overrides base or bound parameters.
-  const merged: Record<string, RuntimeJsonValue> = {
+  const provided: Record<string, RuntimeJsonValue> = {
     ...filteredProvided,
-    ...rowOpPendingBaseInput.value,
-    ...boundInput,
+    ...rowOpPendingExtraInput.value,
   };
   rowOpInputDialogOpen.value = false;
-  await executeRowOperation(row, operationName, descriptor, merged);
+  await executeRowOperation(row, operationName, descriptor, boundInput, provided);
 }
 
 function triggerRowAction(row: PlatformObjectRecord, index: number, item: ResolvedRowActionItem) {

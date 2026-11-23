@@ -6,8 +6,9 @@ import { HttpError } from "../../../utils/errors";
 import { createCustomerOntologyReadAdapter } from "../../ontology-model/customer-reads";
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 import {
-  ACTIONS_EXECUTE, OBJECT_ACTION_TARGET, describeObjectAction, objectActionDeclaration, objectActionOperation,
-  resolveObjectAction, type ResolvedTargetedObjectAction, type ResolvedUntargetedObjectAction,
+  ACTIONS_EXECUTE, OBJECT_ACTION_TARGET, describeObjectAction, mergeObjectActionBoundParams, objectActionDeclaration,
+  objectActionOperation, resolveObjectAction, serializeObjectActionParamValue,
+  type ResolvedTargetedObjectAction, type ResolvedUntargetedObjectAction,
 } from "../object-actions";
 
 /*
@@ -403,5 +404,68 @@ describe("executing a targetless customer action", () => {
     const body = sent[1]?.init.body as FormData;
     expect(body.get("id")).toBe("create-order");
     expect(JSON.parse(String(body.get("param")))).toEqual({ customer: "ACME", amount: 42 });
+  });
+
+  it("serializes and merges boundParams into input.values without writing top-level keys", () => {
+    const schema = objectActionDeclaration({
+      id: "create-student",
+      target: null,
+      function: {
+        parameters: [
+          { name: "campus", type: "TYPE_STRING", description: null },
+          { name: "limit", type: "TYPE_NUMBER", description: null },
+          { name: "meta", type: "TYPE_OBJECT", description: null },
+          { name: "note", type: "TYPE_STRING", description: null },
+        ],
+      },
+    }).inputSchema;
+
+    expect(serializeObjectActionParamValue(null, false)).toBe("");
+    expect(serializeObjectActionParamValue(null, true)).toBe("null");
+    expect(serializeObjectActionParamValue("north", false)).toBe("north");
+    expect(serializeObjectActionParamValue("north", true)).toBe("\"north\"");
+    expect(serializeObjectActionParamValue(10, true)).toBe("10");
+
+    const fail = (key: string): never => {
+      throw new Error(`mismatch:${key}`);
+    };
+
+    // Injects into values and accepts semantically equivalent JSON formatting.
+    expect(mergeObjectActionBoundParams(
+      { values: { meta: "{ \"b\": 2, \"a\": 1 }", note: "ok" } },
+      { campus: "north", limit: 10, meta: { a: 1, b: 2 } },
+      schema,
+      fail,
+    )).toEqual({
+      values: {
+        campus: "north",
+        limit: "10",
+        meta: "{\"a\":1,\"b\":2}",
+        note: "ok",
+      },
+    });
+
+    // Rejects mismatched text or JSON values inside input.values.
+    expect(() => mergeObjectActionBoundParams(
+      { values: { campus: "south" } },
+      { campus: "north" },
+      schema,
+      fail,
+    )).toThrow("mismatch:campus");
+
+    expect(() => mergeObjectActionBoundParams(
+      { values: { limit: "11" } },
+      { limit: 10 },
+      schema,
+      fail,
+    )).toThrow("mismatch:limit");
+
+    // Preserves malformed non-object values untouched for strict schema validation to reject.
+    expect(mergeObjectActionBoundParams(
+      { values: "bad" },
+      { campus: "north" },
+      schema,
+      fail,
+    )).toEqual({ values: "bad" });
   });
 });
