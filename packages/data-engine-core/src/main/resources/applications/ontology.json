@@ -57,6 +57,9 @@
       "names": {"en": "Relation types", "zh-CN": "关系类型"},
       "count": {"member": "catalogue", "data": "rows"}
     }, {
+      "id": "ontology-relation-detail", "pageKey": "ontology-relation-detail", "panelId": "builtin-product-ontology-relation-detail",
+      "path": "/ontology/relations/detail", "access": {"permissionCode": "ontology-modeling"}
+    }, {
       "id": "ontology-actions", "pageKey": "actions", "panelId": "builtin-product-ontology-actions",
       "path": "/ontology/assets/actions", "access": {"permissionCode": "action-management"},
       "descriptions": {"en": "Every action of this domain: its definition, the definition its code derives, the explanation of that code, status and deletion.", "zh-CN": "本域的全部动作：定义、由代码推导的定义、代码解释，以及状态和删除。"},
