@@ -127,8 +127,8 @@ await mountPanel({
 
     // ---- Test current unsaved draft ----
 
-    const trial = usePanelOperation("trial", "test");
-    const trialJson = usePanelOperation("trialJson", "testExecute");
+    const trial = usePanelOperation("definition", "test");
+    const trialJson = usePanelOperation("definition", "testExecute");
     const trialReady = computed(() => Boolean(trial.operation.value));
     const trialJsonReady = computed(() => Boolean(trialJson.operation.value));
 

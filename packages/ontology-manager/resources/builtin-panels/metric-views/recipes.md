@@ -32,9 +32,9 @@ definitions are prepared in this conversation, tested here, and drafted into the
    `function.returnDef.columnLabels` (every output key labeled in the reader's language), `function.logic`,
    `matchQuestions`, and any `bindings` rows with values for every declared parameter. Declare every parameter the query
    package uses and no others; never copy another metric's values into `parameterDefs` as defaults.
-3. **Test on real data before drafting.** Use the two read-only trial operations declared on this page — `trial`
-   (`trial.test` / `metricViews.test`, Markdown output) and `trialJson` (`trialJson.testExecute` /
-   `metricViews.testExecute`, raw JSON output with truncation metadata) — with `{ draft, parameters }`. Neither saves
+3. **Test on real data before drafting.** Use the two read-only trial operations declared on the `definition` form
+   member — `definition.test` (`metricViews.test`, Markdown output) and `definition.testExecute`
+   (`metricViews.testExecute`, raw JSON output with truncation metadata) — with `{ draft, parameters }`. Neither saves
    anything. Treat a truncated result as partial, never as the complete numbers.
 4. **Draft into the form and leave saving to the reader.** How to write the draft is in this page's generated skill;
    the reader reviews it in the `definition` form and saves or discards it.

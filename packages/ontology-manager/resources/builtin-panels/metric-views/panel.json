@@ -108,8 +108,18 @@
           "createForm": "createForm"
         },
         "operation": "platform:MetricView.save",
+        "operations": {
+          "test": {
+            "operation": "metricViews.test",
+            "draft": "definition"
+          },
+          "testExecute": {
+            "operation": "metricViews.testExecute",
+            "draft": "definition"
+          }
+        },
         "name": "指标定义",
-        "description": "指标的名称、描述、状态、匹配问题、函数逻辑（查询包、列标签、逻辑说明与旧格式只读代码）及参数绑定。",
+        "description": "指标的名称、描述、状态、匹配问题、函数逻辑（查询包、列标签、逻辑说明与旧格式只读代码）及参数绑定，同时挂载草稿试运行操作。",
         "id": "builtin-product-1d856c95-d8b9-4ade-bed9-88f912283c8c"
       },
       "remove": {
@@ -142,22 +152,6 @@
         "name": "批量改发布状态",
         "description": "把勾选的指标一次改成待审核、已发布或未使用。",
         "id": "builtin-product-6193e673-ac00-48a5-88e7-7fe7312f7256"
-      },
-      "trial": {
-        "component": "PanelData",
-        "operation": "metricViews.test",
-        "draft": "definition",
-        "name": "测试当前定义",
-        "description": "用正在编辑的定义试跑，返回 Markdown 结果。",
-        "id": "builtin-product-1dd3cb27-6f98-478c-a4ab-3ca886dc09fd"
-      },
-      "trialJson": {
-        "component": "PanelData",
-        "operation": "metricViews.testExecute",
-        "draft": "definition",
-        "name": "测试并返回 JSON",
-        "description": "用正在编辑的定义试跑，返回原始 JSON 结果及截断提示。",
-        "id": "builtin-product-7832c137-74da-4234-9789-7873351308d0"
       }
     }
   },
