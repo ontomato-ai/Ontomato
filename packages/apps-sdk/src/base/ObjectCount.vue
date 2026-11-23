@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import type { PanelRecordQuery } from "@ontomato/contracts/panel-projection";
+import { directReadDeclaration, type PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { usePanelContext } from "../panel/context";
 import { useMember, useMemberData, useMemberOutput } from "../panel/member";
@@ -26,8 +26,9 @@ interface NormalizedCountItem {
 /**
  * Compact inline metric strip displaying the owner's record count from the member's `rows` (`panelRecordList` /
  * `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum. For complete unpaged lists (`panelRecordList`),
- * displays the list length; for paged/query reads (`panelRecordQuery` / `panelOntologyObjects`), displays strictly the
- * owner-returned `total` (showing `—` when the owner omits `total`, never falling back to the current page's row count).
+ * displays the list length (`0` when empty); for paged/query reads (`panelRecordQuery` / `panelOntologyObjects`),
+ * displays strictly the owner-returned `total` (showing `—` when the owner omits `total` or returns an empty response
+ * without `total`, never falling back to the current page's row count or inventing `0`).
  * Publishes `total` as a read-only member output (`number | null`).
  */
 const props = withDefaults(
@@ -73,6 +74,8 @@ const datumName: "rows" | "objects" = "rows" in member.projection.data
         throw new Error(`Projection ${member.projection.id} declares neither 'rows' nor 'objects' datum`);
       })();
 
+const datumDeclaration = directReadDeclaration(member.projection, member.projection.data[datumName]!);
+const isCompleteList = datumName === "rows" && datumDeclaration?.result === "panelRecordList";
 const datumState = useMemberData(datumName);
 
 const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => {
@@ -120,7 +123,7 @@ const configuredItems = computed<readonly NormalizedCountItem[]>(() => {
 const parsedData = computed<ParsedCountData>(() => {
   const state = datumState.value;
   if (state.status === "loading") return { kind: "loading", total: null };
-  if (state.status === "empty") return { kind: "empty", total: 0 };
+  if (state.status === "empty") return { kind: "empty", total: isCompleteList ? 0 : null };
   if (state.status === "forbidden") {
     return { kind: "forbidden", total: null, notice: t("platform.dataForbidden") };
   }
@@ -172,9 +175,8 @@ const visible = computed(() => !resolvedOmitWhenUnavailable.value || parsedData.
 const displayValue = computed(() => {
   const data = parsedData.value;
   if (data.kind === "loading") return "…";
-  if (data.kind === "empty") return "0";
-  if (data.kind !== "ready" || data.total === null) return "—";
-  return String(data.total);
+  if (data.total !== null) return String(data.total);
+  return "—";
 });
 
 const renderedItems = computed(() => {

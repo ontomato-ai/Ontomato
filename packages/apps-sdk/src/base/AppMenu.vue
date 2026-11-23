@@ -14,8 +14,7 @@ import type { AppMenuGroup, AppMenuIcon, AppMenuItem } from "./app-menu-types";
  * Inside an application frame panel, omit `groups` and `active-id` to automatically render the platform's admitted
  * application menu (`usePanelContext().entryMenu`) with the active entry highlighted and automatic navigation on click.
  * Use the `#item-trailing` slot (passing `{ item }`) to place trailing content per row, `:item-trailing-text` for
- * plain-text suffixes in the compact mobile selector, and `:icons` for curated platform icon keys. Legacy `:counts`
- * remains supported when `#item-trailing` and `:item-trailing-text` are omitted.
+ * plain-text suffixes in the compact mobile selector, and `:icons` for curated platform icon keys.
  */
 const props = withDefaults(
   defineProps<{
@@ -23,8 +22,6 @@ const props = withDefaults(
     title?: string;
     /** Explicit navigation groups; when omitted inside a frame panel, derived automatically from the frame's menu. */
     groups?: readonly AppMenuGroup[];
-    /** Optional map of `item.id -> count` overlaid onto matching rows when `#item-trailing` is not used. */
-    counts?: Readonly<Record<string, number | null | undefined>>;
     /** Optional map of `item.id -> trailing text` appended after each option label in the compact mobile selector. */
     itemTrailingText?: Readonly<Record<string, string | null | undefined>>;
     /** Optional map of `item.id -> icon` (curated platform icon key or Vue component) overlaid onto matching rows. */
@@ -44,7 +41,6 @@ const props = withDefaults(
   {
     title: "",
     groups: undefined,
-    counts: undefined,
     itemTrailingText: undefined,
     icons: undefined,
     foot: null,
@@ -153,7 +149,6 @@ function handleSelect(id: string) {
   <PlatformAppMenu
     :title="resolvedTitle"
     :groups="resolvedGroups"
-    :counts="counts"
     :item-trailing-text="itemTrailingText"
     :icons="icons"
     :foot="foot"

@@ -354,16 +354,34 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
     }
   }
 
-  // All 15 count projections use ObjectCount with badge appearance, and paged queries keep size: 1.
+  // All 16 count projections (including productAssets) use ObjectCount with badge appearance;
+  // 8 use count-only reads (no params) and 8 paged queries keep size: 1.
   const countProjectionList = Object.values(frameProjections);
-  expect(countProjectionList).toHaveLength(15);
+  expect(countProjectionList).toHaveLength(16);
+  const countReadMembers = [
+    "builtin-product-om-frame-objects",
+    "builtin-product-om-frame-attributes",
+    "builtin-product-om-frame-relations",
+    "builtin-product-om-frame-actions",
+    "builtin-product-om-frame-workflows",
+    "builtin-product-om-frame-components",
+    "builtin-product-om-frame-products",
+    "builtin-product-om-frame-agents",
+  ];
   for (const projection of countProjectionList) {
     expect(projection.componentId).toBe("@ontomato/sdk:ObjectCount");
     expect(projection.config).toEqual({ appearance: "badge" });
-    if (projection.data.rows?.read === "query") {
-      expect(projection.data.rows.params?.size).toEqual({ literal: 1 });
+    if (countReadMembers.includes(projection.id)) {
+      expect(projection.data.rows?.read).toBe("count");
+      expect(projection.data.rows?.params).toEqual({});
+    } else {
+      expect(projection.data.rows?.read).toBe("query");
+      expect(projection.data.rows?.params?.size).toEqual({ literal: 1 });
     }
   }
+  expect(frameProjections["builtin-product-om-frame-products"]?.data.rows?.source).toEqual({
+    type: { kind: "PlatformObjectType", id: "platform:ProductAsset" },
+  });
 
   const ontologyFrame = {
     ...panelRecord("builtin-product-ontology-frame", "Ontology manager", definePanel({
@@ -382,12 +400,13 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
   };
 
   // Expose only a subset of menu entries (omitting agents/applications/panels/workflows/etc.)
-  // to verify unmounted count members issue zero data reads even though usePanelOutput wires all 15.
+  // to verify unmounted count members issue zero data reads even though usePanelOutput wires all 16.
   const ontologyUses = [
     { ...panelUse("use-playground", "om-playground", content.id, "/ontology/playground"), names: { en: "Ontology graph" }, groupKey: "facts" },
     { ...panelUse("use-objects", "om-objects", content.id, "/ontology/objects"), names: { en: "Object types" }, groupKey: "facts" },
     { ...panelUse("use-knowledge", "om-knowledge", content.id, "/ontology/knowledge"), names: { en: "Business knowledge" }, groupKey: "facts" },
     { ...panelUse("use-skills", "om-skills", content.id, "/ontology/skills"), names: { en: "Skills" }, groupKey: "capabilities" },
+    { ...panelUse("use-products", "om-products", content.id, "/ontology/products"), names: { en: "Product assets" }, groupKey: "products" },
     { ...panelUse("use-members", "om-members", content.id, "/permissions/members"), names: { en: "Members" }, groupKey: "governance" },
   ];
 
@@ -405,7 +424,8 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
           groups: [
             { key: "facts", names: { en: "Facts" }, sort: 1 },
             { key: "capabilities", names: { en: "Capabilities" }, sort: 2 },
-            { key: "governance", names: { en: "Governance" }, sort: 3 },
+            { key: "products", names: { en: "Product layer" }, sort: 3 },
+            { key: "governance", names: { en: "Governance" }, sort: 4 },
           ],
           entry: { path: "/ontology", renderer: "panels" },
           panelUses: ontologyUses,
@@ -423,11 +443,7 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
       if (member === "objectTypes") {
         return Response.json({
           status: "ready",
-          value: [
-            { primaryKey: "Person", label: "Person", fields: {} },
-            { primaryKey: "Order", label: "Order", fields: {} },
-            { primaryKey: "Asset", label: "Asset", fields: {} },
-          ],
+          value: { rows: [], total: 3 },
         });
       }
       if (member === "knowledge") {
@@ -436,10 +452,16 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
           value: { total: 42, rows: [{ primaryKey: "k-1", label: "Rule 1", fields: {} }] },
         });
       }
+      if (member === "productAssets") {
+        return Response.json({
+          status: "ready",
+          value: { rows: [], total: 5 },
+        });
+      }
       if (member === "skills") {
         return Response.json({ status: "forbidden" });
       }
-      return Response.json({ status: "ready", value: [] });
+      return Response.json({ status: "ready", value: { rows: [], total: 0 } });
     }
     for (const [id, projection] of Object.entries(frameProjections)) {
       if (request.path === `/api/product-projections/${id}`) return Response.json({ projection });
@@ -486,25 +508,28 @@ it("shipped ontology-frame uses ObjectCount badges via #item-trailing, reads onl
     await vi.waitFor(() => {
       const objectsBadge = mounted.element.querySelector('[data-member="objectTypes"] .sdk-object-count-badge');
       const knowledgeBadge = mounted.element.querySelector('[data-member="knowledge"] .sdk-object-count-badge');
+      const productsBadge = mounted.element.querySelector('[data-member="productAssets"] .sdk-object-count-badge');
       expect(objectsBadge?.textContent?.trim()).toBe("3");
       expect(knowledgeBadge?.textContent?.trim()).toBe("42");
+      expect(productsBadge?.textContent?.trim()).toBe("5");
     });
 
     // Only visible count members issued data reads; unauthorized/omitted members issued zero reads.
-    expect([...new Set(readMembers)].sort()).toEqual(["knowledge", "objectTypes", "skills"]);
+    expect([...new Set(readMembers)].sort()).toEqual(["knowledge", "objectTypes", "productAssets", "skills"]);
 
     // Forbidden count member renders zero ObjectCount DOM nodes; non-count entry renders zero trailing projection.
     expect(mounted.element.querySelector('[data-member="skills"] .sdk-object-count')).toBeNull();
     const playgroundRow = [...mounted.element.querySelectorAll(".page-row")].find((row) => row.textContent?.includes("Ontology graph"));
     expect(playgroundRow?.querySelector(".ontology-frame-trailing")).toBeNull();
 
-    // Mobile <select> receives (${total}) only for valid totals and plain labels for the rest.
+    // Mobile <select> receives (${total}) only for valid totals (including product assets) and plain labels for the rest.
     const optionTexts = [...mounted.element.querySelectorAll(".mobile-page-select option")].map((opt) => opt.textContent?.trim());
     expect(optionTexts).toEqual([
       "Ontology graph",
       "Object types (3)",
       "Business knowledge (42)",
       "Skills",
+      "Product assets (5)",
       "Members",
     ]);
 

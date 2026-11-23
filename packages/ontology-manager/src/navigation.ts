@@ -22,8 +22,6 @@ import {
   GitBranch,
   Shapes,
 } from "lucide-vue-next";
-import type { ManagerCounts } from "./context";
-import type { OntologyResourceCounts } from "./workspace";
 
 /** A navigation group of the Manager pages; the service shell lists it with the platform groups. */
 export interface ManagerNavigationGroup {
@@ -44,17 +42,15 @@ export interface ManagerNavigationPage {
    * data browser does not: it is a page of the object browser, whose header and gutter the platform draws around it.
    */
   ownHeader: boolean;
-  count?: () => number | null;
 }
 
 /**
  * The look of a menu row where the Manager's menu lists a panel entry of the ontology application instead of a page: the
- * icon and count the page it replaced had. The entry's name and whether the reader may open it are the catalog's.
+ * icon the page it replaced had. The entry's name and whether the reader may open it are the catalog's.
  */
 export interface ManagerEntryRow {
   path: string;
   icon: Component;
-  count?: () => number | null;
 }
 
 /** Paths of the Manager pages; they are the hash addresses the Manager has always used. */
@@ -95,30 +91,29 @@ function page(
   icon: Component,
   group: string,
   permissions: readonly string[],
-  count?: keyof OntologyResourceCounts
-) {
-  return { path, titleKey, icon, group, permissions, ownHeader: true, count };
+): ManagerNavigationPage {
+  return { path, titleKey, icon, group, permissions, ownHeader: true };
 }
 
-const pages = [
+const pages: readonly ManagerNavigationPage[] = [
   page(managerPaths.graph, "nav.ontologyGraph", Network, "ontology", MODELING),
   page(managerPaths.objects, "nav.objectTypes", Boxes, "ontology", MODELING),
   page(managerPaths.attributes, "nav.ontologyAttributes", Tags, "ontology", MODELING),
   page(managerPaths.relations, "nav.relationTypes", Link2, "ontology", MODELING),
-  page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"], "workflows"),
-  page(managerPaths.triggers, "nav.triggerManagement", AlarmClock, "ontology", ["action-management"], "triggers"),
+  page(managerPaths.workflows, "nav.workflowManagement", GitBranch, "ontology", ["action-management"]),
+  page(managerPaths.triggers, "nav.triggerManagement", AlarmClock, "ontology", ["action-management"]),
   page(managerPaths.visualModeling, "nav.visualModeling", WorkflowIcon, "ontology", MODELING),
   // A page of the object browser: the platform draws the application's header above it and the page gutter around it.
   { ...page(managerPaths.dataBrowser, "nav.dataBrowser", Table2, "ontology", ["data-browser"]), ownHeader: false },
-  page(managerPaths.products, "platform.productAssets", Shapes, "assets", MODELING, "products"),
+  page(managerPaths.products, "platform.productAssets", Shapes, "assets", MODELING),
 ];
 
 /**
  * The rows of the panel entries whose native pages are gone, with those pages' icons, and of the product layer's entries,
  * which never had a native page, with icons of their own. An entry at an address the Manager still lists a page for (the
- * graph, the relation types) takes that page's icon and count.
+ * graph, the relation types) takes that page's icon.
  */
-const entries: readonly { path: string; icon: Component; count?: keyof OntologyResourceCounts }[] = [
+const entries: readonly ManagerEntryRow[] = [
   { path: managerPaths.knowledge, icon: BookOpen },
   { path: managerPaths.metrics, icon: ChartColumn },
   { path: managerPaths.functions, icon: SquareFunction },
@@ -132,19 +127,11 @@ const entries: readonly { path: string; icon: Component; count?: keyof OntologyR
   { path: routes.ontologyAgents.path, icon: Bot },
 ];
 
-/**
- * The Manager's navigation entries in display order (ontology, assets, knowledge); the counts come from the page's
- * Manager counts. A row showing a count is what reads them, once per page load, whatever page is open: a native page or a
- * panel entry shows the same menu with the same counts.
- */
-export function managerNavigation(counts: ManagerCounts) {
-  const counted = (count: keyof OntologyResourceCounts) => () => {
-    counts.ensure(count);
-    return counts.values[count];
-  };
+/** The Manager's navigation entries in display order (ontology, assets, knowledge). */
+export function managerNavigation() {
   return {
     groups: [managerGroups.ontology, managerGroups.assets, managerGroups.knowledge],
-    pages: pages.map(({ count, ...entry }): ManagerNavigationPage => count ? { ...entry, count: counted(count) } : entry),
-    entries: entries.map(({ count, ...row }): ManagerEntryRow => count ? { ...row, count: counted(count) } : row),
+    pages: [...pages],
+    entries: [...entries],
   };
 }

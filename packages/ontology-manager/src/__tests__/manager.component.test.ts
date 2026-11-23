@@ -7,7 +7,6 @@ import { createManager, type ManagerPresentation, type ManagerTheme } from "../c
 import type { ManagerCredential, ManagerDataFallbacks } from "../api";
 import { englishMessages, managerMessageTree, type ManagerMessages } from "../i18n";
 import { managerRoutes } from "../routes";
-import { managerNavigation } from "../navigation";
 import de from "element-plus/es/locale/lang/de";
 import en from "element-plus/es/locale/lang/en";
 import { graphHandlers, graphRecord } from "./graph-double";
@@ -299,9 +298,7 @@ function mountHost(initial: HostOptions) {
   document.body.appendChild(element);
   app.mount(element);
   mountedApps.push(app);
-  /** The platform's menu beside the page, showing the Manager's counts: what reads them. */
-  const showMenu = () => managerNavigation(manager.counts).pages.forEach((page) => page.count?.());
-  return { host, views, failures, showMenu, root: () => element.querySelector(".ontology-manager")! };
+  return { host, views, failures, root: () => element.querySelector(".ontology-manager")! };
 }
 
 /** Host-supplied data defaults that differ from the open-source values, so the tests can tell which one was used. */
@@ -648,19 +645,14 @@ describe("Manager pages in the service router", () => {
     expect(requests).toEqual([]);
   });
 
-  it("non-default API entry and API key: real catalog and count requests go to the host entry with x-api-key", async () => {
-    mountHost(base).showMenu();
+  it("non-default API entry and API key: real catalog requests go to the host entry with x-api-key", async () => {
+    mountHost(base);
     await settle();
 
-    expect(paths()).toEqual(
-      // The menu's own count is the product assets'; the panel entries count themselves.
-      expect.arrayContaining([
-        "/tenant-a/api/product-assets/counts",
-        "/workflow/query",
-      ])
-    );
+    expect(paths()).toEqual(expect.arrayContaining(["/workflow/query"]));
+    expect(paths()).not.toContain("/tenant-a/api/product-assets/counts");
     for (const request of requests) {
-      expect(request.url.startsWith("/tenant-a/api/data-query/") || request.url === '/tenant-a/api/product-assets/counts').toBe(true);
+      expect(request.url.startsWith("/tenant-a/api/data-query/")).toBe(true);
       expect(request.headers["x-api-key"]).toBe("key-a");
       expect(request.headers.tk).toBeUndefined();
       expect(request.headers["Accept-Language"]).toBe("en");
@@ -783,15 +775,16 @@ describe("Manager pages in the service router", () => {
 
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
-      path === "/workflow/query" ? 402 : path.endsWith("/product-assets/counts") ? 401 : 200;
-    const { host, failures, showMenu } = mountHost({ ...base, view: "/ontology/assets/workflows" });
-    showMenu();
+      path === "/workflow/query" ? 402 : path === "/trigger/queryList" ? 401 : 200;
+    const { host, failures } = mountHost({ ...base, view: "/ontology/assets/workflows" });
+    await settle();
+    host.view = "/ontology/assets/triggers";
     await settle();
     expect([...new Set(failures)].sort()).toEqual([401, 402]);
 
     requests = [];
     statusFor = () => 200;
-    host.view = "/ontology/assets/triggers";
+    host.view = "/ontology/assets/workflows";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["x-api-key"] === "key-a")).toBe(true);

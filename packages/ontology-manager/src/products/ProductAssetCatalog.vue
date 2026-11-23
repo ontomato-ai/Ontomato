@@ -11,7 +11,7 @@ import {isMetricChartProjection} from '@ontomato/contracts/product-projections';
 import type {MetricReferenceChartEntry} from '@ontomato/contracts/dashboard';
 import { defaultPersonalWorkspace } from "@ontomato/contracts/personal-workspace";
 import { createViewWidget, type NonChartViewWidget } from "@ontomato/contracts/object-views";
-import { useManagerClient, useManagerContext, useManagerCounts,useOntologyText } from "../context";
+import { useManagerClient, useManagerContext, useOntologyText } from "../context";
 import ProductAssetRuntime from "./ProductAssetRuntime.vue";
 import ProductAssetConfiguration from './ProductAssetConfiguration.vue';
 import ProductAssetGraph from './ProductAssetGraph.vue';
@@ -38,7 +38,6 @@ const {ot}=useOntologyText();
 const productText=useProductText();
 const catalogTypes=computed(()=>localizedProductTypes(ot));
 const creationGroups=computed(()=>localizedProductCategories(ot).map(category=>({...category,types:catalogTypes.value.filter(type=>type.category===category.id)})));
-const managerCounts=useManagerCounts();
 const managerContext=useManagerContext();
 const props=defineProps<{assetId?:string;createKind?:string}>();
 const emit=defineEmits<{select:[id:string];home:[];open:[id:string];back:[]}>();
@@ -260,7 +259,6 @@ async function save() { await run(async()=>{
    const saved=await client.products.save(id,input,selected.value?.revision ?? 0);
    selected.value=saved;editing.value=false;
    emit('select',saved.id);
-   void managerCounts.refresh();
    if(shareInitially)try{await client.products.changeDomainGrant(saved.id,true);}catch(reason){throw new Error(ot('productInitialShareFailed',{reason:reason instanceof Error?reason.message:''}),{cause:reason});}
    await load();
 }); }
@@ -278,7 +276,7 @@ async function migrateView(){if(!selected.value)return;await run(async()=>{selec
 async function migrateDashboard(){if(!selected.value)return;await run(async()=>{selected.value=await client.products.migrateDashboard(selected.value!.id,selected.value!.revision);await load();});}
 async function migratePlatform(){if(!selected.value)return;await run(async()=>{const source=selected.value!;let profileId:string|undefined;if(source.document.kind==='widget'&&source.document.widget.kind==='platform'&&source.document.widget.source==='assistant')profileId=(await ElMessageBox.prompt(ot('productPublishedProfileId'),ot('productConfigureConversationProjection'))).value;selected.value=await client.products.migratePlatform(source.id,source.revision,profileId);await load();});}
 async function useHome() { if(!selected.value)return;await run(async()=>{await ElMessageBox.confirm(ot('productUseAsHomeConfirm'),ot('productApplyTemplate'));const home=await client.products.home();await client.products.useHome(selected.value!.id,home.revision);emit('home');}); }
-async function remove() { if(!selected.value)return;await run(async()=>{await ElMessageBox.confirm(ot('productDeleteConfirm'),ot('productDeleteAsset'));await client.products.delete(selected.value!.id,selected.value!.revision);selected.value=null;void managerCounts.refresh();emit('back');}); }
+async function remove() { if(!selected.value)return;await run(async()=>{await ElMessageBox.confirm(ot('productDeleteConfirm'),ot('productDeleteAsset'));await client.products.delete(selected.value!.id,selected.value!.revision);selected.value=null;emit('back');}); }
 </script>
 <template>
   <section class="product-catalog">

@@ -278,7 +278,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(countOmit?.type ?? "", /boolean/);
     const appMenuPorts = declared.get("AppMenu").ports;
     assert.ok(appMenuPorts.props.some(prop => prop.name === "item-trailing-text"), "AppMenu publishes item-trailing-text prop");
+    assert.ok(!appMenuPorts.props.some(prop => prop.name === "counts"), "AppMenu does not publish legacy counts prop");
     assert.ok(appMenuPorts.slots.some(slot => slot.name === "item-trailing"), "AppMenu publishes #item-trailing slot");
+    assert.ok(declared.get("ObjectCount").bindsElement.includes("ObjectType:*"), "ObjectCount applies to customer object types");
     const metricCardItems = declared.get("MetricCard").config.find(prop => prop.name === "items");
     assert.equal(metricCardItems?.required, false);
     assert.match(metricCardItems?.type ?? "", /MetricCardItem/);
