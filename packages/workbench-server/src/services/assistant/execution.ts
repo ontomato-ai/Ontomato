@@ -30,7 +30,8 @@ export async function credentialsForRun(owner: AssistantOwner, runId: string, in
 export async function credentialsForDefinition(owner: AssistantOwner, agentId: string, credentials: AssistantCredentials) {
   const agent = await assistantStore.agent(agentId, owner);
   if(!agent.enabled)throw new HttpError(409,"Agent disabled","AGENT_DISABLED");
-  return agentExecutionCredentials(agentId, agent.execution_user_id, owner, credentials);
+  // Interactive user-triggered definition/profile operations inherit the logged-in user's permissions.
+  return agentExecutionCredentials(agentId, null, owner, credentials);
 }
 
 export function executionCallerCredentials(credentials:AssistantCredentials,callerId:string):AssistantCredentials {

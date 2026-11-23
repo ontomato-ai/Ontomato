@@ -22,6 +22,7 @@ import { HttpError } from "../../utils/errors";
 import { installContentLayout } from "../../content/layout";
 import { config } from "../../config/application";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../../services/product-panels/catalog-reads";
+import { readCurrentProjection } from "../../services/product-panels/current";
 
 const state = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined,
@@ -217,20 +218,29 @@ afterAll(async () => {
 it("maps catalogue filters and cursors into the current product listing", async () => {
   const adapter = createProductPanelReadAdapter(owner, viewer);
   const query = { search: "directory", sort: "name", size: 1 };
-  const first = panelReadResultSchemas.productPanelList.parse(await adapter.query(query));
-  expect(first.items.map(item => item.id)).toEqual(["one"]);
+  const first = panelReadResultSchemas.panelRecordQuery.parse(await adapter.query(query));
+  expect(first.rows.map(item => item.primaryKey)).toEqual(["one"]);
   expect(first.nextCursor).toBeTruthy();
-  const next = panelReadResultSchemas.productPanelList.parse(await adapter.query({ ...query, cursor: first.nextCursor! }));
-  expect(next.items.map(item => item.id)).toEqual(["two"]);
-  const own = panelReadResultSchemas.productPanelList.parse(await adapter.query({ ...query, scope: "mine" }));
-  expect(own.items.map(item => item.id)).toEqual(["one"]);
+  const next = panelReadResultSchemas.panelRecordQuery.parse(await adapter.query({ ...query, cursor: first.nextCursor! }));
+  expect(next.rows.map(item => item.primaryKey)).toEqual(["two"]);
+  const own = panelReadResultSchemas.panelRecordQuery.parse(await adapter.query({ ...query, scope: "mine" }));
+  expect(own.rows.map(item => item.primaryKey)).toEqual(["one"]);
 });
 
 it("keeps members and editable form values with their current authorized panel", async () => {
   const adapter = createProductPanelReadAdapter(owner, viewer);
-  const record = panelReadResultSchemas.productPanelRecord.parse(await adapter.record("one"));
-  expect(record.content).toEqual(content);
-  expect(panelReadResultSchemas.productPanelMembers.parse(await adapter.members("one"))).toEqual(record.manifest.members);
+  const record = panelReadResultSchemas.panelRecord.parse(await adapter.record("one"));
+  expect(record).toMatchObject({
+    primaryKey: "one",
+    className: PRODUCT_PANEL,
+    label: "Alpha directory",
+    outputs: { canEdit: true, canGrant: true, canDelete: true, isBuiltin: false, revision: 1 },
+  });
+  expect(panelReadResultSchemas.productPanelMembers.parse(await adapter.members("one"))).toEqual(manifest.members);
+  const sourceFiles = panelReadResultSchemas.panelRecordList.parse(await adapter.sourceFiles("one"));
+  expect(sourceFiles.map(file => file.primaryKey)).toContain("panel.html");
+  const htmlFile = panelReadResultSchemas.panelRecord.parse(await adapter.sourceFile("one", "panel.html"));
+  expect(htmlFile.fields.content).toBe(content.html);
   const form = panelReadResultSchemas.panelFormDescription.parse(await adapter.form("one", {}));
   expect(form.values).toMatchObject({ name: "Alpha directory", content, manifest });
   expect(form.fields.find(field => field.path === "/content/module")?.readOnly).toBe(false);
@@ -258,11 +268,18 @@ it("uses the registered save operation to write the current panel and refuses a 
   expect(await save.execute(host, target, { ...input, values: { ...input.values, name: "Stale edit" } }, "stale-save"))
     .toMatchObject({ kind: "refusal", code: "PRODUCT_CONFLICT" });
   expect(await adapter.record("one")).toMatchObject({
-    name: "Alpha revised directory", description: "", content, manifest, revision: 2,
+    primaryKey: "one",
+    label: "Alpha revised directory",
+    fields: { name: "Alpha revised directory", revision: 2 },
+    outputs: { revision: 2 },
   });
   expect(await save.execute(host, target, { values: { name: "Unused" }, submittedFields: [], revision: 2 }, "no-edit"))
     .toMatchObject({ kind: "success" });
-  expect(await adapter.record("one")).toMatchObject({ name: "Alpha revised directory", revision: 2 });
+  expect(await adapter.record("one")).toMatchObject({
+    primaryKey: "one",
+    label: "Alpha revised directory",
+    outputs: { revision: 2 },
+  });
 });
 
 function post(path: string, body: unknown, token = viewer.token) {
@@ -286,7 +303,7 @@ async function readCatalogue(dataName: string, inputs: Record<string, unknown> =
 }
 
 it("dispatches catalogue query through the real panel HTTP path to PostgreSQL", async () => {
-  expect(await readCatalogue("listing")).toMatchObject({ items: [{ id: "one" }], nextCursor: expect.any(String) });
+  expect(await readCatalogue("listing")).toMatchObject({ rows: [{ primaryKey: "one" }], nextCursor: expect.any(String) });
 });
 
 it("reports an unreadable panel beside healthy results without losing its stored references", async () => {
@@ -308,7 +325,7 @@ it("reports an unreadable panel beside healthy results without losing its stored
     const next = await fetch(`${base}/api/product-panels?q=directory&sort=name&limit=1&cursor=${first.nextCursor}`);
     expect(await next.json()).toMatchObject({ items: [{ id: "one" }] });
     expect(await readCatalogue("listing")).toMatchObject({
-      items: [], unavailableItems: [{ id, reason: expect.stringContaining("events") }],
+      rows: [], diagnostics: [expect.stringContaining(`${id}:`)],
     });
     const { findPanelUsers } = await import("../../services/product-panels/references");
     expect(await findPanelUsers(owner.domainId, "panel", "one")).toEqual([{ id, name: "A legacy directory" }]);
@@ -345,7 +362,14 @@ it("dispatches application reads from current PostgreSQL records and preserves t
 
 it("updates only the submitted projection configuration field in PostgreSQL", async () => {
   const adapter = createProductProjectionReadAdapter(owner, viewer);
-  const before = await adapter.record("catalogue-data");
+  const before = await readCurrentProjection(owner, viewer, "catalogue-data");
+  const beforeRecord = await adapter.record("catalogue-data");
+  expect(beforeRecord).toMatchObject({
+    primaryKey: before.id,
+    className: PRODUCT_PROJECTION,
+    label: before.name,
+    outputs: { canEdit: true, revision: before.revision },
+  });
   const actor = { owner, credentials: viewer };
   const unusedRequest = async () => { throw new Error("The Node owner should write through its own store"); };
   const host = { initiator: actor, executor: actor, request: unusedRequest, requestWorkbench: unusedRequest };
@@ -358,10 +382,14 @@ it("updates only the submitted projection configuration field in PostgreSQL", as
     values: { config: { drawing: { color: "orange", width: 1 } } },
     submittedFields: ["/config/drawing/color"], revision: before.revision,
   }, "projection-save")).resolves.toMatchObject({ kind: "success" });
-  expect(await adapter.record(before.id)).toMatchObject({
+  expect(await readCurrentProjection(owner, viewer, before.id)).toMatchObject({
     name: before.name, data: before.data, componentId: before.componentId,
     config: { drawing: { color: "orange", width: 400 } },
   });
+  expect(await adapter.configRows(before.id)).toContainEqual(expect.objectContaining({
+    primaryKey: "drawing",
+    fields: { value: JSON.stringify({ color: "orange", width: 400 }, null, 2) },
+  }));
 });
 
 it.each(["identity", "entries"] as const)("submits only the changed application %s field without losing owner values", async section => {
@@ -490,10 +518,10 @@ it("requires edit for grant reads and derives domain sharing from the owner Gran
 });
 
 it("filters panel templates in PostgreSQL before scanning cursor pages", async () => {
-  const first = panelReadResultSchemas.productPanelList.parse(await readCatalogue("templates", {}, undefined, { template: true }));
-  expect(first.items.map(item => ({ id: item.id, template: item.template }))).toEqual([{ id: "one", template: true }]);
+  const first = panelReadResultSchemas.panelRecordQuery.parse(await readCatalogue("templates", {}, undefined, { template: true }));
+  expect(first.rows.map(item => ({ id: item.primaryKey, isTemplate: item.fields.isTemplate }))).toEqual([{ id: "one", isTemplate: true }]);
   expect(first.nextCursor).toEqual(expect.any(String));
-  const second = panelReadResultSchemas.productPanelList.parse(await readCatalogue("templates", { cursor: first.nextCursor }, undefined, { template: true }));
-  expect(second.items.map(item => ({ id: item.id, template: item.template }))).toEqual([{ id: "two", template: true }]);
-  expect(second.nextCursor).toBeNull();
+  const second = panelReadResultSchemas.panelRecordQuery.parse(await readCatalogue("templates", { cursor: first.nextCursor }, undefined, { template: true }));
+  expect(second.rows.map(item => ({ id: item.primaryKey, isTemplate: item.fields.isTemplate }))).toEqual([{ id: "two", isTemplate: true }]);
+  expect(second.nextCursor).toBeUndefined();
 });

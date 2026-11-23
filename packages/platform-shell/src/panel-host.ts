@@ -1,5 +1,13 @@
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { displayLoadSchema, PANEL_LOAD_ERROR_CODES, type DisplayLoad } from "@ontomato/contracts/agent-presentation";
+import {
+  displayLoadSchema,
+  PANEL_LOAD_ERROR_CODES,
+  type DisplayLoad,
+  type FormFillOutcome,
+  type FormFillRequestInput,
+  type PageActionOutcome,
+  type PageActionRequestInput,
+} from "@ontomato/contracts/agent-presentation";
 import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
 import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
 import { onDocumentVisibility } from "@ontomato/foundation-ui/visibility";
@@ -197,6 +205,8 @@ export interface DirectPanelMount {
   /** Whether its reads may run: not while its page is out of the reader's view. */
   activate(active: boolean): void;
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
+  fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
+  executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
   dispose(): void;
 }
 
@@ -263,6 +273,10 @@ export interface PanelInstanceView {
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
   /** Applies a live patch to any declared public state fields in place (no reload, no business writes). */
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
+  /** Fills explicit fields on a mounted live form through the form's own editing entry. */
+  fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
+  /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
+  executeAction(request: PageActionRequestInput): Promise<PageActionOutcome>;
   /** Delivers an updated address (e.g. a draft link with explicit overwrite confirmation) to the running instance. */
   applyAddress(url: string, options?: { overwriteUnsavedDraft?: boolean }): void;
   /** The frame's content window, once it exists. */
@@ -416,6 +430,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let adoptedExternalAddress = "";
   let pendingDirectAddress: { url: string; options?: { overwriteUnsavedDraft?: boolean } } | null = null;
   let pendingLiveState: Readonly<Record<string, RuntimeJsonValue>> | null = null;
+  let appliedExternalEntry: PanelHostState = {};
   let registration: PanelFrameRegistration | undefined;
   /** Whether the frame may ask the platform for anything: not while its page is kept out of view, nor until it is checked. */
   let bridgeOpen = true;
@@ -557,6 +572,12 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const deepLinkInitial: PanelHostState = Object.fromEntries(
       Object.entries(mergedInitial).filter(([name]) => next.panel.manifest.state[name]?.deepLink),
     );
+    const initialExternalEntry: PanelHostState = Object.fromEntries(
+      Object.entries(requested).filter(([name]) => {
+        const field = next.panel.manifest.state[name];
+        return field?.external && !field.deepLink;
+      }),
+    );
     const effectiveAddress = livePatch ? panelAddress(pageAddress(), deepLinkInitial, next.panel.manifest) : requestedAddress;
     adoptedExternalAddress = requestedAddress;
     if (!replaceDirect(next, deepLinkInitial, effectiveAddress)) return;
@@ -569,6 +590,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     mount.activate(bridgeOpen);
     direct.value = { element, mount };
+    appliedExternalEntry = initialExternalEntry;
     if (pendingDirectAddress !== null) {
       const nextAddress = pendingDirectAddress;
       pendingDirectAddress = null;
@@ -580,6 +602,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       const lateValidated = validatePublicStatePatch(next.panel, lateLive);
       mount.setState?.(lateValidated);
     }
+    syncExternalEntryState();
   }
 
   /**
@@ -645,6 +668,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function endDirect() {
     direct.value?.mount.dispose();
     direct.value = null;
+    appliedExternalEntry = {};
     dropStyle?.();
     dropStyle = undefined;
     notice.value = "";
@@ -919,10 +943,30 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   function entryState(panel: HostedPanelSource["panel"], externalOnly = false): PanelHostState {
-    return Object.fromEntries(Object.entries(options.entryInputs?.() ?? {}).filter(([name]) => {
+    return Object.fromEntries(Object.entries(options.entryInputs?.() ?? {}).filter(([name, value]) => {
       const field = panel.manifest.state[name];
-      return field?.external && (!externalOnly || !field.deepLink);
+      return value !== undefined && field?.external && (!externalOnly || !field.deepLink);
     }));
+  }
+
+  function syncExternalEntryState() {
+    if (!source.value || !direct.value) return;
+    const panel = source.value.panel;
+    const next = entryState(panel, true);
+    const patch: Record<string, RuntimeJsonValue> = {};
+    for (const [name, value] of Object.entries(next)) {
+      if (!Object.hasOwn(appliedExternalEntry, name) || JSON.stringify(appliedExternalEntry[name]) !== JSON.stringify(value)) {
+        patch[name] = value as RuntimeJsonValue;
+      }
+    }
+    for (const name of Object.keys(appliedExternalEntry)) {
+      if (!Object.hasOwn(next, name)) {
+        const field = panel.manifest.state[name];
+        if (field) patch[name] = (field.default ?? null) as RuntimeJsonValue;
+      }
+    }
+    appliedExternalEntry = next;
+    if (Object.keys(patch).length) direct.value.mount.setState?.(patch);
   }
 
   function syncAddress(): boolean {
@@ -949,12 +993,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     return true;
   }
   watch([options.address, options.initial, () => JSON.stringify(options.entryInputs?.())], syncAddress);
-  watch(() => JSON.stringify(options.entryInputs?.()), () => {
-    if (source.value && direct.value) {
-      const patch = entryState(source.value.panel, true);
-      if (Object.keys(patch).length) direct.value.mount.setState?.(patch);
-    }
-  });
+  watch(() => JSON.stringify(options.entryInputs?.()), syncExternalEntryState);
 
   /**
    * The reader saved or discarded the draft the address links: the address drops the link and keeps everything else, and
@@ -1061,6 +1100,29 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     },
     admitted,
     applyState,
+    fillForm(request) {
+      if (!direct.value?.mount.fillForm) {
+        return Promise.resolve({
+          ok: false,
+          reason: "form_not_ready",
+          ...(request.member ? { member: request.member } : {}),
+          ...(request.memberPath ? { memberPath: request.memberPath } : {}),
+          message: "The panel is not mounted and ready for form filling.",
+        });
+      }
+      return direct.value.mount.fillForm(request);
+    },
+    executeAction(request) {
+      if (!direct.value?.mount.executeAction) {
+        return Promise.resolve({
+          ok: false,
+          reason: "action_not_ready",
+          operation: request.operation,
+          message: "The panel is not mounted and ready for actions.",
+        });
+      }
+      return direct.value.mount.executeAction(request);
+    },
     applyAddress: tellAddress,
     invoke(id, input) {
       if (direct.value) return direct.value.mount.invoke(id, input);

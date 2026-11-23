@@ -349,7 +349,7 @@ export function expandPanelAuthoringMember(
   if (ownerOperation) {
     const { type: ownerType, operation } = ownerOperation;
     let target: ProjectionOperationBinding["target"];
-    if (operation.target.source !== "none") {
+    if (operation.target.source !== "none" && !readsDraft) {
       if (targetIsFromSlot) {
         const resolvedOwnerType = ownerType ?? fail("target", `Operation '${operation.id}' requires a declared owner type`);
         inputTypes.set(targetPort, { kind: "object", objectType: resolvedOwnerType });
@@ -399,8 +399,9 @@ export function expandPanelAuthoringMember(
     const normalized = typeof spec === "string" ? { operation: spec } : spec;
     const { type: ownerType, operation } = lookupOwnerOperation(normalized.operation, normalized.type ?? bindingType, opPath);
     const opTargetPort = operation.target.source === "input" ? operation.target.input : "target";
+    const opReadsDraft = operation.effect === "read" && operation.target.source === "draft";
     let target: ProjectionOperationBinding["target"];
-    if (operation.target.source !== "none") {
+    if (operation.target.source !== "none" && !opReadsDraft) {
       if (normalized.target === "row") {
         target = { row: true };
       } else if (typeof normalized.target === "string") {

@@ -18,9 +18,52 @@ export const panelOperationStore = {
     return readStoredPanelOperationIntent(row.intent);
   },
   async insert(owner: AssistantOwner, intent: PanelOperationIntent) {
-    const questionId = isPanelHumanOperationIntent(intent) ? null : intent.questionId;
+    const questionId = isPanelHumanOperationIntent(intent)
+      ? (intent.source.kind === "agent-page" ? intent.source.questionId : null)
+      : intent.questionId;
     await db().query(`INSERT INTO ${t("panel_operation_intents")} (domain_id,id,owner_id,question_id,intent) VALUES($1,$2,$3,$4,$5) ON CONFLICT(domain_id,id) DO NOTHING`, [owner.domainId,intent.intentId,owner.userId,questionId,intent]);
     return this.get(owner,intent.intentId);
+  },
+  async findByAgentToolCall(owner: AssistantOwner, runId: string, toolCallId: string) {
+    const row = (await db().query(
+      `SELECT intent FROM ${t("panel_operation_intents")}
+       WHERE domain_id=$1 AND owner_id=$2
+         AND intent->'source'->>'kind'='agent-page'
+         AND intent->'source'->>'runId'=$3
+         AND intent->'source'->>'toolCallId'=$4
+       LIMIT 1`,
+      [owner.domainId, owner.userId, runId, toolCallId],
+    )).rows[0];
+    return row ? readStoredPanelOperationIntent(row.intent) : null;
+  },
+  async cancelIntent(owner: AssistantOwner, id: string, reason: { code: string; message: string }): Promise<boolean> {
+    const result = await db().query(
+      `UPDATE ${t("panel_operation_intents")}
+       SET intent=jsonb_set(intent,'{invalidated}',$4::jsonb)
+       WHERE domain_id=$1 AND owner_id=$2 AND id=$3
+         AND intent->>'dispatched'='false'
+         AND intent->'invalidated' IS NULL
+       RETURNING id`,
+      [owner.domainId, owner.userId, id, JSON.stringify(reason)],
+    );
+    return (result.rowCount ?? 0) > 0;
+  },
+  async cancelPendingAgentPageQuestion(
+    owner: AssistantOwner,
+    questionId: string,
+    reason: { code: string; message: string },
+  ): Promise<{ intentId: string } | null> {
+    const row = (await db().query<{ id: string }>(
+      `UPDATE ${t("panel_operation_intents")}
+       SET intent=jsonb_set(intent,'{invalidated}',$4::jsonb)
+       WHERE domain_id=$1 AND owner_id=$2 AND question_id=$3
+         AND intent->'source'->>'kind'='agent-page'
+         AND intent->>'dispatched'='false'
+         AND intent->'invalidated' IS NULL
+       RETURNING id`,
+      [owner.domainId, owner.userId, questionId, JSON.stringify(reason)],
+    )).rows[0];
+    return row ? { intentId: row.id } : null;
   },
   async claim(owner: AssistantOwner, intent: PanelOperationIntent) {
     return (await db().query(`UPDATE ${t("panel_operation_intents")} SET intent=$4::jsonb WHERE domain_id=$1 AND owner_id=$2 AND id=$3 AND intent->>'dispatched'='false' AND intent->'invalidated' IS NULL RETURNING id`, [owner.domainId,owner.userId,intent.intentId,{...intent,dispatched:true}])).rowCount !== 0;

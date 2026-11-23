@@ -2,8 +2,8 @@
 
 ## 这一页覆盖什么
 
-当前部署的 SDK 发行里声明的全部基础组件（本体类 `platform:SDKComponent`，主键形如 `@ontomato/sdk:ObjectList`：包名加冒号加组件名）。
-每个组件显示它在发行里声明的东西：含义、它要的数据和类型、配置项和默认值、输入、输出，以及它自己声明的操作签名。
+当前部署的 SDK 发行里声明的全部基础组件（本体类 `platform:SDKComponent`，主键形如 `@ontomato/sdk:ObjectList`：包名加冒号加组件名；也包含本域可见的包组件与自定义域组件）。
+每个组件通过官方组件投影展示它在发行里声明的内容：概览与含义、它要的数据和类型、配置项和默认值、输入与插槽、输出（含只读输出）与事件，以及它自己声明的操作签名。
 只显示组件声明的东西，不显示某个投影实际绑定了哪个业务操作或哪个本体类型——那属于那个投影。
 
 这一页只读。组件随 SDK 发行增改，页面不新增、不修改、不删除任何组件，也没有可执行的业务操作。
@@ -18,16 +18,15 @@
 ## 回答「某个组件要什么数据、有哪些配置」
 
 1. 从页面上下文和地址参数读 `selected`（组件主键），或在 `search` 非空时按搜索词理解读者指的是哪一批组件。
-2. 用页面技能的「读当前数据」读取页面已声明的数据。按搜索词查看组件列表 `rows`，查看选中组件时读取它的组件声明 `definition`。
-3. 按已读回的组件声明回答。字段含义：
-   - `meaning` 是含义，`effects` 是副作用，`role` 是角色（`presentation` 展示、`control` 控件），`bindsElement` 是适用的对象类型（实际绑定通过投影的读法或操作声明）。
-   - `data` 是它要的数据：每个数据名接受哪些读取结果（`results`）、是否必需（`required`）、它自己运行时给出哪些读取参数（`runtimeParams`）。
-     没有 `data` 或 `data` 为空对象，表示它不读本体数据，只能当界面用。
-   - `config` 是配置项：`name`、`type`、`description`、`required`、`default`。
-   - `inputs` 是它声明的取值输入，`outputs` 是它交给页面、可连到页面状态的值。
-   - `ports.props` 与 `config` 是同一份声明；`ports.events` 是它发出的事件，`ports.slots` 是页面可以填入内容的插槽。
-   - 组件不声明操作；页面能执行的操作由投影声明。所以组件本身没有可执行的操作签名。
-4. 回答时用读者看到的名字（组件名、包名），把声明里的原文照实说：类型写发行里的写法，不要换成自己的说法。
+2. 用页面技能的「读当前数据」读取页面已声明的成员数据：
+   - 成员 `list`（`rows` / `catalogue`）：按搜索词查看组件目录。
+   - 成员 `header` 或 `summary`（`record`）：查看选中组件的名称、组件标识（`componentId`）、所属包（`package`）、模块（`module`）、导出名（`exportName`）、角色（`role`）、适用对象类型（`bindsElement`）、含义（`meaning`）与副作用（`effects`）。
+   - 成员 `dataTable`（`rows` / `dataRows`）：查看组件声明的数据名、接受的读取结果（`results`）、是否必需（`required`）和运行时读取参数（`runtimeParams`）；返回空表示不读本体数据，只能当界面用。
+   - 成员 `configTable`（`rows` / `configRows`）：查看配置项的名称、类型（`type`）、是否必需（`required`）、默认值（`defaultValue`）与说明（`description`）。
+   - 成员 `inputTable`（`rows` / `inputRows`）：查看组件声明的取值输入与插槽（`kind`、`type`、`description`）。
+   - 成员 `outputTable`（`rows` / `outputRows`）：查看组件交给页面的输出值、只读输出与发出的事件（`kind`、`type`、`description`）。
+   - 成员 `operationTable`（`rows` / `operationRows`）：查看组件自己声明的操作签名（`signature`）；当前 SDK 发行里组件本身不声明业务操作，页面能执行的操作由投影声明。
+3. 回答时用读者看到的名字（组件名、包名），把声明里的原文照实说：类型写发行里的写法，不要换成自己的说法。
    发行里没有声明的项就说没有声明，不要拿别的版本或别的组件的声明顶上。
 
 ## 不要做的事

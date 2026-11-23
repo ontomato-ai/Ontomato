@@ -537,12 +537,13 @@ export async function readPlatformOntologySchema(): Promise<PlatformOntologySche
 export async function readPlatformOntologyCounts(
   owner: ProductOwner,
   credentials: AssistantCredentials,
+  types: readonly PlatformOntologyType[] = PLATFORM_ONTOLOGY_TYPES,
 ): Promise<PlatformOntologyCountsResponse> {
   const started = performance.now();
   const readers = new PlatformOntologyOwnerReaders(owner, credentials);
 
   const counts = await Promise.all(
-    PLATFORM_ONTOLOGY_TYPES.map(async (spec): Promise<PlatformOntologyTypeCount> => {
+    types.map(async (spec): Promise<PlatformOntologyTypeCount> => {
       const res = await readObjectsOfType(readers, spec.id);
       if (res.ok) {
         return { type: spec.id, layer: spec.layer, status: "ok", count: res.data.length };

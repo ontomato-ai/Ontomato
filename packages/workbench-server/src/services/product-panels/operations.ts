@@ -316,7 +316,7 @@ async function replay(record: StoredPanelOperationIntent, owner: AssistantOwner,
     kind: "not-dispatched", intentId: record.intentId, code: PANEL_CONFIRMATION_EXPIRED,
     message: "This confirmation expired. Start a new operation.",
   };
-  if (record.kind === "current" && !isPanelHumanOperationIntent(record.intent) && record.intent.invalidated) {
+  if (record.kind === "current" && record.intent.invalidated) {
     return {
       kind: "not-dispatched",
       intentId: record.intent.intentId,
@@ -420,7 +420,16 @@ export async function inspectPanelOperationImpact(owner: AssistantOwner, credent
 
 function humanPreparation(intent: PanelHumanOperationIntent): PanelHumanOperationPreparation {
   return panelHumanOperationPreparationSchema.parse({
-    intentId: intent.intentId, operationId: intent.operation.id, label: intent.operation.label, confirmation: intent.confirmation,
+    intentId: intent.intentId,
+    operationId: intent.operation.id,
+    label: intent.operation.label,
+    confirmation: intent.confirmation,
+    ...(intent.source.kind === "agent-page"
+      ? {
+          autoMode: intent.source.autoMode,
+          ...(intent.source.questionId ? { questionId: intent.source.questionId } : {}),
+        }
+      : {}),
   });
 }
 
@@ -431,6 +440,9 @@ export async function projectPanelOperationIntent(owner: AssistantOwner, id: str
       throw new HttpError(404, "Operation intent not found for this panel use", "NOT_FOUND");
     if (record.intent.dispatched) throw new HttpError(409, "This operation was already dispatched", "INTENT_ALREADY_DISPATCHED");
     return humanPreparation(record.intent);
+  }
+  if (record.kind === "current" && isPanelHumanOperationIntent(record.intent) && record.intent.source.kind === "agent-page") {
+    return { ...record.intent, outcome: await presentOutcome(record.intent, owner, credentials) };
   }
   const agent = agentRecord(record);
   return agent.kind === "confirmation-expired" ? agent : { ...agent.intent, outcome: await presentOutcome(agent.intent, owner, credentials) };
@@ -456,8 +468,84 @@ async function humanConfirmation(
 }
 
 export async function prepareHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials,
-  input: CreatePanelHumanOperationIntentRequest, _callerUserName?: string,
+  input: CreatePanelHumanOperationIntentRequest, callerUserName?: string,
 ): Promise<PanelHumanOperationPreparation> {
+  if (input.agentRun) {
+    const existing = await store.findByAgentToolCall(owner, input.agentRun.runId, input.agentRun.toolCallId);
+    if (existing?.kind === "current" && isPanelHumanOperationIntent(existing.intent)) {
+      return humanPreparation(existing.intent);
+    }
+    const run = await runForOwner(owner, input.agentRun.runId);
+    if (!run.channel || run.status !== "running") throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
+    if (run.sessionId !== input.agentRun.sessionId) throw new HttpError(403, "Run session mismatch", "FORBIDDEN");
+    const root = rootOf(run);
+    if (!root) throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
+    if (run.channel.authority.executionKind !== "live")
+      throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
+    const { use, framePanelId } = await requirePanelSkillForRun(owner, credentials, run, input);
+    const current = writeOperation(await declaredOperation(owner, credentials, use, input, invocationTarget(input), undefined, {
+      mode: "prepare",
+      framePanelId,
+    }));
+    refuseAgentUpload(current.handler, credentials.locale);
+    const concrete = materializeWriteInvocation(input, current);
+    const prepared = validateInvocation(current.handler, concrete, current.fixedTarget);
+    const host = operationHost({ owner, credentials });
+    const confirmation = await humanConfirmation(current.handler, host, prepared);
+    const settings = await store.settings(owner, root);
+    const autoMode = !settings.confirmBeforeExecute;
+    let questionId: string | null = null;
+    if (!autoMode) {
+      questionId = randomUUID();
+      const handler = "calls" in prepared ? prepared.owner : current.handler;
+      const impact = confirmation.kind === "impact"
+        ? confirmation.impact
+        : confirmation.kind === "batch"
+          ? confirmation.impact
+          : undefined;
+      const target = confirmation.kind === "batch"
+        ? namedTargets(confirmation.targets.objects.map((object) => object.label), confirmation.targets.total, credentials.locale)
+        : impact
+          ? namedTargets(impact.objects.map((object) => object.label), impact.total, credentials.locale)
+          : await confirmationTarget(handler, host, prepared, current.operation.label);
+      const impactSummary = impact?.summary ?? confirmationInputSummary(handler, prepared);
+      const questionPrompt = await panelConfirmation(credentials, {
+        operation: current.operation.label,
+        target,
+        impactSummary,
+        executionUserId: null,
+        initiatorName: callerUserName ?? owner.userId,
+      });
+      await new RuntimeClient(owner.domainId, undefined, owner.userId).request("/v1/channel/user-questions", "POST", {
+        source: { session: { providerId: run.channel.agent.providerId, sessionId: run.sessionId }, runId: input.agentRun.runId },
+        ...questionPrompt,
+      }, questionId);
+    }
+    const intent: PanelHumanOperationIntent = {
+      intentId: randomUUID(),
+      source: {
+        kind: "agent-page",
+        sessionId: input.agentRun.sessionId,
+        runId: input.agentRun.runId,
+        toolCallId: input.agentRun.toolCallId,
+        autoMode,
+        questionId,
+      },
+      initiator: owner,
+      use: { applicationId: input.applicationId, useId: input.useId },
+      ...(input.root && { root: input.root }),
+      panelId: current.rootPanelId,
+      projectionId: current.projection.id,
+      binding: current.projection.binding,
+      operation: current.operation,
+      ...invocationOf(concrete),
+      confirmation,
+      dispatched: false,
+      outcome: null,
+    };
+    await store.insert(owner, intent);
+    return humanPreparation(intent);
+  }
   const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input), {
     mode: "prepare",
   }));
@@ -484,12 +572,26 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
   return humanPreparation(intent);
 }
 
+export async function cancelHumanPanelOperation(owner: AssistantOwner, id: string, reason: { code: string; message: string }) {
+  const cancelled = await store.cancelIntent(owner, id, reason);
+  return { intentId: id, cancelled };
+}
+
+export async function cancelPendingAgentPageQuestion(owner: AssistantOwner, questionId: string, reason: { code: string; message: string }) {
+  const cancelled = await store.cancelPendingAgentPageQuestion(owner, questionId, reason);
+  return cancelled ? { stale: true as const, intentId: cancelled.intentId } : { stale: false as const };
+}
+
 export async function dispatchHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, id: string): Promise<PanelHumanOperationDispatchResponse> {
   const record = await store.get(owner, id);
   if (record.kind !== "current" || !isPanelHumanOperationIntent(record.intent))
     throw new HttpError(403, "This intent was not prepared for human dispatch", "FORBIDDEN");
   const { intent } = record;
-  if (intent.dispatched) return replay(record, owner, credentials);
+  if (intent.dispatched || intent.invalidated) return replay(record, owner, credentials);
+  const claimedIntent: PanelHumanOperationIntent =
+    intent.source.kind === "agent-page" && !intent.source.autoMode
+      ? { ...intent, source: { ...intent.source, confirmedBy: owner.userId } }
+      : intent;
   const ref = { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath };
   const current = writeOperation(await operationForUse(owner, credentials, ref, invocationTarget(intent), { mode: "dispatch" }));
   requireFrozenOperation(intent, current);
@@ -498,7 +600,7 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   const staged = await withStagedFile(owner, ref, current.handler, prepared, credentials.locale);
   const view = current.handler.projectResult && await readAssistantSkillView(owner.domainId, credentials);
   const host = operationHost({ owner, credentials }, view);
-  const result = await claimAndExecutePanel(owner, host, intent, current.handler, staged.invocation);
+  const result = await claimAndExecutePanel(owner, host, claimedIntent, current.handler, staged.invocation);
   // A refused call keeps its file for the reader's retry, such as confirming an overwrite.
   if (result?.outcome.kind === "success" && staged.upload) await uploads.remove(owner, staged.upload.id);
   return result

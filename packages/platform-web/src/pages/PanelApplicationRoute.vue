@@ -80,7 +80,7 @@ const { t, locale, fallbackLocale } = useI18n();
 const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 /** What the conversation's and an operation's changes reach: the shown page's instance. */
-type ShownInstance = Pick<PanelInstanceView, "refresh" | "applyState" | "applyAddress">;
+type ShownInstance = Pick<PanelInstanceView, "refresh" | "applyState" | "applyAddress" | "fillForm" | "executeAction">;
 const host = ref<ShownInstance | null>(null);
 const frameHost = ref<ShownInstance | null>(null);
 let pendingControllerState: Record<string, RuntimeJsonValue> | null = null;
@@ -105,6 +105,29 @@ if (props.registerPageController) {
     },
     applyAddress(url, options) {
       host.value?.applyAddress(url, options);
+    },
+    fillForm(request) {
+      if (!host.value) {
+        return Promise.resolve({
+          ok: false,
+          reason: "form_not_ready",
+          ...(request.member ? { member: request.member } : {}),
+          ...(request.memberPath ? { memberPath: request.memberPath } : {}),
+          message: "The panel is not mounted and ready for form filling.",
+        });
+      }
+      return host.value.fillForm(request);
+    },
+    executeAction(request) {
+      if (!host.value) {
+        return Promise.resolve({
+          ok: false,
+          reason: "action_not_ready",
+          operation: request.operation,
+          message: "The panel is not mounted and ready for actions.",
+        });
+      }
+      return host.value.executeAction(request);
     },
   });
   onBeforeUnmount(() => {

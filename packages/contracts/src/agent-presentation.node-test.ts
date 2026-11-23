@@ -14,7 +14,9 @@ import {
 import {
   displayPageAddressInputSchema,
   displaySnapshotSchema,
+  fillFormRequestSchema,
   observeDisplayRequestSchema,
+  pageActionRequestSchema,
   presentationCallRequestSchema,
   presentationFrameSchema,
   presentationReceiptSchema,
@@ -204,4 +206,81 @@ test("a receipt reports an observed outcome, keeping an empty view distinct from
     const result = { ...opened, reason: "load_error", current: { ...selected, load } };
     assert.deepEqual(presentationReceiptSchema.parse({ ...binding, result }).result, result);
   }
+});
+
+test("fill_form and page_action requests, frames, and receipts validate on the shared presentation channel", () => {
+  const fillInput = { mode: "fill_form", member: "form", values: { "/name": "New Action" } };
+  assert.deepEqual(fillFormRequestSchema.parse(fillInput), fillInput);
+  assert.equal(fillFormRequestSchema.safeParse({ mode: "fill_form", values: {} }).success, false);
+  assert.deepEqual(presentationCallRequestSchema.parse({ toolCallId: "fill-1", input: fillInput }), {
+    toolCallId: "fill-1",
+    input: fillInput,
+  });
+  const fillFrame = {
+    type: "presentation",
+    sessionId: id,
+    runId: id,
+    toolCallId: "fill-1",
+    target: { kind: "fill_form", member: "form", values: { "/name": "New Action" }, overwriteUnsaved: true },
+  };
+  assert.deepEqual(presentationFrameSchema.parse(fillFrame), fillFrame);
+
+  const actionInput = { mode: "page_action", operation: "list.delete", rowKey: "row-1", input: { reason: "cleanup" } };
+  assert.deepEqual(pageActionRequestSchema.parse(actionInput), actionInput);
+  assert.deepEqual(presentationCallRequestSchema.parse({ toolCallId: "act-1", input: actionInput }), {
+    toolCallId: "act-1",
+    input: actionInput,
+  });
+  const actionFrame = {
+    type: "presentation",
+    sessionId: id,
+    runId: id,
+    toolCallId: "act-1",
+    target: { kind: "page_action", operation: "list.delete", rowKey: "row-1", input: { reason: "cleanup" } },
+  };
+  assert.deepEqual(presentationFrameSchema.parse(actionFrame), actionFrame);
+
+  const selected = {
+    known: true,
+    observedAt: "2026-11-23T14:00:00Z",
+    placement: "side",
+    target: { kind: "page", url: address, label: "Tasks", selection: [] },
+    load: { status: "ready" },
+  };
+  const filledReceipt = {
+    connectionId: id,
+    toolCallId: "fill-1",
+    result: {
+      status: "filled",
+      reason: "form_updated",
+      member: "form",
+      filledFields: ["/name"],
+      rejectedFields: [{ path: "/id", reason: "read_only", message: "Field /id is read-only." }],
+      current: selected,
+    },
+  };
+  assert.deepEqual(presentationReceiptSchema.parse(filledReceipt), filledReceipt);
+
+  const awaitingReceipt = {
+    connectionId: id,
+    toolCallId: "act-1",
+    result: {
+      status: "awaiting_confirmation",
+      reason: "confirmation_required",
+      operation: "form.save",
+      intentId: id,
+      questionId: id,
+      label: "Save",
+      current: selected,
+    },
+  };
+  assert.deepEqual(presentationReceiptSchema.parse(awaitingReceipt), awaitingReceipt);
+
+  const missingWithIntent = {
+    status: "unknown",
+    reason: "receipt_missing",
+    intentId: id,
+    current: { known: false, reason: "receipt_missing" },
+  };
+  assert.deepEqual(presentationResultSchema.parse(missingWithIntent), missingWithIntent);
 });

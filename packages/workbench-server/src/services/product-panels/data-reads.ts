@@ -12,7 +12,7 @@ import { authoredReadParameterSource, directReadDeclaration, panelReadParameterI
 import {
   AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
-  ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
+  ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
   PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
   type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
@@ -41,7 +41,17 @@ import type { SkillResolveRequest } from "../skills/panel-reads";
 import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { requireChartReadRegistration } from "./chart-sources";
-import { listSdkComponents, readProjectionComponent, readSdkComponent } from "./component-catalogue";
+import {
+  listSdkComponents,
+  readProjectionComponent,
+  readSdkComponent,
+  readSdkComponentConfigRows,
+  readSdkComponentDataRows,
+  readSdkComponentInputRows,
+  readSdkComponentOperationRows,
+  readSdkComponentOutputRows,
+  readSdkComponentRecord,
+} from "./component-catalogue";
 import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
@@ -231,6 +241,12 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [SDK_COMPONENT]: {
       catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
       definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer.locale),
+      record: selection => readSdkComponentRecord(owner, selection.primaryKey!, viewer.locale),
+      dataRows: selection => readSdkComponentDataRows(owner, selection.primaryKey!, viewer.locale),
+      configRows: selection => readSdkComponentConfigRows(owner, selection.primaryKey!, viewer.locale),
+      inputRows: selection => readSdkComponentInputRows(owner, selection.primaryKey!, viewer.locale),
+      outputRows: selection => readSdkComponentOutputRows(owner, selection.primaryKey!, viewer.locale),
+      operationRows: selection => readSdkComponentOperationRows(owner, selection.primaryKey!, viewer.locale),
     },
     [USER]: {
       options: async (_selection, params) => (await options()).users.options({
@@ -333,11 +349,27 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [OBJECT_TYPE]: modelReads,
     [ATTRIBUTE]: modelReads,
     [RELATIONSHIP]: modelReads,
-    [PRODUCT_PROJECTION]: catalogueReads(projectionCatalogue),
+    [PRODUCT_PROJECTION]: {
+      ...catalogueReads(projectionCatalogue),
+      usedByRows: selection => projectionCatalogue.usedByRows(selection.primaryKey!),
+      grantRows: selection => projectionCatalogue.grantRows(selection.primaryKey!),
+      dataRows: selection => projectionCatalogue.dataRows(selection.primaryKey!),
+      configRows: selection => projectionCatalogue.configRows(selection.primaryKey!),
+      inputRows: selection => projectionCatalogue.inputRows(selection.primaryKey!),
+      outputRows: selection => projectionCatalogue.outputRows(selection.primaryKey!),
+      operationRows: selection => projectionCatalogue.operationRows(selection.primaryKey!),
+    },
     [PRODUCT_PANEL]: {
       ...catalogueReads(panelCatalogue),
+      usedByRows: selection => panelCatalogue.usedByRows(selection.primaryKey!),
+      grantRows: selection => panelCatalogue.grantRows(selection.primaryKey!),
       members: selection => panelCatalogue.members(selection.primaryKey!),
       memberRows: selection => panelCatalogue.memberRows(selection.primaryKey!),
+      sourceFiles: selection => panelCatalogue.sourceFiles(selection.primaryKey!),
+      sourceFile: (selection, params) => panelCatalogue.sourceFile(
+        selection.primaryKey!,
+        panelReadParameterSchemas.skillFilePath.parse(params.path),
+      ),
     },
     [APPLICATION]: {
       query: (_selection, params) => applications.query(params),
@@ -360,6 +392,15 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       start: async () => (await ontology()).start(),
       neighbors: async (_selection, params) => (await ontology()).neighbors(params),
       objects: async (_selection, params) => (await ontology()).objects(params),
+      list: async () => (await ontology()).list(),
+      record: async selection => (await ontology()).record(selection.primaryKey!),
+      properties: async (_selection, params) => (await ontology()).properties(params.type as string),
+      typeRelations: async (_selection, params) => (await ontology()).typeRelations(params.type as string),
+      reads: async (_selection, params) => (await ontology()).reads(params.type as string),
+      operations: async (_selection, params) => (await ontology()).operations(params.type as string),
+    },
+    [ONTOLOGY_RELATION_KIND]: {
+      list: async () => (await ontology()).relationKinds(),
     },
     [SCHEDULED_TASK]: {
       list: () => schedules.list(),

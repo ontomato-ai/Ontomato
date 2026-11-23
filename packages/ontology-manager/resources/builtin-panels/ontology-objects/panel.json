@@ -37,20 +37,113 @@
     },
     "members": {
       "catalog": {
-        "component": "PanelData",
+        "component": "ObjectList",
         "type": "platform:ObjectType",
         "data": {
           "rows": "list"
         },
+        "state": {
+          "search": "search"
+        },
+        "config": {
+          "layout": "table",
+          "showChevron": true,
+          "showFooter": false,
+          "searchable": false,
+          "searchFields": [
+            "label",
+            "showName",
+            "className",
+            "classDesc",
+            "searchableAttributes"
+          ],
+          "emptyText": "ot.empty",
+          "noMatchText": "ot.empty",
+          "columns": [
+            {
+              "key": "label",
+              "subtitleKey": "className",
+              "labelKey": "ot.colType",
+              "minWidth": 200
+            },
+            {
+              "key": "classDesc",
+              "labelKey": "ot.colDescription",
+              "emptyKey": "ot.dash",
+              "minWidth": 200
+            },
+            {
+              "key": "attributeCount",
+              "labelKey": "ot.colAttributes",
+              "width": 88,
+              "align": "right"
+            },
+            {
+              "key": "businessKeyCount",
+              "labelKey": "ot.colBusinessKeys",
+              "width": 88,
+              "align": "right"
+            },
+            {
+              "key": "primaryKey",
+              "labelKey": "ot.colPrimaryKey",
+              "kind": "tag",
+              "width": 108,
+              "valueMap": {
+                "ok": {
+                  "labelKey": "ot.pkStatusOk"
+                },
+                "missing": {
+                  "labelKey": "ot.pkStatusMissing"
+                },
+                "multiple": {
+                  "labelKey": "ot.pkStatusMultiple"
+                },
+                "disabled": {
+                  "labelKey": "ot.pkStatusDisabled"
+                }
+              }
+            }
+          ]
+        },
         "id": "builtin-product-5e582009-1791-467f-894c-31768838477b"
       },
       "detail": {
-        "component": "PanelData",
+        "component": "ObjectHeader",
         "target": "selected",
         "data": {
           "record": "record"
         },
+        "config": {
+          "subtitle": ""
+        },
         "id": "builtin-product-5f0ef5f9-6912-449b-9971-a2af2cf14364"
+      },
+      "summary": {
+        "component": "MetricCard",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "variant": "compact",
+          "columns": 3,
+          "items": [
+            {
+              "field": "attributeCount",
+              "labelKey": "ot.attributeCount"
+            },
+            {
+              "field": "businessKeyCount",
+              "labelKey": "ot.businessKeyCount"
+            },
+            {
+              "field": "relationshipCount",
+              "labelKey": "ot.relationCount"
+            }
+          ]
+        },
+        "id": "builtin-product-6eac5b58-c1eb-42f2-92e1-d4fedbddd333"
       },
       "objectForm": {
         "component": "ObjectForm",
@@ -65,6 +158,18 @@
           "actions": "create-only"
         },
         "id": "builtin-product-7da65587-a6cd-4b74-a438-597258f350a2"
+      },
+      "attributeDetail": {
+        "component": "ObjectHeader",
+        "target": "selectedAttribute",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitleField": "name",
+          "fallbackTitle": ""
+        },
+        "id": "builtin-product-204bb369-e608-4048-b203-e0b85918fbab"
       },
       "attributeForm": {
         "component": "ObjectForm",
@@ -91,12 +196,15 @@
         "operation": "objectTypes.delete",
         "target": "selected",
         "config": {
-          "type": "danger"
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "labelKey": "ot.delete"
         },
         "id": "builtin-product-a9fe30c6-15d7-427c-8e40-caa60f40a1b0"
       },
       "attributes": {
-        "component": "PanelData",
+        "component": "ObjectList",
         "type": "platform:Attribute",
         "data": {
           "rows": {
@@ -107,6 +215,63 @@
               }
             }
           }
+        },
+        "state": {
+          "selected": "selectedAttribute"
+        },
+        "config": {
+          "layout": "table",
+          "showChevron": true,
+          "showFooter": false,
+          "searchable": false,
+          "emptyText": "ot.noAttributes",
+          "columns": [
+            {
+              "key": "label",
+              "subtitleKey": "name",
+              "labelKey": "ot.colAttribute",
+              "minWidth": 150
+            },
+            {
+              "key": "type",
+              "labelKey": "ot.colDataType",
+              "width": 92
+            },
+            {
+              "key": "businessKey",
+              "labelKey": "ot.colBusinessKey",
+              "width": 84,
+              "valueMap": {
+                "true": {
+                  "labelKey": "ot.yes",
+                  "tone": "info"
+                },
+                "false": {
+                  "labelKey": "ot.dash"
+                }
+              }
+            },
+            {
+              "key": "primaryKey",
+              "labelKey": "ot.colPrimaryKey",
+              "width": 84,
+              "valueMap": {
+                "true": {
+                  "labelKey": "ot.yes",
+                  "tone": "success"
+                },
+                "false": {
+                  "labelKey": "ot.dash"
+                }
+              }
+            },
+            {
+              "key": "attrDesc",
+              "labelKey": "ot.colAttrDescription",
+              "emptyKey": "ot.dash",
+              "minWidth": 140
+            }
+          ]
         },
         "id": "builtin-product-10dcbc3b-8d8f-4281-9637-59e97f7378cb"
       },
@@ -121,12 +286,15 @@
         "operation": "attributes.delete",
         "target": "selectedAttribute",
         "config": {
-          "type": "danger"
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "labelKey": "ot.delete"
         },
         "id": "builtin-product-e348de4d-b0d6-4042-89b7-1f55b12cfd78"
       },
       "relations": {
-        "component": "PanelData",
+        "component": "ObjectList",
         "type": "platform:Relationship",
         "data": {
           "rows": {
@@ -138,6 +306,36 @@
             }
           }
         },
+        "config": {
+          "layout": "table",
+          "showChevron": true,
+          "showFooter": false,
+          "searchable": false,
+          "emptyText": "ot.noRelations",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "ot.colRelation",
+              "minWidth": 140
+            },
+            {
+              "key": "fromclassLabel",
+              "labelKey": "ot.colSource",
+              "minWidth": 110
+            },
+            {
+              "key": "toclassLabel",
+              "labelKey": "ot.colTarget",
+              "minWidth": 110
+            },
+            {
+              "key": "desc",
+              "labelKey": "ot.colAttrDescription",
+              "emptyKey": "ot.dash",
+              "minWidth": 140
+            }
+          ]
+        },
         "id": "builtin-product-f3b27777-738b-4413-a40f-d80fb86c9ba1"
       }
     }
@@ -146,12 +344,19 @@
     "messages": {
       "zh-CN": {
         "panel.name": "对象类型",
+        "panel.description": "定义业务对象类型、属性与标识字段",
+        "ot.refresh": "刷新",
         "ot.search": "筛选对象类型",
         "ot.items": "{count} 项",
         "ot.colType": "对象类型",
         "ot.colDescription": "业务说明",
         "ot.colAttributes": "属性",
         "ot.colBusinessKeys": "业务键",
+        "ot.colPrimaryKey": "主键",
+        "ot.pkStatusOk": "正常",
+        "ot.pkStatusMissing": "未设置",
+        "ot.pkStatusMultiple": "多个主键",
+        "ot.pkStatusDisabled": "已停用",
         "ot.empty": "未找到对象类型",
         "ot.loading": "正在读取…",
         "ot.forbidden": "当前账号无权查看对象类型。",
@@ -159,13 +364,12 @@
         "ot.configureView": "配置对象视图",
         "ot.delete": "删除",
         "ot.browseData": "浏览数据",
-        "ot.saveChanges": "保存更改",
         "ot.save": "保存",
+        "ot.discard": "放弃更改",
         "ot.basicInfo": "基本信息",
-        "ot.attributeCount": "个属性",
-        "ot.businessKeyCount": "个业务键",
-        "ot.primaryKeyCount": "个主键",
-        "ot.relationCount": "个关联关系",
+        "ot.attributeCount": "属性",
+        "ot.businessKeyCount": "业务键",
+        "ot.relationCount": "关联关系",
         "ot.pkMissing": "当前对象类型未设置主键属性",
         "ot.pkMultiple": "当前对象类型存在多个主键属性",
         "ot.pkDisabled": "当前主键属性已停用",
@@ -176,11 +380,10 @@
         "ot.colAttribute": "属性",
         "ot.colDataType": "数据类型",
         "ot.colBusinessKey": "业务键",
-        "ot.colPrimaryKey": "主键",
         "ot.colAttrDescription": "说明",
         "ot.yes": "是",
+        "ot.dash": "-",
         "ot.noAttributes": "当前对象类型暂无属性",
-        "ot.attributeEditor": "编辑属性：{name}",
         "ot.attributeCreator": "新建属性",
         "ot.relations": "关联关系",
         "ot.colRelation": "关系类型",
@@ -188,33 +391,36 @@
         "ot.colTarget": "目标对象",
         "ot.noRelations": "暂无关联关系",
         "ot.missing": "对象类型不存在或已删除",
-        "ot.deleted": "已删除",
-        "ot.done": "已完成",
-        "ot.deleteFailed": "操作没有完成",
         "ot.command.create": "新建对象类型",
         "ot.create": "新建对象类型"
       },
       "en": {
         "panel.name": "Object types",
+        "panel.description": "Define business object types, attributes, and identifier fields",
+        "ot.refresh": "Refresh",
         "ot.search": "Filter object types",
         "ot.items": "{count} items",
         "ot.colType": "Object type",
         "ot.colDescription": "Business description",
         "ot.colAttributes": "Attributes",
         "ot.colBusinessKeys": "Business keys",
+        "ot.colPrimaryKey": "Primary key",
+        "ot.pkStatusOk": "Valid",
+        "ot.pkStatusMissing": "Missing",
+        "ot.pkStatusMultiple": "Multiple",
+        "ot.pkStatusDisabled": "Disabled",
         "ot.empty": "No object types found",
         "ot.loading": "Loading…",
-        "ot.forbidden": "You cannot view this content",
+        "ot.forbidden": "You cannot view this content.",
         "ot.back": "Back to object types",
         "ot.configureView": "Configure object view",
         "ot.delete": "Delete",
         "ot.browseData": "Browse data",
-        "ot.saveChanges": "Save changes",
         "ot.save": "Save",
+        "ot.discard": "Discard",
         "ot.basicInfo": "Basic information",
         "ot.attributeCount": "Attributes",
         "ot.businessKeyCount": "Business keys",
-        "ot.primaryKeyCount": "Primary keys",
         "ot.relationCount": "Relationships",
         "ot.pkMissing": "This object type does not have a primary key property yet",
         "ot.pkMultiple": "This object type has multiple primary key properties",
@@ -226,11 +432,10 @@
         "ot.colAttribute": "Attribute",
         "ot.colDataType": "Data type",
         "ot.colBusinessKey": "Business key",
-        "ot.colPrimaryKey": "Primary key",
         "ot.colAttrDescription": "Description",
         "ot.yes": "Yes",
+        "ot.dash": "-",
         "ot.noAttributes": "This object type has no attributes yet",
-        "ot.attributeEditor": "Edit attribute: {name}",
         "ot.attributeCreator": "New attribute",
         "ot.relations": "Relationships",
         "ot.colRelation": "Relationship type",
@@ -238,9 +443,6 @@
         "ot.colTarget": "Target object",
         "ot.noRelations": "No related relationships",
         "ot.missing": "Object type does not exist or has been deleted",
-        "ot.deleted": "Deleted",
-        "ot.done": "Done",
-        "ot.deleteFailed": "The operation did not complete",
         "ot.command.create": "New object type",
         "ot.create": "New object type"
       }

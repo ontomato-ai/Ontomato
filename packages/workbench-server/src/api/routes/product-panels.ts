@@ -1,5 +1,5 @@
 import {
-  createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
+  cancelPanelOperationIntentRequestSchema, createPanelHumanOperationIntentRequestSchema, dispatchPanelHumanOperationIntentRequestSchema,
   inspectPanelOperationImpactRequestSchema, panelFormEditedNotificationSchema, panelHumanOperationDispatchResponseSchema, panelHumanOperationIntentParamsSchema,
   panelOperationDescriptorResponseSchema, panelOperationRefSchema, panelUseRefSchema,
   panelUploadRequestSchema, readPanelOperationRequestSchema, readPanelOperationResponseSchema, updatePanelOperationSettingsRequestSchema,
@@ -13,6 +13,7 @@ import {
   productPanelReadRequestSchema,
 } from "@ontomato/contracts/panel-host";
 import {
+  cancelHumanPanelOperation, cancelPendingAgentPageQuestion,
   dispatchHumanPanelOperation, inspectPanelOperationImpact, invalidateFormConfirmations, ownPanelSettings, prepareHumanPanelOperation,
   projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor, stagePanelUpload,
 } from "../../services/product-panels/operations";
@@ -353,6 +354,18 @@ panelOperationsRouter.post("/panel-operations/intents/:intentId/dispatch", wrap(
   const { intentId } = panelHumanOperationIntentParamsSchema.parse(req.params);
   dispatchPanelHumanOperationIntentRequestSchema.parse(req.body);
   res.json(panelHumanOperationDispatchResponseSchema.parse(await dispatchHumanPanelOperation(owner, credentials, intentId)));
+}));
+panelOperationsRouter.post("/panel-operations/intents/:intentId/cancel", wrap(async (req, res) => {
+  const { owner } = context(req);
+  const { intentId } = panelHumanOperationIntentParamsSchema.parse(req.params);
+  const reason = cancelPanelOperationIntentRequestSchema.parse(req.body);
+  res.json(await cancelHumanPanelOperation(owner, intentId, reason));
+}));
+panelOperationsRouter.post("/panel-operations/questions/:questionId/cancel-if-pending", wrap(async (req, res) => {
+  const { owner } = context(req);
+  const questionId = z.string().uuid().parse(req.params.questionId);
+  const reason = cancelPanelOperationIntentRequestSchema.parse(req.body);
+  res.json(await cancelPendingAgentPageQuestion(owner, questionId, reason));
 }));
 panelOperationsRouter.post("/panel-operations/form-edited", wrap(async (req, res) => {
   const { owner } = context(req);

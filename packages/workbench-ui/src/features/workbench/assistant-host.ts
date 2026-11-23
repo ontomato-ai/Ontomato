@@ -114,6 +114,12 @@ export function createPanelOperationSettings(): ShellPanelOperationsPort {
         target,
       });
     },
+    async cancelPendingQuestionIntent(questionId, reason) {
+      return (await nodeApiPost(
+        `/panel-operations/questions/${encodeURIComponent(questionId)}/cancel-if-pending`,
+        reason,
+      )) as { stale: boolean; intentId?: string };
+    },
   };
 }
 

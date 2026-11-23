@@ -3,6 +3,11 @@ import type {
   DisplayLoad,
   DisplayPageAddressInput,
   DisplaySnapshot,
+  FormFillOutcome,
+  FormFillRequestInput,
+  PageActionOutcome,
+  PageActionRequestInput,
+  PendingPageActionConfirmation,
   PresentationFrame,
   PresentationReceipt,
 } from "@ontomato/contracts/agent-presentation";
@@ -63,6 +68,15 @@ export interface DisplayStateUpdate {
 export interface DisplayPageController {
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   applyAddress?(url: string, options?: { overwriteUnsavedDraft?: boolean }): void;
+  fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
+  executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
+}
+
+/** Pending conversation confirmation bound to a specific live session and mounted page instance. */
+export interface BoundPageActionConfirmation {
+  readonly sessionId: string;
+  readonly pageInstance: string;
+  readonly confirmation: PendingPageActionConfirmation;
 }
 
 export interface ConversationDisplayHost {
@@ -164,6 +178,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   const pageContext = computed(() => (page.value ? host.context(page.value, reported.value) : null));
   const pageSkill = computed(() => (page.value ? reportedSkill.value : null));
 
+  const pendingConfirmations = new Map<string, BoundPageActionConfirmation>();
+
   function commit(next: Shown) {
     const current = shown.value.target;
     const sameInstance =
@@ -178,6 +194,17 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       }
       for (const instance of pendingStates.keys()) {
         if (next.target?.kind !== "page" || instance !== next.target.instance) pendingStates.delete(instance);
+      }
+      if (current?.kind === "page") {
+        for (const [questionId, bound] of pendingConfirmations.entries()) {
+          if (bound.pageInstance === current.instance) {
+            pendingConfirmations.delete(questionId);
+            void bound.confirmation.cancel({
+              code: "FORM_CONFIRMATION_STALE",
+              message: "The page closed or navigated away before confirmation.",
+            }).catch(() => undefined);
+          }
+        }
       }
     }
     shown.value = next;
@@ -434,6 +461,13 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
 
     snapshot,
 
+    /** Removes and returns the live-bound page confirmation for a conversation question, if this page instance holds it. */
+    takePendingActionConfirmation(questionId: string): BoundPageActionConfirmation | null {
+      const found = pendingConfirmations.get(questionId) ?? null;
+      if (found) pendingConfirmations.delete(questionId);
+      return found;
+    },
+
     /**
      * An agent's request to show an artifact or navigate/update a page in place:
      * - Artifacts stay temporary and out of the address bar.
@@ -444,11 +478,139 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
      *   re-issues the call with `overwriteUnsavedDraft: true` after explicit user confirmation.
      * - Unauthorized entries are rejected before opening, returning the refusal reason in the receipt.
      */
-    present: (frame: PresentationFrame) =>
+    present: (frame: PresentationFrame, verifyActive?: () => "view_unavailable" | "not_viewing_session" | null) =>
       inOrder(async (): Promise<DisplayPresentationResult> => {
+        const inactive = verifyActive?.() ?? null;
+        if (inactive) {
+          const unknown = { known: false as const, reason: inactive };
+          if (frame.target.kind === "observe") return { status: "observed", reason: inactive, current: unknown };
+          if (frame.target.kind === "fill_form") return { status: "not_filled", reason: inactive, current: unknown };
+          if (frame.target.kind === "page_action") return { status: "not_executed", reason: inactive, current: unknown };
+          return { status: "not_opened", reason: inactive, current: unknown };
+        }
         if (frame.target.kind === "observe") {
           await nextTick();
           return { status: "observed", reason: "current_display", current: snapshot() };
+        }
+        if (frame.target.kind === "page_action") {
+          const currentTarget = shown.value.target;
+          if (!currentTarget || currentTarget.kind !== "page") {
+            return {
+              status: "not_executed",
+              reason: "no_page_shown",
+              operation: frame.target.operation,
+              current: snapshot(),
+              error: { code: "NO_PAGE_SHOWN", message: "No page is currently open beside the conversation." },
+            };
+          }
+          const controller = controllers.get(currentTarget.instance);
+          if (!controller?.executeAction) {
+            return {
+              status: "not_executed",
+              reason: "unsupported_page",
+              operation: frame.target.operation,
+              current: snapshot(),
+              error: { code: "UNSUPPORTED_PAGE", message: "The currently displayed page does not expose a live action controller." },
+            };
+          }
+          const outcome = await controller.executeAction({
+            operation: frame.target.operation,
+            ...(frame.target.memberPath === undefined ? {} : { memberPath: frame.target.memberPath }),
+            ...(frame.target.rowKey === undefined ? {} : { rowKey: frame.target.rowKey }),
+            ...(frame.target.input === undefined ? {} : { input: frame.target.input }),
+            agentRun: { sessionId: frame.sessionId, runId: frame.runId, toolCallId: frame.toolCallId },
+          });
+          await nextTick();
+          await nextTick();
+          if (outcome.ok && outcome.kind === "awaiting_confirmation") {
+            pendingConfirmations.set(outcome.questionId, {
+              sessionId: frame.sessionId,
+              pageInstance: currentTarget.instance,
+              confirmation: outcome.confirmation,
+            });
+            return {
+              status: "awaiting_confirmation",
+              reason: "confirmation_required",
+              operation: outcome.operation,
+              intentId: outcome.intentId,
+              questionId: outcome.questionId,
+              label: outcome.label,
+              current: snapshot(),
+            };
+          }
+          if (outcome.ok && outcome.kind === "executed") {
+            return {
+              status: "executed",
+              reason: "action_completed",
+              operation: outcome.operation,
+              ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
+              ...(outcome.outcome !== undefined ? { outcome: outcome.outcome } : {}),
+              current: snapshot(),
+            };
+          }
+          return {
+            status: "not_executed",
+            reason: outcome.reason,
+            ...(outcome.operation ? { operation: outcome.operation } : { operation: frame.target.operation }),
+            ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
+            current: snapshot(),
+            ...(outcome.message ? { error: { code: outcome.reason.toUpperCase(), message: outcome.message } } : {}),
+          };
+        }
+        if (frame.target.kind === "fill_form") {
+          const currentTarget = shown.value.target;
+          if (!currentTarget || currentTarget.kind !== "page") {
+            return {
+              status: "not_filled",
+              reason: "no_page_shown",
+              current: snapshot(),
+              error: { code: "NO_PAGE_SHOWN", message: "No page is currently open beside the conversation." },
+            };
+          }
+          const controller = controllers.get(currentTarget.instance);
+          if (!controller?.fillForm) {
+            return {
+              status: "not_filled",
+              reason: "unsupported_page",
+              current: snapshot(),
+              error: { code: "UNSUPPORTED_PAGE", message: "The currently displayed page does not expose a live form controller." },
+            };
+          }
+          const outcome = await controller.fillForm({
+            ...(frame.target.member === undefined ? {} : { member: frame.target.member }),
+            ...(frame.target.memberPath === undefined ? {} : { memberPath: frame.target.memberPath }),
+            values: frame.target.values,
+            ...(frame.target.overwriteUnsaved ? { overwriteUnsaved: true } : {}),
+          });
+          await nextTick();
+          await nextTick();
+          const stillSamePage =
+            shown.value.target?.kind === "page" && shown.value.target.instance === currentTarget.instance;
+          if (outcome.ok && stillSamePage) {
+            const shownNow = selected();
+            return {
+              status: "filled",
+              reason: "form_updated",
+              member: outcome.member,
+              ...(outcome.memberPath?.length ? { memberPath: [...outcome.memberPath] } : {}),
+              filledFields: [...outcome.filledFields],
+              ...(outcome.rejectedFields?.length ? { rejectedFields: [...outcome.rejectedFields] } : {}),
+              current: shownNow,
+            };
+          }
+          return {
+            status: "not_filled",
+            reason: outcome.ok ? "form_not_ready" : outcome.reason,
+            ...(outcome.member ? { member: outcome.member } : {}),
+            ...(outcome.memberPath?.length ? { memberPath: [...outcome.memberPath] } : {}),
+            ...(outcome.rejectedFields?.length ? { rejectedFields: [...outcome.rejectedFields] } : {}),
+            current: snapshot(),
+            ...(!outcome.ok && outcome.message
+              ? { error: { code: outcome.reason.toUpperCase(), message: outcome.message } }
+              : outcome.ok
+                ? { error: { code: "FORM_NOT_READY", message: "The page closed or navigated away while filling the form." } }
+                : {}),
+          };
         }
         const current = shown.value;
         if (frame.target.kind === "artifact") {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
@@ -115,6 +115,7 @@ const {
   nameOf,
   trigger,
   confirmInput,
+  run,
   reset,
 } = useOperationRunner({
   panel: () => panel,
@@ -178,6 +179,45 @@ function onTriggerClick() {
   if (!descriptor.value || !ready.value) return;
   trigger(props.operation, descriptor.value);
 }
+
+const unregisterAction = panel.instance.registerActionHandler(
+  panel.instance.operationIdOf(slot.slot, props.operation),
+  async ({ input }) => {
+    if (hiddenByAvailability.value) {
+      return { ok: false, reason: "action_unavailable", message: `Operation '${props.operation}' is currently hidden or unavailable.` };
+    }
+    if (!descriptor.value) {
+      return { ok: false, reason: "action_not_ready", message: `Operation '${props.operation}' is not ready yet.` };
+    }
+    if (!ready.value) {
+      return {
+        ok: false,
+        reason: "action_unavailable",
+        message: descriptor.value.unavailable?.reason ?? `Operation '${props.operation}' is currently disabled.`,
+      };
+    }
+    const providedInput = input ?? {};
+    const missing = inputFields.value
+      .filter((field) => field.required && !(field.name in providedInput))
+      .map((field) => field.name);
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        reason: "input_required",
+        message: `Operation '${props.operation}' requires input fields: ${missing.join(", ")}.`,
+      };
+    }
+    await run(props.operation, descriptor.value, { ...providedInput });
+    if (failure.value) {
+      return { ok: false, reason: "failed", message: failure.value.message };
+    }
+    if (read.value) {
+      return { ok: true, outcome: read.value };
+    }
+    return { ok: true, outcome: outcome.value ?? receipt.value ?? undefined };
+  },
+);
+onBeforeUnmount(unregisterAction);
 </script>
 
 <template>

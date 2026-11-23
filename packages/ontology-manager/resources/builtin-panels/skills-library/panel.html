@@ -2,7 +2,6 @@
   [v-cloak] { display: none; }
   .skills { display: flex; flex-direction: column; gap: var(--spacing-sm); min-height: 0; min-width: 0; padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px); container-type: inline-size; }
   .skills-bar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: var(--spacing-sm); }
-  .skills-data { display: none; }
   .skills-body {
     display: grid;
     grid-template-columns: clamp(15rem, 30%, 22rem) minmax(0, 1fr);
@@ -35,45 +34,23 @@
     text-align: center;
   }
   .detail-head {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
     padding: var(--spacing-md) var(--spacing-lg);
-    border-bottom: 1px solid var(--ui-divider);
     flex-shrink: 0;
   }
-  .detail-meta { display: flex; flex-direction: column; gap: var(--spacing-xs); min-width: 0; }
-  .detail-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); min-width: 0; }
-  .detail-name {
-    margin: 0;
-    overflow: hidden;
-    color: var(--sdk-text-color-primary);
+  .detail-head.is-ready {
+    border-bottom: 1px solid var(--ui-divider);
+  }
+  .detail-head .sdk-object-header-title {
     font-size: var(--text-base);
     line-height: var(--leading-base);
-    font-weight: var(--font-semibold);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-  .detail-source {
-    flex: none;
-    padding: 0 var(--spacing-xs);
-    border: 1px solid var(--ui-divider);
-    border-radius: var(--radius-sm);
-    color: var(--sdk-text-color-secondary);
-    font-size: var(--text-xs);
-    line-height: 1.6;
-  }
-  .detail-summary {
-    margin: 0;
-    color: var(--sdk-text-color-secondary);
+  .detail-head .sdk-object-header-subtitle {
+    font-family: var(--font-sans);
     font-size: var(--text-sm);
     line-height: var(--leading-sm);
-  }
-  .detail-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: var(--spacing-sm);
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
   }
   .package {
     display: grid;
@@ -117,34 +94,17 @@
     <div class="skills-bar">
       <projection slot="import" @uploaded="onImported"></projection>
     </div>
-    <!-- Data-only member holding the selected skill record for the detail header. -->
-    <div class="skills-data">
-      <projection slot="detail"></projection>
-    </div>
     <div class="skills-body">
       <div class="skills-list">
         <projection slot="list"></projection>
       </div>
       <div class="skills-detail">
         <p v-if="!selected" class="skills-hint">{{ t("panel.select") }}</p>
-        <p v-else-if="record.status === 'forbidden'" class="skills-hint">{{ t("panel.recordForbidden") }}</p>
-        <p v-else-if="record.status === 'error'" class="skills-hint" role="alert">{{ record.message }}</p>
-        <p v-else-if="record.status !== 'ready'" class="skills-hint" role="status">{{ t("panel.loading") }}</p>
-        <template v-if="selected">
-          <div v-show="record.status === 'ready'" class="detail-head">
-            <div class="detail-meta">
-              <div class="detail-title">
-                <h2 class="detail-name" :title="skill.name">{{ skill.name }}</h2>
-                <span v-if="skill.source" class="detail-source">{{ skill.source }}</span>
-              </div>
-              <p v-if="skill.summary" class="detail-summary">{{ skill.summary }}</p>
-            </div>
-            <div class="detail-actions">
-              <projection slot="export"></projection>
-              <projection slot="remove" @done="onDeleted"></projection>
-            </div>
+        <template v-else>
+          <div class="detail-head" :class="{ 'is-ready': detailReady }">
+            <projection slot="detail" @done="onHeaderOperationDone"></projection>
           </div>
-          <div v-show="record.status === 'ready'" class="package">
+          <div v-show="detailReady" class="package">
             <div class="package-tree">
               <projection slot="tree"></projection>
             </div>
