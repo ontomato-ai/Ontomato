@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
+import { panelOperationStore } from "../../product-panels/operation-store";
 import { openPresentationView, presentationCallback, receivePresentation, requestPresentation, visibilityReader } from "../presentation";
 
 const owner = { userId: "reader", domainId: "domain" };
@@ -178,6 +179,100 @@ it("supports read-only observe_display round-trips carrying live public state an
       },
     });
   } finally {
+    view.abort();
+  }
+});
+
+it("forwards fill_form and recovers page_action intent status when receipt is lost", async () => {
+  const view = new AbortController();
+  const binding = { viewId: "77777777-7777-4777-8777-777777777777" };
+  const sent: unknown[] = [];
+  const service = { ownRun: vi.fn(async () => {}), resolve: vi.fn() } as never;
+  const connectionId = openPresentationView("workbench", owner, binding.viewId, (frame) => sent.push(frame), view.signal);
+  const findSpy = vi.spyOn(panelOperationStore, "findByAgentToolCall");
+  try {
+    const fillPending = requestPresentation(
+      service,
+      "workbench",
+      owner,
+      {
+        viewId: binding.viewId,
+        sessionId: session.sessionId,
+        runId,
+        toolCallId: "fill-1",
+        input: { mode: "fill_form", member: "form", values: { "/name": "Remote Name" } },
+      },
+      new AbortController().signal,
+    );
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      type: "presentation",
+      toolCallId: "fill-1",
+      target: { kind: "fill_form", member: "form", values: { "/name": "Remote Name" } },
+    });
+    receivePresentation("workbench", owner, session.sessionId, runId, {
+      connectionId,
+      toolCallId: "fill-1",
+      result: {
+        status: "filled",
+        reason: "form_updated",
+        member: "form",
+        filledFields: ["/name"],
+        current: {
+          known: true,
+          observedAt: new Date().toISOString(),
+          placement: "side",
+          target: { kind: "page", url: "/actions", label: "Actions", selection: [] },
+          load: { status: "ready" },
+        },
+      },
+    });
+    expect(await fillPending).toMatchObject({ status: "filled", filledFields: ["/name"] });
+
+    // Simulate connection abort after browser prepared an agent-page intent that awaits confirmation.
+    const intentId = "88888888-8888-4888-8888-888888888888";
+    const questionId = "99999999-9999-4999-8999-999999999999";
+    findSpy.mockResolvedValueOnce({
+      kind: "current",
+      intent: {
+        intentId,
+        source: { kind: "agent-page", sessionId: session.sessionId, runId, toolCallId: "act-lost", autoMode: false, questionId },
+        initiator: owner,
+        use: { applicationId: "app", useId: "use" },
+        panelId: "panel",
+        projectionId: "proj",
+        binding: { kind: "object-type", id: "platform:Action" },
+        operation: { id: "form.save", kind: "form.save", slot: "form", effect: "write", handlerRef: "form.save", label: "Save", target: { source: "draft" } },
+        call: { input: {} },
+        confirmation: { kind: "none" },
+        dispatched: false,
+        outcome: null,
+      },
+    } as never);
+    const callAbort = new AbortController();
+    const actionPending = requestPresentation(
+      service,
+      "workbench",
+      owner,
+      {
+        viewId: binding.viewId,
+        sessionId: session.sessionId,
+        runId,
+        toolCallId: "act-lost",
+        input: { mode: "page_action", operation: "form.save" },
+      },
+      callAbort.signal,
+    );
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    callAbort.abort();
+    expect(await actionPending).toMatchObject({
+      status: "awaiting_confirmation",
+      intentId,
+      questionId,
+      operation: "form.save",
+    });
+  } finally {
+    findSpy.mockRestore();
     view.abort();
   }
 });

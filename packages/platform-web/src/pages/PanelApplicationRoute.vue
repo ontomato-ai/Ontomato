@@ -80,7 +80,7 @@ const { t, locale, fallbackLocale } = useI18n();
 const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 /** What the conversation's and an operation's changes reach: the shown page's instance. */
-type ShownInstance = Pick<PanelInstanceView, "refresh" | "applyState" | "applyAddress">;
+type ShownInstance = Pick<PanelInstanceView, "refresh" | "applyState" | "applyAddress" | "fillForm" | "executeAction">;
 const host = ref<ShownInstance | null>(null);
 const frameHost = ref<ShownInstance | null>(null);
 let pendingControllerState: Record<string, RuntimeJsonValue> | null = null;
@@ -105,6 +105,29 @@ if (props.registerPageController) {
     },
     applyAddress(url, options) {
       host.value?.applyAddress(url, options);
+    },
+    fillForm(request) {
+      if (!host.value) {
+        return Promise.resolve({
+          ok: false,
+          reason: "form_not_ready",
+          ...(request.member ? { member: request.member } : {}),
+          ...(request.memberPath ? { memberPath: request.memberPath } : {}),
+          message: "The panel is not mounted and ready for form filling.",
+        });
+      }
+      return host.value.fillForm(request);
+    },
+    executeAction(request) {
+      if (!host.value) {
+        return Promise.resolve({
+          ok: false,
+          reason: "action_not_ready",
+          operation: request.operation,
+          message: "The panel is not mounted and ready for actions.",
+        });
+      }
+      return host.value.executeAction(request);
     },
   });
   onBeforeUnmount(() => {
@@ -275,13 +298,14 @@ watch(
       frameManifest.value = null;
       return;
     }
-    if (frameManifest.value?.framePanelId === framePanelId) return;
     // Beside a conversation (unframed), load the frame panel's manifest so declared deep-link defaults
     // populate `frameState` even when omitted from the URL (and empty overrides decode against frame types).
     if (!navigate || !resolvedUse) return;
     void readApplicationFrameManifest(applicationId, resolvedUse, framePanelId).then((manifest) => {
       if (!current) return;
-      frameManifest.value = manifest ? { framePanelId, manifest } : null;
+      frameManifest.value = { framePanelId, manifest };
+    }, () => {
+      if (current) frameManifest.value = null;
     });
   },
   { immediate: true },
@@ -642,18 +666,8 @@ function withdraw(page: KeptPage) {
 function addressOf(page: KeptPage) {
   return page === shownPage.value && opened.value.includes("?") ? pageAddress.value : page.reported;
 }
-/** The opening state last handed to each page: the same object while its content is the same, so the host sees no change. */
-const handed = new WeakMap<KeptPage, { key: string; state: Record<string, unknown> }>();
 function stateOf(page: KeptPage) {
-  const state = page === shownPage.value && opened.value.includes("?") ? requestedState.value : panelAddressState(page.reported);
-  const inputs = entryInputs(page.use);
-  if (!Object.keys(inputs).length) return state;
-  const merged = { ...state, ...inputs };
-  const key = JSON.stringify(merged);
-  const last = handed.get(toRaw(page));
-  if (last?.key === key) return last.state;
-  handed.set(toRaw(page), { key, state: merged });
-  return merged;
+  return page === shownPage.value && opened.value.includes("?") ? requestedState.value : panelAddressState(page.reported);
 }
 
 const liveStatePatch = computed(() =>
@@ -706,6 +720,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
             :wired="Object.keys(page.use.inputs ?? {})"
             :address="addressOf(page)"
             :initial="stateOf(page)"
+            :entry-inputs="entryInputs(page.use)"
             :live-state="page === shownPage ? liveStatePatch : null"
             :frame-state="frameState"
             :draft-to-agent="draftToAgent"
@@ -745,6 +760,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           :wired="Object.keys(page.use.inputs ?? {})"
           :address="addressOf(page)"
           :initial="stateOf(page)"
+          :entry-inputs="entryInputs(page.use)"
           :live-state="page === shownPage ? liveStatePatch : null"
           :frame-state="frameState"
           :draft-to-agent="draftToAgent"

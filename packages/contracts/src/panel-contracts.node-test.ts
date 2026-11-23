@@ -74,6 +74,7 @@ import {
 } from "./product-panels";
 import { ontologyParameterTypeSchema as legacyOntologyParameterTypeSchema } from "./product-projections";
 import { panelDefinitionSnapshotSchema } from "./product-subscriptions";
+import { platformTypeTableEntrySchema } from "./platform-type-table";
 
 const platformType = (id: string) => ({ kind: "PlatformObjectType" as const, id });
 const platformOperation = (id: string) => ({ kind: "PlatformOperation" as const, id });
@@ -859,6 +860,37 @@ test("application addresses carry flat named frame and entry state while preserv
   assert.throws(() => validateApplicationPanelAddressState("frame", frame, undefined), /frame\.term/);
   assert.throws(() => validateApplicationPanelAddressState("frame", { term: 1 }, manifest), /frame\.term.*declared type/);
   assert.throws(() => validateApplicationPanelAddressState("state", { privateSelection: "x" }, manifest), /state\.privateSelection/);
+});
+
+test("flat panel URLs encode empty string lists as named empty parameters without unnamed auxiliary keys", async () => {
+  const { applicationPanelAddress, panelAddress, panelAddressState, parseApplicationPanelAddress } = await import("./panel-host");
+  const path = "/applications/app-school/orders";
+  const type = { kind: "list", items: { kind: "scalar", type: "string" } };
+  for (const defaultValue of [undefined, ["default"]]) {
+    const manifest = panelManifestSchema.parse({ state: { tags: { type, deepLink: true, default: defaultValue } }, members: {} });
+    // Empty list encodes as `?tags=` (distinguished from omitted param), and never adds unnamed auxiliary keys.
+    const emptyUrl = panelAddress(path, { tags: [] }, manifest);
+    assert.equal(emptyUrl, `${path}?tags=`);
+    assert.deepEqual(panelAddressState(emptyUrl, manifest), { tags: [] });
+    assert.deepEqual(panelAddressState(path, manifest), {});
+
+    // A singleton empty string encodes as `?tags=` without auxiliary keys and restores as `[]`.
+    const singletonEmptyUrl = panelAddress(path, { tags: [""] }, manifest);
+    assert.equal(singletonEmptyUrl, `${path}?tags=`);
+    assert.deepEqual(panelAddressState(singletonEmptyUrl, manifest), { tags: [] });
+
+    for (const tags of [[], ["a"], ["a", "b"]]) {
+      const state = { tags };
+      const panelUrl = panelAddress(path, state, manifest);
+      assert.deepEqual(panelAddressState(panelUrl, manifest), state, panelUrl);
+      const url = applicationPanelAddress(path, { frame: state, state, frameManifest: manifest, stateManifest: manifest });
+      const raw = parseApplicationPanelAddress(url);
+      const forwarded = applicationPanelAddress(raw.path, raw);
+      const parsed = parseApplicationPanelAddress(forwarded, { frameManifest: manifest, stateManifest: manifest });
+      assert.deepEqual(parsed.frame, state, forwarded);
+      assert.deepEqual(parsed.state, state, forwarded);
+    }
+  }
 });
 
 test("clearing non-empty defaults encodes explicit empty markers and round-trips without snapping back", async () => {
@@ -2247,6 +2279,27 @@ test("platform ontology start uses the same full node as neighbors, or null", ()
   assert.deepEqual(platformOntologyStartResponseSchema.parse({ node: null }), { node: null });
   assert.equal(platformOntologyStartResponseSchema.safeParse({ node: identity, label: node.label, layer: node.layer }).success, false);
   assert.deepEqual(platformOntologyNeighborsResponseSchema.parse({ node, neighbors: [], edges: [], relations: [] }).node, node);
+});
+
+test("platform ontology catalogues publish standard list, record and required detail reads to the type table", () => {
+  const typeReads = platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[ONTOLOGY_TYPE].reads }).reads!;
+  const relationReads = platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[ONTOLOGY_RELATION_KIND].reads }).reads!;
+  for (const list of [typeReads.list, relationReads.list]) {
+    assert.deepEqual(list, { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" });
+  }
+  assert.deepEqual(typeReads.record, {
+    source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+    outputs: {
+      directoryPath: { kind: "scalar", type: "string" },
+      directoryName: { kind: "scalar", type: "string" },
+    },
+  });
+  for (const name of ["properties", "typeRelations", "reads", "operations"]) {
+    assert.deepEqual(typeReads[name], {
+      source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
+      requiredParams: ["type"], result: "panelRecordList",
+    });
+  }
 });
 
 test("platform ontology reads preserve declared topology, owner status and scoped object identities", () => {

@@ -5,7 +5,7 @@ import { pageContextSchema } from "./page-context";
 import { PAGE_DRAFT_QUERY_KEYS, pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import {
-  normalizeExternalPanelState, normalizeExternalPanelValue, panelChildObjectIdentitySchema,
+  normalizePanelDeepLinkState, normalizeExternalPanelValue, panelChildObjectIdentitySchema,
   panelMemberPathSchema, panelMemberPathSegmentSchema,
   panelObjectIdentitySchema, panelObjectRefSchema, panelOpenRequestSchema, panelOperationSchema,
   panelOperationUnavailableSchema, type DirectPanelPortType, type PanelDeepLinkStateValue,
@@ -369,7 +369,8 @@ function hasNonEmptyDefault(field: PanelStateField): boolean {
  * Values equal to the field's declared default are omitted to keep URLs clean. Conversely, clearing a field that
  * declares a non-empty / non-null default (`""` for string, `[]` for list, `null` for nullable scalar/object/list)
  * emits an explicit empty marker (`[""]` -> `?name=`) so reloading or restoring the URL keeps the cleared value
- * instead of snapping back to the default. For `list<string>`, a single empty query value `?name=` decodes to `[]`.
+ * instead of snapping back to the default. For `list<string>`, an empty list writes `?name=` and restores as `[]`;
+ * empty-string list items are not restored separately without auxiliary parameters.
  */
 function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStateField): string[] {
   if (value === undefined) return [];
@@ -381,7 +382,9 @@ function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStat
     }
     if (value === "" && (field.default === undefined || field.default === null || field.default === "")) return [];
     if (Array.isArray(value) && value.length === 0) {
-      return hasNonEmptyDefault(field) ? [""] : [];
+      const type = field.type;
+      const stringList = type.kind === "list" && type.items.kind === "scalar" && type.items.type === "string";
+      return stringList || hasNonEmptyDefault(field) ? [""] : [];
     }
   } else {
     if (value === null) return [];
@@ -396,6 +399,12 @@ function encodeFlatStateValues(value: PanelDeepLinkStateValue, field?: PanelStat
   return [encodeFlatItem(value, field?.type)];
 }
 
+function appendFlatState(
+  params: URLSearchParams, name: string, value: PanelDeepLinkStateValue, field?: PanelStateField,
+) {
+  for (const item of encodeFlatStateValues(value, field)) params.append(name, item);
+}
+
 function collapseBucket(
   bucket: Record<string, string[]>,
   manifest?: Pick<PanelManifest, "state">,
@@ -404,7 +413,7 @@ function collapseBucket(
   for (const [name, values] of Object.entries(bucket)) {
     raw[name] = values.length === 1 ? values[0]! : values;
   }
-  return manifest ? normalizeExternalPanelState(manifest, raw) : raw;
+  return manifest ? normalizePanelDeepLinkState(manifest, raw) : raw;
 }
 
 /**
@@ -480,18 +489,12 @@ export function applicationPanelAddress(path: string, {
   for (const [name, value] of Object.entries(values.frame)) {
     const key = `${PANEL_FRAME_QUERY_PREFIX}${name}`;
     params.delete(key);
-    const field = frameManifest?.state[name];
-    for (const encoded of encodeFlatStateValues(value, field)) {
-      params.append(key, encoded);
-    }
+    appendFlatState(params, key, value, frameManifest?.state[name]);
   }
   for (const [name, value] of Object.entries(values.state)) {
     if (isReservedOrFrameKey(name)) continue;
     params.delete(name);
-    const field = stateManifest?.state[name];
-    for (const encoded of encodeFlatStateValues(value, field)) {
-      params.append(name, encoded);
-    }
+    appendFlatState(params, name, value, stateManifest?.state[name]);
   }
   return joinAddress(route, params);
 }
@@ -543,17 +546,15 @@ export function panelAddress(
   const params = new URLSearchParams(separator < 0 ? "" : path.slice(separator + 1));
   if (manifest) {
     for (const [name, field] of Object.entries(manifest.state)) {
-      if (field.deepLink && !isReservedOrFrameKey(name)) params.delete(name);
+      if (!field.deepLink || isReservedOrFrameKey(name)) continue;
+      params.delete(name);
     }
   }
   for (const [name, value] of Object.entries(values)) {
     if (isReservedOrFrameKey(name)) continue;
     if (manifest && !manifest.state[name]?.deepLink) continue;
     params.delete(name);
-    const field = manifest?.state[name];
-    for (const encoded of encodeFlatStateValues(value, field)) {
-      params.append(name, encoded);
-    }
+    appendFlatState(params, name, value, manifest?.state[name]);
   }
   return joinAddress(route, params);
 }

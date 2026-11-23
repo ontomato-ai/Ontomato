@@ -145,18 +145,28 @@ if (sessionStream) {
   onBeforeUnmount(
     sessionStream.attach({
       present: async (frame) => {
-        if (frame.target.kind === "observe") {
-          return !documentVisible()
-            ? { status: "observed", reason: "view_unavailable", current: display.snapshot() }
-            : frame.sessionId === conversation.state.sessionId
-              ? display.present(frame)
-              : { status: "observed", reason: "not_viewing_session", current: display.snapshot() };
+        const verifyActive = () =>
+          !documentVisible()
+            ? ("view_unavailable" as const)
+            : frame.sessionId !== conversation.state.sessionId
+              ? ("not_viewing_session" as const)
+              : null;
+        const unavailableReason = verifyActive();
+        if (unavailableReason) {
+          // Never return another session's or hidden tab's display/form snapshot on rejection.
+          const unknown = { known: false as const, reason: unavailableReason };
+          if (frame.target.kind === "observe") {
+            return { status: "observed", reason: unavailableReason, current: unknown };
+          }
+          if (frame.target.kind === "fill_form") {
+            return { status: "not_filled", reason: unavailableReason, current: unknown };
+          }
+          if (frame.target.kind === "page_action") {
+            return { status: "not_executed", reason: unavailableReason, current: unknown };
+          }
+          return { status: "not_opened", reason: unavailableReason, current: unknown };
         }
-        return !documentVisible()
-          ? { status: "not_opened", reason: "view_unavailable", current: display.snapshot() }
-          : frame.sessionId === conversation.state.sessionId
-            ? display.present(frame)
-            : { status: "not_opened", reason: "not_viewing_session", current: display.snapshot() };
+        return display.present(frame, verifyActive);
       },
       objectChanged: ({ session, target, affected, operation }) => {
         if (session.sessionId === conversation.state.sessionId) {
@@ -230,6 +240,46 @@ provide(shellContextKey, {
       ...base,
       async answer(requestId, answer, selectedOption) {
         await pendingFormEditFlush;
+        const bound = display.takePendingActionConfirmation(requestId);
+        if (bound) {
+          if (selectedOption === 1) {
+            const sameSession = bound.sessionId === conversation.state.sessionId;
+            const samePage = display.page.value?.instance === bound.pageInstance;
+            if (!sameSession || !samePage) {
+              const reason = "The page or conversation changed after confirmation was requested.";
+              await bound.confirmation.cancel({ code: "FORM_CONFIRMATION_STALE", message: reason }).catch(() => undefined);
+              return base.answer(
+                requestId,
+                `${answer} [intent=${bound.confirmation.intentId}: stale - ${reason}]`,
+                selectedOption,
+              );
+            }
+            const dispatched = await bound.confirmation.dispatch();
+            const note = dispatched.ok
+              ? `[intent=${dispatched.intentId}: executed - ${dispatched.summary}]`
+              : `[intent=${dispatched.intentId}: ${dispatched.reason} - ${dispatched.message}]`;
+            return base.answer(requestId, `${answer} ${note}`, selectedOption);
+          }
+          await bound.confirmation
+            .cancel({ code: "USER_CANCELLED", message: "User declined confirmation." })
+            .catch(() => undefined);
+          return base.answer(requestId, answer, selectedOption);
+        }
+        if (props.panelOperations?.cancelPendingQuestionIntent) {
+          const reason = selectedOption === 1
+            ? { code: "FORM_CONFIRMATION_STALE", message: "The original page instance is no longer open (reloaded, closed, or in another tab)." }
+            : { code: "USER_CANCELLED", message: "User declined confirmation." };
+          const checked = await props.panelOperations
+            .cancelPendingQuestionIntent(requestId, reason)
+            .catch(() => ({ stale: false as const, intentId: undefined }));
+          if (checked.stale && selectedOption === 1) {
+            return base.answer(
+              requestId,
+              `${answer} [intent=${checked.intentId ?? "unknown"}: stale - ${reason.message}]`,
+              selectedOption,
+            );
+          }
+        }
         return base.answer(requestId, answer, selectedOption);
       },
     };

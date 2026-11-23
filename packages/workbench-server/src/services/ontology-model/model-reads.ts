@@ -91,6 +91,7 @@ function objectTypeOption(view: ObjectTypeView): PanelOption {
 }
 
 function objectTypeRecord(view: ObjectTypeView): Omit<PanelRecord, "fieldLabels"> {
+  const { status, name } = view.primaryKey;
   return {
     primaryKey: view.className,
     label: view.showName || view.className,
@@ -102,20 +103,34 @@ function objectTypeRecord(view: ObjectTypeView): Omit<PanelRecord, "fieldLabels"
       businessKeyCount: String(view.businessKeyCount),
       relationshipCount: String(view.relationshipCount),
       // The owner's derived primary-key state: missing, multiple, disabled or ok.
-      primaryKey: view.primaryKey.status,
+      primaryKey: status,
+      ...(name !== undefined && { primaryKeyName: name }),
       ...(view.searchableAttributes && view.searchableAttributes.length > 0 && {
         searchableAttributes: view.searchableAttributes,
       }),
     },
+    tones: { primaryKey: status === "ok" ? "success" : status === "multiple" ? "danger" : "warning" },
+    outputs: {
+      primaryKeyStatus: status,
+      primaryKeyName: name ?? "",
+      attributeCount: view.attributeCount,
+      businessKeyCount: view.businessKeyCount,
+      relationshipCount: view.relationshipCount,
+    },
   };
 }
 
-function attributeRecord(view: AttributeView): Omit<PanelRecord, "fieldLabels"> {
+function attributeRecord(view: AttributeView, classLabels: ReadonlyMap<string, string>): Omit<PanelRecord, "fieldLabels"> {
+  const ownerLabel = classLabels.get(view.className) ?? view.className;
   return {
     primaryKey: JSON.stringify([view.className, view.name]),
     label: view.showName || view.name,
     fields: {
       className: view.className,
+      classNameLabel: ownerLabel,
+      ...(view.className && {
+        ownerObject: { kind: "reference" as const, className: OBJECT_TYPE, primaryKey: view.className, label: ownerLabel },
+      }),
       name: view.name,
       type: view.type,
       attrDesc: view.attrDesc,
@@ -123,6 +138,12 @@ function attributeRecord(view: AttributeView): Omit<PanelRecord, "fieldLabels"> 
       businessKey: String(view.businessKey),
       primaryKey: String(view.primaryKey),
     },
+    tones: {
+      primaryKey: view.primaryKey ? "success" : "default",
+      businessKey: view.businessKey ? "info" : "default",
+      enable: view.enable ? "success" : "warning",
+    },
+    outputs: { isPrimaryKey: view.primaryKey, className: view.className },
   };
 }
 
@@ -200,14 +221,16 @@ export function createOntologyModelReadAdapter(
   }
 
   /** Reads the owner's field labels in the viewer's language for this call, under the same permission as the lists. */
-  async function labelsOf(reader: Pick<ModelTypeReader<unknown>, "labels">) {
-    return (await ownerGet("ontology-model-field-labels", fieldLabelsSchema, "/ontology/model/field-labels"))[reader.labels];
+  async function labelsOf(type: keyof FieldLabels) {
+    return (await ownerGet("ontology-model-field-labels", fieldLabelsSchema, "/ontology/model/field-labels"))[type];
   }
 
   /** Labels the fields a record has; derived summary fields have no owner label and stay unlabelled. */
   function labelled(record: Omit<PanelRecord, "fieldLabels">, labels: Record<string, string>): PanelRecord {
     const fieldLabels = Object.fromEntries(Object.entries(labels).filter(([key]) => key in record.fields));
-    // Endpoint reference and display-label fields share the owner's labels for `fromclass` and `toclass`.
+    // Reference and display-label fields share the owner's labels for the corresponding class fields.
+    if ("ownerObject" in record.fields && labels.className) fieldLabels.ownerObject = labels.className;
+    if ("classNameLabel" in record.fields && labels.className) fieldLabels.classNameLabel = labels.className;
     if ("fromObject" in record.fields && labels.fromclass) fieldLabels.fromObject = labels.fromclass;
     if ("toObject" in record.fields && labels.toclass) fieldLabels.toObject = labels.toclass;
     if ("fromclassLabel" in record.fields && labels.fromclass) fieldLabels.fromclassLabel = labels.fromclass;
@@ -253,18 +276,24 @@ export function createOntologyModelReadAdapter(
 
   function typedReads<V>(typeId: string, reader: ModelTypeReader<V>): ModelReads {
     return {
+      ...modelForms(typeId, reader.formPath),
       async list(params) {
-        const [views, labels] = await Promise.all([reader.views(params?.className), labelsOf(reader)]);
+        const [views, labels] = await Promise.all([reader.views(params?.className), labelsOf(reader.labels)]);
         return views.map(view => labelled(reader.record(view), labels));
       },
       async record(primaryKey) {
-        const [view, labels] = await Promise.all([reader.one(primaryKey), labelsOf(reader)]);
+        const [view, labels] = await Promise.all([reader.one(primaryKey), labelsOf(reader.labels)]);
         return labelled(reader.record(view), labels);
       },
+    };
+  }
+
+  function modelForms(typeId: string, formPath: string): Pick<ModelReads, "form" | "createForm"> {
+    return {
       form: (primaryKey, params) =>
-        describeForm(reader.formPath, { kind: "object", objectType: typeId, primaryKey }, params),
+        describeForm(formPath, { kind: "object", objectType: typeId, primaryKey }, params),
       createForm: params =>
-        describeForm(reader.formPath, { kind: "draft" }, params),
+        describeForm(formPath, { kind: "draft" }, params),
     };
   }
 
@@ -280,23 +309,37 @@ export function createOntologyModelReadAdapter(
     record: objectTypeRecord,
   };
 
-  const attributeReader: ModelTypeReader<AttributeView> = {
-    formPath: "/ontology/model/attribute/form",
-    labels: "attribute",
-    views: className => ownerGet(
+  function attributeViews(className?: string) {
+    return ownerGet(
       "ontology-model-attributes",
       z.array(attributeViewSchema),
       `/ontology/model/attributes${className ? `?className=${encodeURIComponent(className)}` : ""}`,
-    ),
-    async one(primaryKey) {
+    );
+  }
+
+  async function objectTypeLabels() {
+    const views = await objectTypeReader.views();
+    return new Map(views.map(view => [view.className, view.showName || view.className]));
+  }
+
+  const attributeReader: ModelReads = {
+    ...modelForms(ATTRIBUTE, "/ontology/model/attribute/form"),
+    async list(params) {
+      const [views, labels, classLabels] = await Promise.all([
+        attributeViews(params?.className), labelsOf("attribute"), objectTypeLabels(),
+      ]);
+      return views.map(view => labelled(attributeRecord(view, classLabels), labels));
+    },
+    async record(primaryKey) {
       // Java has no single-attribute read endpoint; read the owning class's attributes and raise 404 when absent.
       const { className, name } = parseAttributePrimaryKey(primaryKey);
-      const attributes = await attributeReader.views(className);
-      const view = attributes.find(attribute => attribute.name === name);
+      const [views, labels, classLabels] = await Promise.all([
+        attributeViews(className), labelsOf("attribute"), objectTypeLabels(),
+      ]);
+      const view = views.find(attribute => attribute.name === name);
       if (view === undefined) throw new HttpError(404, "Attribute not found", "ATTRIBUTE_NOT_FOUND");
-      return view;
+      return labelled(attributeRecord(view, classLabels), labels);
     },
-    record: attributeRecord,
   };
 
   const relationshipReader: ModelTypeReader<RelationshipView> = {
@@ -317,7 +360,7 @@ export function createOntologyModelReadAdapter(
 
   const reads: Readonly<Record<string, ModelReads>> = {
     [OBJECT_TYPE]: typedReads(OBJECT_TYPE, objectTypeReader),
-    [ATTRIBUTE]: typedReads(ATTRIBUTE, attributeReader),
+    [ATTRIBUTE]: attributeReader,
     [RELATIONSHIP]: typedReads(RELATIONSHIP, relationshipReader),
   };
 

@@ -360,7 +360,7 @@ it("derives SDK catalogue reads from the page and serves them through the run's 
   expect(state.credentialsForRun).not.toHaveBeenCalled();
 });
 
-it("reads detail.definition on the real builtin component entry through the authenticated run callback", async () => {
+it("reads header.record and detail table rows on the real builtin component entry through the authenticated run callback", async () => {
   const bundle = path.join(root, "native-components");
   await cp(path.resolve("../ontology-manager/resources/builtin-panels/sdk-components"), path.join(bundle, "sdk-components"),
     { recursive: true });
@@ -381,7 +381,8 @@ it("reads detail.definition on the real builtin component entry through the auth
   const offering = await panelSkillProvider.findByUse(domainId, componentsPage, { token: "reader" });
   if (!offering || !("kind" in offering)) throw new Error("Expected an admitted platform panel offering");
   const skill = (await offering.provide(ref)).files[0]!.content;
-  expect(skill).toContain("Member `detail`, dataName `definition` — definition returns `sdkComponentDefinition`");
+  expect(skill).toContain("Member `header`, dataName `record` — record returns `panelRecord`");
+  expect(skill).toContain("Member `dataTable`, dataName `rows` — dataRows returns `panelRecordList`");
   expect(skill).not.toContain(componentsPage.useId);
 
   const runId = randomUUID();
@@ -392,26 +393,36 @@ it("reads detail.definition on the real builtin component entry through the auth
   const { callbackCredential } = await import("../../services/agent-runtime/callback-credential");
   const pathPrefix = `/api/assistant/executions/${runId}/`;
   const credential = callbackCredential({ pathPrefix, runId, expiresAt: Date.now() + 60_000, token: "reader", apiKey: "" });
-  const readDefinition = () => fetch(state.base + pathPrefix + "panels/read", {
+  const readMember = (member: string, dataName: string) => fetch(state.base + pathPrefix + "panels/read", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Ontomato-Callback-Credential": credential.value,
       "X-Ontomato-Run-Id": runId },
     body: JSON.stringify({
       source: { kind: "registered", applicationId: componentsPage.applicationId, useId: componentsPage.useId },
-      memberPath: [{ member: "detail" }], dataName: "definition",
+      memberPath: [{ member }], dataName,
       inputs: { target: { className: SDK_COMPONENT, primaryKey: "@ontomato/sdk:ObjectList" } },
     }),
   });
-  const response = await readDefinition();
+  const response = await readMember("header", "record");
   const body = await response.json();
   expect(response.status, JSON.stringify(body)).toBe(200);
-  expect(body).toMatchObject({ status: "ready", value: { componentId: "ObjectList" } });
+  expect(body).toMatchObject({
+    status: "ready",
+    value: { primaryKey: "@ontomato/sdk:ObjectList", label: "ObjectList", fields: { componentId: "ObjectList", package: "@ontomato/sdk" } },
+  });
+  const dataRowsResponse = await readMember("dataTable", "rows");
+  const dataRowsBody = await dataRowsResponse.json();
+  expect(dataRowsResponse.status, JSON.stringify(dataRowsBody)).toBe(200);
+  expect(dataRowsBody).toMatchObject({
+    status: "ready",
+    value: expect.arrayContaining([expect.objectContaining({ primaryKey: "rows", label: "rows" })]),
+  });
   expect(state.credentialsForRun).toHaveBeenCalledWith(
     { domainId, userId: "reader" }, runId, expect.objectContaining({ token: "reader" }), run.sessionId,
   );
 
   deniedEntrance = componentsPage.useId;
   state.credentialsForRun.mockClear();
-  expect((await readDefinition()).status).toBe(403);
+  expect((await readMember("header", "record")).status).toBe(403);
   expect(state.credentialsForRun).not.toHaveBeenCalled();
 });
 

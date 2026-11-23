@@ -317,18 +317,23 @@ describe("platform-ontology composite query", () => {
 
     const projection = byId.get(PRODUCT_PROJECTION);
     expect(projection?.definition).toBe(platformTypeDetails[PRODUCT_PROJECTION]?.definition);
-    expect(Object.keys(projection?.reads ?? {}).sort()).toEqual(["createForm", "form", "grants", "query", "record", "usedBy"]);
+    expect(Object.keys(projection?.reads ?? {}).sort()).toEqual([
+      "configRows", "createForm", "dataRows", "form", "grantRows", "grants",
+      "inputRows", "operationRows", "outputRows", "query", "record", "usedBy", "usedByRows",
+    ]);
     expect(projection?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PROJECTION}.save`);
 
     const panel = byId.get(PRODUCT_PANEL);
     expect(panel?.definition).toBe(platformTypeDetails[PRODUCT_PANEL]?.definition);
     expect(Object.keys(panel?.reads ?? {}).sort()).toEqual([
-      "createForm", "form", "grants", "memberRows", "members", "query", "record", "usedBy",
+      "createForm", "form", "grantRows", "grants", "memberRows", "members", "query", "record", "sourceFile", "sourceFiles", "usedBy", "usedByRows",
     ]);
     expect(panel?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PANEL}.save`);
 
     const sdkComponent = byId.get(SDK_COMPONENT);
-    expect(Object.keys(sdkComponent?.reads ?? {}).sort()).toEqual(["catalogue", "definition"]);
+    expect(Object.keys(sdkComponent?.reads ?? {}).sort()).toEqual([
+      "catalogue", "configRows", "dataRows", "definition", "inputRows", "operationRows", "outputRows", "record",
+    ]);
     expect(sdkComponent?.operations).toBeUndefined();
 
     const role = byId.get(ROLE);

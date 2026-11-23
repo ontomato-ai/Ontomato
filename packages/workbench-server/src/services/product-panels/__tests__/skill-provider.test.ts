@@ -708,6 +708,10 @@ it("includes customer Action create and edit ObjectForms in Draft a change and d
     config: {},
     operations: {
       save: { operation: { kind: "Action", id: "create-order" } },
+      approveKnowledge: {
+        operation: { kind: "PlatformOperation", id: "knowledge.approve" },
+        target: { literal: { className: "platform:BusinessKnowledge", primaryKey: "article" } },
+      },
     },
   });
   extraProjections.set("order-edit-form", {
@@ -754,4 +758,67 @@ it("includes customer Action create and edit ObjectForms in Draft a change and d
   expect(opsSection).toContain('Update order (editForm.save), form save via Action update-order, target {"input":"target"}.');
   expect(opsSection).toContain("pass its `operationId` and `call` unchanged to `/operate`");
   expect(opsSection).toContain("FORM_CONFIRMATION_STALE");
+});
+
+it("never treats a targetless customer Action as a customer form save when a projection also declares a platform form.save", async () => {
+  javaSources([uses[0]!]);
+  vi.mocked(backendPost).mockImplementation(async (_name, url) => {
+    if (String(url).endsWith("/action/queryList")) {
+      return {
+        text: JSON.stringify({
+          success: true,
+          data: [
+            {
+              id: "review-action",
+              name: "Submit review",
+              codeHash: "c".repeat(64),
+              target: null,
+              definition: { affects: ["Order"] },
+              function: { parameters: [{ name: "note", type: "TYPE_STRING" }] },
+            },
+          ],
+        }),
+      } as never;
+    }
+    throw new Error(`Unexpected backendPost ${url}`);
+  });
+  extraProjections.set("platform-save-with-review", {
+    name: "Knowledge form with review",
+    description: "Edits knowledge and exposes a targetless customer review action.",
+    visibility: "domain",
+    componentId: "@ontomato/sdk:ObjectForm",
+    inputs: { target: { kind: "object", objectType: "platform:BusinessKnowledge" } },
+    outputs: {},
+    data: {
+      form: { source: { object: { input: "target" } }, read: "form", params: {} },
+      createForm: { source: { type: { kind: "PlatformObjectType", id: "platform:BusinessKnowledge" } }, read: "createForm", params: {} },
+    },
+    config: {},
+    operations: {
+      save: { operation: { kind: "PlatformOperation", id: "platform:BusinessKnowledge.save" }, target: { input: "target" } },
+      review: { operation: { kind: "Action", id: "review-action" } },
+    },
+  });
+  const id = uses[0]!.panelId;
+  const row = trialPanels.get(id)!;
+  panels.set(id, {
+    ...row,
+    content: { ...row.content, ...vuePanelContent("knowledgeForm") },
+    manifest: {
+      state: {
+        selected: { type: { kind: "object", objectType: "platform:BusinessKnowledge" }, personal: false, deepLink: true, external: false },
+      },
+      members: {
+        knowledgeForm: { target: { projectionId: "platform-save-with-review" }, inputs: { target: { state: "selected" } } },
+      },
+    },
+  });
+  const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
+  const markdown = (await offering!.provide(taskRef)).files[0]!.content;
+  const draftSection = markdown.split("### Draft a change")[1]!.split(/\n### /)[0]!;
+  expect(draftSection).toContain("knowledgeForm.save");
+  expect(draftSection).not.toContain("knowledgeForm.review");
+  const opsSection = markdown.split("### Declared operations")[1]!;
+  expect(opsSection).toContain("Submit review (knowledgeForm.review)");
+  expect(opsSection).not.toContain("form save via Action review-action");
 });

@@ -1,4 +1,4 @@
-import { declaredCustomerFormSaveName } from "@ontomato/contracts/panel-projection";
+import { declaredCustomerFormSaveName, hasDeclaredPlatformFormSave } from "@ontomato/contracts/panel-projection";
 import { readonly, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageDraft } from "@ontomato/contracts/page-draft";
@@ -33,8 +33,9 @@ import type { PanelFieldValue } from "./state";
  * save operation, received by the platform's coordinator as an agent's call is. The form itself is the same either way.
  */
 
-/** Extra context passed by ObjectForm when saving through a customer Action (kept off the wire for `form.save`). */
+/** Extra context for routing a form submission to its save operation. */
 export interface FormSaveContext {
+  readonly fixedFieldPaths?: readonly string[];
   readonly changedFields?: readonly string[];
   readonly baselineValues?: PanelFormValues;
   readonly formatUnwiredFieldRefusal?: (paths: readonly string[]) => {
@@ -273,12 +274,12 @@ export function emptyActionSaveWiring(): ActionSaveWiring {
   return { params: {}, wiredPaths: new Set() };
 }
 
-/** Whether a customer-class form relies on an Action for saving. */
+/** Whether a form relies on a customer Action (rather than a declared platform `form.save`) for saving. */
 export function isCustomerActionForm(projection: Pick<ProductProjection, "operations">, objectType: string): boolean {
-  const entries = Object.entries(projection.operations ?? {});
-  if (entries.some(([, binding]) => binding.operation.kind === "PlatformOperation")) return false;
-  const actions = entries.filter(([, binding]) => binding.operation.kind === "Action");
-  return !objectType.startsWith("platform:") || actions.length === 1 || actions.some(([name]) => name === "save" || name === "create");
+  if (hasDeclaredPlatformFormSave(projection.operations)) return false;
+  return !objectType.startsWith("platform:")
+    || declaredCustomerFormSaveName(projection.operations, false) !== undefined
+    || declaredCustomerFormSaveName(projection.operations, true) !== undefined;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, RuntimeJsonValue> {
@@ -544,6 +545,34 @@ function prepareActionSaveInput(
   return { input: { values: serialized } };
 }
 
+export function resolveFormSaveAnswer(
+  answer: { readonly decision: "confirm" | "cancel"; readonly response?: import("@ontomato/contracts/panel-agent").PanelHumanOperationDispatchResponse },
+  target: PanelFormTarget,
+  descriptorKind: "form.save" | "action",
+  objectType: string | null,
+): FormSaveResult {
+  if (answer.decision === "cancel" || !answer.response) throw new Error("The save was cancelled");
+  const { response } = answer;
+  if (response.kind === "not-dispatched") throw new Error(response.message);
+  const outcome = response.outcome;
+  if (outcome === null) throw new Error("Whether the owner saved is not known");
+  if (outcome.kind === "success") {
+    if (target.kind === "object") return { primaryKey: target.primaryKey, message: outcome.message };
+    // A new object is the one of the form's type the owner reports it created.
+    const created = (outcome.affected?.objects ?? []).filter((object) => object.objectType === objectType);
+    if (created.length === 1) return { primaryKey: created[0]!.primaryKey, message: outcome.message };
+    // A customer Action (such as a targetless create Action) may succeed without reporting a single new primary key.
+    if (descriptorKind === "action") return { primaryKey: null, message: outcome.message };
+    throw new Error("The owner did not report the one object it created");
+  }
+  if (outcome.kind === "refusal" || outcome.kind === "failure") {
+    // The owner names each refused field by its JSON Pointer.
+    throw new PlatformObjectRefusal(outcome.message, fieldMessages(outcome.errors), undefined, outcome.savedFields);
+  }
+  if (outcome.kind === "batch") throw new Error("A form's save is one call, not a batch");
+  throw new Error(outcome.message);
+}
+
 export function memberFormSource(member: PanelMemberContext, instance: PanelInstance): FormSource {
   const { projection } = member;
   /** The datum a target's form is read from, and the run inputs that read it for the target and the form's values. */
@@ -602,33 +631,17 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       const operationId = override?.operationId ?? instance.operationIdOf(member.key, save!.name);
       const descriptor = override?.descriptor ?? save!.descriptor;
       const binding = override ? override.binding : projection.operations?.[save!.name];
+      const fixedPaths = context?.fixedFieldPaths;
       const prepared = descriptor.kind === "form.save"
-        ? { input }
+        ? { input: fixedPaths?.length
+            ? { ...input, submittedFields: [...new Set([...(input.submittedFields ?? []), ...fixedPaths])] }
+            : input }
         : actionSaveInput(descriptor, binding, input, context, override?.extraInput);
       if ("refusal" in prepared) throw prepared.refusal;
       const callTarget = descriptor.target.source === "none" ? null : target;
       const answer = await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } });
-      if (answer.decision === "cancel") throw new Error("The save was cancelled");
-      const { response } = answer;
-      if (response.kind === "not-dispatched") throw new Error(response.message);
-      const outcome = response.outcome;
-      if (outcome === null) throw new Error("Whether the owner saved is not known");
-      if (outcome.kind === "success") {
-        if (target.kind === "object") return { primaryKey: target.primaryKey, message: outcome.message };
-        // A new object is the one of the form's type the owner reports it created.
-        const { type } = formRead(target, undefined, null);
-        const created = (outcome.affected?.objects ?? []).filter((object) => object.objectType === type);
-        if (created.length === 1) return { primaryKey: created[0]!.primaryKey, message: outcome.message };
-        // A customer Action (such as a targetless create Action) may succeed without reporting a single new primary key.
-        if (descriptor.kind === "action") return { primaryKey: null, message: outcome.message };
-        throw new Error("The owner did not report the one object it created");
-      }
-      if (outcome.kind === "refusal" || outcome.kind === "failure") {
-        // The owner names each refused field by its JSON Pointer.
-        throw new PlatformObjectRefusal(outcome.message, fieldMessages(outcome.errors), undefined, outcome.savedFields);
-      }
-      if (outcome.kind === "batch") throw new Error("A form's save is one call, not a batch");
-      throw new Error(outcome.message);
+      const { type } = target.kind === "object" ? { type: target.objectType } : formRead(target, undefined, null);
+      return resolveFormSaveAnswer(answer, target, descriptor.kind, type);
     },
   };
 }

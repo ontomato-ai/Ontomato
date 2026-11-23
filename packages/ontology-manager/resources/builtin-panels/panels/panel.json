@@ -1,12 +1,6 @@
 {
   "manifest": {
     "state": {
-      "creating": {
-        "type": {
-          "kind": "scalar",
-          "type": "boolean"
-        }
-      },
       "selected": {
         "type": {
           "kind": "object",
@@ -39,12 +33,12 @@
         "deepLink": true,
         "default": "updated"
       },
-      "memberProjection": {
+      "templateFilter": {
         "type": {
-          "kind": "object",
-          "objectType": "platform:ProductProjection"
+          "kind": "scalar",
+          "type": "boolean"
         },
-        "deepLink": false,
+        "deepLink": true,
         "default": null
       },
       "tab": {
@@ -52,7 +46,7 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
+        "deepLink": true,
         "default": "overview"
       },
       "detailMode": {
@@ -60,21 +54,102 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
+        "deepLink": true,
         "default": "view"
       },
-      "templateFilter": {
+      "sourceFile": {
         "type": {
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
-        "default": "all"
+        "deepLink": true,
+        "default": null
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        }
+      },
+      "selectedRevision": {
+        "type": {
+          "kind": "scalar",
+          "type": "number"
+        }
+      },
+      "copyDialog": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        }
+      },
+      "copyMode": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "copy"
+      },
+      "copyId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "copyName": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "copyTemplate": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        }
+      },
+      "grantDialog": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        }
+      },
+      "grantPrincipalKind": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "principal"
+      },
+      "grantUser": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:User"
+        }
+      },
+      "grantRole": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Role"
+        }
+      },
+      "grantPrincipalId": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        }
+      },
+      "grantVerb": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "use"
       }
     },
     "members": {
-      "listRows": {
-        "component": "PanelData",
+      "catalogue": {
+        "component": "ObjectList",
         "type": "platform:ProductPanel",
         "data": {
           "rows": {
@@ -85,40 +160,459 @@
               },
               "sort": {
                 "state": "sort"
+              },
+              "template": {
+                "state": "templateFilter"
               }
             }
           }
         },
+        "state": {
+          "selected": "selected",
+          "search": "search"
+        },
+        "config": {
+          "layout": "table",
+          "pagination": "pages",
+          "pageSize": 20,
+          "fallbackToFirst": false,
+          "searchPlaceholder": "list.search",
+          "emptyText": "list.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "list.name",
+              "subtitleKey": "subtitle",
+              "minWidth": 180
+            },
+            {
+              "key": "owner",
+              "labelKey": "list.owner",
+              "width": 116
+            },
+            {
+              "key": "visibility",
+              "labelKey": "list.visibility",
+              "kind": "tag",
+              "width": 100
+            },
+            {
+              "key": "template",
+              "labelKey": "list.template",
+              "kind": "tag",
+              "width": 88
+            },
+            {
+              "key": "updatedAt",
+              "labelKey": "field.updated",
+              "kind": "time",
+              "timeFormat": "datetime",
+              "width": 152
+            }
+          ]
+        },
         "id": "builtin-product-3a186b09-737a-47fd-b2cc-bfecb9c0e7ae"
       },
-      "owners": {
-        "component": "PanelData",
-        "type": "platform:User",
-        "data": {
-          "options": "resolve"
-        },
-        "id": "builtin-product-0a2ad516-f6f7-4dc8-ae46-d93c19a4ef63"
-      },
-      "detail": {
-        "component": "PanelData",
+      "headerTitle": {
+        "component": "ObjectHeader",
+        "type": "platform:ProductPanel",
         "target": "selected",
-        "data": {
-          "record": "record",
-          "usedBy": "usedBy",
-          "members": "members"
-        },
-        "id": "builtin-product-672a2015-c276-47e9-bb81-b12811872dd1"
-      },
-      "projectionRecord": {
-        "component": "PanelData",
-        "target": "memberProjection",
         "data": {
           "record": "record"
         },
+        "config": {
+          "statusField": "visibility"
+        },
+        "id": "builtin-product-672a2015-c276-47e9-bb81-b12811872dd1"
+      },
+      "overviewSummary": {
+        "component": "ObjectSummary",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "id",
+            "name",
+            "description",
+            "owner",
+            "visibility",
+            "template",
+            "editable",
+            "revision",
+            "updatedAt",
+            "createdAt",
+            "objectType"
+          ],
+          "copyableFields": [
+            "id"
+          ]
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b0101"
+      },
+      "sourceTree": {
+        "component": "ObjectTree",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "data": {
+          "files": "sourceFiles"
+        },
+        "state": {
+          "selected": "sourceFile"
+        },
+        "config": {
+          "fallbackToFirst": true,
+          "label": "source.files",
+          "emptyText": "source.none"
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b0102"
+      },
+      "sourceViewer": {
+        "component": "ObjectTextReader",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "data": {
+          "record": {
+            "read": "sourceFile",
+            "params": {
+              "path": {
+                "state": "sourceFile"
+              }
+            }
+          }
+        },
+        "config": {
+          "textField": "content",
+          "emptyText": "source.chooseFile"
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b0103"
+      },
+      "membersList": {
+        "component": "ObjectList",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "data": {
+          "rows": "memberRows"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "members.empty",
+          "columns": [
+            {
+              "key": "slot",
+              "labelKey": "members.member",
+              "width": 130
+            },
+            {
+              "key": "kindLabel",
+              "labelKey": "members.kind",
+              "kind": "tag",
+              "width": 100
+            },
+            {
+              "key": "target",
+              "labelKey": "members.target",
+              "kind": "reference",
+              "subtitleKey": "subtitle",
+              "minWidth": 180
+            },
+            {
+              "key": "componentId",
+              "labelKey": "members.component",
+              "width": 130
+            },
+            {
+              "key": "inputs",
+              "labelKey": "members.inputs",
+              "minWidth": 140
+            },
+            {
+              "key": "outputs",
+              "labelKey": "members.outputs",
+              "minWidth": 140
+            }
+          ]
+        },
         "id": "builtin-product-feb92ab2-ada1-47ba-a95f-10ff08962be8"
+      },
+      "usedByList": {
+        "component": "ObjectList",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "data": {
+          "rows": "usedByRows"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "usage.none",
+          "columns": [
+            {
+              "key": "kindLabel",
+              "labelKey": "usage.kind",
+              "kind": "tag",
+              "width": 120
+            },
+            {
+              "key": "target",
+              "labelKey": "usage.user",
+              "kind": "reference",
+              "minWidth": 170
+            },
+            {
+              "key": "path",
+              "labelKey": "usage.path",
+              "minWidth": 180
+            }
+          ],
+          "rowActions": {
+            "labelKey": "usage.actions",
+            "width": 92,
+            "align": "right",
+            "maxVisible": 1,
+            "items": [
+              {
+                "kind": "event",
+                "id": "openEntry",
+                "labelKey": "action.inspect",
+                "when": {
+                  "field": "canOpenPath",
+                  "equals": true
+                }
+              }
+            ]
+          }
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b0104"
+      },
+      "grantsList": {
+        "component": "ObjectList",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "data": {
+          "rows": "grantRows"
+        },
+        "operations": {
+          "revoke": {
+            "operation": "productPanels.revoke",
+            "target": {
+              "state": "selected"
+            },
+            "params": {
+              "principalKind": {
+                "rowField": "principalKind"
+              },
+              "principalId": {
+                "rowField": "principalId"
+              },
+              "verb": {
+                "rowField": "verb"
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "grants.none",
+          "columns": [
+            {
+              "key": "principalKindLabel",
+              "labelKey": "grants.kind",
+              "kind": "tag",
+              "width": 120
+            },
+            {
+              "key": "label",
+              "labelKey": "grants.principalCol",
+              "subtitleKey": "subtitle",
+              "minWidth": 200
+            },
+            {
+              "key": "verbLabel",
+              "labelKey": "grants.verb",
+              "kind": "tag",
+              "width": 100
+            }
+          ],
+          "rowActions": {
+            "labelKey": "grants.actions",
+            "width": 96,
+            "align": "right",
+            "maxVisible": 1,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "revoke",
+                "labelKey": "action.revoke",
+                "danger": true,
+                "when": {
+                  "field": "revocable",
+                  "equals": true
+                }
+              }
+            ]
+          }
+        },
+        "id": "builtin-product-6cce46ee-c637-4740-9684-bdd791ecd52a"
+      },
+      "shareStatusDesc": {
+        "component": "TypedValue",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "domainShared",
+          "kind": "text",
+          "valueMap": {
+            "true": {
+              "labelKey": "grants.sharedDesc"
+            },
+            "false": {
+              "labelKey": "grants.privateDesc"
+            }
+          }
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b0105"
+      },
+      "shareEnable": {
+        "component": "OperationButton",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "operation": "productPanels.share",
+        "operationParams": {
+          "shared": {
+            "literal": true
+          }
+        },
+        "config": {
+          "size": "small",
+          "labelKey": "action.shareOn"
+        },
+        "id": "builtin-product-a595e264-b41f-41ab-8f7a-e80834f30356"
+      },
+      "shareDisable": {
+        "component": "OperationButton",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "operation": "productPanels.share",
+        "operationParams": {
+          "shared": {
+            "literal": false
+          }
+        },
+        "config": {
+          "size": "small",
+          "labelKey": "action.shareOff"
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b0106"
+      },
+      "userPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:User",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "state": {
+          "selected": "grantUser"
+        },
+        "config": {
+          "size": "default",
+          "placeholderKey": "grants.selectMember"
+        },
+        "id": "builtin-product-0a2ad516-f6f7-4dc8-ae46-d93c19a4ef63"
+      },
+      "rolePicker": {
+        "component": "ReferencePicker",
+        "type": "platform:Role",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "state": {
+          "selected": "grantRole"
+        },
+        "config": {
+          "size": "default",
+          "placeholderKey": "grants.selectRole"
+        },
+        "id": "builtin-product-8c4a1d20-6f3e-4b71-9a12-3e5c7d9b0107"
+      },
+      "grantSubmit": {
+        "component": "OperationButton",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "operation": "productPanels.grant",
+        "operationParams": {
+          "principalKind": {
+            "state": "grantPrincipalKind"
+          },
+          "principalId": {
+            "state": "grantPrincipalId"
+          },
+          "verb": {
+            "state": "grantVerb"
+          }
+        },
+        "config": {
+          "type": "primary",
+          "labelKey": "action.grant"
+        },
+        "id": "builtin-product-e6e91cb4-2798-44f4-8fe7-7bfa43f7e63f"
+      },
+      "copySubmit": {
+        "component": "OperationButton",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "operation": "productPanels.copy",
+        "operationParams": {
+          "id": {
+            "state": "copyId"
+          },
+          "name": {
+            "state": "copyName"
+          },
+          "template": {
+            "state": "copyTemplate"
+          }
+        },
+        "config": {
+          "type": "primary",
+          "labelKey": "action.copy"
+        },
+        "id": "builtin-product-8aeb3c46-f3f4-402b-a203-3cbe8931be3c"
+      },
+      "deletePanel": {
+        "component": "OperationButton",
+        "type": "platform:ProductPanel",
+        "target": "selected",
+        "operation": "productPanels.delete",
+        "operationParams": {
+          "revision": {
+            "state": "selectedRevision"
+          }
+        },
+        "config": {
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "hideWhenUnavailable": true
+        },
+        "id": "builtin-product-0df2c184-2139-4637-abb0-ca91839ef259"
       },
       "form": {
         "component": "ObjectForm",
+        "type": "platform:ProductPanel",
         "target": "selected",
         "data": {
           "form": "form",
@@ -127,44 +621,6 @@
         "operation": "platform:ProductPanel.save",
         "id": "builtin-product-6a2d8f95-30eb-4395-978a-ecf72ffa5b0b"
       },
-      "copyOp": {
-        "component": "PanelData",
-        "operation": "productPanels.copy",
-        "target": "selected",
-        "id": "builtin-product-8aeb3c46-f3f4-402b-a203-3cbe8931be3c"
-      },
-      "deleteOp": {
-        "component": "PanelData",
-        "operation": "productPanels.delete",
-        "target": "selected",
-        "id": "builtin-product-0df2c184-2139-4637-abb0-ca91839ef259"
-      },
-      "grantOp": {
-        "component": "PanelData",
-        "operation": "productPanels.grant",
-        "target": "selected",
-        "id": "builtin-product-e6e91cb4-2798-44f4-8fe7-7bfa43f7e63f"
-      },
-      "revokeOp": {
-        "component": "PanelData",
-        "operation": "productPanels.revoke",
-        "target": "selected",
-        "id": "builtin-product-30c9764a-cdc0-4b91-bf72-8ff381c0b456"
-      },
-      "shareOp": {
-        "component": "PanelData",
-        "operation": "productPanels.share",
-        "target": "selected",
-        "id": "builtin-product-a595e264-b41f-41ab-8f7a-e80834f30356"
-      },
-      "grants": {
-        "component": "PanelData",
-        "target": "selected",
-        "data": {
-          "grants": "grants"
-        },
-        "id": "builtin-product-6cce46ee-c637-4740-9684-bdd791ecd52a"
-      },
       "preview": {
         "target": {
           "fromState": "selected",
@@ -172,73 +628,51 @@
             "rule": "usable"
           }
         }
-      },
-      "memberPanelChoices": {
-        "component": "PanelData",
-        "type": "platform:ProductPanel",
-        "data": {
-          "rows": "query"
-        },
-        "id": "builtin-product-32b3c6b9-49ab-48b0-a8c1-e825d7d07f2e"
-      },
-      "memberProjectionChoices": {
-        "component": "PanelData",
-        "type": "platform:ProductProjection",
-        "data": {
-          "rows": "query"
-        },
-        "id": "builtin-product-041e7470-7fcb-4959-a372-daaac00e5f77"
       }
     }
   },
   "content": {
     "messages": {
       "en": {
+        "panel.name": "Panels",
+        "panel.description": "Browse, edit, copy, grant and preview panels available in this domain.",
         "list.search": "Search name or description",
         "list.scope": "Sharing scope",
         "list.sort": "Order",
-        "list.onlyTemplates": "Templates only",
-        "list.onlyTemplatesHint": "Filters the rows loaded so far; the owner's list read has no template filter.",
+        "list.template": "Template use",
         "list.name": "Name",
         "list.owner": "Owner",
         "list.visibility": "Scope",
-        "list.template": "Template use",
-        "list.updated": "Updated",
-        "list.empty": "No panel is available to you here.",
-        "list.filteredEmpty": "No panels match these filters. Change the search or filters.",
-        "list.retry": "Read again",
-        "list.count": "{count} panels",
-        "list.paging": "Page {page}",
-        "list.prev": "Previous page",
-        "list.next": "Next page",
-        "list.size": "Rows per page",
-        "scope.all": "All I may use",
+        "list.empty": "No matching panels.",
+        "scope.all": "All available",
         "scope.mine": "Mine",
         "scope.shared": "Shared with me",
         "sort.updated": "Recently updated",
         "sort.name": "By name",
-        "visibility.private": "Private",
-        "visibility.domain": "Shared in the domain",
-        "template.yes": "Template",
-        "template.no": "Ordinary panel",
+        "template.all": "All template uses",
+        "template.only": "Templates only",
+        "template.ordinary": "Ordinary panels",
+        "action.refresh": "Refresh",
         "action.create": "New panel",
         "action.edit": "Edit",
         "action.cancel": "Cancel",
+        "action.close": "Close",
+        "action.retry": "Retry",
         "action.copy": "Copy",
         "action.saveAsTemplate": "Save as template",
         "action.fromTemplate": "Create from template",
         "action.delete": "Delete",
-        "action.preview": "Preview",
-        "action.viewProjection": "Inspect projection",
         "action.grant": "Grant",
+        "action.addGrant": "Add grant",
         "action.revoke": "Revoke",
-        "action.shareOn": "Share in the domain",
-        "action.shareOff": "Stop sharing in the domain",
+        "action.shareOn": "Enable domain sharing",
+        "action.shareOff": "Disable domain sharing",
         "action.allApplications": "All applications",
         "action.inspect": "Open",
         "detail.empty": "Choose a panel on the left, or create one.",
-        "detail.readonly": "You have no edit grant on this panel: it opens read-only.",
-        "detail.missing": "The panel is no longer available.",
+        "detail.loading": "Loading panel…",
+        "detail.readonly": "You have no edit grant on this panel; it opens read-only.",
+        "detail.missing": "This panel is no longer available.",
         "detail.forbidden": "You cannot read this panel.",
         "tab.overview": "Overview",
         "tab.source": "Source",
@@ -246,140 +680,102 @@
         "tab.usage": "Usage",
         "tab.grants": "Grants",
         "tab.preview": "Preview",
-        "field.id": "Panel ID",
-        "field.name": "Name",
-        "field.description": "Description",
-        "field.owner": "Owner",
-        "field.visibility": "Public state",
-        "field.template": "Template use",
-        "field.revision": "Revision",
-        "field.created": "Created",
         "field.updated": "Updated",
-        "field.class": "Class",
-        "field.editable": "Your grant",
-        "editable.yes": "May edit",
-        "editable.no": "Read only",
-        "class.hint": "The platform class that owns panels in the platform class catalogue.",
-        "source.html": "Vue page source",
-        "source.module": "Script module",
-        "source.style": "Style",
-        "source.recipes": "Common practice (recipes)",
-        "source.messages": "Copy (messages)",
-        "source.none": "None declared",
-        "members.member": "Member",
+        "source.files": "Panel files",
+        "source.none": "No source files available.",
+        "source.chooseFile": "Choose a file on the left to read its source.",
+        "members.member": "Slot",
+        "members.kind": "Kind",
         "members.target": "Reference",
-        "members.inputs": "Values passed in",
-        "members.outputs": "Values passed out",
-        "members.empty": "This panel declares no member.",
-        "members.projection": "Projection",
-        "members.panel": "Panel",
-        "members.candidate": "Candidate panels by state",
-        "members.entry": "The current application entry",
-        "members.projectionRecord": "Projection record",
-        "members.projectionEmpty": "Choose a projection member to read its record.",
-        "members.directoryHint": "The projection directory is not published yet; the record is read here through its owner.",
-        "usage.entries": "Application entries using it",
-        "usage.panels": "Panels using it",
-        "usage.classes": "Class details using it",
-        "usage.skills": "Derived page skills",
-        "usage.hidden": "{count} more users you may not read",
+        "members.component": "Component",
+        "members.inputs": "Inputs",
+        "members.outputs": "Outputs",
+        "members.empty": "This panel declares no members.",
+        "usage.kind": "Kind",
+        "usage.user": "Used by",
+        "usage.path": "Path / ID",
+        "usage.actions": "Actions",
+        "usage.hidden": "{count} more users you may not read.",
         "usage.none": "Nothing uses this panel.",
-        "usage.skill": "Entry {pageKey} derives this panel's page skill: its reads, drafts and declared operations.",
-        "grants.state": "Sharing scope",
-        "grants.grant": "Grant a use or edit right",
-        "grants.kind": "Grantee kind",
+        "grants.shareTitle": "Share with domain members",
+        "grants.sharedDesc": "All members in this domain can use this panel.",
+        "grants.privateDesc": "Only the granted members and roles below can use or edit it.",
+        "grants.shareNote": "Domain sharing also grants the projections this panel uses whenever you hold edit rights on them.",
+        "grants.dialogTitle": "Add grant",
+        "grants.kind": "Subject type",
+        "grants.principalCol": "Subject",
         "grants.role": "Role",
         "grants.principal": "Member",
-        "grants.principalId": "Grantee ID",
-        "grants.verb": "Right",
+        "grants.verb": "Permission",
+        "grants.actions": "Actions",
         "grants.use": "Use",
         "grants.edit": "Edit",
-        "grants.receipt": "Last result",
-        "grants.none": "No grant is recorded.",
-        "grants.shareNote": "Sharing in the domain also grants the projections this panel uses that you may grant.",
-        "grants.skipped": "Not granted along: {ids}",
-        "grants.granted": "Done.",
+        "grants.none": "No individual grants recorded.",
+        "grants.selectMember": "Search or select a member",
+        "grants.selectRole": "Search or select a role",
+        "grants.updated": "Sharing updated.",
+        "grants.skipped": "Shared, except projections you cannot grant: {ids}",
+        "copy.title": "Copy panel",
+        "copy.saveAsTemplateTitle": "Save as template",
+        "copy.fromTemplateTitle": "Create from template",
+        "copy.note": "The new panel reuses the same projection references and starts private.",
+        "copy.templateNote": "Creates a reusable template panel from this panel's source and member declarations.",
+        "copy.fromTemplateNote": "Creates a new ordinary panel from this template's source and member declarations.",
         "copy.newId": "New panel ID",
         "copy.newName": "New panel name",
-        "copy.note": "A copy keeps referring to the projections the original uses.",
-        "template.note": "A new panel is created from this template's source and members, referring to the same projections.",
-        "delete.confirm": "Delete this panel?",
-        "delete.usage": "Used by: {users}",
-        "delete.done": "Deleted. Projections only it used were removed: {deleted}",
-        "delete.retained": "Kept because you have no edit grant: {ids}",
-        "delete.none": "None",
-        "preview.live": "Live preview",
+        "copy.idPlaceholder": "Lowercase letters, digits and hyphens",
+        "copy.defaultName": "{name} copy",
+        "copy.defaultTemplateName": "{name} template",
+        "copy.defaultDerivedName": "{name} derived",
+        "preview.live": "Inline preview",
         "form.new": "New panel",
         "form.edit": "Edit panel",
-        "form.fromTemplate": "New panel from template {name}",
-        "busy": "Working…",
-        "error": "The owner reported: {message}",
-        "template.all": "Any template use",
-        "template.only": "Templates only",
-        "template.ordinary": "Not a template",
-        "grants.existing": "Grants on this panel",
-        "grants.domainMembers": "Domain members",
-        "grants.shared": "Shared in the domain",
-        "grants.notShared": "Not shared",
-        "grants.empty": "Read the grants again to see who may use or edit this panel.",
-        "visibility.platform": "Built in",
-        "list.pageSize": "Rows per page",
-        "list.pageSizeValue": "{count} rows per page",
-        "source.manifest": "Manifest and theme",
-        "source.theme": "Theme",
-        "members.openRecord": "Open record",
-        "members.addExisting": "Add an existing member",
-        "members.search": "Search by name",
-        "members.noMatches": "No matching members",
-        "members.choose": "Select a record",
-        "members.keyExists": "This member name is already used."
+        "notify.saved": "Panel saved.",
+        "notify.copied": "Created panel {id}.",
+        "notify.deleted": "Panel deleted.",
+        "notify.deletedWithProjections": "Panel deleted. Removed unused projections: {deleted}.",
+        "notify.deletedWithRetained": "Panel deleted. Retained projections without edit rights: {retained}."
       },
       "zh-CN": {
+        "panel.name": "面板",
+        "panel.description": "浏览、编辑、复制、授权和预览域内可用面板。",
         "list.search": "搜索名称或说明",
         "list.scope": "共享范围",
         "list.sort": "排序",
-        "list.onlyTemplates": "仅模板",
-        "list.onlyTemplatesHint": "只筛掉已加载的行；所有者没有声明模板筛选参数。",
+        "list.template": "模板用途",
         "list.name": "名称",
         "list.owner": "所属人",
         "list.visibility": "共享范围",
-        "list.template": "模板用途",
-        "list.updated": "更新时间",
-        "list.empty": "这里没有你可用的面板。",
-        "list.filteredEmpty": "没有符合当前筛选的面板。请调整搜索词或筛选条件。",
-        "list.retry": "重新读取",
-        "list.count": "共 {count} 个面板",
-        "list.paging": "第 {page} 页",
-        "list.prev": "上一页",
-        "list.next": "下一页",
-        "list.size": "每页条数",
+        "list.empty": "暂无匹配的面板。",
         "scope.all": "全部可用",
         "scope.mine": "我的",
         "scope.shared": "共享给我",
         "sort.updated": "最近更新",
         "sort.name": "按名称",
-        "visibility.private": "私有",
-        "visibility.domain": "域内共享",
-        "template.yes": "模板",
-        "template.no": "普通面板",
+        "template.all": "全部模板用途",
+        "template.only": "仅模板",
+        "template.ordinary": "非模板",
+        "action.refresh": "刷新",
         "action.create": "新建面板",
         "action.edit": "编辑",
         "action.cancel": "取消",
+        "action.close": "关闭",
+        "action.retry": "重试",
         "action.copy": "复制",
         "action.saveAsTemplate": "另存为模板",
         "action.fromTemplate": "从模板创建",
         "action.delete": "删除",
-        "action.preview": "预览",
-        "action.viewProjection": "查看投影",
         "action.grant": "授予",
+        "action.addGrant": "添加授权",
         "action.revoke": "撤销",
         "action.shareOn": "开启域内共享",
         "action.shareOff": "关闭域内共享",
         "action.allApplications": "全部应用",
         "action.inspect": "打开",
         "detail.empty": "在左侧选择一个面板，或新建一个。",
+        "detail.loading": "正在读取面板…",
         "detail.readonly": "你没有这个面板的编辑权，按只读显示。",
-        "detail.missing": "这个面板已不可用。",
+        "detail.missing": "这个面板已不可用或已删除。",
         "detail.forbidden": "你无权读取这个面板。",
         "tab.overview": "概览",
         "tab.source": "源码",
@@ -387,165 +783,679 @@
         "tab.usage": "使用",
         "tab.grants": "授权",
         "tab.preview": "预览",
-        "field.id": "面板 ID",
-        "field.name": "名称",
-        "field.description": "说明",
-        "field.owner": "所属人",
-        "field.visibility": "公开状态",
-        "field.template": "模板用途",
-        "field.revision": "修订号",
-        "field.created": "创建时间",
         "field.updated": "更新时间",
-        "field.class": "所属类",
-        "field.editable": "你的权限",
-        "editable.yes": "可编辑",
-        "editable.no": "只读",
-        "class.hint": "平台类目录中“面板”这一类。",
-        "source.html": "Vue 页面源码",
-        "source.module": "脚本模块",
-        "source.style": "样式",
-        "source.recipes": "常见做法（recipes）",
-        "source.messages": "文案（messages）",
-        "source.none": "未声明",
-        "members.member": "成员",
-        "members.target": "引用",
-        "members.inputs": "传入的值",
-        "members.outputs": "传出的值",
+        "source.files": "面板源码文件",
+        "source.none": "暂无源码文件。",
+        "source.chooseFile": "从左侧选择一个源码文件查看只读内容。",
+        "members.member": "成员槽位",
+        "members.kind": "类型",
+        "members.target": "引用目标",
+        "members.component": "组件",
+        "members.inputs": "传入值",
+        "members.outputs": "传出值",
         "members.empty": "这个面板没有声明成员。",
-        "members.projection": "投影",
-        "members.panel": "面板",
-        "members.candidate": "按状态选的面板",
-        "members.entry": "当前应用入口",
-        "members.projectionRecord": "投影记录",
-        "members.projectionEmpty": "选择一个投影成员，读取它的记录。",
-        "members.directoryHint": "投影目录尚未上线；这里通过它的所有者直接读出记录。",
-        "usage.entries": "在用的应用入口",
-        "usage.panels": "在用的面板",
-        "usage.classes": "在用的类详情",
-        "usage.skills": "派生的页面技能",
-        "usage.hidden": "另有 {count} 个无权读取的使用方",
-        "usage.none": "没有别处用这个面板。",
-        "usage.skill": "入口 {pageKey} 派生这个面板的页面技能：它的读取、草稿与已声明操作。",
-        "grants.state": "共享范围",
-        "grants.grant": "授予使用或编辑权",
-        "grants.kind": "被授予方类型",
+        "usage.kind": "类型",
+        "usage.user": "使用方",
+        "usage.path": "地址 / 标识",
+        "usage.actions": "操作",
+        "usage.hidden": "另有 {count} 个你无权读取的使用方。",
+        "usage.none": "暂无其他位置使用这个面板。",
+        "grants.shareTitle": "向本域成员共享",
+        "grants.sharedDesc": "已向本域所有成员开放使用权限。",
+        "grants.privateDesc": "目前仅对下方授权的成员与角色开放。",
+        "grants.shareNote": "开启域内共享时，所有者会连带授出该面板引用且你有编辑权的投影。",
+        "grants.dialogTitle": "添加授权",
+        "grants.kind": "主体类型",
+        "grants.principalCol": "主体",
         "grants.role": "角色",
         "grants.principal": "成员",
-        "grants.principalId": "被授予方 ID",
         "grants.verb": "权限",
+        "grants.actions": "操作",
         "grants.use": "使用",
         "grants.edit": "编辑",
-        "grants.receipt": "最近一次结果",
-        "grants.none": "还没有记录授权。",
-        "grants.shareNote": "域内共享时，连同这个面板用到、且你有权授出的投影一起授出。",
-        "grants.skipped": "未能连带授出：{ids}",
-        "grants.granted": "已完成。",
+        "grants.none": "暂无单独授权记录。",
+        "grants.selectMember": "搜索或选择成员",
+        "grants.selectRole": "搜索或选择角色",
+        "grants.updated": "共享状态已更新。",
+        "grants.skipped": "已共享，但以下投影因无权未能连带共享：{ids}",
+        "copy.title": "复制面板",
+        "copy.saveAsTemplateTitle": "另存为模板",
+        "copy.fromTemplateTitle": "从模板创建面板",
+        "copy.note": "新面板会保留原面板的投影引用，并以私有状态创建。",
+        "copy.templateNote": "按当前面板的源码与成员声明创建一个可复用模板面板。",
+        "copy.fromTemplateNote": "按此模板的源码与成员声明创建一个新的普通面板。",
         "copy.newId": "新面板 ID",
         "copy.newName": "新面板名称",
-        "copy.note": "复制的面板仍引用原面板用到的投影。",
-        "template.note": "按这个模板的源码与成员新建面板，仍引用同一批投影。",
-        "delete.confirm": "删除这个面板？",
-        "delete.usage": "使用方：{users}",
-        "delete.done": "已删除。一并清掉了只由它使用的投影：{deleted}",
-        "delete.retained": "因你没有编辑权而保留：{ids}",
-        "delete.none": "无",
+        "copy.idPlaceholder": "小写字母、数字和连字符",
+        "copy.defaultName": "{name} 副本",
+        "copy.defaultTemplateName": "{name} 模板",
+        "copy.defaultDerivedName": "{name} 派生",
         "preview.live": "原位预览",
         "form.new": "新建面板",
         "form.edit": "编辑面板",
-        "form.fromTemplate": "从模板 {name} 新建面板",
-        "busy": "处理中…",
-        "error": "所有者回答：{message}",
-        "template.all": "全部模板用途",
-        "template.only": "仅模板",
-        "template.ordinary": "非模板",
-        "grants.existing": "已有的授权",
-        "grants.domainMembers": "域内成员",
-        "grants.shared": "域内共享",
-        "grants.notShared": "未共享",
-        "grants.empty": "重新读取授权后，这里列出谁可以使用或编辑这个面板。",
-        "visibility.platform": "平台自带",
-        "list.pageSize": "每页条数",
-        "list.pageSizeValue": "{count} 条/页",
-        "source.manifest": "公开声明与主题",
-        "source.theme": "主题",
-        "members.openRecord": "打开记录",
-        "members.addExisting": "添加已有成员",
-        "members.search": "按名称搜索",
-        "members.noMatches": "没有符合条件的成员",
-        "members.choose": "选择一条记录",
-        "members.keyExists": "这个成员名称已在使用。"
+        "notify.saved": "面板已保存。",
+        "notify.copied": "已创建面板 {id}。",
+        "notify.deleted": "面板已删除。",
+        "notify.deletedWithProjections": "面板已删除，一并清理了未再使用的投影：{deleted}。",
+        "notify.deletedWithRetained": "面板已删除，因无编辑权保留的投影：{retained}。"
       },
       "zh-TW": {
-        "list.pageSize": "每頁筆數",
-        "list.pageSizeValue": "每頁 {count} 筆",
-        "source.manifest": "公開宣告與主題",
-        "source.theme": "主題",
-        "members.openRecord": "開啟記錄",
-        "members.addExisting": "新增既有成員",
-        "members.search": "依名稱搜尋",
-        "members.noMatches": "沒有符合條件的成員",
-        "members.choose": "選擇一筆記錄",
-        "members.keyExists": "這個成員名稱已被使用。"
+        "panel.name": "面板",
+        "panel.description": "瀏覽、編輯、複製、授權與預覽域內可用面板。",
+        "list.search": "搜尋名稱或說明",
+        "list.scope": "共享範圍",
+        "list.sort": "排序",
+        "list.template": "範本用途",
+        "list.name": "名稱",
+        "list.owner": "擁有者",
+        "list.visibility": "共享範圍",
+        "list.empty": "暫無符合的面板。",
+        "scope.all": "全部可用",
+        "scope.mine": "我的",
+        "scope.shared": "共享給我",
+        "sort.updated": "最近更新",
+        "sort.name": "依名稱",
+        "template.all": "全部範本用途",
+        "template.only": "僅範本",
+        "template.ordinary": "非範本",
+        "action.refresh": "重新整理",
+        "action.create": "新建面板",
+        "action.edit": "編輯",
+        "action.cancel": "取消",
+        "action.close": "關閉",
+        "action.retry": "重試",
+        "action.copy": "複製",
+        "action.saveAsTemplate": "另存為範本",
+        "action.fromTemplate": "從範本建立",
+        "action.delete": "刪除",
+        "action.grant": "授予",
+        "action.addGrant": "新增授權",
+        "action.revoke": "撤銷",
+        "action.shareOn": "開啟域內共享",
+        "action.shareOff": "關閉域內共享",
+        "action.allApplications": "全部應用",
+        "action.inspect": "開啟",
+        "detail.empty": "在左側選擇一個面板，或新建一個。",
+        "detail.loading": "正在讀取面板…",
+        "detail.readonly": "你沒有這個面板的編輯權，以唯讀顯示。",
+        "detail.missing": "這個面板已不可用或已刪除。",
+        "detail.forbidden": "你無權讀取這個面板。",
+        "tab.overview": "概覽",
+        "tab.source": "原始碼",
+        "tab.members": "成員參照",
+        "tab.usage": "使用",
+        "tab.grants": "授權",
+        "tab.preview": "預覽",
+        "field.updated": "更新時間",
+        "source.files": "面板原始碼檔案",
+        "source.none": "暫無原始碼檔案。",
+        "source.chooseFile": "從左側選擇一個原始碼檔案檢視唯讀內容。",
+        "members.member": "成員槽位",
+        "members.kind": "類型",
+        "members.target": "參照目標",
+        "members.component": "元件",
+        "members.inputs": "傳入值",
+        "members.outputs": "傳出值",
+        "members.empty": "這個面板沒有宣告成員。",
+        "usage.kind": "類型",
+        "usage.user": "使用方",
+        "usage.path": "位址 / 識別碼",
+        "usage.actions": "操作",
+        "usage.hidden": "另有 {count} 個你無權讀取的使用方。",
+        "usage.none": "暫無其他位置使用這個面板。",
+        "grants.shareTitle": "向本域成員共享",
+        "grants.sharedDesc": "已向本域所有成員開放使用權限。",
+        "grants.privateDesc": "目前僅對下方授權的成員與角色開放。",
+        "grants.shareNote": "開啟域內共享時，擁有者會連帶授出該面板參照且你有編輯權的投影。",
+        "grants.dialogTitle": "新增授權",
+        "grants.kind": "主體類型",
+        "grants.principalCol": "主體",
+        "grants.role": "角色",
+        "grants.principal": "成員",
+        "grants.verb": "權限",
+        "grants.actions": "操作",
+        "grants.use": "使用",
+        "grants.edit": "編輯",
+        "grants.none": "暫無單獨授權紀錄。",
+        "grants.selectMember": "搜尋或選擇成員",
+        "grants.selectRole": "搜尋或選擇角色",
+        "grants.updated": "共享狀態已更新。",
+        "grants.skipped": "已共享，但以下投影因無權未能連帶共享：{ids}",
+        "copy.title": "複製面板",
+        "copy.saveAsTemplateTitle": "另存為範本",
+        "copy.fromTemplateTitle": "從範本建立面板",
+        "copy.note": "新面板會保留原面板的投影參照，並以私有狀態建立。",
+        "copy.templateNote": "依目前面板的原始碼與成員宣告建立可重用範本面板。",
+        "copy.fromTemplateNote": "依此範本的原始碼與成員宣告建立新的普通面板。",
+        "copy.newId": "新面板 ID",
+        "copy.newName": "新面板名稱",
+        "copy.idPlaceholder": "小寫字母、數字與連字號",
+        "copy.defaultName": "{name} 副本",
+        "copy.defaultTemplateName": "{name} 範本",
+        "copy.defaultDerivedName": "{name} 衍生",
+        "preview.live": "原位預覽",
+        "form.new": "新建面板",
+        "form.edit": "編輯面板",
+        "notify.saved": "面板已儲存。",
+        "notify.copied": "已建立面板 {id}。",
+        "notify.deleted": "面板已刪除。",
+        "notify.deletedWithProjections": "面板已刪除，一併清理了未再使用的投影：{deleted}。",
+        "notify.deletedWithRetained": "面板已刪除，因無編輯權保留的投影：{retained}。"
       },
       "ja": {
-        "list.pageSize": "ページごとの件数",
-        "list.pageSizeValue": "1 ページ {count} 件",
-        "source.manifest": "マニフェストとテーマ",
-        "source.theme": "テーマ",
-        "members.openRecord": "レコードを開く",
-        "members.addExisting": "既存のメンバーを追加",
-        "members.search": "名前で検索",
-        "members.noMatches": "条件に一致するメンバーがありません",
-        "members.choose": "レコードを選択",
-        "members.keyExists": "このメンバー名はすでに使われています。"
+        "panel.name": "パネル",
+        "panel.description": "このドメインで利用可能なパネルの閲覧、編集、複製、権限設定、プレビューを行います。",
+        "list.search": "名前または説明を検索",
+        "list.scope": "共有範囲",
+        "list.sort": "並び順",
+        "list.template": "テンプレート用途",
+        "list.name": "名前",
+        "list.owner": "所有者",
+        "list.visibility": "範囲",
+        "list.empty": "一致するパネルがありません。",
+        "scope.all": "利用可能なすべて",
+        "scope.mine": "自分のパネル",
+        "scope.shared": "共有されたパネル",
+        "sort.updated": "更新順",
+        "sort.name": "名前順",
+        "template.all": "すべて",
+        "template.only": "テンプレートのみ",
+        "template.ordinary": "通常パネル",
+        "action.refresh": "更新",
+        "action.create": "新規パネル",
+        "action.edit": "編集",
+        "action.cancel": "キャンセル",
+        "action.close": "閉じる",
+        "action.retry": "再試行",
+        "action.copy": "複製",
+        "action.saveAsTemplate": "テンプレートとして保存",
+        "action.fromTemplate": "テンプレートから作成",
+        "action.delete": "削除",
+        "action.grant": "付与",
+        "action.addGrant": "権限を追加",
+        "action.revoke": "取り消す",
+        "action.shareOn": "ドメイン共有を有効化",
+        "action.shareOff": "ドメイン共有を無効化",
+        "action.allApplications": "すべてのアプリ",
+        "action.inspect": "開く",
+        "detail.empty": "左からパネルを選択するか、新規作成してください。",
+        "detail.loading": "パネルを読み込み中…",
+        "detail.readonly": "このパネルの編集権限がないため、読み取り専用で表示しています。",
+        "detail.missing": "このパネルは利用できません。",
+        "detail.forbidden": "このパネルを閲覧する権限がありません。",
+        "tab.overview": "概要",
+        "tab.source": "ソース",
+        "tab.members": "メンバー",
+        "tab.usage": "利用状況",
+        "tab.grants": "権限",
+        "tab.preview": "プレビュー",
+        "field.updated": "更新日時",
+        "source.files": "ソースファイル",
+        "source.none": "ソースファイルはありません。",
+        "source.chooseFile": "左からファイルを選択して内容を確認してください。",
+        "members.member": "スロット",
+        "members.kind": "種別",
+        "members.target": "参照先",
+        "members.component": "コンポーネント",
+        "members.inputs": "入力",
+        "members.outputs": "出力",
+        "members.empty": "メンバーは宣言されていません。",
+        "usage.kind": "種別",
+        "usage.user": "利用先",
+        "usage.path": "パス / ID",
+        "usage.actions": "操作",
+        "usage.hidden": "他に閲覧権限のない利用先が {count} 件あります。",
+        "usage.none": "このパネルを利用している箇所はありません。",
+        "grants.shareTitle": "ドメインメンバーに共有",
+        "grants.sharedDesc": "ドメイン内の全メンバーがこのパネルを利用できます。",
+        "grants.privateDesc": "以下に権限付与されたメンバー・ロールのみ利用できます。",
+        "grants.shareNote": "ドメイン共有を有効にすると、編集権限のある参照プロジェクションも併せて共有されます。",
+        "grants.dialogTitle": "権限を追加",
+        "grants.kind": "対象種別",
+        "grants.principalCol": "対象",
+        "grants.role": "ロール",
+        "grants.principal": "メンバー",
+        "grants.verb": "権限",
+        "grants.actions": "操作",
+        "grants.use": "使用",
+        "grants.edit": "編集",
+        "grants.none": "個別権限は設定されていません。",
+        "grants.selectMember": "メンバーを検索または選択",
+        "grants.selectRole": "ロールを検索または選択",
+        "grants.updated": "共有設定を更新しました。",
+        "grants.skipped": "共有しましたが、権限不足のため一部のプロジェクションは除外されました：{ids}",
+        "copy.title": "パネルを複製",
+        "copy.saveAsTemplateTitle": "テンプレートとして保存",
+        "copy.fromTemplateTitle": "テンプレートから作成",
+        "copy.note": "新しいパネルは同じプロジェクション参照を引き継ぎ、非公開で作成されます。",
+        "copy.templateNote": "このパネルのソースとメンバーから再利用可能なテンプレートを作成します。",
+        "copy.fromTemplateNote": "このテンプレートから新しい通常パネルを作成します。",
+        "copy.newId": "新しいパネル ID",
+        "copy.newName": "新しいパネル名",
+        "copy.idPlaceholder": "小文字・数字・ハイフン",
+        "copy.defaultName": "{name} コピー",
+        "copy.defaultTemplateName": "{name} テンプレート",
+        "copy.defaultDerivedName": "{name} 派生",
+        "preview.live": "インラインプレビュー",
+        "form.new": "新規パネル",
+        "form.edit": "パネルを編集",
+        "notify.saved": "パネルを保存しました。",
+        "notify.copied": "パネル {id} を作成しました。",
+        "notify.deleted": "パネルを削除しました。",
+        "notify.deletedWithProjections": "パネルを削除し、未使用のプロジェクションも削除しました：{deleted}。",
+        "notify.deletedWithRetained": "パネルを削除しました。編集権限がないプロジェクションは保持されました：{retained}。"
       },
       "ar": {
-        "list.pageSize": "عدد الصفوف في الصفحة",
-        "list.pageSizeValue": "{count} صف في الصفحة",
-        "source.manifest": "البيان والسمة",
-        "source.theme": "السمة",
-        "members.openRecord": "فتح السجل",
-        "members.addExisting": "إضافة عضو موجود",
-        "members.search": "البحث بالاسم",
-        "members.noMatches": "لا يوجد أعضاء مطابقون",
-        "members.choose": "اختر سجلًا",
-        "members.keyExists": "اسم العضو هذا مستخدم بالفعل."
+        "panel.name": "اللوحات",
+        "panel.description": "تصفح وتحرير ونسخ ومنح صلاحيات ومعاينة اللوحات المتاحة في هذا النطاق.",
+        "list.search": "البحث بالاسم أو الوصف",
+        "list.scope": "نطاق المشاركة",
+        "list.sort": "الترتيب",
+        "list.template": "القالب",
+        "list.name": "الاسم",
+        "list.owner": "المالك",
+        "list.visibility": "النطاق",
+        "list.empty": "لا توجد لوحات مطابقة.",
+        "scope.all": "الكل",
+        "scope.mine": "لوحاتي",
+        "scope.shared": "مشتركة معي",
+        "sort.updated": "الأحدث تحديثًا",
+        "sort.name": "حسب الاسم",
+        "template.all": "كل الأنواع",
+        "template.only": "القوالب فقط",
+        "template.ordinary": "لوحات عادية",
+        "action.refresh": "تحديث",
+        "action.create": "لوحة جديدة",
+        "action.edit": "تحرير",
+        "action.cancel": "إلغاء",
+        "action.close": "إغلاق",
+        "action.retry": "إعادة المحاولة",
+        "action.copy": "نسخ",
+        "action.saveAsTemplate": "حفظ كقالب",
+        "action.fromTemplate": "إنشاء من قالب",
+        "action.delete": "حذف",
+        "action.grant": "منح",
+        "action.addGrant": "إضافة صلاحية",
+        "action.revoke": "إلغاء الصلاحية",
+        "action.shareOn": "تفعيل مشاركة النطاق",
+        "action.shareOff": "إيقاف مشاركة النطاق",
+        "action.allApplications": "كل التطبيقات",
+        "action.inspect": "فتح",
+        "detail.empty": "اختر لوحة من القائمة أو أنشئ لوحة جديدة.",
+        "detail.loading": "جارٍ تحميل اللوحة…",
+        "detail.readonly": "ليست لديك صلاحية تحرير لهذه اللوحة؛ تُعرض للقراءة فقط.",
+        "detail.missing": "هذه اللوحة لم تعد متاحة.",
+        "detail.forbidden": "ليست لديك صلاحية قراءة هذه اللوحة.",
+        "tab.overview": "نظرة عامة",
+        "tab.source": "المصدر",
+        "tab.members": "الأعضاء",
+        "tab.usage": "الاستخدام",
+        "tab.grants": "الصلاحيات",
+        "tab.preview": "معاينة",
+        "field.updated": "آخر تحديث",
+        "source.files": "ملفات المصدر",
+        "source.none": "لا توجد ملفات مصدر.",
+        "source.chooseFile": "اختر ملفًا من القائمة لعرض محتواه.",
+        "members.member": "الموضع",
+        "members.kind": "النوع",
+        "members.target": "المرجع",
+        "members.component": "المكون",
+        "members.inputs": "المدخلات",
+        "members.outputs": "المخرجات",
+        "members.empty": "لا تصرّح هذه اللوحة عن أي أعضاء.",
+        "usage.kind": "النوع",
+        "usage.user": "المستخدم",
+        "usage.path": "المسار / المعرّف",
+        "usage.actions": "الإجراءات",
+        "usage.hidden": "يوجد {count} مستخدمين آخرين لا تملك صلاحية قراءتهم.",
+        "usage.none": "لا يوجد ما يستخدم هذه اللوحة.",
+        "grants.shareTitle": "المشاركة مع أعضاء النطاق",
+        "grants.sharedDesc": "يمكن لجميع أعضاء هذا النطاق استخدام هذه اللوحة.",
+        "grants.privateDesc": "يمكن فقط للأعضاء والأدوار الممنوحة أدناه استخدامها.",
+        "grants.shareNote": "تشمل مشاركة النطاق أيضًا الإسقاطات التي تستخدمها هذه اللوحة ولديك صلاحية تحريرها.",
+        "grants.dialogTitle": "إضافة صلاحية",
+        "grants.kind": "نوع الجهة",
+        "grants.principalCol": "الجهة",
+        "grants.role": "دور",
+        "grants.principal": "عضو",
+        "grants.verb": "الصلاحية",
+        "grants.actions": "الإجراءات",
+        "grants.use": "استخدام",
+        "grants.edit": "تحرير",
+        "grants.none": "لا توجد صلاحيات فردية مسجلة.",
+        "grants.selectMember": "ابحث عن عضو أو اختره",
+        "grants.selectRole": "ابحث عن دور أو اختره",
+        "grants.updated": "تم تحديث المشاركة.",
+        "grants.skipped": "تمت المشاركة باستثناء الإسقاطات التي لا تملك صلاحية منحها: {ids}",
+        "copy.title": "نسخ اللوحة",
+        "copy.saveAsTemplateTitle": "حفظ كقالب",
+        "copy.fromTemplateTitle": "إنشاء من قالب",
+        "copy.note": "تحتفظ اللوحة الجديدة بمراجع الإسقاط نفسها وتبدأ خاصة.",
+        "copy.templateNote": "ينشئ لوحة قالب قابلة لإعادة الاستخدام من مصدر هذه اللوحة وأعضائها.",
+        "copy.fromTemplateNote": "ينشئ لوحة عادية جديدة من مصدر هذا القالب وأعضائه.",
+        "copy.newId": "معرّف اللوحة الجديد",
+        "copy.newName": "اسم اللوحة الجديد",
+        "copy.idPlaceholder": "أحرف صغيرة وأرقام وشرطات",
+        "copy.defaultName": "{name} نسخة",
+        "copy.defaultTemplateName": "{name} قالب",
+        "copy.defaultDerivedName": "{name} مشتقة",
+        "preview.live": "معاينة مباشرة",
+        "form.new": "لوحة جديدة",
+        "form.edit": "تحرير اللوحة",
+        "notify.saved": "تم حفظ اللوحة.",
+        "notify.copied": "تم إنشاء اللوحة {id}.",
+        "notify.deleted": "تم حذف اللوحة.",
+        "notify.deletedWithProjections": "تم حذف اللوحة وإزالة الإسقاطات غير المستخدمة: {deleted}.",
+        "notify.deletedWithRetained": "تم حذف اللوحة مع الإبقاء على الإسقاطات دون صلاحية تحرير: {retained}."
       },
       "fr": {
-        "list.pageSize": "Lignes par page",
-        "list.pageSizeValue": "{count} lignes par page",
-        "source.manifest": "Manifeste et thème",
-        "source.theme": "Thème",
-        "members.openRecord": "Ouvrir la fiche",
-        "members.addExisting": "Ajouter un membre existant",
-        "members.search": "Rechercher par nom",
-        "members.noMatches": "Aucun membre correspondant",
-        "members.choose": "Sélectionner une fiche",
-        "members.keyExists": "Ce nom de membre est déjà utilisé."
+        "panel.name": "Panneaux",
+        "panel.description": "Parcourez, modifiez, copiez, partagez et prévisualisez les panneaux disponibles dans ce domaine.",
+        "list.search": "Rechercher par nom ou description",
+        "list.scope": "Portée de partage",
+        "list.sort": "Ordre",
+        "list.template": "Modèle",
+        "list.name": "Nom",
+        "list.owner": "Propriétaire",
+        "list.visibility": "Portée",
+        "list.empty": "Aucun panneau correspondant.",
+        "scope.all": "Tous disponibles",
+        "scope.mine": "Les miens",
+        "scope.shared": "Partagés avec moi",
+        "sort.updated": "Mis à jour récemment",
+        "sort.name": "Par nom",
+        "template.all": "Tous les types",
+        "template.only": "Modèles uniquement",
+        "template.ordinary": "Panneaux ordinaires",
+        "action.refresh": "Actualiser",
+        "action.create": "Nouveau panneau",
+        "action.edit": "Modifier",
+        "action.cancel": "Annuler",
+        "action.close": "Fermer",
+        "action.retry": "Réessayer",
+        "action.copy": "Copier",
+        "action.saveAsTemplate": "Enregistrer comme modèle",
+        "action.fromTemplate": "Créer depuis le modèle",
+        "action.delete": "Supprimer",
+        "action.grant": "Accorder",
+        "action.addGrant": "Ajouter un accès",
+        "action.revoke": "Révoquer",
+        "action.shareOn": "Activer le partage de domaine",
+        "action.shareOff": "Désactiver le partage de domaine",
+        "action.allApplications": "Toutes les applications",
+        "action.inspect": "Ouvrir",
+        "detail.empty": "Sélectionnez un panneau à gauche ou créez-en un.",
+        "detail.loading": "Chargement du panneau…",
+        "detail.readonly": "Vous n'avez pas le droit de modification sur ce panneau ; il s'ouvre en lecture seule.",
+        "detail.missing": "Ce panneau n'est plus disponible.",
+        "detail.forbidden": "Vous ne pouvez pas lire ce panneau.",
+        "tab.overview": "Aperçu",
+        "tab.source": "Source",
+        "tab.members": "Membres",
+        "tab.usage": "Utilisation",
+        "tab.grants": "Accès",
+        "tab.preview": "Prévisualisation",
+        "field.updated": "Mis à jour",
+        "source.files": "Fichiers source",
+        "source.none": "Aucun fichier source.",
+        "source.chooseFile": "Choisissez un fichier à gauche pour lire son contenu.",
+        "members.member": "Emplacement",
+        "members.kind": "Type",
+        "members.target": "Référence",
+        "members.component": "Composant",
+        "members.inputs": "Entrées",
+        "members.outputs": "Sorties",
+        "members.empty": "Ce panneau ne déclare aucun membre.",
+        "usage.kind": "Type",
+        "usage.user": "Utilisé par",
+        "usage.path": "Chemin / ID",
+        "usage.actions": "Actions",
+        "usage.hidden": "{count} autres utilisateurs que vous ne pouvez pas lire.",
+        "usage.none": "Rien n'utilise ce panneau.",
+        "grants.shareTitle": "Partager avec les membres du domaine",
+        "grants.sharedDesc": "Tous les membres du domaine peuvent utiliser ce panneau.",
+        "grants.privateDesc": "Seuls les membres et rôles autorisés ci-dessous peuvent l'utiliser.",
+        "grants.shareNote": "Le partage de domaine accorde aussi les projections utilisées sur lesquelles vous avez un droit de modification.",
+        "grants.dialogTitle": "Ajouter un accès",
+        "grants.kind": "Type de bénéficiaire",
+        "grants.principalCol": "Bénéficiaire",
+        "grants.role": "Rôle",
+        "grants.principal": "Membre",
+        "grants.verb": "Droit",
+        "grants.actions": "Actions",
+        "grants.use": "Utiliser",
+        "grants.edit": "Modifier",
+        "grants.none": "Aucun accès individuel enregistré.",
+        "grants.selectMember": "Rechercher ou sélectionner un membre",
+        "grants.selectRole": "Rechercher ou sélectionner un rôle",
+        "grants.updated": "Partage mis à jour.",
+        "grants.skipped": "Partagé, sauf projections non accordables : {ids}",
+        "copy.title": "Copier le panneau",
+        "copy.saveAsTemplateTitle": "Enregistrer comme modèle",
+        "copy.fromTemplateTitle": "Créer depuis le modèle",
+        "copy.note": "Le nouveau panneau conserve les mêmes références de projection et démarre en privé.",
+        "copy.templateNote": "Crée un modèle réutilisable à partir du source et des membres de ce panneau.",
+        "copy.fromTemplateNote": "Crée un nouveau panneau ordinaire à partir de ce modèle.",
+        "copy.newId": "Nouvel identifiant de panneau",
+        "copy.newName": "Nouveau nom de panneau",
+        "copy.idPlaceholder": "Lettres minuscules, chiffres et tirets",
+        "copy.defaultName": "{name} copie",
+        "copy.defaultTemplateName": "{name} modèle",
+        "copy.defaultDerivedName": "{name} dérivé",
+        "preview.live": "Prévisualisation en ligne",
+        "form.new": "Nouveau panneau",
+        "form.edit": "Modifier le panneau",
+        "notify.saved": "Panneau enregistré.",
+        "notify.copied": "Panneau {id} créé.",
+        "notify.deleted": "Panneau supprimé.",
+        "notify.deletedWithProjections": "Panneau supprimé. Projections inutilisées retirées : {deleted}.",
+        "notify.deletedWithRetained": "Panneau supprimé. Projections conservées sans droit de modification : {retained}."
       },
       "de": {
-        "list.pageSize": "Einträge pro Seite",
-        "list.pageSizeValue": "{count} Einträge pro Seite",
-        "source.manifest": "Manifest und Design",
-        "source.theme": "Design",
-        "members.openRecord": "Datensatz öffnen",
-        "members.addExisting": "Vorhandenes Mitglied hinzufügen",
-        "members.search": "Nach Namen suchen",
-        "members.noMatches": "Keine passenden Mitglieder",
-        "members.choose": "Datensatz auswählen",
-        "members.keyExists": "Dieser Mitgliedsname wird bereits verwendet."
+        "panel.name": "Panels",
+        "panel.description": "Verfügbare Panels dieser Domäne durchsuchen, bearbeiten, kopieren, freigeben und in der Vorschau anzeigen.",
+        "list.search": "Nach Name oder Beschreibung suchen",
+        "list.scope": "Freigabebereich",
+        "list.sort": "Sortierung",
+        "list.template": "Vorlage",
+        "list.name": "Name",
+        "list.owner": "Eigentümer",
+        "list.visibility": "Bereich",
+        "list.empty": "Keine passenden Panels.",
+        "scope.all": "Alle verfügbaren",
+        "scope.mine": "Eigene",
+        "scope.shared": "Mit mir geteilt",
+        "sort.updated": "Zuletzt aktualisiert",
+        "sort.name": "Nach Name",
+        "template.all": "Alle Typen",
+        "template.only": "Nur Vorlagen",
+        "template.ordinary": "Normale Panels",
+        "action.refresh": "Aktualisieren",
+        "action.create": "Neues Panel",
+        "action.edit": "Bearbeiten",
+        "action.cancel": "Abbrechen",
+        "action.close": "Schließen",
+        "action.retry": "Erneut versuchen",
+        "action.copy": "Kopieren",
+        "action.saveAsTemplate": "Als Vorlage speichern",
+        "action.fromTemplate": "Aus Vorlage erstellen",
+        "action.delete": "Löschen",
+        "action.grant": "Gewähren",
+        "action.addGrant": "Freigabe hinzufügen",
+        "action.revoke": "Entziehen",
+        "action.shareOn": "Domänenfreigabe aktivieren",
+        "action.shareOff": "Domänenfreigabe deaktivieren",
+        "action.allApplications": "Alle Anwendungen",
+        "action.inspect": "Öffnen",
+        "detail.empty": "Wählen Sie links ein Panel aus oder erstellen Sie eines.",
+        "detail.loading": "Panel wird geladen…",
+        "detail.readonly": "Sie haben kein Bearbeitungsrecht für dieses Panel; es wird schreibgeschützt angezeigt.",
+        "detail.missing": "Dieses Panel ist nicht mehr verfügbar.",
+        "detail.forbidden": "Sie können dieses Panel nicht lesen.",
+        "tab.overview": "Übersicht",
+        "tab.source": "Quelltext",
+        "tab.members": "Mitglieder",
+        "tab.usage": "Verwendung",
+        "tab.grants": "Freigaben",
+        "tab.preview": "Vorschau",
+        "field.updated": "Aktualisiert",
+        "source.files": "Quelldateien",
+        "source.none": "Keine Quelldateien vorhanden.",
+        "source.chooseFile": "Wählen Sie links eine Datei aus, um den Quelltext anzuzeigen.",
+        "members.member": "Slot",
+        "members.kind": "Art",
+        "members.target": "Referenz",
+        "members.component": "Komponente",
+        "members.inputs": "Eingaben",
+        "members.outputs": "Ausgaben",
+        "members.empty": "Dieses Panel deklariert keine Mitglieder.",
+        "usage.kind": "Art",
+        "usage.user": "Verwendet von",
+        "usage.path": "Pfad / ID",
+        "usage.actions": "Aktionen",
+        "usage.hidden": "{count} weitere Verwendungen, die Sie nicht lesen dürfen.",
+        "usage.none": "Nichts verwendet dieses Panel.",
+        "grants.shareTitle": "Mit Domänenmitgliedern teilen",
+        "grants.sharedDesc": "Alle Mitglieder dieser Domäne können dieses Panel nutzen.",
+        "grants.privateDesc": "Nur die unten freigegebenen Mitglieder und Rollen können es nutzen.",
+        "grants.shareNote": "Die Domänenfreigabe gibt auch verwendete Projektionen frei, sofern Sie Bearbeitungsrechte darauf haben.",
+        "grants.dialogTitle": "Freigabe hinzufügen",
+        "grants.kind": "Subjekttyp",
+        "grants.principalCol": "Subjekt",
+        "grants.role": "Rolle",
+        "grants.principal": "Mitglied",
+        "grants.verb": "Berechtigung",
+        "grants.actions": "Aktionen",
+        "grants.use": "Nutzen",
+        "grants.edit": "Bearbeiten",
+        "grants.none": "Keine Einzelfreigaben vorhanden.",
+        "grants.selectMember": "Mitglied suchen oder wählen",
+        "grants.selectRole": "Rolle suchen oder wählen",
+        "grants.updated": "Freigabe aktualisiert.",
+        "grants.skipped": "Freigegeben, außer Projektionen ohne Recht: {ids}",
+        "copy.title": "Panel kopieren",
+        "copy.saveAsTemplateTitle": "Als Vorlage speichern",
+        "copy.fromTemplateTitle": "Aus Vorlage erstellen",
+        "copy.note": "Das neue Panel übernimmt dieselben Projektionsreferenzen und startet privat.",
+        "copy.templateNote": "Erstellt ein wiederverwendbares Vorlagen-Panel aus Quelltext und Mitgliedern dieses Panels.",
+        "copy.fromTemplateNote": "Erstellt ein neues normales Panel aus dieser Vorlage.",
+        "copy.newId": "Neue Panel-ID",
+        "copy.newName": "Neuer Panel-Name",
+        "copy.idPlaceholder": "Kleinbuchstaben, Ziffern und Bindestriche",
+        "copy.defaultName": "{name} Kopie",
+        "copy.defaultTemplateName": "{name} Vorlage",
+        "copy.defaultDerivedName": "{name} abgeleitet",
+        "preview.live": "Direktvorschau",
+        "form.new": "Neues Panel",
+        "form.edit": "Panel bearbeiten",
+        "notify.saved": "Panel gespeichert.",
+        "notify.copied": "Panel {id} erstellt.",
+        "notify.deleted": "Panel gelöscht.",
+        "notify.deletedWithProjections": "Panel gelöscht. Ungenutzte Projektionen entfernt: {deleted}.",
+        "notify.deletedWithRetained": "Panel gelöscht. Projektionen ohne Bearbeitungsrecht behalten: {retained}."
       },
       "it": {
-        "list.pageSize": "Righe per pagina",
-        "list.pageSizeValue": "{count} righe per pagina",
-        "source.manifest": "Manifesto e tema",
-        "source.theme": "Tema",
-        "members.openRecord": "Apri scheda",
-        "members.addExisting": "Aggiungi un membro esistente",
-        "members.search": "Cerca per nome",
-        "members.noMatches": "Nessun membro corrispondente",
-        "members.choose": "Seleziona una scheda",
-        "members.keyExists": "Questo nome è già usato da un membro."
+        "panel.name": "Pannelli",
+        "panel.description": "Esplora, modifica, copia, condividi e visualizza in anteprima i pannelli disponibili in questo dominio.",
+        "list.search": "Cerca per nome o descrizione",
+        "list.scope": "Ambito di condivisione",
+        "list.sort": "Ordine",
+        "list.template": "Modello",
+        "list.name": "Nome",
+        "list.owner": "Proprietario",
+        "list.visibility": "Ambito",
+        "list.empty": "Nessun pannello corrispondente.",
+        "scope.all": "Tutti disponibili",
+        "scope.mine": "Miei",
+        "scope.shared": "Condivisi con me",
+        "sort.updated": "Aggiornati di recente",
+        "sort.name": "Per nome",
+        "template.all": "Tutti i tipi",
+        "template.only": "Solo modelli",
+        "template.ordinary": "Pannelli ordinari",
+        "action.refresh": "Aggiorna",
+        "action.create": "Nuovo pannello",
+        "action.edit": "Modifica",
+        "action.cancel": "Annulla",
+        "action.close": "Chiudi",
+        "action.retry": "Riprova",
+        "action.copy": "Copia",
+        "action.saveAsTemplate": "Salva come modello",
+        "action.fromTemplate": "Crea da modello",
+        "action.delete": "Elimina",
+        "action.grant": "Concedi",
+        "action.addGrant": "Aggiungi autorizzazione",
+        "action.revoke": "Revoca",
+        "action.shareOn": "Attiva condivisione dominio",
+        "action.shareOff": "Disattiva condivisione dominio",
+        "action.allApplications": "Tutte le applicazioni",
+        "action.inspect": "Apri",
+        "detail.empty": "Scegli un pannello a sinistra o creane uno nuovo.",
+        "detail.loading": "Caricamento pannello…",
+        "detail.readonly": "Non hai diritti di modifica su questo pannello; viene aperto in sola lettura.",
+        "detail.missing": "Questo pannello non è più disponibile.",
+        "detail.forbidden": "Non puoi leggere questo pannello.",
+        "tab.overview": "Panoramica",
+        "tab.source": "Sorgente",
+        "tab.members": "Membri",
+        "tab.usage": "Utilizzo",
+        "tab.grants": "Autorizzazioni",
+        "tab.preview": "Anteprima",
+        "field.updated": "Aggiornato",
+        "source.files": "File sorgente",
+        "source.none": "Nessun file sorgente.",
+        "source.chooseFile": "Scegli un file a sinistra per leggerne il contenuto.",
+        "members.member": "Slot",
+        "members.kind": "Tipo",
+        "members.target": "Riferimento",
+        "members.component": "Componente",
+        "members.inputs": "Input",
+        "members.outputs": "Output",
+        "members.empty": "Questo pannello non dichiara membri.",
+        "usage.kind": "Tipo",
+        "usage.user": "Usato da",
+        "usage.path": "Percorso / ID",
+        "usage.actions": "Azioni",
+        "usage.hidden": "Altri {count} utilizzi che non puoi leggere.",
+        "usage.none": "Nulla utilizza questo pannello.",
+        "grants.shareTitle": "Condividi con i membri del dominio",
+        "grants.sharedDesc": "Tutti i membri del dominio possono usare questo pannello.",
+        "grants.privateDesc": "Solo i membri e i ruoli autorizzati sotto possono usarlo.",
+        "grants.shareNote": "La condivisione di dominio include le proiezioni usate su cui hai diritti di modifica.",
+        "grants.dialogTitle": "Aggiungi autorizzazione",
+        "grants.kind": "Tipo soggetto",
+        "grants.principalCol": "Soggetto",
+        "grants.role": "Ruolo",
+        "grants.principal": "Membro",
+        "grants.verb": "Permesso",
+        "grants.actions": "Azioni",
+        "grants.use": "Usa",
+        "grants.edit": "Modifica",
+        "grants.none": "Nessuna autorizzazione individuale registrata.",
+        "grants.selectMember": "Cerca o seleziona un membro",
+        "grants.selectRole": "Cerca o seleziona un ruolo",
+        "grants.updated": "Condivisione aggiornata.",
+        "grants.skipped": "Condiviso, escluse le proiezioni senza permessi: {ids}",
+        "copy.title": "Copia pannello",
+        "copy.saveAsTemplateTitle": "Salva come modello",
+        "copy.fromTemplateTitle": "Crea da modello",
+        "copy.note": "Il nuovo pannello riutilizza gli stessi riferimenti alle proiezioni e inizia come privato.",
+        "copy.templateNote": "Crea un modello riutilizzabile dal sorgente e dai membri di questo pannello.",
+        "copy.fromTemplateNote": "Crea un nuovo pannello ordinario da questo modello.",
+        "copy.newId": "Nuovo ID pannello",
+        "copy.newName": "Nuovo nome pannello",
+        "copy.idPlaceholder": "Lettere minuscole, cifre e trattini",
+        "copy.defaultName": "{name} copia",
+        "copy.defaultTemplateName": "{name} modello",
+        "copy.defaultDerivedName": "{name} derivato",
+        "preview.live": "Anteprima in linea",
+        "form.new": "Nuovo pannello",
+        "form.edit": "Modifica pannello",
+        "notify.saved": "Pannello salvato.",
+        "notify.copied": "Pannello {id} creato.",
+        "notify.deleted": "Pannello eliminato.",
+        "notify.deletedWithProjections": "Pannello eliminato. Proiezioni inutilizzate rimosse: {deleted}.",
+        "notify.deletedWithRetained": "Pannello eliminato. Proiezioni mantenute senza diritti di modifica: {retained}."
       }
     }
   }

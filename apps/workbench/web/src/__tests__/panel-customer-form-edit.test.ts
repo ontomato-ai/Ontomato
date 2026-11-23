@@ -753,6 +753,35 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     unmount();
   });
 
+  it("never falls back to a targetless customer Action when platform form.save permission is absent", async () => {
+    const { instance, element, prepared, unmount } = mountCustomerForm({
+      objectType: FUNCTION,
+      primaryKey: null,
+      includeCreateForm: true,
+      draftOperation: "function.save",
+      fields: [
+        { path: "/name", label: "Name", valueSchema: { type: "string" }, required: true, readOnly: true, control: { kind: "text" } },
+      ],
+      values: { name: "" },
+      operations: {
+        save: { operation: { kind: "PlatformOperation", id: `${FUNCTION}.save` }, target: { input: "target" } },
+        review: { operation: { kind: "Action", id: "action-review" } },
+      },
+      // Viewer lacks permission for platform `form.save`; only targetless `review` Action is admitted.
+      admittedOperations: {
+        review: actionDescriptor("Submit review", { name: {} }, { source: "none" }),
+      },
+    });
+
+    await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')).not.toBeNull());
+    await nextTick();
+
+    await expect(instance.forms.submit("customerForm")).rejects.toThrow("admits no save");
+    expect(prepared).toHaveLength(0);
+
+    unmount();
+  });
+
   it("stays all read-only in edit mode when only a targetless create Action is declared/admitted", async () => {
     const { instance, element, prepared, unmount } = mountCustomerForm({
       fields: baseFields,

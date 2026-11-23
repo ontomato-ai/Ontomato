@@ -2,18 +2,23 @@
   .visual-modeling {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm);
+    width: 100%;
     height: 100%;
+    min-width: 0;
     min-height: 0;
+    overflow: hidden;
+    container: visual-modeling / inline-size;
   }
   .vm-toolbar {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--spacing-sm);
-    padding: 0 var(--page-gutter);
+    padding: var(--spacing-sm) var(--page-gutter);
+    border-bottom: 1px solid var(--sdk-border-color-light, var(--ui-divider));
     font-size: var(--text-sm);
     color: var(--sdk-text-color-secondary);
+    flex: 0 0 auto;
   }
   .vm-toolbar .vm-hint {
     flex: 1 1 16rem;
@@ -22,36 +27,34 @@
   .vm-selection {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: var(--spacing-xs);
   }
-  /* Fill the available viewport height without overflowing the page, keeping the details column scrolled inside. */
   .vm-body {
     display: flex;
-    flex: 0 0 auto;
-    height: clamp(24rem, calc(100vh - 172px), 52rem);
-    min-height: 24rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
     gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--page-gutter) var(--page-content-gap);
     align-items: stretch;
+    overflow: hidden;
   }
   .vm-canvas {
     flex: 1 1 auto;
     min-width: 0;
-    min-height: 0;
-    height: 100%;
+    min-height: 20rem;
     position: relative;
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--ui-border);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
     border-radius: var(--radius-md);
     background-color: var(--sdk-bg-color-page);
-    background-image: radial-gradient(var(--ui-border) 1px, transparent 1px);
+    background-image: radial-gradient(var(--sdk-border-color, var(--ui-border)) 1px, transparent 1px);
     background-size: 20px 20px;
     overflow: hidden;
   }
-  /*
-   * The graph member is placed out of the flow over the canvas box, so the canvas's own resize
-   * handling cannot grow the box it sits in; the grid row gives the component a definite height.
-   */
+  /* Keep the graph member pinned to the canvas box so resize observers measure a definite height. */
   .vm-canvas > [data-member] {
     position: absolute;
     inset: 0;
@@ -61,31 +64,42 @@
     overflow: hidden;
   }
   .vm-side {
-    flex: 0 0 22rem;
-    width: 22rem;
+    flex: 0 0 24rem;
+    width: 24rem;
     min-width: 0;
+    min-height: 0;
     max-height: 100%;
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
-    border: 1px solid var(--ui-border);
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
     border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
     padding: var(--spacing-md);
     overflow-y: auto;
   }
-  .vm-side-title {
+  .vm-side-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: var(--spacing-sm);
-    font-size: var(--text-sm);
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-primary);
+    min-width: 0;
+  }
+  .vm-side-header-main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .vm-side-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
   }
   .vm-side-section {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
+    min-width: 0;
   }
   .vm-section-head {
     display: flex;
@@ -96,76 +110,55 @@
     font-weight: var(--font-semibold);
     color: var(--sdk-text-color-secondary);
   }
-  .vm-attribute-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
+  .vm-side .sdk-owner-form,
+  .vm-side .sdk-owner-form-inner,
+  .vm-dialog-body .sdk-owner-form,
+  .vm-dialog-body .sdk-owner-form-inner {
+    height: auto;
   }
-  .vm-attribute {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-sm);
-    border: 1px solid var(--ui-divider);
-    border-radius: var(--radius-sm);
-    background: var(--ui-fill-tertiary);
-    cursor: pointer;
-    text-align: left;
-    font: inherit;
-    color: inherit;
+  .vm-side .sdk-owner-form-body,
+  .vm-dialog-body .sdk-owner-form-body {
+    overflow: visible;
   }
-  .vm-attribute.is-selected {
-    border-color: var(--brand-link);
-  }
-  .vm-attribute-label {
-    display: flex;
-    align-items: baseline;
-    gap: var(--spacing-xs);
-    font-size: var(--text-sm);
-    font-weight: var(--font-semibold);
-    color: var(--sdk-text-color-primary);
-  }
-  .vm-attribute-label code {
-    font-family: var(--text-mono);
-    font-size: var(--text-xs);
-    font-weight: 400;
-    color: var(--sdk-text-color-secondary);
-  }
-  .vm-attribute-subtitle {
-    font-size: var(--text-xs);
-    color: var(--sdk-text-color-secondary);
-  }
-  .vm-attribute-fields {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--spacing-xs) var(--spacing-sm);
-    font-size: var(--text-xs);
-    color: var(--sdk-text-color-regular);
-  }
-  .vm-attribute-fields .vm-field-label {
-    color: var(--sdk-text-color-secondary);
+  .vm-attributes .sdk-panel-member,
+  .vm-attributes .sdk-object-list,
+  .vm-attributes .sdk-object-list-items {
+    height: auto;
+    overflow: visible;
   }
   .vm-state {
     font-size: var(--text-sm);
     color: var(--sdk-text-color-secondary);
     margin: 0;
   }
-  @media (max-width: 64rem) {
+
+  @container visual-modeling (max-width: 860px) {
+    .visual-modeling {
+      overflow-y: auto;
+    }
     .vm-body {
+      flex: 1 0 auto;
       flex-direction: column;
+      overflow: visible;
+    }
+    .vm-canvas {
+      flex: 0 0 auto;
+      height: 24rem;
+      min-height: 20rem;
     }
     .vm-side {
       flex: 0 0 auto;
-      width: auto;
-      max-height: 22rem;
+      width: 100%;
+      max-height: none;
+      overflow-y: visible;
     }
   }
 </style>
 
-<div id="app" class="visual-modeling">
+<div id="app" ref="rootRef" class="visual-modeling">
   <page-header :title="t('panel.name')">
     <template #actions>
-      <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
+      <sdk-button text :aria-label="t('visualModeling.refresh')" :title="t('visualModeling.refresh')" @click="refresh">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
       </sdk-button>
       <sdk-button @click="openRelationDialog">{{ t("visualModeling.addRelation") }}</sdk-button>
@@ -182,7 +175,7 @@
         {{ t("visualModeling.selectedRelation", { name: selectedEdgeLabel }) }}
       </sdk-tag>
       <span v-else class="vm-state">{{ t("visualModeling.noSelection") }}</span>
-      <sdk-button v-if="selectedNode || selectedEdge" text size="small" @click="clearSelection">
+      <sdk-button v-if="selectedNode || selectedEdge" text size="small" @click="requestCloseSide">
         {{ t("visualModeling.close") }}
       </sdk-button>
     </div>
@@ -194,85 +187,98 @@
     </div>
 
     <aside v-if="selectedNode || selectedEdge" class="vm-side">
-      <template v-if="selectedEdge">
-        <div class="vm-side-title">
-          <span>{{ t("visualModeling.relationDetail") }}</span>
-          <sdk-button text size="small" @click="clearSelection">{{ t("visualModeling.close") }}</sdk-button>
+      <template v-if="selectedNode">
+        <div class="vm-side-header">
+          <div class="vm-side-header-main">
+            <projection slot="nodeHeader"></projection>
+          </div>
+          <sdk-button text size="small" @click="requestCloseSide">{{ t("visualModeling.close") }}</sdk-button>
         </div>
-        <projection slot="relationForm"></projection>
-        <div class="vm-side-section">
-          <projection slot="relationDelete"></projection>
-        </div>
+        <template v-if="!nodeMissing">
+          <projection slot="classForm"></projection>
+          <div class="vm-side-actions">
+            <sdk-button size="small" @click="browseData">{{ t("visualModeling.openData") }}</sdk-button>
+            <projection slot="classDelete" @done="onClassDeleted"></projection>
+          </div>
+
+          <div class="vm-side-section">
+            <div class="vm-section-head">
+              <span>
+                {{ t("visualModeling.attributes") }}
+                <template v-if="attributesTotal !== null">
+                  · {{ t("visualModeling.attributeCount", { count: attributesTotal }) }}
+                </template>
+              </span>
+              <sdk-button text size="small" @click="newAttribute">{{ t("visualModeling.newAttribute") }}</sdk-button>
+            </div>
+            <div class="vm-attributes">
+              <projection slot="attributes"></projection>
+            </div>
+          </div>
+
+          <div class="vm-side-section">
+            <div class="vm-section-head">
+              <span>{{ selectedAttribute ? t("visualModeling.editAttribute") : t("visualModeling.newAttribute") }}</span>
+            </div>
+            <projection slot="attributeForm"></projection>
+            <div v-if="selectedAttribute" class="vm-selection">
+              <projection slot="attributePrimaryKey"></projection>
+              <projection slot="attributeDelete" @done="onAttributeDeleted"></projection>
+            </div>
+          </div>
+        </template>
       </template>
 
       <template v-else>
-        <div class="vm-side-title">
-          <span :title="selectedNode.primaryKey">{{ selectedNodeLabel }}</span>
-          <sdk-button text size="small" @click="clearSelection">{{ t("visualModeling.close") }}</sdk-button>
-        </div>
-        <projection slot="classForm"></projection>
-        <div class="vm-side-section">
-          <sdk-button size="small" @click="browseData">{{ t("visualModeling.openData") }}</sdk-button>
-          <projection slot="classDelete"></projection>
-        </div>
-
-        <div class="vm-side-section">
-          <div class="vm-section-head">
-            <span>
-              {{ t("visualModeling.attributes") }}
-              <template v-if="attributes.status === 'ready'">
-                · {{ t("visualModeling.attributeCount", { count: attributes.value.length }) }}
-              </template>
-            </span>
-            <sdk-button text size="small" @click="newAttribute">{{ t("visualModeling.newAttribute") }}</sdk-button>
+        <div class="vm-side-header">
+          <div class="vm-side-header-main">
+            <projection slot="edgeHeader"></projection>
           </div>
-
-          <p v-if="attributes.status === 'loading'" class="vm-state">{{ t("visualModeling.loadingAttributes") }}</p>
-          <p v-else-if="attributes.status === 'forbidden'" class="vm-state">{{ t("visualModeling.noAttributesPermission") }}</p>
-          <p v-else-if="attributes.status === 'error'" class="vm-state" role="alert">
-            {{ t("visualModeling.attributesFailed", { message: attributes.message }) }}
-          </p>
-          <p v-else-if="attributes.status === 'ready' && attributes.value.length === 0" class="vm-state">
-            {{ t("visualModeling.noAttributes") }}
-          </p>
-          <div v-else-if="attributes.status === 'ready'" class="vm-attribute-list">
-            <button v-for="row in attributes.value" :key="row.primaryKey" type="button" class="vm-attribute"
-              :class="{ 'is-selected': selectedAttribute && selectedAttribute.primaryKey === row.primaryKey }"
-              @click="pickAttribute(row)">
-              <span class="vm-attribute-label">
-                <span>{{ row.label }}</span>
-                <code v-if="row.subtitle">{{ row.subtitle }}</code>
-              </span>
-              <span v-if="row.subtitle" class="vm-attribute-subtitle">{{ row.subtitle }}</span>
-              <span v-if="fieldEntries(row).length" class="vm-attribute-fields">
-                <span v-for="entry in fieldEntries(row)" :key="entry.key">
-                  <span class="vm-field-label">{{ entry.label }}</span>
-                  {{ entry.value }}
-                </span>
-              </span>
-            </button>
-          </div>
+          <sdk-button text size="small" @click="requestCloseSide">{{ t("visualModeling.close") }}</sdk-button>
         </div>
-
-        <div class="vm-side-section">
-          <div class="vm-section-head">
-            <span>{{ selectedAttribute ? t("visualModeling.editAttribute") : t("visualModeling.newAttribute") }}</span>
+        <template v-if="!edgeMissing">
+          <projection slot="relationForm"></projection>
+          <div class="vm-side-actions">
+            <projection slot="relationDelete" @done="onRelationDeleted"></projection>
           </div>
-          <projection slot="attributeForm"></projection>
-          <div v-if="selectedAttribute" class="vm-selection">
-            <projection slot="attributePrimaryKey"></projection>
-            <projection slot="attributeDelete"></projection>
-          </div>
-        </div>
+        </template>
       </template>
     </aside>
   </div>
 
-  <sdk-dialog v-model="classDialog" :title="t('visualModeling.createClassTitle')" width="540px" append-to-body destroy-on-close>
-    <projection v-if="classDialog" slot="classCreate" @saved="closeDialog" @discarded="closeDialog"></projection>
+  <sdk-dialog
+    v-model="classDialog"
+    :title="t('visualModeling.createClassTitle')"
+    :width="narrow ? '94%' : '540px'"
+    append-to-body
+    destroy-on-close
+  >
+    <div class="vm-dialog-body">
+      <projection
+        v-if="classDialog"
+        slot="classCreate"
+        @saved="closeDialog"
+        @discarded="closeDialog"
+        @cancel="closeDialog"
+      ></projection>
+    </div>
   </sdk-dialog>
 
-  <sdk-dialog v-model="relationDialog" :title="t('visualModeling.createRelationTitle')" width="540px" append-to-body destroy-on-close>
-    <projection v-if="relationDialog" slot="relationCreate" @saved="closeDialog" @discarded="closeDialog"></projection>
+  <sdk-dialog
+    v-model="relationDialog"
+    :title="t('visualModeling.createRelationTitle')"
+    :width="narrow ? '94%' : '540px'"
+    append-to-body
+    destroy-on-close
+  >
+    <div class="vm-dialog-body">
+      <projection
+        v-if="relationDialog"
+        slot="relationCreate"
+        @saved="closeDialog"
+        @discarded="closeDialog"
+        @cancel="closeDialog"
+      ></projection>
+    </div>
   </sdk-dialog>
 </div>

@@ -276,7 +276,17 @@ export class AgentChannel {
       if((session.activeRunId || preparing) && input.role==="notification" && input.kind==="agent-message" && !steer) throw new RuntimeError(409,"SESSION_BUSY","Use steer to insert an ordinary message into a running session");
       if(web && input.role==="notification" && input.replyTo && !(await this.facts.pendingQuestions(scope,target.sessionId)).some(question=>question.requestId===input.replyTo)) throw new RuntimeError(400,"INVALID_REPLY","replyTo must identify a pending question for this conversation's user");
       const openRun=session.activeRunId && this.runtime.acceptsInput(scope,session.activeRunId) ? session.activeRunId : null;
-      const existingRun=openRun ?? preparing;
+      let existingRun=openRun ?? preparing;
+      if (existingRun && web) {
+        const existingIntent = await this.facts.intent(scope, existingRun);
+        // Never steer a human message into an unattended background run (which uses the agent's
+        // default execution identity) or vice versa; seal the active run and queue a fresh run instead.
+        if (Boolean(web.channel.userRecipient) !== Boolean(existingIntent.channel.userRecipient)) {
+          if (preparing) throw new RuntimeError(409, "SESSION_BUSY", "Session is starting a run with a different execution context; retry shortly");
+          this.runtime.seal(scope, openRun!);
+          existingRun = null;
+        }
+      }
       const received=await this.facts.receive(scope,target.sessionId,input,{mode:steer || (input.role==="notification" && input.replyTo)?"steer":"followup",...(web?{id:web.runId}:{}),intentId:existingRun ?? undefined});
       if(existingRun) {
         if(openRun) await this.runtime.inputReceived(scope,openRun,received);
@@ -325,9 +335,9 @@ export class AgentChannel {
     intent.status = run.stopReason === "aborted" ? "cancelled" : run.stopReason === "error" ? "failed" : "completed";
     intent.error = run.errorMessage;
     await this.facts.update(scope, intent);
-    if (intent.cancelled) return;
     const preparing=await this.facts.preparing(scope,run.sessionId);
-    if(preparing) return this.facts.intent(scope,preparing);
+    if(preparing && preparing !== run.id) return this.facts.intent(scope,preparing);
+    if (intent.cancelled) return;
     const rows = await this.facts.pending(scope, run.sessionId);
     if (!rows.length) return;
     const next=await this.facts.reserve(scope, run.sessionId, randomUUID(), rows[0].id, run.channel, { language: intent.language,context: intent.context,executionUserId:run.executionUserId });
@@ -373,7 +383,7 @@ export class AgentChannel {
   private async consumeInputs(scope: Scope, run: RuntimeRun, mode: "followup" | "steer"): Promise<Message[]> {
     const pending = await this.runtime.locked(scope, run.sessionId, async () => {
       if ((await this.facts.intent(scope,run.id)).cancelled) { this.runtime.seal(scope,run.id); return []; }
-      const rows = await this.facts.pending(scope,run.sessionId,mode === "steer" ? "steer" : undefined);
+      const rows = await this.facts.pending(scope,run.sessionId,mode === "steer" ? "steer" : undefined,run.id);
       if (!rows.length && mode === "followup") this.runtime.seal(scope,run.id);
       return rows;
     });

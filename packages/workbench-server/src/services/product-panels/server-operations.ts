@@ -8,6 +8,7 @@ import {
   type panelOperationImpactSchema, type panelReadOperationCallSchema, type panelReadOperationJsonResultSchema, type panelSingleInvocationSchema,
 } from "@ontomato/contracts/panel-operations";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { isPlatformFormSaveOperation } from "@ontomato/contracts/platform-object-types";
 import type { PanelUploadDeclaration } from "@ontomato/contracts/panel-upload";
 import type { AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
@@ -171,8 +172,17 @@ const declarationCache = new WeakMap<PanelServerOperation, PanelOperationDeclara
 const operations = new Map(registrations.map(operation => {
   requirePanelOperationLabelKey(operation);
   requireDeclaredUploadInput(operation);
+  requirePlatformFormSaveAgreement(operation);
   return [operation.handlerRef, operation];
 }));
+
+function requirePlatformFormSaveAgreement(handler: PanelServerOperation) {
+  if ((handler.kind === "form.save") !== isPlatformFormSaveOperation(handler.handlerRef)) {
+    throw new Error(
+      `Owner operation '${handler.handlerRef}' has kind '${handler.kind}', which disagrees with platformFormSaveOperations`,
+    );
+  }
+}
 
 function requireDeclaredUploadInput(handler: PanelServerOperation) {
   const upload = panelOperationUpload(handler);

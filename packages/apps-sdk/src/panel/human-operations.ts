@@ -1,6 +1,6 @@
 import {
   panelHumanOperationPreparationSchema, panelOperationDescriptorResponseSchema, readPanelOperationResponseSchema,
-  type PanelHumanOperationPreparation, type PanelUseRef,
+  type PanelAgentRunRef, type PanelHumanOperationPreparation, type PanelUseRef,
 } from "@ontomato/contracts/panel-agent";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
 import type { PanelMemberPath, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
@@ -45,13 +45,18 @@ export interface PanelHumanOperations {
     operationId: string,
     invocation: PanelWriteInvocation,
     memberPath?: PanelMemberPath,
+    agentRun?: PanelAgentRunRef,
   ): Promise<PanelHumanOperationPreparation>;
+  /** Marks an unexecuted prepared intent as cancelled/stale so it can never be dispatched later. */
+  cancel?(intentId: string, reason: { code: string; message: string }): Promise<void>;
 }
 
 /** Lifecycle hooks reported by the host while confirming and dispatching a prepared write. */
 export interface ConfirmPanelOperationHooks {
   /** Called right after confirmation succeeds (or immediately when no confirmation is needed), before dispatch begins. */
   onConfirmed?: () => void;
+  /** Skip the platform's modal confirmation dialog (used for full-auto or already-confirmed chat actions). */
+  skipDialog?: boolean;
 }
 
 /** What the host does with a prepared write: confirms it where it must and dispatches it once, or the reader cancels. */
@@ -125,11 +130,15 @@ export function panelHumanOperations(use: PanelOperationUse | null, requests: Pl
       form.set("file", file, file.name);
       return panelUploadReceiptSchema.parse(await answer(requests.request(PANEL_UPLOADS_PATH, { method: "POST", body: form }, "")));
     },
-    async prepare(operationId, invocation, memberPath) {
+    async prepare(operationId, invocation, memberPath, agentRun) {
       return panelHumanOperationPreparationSchema.parse(await post("/panel-operations/intents", {
         ...of(operationId, memberPath),
+        ...(agentRun ? { agentRun } : {}),
         ...invocation,
       }));
+    },
+    async cancel(intentId, reason) {
+      await post(`/panel-operations/intents/${encodeURIComponent(intentId)}/cancel`, reason);
     },
   };
 }

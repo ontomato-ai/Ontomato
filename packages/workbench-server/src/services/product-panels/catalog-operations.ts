@@ -16,7 +16,7 @@ import {
 } from "@ontomato/contracts/product-governance";
 import {
   METRIC_CHART_COMPONENT, applicationPanelUseSchema, copyProductCurrentRequestSchema, deleteProductCurrentQuerySchema, deleteProductCurrentResponseSchema,
-  deleteProductPanelResponseSchema, productCurrentIdParamsSchema,
+  deleteProductPanelQuerySchema, deleteProductPanelResponseSchema, productCurrentIdParamsSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
 import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
@@ -235,6 +235,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     inputSchema: z.ZodType<Input, z.ZodTypeDef, unknown>,
     resultSchema: z.ZodTypeAny,
     run: (actor: PanelOperationHost["executor"], primaryKey: string, input: Input) => Promise<{ primaryKey: string; data: OutcomeData }>,
+    extra?: Pick<PanelWriteServerOperation, "unavailable">,
   ): PanelWriteServerOperation {
     const handlerRef = `${collection}.${name}`;
     return {
@@ -249,6 +250,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
       targetSchema: objectTarget,
       inputSchema: inputSchema as z.ZodType<Input>,
       resultSchema,
+      ...(extra?.unavailable && { unavailable: extra.unavailable }),
       async targetLabel({ initiator: { owner, credentials } }, target) {
         if (kind === "panel" && name === "delete") return readCurrentPanelLabel(owner, credentials, target.primaryKey);
         const read = kind === "panel" ? readCurrentPanel : readCurrentProjection;
@@ -261,17 +263,36 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     };
   }
 
+  const panelCopyInputSchema = copyProductCurrentRequestSchema.extend({ template: z.boolean().optional() }).strict();
+  const panelDeleteUnavailable: PanelWriteServerOperation["unavailable"] | undefined = kind === "panel"
+    ? async (host, { primaryKey }) => {
+        const locale = host.locale ?? host.initiator.credentials.locale;
+        try {
+          const panel = await readCurrentPanel(host.initiator.owner, host.initiator.credentials, primaryKey);
+          if (!panel.editable) {
+            return { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") };
+          }
+          return undefined;
+        } catch {
+          return { reason: tForLocale(locale, "panels.productCatalog.application.availabilityUnavailable") };
+        }
+      }
+    : undefined;
+
   return [
     save,
-    action("copy", copyProductCurrentRequestSchema, savedId, async ({ owner, credentials }, sourceId, input) => {
-      const copied = await copyCurrentProduct(owner, credentials, kind, sourceId, input);
-      return { primaryKey: copied.id, data: { id: copied.id } };
-    }),
-    action("delete", deleteProductCurrentQuerySchema, kind === "panel" ? deleteProductPanelResponseSchema : deleteProductCurrentResponseSchema,
+    action("copy", kind === "panel" ? panelCopyInputSchema : copyProductCurrentRequestSchema, savedId,
+      async ({ owner, credentials }, sourceId, input) => {
+        const copied = await copyCurrentProduct(owner, credentials, kind, sourceId, input);
+        return { primaryKey: copied.id, data: { id: copied.id } };
+      }),
+    action("delete", kind === "panel" ? deleteProductPanelQuerySchema : deleteProductCurrentQuerySchema,
+      kind === "panel" ? deleteProductPanelResponseSchema : deleteProductCurrentResponseSchema,
       async ({ owner, credentials }, primaryKey, { revision }) => {
         const result = await deleteCurrentProduct(owner, credentials, kind, primaryKey, revision);
         return { primaryKey, data: runtimeJsonObjectSchema.parse(result) };
-      }),
+      },
+      panelDeleteUnavailable ? { unavailable: panelDeleteUnavailable } : undefined),
     ...(["grant", "revoke"] as const).map(name => action(name, grantInput, noData,
       async ({ owner, credentials }, primaryKey, input) => {
         await changeCurrentProductGrant(owner, credentials, kind, primaryKey, { ...input, remove: name === "revoke" });

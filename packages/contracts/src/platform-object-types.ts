@@ -144,6 +144,10 @@ const referenceReads = {
 } as const satisfies NonNullable<PlatformObjectTypeDeclaration["reads"]>;
 
 const metadataList = { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } } as const;
+const ontologyTypeDetailList = {
+  source: "type", parameterMode: "fixed", params: { type: "ontologyType" },
+  requiredParams: ["type"], result: "panelRecordList",
+} as const satisfies PlatformReadDeclaration;
 /** A catalogue searched and paged like the business knowledge list, for definitions with no further filter. */
 const definitionQuery = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", cursor: "cursor", size: "size" }, result: "panelRecordQuery" },
@@ -210,13 +214,32 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   [MCP_SERVICE_OPTION]: { ...describeType("mcpServiceOption"), reads: referenceReads },
   [OBJECT_TYPE]: {
     ...describeType("objectType", "fact"),
-    reads: { ...modelReads, ...metadataList },
+    reads: {
+      ...modelReads, ...metadataList,
+      record: {
+        ...modelReads.record,
+        outputs: {
+          primaryKeyStatus: { kind: "scalar", type: "string" },
+          primaryKeyName: { kind: "scalar", type: "string" },
+          attributeCount: { kind: "scalar", type: "number" },
+          businessKeyCount: { kind: "scalar", type: "number" },
+          relationshipCount: { kind: "scalar", type: "number" },
+        },
+      },
+    },
     operations: [`${OBJECT_TYPE}.save`, DELETE_OBJECT_TYPE],
   },
   [ATTRIBUTE]: {
     ...describeType("attribute", "fact"),
     reads: {
       ...modelReads, list: modelListByClass,
+      record: {
+        ...modelReads.record,
+        outputs: {
+          isPrimaryKey: { kind: "scalar", type: "boolean" },
+          className: { kind: "scalar", type: "string" },
+        },
+      },
     },
     operations: [`${ATTRIBUTE}.save`, DELETE_ATTRIBUTE, SET_PRIMARY_KEY],
   },
@@ -403,16 +426,44 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       catalogue: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
       definition: { source: "object", parameterMode: "fixed", params: {}, result: "sdkComponentDefinition" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      dataRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      configRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      inputRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      outputRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      operationRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
     },
   },
   [PRODUCT_PROJECTION]: {
     ...describeType("productProjection", "product"),
     reads: {
       ...productCatalogueFormReads,
-      query: { ...catalogueQuery, result: "productProjectionList" },
-      record: { ...catalogueRecord, result: "productProjectionRecord" },
+      query: { ...catalogueQuery, result: "panelRecordQuery" },
+      record: {
+        ...catalogueRecord,
+        result: "panelRecord",
+        outputs: {
+          canEdit: { kind: "scalar", type: "boolean" },
+          canGrant: { kind: "scalar", type: "boolean" },
+          canDelete: { kind: "scalar", type: "boolean" },
+          canCopy: { kind: "scalar", type: "boolean" },
+          isBuiltin: { kind: "scalar", type: "boolean" },
+          isChart: { kind: "scalar", type: "boolean" },
+          domainShared: { kind: "scalar", type: "boolean" },
+          revision: { kind: "scalar", type: "number" },
+          usedByCount: { kind: "scalar", type: "number" },
+          hiddenUsedByCount: { kind: "scalar", type: "number" },
+        },
+      },
       usedBy: { ...catalogueRecord, result: "productProjectionUsedBy" },
+      usedByRows: { ...catalogueRecord, result: "panelRecordList", rowType: PRODUCT_PANEL },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
+      grantRows: { ...catalogueRecord, result: "panelRecordList" },
+      dataRows: { ...catalogueRecord, result: "panelRecordList" },
+      configRows: { ...catalogueRecord, result: "panelRecordList" },
+      inputRows: { ...catalogueRecord, result: "panelRecordList" },
+      outputRows: { ...catalogueRecord, result: "panelRecordList" },
+      operationRows: { ...catalogueRecord, result: "panelRecordList" },
     },
     operations: productCatalogueOperations(PRODUCT_PROJECTION, "productProjections"),
   },
@@ -420,12 +471,32 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("productPanel", "product"),
     reads: {
       ...productCatalogueFormReads,
-      query: { ...catalogueQuery, params: { ...catalogueQuery.params, template: "productTemplate" }, result: "productPanelList" },
-      record: { ...catalogueRecord, result: "productPanelRecord" },
+      query: { ...catalogueQuery, params: { ...catalogueQuery.params, template: "productTemplate" }, result: "panelRecordQuery" },
+      record: {
+        ...catalogueRecord,
+        result: "panelRecord",
+        outputs: {
+          canEdit: { kind: "scalar", type: "boolean" },
+          canGrant: { kind: "scalar", type: "boolean" },
+          canDelete: { kind: "scalar", type: "boolean" },
+          isBuiltin: { kind: "scalar", type: "boolean" },
+          isTemplate: { kind: "scalar", type: "boolean" },
+          domainShared: { kind: "scalar", type: "boolean" },
+          revision: { kind: "scalar", type: "number" },
+          hiddenUsedByCount: { kind: "scalar", type: "number" },
+        },
+      },
       usedBy: { ...catalogueRecord, result: "productPanelUsedBy" },
+      usedByRows: { ...catalogueRecord, result: "panelRecordList" },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
+      grantRows: { ...catalogueRecord, result: "panelRecordList" },
       members: { ...catalogueRecord, result: "productPanelMembers" },
       memberRows: { ...catalogueRecord, result: "panelRecordList" },
+      sourceFiles: { ...catalogueRecord, result: "panelRecordList" },
+      sourceFile: {
+        source: "object", parameterMode: "fixed", params: { path: "skillFilePath" },
+        requiredParams: ["path"], result: "panelRecord",
+      },
     },
     operations: productCatalogueOperations(PRODUCT_PANEL, "productPanels"),
   },
@@ -493,9 +564,21 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         source: "type", parameterMode: "fixed", params: { type: "ontologyType", search: "keyword", page: "page" },
         requiredParams: ["type"], result: "panelOntologyObjects",
       },
+      ...metadataList,
+      record: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          directoryPath: { kind: "scalar", type: "string" },
+          directoryName: { kind: "scalar", type: "string" },
+        },
+      },
+      properties: ontologyTypeDetailList,
+      typeRelations: ontologyTypeDetailList,
+      reads: ontologyTypeDetailList,
+      operations: ontologyTypeDetailList,
     },
   },
-  [ONTOLOGY_RELATION_KIND]: describeType("ontologyRelationKind"),
+  [ONTOLOGY_RELATION_KIND]: { ...describeType("ontologyRelationKind"), reads: metadataList },
   [FEEDBACK_RECORD]: {
     ...describeType("feedbackRecord"),
     reads: {
@@ -569,6 +652,18 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     operations: [`${MODEL_USAGE}.save`, REBUILD_VECTORS, PAUSE_VECTOR_REBUILD],
   },
 };
+
+/** Platform operation IDs whose server handler is a `form.save` rather than an action. */
+export const platformFormSaveOperations: ReadonlySet<string> = new Set(
+  Object.entries(platformObjectTypes).flatMap(([typeId, declaration]) =>
+    (declaration.operations ?? []).filter(id => id === `${typeId}.save` || id === CREATE_SCHEDULED_TASK),
+  ),
+);
+
+/** Whether a `PlatformOperation` ID is a registered platform `form.save` operation. */
+export function isPlatformFormSaveOperation(operationId: string): boolean {
+  return platformFormSaveOperations.has(operationId);
+}
 
 /** These families apply to the class or relationship identified by the current domain catalogue. */
 export const customerOntologyReads: Readonly<Record<string, PlatformReadDeclaration>> = {

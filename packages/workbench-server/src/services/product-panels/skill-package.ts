@@ -259,7 +259,7 @@ function describePanel(
           ? panelServerOperationLabel(bound.owner.handler, locale)
           : actions?.get(bound.binding.operation.id)?.name;
         if (label === undefined) return [];
-        const customerForm = customerForms.get(bound.name);
+        const customerForm = customerForms?.get(bound.name);
         return [{
           ...bound,
           id: panelOperationId(member, bound.name),

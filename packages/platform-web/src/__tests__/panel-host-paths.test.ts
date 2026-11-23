@@ -3,7 +3,8 @@ import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import en from "element-plus/es/locale/lang/en";
-import { panelHostPaths } from "../panel-host";
+import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { cachedApplicationFrameManifest, framePanelHost, panelHostPaths, readApplicationFrameManifest } from "../panel-host";
 
 /*
  * The panel host's addresses (design 10.3): each request goes to the owner it belongs to, and the two owners differ.
@@ -125,6 +126,40 @@ describe("the panel host's addresses", () => {
     expect(subscriptionSignal?.aborted).toBe(true);
     expect(requested).toHaveLength(7);
   });
+});
+
+it("refreshes a cached frame default for an entry opened beside a conversation", async () => {
+  const use = { id: "use-a", pageKey: "tasks", panelId: "panel-a", path: "/applications/app-a/tasks", access: { kind: "domain-member" as const } };
+  const framePanelId = "term-frame";
+  const frameManifest = (term: string) => definePanel({
+    state: { term: { type: { kind: "scalar", type: "string" }, external: true, deepLink: true, default: term } },
+    members: {},
+  });
+  let revision = 1;
+  let term = "fall";
+  vi.stubGlobal("fetch", async (input: string | URL) => {
+    const url = new URL(input, "http://localhost");
+    if (url.pathname === panelHostPaths.snapshot(framePanelId)) {
+      return Response.json({ panel: { id: framePanelId, revision }, projections: [] });
+    }
+    expect(url.pathname).toBe(panelHostPaths.panel(framePanelId));
+    return Response.json({ panel: {
+      id: framePanelId, revision, name: "Terms", description: "", visibility: "domain",
+      domainId: "domain-1", ownerId: "owner-1", editable: true,
+      createdAt: "2026-11-18T00:00:00.000Z", updatedAt: "2026-11-18T00:00:00.000Z",
+      content: { html: '<div id="app"></div>' }, manifest: frameManifest(term),
+    } });
+  });
+
+  const fullPage = framePanelHost("app-a", use, framePanelId, () => {});
+  await fullPage.source();
+  expect(cachedApplicationFrameManifest("app-a", framePanelId)?.state.term?.default).toBe("fall");
+
+  revision = 2;
+  term = "spring";
+  const beside = await readApplicationFrameManifest("app-a", use, framePanelId);
+  expect(beside.state.term?.default).toBe("spring");
+  expect((await fullPage.source()).panel.manifest.state.term?.default).toBe("spring");
 });
 
 it.each([403, 404, "bad-frame"] as const)("reports %s and stops instead of reopening the subscription", async refusal => {
