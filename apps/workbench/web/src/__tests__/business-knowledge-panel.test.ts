@@ -1074,15 +1074,16 @@ describe("business-knowledge builtin panel unmounts hidden form and actions", ()
 });
 
 function installMockResizeObserver(initialWidth: number) {
+  type ObserverCallback = (entries: ResizeObserverEntry[], observer: ResizeObserver) => void;
   const Original = globalThis.ResizeObserver;
   const observers = new Set<{
-    callback: ResizeObserverCallback;
+    callback: ObserverCallback;
     targets: Set<Element>;
   }>();
 
   class MockResizeObserver implements ResizeObserver {
-    readonly #entry: { callback: ResizeObserverCallback; targets: Set<Element> };
-    constructor(callback: ResizeObserverCallback) {
+    readonly #entry: { callback: ObserverCallback; targets: Set<Element> };
+    constructor(callback: ObserverCallback) {
       this.#entry = { callback, targets: new Set() };
       observers.add(this.#entry);
     }
