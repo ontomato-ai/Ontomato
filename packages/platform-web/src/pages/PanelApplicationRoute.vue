@@ -281,6 +281,8 @@ watch(
     void readApplicationFrameManifest(applicationId, resolvedUse, framePanelId).then((manifest) => {
       if (!current) return;
       frameManifest.value = { framePanelId, manifest };
+    }, () => {
+      if (current) frameManifest.value = null;
     });
   },
   { immediate: true },
