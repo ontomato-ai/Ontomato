@@ -4,6 +4,7 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormField, PanelFormValues, ProjectionOperationBinding } from "@ontomato/contracts/panel-projection";
+import type { PanelAgentActionContext } from "./instance";
 
 /*
  * Live form adapters registered by mounted form projections in one panel instance. Each mounted `ObjectForm` registers
@@ -46,7 +47,8 @@ export interface FormSubmitOverride {
   readonly operationId: string;
   readonly descriptor: PanelOwnerOperationDescriptor;
   readonly binding?: ProjectionOperationBinding;
-  readonly extraInput?: Readonly<Record<string, unknown>>;
+  readonly memberInputs?: Readonly<Record<string, unknown>>;
+  readonly agentContext?: PanelAgentActionContext;
 }
 
 /** Outcome of filling explicit fields on a single mounted form adapter. */
