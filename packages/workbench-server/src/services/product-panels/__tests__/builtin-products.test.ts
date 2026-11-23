@@ -89,6 +89,25 @@ describe("readBuiltinProducts", () => {
         }
       }
       expect(frame!.content.html).not.toContain(".sdk-object-count");
+
+      const projectionsPanel = panels.get("builtin-product-ontology-projections");
+      expect(projectionsPanel).toBeDefined();
+      expect(projectionsPanel!.manifest.state).not.toHaveProperty("deleteDialog");
+      expect(projectionsPanel!.manifest.members).not.toHaveProperty("deleteSubmit");
+      expect(projectionsPanel!.manifest.members).toHaveProperty("deleteProjection");
+      const deleteMember = projectionsPanel!.manifest.members.deleteProjection;
+      expect(deleteMember && "target" in deleteMember && "projectionId" in deleteMember.target).toBe(true);
+      const deleteProjection = deleteMember && "target" in deleteMember && "projectionId" in deleteMember.target
+        ? projections.get(deleteMember.target.projectionId)
+        : undefined;
+      expect(deleteProjection?.operations?.delete?.operation).toEqual({
+        kind: "PlatformOperation",
+        id: "productProjections.delete",
+      });
+      const recipes = projectionsPanel!.content.recipes ?? "";
+      expect(recipes).not.toContain("deleteDialog");
+      expect(recipes).not.toContain("deleteSubmit");
+      expect(recipes).toContain("deleteProjection.delete");
     } finally {
       await rm(bundle, { recursive: true, force: true });
     }

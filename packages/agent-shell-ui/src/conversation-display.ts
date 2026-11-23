@@ -767,6 +767,20 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               current: snapshot(),
             };
           }
+          if ("kind" in outcome && outcome.kind === "unknown") {
+            return {
+              status: "unknown",
+              reason: "outcome_unknown",
+              operation: outcome.operation,
+              ...(outcome.intentId ? { intentId: outcome.intentId } : {}),
+              ...(outcome.outcome !== undefined ? { outcome: outcome.outcome } : {}),
+              current: snapshot(),
+              error: {
+                code: "ACTION_OUTCOME_UNKNOWN",
+                message: outcome.message ?? "Operation was dispatched, but its outcome is unknown. Check the intent status without retrying.",
+              },
+            };
+          }
           return {
             status: "not_executed",
             reason: outcome.reason,
@@ -958,7 +972,24 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
 
         if (sameInstance && currentPage) {
           const controller = controllers.get(resolved.instance);
-          if (rawState !== undefined && Object.keys(rawState).length > 0) {
+          const hasStatePatch = rawState !== undefined && Object.keys(rawState).length > 0;
+          const basePathOf = (value: string) => value.split(/[?#]/, 1)[0]!;
+          const addressSpecifiesParamsOrPathChange =
+            resolved.address.includes("?")
+            || resolved.address.includes("#")
+            || basePathOf(resolved.address) !== basePathOf(currentPage.address);
+          // When navigating with no state patch or with explicit query/path parameters, apply the requested address
+          // first so any accompanying state patch overlays cleanly without being clobbered by a bare base path.
+          if (
+            (!hasStatePatch || addressSpecifiesParamsOrPathChange)
+            && (resolved.address !== currentPage.address || !current.restorable || current.view !== nextView)
+          ) {
+            const addressTarget: DisplayTarget = { kind: "page", ...resolved };
+            commit({ target: addressTarget, view: nextView, restorable: true });
+            await write(addressTarget, nextView, "replace");
+            if (hasStatePatch) await nextTick();
+          }
+          if (hasStatePatch) {
             if (controller) {
               try {
                 controller.applyState(rawState);
@@ -980,20 +1011,15 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               };
             }
           }
-          const updatedTarget: DisplayTarget = {
-            kind: "page",
-            ...resolved,
-            // When state was applied in place without changing the base address, keep any reactive address update.
-            address: resolved.address !== rawAddress || resolved.address !== currentPage.address
-              ? resolved.address
-              : shown.value.target?.kind === "page" ? shown.value.target.address : resolved.address,
-          };
-          if (updatedTarget.address !== currentPage.address || !current.restorable || current.view !== nextView) {
-            commit({ target: updatedTarget, view: nextView, restorable: true });
-            await write(updatedTarget, nextView, "replace");
+          await nextTick();
+          await nextTick();
+          const livePage = shown.value.target?.kind === "page" && shown.value.target.instance === resolved.instance
+            ? shown.value.target
+            : null;
+          if (livePage && (!shown.value.restorable || shown.value.view !== nextView)) {
+            commit({ target: livePage, view: nextView, restorable: true });
+            await write(livePage, nextView, "replace");
           }
-          await nextTick();
-          await nextTick();
         } else {
           if (rawState !== undefined && Object.keys(rawState).length > 0) {
             const patch = { ...rawState };

@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PageActionOutcome, PresentationFrame } from "@ontomato/contracts/agent-presentation";
+import {
+  presentationReceiptSchema,
+  presentationResultSchema,
+  type PageActionOutcome,
+  type PresentationFrame,
+} from "@ontomato/contracts/agent-presentation";
 import { pageContextLine, writtenText } from "../page-context";
 import { useConversationDisplay, type DisplayPage, type DisplayView } from "../conversation-display";
 
@@ -22,6 +27,7 @@ function setup(options: {
     "/actions": "Actions",
     "/graph": "Ontology Graph",
     "/admin/users": "Users",
+    "/ontology/panels": "Panels",
   };
   const display = useConversationDisplay({
     features: () => [{ id: "panel", label: "Panel", icon: "pages", availability: "page", withConversation: true }],
@@ -534,5 +540,114 @@ describe("live agent page control (requirement-64995244)", () => {
       reason: "action_not_ready",
       error: { code: "PANEL_ERROR", message: "Load failed" },
     });
+  });
+
+  it("preserves applyState deepLink address when presenting same instance with bare base path and state (C2-3)", async () => {
+    const { display, serialized } = setup();
+    await display.present(frame({ kind: "page", address: "/ontology/panels?selected=panel-a" }));
+    expect(display.page.value?.address).toBe("/ontology/panels?selected=panel-a");
+
+    const liveValues: Record<string, RuntimeJsonValue> = {
+      selected: { className: "platform:ProductPanel", primaryKey: "panel-a" },
+      detailMode: "view",
+    };
+    display.context({
+      url: "/ontology/panels?selected=panel-a",
+      label: "Panels",
+      selection: [],
+      state: { ...liveValues },
+    });
+
+    const unregister = display.registerPageController("/ontology/panels", {
+      applyState(patch) {
+        Object.assign(liveValues, patch);
+        const sel = liveValues.selected as { primaryKey?: string } | null;
+        const nextUrl = sel?.primaryKey
+          ? `/ontology/panels?selected=${sel.primaryKey}`
+          : "/ontology/panels";
+        // Simulate reactive Vue watcher reporting the updated deepLink address on nextTick (as PanelApplicationRoute does).
+        void nextTick(() => {
+          display.address({ kind: "state", address: nextUrl });
+          display.context({ url: nextUrl, label: "Panels", selection: [], state: { ...liveValues } });
+        });
+      },
+    });
+
+    const panelB = { className: "platform:ProductPanel", primaryKey: "panel-b" };
+    const receipt = await display.present(frame({
+      kind: "page",
+      address: "/ontology/panels",
+      state: { selected: panelB, detailMode: "edit" },
+    }));
+
+    expect(display.page.value?.address).toBe("/ontology/panels?selected=panel-b");
+    expect(serialized.at(-1)?.page?.address).toBe("/ontology/panels?selected=panel-b");
+    expect(receipt).toMatchObject({
+      status: "opened",
+      reason: "target_selected",
+      current: {
+        target: {
+          kind: "page",
+          url: "/ontology/panels?selected=panel-b",
+          state: { selected: panelB, detailMode: "edit" },
+        },
+      },
+    });
+
+    // Explicit query navigation without state still updates the address normally on the same instance.
+    const queryReceipt = await display.present(frame({
+      kind: "page",
+      address: "/ontology/panels?selected=panel-c",
+    }));
+    expect(display.page.value?.address).toBe("/ontology/panels?selected=panel-c");
+    expect(queryReceipt).toMatchObject({
+      status: "opened",
+      reason: "target_selected",
+      current: { target: { kind: "page", url: "/ontology/panels?selected=panel-c" } },
+    });
+
+    unregister();
+  });
+
+  it("reports owner unknown outcome honestly as status 'unknown' instead of 'executed' (C2-2)", async () => {
+    const { display } = setup();
+    await display.present(frame({ kind: "page", address: "/actions" }));
+    const intentId = "33333333-3333-4333-8333-333333333333";
+    const unknownOutcome = {
+      kind: "batch",
+      items: [
+        { target: { objectType: "platform:Action", primaryKey: "a-1" }, outcome: { kind: "unknown", message: "Owner stream dropped" } },
+      ],
+    };
+    const unregister = display.registerPageController("/actions", {
+      applyState: vi.fn(),
+      executeAction: async (): Promise<PageActionOutcome> => ({
+        ok: false,
+        kind: "unknown",
+        reason: "outcome_unknown",
+        operation: "list.batchUpdate",
+        intentId,
+        outcome: unknownOutcome,
+        message: "Owner stream dropped",
+      }),
+    });
+
+    const result = await display.present(frame({ kind: "page_action", operation: "list.batchUpdate" }));
+    expect(result).toMatchObject({
+      status: "unknown",
+      reason: "outcome_unknown",
+      operation: "list.batchUpdate",
+      intentId,
+      outcome: unknownOutcome,
+      current: { known: true, target: { kind: "page", url: "/actions" } },
+      error: { code: "ACTION_OUTCOME_UNKNOWN", message: "Owner stream dropped" },
+    });
+    expect(presentationResultSchema.safeParse(result).success).toBe(true);
+    expect(presentationReceiptSchema.safeParse({
+      connectionId: SESSION,
+      toolCallId: "call-unknown",
+      result,
+    }).success).toBe(true);
+    unregister();
   });
 });

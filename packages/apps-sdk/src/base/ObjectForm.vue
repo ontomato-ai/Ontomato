@@ -25,9 +25,10 @@ import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-st
 import { useMember, useMemberOutput } from "../panel/member";
 import { missingOperationDescriptorResult } from "../panel/member-operations";
 import {
+  classifyDispatchResponseForAction,
+  classifyDispatchResponseForConfirmation,
   PanelConfirmationDeferred,
   PanelOperationDeferred,
-  summarizeDispatchResponse,
   type PanelAgentActionContext,
 } from "../panel/instance";
 import {
@@ -641,8 +642,20 @@ watch(saveOperationName, (name) => {
       if (Object.keys(activeInvalid.value).length > 0) {
         return { ok: false, reason: "validation_failed", message: t("platform.formFixInvalid") };
       }
-      const outcome = await write(undefined, agentContext);
-      return { ok: true, outcome };
+      try {
+        const outcome = await write(undefined, agentContext);
+        if (agentContext?.completed) {
+          const classified = classifyDispatchResponseForAction(agentContext.completed.response);
+          if (!classified.ok) return classified;
+        }
+        return { ok: true, outcome };
+      } catch (reason) {
+        if (reason instanceof PanelConfirmationDeferred || reason instanceof PanelSubmissionStaleError) throw reason;
+        if (agentContext?.completed) {
+          return classifyDispatchResponseForAction(agentContext.completed.response);
+        }
+        throw reason;
+      }
     },
   );
 }, { immediate: true });
@@ -1641,17 +1654,18 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
             if (confirmed.decision !== "confirm") {
               return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "The save was cancelled." };
             }
-            if (confirmed.response.kind === "not-dispatched") {
-              return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
+            const classified = classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
+            if (!classified.ok) {
+              try {
+                resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
+              } catch (refusalReason) {
+                handleSaveRefusal(refusalReason);
+              }
+              return classified;
             }
             const saved = resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
             await finishSave(saved);
-            return {
-              ok: true,
-              intentId: preparation.intentId,
-              outcome: confirmed.response.outcome,
-              summary: summarizeDispatchResponse(confirmed.response),
-            };
+            return classified;
           } catch (dispatchReason) {
             handleSaveRefusal(dispatchReason);
             return {

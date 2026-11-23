@@ -50,6 +50,11 @@ export type MemberInputs = Readonly<Record<string, RuntimeJsonValue>>;
 /** A member's placement as a read's parameters see it: the panel state its inputs and outputs bind. */
 export type MemberPlacement = Pick<PanelManifest["members"][string], "inputs" | "outputs">;
 
+export interface DirectProjectionReadOptions {
+  /** True when the member picks its projection from public panel state rather than a fixed manifest target. */
+  readonly dynamic?: boolean;
+}
+
 export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "readProjection"> {
   /** Only for an application's frame: the entry the platform resolved, its menu, and where its content goes. */
   currentEntry?: DirectPanelRun["currentEntry"];
@@ -65,7 +70,7 @@ export interface DirectPanelInstanceOptions extends Omit<PanelInstanceOptions, "
   /** Reads one named datum of one member, as the platform's read entry answers it for this panel's source. */
   read: PanelReadPort;
   /** Reads a member's current projection by ID, as the reader. */
-  readProjection(id: string): Promise<DirectProjection>;
+  readProjection(id: string, options?: DirectProjectionReadOptions): Promise<DirectProjection>;
   /**
    * Expands the page's composer with a conversation entry a member's projection declares: its agent and its opening
    * sentence. The record is the platform's own read, so the entry needs no check against it; nothing is sent.
@@ -561,7 +566,9 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       if (!found) {
         const id = placedProjectionId(member);
         if (id === null) throw new Error(`Member '${member}' places no projection now`);
-        found = options.readProjection(id).then((projection) => {
+        const dynamic = "fromState" in direct.members[member]!.target;
+        const readPromise = dynamic ? options.readProjection(id, { dynamic: true }) : options.readProjection(id);
+        found = readPromise.then((projection) => {
           if (projections.get(member) === found) {
             readRevisions.set(member, projection.revision);
             const newest = latestRevisions.get(id);

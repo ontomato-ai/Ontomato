@@ -383,6 +383,7 @@ export function builtinFramePanelHost(
   const sourceQuery = new URLSearchParams({ includeProjections: "1" });
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
   let lastPanel: ProductPanel | undefined;
+  let mountUnavailable: Map<string, Extract<BundledPanelProjection, { status: "unavailable" }>> | undefined;
   let sourceReconciled = false;
   return {
     async source() {
@@ -397,9 +398,10 @@ export function builtinFramePanelHost(
           invalidateCachedPanel(cacheKey);
           throw failure;
         }
-        reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
+        const forbidden = reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
         if (verified.panel.revision === cached.revision) {
           lastPanel = cached;
+          mountUnavailable = forbidden;
           sourceReconciled = true;
           return { kind: "registered", applicationId, use: placeholderUse, panel: cached };
         }
@@ -409,7 +411,7 @@ export function builtinFramePanelHost(
       const scope = currentDefinitionCacheScope();
       const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${sourceQuery}`));
       setCachedPanel(cacheKey, answer.panel, scope);
-      ingestBundledPanelProjections(answer.projections, scope);
+      mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
       lastPanel = answer.panel;
       return { kind: "registered", applicationId, use: placeholderUse, panel: answer.panel };
     },
@@ -421,7 +423,7 @@ export function builtinFramePanelHost(
         const scope = currentDefinitionCacheScope();
         const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(panelId)}?${sourceQuery}`));
         setCachedPanel(cacheKey, answer.panel, scope);
-        ingestBundledPanelProjections(answer.projections, scope);
+        mountUnavailable = ingestBundledPanelProjections(answer.projections, scope);
         lastPanel = answer.panel;
         return answer.panel;
       }
@@ -436,7 +438,11 @@ export function builtinFramePanelHost(
         manifest: source.panel.manifest,
         run,
         requests: platformRequests,
-        readProjection: (id) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id)),
+        readProjection: (id, readOptions) => readCachedProjection(
+          id,
+          () => readPlatformProjection(id),
+          readOptions?.dynamic ? { verifyAccess: true } : { mountUnavailable },
+        ),
         use: null,
         read: () => Promise.resolve({ status: "forbidden", reason: "Native frame does not read panel data" }),
         confirmOperation: () => Promise.reject(new Error("A native frame runs no panel operations")),
@@ -462,7 +468,11 @@ export function builtinFramePanelHost(
         invalidateCachedPanel(targetKey);
         throw failure;
       }
-      reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
+      const forbidden = reconcileDefinitionCacheWithSnapshot(targetKey, lastPanel, answer, scope);
+      if (mountUnavailable && answer.members !== undefined) {
+        mountUnavailable.clear();
+        for (const [id, entry] of forbidden) mountUnavailable.set(id, entry);
+      }
       return answer;
     },
     mode: { kind: "view" },
@@ -496,6 +506,7 @@ export function candidatePanelHost(candidate: CandidatePanelSource["workspace"] 
         manifest: source.panel.manifest,
         run,
         requests: platformRequests,
+        readProjection: readPlatformProjection,
         ...(source.domainComponents ? { panelDomainComponents: source.domainComponents } : {}),
         use: null,
         read: request => readPanelData({ source: { kind: "candidate", workspace: source.workspace }, ...request }),
@@ -521,6 +532,20 @@ const platformRequests: PlatformRequests = {
   request: (path, init, service) => nodeApiRequest(`/api${service}${path}`, init),
 };
 
+/**
+ * Reads a projection render payload through the platform's host request layer, translating HTTP 403/404
+ * `ApiRequestError`s from `nodeApiRequest` into `PanelMemberUnavailable` so member slots and definition cache eviction
+ * handle revoked/missing projections identically to the frame bridge.
+ */
+function readPlatformProjection(id: string) {
+  return readProjectionForRender(platformRequests, id).catch((failure: unknown) => {
+    if (failure instanceof ApiRequestError && (failure.status === 403 || failure.status === 404)) {
+      throw new PanelMemberUnavailable(failure.status, failure.message);
+    }
+    throw failure;
+  });
+}
+
 /** What a panel of an application use runs on in this document: the SDK's instance with this platform's reads, requests and words. */
 function directOptions(
   source: DirectPanelHostSource, run: DirectPanelRun, use: PanelUseRef, changed: (change: PanelObjectChange) => void, beside?: (address: string) => void,
@@ -537,7 +562,11 @@ function directOptions(
     manifest: source.panel.manifest,
     run,
     requests: platformRequests,
-    readProjection: (id) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id), mountUnavailable),
+    readProjection: (id, readOptions) => readCachedProjection(
+      id,
+      () => readPlatformProjection(id),
+      readOptions?.dynamic ? { verifyAccess: true } : { mountUnavailable },
+    ),
     use: root ? { ...use, root } : use,
     read: request => readPanelData({ source: readSource, ...request }),
     confirmOperation: (preparation, hooks) => confirmPanelIntent(
@@ -600,8 +629,8 @@ async function mountNested(
   const dropTheme = applyTheme(element, () => composeThemes(panel.theme, run.theme), hostThemeMode);
   try {
     const nestedReadProjection = source.kind === "candidate"
-      ? undefined
-      : (id: string) => readCachedProjection(id, () => readProjectionForRender(platformRequests, id));
+      ? (id: string) => readPlatformProjection(id)
+      : (id: string) => readCachedProjection(id, () => readPlatformProjection(id), { verifyAccess: true });
     const last = memberPath.at(-1);
     const mount = await withPersonalState(source, placedAt, panel.manifest, run, (opened) => mountCoded(
       withNested({

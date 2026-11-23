@@ -70,12 +70,6 @@
           "type": "string"
         }
       },
-      "deleteDialog": {
-        "type": {
-          "kind": "scalar",
-          "type": "boolean"
-        }
-      },
       "deleteRevision": {
         "type": {
           "kind": "scalar",
@@ -663,7 +657,7 @@
         },
         "id": "builtin-product-939794c4-a905-45b4-8299-8fa57f867268"
       },
-      "deleteSubmit": {
+      "deleteProjection": {
         "component": "OperationButton",
         "type": "platform:ProductProjection",
         "target": "selected",
@@ -675,7 +669,11 @@
         },
         "config": {
           "type": "danger",
-          "labelKey": "action.delete"
+          "size": "small",
+          "plain": true,
+          "icon": "trash",
+          "labelKey": "action.delete",
+          "hideWhenUnavailable": true
         },
         "id": "builtin-product-3366ba8b-929b-4021-8fd1-95faff2e7db5"
       },
@@ -791,9 +789,6 @@
         "copy.nameLabel": "新名称",
         "copy.idLabel": "新标识",
         "copy.defaultName": "{name} 副本",
-        "delete.title": "删除投影",
-        "delete.confirm": "删除「{name}」？此操作不可撤销。",
-        "delete.inUseWarning": "它正被 {count} 个面板使用，属主会拒绝删除。",
         "notify.saved": "已保存"
       },
       "en": {
@@ -888,9 +883,6 @@
         "copy.nameLabel": "New name",
         "copy.idLabel": "New ID",
         "copy.defaultName": "{name} copy",
-        "delete.title": "Delete projection",
-        "delete.confirm": "Delete \"{name}\"? This action cannot be undone.",
-        "delete.inUseWarning": "Used by {count} panel(s); the owner will refuse deletion.",
         "notify.saved": "Saved."
       },
       "zh-TW": {
@@ -985,9 +977,6 @@
         "copy.nameLabel": "新名稱",
         "copy.idLabel": "新識別碼",
         "copy.defaultName": "{name} 副本",
-        "delete.title": "刪除投影",
-        "delete.confirm": "刪除「{name}」？此操作無法復原。",
-        "delete.inUseWarning": "它正被 {count} 個面板使用，屬主將拒絕刪除。",
         "notify.saved": "已儲存"
       },
       "ja": {
@@ -1082,9 +1071,6 @@
         "copy.nameLabel": "新しい名前",
         "copy.idLabel": "新しい ID",
         "copy.defaultName": "{name} のコピー",
-        "delete.title": "プロジェクションを削除",
-        "delete.confirm": "「{name}」を削除しますか？この操作は元に戻せません。",
-        "delete.inUseWarning": "{count} 件のパネルで使用されているため削除は拒否されます。",
         "notify.saved": "保存しました。"
       },
       "ar": {
@@ -1179,9 +1165,6 @@
         "copy.nameLabel": "الاسم الجديد",
         "copy.idLabel": "المعرّف الجديد",
         "copy.defaultName": "نسخة من {name}",
-        "delete.title": "حذف الإسقاط",
-        "delete.confirm": "هل تريد حذف «{name}»؟ لا يمكن التراجع عن هذا الإجراء.",
-        "delete.inUseWarning": "مستخدم في {count} لوحة؛ سيرفض المالك الحذف.",
         "notify.saved": "تم الحفظ."
       },
       "fr": {
@@ -1276,9 +1259,6 @@
         "copy.nameLabel": "Nouveau nom",
         "copy.idLabel": "Nouvel identifiant",
         "copy.defaultName": "{name} (copie)",
-        "delete.title": "Supprimer la projection",
-        "delete.confirm": "Supprimer « {name} » ? Cette action est irréversible.",
-        "delete.inUseWarning": "Utilisée par {count} panneau(x) ; la suppression sera refusée.",
         "notify.saved": "Enregistré."
       },
       "de": {
@@ -1373,9 +1353,6 @@
         "copy.nameLabel": "Neuer Name",
         "copy.idLabel": "Neue ID",
         "copy.defaultName": "{name} Kopie",
-        "delete.title": "Projektion löschen",
-        "delete.confirm": "„{name}“ löschen? Dies kann nicht rückgängig gemacht werden.",
-        "delete.inUseWarning": "Von {count} Panel(s) verwendet; das Löschen wird abgelehnt.",
         "notify.saved": "Gespeichert."
       },
       "it": {
@@ -1470,9 +1447,6 @@
         "copy.nameLabel": "Nuovo nome",
         "copy.idLabel": "Nuovo ID",
         "copy.defaultName": "{name} copia",
-        "delete.title": "Elimina proiezione",
-        "delete.confirm": "Eliminare «{name}»? Questa azione non può essere annullata.",
-        "delete.inUseWarning": "Usata da {count} pannelli; il proprietario rifiuterà l'eliminazione.",
         "notify.saved": "Salvato."
       }
     }
