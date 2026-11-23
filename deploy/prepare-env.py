@@ -42,7 +42,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("env_file", nargs="?", default=".env")
     parser.add_argument("--sandbox-preflight", action="store_true")
-    parser.add_argument("--sandbox-preflight", action="store_true")
     args = parser.parse_args()
     try:
         if args.sandbox_preflight:
