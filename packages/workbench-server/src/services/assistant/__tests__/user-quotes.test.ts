@@ -21,4 +21,24 @@ describe("host user quotes",()=>{
     const messages=[user(1,"Use this period"),{...user(2,"Use this period"),runId:null,contextSeq:null}];
     expect(recentUserMessages(messages,"2")).toEqual(["Use this period","Use this period"]);
   });
+  it("excludes queued unclaimed unattended messages from the running human turn's user quotes",()=>{
+    const messages: RuntimeMessageRecord[] = [
+      user(1, "Show Q1 revenue"),
+      { id: "2", runId: null, messageSeq: 2, contextSeq: null, message: { role: "user", content: "Queued unattended MCP task", timestamp: 2 } },
+      { id: "3", runId: null, messageSeq: 3, contextSeq: null, message: { role: "user", content: "Exclude refunded orders", timestamp: 3 } },
+    ];
+    expect(recentUserMessages(messages, "3")).toEqual(["Show Q1 revenue", "Exclude refunded orders"]);
+  });
+  it("orders previously consumed messages by consumption order before a later queued turn's opening input",()=>{
+    const messages: RuntimeMessageRecord[] = [
+      { id: "1", runId: "human-run", messageSeq: 1, contextSeq: 1, message: { role: "user", content: "Show Q1 revenue", timestamp: 1 } },
+      { id: "2", runId: null, messageSeq: 2, contextSeq: null, message: { role: "user", content: "Queued unattended MCP task", timestamp: 2 } },
+      { id: "3", runId: "human-run", messageSeq: 3, contextSeq: 2, message: { role: "user", content: "Exclude refunded orders", timestamp: 3 } },
+    ];
+    expect(recentUserMessages(messages, "2")).toEqual([
+      "Show Q1 revenue",
+      "Exclude refunded orders",
+      "Queued unattended MCP task",
+    ]);
+  });
 });

@@ -112,10 +112,12 @@ const props = defineProps({
   selected: { type: Boolean, default: false },
   boardLocked: { type: Boolean, default: false },
   lockReason: { type: String, default: "" },
+  renameCancelSeq: { type: Number, default: 0 },
 });
 const emit = defineEmits([
   "chart-renamed",
   "chart-deleted",
+  "rename-state",
   "view-metric",
   "edit-parameters",
   "layout-change",
@@ -175,6 +177,8 @@ async function handleCommand(cmd) {
   const chartId = String(props.chart?.id || "").trim();
 
   if (cmd === "rename") {
+    const startCancelSeq = props.renameCancelSeq;
+    emit("rename-state", { chartId, active: true });
     try {
       const ret = await ElMessageBox.prompt(
         t("analysis.enterChartName"),
@@ -185,6 +189,7 @@ async function handleCommand(cmd) {
           inputValue: title.value,
         }
       );
+      if (props.renameCancelSeq !== startCancelSeq) return;
       const nextName = String(ret?.value || "").trim();
       if (!nextName || nextName === title.value) return;
       const ok = await modifyResultSetName(dashboardId, chartId, nextName);
@@ -192,8 +197,10 @@ async function handleCommand(cmd) {
       emit("chart-renamed", { chartId, title: nextName });
       ElMessage.success(t("common.renamed"));
     } catch (e) {
-      if (e === "cancel") return;
+      if (e === "cancel" || e === "close") return;
       ElMessage.error(e instanceof Error ? e.message : t("common.renameFailed"));
+    } finally {
+      emit("rename-state", { chartId, active: false });
     }
     return;
   }

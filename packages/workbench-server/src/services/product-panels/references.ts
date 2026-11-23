@@ -32,6 +32,11 @@ export const panelReferenceDefinitionSchema = productPanelInputSchema.pick({ nam
 }).strip();
 type PanelDefinition = z.infer<typeof panelReferenceDefinitionSchema>;
 type ReferenceManifest = PanelDefinition["manifest"];
+const storedPanelFactsSchema = z.object({
+  name: z.string().trim().min(1).catch(""),
+  manifest: z.object({ members: z.record(z.unknown()).catch({}), state: z.record(z.unknown()).catch({}) }),
+});
+const referenceManifestShape = panelReferenceDefinitionSchema.shape.manifest.shape;
 type ProjectionDefinition = ProductProjectionInput | BuiltinProductProjectionInput;
 type Target = { kind: CurrentProductKind; id: string };
 type Wiring = {
@@ -122,12 +127,46 @@ function collectReferences(
   return references;
 }
 
+function parseStoredPanelReferenceDefinition(id: string, definition: unknown) {
+  const parsed = panelReferenceDefinitionSchema.safeParse(definition);
+  if (parsed.success) return { panel: parsed.data, valid: true };
+
+  const facts = storedPanelFactsSchema.safeParse(definition);
+  if (!facts.success) return null;
+  const members: ReferenceManifest["members"] = {};
+  for (const [name, value] of Object.entries(facts.data.manifest.members)) {
+    const member = referenceManifestShape.members.valueSchema.safeParse(value);
+    if (member.success) members[name] = member.data;
+  }
+  const state: ReferenceManifest["state"] = {};
+  for (const [name, value] of Object.entries(facts.data.manifest.state)) {
+    const schema = referenceManifestShape.state.valueSchema;
+    const field = schema.safeParse(value);
+    if (field.success) {
+      state[name] = field.data;
+    } else if (typeof value === "object" && value !== null && "default" in value) {
+      const { default: _invalidDefault, ...withoutDefault } = value;
+      const recovered = schema.safeParse(withoutDefault);
+      if (recovered.success && recovered.data.type.kind === "placement") state[name] = recovered.data;
+    }
+  }
+  return { panel: { name: facts.data.name || id, manifest: { members, state } }, valid: false };
+}
+
 async function loadPanels(domainId: string, client: QueryClient, excluding?: string) {
   const { rows } = await client.query<{ id: string; definition: unknown }>(
     `SELECT id,definition FROM ${currentProductRows("panel")} AS definitions
      WHERE domain_id=$1 OR domain_id IS NULL ORDER BY id`, [domainId],
   );
-  return new Map(rows.filter(row => row.id !== excluding).map(({ id, definition }) => [id, panelReferenceDefinitionSchema.parse(definition)]));
+  const panels = new Map<string, PanelDefinition>();
+  const invalidIds = new Set<string>();
+  for (const { id, definition } of rows) {
+    if (id === excluding) continue;
+    const parsed = parseStoredPanelReferenceDefinition(id, definition);
+    if (parsed) panels.set(id, parsed.panel);
+    if (!parsed?.valid) invalidIds.add(id);
+  }
+  return { panels, invalidIds };
 }
 
 async function loadDetails(domainId: string, client: QueryClient) {
@@ -164,8 +203,8 @@ async function loadSavedPlacements(domainId: string, panels: ReadonlyMap<string,
 }
 
 export async function findPanelUsers(domainId: string, kind: CurrentProductKind, id: string, client: QueryClient = getPostgresPool(), excluding?: string) {
-  const [panels, details] = await Promise.all([loadPanels(domainId, client, excluding), loadDetails(domainId, client)]);
-  const saved = await loadSavedPlacements(domainId, panels, client);
+  const [{ panels }, details] = await Promise.all([loadPanels(domainId, client, excluding), loadDetails(domainId, client)]);
+  const saved = await loadSavedPlacements(domainId, panels, client, true);
   return Array.from(panels, ([parentId, panel]) => ({ id: parentId, panel }))
     .filter(parent => collectReferences(parent.panel, details, saved.get(parent.id)).some(({ target }) => target.kind === kind && target.id === id))
     .map(({ id, panel }) => ({ id, name: panel.name }))
@@ -197,25 +236,11 @@ export async function findProjectionPanelUsers(projections: readonly ScopedProdu
   }
 
   const panels = new Map<string | null, Map<string, PanelDefinition>>();
-  const facts = z.object({ manifest: z.object({ members: z.record(z.unknown()).catch({}), state: z.record(z.unknown()).catch({}) }) });
-  const manifest = panelManifestSchema.innerType().shape;
-
-  const retained = <T>(values: Record<string, unknown>, schema: z.ZodType<T, z.ZodTypeDef, unknown>) =>
-    Object.fromEntries(Object.entries(values).flatMap(([name, value]) => {
-      const item = schema.safeParse(value);
-      return item.success ? [[name, item.data] as const] : [];
-    }));
   for (const { domainId, id, definition } of rows) {
-    const parsed = facts.safeParse(definition);
-    if (!parsed.success) continue;
+    const parsed = parseStoredPanelReferenceDefinition(id, definition);
+    if (!parsed) continue;
     const inDomain = panels.get(domainId) ?? new Map<string, PanelDefinition>();
-    const { members, state } = parsed.data.manifest;
-    const fields = retained(state, manifest.state.valueSchema);
-    for (const [name, field] of Object.entries(fields)) {
-      if (field.type.kind === "placement" && field.default != null && !panelPlacementSchema.safeParse(field.default).success)
-        fields[name] = { ...field, default: undefined };
-    }
-    inDomain.set(id, { name: id, manifest: { members: retained(members, manifest.members.valueSchema), state: fields } });
+    inDomain.set(id, parsed.panel);
     panels.set(domainId, inDomain);
     if (domainId !== null) domains.add(domainId);
   }
@@ -346,7 +371,7 @@ export async function validateCurrentProductReferences(
   owner: ProductOwner, credentials: AssistantCredentials, kind: CurrentProductKind, id: string,
   input: ProductPanelInput | ProductProjectionInput, client: PoolClient,
 ) {
-  const [panels, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
+  const [{ panels, invalidIds }, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
   let catalogue: ReturnType<typeof readPanelComponentCatalogue> | undefined;
   const readCatalogue = () => catalogue ??= readPanelComponentCatalogue();
   let checkOperationTarget: ReturnType<typeof panelOperationTargetCheck> | undefined;
@@ -363,9 +388,20 @@ export async function validateCurrentProductReferences(
     }
     return incompatiblePort(manifest, reference, definition, readCatalogue, isBuiltinProductId(reference.target.id) ? null : owner.domainId, client);
   };
-  if ("manifest" in input) panels.set(id, input);
+  if ("manifest" in input) {
+    panels.set(id, input);
+    invalidIds.delete(id);
+  }
   const saved = await loadSavedPlacements(owner.domainId, panels, client);
   if ("manifest" in input) {
+    const rejectUnavailable = async ({ target, key }: Reference) => {
+      await assertAppBuilderAccess(credentials);
+      const kind = target.kind === "panel" ? "Panel" : "Projection";
+      throw new HttpError(404, `Panel '${id}', member '${key}' – ${kind} '${target.id}' does not exist`, "PRODUCT_UNAVAILABLE");
+    };
+    const references = collectReferences(input, details);
+    const invalidReference = references.find(({ target }) => target.kind === "panel" && invalidIds.has(target.id));
+    if (invalidReference) await rejectUnavailable(invalidReference);
     rejectCycles(panels, details, [id]);
     await readPanelDomainComponents(owner.domainId, input.manifest.components, {
       authorId: owner.userId, client, strict: true,
@@ -373,16 +409,12 @@ export async function validateCurrentProductReferences(
 
     const inspected = new Map<string, PanelDefinition | ProjectionDefinition>();
     const authorized = new Set<string>();
-    for (const reference of collectReferences(input, details)) {
+    for (const reference of references) {
       const { target, key } = reference;
       const known = inspected.get(target.id);
       const stored = known ?? (target.kind === "panel" ? panels.get(target.id)
         : (await findCurrentProduct(owner.domainId, "projection", target.id, client))?.definition);
-      if (!stored) {
-        await assertAppBuilderAccess(credentials);
-        const kind = target.kind === "panel" ? "Panel" : "Projection";
-        throw new HttpError(404, `Panel '${id}', member '${key}' – ${kind} '${target.id}' does not exist`, "PRODUCT_UNAVAILABLE");
-      }
+      if (!stored) await rejectUnavailable(reference);
       if (!reference.fromObjectDetail && !authorized.has(target.id)) {
         await requireProductGrant(target.id, "use", credentials);
         authorized.add(target.id);
@@ -404,9 +436,9 @@ export async function validateCurrentProductReferences(
 }
 
 export async function validateObjectDetailPanelMapping(domainId: string, className: string, panelId: string, client: PoolClient) {
-  const [panels, details] = await Promise.all([loadPanels(domainId, client), loadDetails(domainId, client)]);
+  const [{ panels, invalidIds }, details] = await Promise.all([loadPanels(domainId, client), loadDetails(domainId, client)]);
   const target = panels.get(panelId);
-  if (!target) throw new HttpError(404, "Current detail panel definition not found", "PRODUCT_UNAVAILABLE");
+  if (!target || invalidIds.has(panelId)) throw new HttpError(404, "Current detail panel definition not found", "PRODUCT_UNAVAILABLE");
 
   details.set(className, panelId);
   const saved = await loadSavedPlacements(domainId, panels, client);
@@ -426,10 +458,12 @@ export async function validatePersonalPlacement(
   field: string, placement: PanelPlacement, client: PoolClient,
 ) {
   const target = fixedTarget(placement.target);
-  const [panels, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
+  const [{ panels, invalidIds }, details] = await Promise.all([loadPanels(owner.domainId, client), loadDetails(owner.domainId, client)]);
+  const unavailable = () => new HttpError(404, "Selected member does not exist", "PRODUCT_UNAVAILABLE");
+  if (target.kind === "panel" && invalidIds.has(target.id)) throw unavailable();
   await requireProductGrant(target.id, "use", viewer);
   const definition = target.kind === "panel" ? panels.get(target.id) : await requireProjection(owner.domainId, target.id, client);
-  if (!definition) throw new HttpError(404, "Selected member does not exist", "PRODUCT_UNAVAILABLE");
+  if (!definition) throw unavailable();
 
   const issue = await incompatiblePort(panel.manifest, { key: field, target, wiring: placement }, definition, undefined,
     isBuiltinProductId(target.id) ? null : owner.domainId, client);

@@ -8,8 +8,7 @@ it is on, its avatar, instructions, model, skills, execution identity, data scop
 `selected` is the shown `platform:AgentDefinition`; `mode` is `list`, `edit` or `create`. Both travel in the
 address. Opening with no state selects the first agent, as the original page's bare address did; opening with an
 explicit `selected` that is missing or inaccessible keeps that selection and shows the owner's reason in place without
-switching to another agent. `listedAgents` is non-deep-linked output state (`deepLink: false`) written by the `list`
-projection for default selection and post-delete fallback; do not pass it in `present` or links.
+switching to another agent.
 
 ## Editing or creating an agent
 
@@ -19,5 +18,5 @@ unsaved), and either leave saving to the reader or call `page_action` on the for
 
 ## Deleting
 
-`agents.delete` removes the selected agent; the platform asks the reader to confirm the impact first. After a
+`remove.delete` removes the selected agent; the platform asks the reader to confirm the impact first. After a
 delete the panel falls back to the first agent in the list.

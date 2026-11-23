@@ -108,25 +108,26 @@ export class ChannelStore {
     });
     return intent;
   }
-  private nextStarting() {
+  private nextStarting(order: "ASC" | "DESC" = "ASC") {
     return `SELECT a.key FROM ${this.store.table("admissions")} a
     JOIN ${this.store.table("messages")} m ON m.host_id=a.host_id AND m.domain_id=a.domain_id AND m.id=(a.intent->>'inputId')::uuid
-    WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3 AND a.intent->>'status'='starting'
-    ORDER BY m.seq LIMIT 1`;
+    WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3 AND NOT a.deleted AND a.intent->>'status'='starting'
+    ORDER BY m.seq ${order} LIMIT 1`;
   }
+  /** Latest starting intent at the tail of the session queue; same-source arrivals coalesce only at the tail. */
   async waiting(scope: Scope, sessionId: string): Promise<string | null> {
-    const { rows } = await this.store.pool.query(this.nextStarting(), [...this.key(scope), sessionId]);
+    const { rows } = await this.store.pool.query(this.nextStarting("DESC"), [...this.key(scope), sessionId]);
     return rows[0]?.key ?? null;
   }
   async claimNext(scope: Scope, sessionId: string): Promise<AgentRunIntent | undefined> {
     const { rows } = await this.store.pool.query(`UPDATE ${this.store.table("sessions")}
-      SET preparing_run_id=(${this.nextStarting()})
+      SET preparing_run_id=(${this.nextStarting("ASC")})
       WHERE host_id=$1 AND domain_id=$2 AND id=$3 AND active_run_id IS NULL AND preparing_run_id IS NULL
       RETURNING preparing_run_id`, [...this.key(scope), sessionId]);
     if (rows[0]?.preparing_run_id) return this.intent(scope, rows[0].preparing_run_id);
   }
   async intent(scope: Scope, id: string): Promise<AgentRunIntent> {
-    const row = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3 AND intent IS NOT NULL`, [...this.key(scope), id])).rows[0];
+    const row = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3 AND NOT deleted AND intent IS NOT NULL`, [...this.key(scope), id])).rows[0];
     if (!row) throw new RuntimeError(404, "NOT_FOUND", "Agent execution not found");
     return agentRunIntentSchema.parse(row.intent);
   }
@@ -137,11 +138,11 @@ export class ChannelStore {
     });
   }
   async latest(scope: Scope, sessionId: string): Promise<AgentRunIntent> {
-    const row = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND intent IS NOT NULL ORDER BY intent->>'createdAt' DESC,key DESC LIMIT 1`, [...this.key(scope),sessionId])).rows[0];
+    const row = (await this.store.pool.query(`SELECT intent FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND session_id=$3 AND NOT deleted AND intent IS NOT NULL ORDER BY intent->>'createdAt' DESC,key DESC LIMIT 1`, [...this.key(scope),sessionId])).rows[0];
     return agentRunIntentSchema.parse(row.intent);
   }
   async task(domainId: string, taskId: string): Promise<{ scope: Scope; intent: AgentRunIntent } | null> {
-    const row = (await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND key=$2 AND intent IS NOT NULL`,[domainId,taskId])).rows[0];
+    const row = (await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND key=$2 AND NOT deleted AND intent IS NOT NULL`,[domainId,taskId])).rows[0];
     return row ? { scope: { hostId: row.host_id,domainId },intent: agentRunIntentSchema.parse(row.intent) } : null;
   }
   /** Only this conversation's direct delegations and their execution descendants. */
@@ -149,21 +150,43 @@ export class ChannelStore {
     const { rows } = await this.store.pool.query(`WITH RECURSIVE delegated AS (
       SELECT a.host_id,a.intent,a.intent->'channel'->'requestedBy'->>'runId' AS root_run_id
       FROM ${this.store.table("admissions")} a
-      WHERE a.domain_id=$1 AND a.intent IS NOT NULL AND a.intent->'channel'->'requestedBy'->'session'=ANY($2::jsonb[])
+      WHERE a.domain_id=$1 AND NOT a.deleted AND a.intent IS NOT NULL AND a.intent->'channel'->'requestedBy'->'session'=ANY($2::jsonb[])
       UNION ALL
       SELECT child.host_id,child.intent,parent.root_run_id
       FROM delegated parent JOIN ${this.store.table("admissions")} child
-        ON child.domain_id=$1 AND child.intent IS NOT NULL
+        ON child.domain_id=$1 AND NOT child.deleted AND child.intent IS NOT NULL
         AND child.intent->'channel'->'requestedBy'=jsonb_build_object('session',parent.intent->'session','runId',parent.intent->>'id')
     ) SELECT host_id,intent,root_run_id FROM delegated ORDER BY intent->>'createdAt',intent->>'id'`,[domainId,sessions.map(session => JSON.stringify(session))]);
     return rows.map(row => ({ scope: { hostId: row.host_id,domainId },intent: agentRunIntentSchema.parse(row.intent),rootRunId: row.root_run_id }));
   }
   async preparationFailures(scope: Scope, sessionId: string) {
-    const { rows } = await this.store.pool.query(`SELECT a.intent FROM ${this.store.table("admissions")} a LEFT JOIN ${this.store.table("runs")} r ON r.host_id=a.host_id AND r.domain_id=a.domain_id AND r.id=a.key WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3 AND a.intent IS NOT NULL AND a.intent->>'status'='failed' AND r.id IS NULL ORDER BY a.intent->>'createdAt',a.key`,[...this.key(scope),sessionId]);
+    const { rows } = await this.store.pool.query(`SELECT a.intent FROM ${this.store.table("admissions")} a LEFT JOIN ${this.store.table("runs")} r ON r.host_id=a.host_id AND r.domain_id=a.domain_id AND r.id=a.key WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3 AND NOT a.deleted AND a.intent IS NOT NULL AND a.intent->>'status'='failed' AND r.id IS NULL ORDER BY a.intent->>'createdAt',a.key`,[...this.key(scope),sessionId]);
     return rows.map(row => ({ runId: row.intent.id,inputId: row.intent.inputId,error: row.intent.error as string,createdAt: row.intent.createdAt as string }));
   }
+  /** Accepted runs still waiting in the session queue before starting (`status === "starting"`), with their queued input IDs. */
+  async queuedRuns(scope: Scope, sessionId: string) {
+    const { rows } = await this.store.pool.query(
+      `SELECT a.key, a.intent->>'inputId' AS input_id, a.intent->>'createdAt' AS created_at,
+        COALESCE(array_agg(m.id ORDER BY m.seq) FILTER (WHERE m.id IS NOT NULL), '{}') AS input_ids
+      FROM ${this.store.table("admissions")} a
+      JOIN ${this.store.table("messages")} first_m
+        ON first_m.host_id=a.host_id AND first_m.domain_id=a.domain_id AND first_m.id=(a.intent->>'inputId')::uuid
+      LEFT JOIN ${this.store.table("messages")} m
+        ON m.host_id=a.host_id AND m.domain_id=a.domain_id AND m.session_id=a.session_id
+        AND m.run_id IS NULL AND (m.intent_id=a.key OR m.id=(a.intent->>'inputId')::uuid)
+      WHERE a.host_id=$1 AND a.domain_id=$2 AND a.session_id=$3
+        AND NOT a.deleted AND a.intent IS NOT NULL AND a.intent->>'status'='starting'
+      GROUP BY a.key, a.intent, first_m.seq
+      ORDER BY first_m.seq`,
+      [...this.key(scope), sessionId],
+    );
+    return rows.map(row => {
+      const ids = Array.isArray(row.input_ids) && row.input_ids.length ? (row.input_ids as string[]) : [row.input_id as string];
+      return { runId: row.key as string, inputIds: ids, createdAt: row.created_at as string };
+    });
+  }
   async children(domainId: string, source: AgentExecutionRef): Promise<Array<{ scope: Scope; intent: AgentRunIntent }>> {
-    const { rows } = await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND intent IS NOT NULL AND intent->'channel'->'requestedBy'=$2::jsonb ORDER BY key`,[domainId,JSON.stringify(source)]);
+    const { rows } = await this.store.pool.query(`SELECT host_id,intent FROM ${this.store.table("admissions")} WHERE domain_id=$1 AND NOT deleted AND intent IS NOT NULL AND intent->'channel'->'requestedBy'=$2::jsonb ORDER BY key`,[domainId,JSON.stringify(source)]);
     return rows.map(row => ({ scope: { hostId: row.host_id,domainId },intent: agentRunIntentSchema.parse(row.intent) }));
   }
   async closePending(scope:Scope,sessionId:string,runId:string) {

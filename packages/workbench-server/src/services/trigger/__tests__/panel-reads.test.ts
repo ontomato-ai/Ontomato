@@ -137,8 +137,8 @@ describe("trigger catalog reads", () => {
       { path: "/trigger/form", body: { target: { kind: "draft" }, changedField: null } },
     ]);
 
-    expect(panelOwnerOperationDescriptorSchema.parse(adapter[`${SET_TRIGGER_STATUS}.describe`]()).handlerRef).toBe(SET_TRIGGER_STATUS);
-    expect(panelOwnerOperationDescriptorSchema.parse(adapter[`${DELETE_TRIGGER}.describe`]()).handlerRef).toBe(DELETE_TRIGGER);
+    expect(panelOwnerOperationDescriptorSchema.parse(await adapter[`${SET_TRIGGER_STATUS}.describe`]()).handlerRef).toBe(SET_TRIGGER_STATUS);
+    expect(panelOwnerOperationDescriptorSchema.parse(await adapter[`${DELETE_TRIGGER}.describe`]()).handlerRef).toBe(DELETE_TRIGGER);
   });
 
   it("preserves coded owner refusals on missing trigger reads", async () => {

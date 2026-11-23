@@ -16,6 +16,7 @@ import { candidateFiles, panelInput, projectionMaterial } from "../../../../../p
 import builtinHtml from "../../../../../packages/ontology-manager/resources/builtin-panels/agent-settings/panel.html?raw";
 import builtinSource from "../../../../../packages/ontology-manager/resources/builtin-panels/agent-settings/panel.json";
 import builtinModule from "../../../../../packages/ontology-manager/resources/builtin-panels/agent-settings/panel.mjs?raw";
+import builtinRecipes from "../../../../../packages/ontology-manager/resources/builtin-panels/agent-settings/recipes.md?raw";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
 import PanelCandidateRoute from "../../../../../packages/platform-web/src/pages/PanelCandidateRoute.vue";
@@ -614,19 +615,43 @@ describe("agent-settings builtin panel", () => {
     };
   }
 
-  it("removes usePanelData/PanelData and uses sdk-button instead of a raw button", () => {
+  const answerLeaveConfirm = async (choice: "keep" | "discard") => {
+    const box = await vi.waitFor(() => {
+      const found = [...document.querySelectorAll<HTMLElement>(".el-message-box")]
+        .find((candidateBox) => candidateBox.closest<HTMLElement>(".el-overlay")?.style.display !== "none");
+      if (!found) throw new Error(`Expected unsaved leave confirm dialog for '${choice}'`);
+      return found;
+    }, { timeout: 5000 });
+    const selector = choice === "keep"
+      ? ".el-message-box__btns button.ontomato-danger-confirm-cancel"
+      : ".el-message-box__btns button.el-button--danger";
+    const button = box.querySelector<HTMLButtonElement>(selector);
+    expect(button).toBeTruthy();
+    button!.click();
+    await vi.waitFor(() => {
+      const open = [...document.querySelectorAll<HTMLElement>(".el-message-box")]
+        .find((candidateBox) => candidateBox.closest<HTMLElement>(".el-overlay")?.style.display !== "none");
+      expect(open).toBeUndefined();
+    }, { timeout: 5000 });
+  };
+
+  it("removes usePanelData/PanelData, keeps manifest.state free of listedAgents, and uses sdk-button instead of a raw button", () => {
     expect(builtinModule).not.toMatch(/usePanelData|PanelData/);
     expect(JSON.stringify(builtinSource)).not.toMatch(/usePanelData|PanelData/);
     expect(builtinModule).toContain('usePanelOutput("list", "status")');
-    expect(builtinSource.manifest.state.listedAgents).toMatchObject({
-      type: { kind: "list", items: { kind: "object", objectType: AGENT_DEFINITION } },
-      deepLink: false,
-    });
+    expect(Object.keys(builtinSource.manifest.state).sort()).toEqual(["mode", "selected"]);
+    expect(builtinSource.manifest.state).not.toHaveProperty("listedAgents");
     expect(builtinSource.manifest.state.selected.deepLink).toBe(true);
     expect(builtinSource.manifest.state.mode.deepLink).toBe(true);
+    expect(builtinSource.manifest.members.list.state).toEqual({ selected: "selected" });
+    expect(builtinSource.manifest.members.list.state).not.toHaveProperty("listed");
+    expect(builtinHtml).toContain('<projection slot="list" @update:listed="onListed"></projection>');
     expect(builtinHtml).not.toContain("<button");
     expect(builtinHtml).not.toContain("agent-settings-button");
     expect(builtinHtml).toContain('<sdk-button text size="small" @click="viewType">');
+    expect(builtinRecipes).not.toContain("listedAgents");
+    expect(builtinRecipes).not.toContain("agents.delete");
+    expect(builtinRecipes).toContain("remove.delete");
   });
 
   it("selects the first agent on a bare address without flashing empty state while loading, and navigates via View class sdk-button", { timeout: 20000 }, async () => {
@@ -725,17 +750,31 @@ describe("agent-settings builtin panel", () => {
     }
   });
 
-  it("falls back to the first remaining agent after deleting the selected agent, and returns to list mode when the last agent is deleted", { timeout: 20000 }, async () => {
+  it("waits for the refreshed list before falling back after delete, and stays in list mode when the last agent is deleted", { timeout: 20000 }, async () => {
     let remaining = [
       agentRow(AGENT, String(stored.name), String(stored.description)),
       agentRow(OTHER, "Planner", "Plans tasks"),
     ];
+    let gateAfterFirstDelete: Promise<void> | null = null;
+    let releaseAfterFirstDelete: () => void = () => {};
     const route = mountBuiltinRoute({
-      onListRead: () => remaining.length
-        ? Response.json({ status: "ready", value: remaining })
-        : Response.json({ status: "empty" }),
+      onListRead: async () => {
+        if (gateAfterFirstDelete) {
+          const pending = gateAfterFirstDelete;
+          gateAfterFirstDelete = null;
+          await pending;
+        }
+        return remaining.length
+          ? Response.json({ status: "ready", value: remaining })
+          : Response.json({ status: "empty" });
+      },
       onDelete: (targetId) => {
         remaining = remaining.filter((item) => item.primaryKey !== targetId);
+        if (targetId === AGENT) {
+          gateAfterFirstDelete = new Promise<void>((resolve) => {
+            releaseAfterFirstDelete = resolve;
+          });
+        }
       },
     });
     const { app, element } = await route.open();
@@ -752,7 +791,20 @@ describe("agent-settings builtin panel", () => {
         return button!;
       }, { timeout: 5000 });
 
+      const readsBeforeDelete = route.listReads.length;
       (await deleteButton()).click();
+      await vi.waitFor(() => {
+        expect(route.listReads.length).toBeGreaterThan(readsBeforeDelete);
+        expect(route.router.currentRoute.value.query.selected).toBeUndefined();
+        expect(route.router.currentRoute.value.query.mode).toBe("list");
+      }, { timeout: 5000 });
+      // Before the refreshed [B] list arrives, never fall back to any entry from the stale [A, B] list.
+      await nextTick();
+      await nextTick();
+      expect(route.router.currentRoute.value.query.selected).toBeUndefined();
+      expect(route.router.currentRoute.value.query.mode).toBe("list");
+
+      releaseAfterFirstDelete();
       await vi.waitFor(() => {
         expect(route.router.currentRoute.value.query.selected).toBe(OTHER);
         expect(route.router.currentRoute.value.query.mode).toBe("edit");
@@ -764,6 +816,140 @@ describe("agent-settings builtin panel", () => {
         expect(route.router.currentRoute.value.query.mode).toBe("list");
         expect(element.textContent).toContain("Select an agent on the left, or create one.");
       }, { timeout: 5000 });
+    } finally {
+      releaseAfterFirstDelete();
+      app.unmount();
+    }
+  });
+
+  it("keeps a dirty create form mounted until leaving is confirmed: Keep editing restores create draft and Discard switches to the clicked agent", { timeout: 20000 }, async () => {
+    let summaryGate: Promise<void> | null = null;
+    let releaseSummary: () => void = () => {};
+    const rows = [
+      agentRow(AGENT, String(stored.name), String(stored.description)),
+      agentRow(OTHER, "Planner", "Plans tasks"),
+    ];
+    const route = mountBuiltinRoute({
+      initialState: { mode: "create" },
+      onListRead: () => Response.json({ status: "ready", value: rows }),
+      onSummaryRead: async (primaryKey) => {
+        if (primaryKey === OTHER && summaryGate) {
+          await summaryGate;
+        }
+        const label = primaryKey === OTHER ? "Planner" : String(stored.name);
+        return Response.json({
+          status: "ready",
+          value: { primaryKey: primaryKey ?? AGENT, label, fields: { description: "Plans tasks", enabled: true } },
+        });
+      },
+    });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(element.querySelectorAll(".sdk-object-list [role=option]")).toHaveLength(2);
+        expect(fieldItem("/name")?.querySelector("input")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      const nameInput = fieldItem("/name")!.querySelector<HTMLInputElement>("input")!;
+      nameInput.value = "Draft Agent";
+      nameInput.dispatchEvent(new Event("input"));
+      await nextTick();
+
+      // Delay B's summary read so selectedReady stays false while clicking B from dirty create mode.
+      summaryGate = new Promise<void>((resolve) => {
+        releaseSummary = resolve;
+      });
+      const optionB = [...element.querySelectorAll<HTMLElement>(".sdk-object-list [role=option]")]
+        .find((optionEl) => optionEl.textContent?.includes("Planner"))!;
+      optionB.click();
+
+      // Form must remain mounted (not unmounted while summary is pending) and show unsaved leave confirmation.
+      expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Draft Agent");
+      await answerLeaveConfirm("keep");
+
+      await vi.waitFor(() => {
+        expect(route.router.currentRoute.value.query.mode).toBe("create");
+        expect(route.router.currentRoute.value.query.selected).toBeUndefined();
+      }, { timeout: 5000 });
+      expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Draft Agent");
+
+      // Click B again and discard the unsaved draft -> loads B cleanly once summary resolves.
+      optionB.click();
+      await answerLeaveConfirm("discard");
+      releaseSummary();
+      summaryGate = null;
+
+      await vi.waitFor(() => {
+        expect(route.router.currentRoute.value.query.selected).toBe(OTHER);
+        expect(route.router.currentRoute.value.query.mode).toBe("edit");
+        expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Planner");
+      }, { timeout: 5000 });
+    } finally {
+      releaseSummary();
+      app.unmount();
+    }
+  });
+
+  it("keeps a dirty edit form mounted when switching to a missing or forbidden target until confirmed: Keep editing returns to A and Discard unmounts the form with error in place", { timeout: 20000 }, async () => {
+    const missingId = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a99";
+    const rows = [
+      agentRow(AGENT, String(stored.name), String(stored.description)),
+      agentRow(missingId, "Ghost Agent", "Deleted elsewhere"),
+    ];
+    const route = mountBuiltinRoute({
+      onListRead: () => Response.json({ status: "ready", value: rows }),
+      onSummaryRead: (primaryKey) => primaryKey === missingId
+        ? Response.json({ status: "error", message: "Agent definition not found" })
+        : Response.json({
+          status: "ready",
+          value: { primaryKey: AGENT, label: String(stored.name), fields: { description: String(stored.description), enabled: true } },
+        }),
+    });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(route.router.currentRoute.value.query.selected).toBe(AGENT);
+        expect(fieldItem("/name")?.querySelector("input")?.value).toBe("e2e-agent-settings");
+      }, { timeout: 5000 });
+
+      const nameInput = fieldItem("/name")!.querySelector<HTMLInputElement>("input")!;
+      nameInput.value = "Unsaved A Edit";
+      nameInput.dispatchEvent(new Event("input"));
+      await nextTick();
+
+      const optionC = [...element.querySelectorAll<HTMLElement>(".sdk-object-list [role=option]")]
+        .find((optionEl) => optionEl.textContent?.includes("Ghost Agent"))!;
+      optionC.click();
+
+      // Wait for C's error summary while the confirm dialog is still open: form stays mounted, Delete stays hidden.
+      await vi.waitFor(() => {
+        expect(element.textContent).toContain("Agent definition not found");
+      }, { timeout: 5000 });
+      expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Unsaved A Edit");
+      const deleteButtonsWhileConfirming = [...element.querySelectorAll<HTMLButtonElement>(".agent-settings-actions button")]
+        .filter((button) => button.textContent?.trim() === "Delete");
+      expect(deleteButtonsWhileConfirming).toHaveLength(0);
+
+      await answerLeaveConfirm("keep");
+      await vi.waitFor(() => {
+        expect(route.router.currentRoute.value.query.selected).toBe(AGENT);
+        expect(route.router.currentRoute.value.query.mode).toBe("edit");
+      }, { timeout: 5000 });
+      expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Unsaved A Edit");
+
+      // Switch to C again and discard -> form unmounts cleanly and C's error stays visible in place.
+      optionC.click();
+      await answerLeaveConfirm("discard");
+
+      await vi.waitFor(() => {
+        expect(route.router.currentRoute.value.query.selected).toBe(missingId);
+        expect(route.router.currentRoute.value.query.mode).toBe("edit");
+        expect(fieldItem("/name")).toBeNull();
+        expect(element.textContent).toContain("Agent definition not found");
+      }, { timeout: 5000 });
+      const deleteButtonsAfterDiscard = [...element.querySelectorAll<HTMLButtonElement>(".agent-settings-actions button")]
+        .filter((button) => button.textContent?.trim() === "Delete");
+      expect(deleteButtonsAfterDiscard).toHaveLength(0);
     } finally {
       app.unmount();
     }

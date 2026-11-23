@@ -12,14 +12,75 @@ import {
   type AssistantCredentials,
 } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
+import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { runOutcome } from "../../platform/agent-runtime/projection";
+
+async function externalThreadId(sessionId: string, owner: AssistantOwner): Promise<string> {
+  return (
+    (
+      await getPostgresPool().query(
+        `SELECT alias FROM ${table("assistant_external_threads")} WHERE session_id=$1 AND domain_id=$2 AND owner_id=$3 ORDER BY alias LIMIT 1`,
+        [sessionId, owner.domainId, owner.userId],
+      )
+    ).rows[0]?.alias ?? sessionId
+  );
+}
+
+async function pendingAnalysisTask(id: string, owner: AssistantOwner, notFound: HttpError) {
+  const client = new RuntimeClient(owner.domainId, undefined, owner.userId);
+  let intent;
+  try {
+    intent = await client.channelIntent(id);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 404) throw notFound;
+    throw error;
+  }
+  if (intent.session.providerId !== "workbench" || intent.channel.actor.domainId !== owner.domainId)
+    throw notFound;
+  const session = await assistantStore.session(intent.session.sessionId, owner);
+  if (intent.status !== "starting" && intent.status !== "cancelled" && intent.status !== "failed")
+    return null;
+  const snapshot = await client.session(session.id);
+  const input = snapshot.messages.find((m) => m.id === intent.inputId)?.message;
+  const createdAt = Date.parse(intent.createdAt);
+  return {
+    id,
+    agentId: session.agent_id,
+    userId: owner.userId,
+    name: session.title,
+    status: intent.status,
+    threadId: await externalThreadId(session.id, owner),
+    question: messageText(input ?? { content: "" }),
+    resultSummary: intent.error ?? "",
+    resultReport: undefined,
+    reportDeliverableEnabled: false,
+    finalAnswer: "",
+    triggerSource: "manual" as const,
+    lastRunAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
 export async function analysisTask(id: string, owner: AssistantOwner) {
   if (!z.string().uuid().safeParse(id).success)
     throw new HttpError(404, "Analysis task not found");
-  const turn = await assistantStore.turn(id, owner),
-    session = await assistantStore.session(turn.session_id, owner),
-    s = await assistantService.readRun(session.id, id, owner),
-    report = s.artifacts
+  let turn;
+  let session;
+  let s;
+  try {
+    turn = await assistantStore.turn(id, owner);
+    session = await assistantStore.session(turn.session_id, owner);
+    s = await assistantService.readRun(session.id, id, owner);
+  } catch (error) {
+    if (!(error instanceof HttpError && error.status === 404)) throw error;
+    const pending = await pendingAnalysisTask(id, owner, error);
+    if (pending) return pending;
+    turn = await assistantStore.turn(id, owner);
+    session = await assistantStore.session(turn.session_id, owner);
+    s = await assistantService.readRun(session.id, id, owner);
+  }
+  const report = s.artifacts
       .filter((a) => /^outputs\/reports\/.+\/report\.md$/.test(a.path))
       .at(-1),
     text = answerText(s);
@@ -29,13 +90,7 @@ export async function analysisTask(id: string, owner: AssistantOwner) {
     userId: owner.userId,
     name: session.title,
     status: runOutcome(s.run),
-    threadId:
-      (
-        await getPostgresPool().query(
-          `SELECT alias FROM ${table("assistant_external_threads")} WHERE session_id=$1 AND domain_id=$2 AND owner_id=$3 ORDER BY alias LIMIT 1`,
-          [session.id, owner.domainId, owner.userId],
-        )
-      ).rows[0]?.alias ?? session.id,
+    threadId: await externalThreadId(session.id, owner),
     question: messageText(
       s.messages.find((m) => m.message.role === "user")?.message ?? {
         content: "",
@@ -49,7 +104,7 @@ export async function analysisTask(id: string, owner: AssistantOwner) {
       : undefined,
     reportDeliverableEnabled: !!report,
     finalAnswer: text,
-    triggerSource: "manual",
+    triggerSource: "manual" as const,
     lastRunAt: Date.parse(s.run.createdAt),
     createdAt: new Date(turn.created_at).getTime(),
     updatedAt: Date.parse(s.run.finishedAt ?? s.run.createdAt),

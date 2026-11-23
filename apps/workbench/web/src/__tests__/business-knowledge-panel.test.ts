@@ -203,6 +203,8 @@ function mountKnowledgeRoute(options: {
   initialState?: Record<string, unknown>;
   confirmLeave?: () => Promise<boolean>;
   beforeListRead?: () => Promise<void>;
+  beforeFormRead?: () => Promise<void>;
+  formReadResponse?: (dataName: string) => Response | null;
 } = {}) {
   const records = new Map<string, KnowledgeRecord>([
     [
@@ -358,8 +360,11 @@ function mountKnowledgeRoute(options: {
         return Response.json({ status: "ready", value: toListRow(record) });
       }
       if (member === "form") {
+        if (options.beforeFormRead) await options.beforeFormRead();
         if (body.dataName === "createForm") {
           formTargetReads.push({ dataName: "createForm", targetPrimaryKey: null });
+          const custom = options.formReadResponse?.(body.dataName);
+          if (custom) return custom;
           return Response.json({
             status: "ready",
             value: formDescription(null, { knowledgeTitle: "", knowledgeText: "", status: "0" }),
@@ -368,6 +373,8 @@ function mountKnowledgeRoute(options: {
         const ref = (body.inputs.knowledge ?? body.inputs.target) as { primaryKey?: string } | undefined;
         const record = ref?.primaryKey ? records.get(ref.primaryKey) : undefined;
         formTargetReads.push({ dataName: "form", targetPrimaryKey: ref?.primaryKey ?? null });
+        const custom = options.formReadResponse?.(body.dataName);
+        if (custom) return custom;
         if (!record) return Response.json({ status: "empty" });
         return Response.json({
           status: "ready",
@@ -1065,3 +1072,269 @@ describe("business-knowledge builtin panel unmounts hidden form and actions", ()
     }
   });
 });
+
+function installMockResizeObserver(initialWidth: number) {
+  type ObserverCallback = (entries: ResizeObserverEntry[], observer: ResizeObserver) => void;
+  const Original = globalThis.ResizeObserver;
+  const observers = new Set<{
+    callback: ObserverCallback;
+    targets: Set<Element>;
+  }>();
+
+  class MockResizeObserver implements ResizeObserver {
+    readonly #entry: { callback: ObserverCallback; targets: Set<Element> };
+    constructor(callback: ObserverCallback) {
+      this.#entry = { callback, targets: new Set() };
+      observers.add(this.#entry);
+    }
+    observe(target: Element) {
+      this.#entry.targets.add(target);
+      this.#entry.callback(
+        [{ target, contentRect: { width: initialWidth, height: 600 } as DOMRectReadOnly } as ResizeObserverEntry],
+        this,
+      );
+    }
+    unobserve(target: Element) {
+      this.#entry.targets.delete(target);
+    }
+    disconnect() {
+      this.#entry.targets.clear();
+      observers.delete(this.#entry);
+    }
+  }
+
+  globalThis.ResizeObserver = MockResizeObserver;
+  return {
+    restore() {
+      globalThis.ResizeObserver = Original;
+    },
+  };
+}
+
+describe("business-knowledge builtin panel narrow layout detailOpen behavior", () => {
+  it("opens detail directly on cold start with ?selected=ENTRY_A in a narrow container", { timeout: 20000 }, async () => {
+    const ro = installMockResizeObserver(560);
+    const route = mountKnowledgeRoute({ initialState: { selected: knowledgeRef(ENTRY_A) } });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        const root = element.querySelector<HTMLElement>(".bk");
+        expect(root?.classList.contains("narrow")).toBe(true);
+        expect(root?.classList.contains("detail-open")).toBe(true);
+        expect(element.textContent).toContain("Orders after 18:00 ship next day.");
+      }, { timeout: 5000 });
+    } finally {
+      app.unmount();
+      ro.restore();
+    }
+  });
+
+  it("keeps narrow container on list view when opened without selected despite fallbackToFirst, then opens detail on agent present", { timeout: 20000 }, async () => {
+    const ro = installMockResizeObserver(560);
+    const route = mountKnowledgeRoute();
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(route.getController()).not.toBeNull();
+        expect(findListOption(element, "Order Cutoff Rule")).toBeTruthy();
+        expect(findListOption(element, "Refund SLA")).toBeTruthy();
+        // fallbackToFirst selects ENTRY_A in state, while narrow container keeps the list visible.
+        expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_A);
+      }, { timeout: 5000 });
+
+      const root = element.querySelector<HTMLElement>(".bk");
+      expect(root?.classList.contains("narrow")).toBe(true);
+      expect(root?.classList.contains("detail-open")).toBe(false);
+
+      // Agent present targeting ENTRY_B from narrow list view opens detail.
+      route.getController()!.applyState({ selected: knowledgeRef(ENTRY_B) });
+      await vi.waitFor(() => {
+        expect(root?.classList.contains("detail-open")).toBe(true);
+        expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_B);
+        expect(element.textContent).toContain("Refunds settle within 3 business days.");
+      }, { timeout: 5000 });
+    } finally {
+      app.unmount();
+      ro.restore();
+    }
+  });
+
+  it("supports returning to list and re-opening the same or another entry by click or agent present in a narrow container", { timeout: 20000 }, async () => {
+    const ro = installMockResizeObserver(560);
+    const route = mountKnowledgeRoute({ initialState: { selected: knowledgeRef(ENTRY_A) } });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        const root = element.querySelector<HTMLElement>(".bk");
+        expect(route.getController()).not.toBeNull();
+        expect(root?.classList.contains("narrow")).toBe(true);
+        expect(root?.classList.contains("detail-open")).toBe(true);
+        expect(findButton(element, "Back to list")).toBeTruthy();
+        expect(findListOption(element, "Order Cutoff Rule")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      const root = element.querySelector<HTMLElement>(".bk")!;
+
+      // Return to list in narrow mode.
+      findButton(element, "Back to list")!.click();
+      await vi.waitFor(() => {
+        expect(root.classList.contains("detail-open")).toBe(false);
+      }, { timeout: 5000 });
+
+      // Clicking the same entry ENTRY_A again re-opens detail.
+      clickListOption(element, "Order Cutoff Rule");
+      await vi.waitFor(() => {
+        expect(root.classList.contains("detail-open")).toBe(true);
+        expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_A);
+      }, { timeout: 5000 });
+
+      // Return to list again, then click ENTRY_B.
+      findButton(element, "Back to list")!.click();
+      await vi.waitFor(() => {
+        expect(root.classList.contains("detail-open")).toBe(false);
+      }, { timeout: 5000 });
+
+      clickListOption(element, "Refund SLA");
+      await vi.waitFor(() => {
+        expect(root.classList.contains("detail-open")).toBe(true);
+        expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_B);
+      }, { timeout: 5000 });
+
+      // Return to list again, then re-present the same ENTRY_B from agent.
+      findButton(element, "Back to list")!.click();
+      await vi.waitFor(() => {
+        expect(root.classList.contains("detail-open")).toBe(false);
+      }, { timeout: 5000 });
+
+      route.getController()!.applyState({ selected: knowledgeRef(ENTRY_B) });
+      await vi.waitFor(() => {
+        expect(root.classList.contains("detail-open")).toBe(true);
+        expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_B);
+      }, { timeout: 5000 });
+
+      // Entering edit mode and clicking Back to list closes both edit mode and narrow detail.
+      findButton(element, "Edit")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Edit Knowledge");
+        expect(root.classList.contains("detail-open")).toBe(true);
+      }, { timeout: 5000 });
+
+      findButton(element, "Back to list")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBeNull();
+        expect(root.classList.contains("detail-open")).toBe(false);
+      }, { timeout: 5000 });
+    } finally {
+      app.unmount();
+      ro.restore();
+    }
+  });
+});
+
+describe("business-knowledge builtin panel Save button aligns with form.canSubmit", () => {
+  it("keeps Save enabled when an edited field is changed back to its original value, matching form.save", { timeout: 20000 }, async () => {
+    const route = mountKnowledgeRoute({ initialState: { selected: knowledgeRef(ENTRY_A) } });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(findButton(element, "Edit")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      findButton(element, "Edit")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Edit Knowledge");
+        expect(titleInput(element)?.value).toBe("Order Cutoff Rule");
+      }, { timeout: 5000 });
+
+      // Before any edit, Save is disabled because canSettle/canSubmit is false.
+      expect(findButton(element, "Save")?.disabled).toBe(true);
+
+      // Edit title -> Save enables.
+      setTitleInput(element, "Order Cutoff Rule Temp");
+      await vi.waitFor(() => {
+        expect(findButton(element, "Save")?.disabled).toBe(false);
+      }, { timeout: 5000 });
+
+      // Revert title back to its original value -> Save stays enabled because the field is still in `submitted` (`canSettle === true`).
+      setTitleInput(element, "Order Cutoff Rule");
+      await vi.waitFor(() => {
+        expect(titleInput(element)?.value).toBe("Order Cutoff Rule");
+      }, { timeout: 5000 });
+      expect(findButton(element, "Save")?.disabled).toBe(false);
+
+      // Clicking Save submits successfully.
+      findButton(element, "Save")!.click();
+      await vi.waitFor(() => {
+        expect(route.savedCalls).toHaveLength(1);
+        expect(route.savedCalls[0]?.targetPrimaryKey).toBe(ENTRY_A);
+        expect(route.savedCalls[0]?.values.knowledgeTitle).toBe("Order Cutoff Rule");
+        expect(formHeading(element)).toBeNull();
+      }, { timeout: 5000 });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("disables Save while the form is loading or when the form read fails", { timeout: 20000 }, async () => {
+    const formReadGate: { release: (() => void) | null } = { release: null };
+    let shouldFail = false;
+    const route = mountKnowledgeRoute({
+      initialState: { selected: knowledgeRef(ENTRY_A) },
+      beforeFormRead: async () => {
+        if (shouldFail) return;
+        await new Promise<void>((resolve) => {
+          formReadGate.release = resolve;
+        });
+      },
+      formReadResponse: () => {
+        if (!shouldFail) return null;
+        return Response.json({ status: "error", message: "Form load failed" }, { status: 500 });
+      },
+    });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(findButton(element, "Add Knowledge")).toBeTruthy();
+        expect(findButton(element, "Edit")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      // Create mode while form description is still loading: Save must be disabled.
+      findButton(element, "Add Knowledge")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Add Knowledge");
+        expect(formReadGate.release).not.toBeNull();
+      }, { timeout: 5000 });
+      expect(findButton(element, "Save")?.disabled).toBe(true);
+
+      // Release loading; still disabled until a field is set, then enables on edit.
+      formReadGate.release!();
+      formReadGate.release = null;
+      await vi.waitFor(() => {
+        expect(titleInput(element)).not.toBeNull();
+      }, { timeout: 5000 });
+      expect(findButton(element, "Save")?.disabled).toBe(true);
+
+      findButton(element, "Cancel")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBeNull();
+        expect(findButton(element, "Edit")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      // Form read failure: once the failed read settles, Save must remain disabled.
+      shouldFail = true;
+      findButton(element, "Edit")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Edit Knowledge");
+        expect(route.formTargetReads.some((r) => r.dataName === "form")).toBe(true);
+        expect(element.textContent).toContain("Form load failed");
+      }, { timeout: 5000 });
+
+      expect(titleInput(element)).toBeNull();
+      expect(findButton(element, "Save")?.disabled).toBe(true);
+    } finally {
+      formReadGate.release?.();
+      app.unmount();
+    }
+  });
+});
+

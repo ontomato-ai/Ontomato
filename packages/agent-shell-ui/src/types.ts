@@ -205,6 +205,8 @@ export interface ShellLabels {
   steps: (count: number) => string;
   thinking: string;
   working: string;
+  /** Shown on a received message waiting in the session queue for the previous turn to finish. */
+  queuedWaiting: string;
   /** The composer's agent choice while a reply runs: the running conversation keeps the agent it started with. */
   switchWhileRunning: string;
   /**

@@ -163,22 +163,37 @@ watch(
   { immediate: true },
 );
 
-function targetDashboardIdFromNavigation(next: {
-  address: string;
-  state?: Readonly<Record<string, unknown>>;
-}): string {
-  const fromState = typeof next.state?.dashboardId === "string" ? next.state.dashboardId.trim() : "";
-  if (fromState) return fromState;
-  const query = next.address.split("?")[1]?.split("#")[0] ?? "";
-  return new URLSearchParams(query).get("dashboardId")?.trim() ?? "";
-}
-
 if (props.registerPageController) {
   const unregister = props.registerPageController({
     blocksNavigation(next) {
       if (!panelDirty.value) return false;
-      const targetId = targetDashboardIdFromNavigation(next);
-      return Boolean(targetId && targetId !== currentDashboardId.value);
+      const currentId = currentDashboardId.value;
+      const query = next.address.split("?")[1]?.split("#")[0] ?? "";
+      const queryId = new URLSearchParams(query).get("dashboardId")?.trim() ?? "";
+      const hasState = Boolean(next.state && Object.keys(next.state).length > 0);
+      const stateHasDashboardId = Boolean(next.state && "dashboardId" in next.state);
+      const stateId = typeof next.state?.dashboardId === "string" ? next.state.dashboardId.trim() : "";
+
+      if (stateHasDashboardId) {
+        if (!stateId || stateId !== currentId) return true;
+        // An address with explicit query/hash omitting dashboardId would still rewrite the URL and drop the board.
+        if ((next.address.includes("?") || next.address.includes("#")) && queryId !== currentId) return true;
+        return false;
+      }
+      if (queryId) {
+        return queryId !== currentId;
+      }
+
+      // Without dashboardId, allow only a bare-path state patch operating on the current board (such as `{ cardId }`),
+      // because the display controller keeps the current address intact for state-only patches.
+      const addressHasParams = next.address.includes("?") || next.address.includes("#");
+      const isSameBoardCardPatch =
+        hasState
+        && !addressHasParams
+        && typeof next.state?.cardId === "string"
+        && next.state.cardId.trim().length > 0
+        && Object.keys(next.state!).every((key) => key === "cardId");
+      return !isSameBoardCardPatch;
     },
     applyState(patch) {
       const nextDashboardId = typeof patch.dashboardId === "string" ? patch.dashboardId.trim() : "";
@@ -387,9 +402,11 @@ onMounted(async () => {
         :key="currentDashboardId"
         :dashboard-id="currentDashboardId"
         :card-id="chosenCardId"
+        :editing-board-name="Boolean(currentDashboardId && editingDashboardId === currentDashboardId)"
         @select-card="(card: { id: string; name: string } | null) => writeCard(card)"
         @dirty="onPanelDirty"
         @preview-active="onBoardPreviewActive"
+        @cancel-board-rename="store.cancelDashboardRename()"
         @board-saved="() => store.loadDashboards()"
       />
       <el-empty v-else-if="!loadingDashboards" :description="t('analysis.noDashboards')" />

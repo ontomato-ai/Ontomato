@@ -92,6 +92,7 @@
           "selected": "filePath"
         },
         "config": {
+          "defaultKey": "SKILL.md",
           "fallbackToFirst": true,
           "label": "panel.files",
           "emptyText": "panel.filesEmpty"

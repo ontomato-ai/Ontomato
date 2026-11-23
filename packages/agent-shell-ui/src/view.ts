@@ -30,6 +30,8 @@ export interface UserItem {
   text: string;
   /** The reader answered one of the agents' questions with it. */
   answer: boolean;
+  /** Accepted by the runtime and queued until the previous turn finishes. */
+  queued?: boolean;
 }
 
 export interface ResponseItem {
@@ -82,6 +84,11 @@ function userText(content: string | { type: string; text?: string }[]): string {
  */
 export function conversationItems(state: ConversationState, tasks: AgentTasksSnapshot | null = null): ConversationItem[] {
   const items: ConversationItem[] = [];
+  const queuedInputIds = new Set<string>();
+  for (const queued of tasks?.queuedRuns ?? []) {
+    if (state.runs[queued.runId]) continue;
+    for (const inputId of queued.inputIds) queuedInputIds.add(inputId);
+  }
   const retrievals = new Map<string, Array<ChannelAgentTask>>();
   const datasetsByRun = new Map<string, ChannelAgentTask>();
   const delegatedByRun = new Map<string, ChannelAgentTask>();
@@ -152,7 +159,10 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       if(current && entry.contextSeq !== null) {
         place(current,message.timestamp);
         current.process.push({kind:"input",key:entry.id,messageId:entry.id,text:userText(message.content),source:"user",...(message.role === "notification" ? {replyTo:message.replyTo}:{}),runId:current.runId,final:true});
-      } else items.push({ kind: "user", key: entry.id, text: userText(message.content), answer: userAnswer });
+      } else {
+        const queued = entry.runId === null && queuedInputIds.has(entry.id);
+        items.push({ kind: "user", key: entry.id, text: userText(message.content), answer: userAnswer, ...(queued ? { queued: true } : {}) });
+      }
       for (const failure of tasks?.preparationFailures ?? []) if (failure.inputId === entry.id) items.push({ kind: "notification",key: `preparation:${failure.runId}`,text: failure.error,error: true });
       continue;
     }
