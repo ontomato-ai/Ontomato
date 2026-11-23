@@ -63,6 +63,7 @@ export {
   type DefinitionChanged,
   type CodedPanelTarget,
   type DirectPanelMount,
+  type DirectPanelMountStateOptions,
   type DirectPanelRun,
   type HostedPanelSource,
   type PanelHostState,

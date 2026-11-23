@@ -133,6 +133,22 @@ test("short draft reads must name their form member and keep the binding on the 
   assert.throws(() => expand("approve", {
     component: "OperationButton", operation: approve.id, target: "selected", parameters,
   }), /Member 'approve', field 'parameters'.*requires an operation that reads a form draft/);
+
+  const formWithDraftRead = expand("definition", {
+    component: "ObjectForm",
+    target: "selected",
+    data: { form: "form" },
+    operation: save.id,
+    operations: {
+      testExecute: { operation: trial.id, draft: "definition" },
+    },
+  }, { objectTypes: { [type]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[type].reads, operations: [save, trial] }) } });
+  assert.deepEqual(formWithDraftRead.projection.operations?.testExecute, {
+    operation: { kind: "PlatformOperation", id: trial.id },
+  });
+  assert.deepEqual(formWithDraftRead.placement.readOperationInputs?.testExecute, {
+    draft: { slot: "definition" }, parameters: { fields: {} },
+  });
 });
 
 test("short forms share the object input between the form read and save operation", () => {

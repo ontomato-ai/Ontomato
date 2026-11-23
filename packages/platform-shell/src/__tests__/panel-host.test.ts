@@ -10,6 +10,7 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import {
   panelFrameDocument,
   usePanelInstance,
+  type DirectPanelMountStateOptions,
   type DirectPanelRun,
   type PanelHostLabels,
   type PanelHostPort,
@@ -92,7 +93,12 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
   const listeners = new Set<(revisions: readonly ProductDefinitionRevision[]) => void>();
   /** Each started instance of a panel with a module, by use: what the host gave it, and what it was told since. */
   const coded = new Map<string, {
-    run: DirectPanelRun; projectionsChanged: { id: string; revision?: number }[][]; addresses: string[]; invoked: string[]; statePatches: Record<string, unknown>[];
+    run: DirectPanelRun;
+    projectionsChanged: { id: string; revision?: number }[][];
+    addresses: string[];
+    invoked: string[];
+    statePatches: Record<string, unknown>[];
+    stateUpdates: { patch: Record<string, unknown>; options?: DirectPanelMountStateOptions }[];
   }>();
   const frames = new Map<Window, unknown[]>();
   const sent = new WeakMap<Window, unknown[]>();
@@ -109,14 +115,24 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
         // The panel runs in the platform's document, started here.
         coded: async (_source, run) => {
           if (stand.codedFailure) throw stand.codedFailure;
-          const started = { run, projectionsChanged: [] as { id: string; revision?: number }[][], addresses: [] as string[], invoked: [] as string[], statePatches: [] as Record<string, unknown>[] };
+          const started = {
+            run,
+            projectionsChanged: [] as { id: string; revision?: number }[][],
+            addresses: [] as string[],
+            invoked: [] as string[],
+            statePatches: [] as Record<string, unknown>[],
+            stateUpdates: [] as { patch: Record<string, unknown>; options?: DirectPanelMountStateOptions }[],
+          };
           coded.set(use.id, started);
           // The instance runs: it reports its state at the address it was given.
           run.state(run.initial, run.url());
           return {
             refresh() {}, activate() {}, dispose() {},
             address: url => { started.addresses.push(url); },
-            setState: patch => { started.statePatches.push({ ...patch }); },
+            setState: (patch, options) => {
+              started.statePatches.push({ ...patch });
+              started.stateUpdates.push({ patch: { ...patch }, ...(options ? { options } : {}) });
+            },
             invoke: id => { started.invoked.push(id); return Promise.resolve(`answer of ${id}`); },
             projectionsChanged: projections => { started.projectionsChanged.push([...projections]); },
           };
@@ -743,7 +759,47 @@ describe("the panel host", () => {
       { term: "spring", campus: null },
       { term: "autumn" },
     ]);
+    expect(started.stateUpdates).toEqual([
+      { patch: { term: "spring", campus: null }, options: { external: true, withdrawn: ["campus"] } },
+      { patch: { term: "autumn" }, options: { external: true, withdrawn: ["term"] } },
+    ]);
     expect(view.address.value).toBe(path);
+    scope.stop();
+  });
+
+  it("marks withdrawn external-only fields including personal fields so personal-state hosts can restore saved preferences", async () => {
+    const manifest = definePanel({
+      state: {
+        term: { type: { kind: "scalar", type: "string" }, external: true, personal: true, default: "autumn" },
+        campus: { type: { kind: "scalar", type: "string" }, external: true },
+      },
+      members: {},
+    });
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", manifest)]]);
+    const path = "/applications/app-a/a/schedules";
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", path)] });
+    const inputs = ref<Record<string, string>>({});
+    const scope = effectScope();
+    const view = scope.run(() => usePanelInstance(port.port("use-a"), {
+      labels,
+      label: () => "Scheduled tasks",
+      address: () => path,
+      initial: () => ({}),
+      entryInputs: () => inputs.value,
+      wired: () => ["term", "campus"],
+    }))!;
+    await view.ready;
+
+    inputs.value = { term: "spring", campus: "north" };
+    await nextTick();
+    inputs.value = {};
+    await nextTick();
+
+    const started = port.started("use-a");
+    expect(started.stateUpdates).toEqual([
+      { patch: { term: "spring", campus: "north" }, options: { external: true } },
+      { patch: { term: "autumn", campus: null }, options: { external: true, withdrawn: ["term", "campus"] } },
+    ]);
     scope.stop();
   });
 

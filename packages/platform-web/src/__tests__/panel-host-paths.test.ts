@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { effectScope, nextTick, ref } from "vue";
+import { createMemoryHistory, createRouter } from "vue-router";
 import { installAuthHost } from "@ontomato/workbench-ui/utils/auth";
 import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import en from "element-plus/es/locale/lang/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { cachedApplicationFrameManifest, framePanelHost, panelHostPaths, readApplicationFrameManifest } from "../panel-host";
+import { PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH } from "@ontomato/contracts/panel-host";
+import { usePanelInstance, type PanelHostLabels } from "@ontomato/platform-shell";
+import type { PlatformPreferences } from "@ontomato/platform-admin";
+import { installAppHost } from "../app-host";
+import { cachedApplicationFrameManifest, framePanelHost, panelHostPaths, platformPanelHost, readApplicationFrameManifest } from "../panel-host";
 
 /*
  * The panel host's addresses (design 10.3): each request goes to the owner it belongs to, and the two owners differ.
@@ -219,4 +225,197 @@ it("backs off consecutive failures, resets on a snapshot, and cancels a pending 
     observer.close();
     vi.useRealTimers();
   }
+});
+
+describe("personal state with external-only entry inputs", () => {
+  beforeEach(() => {
+    installAppHost({
+      credential: { type: "anonymous" },
+      preferences: { locale: ref("en"), locales: ["en"], theme: ref("light"), setLocale: () => {}, setTheme: () => {} } as PlatformPreferences,
+      router: createRouter({ history: createMemoryHistory(), routes: [] }),
+      onAuthFailure: vi.fn(),
+    });
+  });
+
+  const hostLabels: PanelHostLabels = {
+    notStarted: "Not started",
+    failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
+    content: { styleOutside: "Style outside" },
+    draft: { opening: "Opening the draft", close: "Close", toAgent: "To agent", toAgentText: "Unused: {reason}" },
+    refresh: "Refresh",
+  };
+  const use = {
+    id: "use-personal-ext",
+    pageKey: "personal-ext",
+    panelId: "panel-personal-ext",
+    path: "/applications/app-a/personal-ext",
+    access: { kind: "domain-member" as const },
+  };
+  const panelManifest = definePanel({
+    state: {
+      term: { type: { kind: "scalar", type: "string" }, external: true, personal: true, deepLink: false, default: "autumn" },
+      campus: { type: { kind: "scalar", type: "string" }, external: true, deepLink: false, default: "north" },
+    },
+    members: {},
+  });
+
+  function stubPersonalHostFetch(savedValues: Record<string, unknown>, writes: Record<string, unknown>[]) {
+    vi.stubGlobal("fetch", async (input: string | URL, init?: { method?: string; body?: string }) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === `/api${PANEL_PERSONAL_STATE_READ_PATH}`) {
+        return Response.json({ values: savedValues });
+      }
+      if (url.pathname === `/api${PANEL_PERSONAL_STATE_PATH}` && init?.method === "PUT") {
+        writes.push(JSON.parse(init.body ?? "{}").values as Record<string, unknown>);
+        return Response.json({ values: savedValues });
+      }
+      if (url.pathname === panelHostPaths.snapshot(use.panelId)) {
+        return Response.json({
+          panel: { id: use.panelId, revision: 1 },
+          projections: [],
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === panelHostPaths.pageSkillContext(use.panelId)) {
+        return Response.json({
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+        });
+      }
+      if (url.pathname === panelHostPaths.panel(use.panelId)) {
+        return Response.json({
+          panel: {
+            id: use.panelId,
+            revision: 1,
+            name: "Personal External",
+            description: "",
+            visibility: "domain",
+            domainId: "domain-1",
+            ownerId: "owner-1",
+            editable: true,
+            createdAt: "2026-11-24T00:00:00.000Z",
+            updatedAt: "2026-11-24T00:00:00.000Z",
+            content: { html: '<div id="app"><span>panel</span></div>', module: "" },
+            manifest: panelManifest,
+          },
+          projections: {},
+        });
+      }
+      return Response.json({});
+    });
+  }
+
+  function mountedState(view: ReturnType<typeof usePanelInstance>) {
+    const mount = view.direct.value?.mount as {
+      instance: { state: { values: { value: Record<string, unknown> }; set(name: string, value: unknown): void } };
+    } | undefined;
+    return mount!.instance.state;
+  }
+
+  it("restores saved personal state instead of declared default and never overwrites personal storage when an external entry value is withdrawn", async () => {
+    const writes: Record<string, unknown>[] = [];
+    stubPersonalHostFetch({ term: "summer" }, writes);
+    vi.useFakeTimers();
+    const inputs = ref<Record<string, string>>({ term: "spring", campus: "south" });
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => use.path,
+        initial: () => ({}),
+        entryInputs: () => inputs.value,
+        wired: () => ["term", "campus"],
+      }))!;
+      await view.ready;
+      expect(view.error.value).toBe("");
+
+      expect(mountedState(view).values.value).toEqual({ term: "spring", campus: "south" });
+
+      inputs.value = {};
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(mountedState(view).values.value).toEqual({ term: "summer", campus: "north" });
+      expect(writes).toEqual([]);
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+    expect(writes).toEqual([]);
+  });
+
+  it("ignores external entry overrides in personal-state persistence while still saving explicit user changes", async () => {
+    const writes: Record<string, unknown>[] = [];
+    stubPersonalHostFetch({ term: "summer" }, writes);
+    vi.useFakeTimers();
+    const inputs = ref<Record<string, string>>({});
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => use.path,
+        initial: () => ({}),
+        entryInputs: () => inputs.value,
+        wired: () => ["term", "campus"],
+      }))!;
+      await view.ready;
+
+      expect(mountedState(view).values.value).toEqual({ term: "summer", campus: "north" });
+
+      inputs.value = { term: "spring", campus: "south" };
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mountedState(view).values.value).toEqual({ term: "spring", campus: "south" });
+      expect(writes).toEqual([]);
+
+      inputs.value = {};
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mountedState(view).values.value).toEqual({ term: "summer", campus: "north" });
+      expect(writes).toEqual([]);
+
+      mountedState(view).set("term", "winter");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(writes).toEqual([{ term: "winter" }]);
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("falls back to declared default without persisting when no personal value was saved", async () => {
+    const writes: Record<string, unknown>[] = [];
+    stubPersonalHostFetch({}, writes);
+    vi.useFakeTimers();
+    const inputs = ref<Record<string, string>>({ term: "spring" });
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", use, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => use.path,
+        initial: () => ({}),
+        entryInputs: () => inputs.value,
+        wired: () => ["term", "campus"],
+      }))!;
+      await view.ready;
+
+      expect(mountedState(view).values.value).toEqual({ term: "spring", campus: "north" });
+
+      inputs.value = {};
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(mountedState(view).values.value).toEqual({ term: "autumn", campus: "north" });
+      expect(writes).toEqual([]);
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+    expect(writes).toEqual([]);
+  });
 });

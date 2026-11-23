@@ -48,6 +48,7 @@ export { default as ReferencePicker } from "../base/ReferencePicker.vue";
 export { default as ObjectGraph } from "../base/ObjectGraph.vue";
 export { default as ObjectTree } from "../base/ObjectTree.vue";
 export { default as ObjectTextReader } from "../base/ObjectTextReader.vue";
+export { default as AnnotatedCode } from "../base/AnnotatedCode.vue";
 export { default as ConversationEntry } from "../base/ConversationEntry.vue";
 export { default as PanelData } from "../base/PanelData.vue";
 export { default as CurrentEntry } from "../base/CurrentEntry.vue";

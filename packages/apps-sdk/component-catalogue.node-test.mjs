@@ -71,6 +71,7 @@ const DECLARED_DATA = {
   ConversationEntry: {},
   ObjectTree: { files: ["panelRecordList"] },
   ObjectTextReader: { sources: ["panelRecordList"], page: ["panelRecordQuery"], record: ["panelRecord"] },
+  AnnotatedCode: { content: ["annotatedCode"] },
 };
 
 test("the built SDK's components.json is the catalogue its contract declares", (t) => {

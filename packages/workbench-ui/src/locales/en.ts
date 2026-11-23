@@ -338,7 +338,18 @@ export default {
     "workbenchExpandAside": "Expand sidebar",
     "workbenchCloseDetail": "Close details",
     "objectHeaderMoreActions": "More actions",
-    "objectHeaderMoreActionsFor": "More actions for {name}"
+    "objectHeaderMoreActionsFor": "More actions for {name}",
+    "annotatedCodeSegments": "Code explanation",
+    "annotatedCodeKinds": "Segment kinds",
+    "annotatedCodeEmpty": "No code explanation available",
+    "annotatedCodeStaleLabel": "Outdated",
+    "annotatedCodeStaleHint": "The current draft code differs from the saved annotated version.",
+    "annotatedCodeLineRange": "Lines {start}–{end}",
+    "annotatedCodeLineSingle": "Line {line}",
+    "annotatedCodeExpand": "Details",
+    "annotatedCodeCollapse": "Hide",
+    "annotatedCodeRefLocate": "Locate reference",
+    "annotatedCodeSummary": "Summary"
   },
   "nav": {
     "agentsAndSkills": "Agents and Skills",

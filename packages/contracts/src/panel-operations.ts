@@ -8,6 +8,7 @@ import {
   panelRecordListSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema,
 } from "./panel-projection";
 import { actionDefinitionSchema, actionExplanationSchema } from "./action-panel";
+import { annotatedCodeSchema } from "./annotated-code";
 import { chartProjectionTemplateSchema, dashboardMetricOutputSchema } from "./dashboard";
 import { productComponentDefinitionSchema } from "./apps-sdk";
 import {
@@ -121,6 +122,7 @@ export const panelReadResultSchemas = {
   sdkComponentDefinition: sdkComponentDefinitionSchema,
   actionDefinition: actionDefinitionSchema,
   actionExplanation: actionExplanationSchema,
+  annotatedCode: annotatedCodeSchema,
 };
 
 export const panelReadResultIdSchema = z.custom<PanelReadResultId>(
