@@ -1,84 +1,213 @@
 import { z } from "zod";
-import { RESERVED_MODEL_PROVIDER_IDS, UNCONFIGURED_MODEL_PROVIDER_ID, modelSettingsConfigurationSchema, type ModelEntry, type ModelSettingsWrite, type ModelProviderWrite } from "@ontomato/contracts/model-settings";
-import { type LegacyEmbeddingImport, type ModelMigrationMap } from "@ontomato/contracts/model-migration";
-import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
+import {
+  DEFAULT_CHAT_CONTEXT_WINDOW, DEFAULT_MODEL_MAX_RETRIES, DEFAULT_MODEL_TIMEOUT_SECONDS,
+  modelSettingsConfigurationSchema, type ModelEntry, type ModelProvider, type ModelSettingsConfiguration,
+} from "@ontomato/contracts/model-settings";
+import type { LegacyEmbeddingImport, ModelMigrationMap } from "@ontomato/contracts/model-migration";
 
-export const defaultModelRetry = () => ({ provider: { timeoutMs: 300000, maxRetries: 3, maxRetryDelayMs: 60000 } });
-export const emptyModelSettings = (): ModelSettingsWrite => ({ providers: {}, defaultModelId: null, embeddingModelId: null, retry: defaultModelRetry() });
-const legacyModelSchema = z.object({
-  name: z.string().min(1), modelName: z.string().min(1), baseUrl: z.string().url(),
-  displayName: z.string().nullish(), apiKeys: z.array(z.string()),
-  timeout: z.string().nullish(), maxRetries: z.number().int().nonnegative().nullish(),
-  contextWindow: z.number().int().positive().nullish(), maxTokens: z.number().int().positive().nullish(),
-  customHeaders: z.record(z.string()).nullish(), customRequestParameters: runtimeJsonObjectSchema.nullish(),
+/** References the runtime could not map stay under this prefix, so their owners keep failing explicitly. */
+export const unavailableReferencePrefix = "legacy";
+
+export function emptyModelSettings(): ModelSettingsConfiguration {
+  return { connections: {}, models: {}, defaultModel: null, embeddingModel: null };
+}
+
+/** The API each earlier release stored a connection's protocol as, and the provider prefix it now is. */
+export const legacyApiProviders: Record<string, ModelProvider> = {
+  "openai-completions": "custom_openai",
+  "openai-responses": "openai",
+  "anthropic-messages": "anthropic",
+  "google-generative-ai": "gemini",
+};
+
+/** An earlier release's connection with the models it hung under itself. */
+const legacyProviderSchema = z.object({
+  baseUrl: z.string(),
+  api: z.enum(["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"]),
+  apiKey: z.string(),
+  headers: z.record(z.string()).optional(),
+  models: z.array(z.object({
+    id: z.string(), type: z.enum(["chat", "embedding"]),
+    contextWindow: z.number().int().positive().nullish(), maxTokens: z.number().int().positive().nullish(),
+    dimensions: z.number().int().positive().nullish(), reasoning: z.boolean().nullish(),
+    input: z.array(z.string()).nullish(), samplingParams: z.record(z.unknown()).nullish(),
+  }).passthrough()).default([]),
 }).passthrough();
-// A stored row may predate the selection field entirely, so absent means "no default chosen" (~ null),
-// not a malformed row: refusing to start on it would strand an existing domain behind a crash.
-const legacySettingsSchema = z.object({ models: z.array(legacyModelSchema), defaultModelId: z.string().nullable().optional() });
+/** The oldest shape: one flat list of models, each with its address and keys, from pi's own settings file. */
+const legacyModelSchema = z.object({
+  name: z.string().min(1), modelName: z.string().min(1), baseUrl: z.string(),
+  apiKeys: z.array(z.string()).min(1), timeout: z.string().nullish(), maxRetries: z.number().int().nonnegative().nullish(),
+  contextWindow: z.number().int().positive().nullish(), maxTokens: z.number().int().positive().nullish(),
+  temperature: z.number().nullish(), topP: z.number().nullish(),
+  organizationId: z.string().nullish(), projectId: z.string().nullish(),
+  customHeaders: z.record(z.string()).nullish(), customRequestParameters: z.record(z.unknown()).nullish(),
+}).passthrough();
+const legacyProvidersSchema = z.object({
+  providers: z.record(legacyProviderSchema),
+  defaultModelId: z.string().nullish(), embeddingModelId: z.string().nullish(),
+  retry: z.object({ provider: z.object({
+    timeoutMs: z.number().int().positive(),
+    maxRetries: z.number().int().nonnegative(),
+    maxRetryDelayMs: z.number().int().nonnegative().optional(),
+  }).passthrough() }).passthrough().optional(),
+}).passthrough();
+const legacyModelsSchema = z.object({ models: z.array(legacyModelSchema), defaultModelId: z.string().nullish() }).passthrough();
+
 export function durationMs(value: string): number {
   const m = /^PT(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(value);
   if (!m || !m.slice(1).some(Boolean)) throw new Error("Invalid legacy model timeout");
   return Math.round((Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0)) * 1000);
 }
-const parameterNames: Record<string, string> = {
-  temperature: "temperature", topP: "top_p", stop: "stop", maxCompletionTokens: "max_completion_tokens",
-  presencePenalty: "presence_penalty", frequencyPenalty: "frequency_penalty", logitBias: "logit_bias",
-  seed: "seed", user: "user", parallelToolCalls: "parallel_tool_calls", store: "store", metadata: "metadata",
-  serviceTier: "service_tier", reasoningEffort: "reasoning_effort",
-};
+
 const normalizedHeaders = (headers: Record<string, string> = {}) => Object.fromEntries(
   Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]).sort(([a], [b]) => a!.localeCompare(b!)),
 );
-/** Every legacy entry survives, including duplicate API model IDs with different parameters. */
-export function appendImportedModel(settings: ModelSettingsWrite, connection: Omit<ModelProviderWrite, "models">, model: ModelEntry): string {
-  const equal = (provider: ModelProviderWrite) => provider.baseUrl === connection.baseUrl
-    && provider.apiKey === connection.apiKey && (provider.api === connection.api
-      || (model.type === "embedding" && provider.api === "openai-responses"))
-    && JSON.stringify(normalizedHeaders(provider.headers)) === JSON.stringify(normalizedHeaders(connection.headers));
-  const found = Object.entries(settings.providers).find(([, p]) => equal(p) && !p.models.some(m => m.id === model.id));
-  if (found) { found[1].models.push(model); return `${found[0]}/${model.id}`; }
-  let base = new URL(connection.baseUrl).hostname.replace(/[^a-zA-Z0-9.-]/g, "-") || "gateway";
-  if (RESERVED_MODEL_PROVIDER_IDS.includes(base)) base = "gateway";
-  let id = base;
-  for (let n = 2; settings.providers[id]; n++) id = `${base}-${n}`;
-  settings.providers[id] = { ...connection, name: id, models: [model] };
-  return `${id}/${model.id}`;
+
+/**
+ * A model's public name: the upstream's own ID, and the connection's name appended when the domain already uses that
+ * ID. Two models of one connection can never share an upstream ID, so this is the only collision to expect.
+ */
+function publicName(models: Record<string, ModelEntry>, preferred: string, connection: string): string {
+  if (!models[preferred]) return preferred;
+  const qualified = `${preferred} (${connection})`;
+  if (!models[qualified]) return qualified;
+  throw new Error(`Two models of connection ${connection} share the name ${preferred}`);
 }
-export function migrateLegacyModelSettings(raw: unknown, open: (key: string) => string) {
-  const old = legacySettingsSchema.parse(raw), settings = emptyModelSettings();
-  const mapping: ModelMigrationMap = { references: {}, unconfiguredProviderId: UNCONFIGURED_MODEL_PROVIDER_ID };
-  let discardedKeys = 0;
-  const timeouts: number[] = [], retries: number[] = [];
-  for (const model of old.models) {
-    const headers: Record<string, string> = {};
-    if (typeof model.organizationId === "string" && model.organizationId) headers["openai-organization"] = model.organizationId;
-    if (typeof model.projectId === "string" && model.projectId) headers["openai-project"] = model.projectId;
-    Object.assign(headers, normalizedHeaders(model.customHeaders ?? {}));
-    const samplingParams: Record<string, unknown> = {};
-    for (const [oldName, name] of Object.entries(parameterNames))
-      if (model[oldName] !== undefined && model[oldName] !== null) samplingParams[name] = model[oldName];
-    if (typeof model.responseFormat === "string" && model.responseFormat) samplingParams.response_format = { type: model.responseFormat };
-    Object.assign(samplingParams, model.customRequestParameters);
-    mapping.references[model.name] = appendImportedModel(settings, {
-      baseUrl: model.baseUrl, api: "openai-completions", apiKey: model.apiKeys[0] ? open(model.apiKeys[0]) : "unused", headers,
-    }, { id: model.modelName, name: model.displayName?.trim() || model.name, type: "chat", reasoning: false,
-      input: ["text", "image"], contextWindow: model.contextWindow ?? 256000, maxTokens: model.maxTokens ?? 50000,
-      samplingParams: runtimeJsonObjectSchema.parse(samplingParams) });
-    discardedKeys += Math.max(0, model.apiKeys.length - 1);
-    // An unset value meant the runtime default (provider default timeout, 3 retries), which the domain value must keep.
-    const defaults = defaultModelRetry().provider;
-    timeouts.push(model.timeout ? durationMs(model.timeout) : defaults.timeoutMs);
-    retries.push(model.maxRetries ?? defaults.maxRetries);
+
+interface ConnectionSource {
+  provider: ModelProvider;
+  apiBase?: string;
+  apiKey: string;
+  extraHeaders?: Record<string, string>;
+}
+
+/** Reuse a connection with the same upstream, or take a free name derived from its host. */
+function connectionFor(settings: ModelSettingsConfiguration, source: ConnectionSource): string {
+  const equal = (connection: ConnectionSource) => connection.provider === source.provider
+    && connection.apiBase === source.apiBase && connection.apiKey === source.apiKey
+    && JSON.stringify(normalizedHeaders(connection.extraHeaders)) === JSON.stringify(normalizedHeaders(source.extraHeaders));
+  const found = Object.entries(settings.connections).find(([, connection]) => equal(connection));
+  if (found) return found[0];
+  const base = new URL(source.apiBase ?? "https://gateway").hostname.replace(/[^a-zA-Z0-9.-]/g, "-") || "gateway";
+  let name = base;
+  for (let n = 2; settings.connections[name]; n++) name = `${base}-${n}`;
+  settings.connections[name] = source;
+  return name;
+}
+
+function chatEntry(model: z.output<typeof legacyProviderSchema>["models"][number], connection: string,
+  timeoutSeconds: number, maxRetries: number): ModelEntry {
+  const sampling = model.samplingParams ?? {};
+  const temperature = sampling.temperature as number | undefined;
+  const topP = sampling.top_p as number | undefined;
+  return {
+    connection,
+    model: model.id,
+    type: "chat",
+    contextWindow: model.contextWindow ?? DEFAULT_CHAT_CONTEXT_WINDOW,
+    ...(model.maxTokens == null ? {} : { maxOutputTokens: model.maxTokens }),
+    timeoutSeconds,
+    maxRetries,
+    ...(temperature === undefined ? {} : { temperature }),
+    ...(topP === undefined ? {} : { topP }),
+    ...(model.input?.includes("image") ? { supportsVision: true } : {}),
+    ...(model.reasoning ? { supportsReasoning: true } : {}),
+  };
+}
+
+/** The providers-and-models shape, one release before named connections. */
+function migrateProviders(raw: z.output<typeof legacyProvidersSchema>, open: (key: string) => string) {
+  const settings = emptyModelSettings();
+  const mapping: ModelMigrationMap = { references: {}, unavailablePrefix: unavailableReferencePrefix };
+  const timeoutSeconds = Math.max(1, Math.round((raw.retry?.provider.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_SECONDS * 1000) / 1000));
+  const maxRetries = raw.retry?.provider.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES;
+  for (const [id, provider] of Object.entries(raw.providers)) {
+    const connection: ConnectionSource = {
+      provider: legacyApiProviders[provider.api]!,
+      apiBase: provider.baseUrl,
+      apiKey: open(provider.apiKey),
+      ...(provider.headers && Object.keys(provider.headers).length ? { extraHeaders: provider.headers } : {}),
+    };
+    settings.connections[id] = connection;
+    for (const model of provider.models) {
+      const name = publicName(settings.models, model.id, id);
+      mapping.references[`${id}/${model.id}`] = name;
+      settings.models[name] = model.type === "chat"
+        ? chatEntry(model, id, timeoutSeconds, maxRetries)
+        : { connection: id, model: model.id, type: "embedding", dimensions: model.dimensions!,
+          ...(model.maxTokens == null ? {} : { maxOutputTokens: model.maxTokens }), timeoutSeconds, maxRetries };
+    }
   }
-  settings.defaultModelId = old.defaultModelId == null ? null : mapping.references[old.defaultModelId] ?? `legacy/${old.defaultModelId}`;
-  if (timeouts.length) settings.retry.provider.timeoutMs = Math.max(...timeouts);
-  if (retries.length) settings.retry.provider.maxRetries = Math.max(...retries);
-  return { settings: modelSettingsConfigurationSchema.parse(settings), mapping, discardedKeys };
+  return { settings, mapping, discardedKeys: 0 };
 }
-export function importLegacyEmbedding(settings: ModelSettingsWrite, input: LegacyEmbeddingImport): string {
-  const ref = appendImportedModel(settings, { baseUrl: input.baseUrl, api: "openai-completions", apiKey: input.apiKey,
-    headers: input.headers }, { id: input.modelName, type: "embedding", dimensions: input.dimensions });
-  if (settings.embeddingModelId === null) settings.embeddingModelId = ref;
-  if (input.timeoutMs) settings.retry.provider.timeoutMs = Math.max(settings.retry.provider.timeoutMs, input.timeoutMs);
-  return ref;
+
+/** pi's own settings file: one flat list, every entry an OpenAI-compatible connection of its own. */
+function migrateModels(raw: z.output<typeof legacyModelsSchema>, open: (key: string) => string) {
+  const settings = emptyModelSettings();
+  const mapping: ModelMigrationMap = { references: {}, unavailablePrefix: unavailableReferencePrefix };
+  let discardedKeys = 0;
+  const defaults = { timeoutSeconds: DEFAULT_MODEL_TIMEOUT_SECONDS, maxRetries: DEFAULT_MODEL_MAX_RETRIES };
+  for (const model of raw.models) {
+    const headers: Record<string, string> = {};
+    if (model.organizationId) headers["openai-organization"] = model.organizationId;
+    if (model.projectId) headers["openai-project"] = model.projectId;
+    Object.assign(headers, normalizedHeaders(model.customHeaders ?? {}));
+    const connection = connectionFor(settings, { provider: "custom_openai", apiBase: model.baseUrl,
+      apiKey: model.apiKeys[0] ? open(model.apiKeys[0]) : "unused",
+      ...(Object.keys(headers).length ? { extraHeaders: headers } : {}) });
+    const name = publicName(settings.models, model.modelName, connection);
+    mapping.references[model.name] = name;
+    // A stored request parameter was merged over the named one, so it is what the model actually called with.
+    const parameters = model.customRequestParameters ?? {};
+    const temperature = (parameters.temperature as number | undefined) ?? model.temperature ?? undefined;
+    const topP = (parameters.top_p as number | undefined) ?? model.topP ?? undefined;
+    settings.models[name] = {
+      connection,
+      model: model.modelName,
+      type: "chat",
+      contextWindow: model.contextWindow ?? DEFAULT_CHAT_CONTEXT_WINDOW,
+      ...(model.maxTokens == null ? {} : { maxOutputTokens: model.maxTokens }),
+      timeoutSeconds: model.timeout ? Math.max(1, Math.round(durationMs(model.timeout) / 1000)) : defaults.timeoutSeconds,
+      maxRetries: model.maxRetries ?? defaults.maxRetries,
+      ...(temperature === undefined ? {} : { temperature }),
+      ...(topP === undefined ? {} : { topP }),
+    };
+    discardedKeys += Math.max(0, model.apiKeys.length - 1);
+  }
+  return { settings, mapping, discardedKeys };
+}
+
+function mapped(ref: string | null | undefined, mapping: ModelMigrationMap): string | null {
+  if (ref == null) return null;
+  return mapping.references[ref] ?? `${mapping.unavailablePrefix}/${ref}`;
+}
+
+/** Reads any earlier stored shape into named connections, keeping every reference's meaning. */
+export function migrateLegacyModelSettings(raw: unknown, open: (key: string) => string) {
+  const providers = legacyProvidersSchema.safeParse(raw);
+  if (providers.success) {
+    const migrated = migrateProviders(providers.data, open);
+    migrated.settings.defaultModel = mapped(providers.data.defaultModelId, migrated.mapping);
+    migrated.settings.embeddingModel = mapped(providers.data.embeddingModelId, migrated.mapping);
+    return { settings: modelSettingsConfigurationSchema.parse(migrated.settings), mapping: migrated.mapping,
+      discardedKeys: migrated.discardedKeys };
+  }
+  const models = legacyModelsSchema.parse(raw), migrated = migrateModels(models, open);
+  migrated.settings.defaultModel = mapped(models.defaultModelId, migrated.mapping);
+  return { settings: modelSettingsConfigurationSchema.parse(migrated.settings), mapping: migrated.mapping,
+    discardedKeys: migrated.discardedKeys };
+}
+
+/** One domain's embedding settings from before the model library imported once, as a connection of its own. */
+export function importLegacyEmbedding(settings: ModelSettingsConfiguration, input: LegacyEmbeddingImport): string {
+  const connection = connectionFor(settings, { provider: "custom_openai", apiBase: input.baseUrl, apiKey: input.apiKey,
+    ...(input.headers ? { extraHeaders: input.headers } : {}) });
+  const name = publicName(settings.models, input.modelName, connection);
+  settings.models[name] = {
+    connection, model: input.modelName, type: "embedding", dimensions: input.dimensions,
+    timeoutSeconds: input.timeoutMs ? Math.max(1, Math.round(input.timeoutMs / 1000)) : DEFAULT_MODEL_TIMEOUT_SECONDS,
+    maxRetries: DEFAULT_MODEL_MAX_RETRIES,
+  };
+  if (settings.embeddingModel === null) settings.embeddingModel = name;
+  return name;
 }

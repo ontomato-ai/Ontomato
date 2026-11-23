@@ -10,10 +10,10 @@ if (!database) throw new Error("Set RUNTIME_TEST_DATABASE_URL to a disposable Po
 describe("persisted domain model settings and upgrade", () => {
   const schema = "models_" + randomUUID().replaceAll("-", "");
   let store: RuntimeStore, models: RuntimeModelSettings;
-  const draft = () => ({ ...emptyModelSettings(), providers: { gateway: {
-    api: "openai-completions" as const, baseUrl: "http://127.0.0.1:9/v1", apiKey: "sk-first-key-0001",
-    models: [{ id: "vendor/chat", type: "chat" as const }],
-  } }, defaultModelId: "gateway/vendor/chat" });
+  const draft = () => ({ ...emptyModelSettings(),
+    connections: { gateway: { provider: "custom_openai" as const, apiBase: "http://127.0.0.1:9/v1", apiKey: "sk-first-key-0001" } },
+    models: { "vendor/chat": { connection: "gateway", model: "vendor/chat", type: "chat" as const } },
+    defaultModel: "vendor/chat" });
   beforeAll(async () => {
     store = new RuntimeStore(database!, schema); await store.initialize();
     models = new RuntimeModelSettings(store, "seal-token"); await models.initialize();
@@ -24,15 +24,15 @@ describe("persisted domain model settings and upgrade", () => {
   });
   it("encrypts keys, masks reads, retains matched masks and rejects foreign masks atomically", async () => {
     const saved = await models.save("d1", draft());
-    expect(saved.providers.gateway!.apiKey).toBe("******0001");
+    expect(saved.connections.gateway!.apiKey).toBe("******0001");
     const raw = (await store.pool.query(`SELECT settings FROM ${store.table("model_settings")} WHERE domain_id='d1'`)).rows[0].settings;
-    expect(raw.providers.gateway.apiKey).toMatch(/^enc:v1:/);
+    expect(raw.connections.gateway.apiKey).toMatch(/^enc:v1:/);
     expect(JSON.stringify(raw)).not.toContain("sk-first");
     await models.save("d1", saved);
     await expect(models.save("d2", saved)).rejects.toMatchObject({ code: "INVALID_REQUEST" });
-    await expect(models.save("d1", { ...saved, providers: { gateway: { ...saved.providers.gateway, apiKey: "******9999" } } })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(models.save("d1", { ...saved, connections: { gateway: { ...saved.connections.gateway, apiKey: "******9999" } } })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
     expect(await models.get("d1")).toEqual(saved);
-    expect((await models.resolve("d1", null)).id).toBe("vendor/chat");
+    expect((await models.resolve("d1", null)).name).toBe("vendor/chat");
     await expect(models.resolve("d1", "missing/chat")).rejects.toMatchObject({ code: "MODEL_NOT_CONFIGURED" });
     expect(JSON.stringify(await models.options("d1"))).not.toContain("apiKey");
   });
@@ -41,14 +41,14 @@ describe("persisted domain model settings and upgrade", () => {
       apiKeys: [sealModelKey("key", "seal-token")], timeout: "PT10S" }], defaultModelId: "main" };
     await store.pool.query(`INSERT INTO ${store.table("model_settings")} VALUES($1,$2)`, ["upgrade", legacy]);
     await models.initialize();
-    expect((await models.migrationMap("upgrade")).references).toEqual({ main: "gateway/chat" });
+    expect((await models.migrationMap("upgrade")).references).toEqual({ main: "chat" });
     const input = { baseUrl: "https://gateway/v1", apiKey: "key", modelName: "embed", dimensions: 2 };
     const first = await models.importEmbedding("upgrade", input);
-    expect(first).toEqual({ importedModelId: "gateway/embed", embeddingModelId: "gateway/embed" });
-    const saved = await models.get("upgrade"); saved.embeddingModelId = null;
+    expect(first).toEqual({ importedModelId: "embed", embeddingModelId: "embed" });
+    const saved = await models.get("upgrade"); saved.embeddingModel = null;
     await models.save("upgrade", saved);
     await models.initialize();
-    expect(await models.importEmbedding("upgrade", input)).toEqual({ importedModelId: "gateway/embed", embeddingModelId: null });
-    expect((await models.get("upgrade")).providers.gateway!.models).toHaveLength(2);
+    expect(await models.importEmbedding("upgrade", input)).toEqual({ importedModelId: "embed", embeddingModelId: null });
+    expect(Object.keys((await models.get("upgrade")).models)).toEqual(["chat", "embed"]);
   });
 });

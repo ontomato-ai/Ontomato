@@ -1,14 +1,14 @@
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { UNCONFIGURED_MODEL_PROVIDER_ID, isMaskedSecret, maskModelKey, modelSettingsConfigurationSchema, modelSettingsWriteSchema,
-  modelProviderConnectionSchema, type ModelSettingsData, type ModelSettingsWrite } from "@ontomato/contracts/model-settings";
+import { isMaskedSecret, maskModelKey, modelSettingsConfigurationSchema,
+  modelSettingsWriteSchema, type ModelSettingsData, type ModelSettingsWrite } from "@ontomato/contracts/model-settings";
 import { legacyEmbeddingImportSchema, type ModelMigrationMap } from "@ontomato/contracts/model-migration";
 import { openSealedModelKey, sealModelKey } from "@ontomato/contracts/model-key-seal";
 import { runtimeModelTestRequestSchema, runtimeModelDiscoveryRequestSchema } from "@ontomato/contracts/runtime-model-test";
 import { RuntimeStore } from "./store";
 import { RuntimeError } from "./errors";
-import { resolveModel } from "./model";
-import { emptyModelSettings, migrateLegacyModelSettings, importLegacyEmbedding } from "./model-migration";
+import { resolvedModel, type ResolvedChatModel, type ResolvedEmbeddingModel, type ResolvedModel } from "./model";
+import { emptyModelSettings, migrateLegacyModelSettings, importLegacyEmbedding, unavailableReferencePrefix } from "./model-migration";
 import { runtimeLogger } from "./logging";
 
 /** One model library per domain; every mutation and upgrade shares the same transaction lock. */
@@ -22,23 +22,29 @@ export class RuntimeModelSettings {
     for (const row of rows) await this.read(row.domain_id);
   }
   private keys(data: ModelSettingsWrite, fn: (value: string) => string): ModelSettingsWrite {
-    return { ...data, providers: Object.fromEntries(Object.entries(data.providers).map(([id, p]) => [id, { ...p, apiKey: fn(p.apiKey) }])) };
+    return { ...data, connections: Object.fromEntries(Object.entries(data.connections)
+      .map(([name, connection]) => [name, { ...connection, apiKey: fn(connection.apiKey) }])) };
   }
-  private open(raw: unknown): ModelSettingsWrite {
-    const shape = modelSettingsConfigurationSchema.extend({ providers: z.record(
-      modelProviderConnectionSchema.extend({ apiKey: z.string(), models: z.array(z.unknown()) }).passthrough()) }).parse(raw);
-    return modelSettingsConfigurationSchema.parse({ ...shape, providers: Object.fromEntries(Object.entries(shape.providers)
-      .map(([id, p]) => [id, { ...p, apiKey: openSealedModelKey(p.apiKey, this.token) }])) });
+  private open(raw: unknown) {
+    const stored = z.object({
+      connections: z.record(z.object({ provider: z.string(), apiBase: z.string().optional(),
+        extraHeaders: z.record(z.string()).optional(), apiKey: z.string() }).passthrough()),
+      models: z.record(z.unknown()),
+      defaultModel: z.string().nullable().optional(),
+      embeddingModel: z.string().nullable().optional(),
+    }).parse(raw);
+    return modelSettingsConfigurationSchema.parse({ ...stored, connections: Object.fromEntries(Object.entries(stored.connections)
+      .map(([name, connection]) => [name, { ...connection, apiKey: openSealedModelKey(connection.apiKey, this.token) }])) });
   }
   private async write(c: PoolClient, domain: string, data: ModelSettingsWrite) {
     await c.query(`INSERT INTO ${this.store.table("model_settings")} (domain_id,settings) VALUES($1,$2::jsonb)
       ON CONFLICT(domain_id) DO UPDATE SET settings=EXCLUDED.settings`,
     [domain, JSON.stringify(this.keys(data, value => sealModelKey(value, this.token)))]);
   }
-  private async current(c: PoolClient, domain: string): Promise<ModelSettingsWrite> {
+  private async current(c: PoolClient, domain: string) {
     await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [JSON.stringify([this.store.schema, "model_settings", domain])]);
     const row = (await c.query(`SELECT settings FROM ${this.store.table("model_settings")} WHERE domain_id=$1`, [domain])).rows[0];
-    if (row?.settings.providers) return this.open(row.settings);
+    if (row?.settings.connections && row.settings.models) return this.open(row.settings);
     let legacy: unknown = row?.settings;
     if (!row && this.seed.baseUrl && this.seed.apiKey && this.seed.modelName)
       legacy = { models: [{ name: "default", modelName: this.seed.modelName, baseUrl: this.seed.baseUrl,
@@ -55,13 +61,13 @@ export class RuntimeModelSettings {
   async get(domain: string): Promise<ModelSettingsData> { return this.keys(await this.read(domain), maskModelKey); }
   async options(domain: string) {
     const data = await this.read(domain);
-    return { models: Object.entries(data.providers).flatMap(([id, p]) => p.models.map(m => ({
-      ref: `${id}/${m.id}`, name: m.name ?? m.id, type: m.type, ...(m.type === "embedding" ? { dimensions: m.dimensions } : {}),
-    }))), defaultModelId: data.defaultModelId, embeddingModelId: data.embeddingModelId };
+    return { models: Object.entries(data.models).map(([name, model]) => ({
+      name, type: model.type, ...(model.type === "embedding" ? { dimensions: model.dimensions } : {}),
+    })), defaultModel: data.defaultModel, embeddingModel: data.embeddingModel };
   }
-  private restoreKey(id: string, key: string, previous: ModelSettingsWrite) {
+  private restoreKey(name: string, key: string, previous: ModelSettingsWrite) {
     if (!isMaskedSecret(key)) return key;
-    const saved = previous.providers[id]?.apiKey;
+    const saved = previous.connections[name]?.apiKey;
     if (!saved || maskModelKey(saved) !== key)
       throw new RuntimeError(400, "INVALID_REQUEST", "The masked key does not match a saved value; enter it again");
     return saved;
@@ -70,34 +76,38 @@ export class RuntimeModelSettings {
     const input = modelSettingsWriteSchema.parse(body);
     return this.store.transaction(async c => {
       const previous = await this.current(c, domain);
-      const data = { ...input, providers: Object.fromEntries(Object.entries(input.providers).map(([id, p]) =>
-        [id, { ...p, apiKey: this.restoreKey(id, p.apiKey, previous) }])) };
+      const data = { ...input, connections: Object.fromEntries(Object.entries(input.connections)
+        .map(([name, connection]) => [name, { ...connection, apiKey: this.restoreKey(name, connection.apiKey, previous) }])) };
       await this.write(c, domain, data);
       return this.keys(data, maskModelKey);
     });
   }
-  async resolve(domain: string, ref?: string | null, kind: "chat" | "embedding" = "chat") {
-    const data = await this.read(domain), reference = ref ?? (kind === "chat" ? data.defaultModelId : data.embeddingModelId);
-    const slash = reference?.indexOf("/") ?? -1, id = reference?.slice(0, slash) ?? "";
-    const provider = data.providers[id], model = provider?.models.find(m => m.id === reference?.slice(slash + 1));
+  async resolve(domain: string, name: string | null | undefined, kind: "embedding"): Promise<ResolvedEmbeddingModel>;
+  async resolve(domain: string, name?: string | null, kind?: "chat"): Promise<ResolvedChatModel>;
+  async resolve(domain: string, name?: string | null, kind: "chat" | "embedding" = "chat"): Promise<ResolvedModel> {
+    const data = await this.read(domain);
+    const chosen = name ?? (kind === "chat" ? data.defaultModel : data.embeddingModel);
+    const model = chosen === null ? undefined : data.models[chosen];
     if (!model || model.type !== kind)
       throw new RuntimeError(422, "MODEL_NOT_CONFIGURED", `The selected ${kind} model is not configured`);
-    return resolveModel(id, provider!, model, data.retry);
+    return resolvedModel(chosen!, model.connection, data.connections[model.connection]!, model) as never;
   }
-  async testDraft(domain: string, body: unknown) {
-    const { providerId, provider, model, retry, prompt } = runtimeModelTestRequestSchema.parse(body);
-    const saved = isMaskedSecret(provider.apiKey) ? await this.read(domain) : emptyModelSettings();
-    return { config: resolveModel(providerId, { ...provider, apiKey: this.restoreKey(providerId, provider.apiKey, saved) }, model, retry), prompt };
+  async testDraft(domain: string, body: unknown): Promise<{ config: ResolvedModel; prompt: string }> {
+    const { connectionName, connection, model, prompt } = runtimeModelTestRequestSchema.parse(body);
+    const saved = isMaskedSecret(connection.apiKey) ? await this.read(domain) : emptyModelSettings();
+    const apiKey = this.restoreKey(connectionName, connection.apiKey, saved);
+    return { config: resolvedModel(model.model, connectionName, { ...connection, apiKey }, model), prompt };
   }
   async discoveryDraft(domain: string, body: unknown) {
     const draft = runtimeModelDiscoveryRequestSchema.parse(body);
-    const saved = isMaskedSecret(draft.provider.apiKey) ? await this.read(domain) : emptyModelSettings();
-    return { ...draft, provider: { ...draft.provider, apiKey: this.restoreKey(draft.providerId, draft.provider.apiKey, saved) } };
+    const saved = isMaskedSecret(draft.connection.apiKey) ? await this.read(domain) : emptyModelSettings();
+    return { ...draft, connection: { ...draft.connection,
+      apiKey: this.restoreKey(draft.connectionName, draft.connection.apiKey, saved) } };
   }
   async migrationMap(domain: string): Promise<ModelMigrationMap> {
-    const settings = await this.read(domain);
+    await this.read(domain);
     const row = (await this.store.pool.query(`SELECT references_map FROM ${this.store.table("model_migration")} WHERE domain_id=$1`, [domain])).rows[0];
-    return { references: row?.references_map ?? {}, unconfiguredProviderId: UNCONFIGURED_MODEL_PROVIDER_ID };
+    return { references: row?.references_map ?? {}, unavailablePrefix: unavailableReferencePrefix };
   }
   async importEmbedding(domain: string, body: unknown) {
     const input = legacyEmbeddingImportSchema.parse(body);
@@ -105,13 +115,13 @@ export class RuntimeModelSettings {
     return this.store.transaction(async c => {
       const settings = await this.current(c, domain);
       const row = (await c.query(`SELECT imported_embedding FROM ${this.store.table("model_migration")} WHERE domain_id=$1`, [domain])).rows[0];
-      if (row?.imported_embedding) return { importedModelId: row.imported_embedding, embeddingModelId: settings.embeddingModelId };
+      if (row?.imported_embedding) return { importedModelId: row.imported_embedding, embeddingModelId: settings.embeddingModel };
       const importedModelId = importLegacyEmbedding(settings, input);
       modelSettingsConfigurationSchema.parse(settings);
       await this.write(c, domain, settings);
       await c.query(`INSERT INTO ${this.store.table("model_migration")} (domain_id,imported_embedding) VALUES($1,$2)
         ON CONFLICT(domain_id) DO UPDATE SET imported_embedding=EXCLUDED.imported_embedding`, [domain, importedModelId]);
-      return { importedModelId, embeddingModelId: settings.embeddingModelId };
+      return { importedModelId, embeddingModelId: settings.embeddingModel };
     });
   }
 }

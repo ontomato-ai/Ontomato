@@ -34,7 +34,7 @@ RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
     /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" libstdc++6 git \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir --no-deps -i "${PIP_INDEX_URL}" -r /tmp/requirements-py310.txt \
- && pip check && python -c "import requests, numpy, pandas, sympy"
+ && pip check && python -c "import requests, numpy, pandas, sympy, litellm, starlette, uvicorn"
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-runtime /usr/local/LICENSE /usr/local/share/node/LICENSE
 COPY --from=dependencies /tmp/npm-licenses.json /tmp/npm-licenses.json
@@ -48,7 +48,7 @@ Debian packages: /usr/share/doc/<package>/copyright
 The pi-agent-core fork retains its MIT license in /app/packages/agent-runtime/src/core/pi/LICENSE
 EOF
 RUN rm -rf /usr/local/lib/python3.10/site-packages/pip* /usr/local/lib/python3.10/site-packages/setuptools* /usr/local/lib/python3.10/site-packages/pkg_resources /usr/local/bin/pip* \
- && node --version && python -c "import requests, numpy, pandas, sympy" \
+ && node --version && python -c "import requests, numpy, pandas, sympy, litellm, starlette, uvicorn" \
  && ! python -m pip --version
 
 FROM python-runtime AS final
@@ -59,7 +59,8 @@ ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
 RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
     /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" fonts-wqy-microhei fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
-ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data
+# LiteLLM reads its own bundled model metadata instead of fetching it: startup never needs the network.
+ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data LITELLM_LOCAL_MODEL_COST_MAP=true
 COPY --from=dependencies /opt/runtime/node_modules /opt/runtime/node_modules
 COPY --from=payload /stage/ /app/
 COPY --from=python-runtime /runtime-notices.txt /app/licenses/THIRD_PARTY_NOTICES.txt
@@ -70,7 +71,7 @@ LABEL org.opencontainers.image.source="https://github.com/ontomato-ai/Ontomato"
 WORKDIR /app/apps/agent-runtime
 # Import the assembled production graph without starting the service or contacting PostgreSQL.
 RUN node --import tsx --input-type=module -e 'await import("@ontomato/agent-runtime")' \
- && python -c "import requests, numpy, pandas, sympy" \
+ && python -c "import requests, numpy, pandas, sympy, litellm" \
  && ! command -v chromium && ! command -v chromium-browser
 # Root is the supervisor only; worker-launch.py drops each worker to a distinct non-root UID.
 RUN rm -f /runtime-notices.txt /tmp/npm-licenses.json /tmp/third_party_notices.py /tmp/requirements-py310.txt

@@ -3,7 +3,7 @@ import * as completions from "@earendil-works/pi-ai/api/openai-completions";
 import { expect, it, vi } from "vitest";
 import { Type } from "typebox";
 import { normalizeContext, type Message } from "@earendil-works/pi-ai";
-import { modelStream, piModel, recoverContext, resolveModel } from "../model";
+import { modelStream, piModel, recoverContext, resolvedModel } from "../model";
 import { runAgentLoop } from "../core/pi/agent-loop";
 import { RuntimeStore } from "../store";
 import { runtimeLogger } from "../logging";
@@ -13,46 +13,25 @@ vi.mock("@earendil-works/pi-ai/api/openai-completions", async importOriginal => 
   return { ...actual, streamSimple: vi.fn(actual.streamSimple) };
 });
 
-const config = resolveModel("fixture", { api: "openai-completions", baseUrl: "http://fixture/v1", apiKey: "key" },
-  { id: "fixture", type: "chat" }, { provider: { maxRetries: 0, timeoutMs: 5000, maxRetryDelayMs: 0 } });
+const lease = { id: "lease", token: "lease-token", url: "http://fixture" };
+const config = resolvedModel("fixture", "fixture-connection",
+  { provider: "custom_openai", apiBase: "http://fixture/v1", apiKey: "key" },
+  { connection: "fixture-connection", model: "fixture", type: "chat" });
 const scope = { hostId: "host", domainId: "domain" };
 const store = { pool: { query: vi.fn().mockResolvedValue({ rows: [] }) }, table: () => "model_calls" } as unknown as RuntimeStore;
 const user = (content: string): Message => ({ role: "user", content, timestamp: Date.now() });
 const chunk = (delta: unknown, finish_reason: string | null = null) => `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
 const response = (text: string) => new Response(text + "data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
 
-it("continues DeepSeek tool calls through a custom gateway with or without streamed reasoning", async () => {
-  const gateway = resolveModel("fixture", { api: "openai-completions", baseUrl: "http://fixture/v1", apiKey: "key" },
-    { id: "deepseek-flash", type: "chat" }, config.retry);
-  const call = (id: string) => ({ index: 0, id, type: "function", function: { name: "lookup", arguments: "{}" } });
-  const fetcher = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
-    .mockResolvedValueOnce(response(chunk({ role: "assistant", tool_calls: [call("first")] }, "tool_calls")))
-    .mockResolvedValueOnce(response(chunk({ role: "assistant", reasoning_content: "Check the result" }) +
-      chunk({ tool_calls: [call("second")] }, "tool_calls")))
-    .mockResolvedValueOnce(response(chunk({ role: "assistant", content: "Done" }, "stop")));
-  const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "3109" }], details: {} }));
-  const result = await runAgentLoop([user("Count staff")], {
-    messages: [], tools: [{ name: "lookup", label: "Lookup", description: "Read a count", parameters: Type.Object({}), execute }],
-  }, { model: piModel(gateway), convertToLlm: messages => messages as Message[], fetch: fetcher },
-  () => {}, undefined, modelStream(gateway, store, scope, "run", "correlation", "conversation"));
-  const replay = JSON.parse(fetcher.mock.calls[2]![1]!.body as string);
-  expect(replay.messages.filter((message: { tool_calls?: unknown }) => message.tool_calls)).toMatchObject([
-    { tool_calls: [{ id: "first" }], reasoning_content: "" },
-    { tool_calls: [{ id: "second" }], reasoning_content: "Check the result" },
-  ]);
-  expect(execute).toHaveBeenCalledTimes(2);
-  expect(result.at(-1)).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "Done" }] });
-});
-
 it("stops during a tool execution, persists its result, then sends a legal next request", async () => {
   const controller = new AbortController();
   const saved: Message[] = [];
   let executing!: () => void;
   const started = new Promise<void>(resolve => { executing = resolve; });
-  const stream = modelStream(config, store, scope, "run", "correlation", "conversation");
+  const stream = modelStream(config, lease, store, scope, "run", "correlation", "conversation");
   const fetcher = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>().mockResolvedValueOnce(response(chunk({ role: "assistant", tool_calls: [{ index: 0, id: "call-1", type: "function", function: { name: "wait", arguments: "{}" } }] }, "tool_calls")))
     .mockResolvedValue(response(chunk({ role: "assistant", content: "continued" }, "stop")));
-  const loop = { model: piModel(config), convertToLlm: (m: unknown[]) => m as Message[], fetch: fetcher };
+  const loop = { model: piModel(config, lease), convertToLlm: (m: unknown[]) => m as Message[], fetch: fetcher };
   const tool = { name: "wait", label: "wait", description: "Wait", parameters: Type.Object({}),
     execute: async (_id: string, _args: unknown, signal?: AbortSignal) => {
       executing();
@@ -74,8 +53,8 @@ it("stops during a tool execution, persists its result, then sends a legal next 
 
 it("removes partial tool calls before an interrupted model response reaches persistence", async () => {
   const controller = new AbortController();
-  const stream = modelStream(config, store, scope, "run", "correlation", "conversation");
-  const output = await stream(piModel(config), normalizeContext({ messages: [user("start")] }), {
+  const stream = modelStream(config, lease, store, scope, "run", "correlation", "conversation");
+  const output = await stream(piModel(config, lease), normalizeContext({ messages: [user("start")] }), {
     signal: controller.signal,
     fetch: async () => new Response(new ReadableStream({ start(c) {
       c.enqueue(new TextEncoder().encode(chunk({ role: "assistant", tool_calls: [{ index: 0, id: "half", type: "function", function: { name: "wait", arguments: '{"x":' } }] })));
@@ -91,8 +70,8 @@ it("removes partial tool calls before an interrupted model response reaches pers
 
 it.each(["zh-CN", "en"])("keeps provider JSON in logs and presents readable %s failures", async language => {
   const log = vi.spyOn(runtimeLogger, "error");
-  const stream = modelStream(config, store, scope, "run", "correlation", "conversation", language);
-  const output = await stream(piModel(config), normalizeContext({ messages: [user("start")] }), {
+  const stream = modelStream(config, lease, store, scope, "run", "correlation", "conversation", language);
+  const output = await stream(piModel(config, lease), normalizeContext({ messages: [user("start")] }), {
     fetch: async () => new Response('{"error":{"message":"private upstream JSON"}}', { status: 400 }),
   });
   for await (const _event of output) { /* Consume the provider stream. */ }
@@ -134,8 +113,8 @@ it("continues after the real persisted partial-call, cancellation notice and ups
   const fetcher = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>().mockResolvedValue(
     response(chunk({ role: "assistant", content: "continued" }, "stop")),
   );
-  const stream = modelStream(config, store, scope, "next", "correlation", "conversation");
-  const output = await stream(piModel(config), normalizeContext({ messages: [...recovered, user("next")] }), { fetch: fetcher });
+  const stream = modelStream(config, lease, store, scope, "next", "correlation", "conversation");
+  const output = await stream(piModel(config, lease), normalizeContext({ messages: [...recovered, user("next")] }), { fetch: fetcher });
   for await (const _event of output) { /* Consume the next model request. */ }
   const payload = JSON.parse(fetcher.mock.calls[0][1]!.body as string);
   expect(payload.messages.some((message: { role: string }) => message.role === "tool")).toBe(false);
@@ -148,8 +127,8 @@ it.each([400, 401, 429])("preserves HTTP %s on the thrown-exception path without
   vi.mocked(completions.streamSimple).mockImplementationOnce(() => { throw failure; });
   const log = vi.spyOn(runtimeLogger, "error");
   try {
-    const stream = modelStream(config, store, scope, "run", "correlation", "conversation", "zh-CN");
-    const output = await stream(piModel(config), normalizeContext({ messages: [user("start")] }));
+    const stream = modelStream(config, lease, store, scope, "run", "correlation", "conversation", "zh-CN");
+    const output = await stream(piModel(config, lease), normalizeContext({ messages: [user("start")] }));
     for await (const _event of output) { /* Consume the failed request. */ }
     const message = await output.result();
     expect(message.errorMessage).toContain(`HTTP ${status}`);

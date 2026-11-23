@@ -8,6 +8,8 @@ import {
   RuntimeStore,
   createRuntimeHttp,
 } from "@ontomato/agent-runtime";
+import { ModelGatewayProcess } from "@ontomato/agent-runtime/gateway-process";
+import { ModelGatewayClient } from "@ontomato/agent-runtime/gateway-client";
 
 function jsonSetting(name: "AGENT_RUNTIME_HOSTS" | "AGENT_CHANNEL_PROVIDERS") {
   try {
@@ -46,11 +48,15 @@ const commandHost =
       : listenHost.includes(":") && !listenHost.startsWith("[")
         ? `[${listenHost}]`
         : listenHost;
+const python = process.env.AGENT_RUNTIME_PYTHON || "python3";
+// The gateway runs the LiteLLM SDK in the skills environment's interpreter; every model call goes through it.
+const modelGateway = await ModelGatewayProcess.start(python);
 const runtime = new AgentRuntime({
+  gateway: new ModelGatewayClient(modelGateway.addresses.controlUrl, modelGateway.addresses.dataUrl),
   worker: {
     development:
       process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test",
-    python: process.env.AGENT_RUNTIME_PYTHON || "python3",
+    python,
   },
   store,
   hosts,
@@ -87,6 +93,7 @@ const stop = async () => {
   stopping = true;
   server.close();
   await runtime.close();
+  await modelGateway.stop();
   server.closeAllConnections();
 };
 process.once("SIGTERM", () => {
