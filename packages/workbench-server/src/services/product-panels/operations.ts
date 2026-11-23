@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import {
-  PANEL_CONFIRMATION_EXPIRED, isPanelHumanOperationIntent, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
+  PANEL_CONFIRMATION_EXPIRED, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
   type inspectPanelOperationImpactRequestSchema,
   type CreatePanelHumanOperationIntentRequest,
   type PanelHumanOperationConfirmation, type PanelHumanOperationDispatchResponse, type PanelHumanOperationIntent,
@@ -364,7 +364,7 @@ function humanPreparation(intent: PanelHumanOperationIntent): PanelHumanOperatio
 export async function projectPanelOperationIntent(owner: AssistantOwner, id: string, use: PanelUseRef | undefined, credentials: AssistantCredentials) {
   const record = await store.get(owner, id);
   if (use) {
-    if (record.kind !== "current" || !isPanelHumanOperationIntent(record.intent) || !isDeepStrictEqual(record.intent.use, use))
+    if (record.kind !== "current" || !isDeepStrictEqual(record.intent.use, use))
       throw new HttpError(404, "Operation intent not found for this panel use", "NOT_FOUND");
     if (record.intent.dispatched) throw new HttpError(409, "This operation was already dispatched", "INTENT_ALREADY_DISPATCHED");
     return humanPreparation(record.intent);
@@ -383,9 +383,9 @@ async function humanConfirmation(
     return details ? { kind: "impact", impact: details, ...(upload && { upload }) } : { kind: "none" };
   }
   const [objects, details] = await Promise.all([
-    Promise.all(invocation.calls.map(async ({ target }) => ({
+    Promise.all(invocation.calls.map(async ({ target, input }) => ({
       target: { objectType: target.objectType, primaryKey: target.primaryKey },
-      label: await invocation.owner.targetLabel(host, target),
+      label: await invocation.owner.targetLabel(host, target, input),
     }))),
     impact,
   ]);
@@ -397,7 +397,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
 ): Promise<PanelHumanOperationPreparation> {
   if (input.agentRun) {
     const existing = await store.findByAgentToolCall(owner, input.agentRun.runId, input.agentRun.toolCallId);
-    if (existing?.kind === "current" && isPanelHumanOperationIntent(existing.intent)) {
+    if (existing?.kind === "current") {
       return humanPreparation(existing.intent);
     }
     const run = await runForOwner(owner, input.agentRun.runId);
@@ -419,10 +419,9 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     const confirmation = await humanConfirmation(current.handler, host, prepared);
     const settings = await store.settings(owner, root);
     const autoMode = !settings.confirmBeforeExecute;
-    let questionId: string | null = null;
+    const questionId = autoMode ? null : randomUUID();
+    let questionPrompt: Awaited<ReturnType<typeof panelConfirmation>> | null = null;
     if (!autoMode) {
-      questionId = randomUUID();
-      const handler = "calls" in prepared ? prepared.owner : current.handler;
       const impact = confirmation.kind === "impact"
         ? confirmation.impact
         : confirmation.kind === "batch"
@@ -432,19 +431,15 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
         ? namedTargets(impact.objects.map((object) => object.label), impact.total, credentials.locale)
         : confirmation.kind === "batch"
           ? namedTargets(confirmation.targets.objects.map((object) => object.label), confirmation.targets.total, credentials.locale)
-          : await confirmationTarget(handler, host, prepared, current.operation.label);
-      const impactSummary = impact?.summary ?? confirmationInputSummary(handler, prepared);
-      const questionPrompt = await panelConfirmation(credentials, {
+          : await confirmationTarget(current.handler, host, prepared, current.operation.label);
+      const impactSummary = impact?.summary ?? confirmationInputSummary(current.handler, prepared);
+      questionPrompt = await panelConfirmation(credentials, {
         operation: current.operation.label,
         target,
         impactSummary,
         executionUserId: null,
         initiatorName: callerUserName ?? owner.userId,
       });
-      await new RuntimeClient(owner.domainId, undefined, owner.userId).request("/v1/channel/user-questions", "POST", {
-        source: { session: { providerId: run.channel.agent.providerId, sessionId: run.sessionId }, runId: input.agentRun.runId },
-        ...questionPrompt,
-      }, questionId);
     }
     const intent: PanelHumanOperationIntent = {
       intentId: randomUUID(),
@@ -468,7 +463,22 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
       dispatched: false,
       outcome: null,
     };
+    // Persist the intent BEFORE publishing the conversation question so answering immediately can never race ahead of intent registration.
     await store.insert(owner, intent);
+    if (questionPrompt && questionId) {
+      try {
+        await new RuntimeClient(owner.domainId, undefined, owner.userId).request("/v1/channel/user-questions", "POST", {
+          source: { session: { providerId: run.channel.agent.providerId, sessionId: run.sessionId }, runId: input.agentRun.runId },
+          ...questionPrompt,
+        }, questionId);
+      } catch (error) {
+        await store.cancelIntent(owner, intent.intentId, {
+          code: "CONFIRMATION_PUBLISH_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    }
     return humanPreparation(intent);
   }
   const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input), {
@@ -509,7 +519,7 @@ export async function cancelPendingAgentPageQuestion(owner: AssistantOwner, ques
 
 export async function dispatchHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, id: string): Promise<PanelHumanOperationDispatchResponse> {
   const record = await store.get(owner, id);
-  if (record.kind !== "current" || !isPanelHumanOperationIntent(record.intent))
+  if (record.kind !== "current")
     throw new HttpError(403, "This intent was not prepared for human dispatch", "FORBIDDEN");
   const { intent } = record;
   if (intent.dispatched || intent.invalidated) return replay(record, owner, credentials);
@@ -527,14 +537,30 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   const host = operationHost({ owner, credentials }, view);
   const result = await claimAndExecutePanel(owner, host, claimedIntent, current.handler, staged.invocation);
   // A refused call keeps its file for the reader's retry, such as confirming an overwrite.
-  if (result?.outcome.kind === "success" && staged.upload) await uploads.remove(owner, staged.upload.id);
+  if (result?.outcome.kind === "success") {
+    if (staged.upload) await uploads.remove(owner, staged.upload.id);
+    if ("call" in intent && intent.call.target !== null) {
+      await store.invalidatePendingFormSaves(owner, {
+        applicationId: intent.use.applicationId,
+        useId: intent.use.useId,
+        panelId: intent.panelId,
+        projectionId: intent.projectionId,
+        operationId: intent.operation.id,
+        target: intent.call.target,
+        excludeIntentId: intent.intentId,
+      }, {
+        code: "FORM_CONFIRMATION_STALE",
+        message: "This record was already saved in another action or tab.",
+      });
+    }
+  }
   return result
     ? { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome: result.outcome }, owner, credentials, view) }
     : replay(await store.get(owner, id), owner, credentials);
 }
 
 function namedTargets(labels: string[], total: number, locale?: string) {
-  const names = new Intl.ListFormat(locale).format(labels.slice(0, 4));
+  const names = new Intl.ListFormat(locale).format(labels);
   return `${names} (${new Intl.NumberFormat(locale).format(total)})`.trim();
 }
 
@@ -557,17 +583,49 @@ function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOut
   const objectTypes = new Set(successes.flatMap(affected => affected.objectTypes));
   return { kind: "batch", items, affected: { objects, objectTypes: [...objectTypes], ...(removed.length && { removed }) } };
 }
+function formatSummaryValue(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return undefined;
+    return text.length > 60 ? `${text.slice(0, 57)}...` : text;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
+}
+
+function readPointerValue(root: Record<string, unknown>, pointer: string): unknown {
+  const parts = pointer.split("/").slice(1).map(part => part.replaceAll("~1", "/").replaceAll("~0", "~"));
+  let current: unknown = root;
+  for (const part of parts) {
+    if (current === null || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
 function confirmationInputSummary(handler: PanelWriteServerOperation, invocation: CheckedInvocation): string | undefined {
-  if (handler.kind !== "action" || handler.handlerRef !== EXECUTE_OBJECT_ACTION || handler.targetLabel || !("call" in invocation)) return undefined;
+  if (!("call" in invocation)) return undefined;
+  const isFormSave = handler.kind === "form.save";
+  const isObjectAction = handler.kind === "action" && handler.handlerRef === EXECUTE_OBJECT_ACTION;
+  if (!isFormSave && !isObjectAction) return undefined;
   const values = invocation.call.input.values;
   if (!values || typeof values !== "object" || Array.isArray(values)) return undefined;
-  const entries = Object.entries(values as Record<string, unknown>)
-    .filter(([, value]) => typeof value === "string" && value.trim().length > 0)
-    .slice(0, 6)
-    .map(([param, value]) => {
-      const text = String(value).trim();
-      return `${param}: ${text.length > 60 ? `${text.slice(0, 57)}...` : text}`;
-    });
+  const record = values as Record<string, unknown>;
+  const submitted = isFormSave && Array.isArray(invocation.call.input.submittedFields)
+    ? invocation.call.input.submittedFields.filter((field): field is string => typeof field === "string")
+    : [];
+  const entries = submitted.length > 0
+    ? submitted.slice(0, 8).map(pointer => {
+      const label = pointer.replace(/^\//u, "");
+      const formatted = formatSummaryValue(readPointerValue(record, pointer));
+      return formatted !== undefined ? `${label}: ${formatted}` : label;
+    })
+    : Object.entries(record)
+      .flatMap(([param, value]) => {
+        const formatted = formatSummaryValue(value);
+        return formatted !== undefined ? [`${param}: ${formatted}`] : [];
+      })
+      .slice(0, 6);
   return entries.length > 0 ? entries.join(", ") : undefined;
 }
 
@@ -576,12 +634,10 @@ async function confirmationTarget(handler: PanelWriteServerOperation,
 ) {
   if (handler.kind === "form.save") {
     if ("call" in invocation) {
-      const values = invocation.call.input.values;
-      const recordName = values && typeof values === "object" && !Array.isArray(values)
-        ? ["name", "displayName", "showName", "title", "label"]
-          .map(key => (values as Record<string, unknown>)[key])
-          .find((value): value is string => typeof value === "string" && value.trim().length > 0)
-        : undefined;
+      const values = invocation.call.input.values as Record<string, unknown>;
+      const recordName = ["name", "displayName", "showName", "title", "label"]
+        .map(key => values[key])
+        .find((value): value is string => typeof value === "string" && value.trim().length > 0);
       if (recordName) return recordName.trim();
       if (invocation.target?.kind === "object") return `${invocation.target.objectType} (${invocation.target.primaryKey})`;
     }
@@ -589,9 +645,9 @@ async function confirmationTarget(handler: PanelWriteServerOperation,
   }
   // An action without a target is named by the operation itself.
   if (!handler.targetLabel) return operationLabel;
-  if ("call" in invocation) return handler.targetLabel(host, invocation.target as PanelRecordTarget);
+  if ("call" in invocation) return handler.targetLabel(host, invocation.target as PanelRecordTarget, invocation.call.input);
   const { targetLabel } = handler;
-  const labels = await Promise.all(invocation.calls.map(call => targetLabel(host, call.target)));
+  const labels = await Promise.all(invocation.calls.map(call => targetLabel(host, call.target, call.input)));
   return namedTargets(labels, invocation.calls.length, host.locale);
 }
 
@@ -601,7 +657,7 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
   // The name the owner's completion sentence gives, read while the target is still there; a target that cannot be read
   // fails here, before anything is claimed or written.
   const done = handler.kind === "action" && handler.done && "call" in prepared
-    ? handler.done(host, await handler.targetLabel(host, prepared.target as PanelRecordTarget))
+    ? handler.done(host, await handler.targetLabel(host, prepared.target as PanelRecordTarget, prepared.call.input))
     : undefined;
   if (!await store.claim(owner, intent)) return;
   const id = intent.intentId;

@@ -404,9 +404,21 @@ function applicationAction<Input extends Record<string, unknown>>(
     inputSchema,
     resultSchema: noData,
     ...(extra?.unavailable && { unavailable: extra.unavailable }),
-    async targetLabel(host, { primaryKey }) {
+    async targetLabel(host, { primaryKey }, input) {
+      const locale = host.locale ?? "en";
       const record = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
-      return localizedApplicationText(record.names, host.locale ?? "en") ?? record.id;
+      const appLabel = localizedApplicationText(record.names, locale) ?? record.id;
+      if (name === "deleteEntry" || name === "updateEntry") {
+        const entryId = typeof input?.entryId === "string" ? input.entryId : undefined;
+        const entry = entryId ? record.panelUses.find(item => item.id === entryId) : undefined;
+        const entryLabel = (entry?.names && localizedApplicationText(entry.names, locale)) ?? entry?.path ?? entryId;
+        if (entryLabel) return `${appLabel} / ${entryLabel}`;
+      } else if (name === "addEntry") {
+        const entry = input?.entry as z.infer<typeof applicationPanelUseSchema> | undefined;
+        const entryLabel = (entry?.names && localizedApplicationText(entry.names, locale)) ?? entry?.path ?? entry?.id;
+        if (entryLabel) return `${appLabel} / ${entryLabel}`;
+      }
+      return appLabel;
     },
     async execute({ locale, executor }, target, input) {
       return write(APPLICATION, async () => {

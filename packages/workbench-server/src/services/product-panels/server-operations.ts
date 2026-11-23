@@ -101,7 +101,7 @@ export type PanelWriteServerOperation = ServerOperation & (
   ({ kind: "action" } & (
     (TargetedExecution & {
       targetInput: string;
-      targetLabel(host: PanelOperationHost, target: PanelRecordTarget): Promise<string>;
+      targetLabel(host: PanelOperationHost, target: PanelRecordTarget, input?: Record<string, unknown>): Promise<string>;
       /**
        * The owner's sentence for one call it completed, naming what it acted on by the target's `targetLabel`
        * ("Function “Refund” deleted"), in the host's language. The platform reads the name before the call runs (a delete

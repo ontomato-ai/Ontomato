@@ -57,6 +57,7 @@ import {
   dispatchHumanPanelOperation, inspectPanelOperationImpact, ownPanelSettings,
   prepareHumanPanelOperation, projectPanelOperationIntent, readPanelOperation, readPanelOperationDescriptor,
 } from "../operations";
+import { productCatalogServerOperations } from "../catalog-operations";
 import { panelOperationStore } from "../operation-store";
 import { readAdmittedProjectionOperations } from "../direct-operations";
 import { requireDirectPanelMember } from "../current";
@@ -129,7 +130,27 @@ beforeEach(()=>{
    if(sql.startsWith("SELECT confirm_before"))return {rows:automatic?[{confirm_before_execute:false}]:[]};
    if(sql.startsWith("SELECT intent"))return {rows:intents.has(id)?[{intent:structuredClone(intents.get(id)),owner_id:owner.userId}]:[]};
    if(sql.startsWith("INSERT INTO panel_operation_intents")){if(!intents.has(String(args[1])))intents.set(String(args[1]),structuredClone(args[4] as PanelOperationIntent));return {rows:[]};}
-   if(sql.includes("AND intent->>'dispatched'='false'")){const value=intents.get(id)!;if(value.dispatched)return {rowCount:0};intents.set(id,structuredClone(args[3] as PanelOperationIntent));return {rowCount:1};}
+   if(sql.includes("'{invalidated}'") && sql.includes("id<>$3")){
+     const excludeId=String(args[2]), appId=String(args[3]), useId=String(args[4]);
+     const reason=JSON.parse(String(args.at(-1)));
+     let count=0;
+     for(const [key,val] of intents.entries()){
+       if(key===excludeId || val.source.kind!=="agent-page" || val.operation.kind!=="form.save" || val.dispatched || val.invalidated) continue;
+       if(val.use.applicationId!==appId || val.use.useId!==useId) continue;
+       const matchesObject = sql.includes("call'->'target'->>'kind'='object'")
+         ? "call" in val && val.call.target?.kind==="object" && val.call.target.objectType===args[5] && val.call.target.primaryKey===args[6]
+         : val.panelId===args[5] && val.projectionId===args[6] && val.operation.id===args[7];
+       if(matchesObject){val.invalidated=reason;count++;}
+     }
+     return {rowCount:count};
+   }
+   if(sql.includes("'{invalidated}'") && sql.includes("WHERE domain_id=$1 AND owner_id=$2 AND id=$3")){
+     const val=intents.get(id);
+     if(!val || val.dispatched || val.invalidated) return {rowCount:0};
+     val.invalidated=JSON.parse(String(args[3]));
+     return {rowCount:1};
+   }
+   if(sql.includes("AND intent->>'dispatched'='false'")){const value=intents.get(id)!;if(value.dispatched || value.invalidated)return {rowCount:0};intents.set(id,structuredClone(args[3] as PanelOperationIntent));return {rowCount:1};}
    if(sql.includes("jsonb_set")){intents.get(id)!.outcome=JSON.parse(String(args[3]));return {rowCount:1};}
    throw new Error(sql);
  });
@@ -851,4 +872,134 @@ it("marks a batch operation unavailable only when every item in a non-empty arra
   const fallbackMixed = await readAdmittedProjectionOperations(actor, placement, { checked: [approved1, draft] });
   expect(fallbackMixed.approveAll).not.toHaveProperty("unavailable");
   expect(unavailableFallback).toHaveBeenCalledTimes(4);
+});
+
+it("invalidates pending agent-page form save intents when another tab saves the same object", async () => {
+  const execute = vi.fn(async () => ({ kind: "success" as const, data: { saved: true } }));
+  const saveHandlerRef = "platform:ScheduledTask.save";
+  mockRegisteredOperation({
+    handlerRef: saveHandlerRef,
+    labelKey: "test.perform",
+    binding: { kind: "PlatformOperation", id: saveHandlerRef },
+    kind: "form.save",
+    effect: "write",
+    batch: false,
+    targetType: "platform:ScheduledTask",
+    targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal("platform:ScheduledTask"), primaryKey: z.string() }).strict(),
+    inputSchema: z.object({ values: z.record(z.unknown()), submittedFields: z.array(z.string()).optional() }),
+    resultSchema: z.object({}),
+    draftOperation: () => "task.save",
+    draftInput: input => input,
+    execute,
+  });
+
+  const target = { kind: "object" as const, objectType: "platform:ScheduledTask", primaryKey: uuid(9) };
+  // Tab A prepares an agent-page form save (awaiting confirmation).
+  const agentPrepared = await prepareLiveAction({
+    intentId: uuid(51),
+    applicationId: "A",
+    useId: "tasks",
+    operationId: "form.save",
+    call: { target, input: { values: { title: "Agent title", note: "A" }, submittedFields: ["/title"] } },
+  });
+  // Confirmation question includes the submitted field summary (二.7).
+  const questionCall = mocks.request.mock.calls.find(([path]) => path === "/v1/channel/user-questions");
+  expect(questionCall?.[2]).toMatchObject({ message: expect.stringContaining("title: Agent title") });
+
+  // Tab B manually saves the same object as human.
+  const humanPrepared = await prepareHumanPanelOperation(owner, credentials, {
+    applicationId: "A",
+    useId: "tasks",
+    operationId: "form.save",
+    call: { target, input: { values: { title: "Manual title" }, submittedFields: ["/title"] } },
+  });
+  const humanDispatched = await dispatchHumanPanelOperation(owner, credentials, humanPrepared.intentId);
+  expect(humanDispatched).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+
+  // Tab A's pending agent-page intent is now invalidated on the server and cannot be dispatched.
+  const staleDispatch = await dispatchHumanPanelOperation(owner, credentials, agentPrepared.intentId);
+  expect(staleDispatch).toMatchObject({ kind: "not-dispatched", code: "FORM_CONFIRMATION_STALE" });
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it("persists the agent-page intent before publishing the confirmation question and cancels it if publishing fails", async () => {
+  const { request } = installBatchOwner();
+  const order: string[] = [];
+  const origQuery = mocks.query.getMockImplementation()!;
+  mocks.query.mockImplementation(async (sql: string, args: unknown[]) => {
+    if (sql.startsWith("INSERT INTO panel_operation_intents")) order.push("insert-intent");
+    return origQuery(sql, args);
+  });
+  mocks.request.mockImplementation(async (path: string) => {
+    if (path === "/v1/channel/user-questions") order.push("publish-question");
+    return {};
+  });
+
+  await prepareLiveAction({ ...request, intentId: uuid(54) });
+  expect(order).toEqual(["insert-intent", "publish-question"]);
+
+  // If publishing the question fails after insert, the intent is cancelled rather than left pending.
+  mocks.request.mockRejectedValueOnce(new Error("runtime unavailable"));
+  await expect(prepareLiveAction({ ...request, intentId: uuid(52) })).rejects.toThrow("runtime unavailable");
+  const inserted = [...intents.values()].find(item => item.source.kind === "agent-page" && item.source.toolCallId === uuid(52));
+  expect(inserted?.invalidated).toMatchObject({ code: "CONFIRMATION_PUBLISH_FAILED" });
+});
+
+it("lists every target name in batch confirmation questions instead of truncating at four", async () => {
+  const { request } = installBatchOwner();
+  await prepareLiveAction({ ...request, intentId: uuid(53) });
+  const questionBody = mocks.request.mock.calls.at(-1)?.[2] as { message: string };
+  for (let index = 1; index <= 5; index += 1) {
+    expect(questionBody.message).toContain(`Task ${index}`);
+  }
+});
+
+it("names the specific application entry in deleteEntry confirmation prompts", async () => {
+  const deleteEntry = productCatalogServerOperations.find(op => op.handlerRef === "applications.deleteEntry")!;
+  if (deleteEntry.effect !== "write" || deleteEntry.kind !== "action" || !deleteEntry.targetLabel) {
+    throw new Error("Expected applications.deleteEntry write handler");
+  }
+  const origBackend = mocks.backend.getMockImplementation()!;
+  mocks.backend.mockImplementation(async (name: string, url: string, opts: { headers: object }) => {
+    if (url.includes("/platform/applications/catalogue/app-1")) {
+      return {
+        text: JSON.stringify({
+          success: true,
+          data: {
+            id: "app-1",
+            source: "domain",
+            names: { en: "Orders App" },
+            descriptions: {},
+            icon: "apps",
+            allowStandalone: false,
+            canMaintain: true,
+            canEditEntries: true,
+            canGrant: true,
+            entryCount: 2,
+            updatedAt: "",
+            entry: { path: "/orders", home: "/orders/list" },
+            groups: [],
+            panelUses: [
+              { id: "entry-a", pageKey: "orders", panelId: "p1", path: "/orders/list", access: { kind: "domain-member" }, names: { en: "Order List" } },
+              { id: "entry-b", pageKey: "settings", panelId: "p2", path: "/orders/settings", access: { kind: "domain-member" }, names: { en: "Order Settings" } },
+            ],
+          },
+        }),
+      };
+    }
+    return origBackend(name, url, opts);
+  });
+
+  const host = {
+    initiator: { owner, credentials },
+    executor: { owner, credentials },
+    locale: "en",
+    request: async () => new Response(),
+    requestWorkbench: async () => new Response(),
+  };
+  const labelA = await deleteEntry.targetLabel(host, { kind: "object", objectType: "platform:Application", primaryKey: "app-1" }, { entryId: "entry-a" });
+  const labelB = await deleteEntry.targetLabel(host, { kind: "object", objectType: "platform:Application", primaryKey: "app-1" }, { entryId: "entry-b" });
+  expect(labelA).toBe("Orders App / Order List");
+  expect(labelB).toBe("Orders App / Order Settings");
+  expect(labelA).not.toBe(labelB);
 });
