@@ -218,8 +218,10 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(declared.get("ReferencePicker").data.selected.required, false);
     assert.equal(declared.get("ReferencePicker").data.rows.required, false);
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
-    // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
     const ontologyNode = { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] };
+    assert.deepEqual(declared.get("ObjectRefCard").outputs, { navigate: ontologyNode });
+    assert.ok(declared.get("ObjectForm").bindsElement.includes("ObjectType:*"), "ObjectForm binds customer object types");
+    // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
     assert.deepEqual(declared.get("OntologyGraph").inputs, {
       mode: { kind: "scalar", type: "string" },
       start: ontologyNode,

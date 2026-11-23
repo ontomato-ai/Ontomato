@@ -31,12 +31,19 @@ export function panelOperations(
     Object.entries(registration.operations).map(([name, descriptor]) => {
       const { id, memberPath } = place(registration.slot, name);
       const operation = { ...projectionOperation(manifest, registration.slot, name, descriptor), id, ...(memberPath ? { memberPath } : {}) };
+      const draftSlot = manifest.members[registration.slot]?.operationDrafts?.[name]?.slot;
       return {
         ...operation,
         invoke: (input?: Readonly<Record<string, unknown>>) => {
-          if (operation.kind === "form.save") return forms.submit(operation.slot!);
+          if (operation.kind === "form.save") {
+            if (!draftSlot || draftSlot === operation.slot) return forms.submit(operation.slot!);
+            return forms.submit(draftSlot, { operationId: operation.id, descriptor });
+          }
           if (descriptor.effect === "read")
             return read(operation.id, { target: operationCall(operation, state.values.value).target, input: input ?? {} });
+          if (draftSlot) {
+            return forms.submit(draftSlot, { operationId: operation.id, descriptor, extraInput: input });
+          }
           return write(operation.id, operationInvocation(operation, state.values.value, input ?? {}));
         },
       };

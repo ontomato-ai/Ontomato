@@ -62,7 +62,7 @@ it("runs the selected metric as the reader at its described revision and answers
     customerId: { className: "Customer", primaryKey: "c-42" }, year: 2026,
   });
 
-  expect(dashboardMetricOutputSchema.parse(result)).toEqual(output);
+  expect(dashboardMetricOutputSchema.parse(result)).toEqual({ ...output, sourceObjectTypes: ["Order"] });
   expect(sent).toEqual([
     { path: "/ontology/query/metrics/describe", body: { id: "m1" } },
     { path: "/ontology/query/metrics/execute", body: { id: "m1", revision: "rev-7", parameters: { customerId: "c-42", year: 2026 } } },
@@ -86,7 +86,7 @@ it("runs a metric without parameters with none", async () => {
   const sent = ownerAnswering(() => Response.json({ ...output, rows: [], truncation: null }));
 
   expect(await createMetricReadAdapter(owner, viewer).result("m1", {}))
-    .toEqual({ columns: description.outputColumns, rows: [], truncation: null });
+    .toEqual({ columns: description.outputColumns, rows: [], truncation: null, sourceObjectTypes: ["Order"] });
   expect(sent[1]?.body).toEqual({ id: "m1", revision: "rev-7", parameters: {} });
 });
 

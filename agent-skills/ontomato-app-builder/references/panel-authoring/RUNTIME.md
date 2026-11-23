@@ -409,7 +409,9 @@ in panel templates / slots) instead of formatting business fields in panel HTML:
   shape (or use `<typed-value :value="value" :value-map="..." />` inside `#cell-<columnKey>` slots).
 - `<object-ref-card>` (`ObjectRefCard`): clickable object reference card (icon/monogram, caption, localized name,
   monospace identifier, optional badge) from `data.record` (via `field` or the record itself), `data.result`, or a
-  direct `reference` prop — ideal for composing relationship `Source → Target` blocks.
+  direct `reference` prop — ideal for composing relationship `Source → Target` blocks. Declares output `navigate`
+  (bindable via `state: { navigate: "..." }`, typed by `config.targetClassName`, the bound record type, or an
+  ontology `object-union`) in addition to emitting `@navigate`.
 - `<metric-card>` (`MetricCard`): single or multi-KPI statistic cards (`card`, `compact`, or `inline` variants) bound
   directly to `data.result` (`metricOutput`), `data.record`, `data.rows`, `data.objects`, or standalone `value`/`items`.
 

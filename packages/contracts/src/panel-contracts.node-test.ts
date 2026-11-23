@@ -539,6 +539,16 @@ test("knowledge detail can share list search and customer instances have no form
   }).success, true);
   assert.equal(productProjectionInputSchema.safeParse({
     ...base, componentId: "@ontomato/sdk:ObjectForm", data: { form: { ...customer, read: "form" } },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, componentId: "@ontomato/sdk:ObjectForm", data: {
+      createForm: { source: { type: { kind: "ObjectType", id: "Customer" } }, read: "createForm", params: {} },
+    },
+  }).success, true);
+  assert.equal(productProjectionInputSchema.safeParse({
+    ...base, componentId: "@ontomato/sdk:ObjectForm", data: {
+      form: { source: { type: { kind: "ObjectType", id: "Customer" } }, read: "form", params: {} },
+    },
   }).success, false);
 });
 
@@ -2933,4 +2943,54 @@ test("object form fields declare discriminated variants, validate invariants, an
       },
     },
   }).success, false);
+});
+
+test("operationDrafts validates target form member and directs projectionOperation to the declared draft slot", async () => {
+  const { projectionOperation } = await import("./panel-projection");
+  const { dashboardMetricOutputSchema } = await import("./dashboard");
+  const manifest = panelManifestSchema.parse({
+    state: {},
+    members: {
+      relationForm: { target: { projectionId: "form-proj" } },
+      headerSave: {
+        target: { projectionId: "save-btn" },
+        operationDrafts: { save: { slot: "relationForm" } },
+      },
+    },
+  });
+  assert.deepEqual(manifest.members.headerSave.operationDrafts, { save: { slot: "relationForm" } });
+
+  const badManifest = panelManifestSchema.safeParse({
+    state: {},
+    members: {
+      headerSave: {
+        target: { projectionId: "save-btn" },
+        operationDrafts: { save: { slot: "missingForm" } },
+      },
+    },
+  });
+  assert.equal(badManifest.success, false);
+  assert.deepEqual(badManifest.error.issues[0]?.path, ["members", "headerSave", "operationDrafts", "save", "slot"]);
+
+  const placedSave = projectionOperation(manifest, "headerSave", "save", {
+    kind: "form.save",
+    effect: "write",
+    batch: false,
+    handlerRef: "platform:Relationship.save",
+    label: "Save",
+    target: { source: "draft", slot: "relationForm" },
+    inputSchema: {},
+    resultSchema: {},
+  });
+  assert.equal(placedSave.slot, "headerSave");
+  assert.deepEqual(placedSave.target, { source: "draft", slot: "relationForm" });
+
+  // Metric output contract carries optional sourceObjectTypes for write-triggered refresh invalidation.
+  const metricOut = dashboardMetricOutputSchema.parse({
+    columns: [{ key: "total", label: "Total", type: "number" }],
+    rows: [{ total: 12 }],
+    truncation: null,
+    sourceObjectTypes: ["Student"],
+  });
+  assert.deepEqual(metricOut.sourceObjectTypes, ["Student"]);
 });

@@ -10,6 +10,7 @@ import type { PanelMemberContext } from "./member";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { PlatformObjectRefusal, selectedKey } from "./platform-objects";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
+import type { FormSubmitOverride } from "./draft";
 import type { MemberOperationsState } from "./member-operations";
 import { slotInputState } from "./context";
 import { changedPaths, valueAt } from "./form-values";
@@ -25,7 +26,7 @@ import type { PanelFieldValue } from "./state";
 /** What an owner form asks of where it reads and saves. */
 export interface FormSource {
   describe(request: PanelFormRequest): Promise<PanelFormDescription>;
-  save(target: PanelFormTarget, input: PanelFormSaveInput): Promise<{ primaryKey: string }>;
+  save(target: PanelFormTarget, input: PanelFormSaveInput, override?: FormSubmitOverride): Promise<{ primaryKey: string }>;
 }
 
 /** The input a form's `form` datum reads its object from: the panel state the edited object is held in. */
@@ -43,8 +44,13 @@ export function formSave(state: MemberOperationsState): { name: string; descript
   if (state.status !== "ready") return null;
   const saves = Object.entries(state.value).filter(([, descriptor]) => descriptor.kind === "form.save");
   if (saves.length > 1) throw new Error(`A form saves through one operation; its projection names ${saves.map(([name]) => name).join(", ")}`);
-  const [found] = saves;
-  return found ? { name: found[0], descriptor: found[1] } : null;
+  if (saves.length === 1) return { name: saves[0]![0], descriptor: saves[0]![1] };
+  // Customer object forms have no platform `form.save`; they save through a bound customer write Action.
+  const actions = Object.entries(state.value).filter(([, descriptor]) =>
+    descriptor.kind === "action" && descriptor.effect === "write" && descriptor.handlerRef === "actions.execute");
+  if (actions.length === 1) return { name: actions[0]![0], descriptor: actions[0]![1] };
+  const namedSave = actions.find(([name]) => name === "save");
+  return namedSave ? { name: namedSave[0], descriptor: namedSave[1] } : null;
 }
 
 /** A datum the owner did not answer with a value: no permission, or the reason it could not be read. */
@@ -204,7 +210,38 @@ export async function evaluateMemberFormDraft(
  * (the type's create form), and either saved through its owner's `save`.
  */
 function fieldMessages(errors: readonly { field: string; message: string }[] = []) {
-  return Object.fromEntries(errors.map(({ field, message }) => [field, message]));
+  return Object.fromEntries(errors.map(({ field, message }) => [field.startsWith("/") ? field : `/${field}`, message]));
+}
+
+/**
+ * Converts live form values into a customer Action's `{ values: Record<string, string> }` payload according to the
+ * Action's declared `inputSchema.properties.values.properties`, keeping only parameters accepted by the Action.
+ */
+function buildActionSaveInput(
+  descriptor: PanelOwnerOperationDescriptor,
+  formValues: PanelFormValues,
+  extraInput?: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const schemaProps = (descriptor.inputSchema.properties as Record<string, unknown> | undefined);
+  const valuesSchema = schemaProps?.values as { properties?: Record<string, { contentMediaType?: string }> } | undefined;
+  const declared = valuesSchema?.properties;
+  if (!declared) {
+    return { ...formValues, ...(extraInput ?? {}) };
+  }
+  const extraValues = (extraInput && typeof extraInput.values === "object" && extraInput.values !== null && !Array.isArray(extraInput.values))
+    ? (extraInput.values as Record<string, unknown>)
+    : undefined;
+  const serialized: Record<string, string> = {};
+  for (const [param, paramSchema] of Object.entries(declared)) {
+    const raw = extraValues && Object.hasOwn(extraValues, param)
+      ? extraValues[param]
+      : Object.hasOwn(formValues, param) ? formValues[param] : undefined;
+    if (raw === undefined || raw === null) continue;
+    serialized[param] = paramSchema?.contentMediaType === "application/json" || typeof raw === "object"
+      ? JSON.stringify(raw)
+      : String(raw);
+  }
+  return { values: serialized };
 }
 
 export function memberFormSource(member: PanelMemberContext, instance: PanelInstance): FormSource {
@@ -231,10 +268,22 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
       if (result.status !== "ready") throw new MemberDataUnavailable(result);
       return result.value as PanelFormDescription;
     },
-    async save(target, input) {
-      const save = formSave(member.operations.value);
-      if (!save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
-      const answer = await instance.writeOperation(instance.operationIdOf(member.key, save.name), { call: { target, input } });
+    async save(target, input, override) {
+      let operationId: string;
+      let descriptor: PanelOwnerOperationDescriptor;
+      if (override) {
+        operationId = override.operationId;
+        descriptor = override.descriptor;
+      } else {
+        const save = formSave(member.operations.value);
+        if (!save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
+        operationId = instance.operationIdOf(member.key, save.name);
+        descriptor = save.descriptor;
+      }
+      const payload = descriptor.kind === "form.save"
+        ? input
+        : buildActionSaveInput(descriptor, input.values, override?.extraInput);
+      const answer = await instance.writeOperation(operationId, { call: { target, input: payload } });
       if (answer.decision === "cancel") throw new Error("The save was cancelled");
       const { response } = answer;
       if (response.kind === "not-dispatched") throw new Error(response.message);

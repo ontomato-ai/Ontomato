@@ -38,6 +38,7 @@ const authoringOperationEntrySchema = z.union([
     type: ownerType.optional(),
     target: authoringOperationTargetSchema.optional(),
     params: z.record(readName, authoringOperationParamSchema).optional(),
+    draft: memberKey.optional().describe("Form member key in this panel whose draft this operation submits or reads."),
   }).strict(),
 ]);
 const authoringInputBindingSchema = z.union([
@@ -72,9 +73,9 @@ const inlineMemberSchema = z.object({
   data: z.record(readName, authoringDataSchema).optional().describe("Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: fieldName}, {literal: value}, or {fromSlot: true}."),
   operation: panelOperationDeclarationSchema.shape.id.optional().describe("Single operation ID from the owner's entry in the type table."),
   operationParams: z.record(readName, authoringOperationParamSchema).optional().describe("Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' | 'label'}, or {rowField: fieldKey}."),
-  operations: z.record(readName, authoringOperationEntrySchema).optional().describe("Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?} where target may be 'row', {row: true}, {rowField: key}, a state field name, {state: fieldName}, or {literal: ref}."),
+  operations: z.record(readName, authoringOperationEntrySchema).optional().describe("Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?, draft?} where target may be 'row', {row: true}, {rowField: key}, a state field name, {state: fieldName}, or {literal: ref}, and draft names a form member in this panel."),
   draft: panelReadOperationInputsSchema.shape.draft.unwrap().shape.slot.optional()
-    .describe("Form member key in this panel. Required when the declared read operation takes a draft."),
+    .describe("Form member key in this panel. Required when the declared read operation takes a draft; optional on a write operation to submit that form member's draft."),
   parameters: panelReadOperationInputsSchema.shape.parameters.optional()
     .describe("Parameters for a draft read operation. Use {state: fieldName}, {formField: {slot, path}}, or {fields: {parameterName: source}}. Defaults to an empty object."),
   bindingId: panelReadOperationInputsSchema.shape.bindingId

@@ -80,8 +80,9 @@ export function createDashboardCardReadAdapter({ domainId }: DashboardOwner, vie
     async result(primaryKey: string, registration: ChartRegistration, parameters: DashboardMetricReference["parameters"]) {
       const { card } = await registeredChart(domainId, association(primaryKey, registration));
       const metric = new DashboardMetricClient(domainId, viewer);
-      const { revision } = await metric.describe(registration.metricId);
-      return metric.execute({ ...card.query, parameters: { ...card.query.parameters, ...parameters } }, revision);
+      const { revision, sourceObjectTypes } = await metric.describe(registration.metricId);
+      const executed = await metric.execute({ ...card.query, parameters: { ...card.query.parameters, ...parameters } }, revision);
+      return sourceObjectTypes !== undefined ? { ...executed, sourceObjectTypes } : executed;
     },
   };
 }

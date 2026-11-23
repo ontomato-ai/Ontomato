@@ -115,6 +115,8 @@ export function resolveOperationInputFields(
   if (!panel || !slot || !descriptor || descriptor.upload) return [];
   const hasDeclaredReadInputs = panel.manifest.members[slot.slot]?.readOperationInputs?.[operationName] !== undefined;
   if (descriptor.effect === "read" && (descriptor.target.source === "draft" || hasDeclaredReadInputs)) return [];
+  const hasDeclaredDraft = panel.manifest.members[slot.slot]?.operationDrafts?.[operationName] !== undefined;
+  if (descriptor.effect === "write" && hasDeclaredDraft) return [];
   const boundParams = new Set(Object.keys(slot.projection.operations?.[operationName]?.params ?? {}));
   return operationInputFields(descriptor.inputSchema, boundParams);
 }
@@ -262,6 +264,20 @@ export function useOperationRunner(options: {
             )
           : effectiveInput;
         read.value = await panel.instance.readOperation(operationId, { target: targetInfo.target, input });
+        return;
+      }
+
+      const declaredDraftSlot = panel.manifest.members[slot.slot]?.operationDrafts?.[operationName]?.slot;
+      if (declaredDraftSlot) {
+        if (descriptor.kind === "form.save" && declaredDraftSlot === slot.slot) {
+          await panel.instance.forms.submit(slot.slot);
+        } else {
+          await panel.instance.forms.submit(declaredDraftSlot, {
+            operationId,
+            descriptor,
+            ...(Object.keys(effectiveInput).length ? { extraInput: effectiveInput } : {}),
+          });
+        }
         return;
       }
 

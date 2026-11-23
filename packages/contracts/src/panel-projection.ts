@@ -1138,13 +1138,17 @@ export function projectionOperation(
   descriptor: PanelOwnerOperationDescriptor,
 ): PanelOperation {
   const { kind, label, handlerRef, inputSchema, target, unavailable } = descriptor;
+  const draftSlot = manifest.members[member]?.operationDrafts?.[name]?.slot;
   let placed: PanelOperation["target"];
-  if (kind === "form.save") placed = { source: "draft", slot: member };
+  if (kind === "form.save") placed = { source: "draft", slot: draftSlot ?? member };
   else if (target.source === "literal" || target.source === "none") placed = target;
   else if (target.source === "input") {
     const binding = manifest.members[member]?.inputs?.[target.input];
     if (binding && "state" in binding) placed = { source: "state", state: binding.state };
     else if (binding && "literal" in binding) placed = { source: "literal", literal: panelObjectRefSchema.parse(binding.literal) };
+  }
+  if (!placed && draftSlot && descriptor.effect === "write") {
+    placed = { source: "draft", slot: draftSlot };
   }
   return {
     id: panelOperationId(member, name), kind, label, handlerRef, inputSchema, target: placed, slot: member,

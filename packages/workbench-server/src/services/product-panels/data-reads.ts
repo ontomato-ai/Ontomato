@@ -49,6 +49,15 @@ type ReadMember = ProductPanel["manifest"]["members"][string];
 type ReadSelection = { kind: "platform" | "customer"; typeId: string; method: string; primaryKey?: string };
 type ReadAdapter = (selection: ReadSelection, params: Record<string, unknown>, projection: ProductProjection) => Promise<unknown> | unknown;
 
+function formParams(params: Record<string, unknown>) {
+  const values = panelReadParameterSchemas.panelFormValues.optional().parse(params.values);
+  requireFormFieldNames(values, "values");
+  return {
+    values,
+    changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) ?? null,
+  };
+}
+
 function customerReads(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string): Record<string, ReadAdapter> {
   const customer = createCustomerOntologyReadAdapter(owner, viewer, callerUserName);
   return {
@@ -57,6 +66,8 @@ function customerReads(owner: ProductOwner, viewer: AssistantCredentials, caller
       page: panelReadParameterSchemas.page.optional().parse(params.page),
     }),
     record: selection => customer.record(selection.typeId, selection.primaryKey!),
+    form: (selection, params) => customer.form(selection.typeId, selection.primaryKey!, formParams(params)),
+    createForm: (selection, params) => customer.createForm(selection.typeId, formParams(params)),
     neighbors: (selection, params) => customer.neighbors(selection.typeId, {
       node: panelReadParameterSchemas.graphNode.parse(params.node),
       relationKinds: panelReadParameterSchemas.relationKinds.optional().parse(params.relationKinds),
@@ -89,14 +100,6 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
   const cards = createDashboardCardReadAdapter(owner, viewer);
-  const formParams = (params: Record<string, unknown>) => {
-    const values = panelReadParameterSchemas.panelFormValues.optional().parse(params.values);
-    requireFormFieldNames(values, "values");
-    return {
-      values,
-      changedField: panelReadParameterSchemas.changedField.optional().parse(params.changedField) ?? null,
-    };
-  };
   const modelReads: Record<string, ReadAdapter> = {
     list: (selection, params) => model.list(selection.typeId, {
       className: panelReadParameterSchemas.className.optional().parse(params.className),

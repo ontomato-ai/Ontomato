@@ -994,3 +994,76 @@ it("rechecks a customer action and reads the confirmation label as the initiator
  });
  expect(ownerCalls).toEqual(["definition", "open", "definition", "open", "submit", "execute"]);
 });
+
+it("admits a cross-member form.save write operation bound to another form member via operationDrafts", async () => {
+  const { readAdmittedProjectionOperations } = await import("../direct-operations");
+  const saveId = "test.cross.save";
+  mockRegisteredOperation({
+    handlerRef: saveId,
+    labelKey: "test.previewMetric",
+    binding: { kind: "PlatformOperation", id: saveId },
+    kind: "form.save",
+    effect: "write",
+    batch: false,
+    targetType: "platform:Relationship",
+    targetSchema: z.union([
+      z.object({ kind: z.literal("object"), objectType: z.literal("platform:Relationship"), primaryKey: z.string() }).strict(),
+      z.object({ kind: z.literal("draft") }).strict(),
+    ]),
+    inputSchema: z.object({ values: z.record(z.unknown()) }),
+    resultSchema: z.object({}),
+    draftOperation: () => "relationship.create",
+    draftInput: input => input,
+    formInstructions: "Save relationship.",
+    create: {
+      draftValues: values => (values as Record<string, unknown>) ?? {},
+      createdObject: () => ({ primaryKey: "rel-1", objectType: "platform:Relationship" }),
+    },
+    execute: async () => ({ kind: "success", data: {}, affected: { objects: [], objectTypes: ["platform:Relationship"] } }),
+  });
+
+  const panel = {
+    id: "panel-cross-save",
+    manifest: {
+      state: {},
+      members: {
+        relationForm: { target: { projectionId: "rel-form" } },
+        headerSave: {
+          target: { projectionId: "header-save" },
+          operationDrafts: { save: { slot: "relationForm" } },
+        },
+      },
+    },
+  };
+  const headerProjection = {
+    id: "header-save",
+    name: "Header save",
+    description: "",
+    visibility: "domain" as const,
+    componentId: "@ontomato/sdk:OperationButton",
+    inputs: {},
+    outputs: {},
+    data: {},
+    config: { operation: "save" },
+    operations: {
+      save: { operation: { kind: "PlatformOperation" as const, id: saveId } },
+    },
+  };
+  const actor = {
+    owner,
+    credentials,
+    use: { kind: "registered" as const, applicationId: "A", useId: "relations" },
+  };
+
+  const admitted = await readAdmittedProjectionOperations(actor as never, {
+    panel: panel as never,
+    projection: headerProjection as never,
+    member: panel.manifest.members.headerSave,
+    slot: "headerSave",
+  }, {});
+  expect(admitted.save).toMatchObject({
+    kind: "form.save",
+    effect: "write",
+    target: { source: "draft", slot: "relationForm" },
+  });
+});

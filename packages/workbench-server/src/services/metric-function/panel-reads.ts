@@ -183,13 +183,14 @@ export function createMetricReadAdapter(_owner: ProductOwner, viewer: AssistantC
       return form("metric-form", "/metricView/form", METRIC_VIEW, null, params);
     },
     async result(primaryKey: string, params: MetricResultParams): Promise<DashboardMetricOutput> {
-      const { revision } = await query(
+      const { revision, sourceObjectTypes } = await query(
         "metric-describe", "/ontology/query/metrics/describe", { id: primaryKey }, dashboardMetricDescriptionSchema,
       );
       const parameters = Object.fromEntries(Object.entries(params).map(([name, value]) => [name, parameterValue(value)]));
-      return query(
+      const executed = await query(
         "metric-execute", "/ontology/query/metrics/execute", { id: primaryKey, revision, parameters }, dashboardMetricOutputSchema,
       );
+      return sourceObjectTypes !== undefined ? { ...executed, sourceObjectTypes } : executed;
     },
   };
 }

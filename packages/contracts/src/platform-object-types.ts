@@ -485,6 +485,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
 export const customerOntologyReads: Readonly<Record<string, PlatformReadDeclaration>> = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },
   record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+  form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
+  createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
 };
 export const customerRelationReads: Readonly<Record<string, PlatformReadDeclaration>> = {
   neighbors: {

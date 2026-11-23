@@ -177,8 +177,11 @@ export function useProjectionSlot(): ProjectionSlot {
 export function useProjectionForm(adapter: PanelFormAdapter): void {
   const context = usePanelContext();
   const drawn = useProjectionSlot();
-  // A form saves through an operation its projection names; which one is the owner's form save its description says.
-  if (Object.keys(drawn.projection.operations ?? {}).length === 0)
+  // A form saves through an operation its projection names, or a sibling member's write operation bound via operationDrafts.
+  const hasOwnOperation = Object.keys(drawn.projection.operations ?? {}).length > 0;
+  const hasSiblingDraftOperation = Object.values(context.manifest.members).some((member) =>
+    Object.values(member.operationDrafts ?? {}).some((draft) => draft.slot === drawn.slot));
+  if (!hasOwnOperation && !hasSiblingDraftOperation)
     throw new Error(`The projection in member '${drawn.slot}' names no operation, so its form cannot save`);
   onBeforeUnmount(context.instance.forms.register(drawn.slot, adapter));
 }

@@ -376,7 +376,14 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
   });
   /** Every datum shown now, with how to read it again when an operation reports its source changed. */
-  const shown = new Set<{ data: DirectProjectionData; inputs: () => MemberInputs; reread(): void; markInactive(): void }>();
+  const shown = new Set<{
+    data: DirectProjectionData;
+    inputs: () => MemberInputs;
+    isMetricOutput: boolean;
+    sourceObjectTypes: () => readonly string[] | undefined;
+    reread(): void;
+    markInactive(): void;
+  }>();
   /** Every member's operations read now, read again with everything shown. */
   const operationReads = new Set<() => void>();
   /** Where the members the instance holds live, each in its own scope, so a member held anew ends the old one. */
@@ -671,10 +678,13 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           const state = shallowRef<MemberDataState>({ status: "loading" });
           let sequence = 0;
           const entryData = projection.data[name]!;
+          const declaration = directReadDeclaration(projection, entryData);
+          const isMetricOutput = declaration?.result === "metricOutput";
           const isObjectDatum = "object" in entryData.source;
           const objectTargetKeyOf = () => (isObjectDatum ? JSON.stringify(sourceObject(entryData, inputs()) ?? null) : null);
           let targetKeyWhileInactive: string | null = null;
           let wasInactive = false;
+          let metricSourceObjectTypes: readonly string[] | undefined;
           const reread = () => {
             // Unseen, the instance reads nothing; remember the target it last showed so returning to a different
             // object clears the stale record immediately instead of flashing it while the new read is in flight.
@@ -701,16 +711,29 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
             void answer(name, inputs()).then((result) => {
               if (reading !== sequence) return;
+              if (isMetricOutput && result.status === "ready" && result.value && typeof result.value === "object" && !Array.isArray(result.value)) {
+                const rawTypes = (result.value as { sourceObjectTypes?: unknown }).sourceObjectTypes;
+                if (Array.isArray(rawTypes) && rawTypes.every((item): item is string => typeof item === "string")) {
+                  metricSourceObjectTypes = rawTypes;
+                }
+              }
               // A failure is read again on request, as a refresh reads it.
               state.value = result.status === "error" ? { ...result, retry: () => { state.value = { status: "loading" }; reread(); } } : result;
             });
           };
-          const entry = { data: entryData, inputs, reread, markInactive: () => {
-            if (!wasInactive) {
-              wasInactive = true;
-              targetKeyWhileInactive = objectTargetKeyOf();
-            }
-          } };
+          const entry = {
+            data: entryData,
+            inputs,
+            isMetricOutput,
+            sourceObjectTypes: () => metricSourceObjectTypes,
+            reread,
+            markInactive: () => {
+              if (!wasInactive) {
+                wasInactive = true;
+                targetKeyWhileInactive = objectTargetKeyOf();
+              }
+            },
+          };
           shown.add(entry);
           watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), reread, { immediate: true });
           onScopeDispose(() => shown.delete(entry));
@@ -731,11 +754,22 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     refresh(affected: PanelOperationAffected) {
       // What the write removed is let go of first, so nothing below reads it again.
       if (affected.removed) instance.letGo(affected.removed);
-      for (const { data, inputs, reread } of shown) {
+      const affectedTypes = new Set<string>([
+        ...affected.objectTypes,
+        ...affected.objects.map((changed) => changed.objectType),
+      ]);
+      for (const { data, inputs, isMetricOutput, sourceObjectTypes, reread } of shown) {
         const object = stateObject(sourceObject(data, inputs()));
-        if (object && affected.objects.some((changed) => changed.objectType === object.className && changed.primaryKey === object.primaryKey))
+        if (object && affected.objects.some((changed) => changed.objectType === object.className && changed.primaryKey === object.primaryKey)) {
           reread();
-        else if ("type" in data.source && affected.objectTypes.includes(data.source.type.id)) reread();
+        } else if ("type" in data.source && affected.objectTypes.includes(data.source.type.id)) {
+          reread();
+        } else if (isMetricOutput && affectedTypes.size > 0) {
+          const dependencies = sourceObjectTypes();
+          if (dependencies === undefined || dependencies.some((type) => affectedTypes.has(type))) {
+            reread();
+          }
+        }
       }
       for (const object of affected.objects) instance.objectChanged(object);
       // What changed may be shown by a panel placed here, too.

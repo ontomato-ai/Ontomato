@@ -117,9 +117,21 @@ test("short draft reads must name their form member and keep the binding on the 
   assert.deepEqual(withParameters.placement.readOperationInputs?.testExecute, {
     draft: { slot: "metricEditor" }, parameters, bindingId,
   });
-  assert.throws(() => expand("approve", {
+  const writeWithDraft = expand("approve", {
     component: "OperationButton", operation: approve.id, target: "selected", draft: "metricEditor",
-  }), /Member 'approve', field 'draft'.*requires an operation that reads a form draft/);
+  });
+  assert.deepEqual(writeWithDraft.placement.operationDrafts, { approve: { slot: "metricEditor" } });
+  const nonDraftRead = panelOperationDeclarationSchema.parse({
+    id: "knowledge.export", kind: "action", effect: "read", batch: false,
+    target: { source: "none" }, inputSchema: { type: "object" },
+  });
+  assert.throws(() => expand("exporter", {
+    component: "OperationButton", operation: nonDraftRead.id, draft: "metricEditor",
+  }, { objectTypes: { [type]: { reads: undefined, operations: [nonDraftRead] } } }),
+    /Member 'exporter', field 'draft'.*requires a write operation or a read operation that reads a form draft/);
+  assert.throws(() => expand("approve", {
+    component: "OperationButton", operation: approve.id, target: "selected", parameters,
+  }), /Member 'approve', field 'parameters'.*requires an operation that reads a form draft/);
 });
 
 test("short forms share the object input between the form read and save operation", () => {
@@ -431,4 +443,137 @@ test("short list row operations, fromSlot nested projections, object-union targe
   assert.doesNotThrow(() => productProjectionInputSchema.parse({
     ...unionOpExpanded.projection, name: "Approve chosen", description: "", visibility: "domain",
   }));
+});
+
+test("customer ObjectType expands standard form/createForm, cross-member operations.<name>.draft, and ObjectRefCard navigate output", async () => {
+  const { customerOntologyReads } = await import("./platform-object-types");
+  const { platformTypeTableResponseSchema } = await import("./platform-type-table");
+  const { productProjectionInputSchema } = await import("./product-panels");
+  const updateCustomerAction = panelOperationDeclarationSchema.parse({
+    id: "action-update-student", kind: "action", effect: "write", batch: false,
+    target: { source: "input", input: "target" },
+    inputSchema: { type: "object", properties: { values: { type: "object", properties: { name: { type: "string" } } } }, required: ["values"] },
+  });
+  const customerTable = platformTypeTableResponseSchema.parse({
+    objectTypes: {
+      ...typeTable.objectTypes,
+      Student: { reads: customerOntologyReads, operations: [updateCustomerAction] },
+      "platform:Relationship": {
+        reads: { record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" } },
+        operations: [save],
+      },
+    },
+    resultSchemas: {
+      panelRecordQuery: {},
+      panelGroupCounts: {},
+      panelRecord: {},
+      panelFormDescription: {},
+    },
+  });
+  const customerState = panelManifestSchema.parse({
+    state: {
+      selectedStudent: { type: { kind: "object", objectType: "Student" } },
+      selectedRelation: { type: { kind: "object", objectType: "platform:Relationship" } },
+      navigatedObjectType: { type: { kind: "object", objectType: "platform:ObjectType" } },
+      navigatedAny: { type: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] } },
+    },
+    members: {},
+  }).state;
+  const extendedComponents: Parameters<typeof expandPanelAuthoringMember>[2]["components"] = [
+    ...components,
+    buildComponent("ObjectRefCard", {
+      role: "presentation",
+      meaning: "Reference card",
+      data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } },
+      outputs: {
+        navigate: {
+          kind: "object-union",
+          layers: ["fact", "capability", "governance", "product"],
+          objectTypes: ["platform:OntologyType"],
+        },
+      },
+    }),
+  ];
+
+  // 1. Customer ObjectType ObjectForm expands form + createForm + customer write Action.
+  const studentFormMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectForm",
+    type: "Student",
+    target: "selectedStudent",
+    data: { form: "form", createForm: "createForm" },
+    operation: updateCustomerAction.id,
+  });
+  assert("component" in studentFormMember);
+  const studentFormExpanded = expandPanelAuthoringMember("studentForm", studentFormMember, {
+    state: customerState, components: extendedComponents, typeTable: customerTable,
+  });
+  assert.deepEqual(studentFormExpanded.projection.data.form.source, { object: { input: "target" } });
+  assert.deepEqual(studentFormExpanded.projection.data.createForm.source, { type: { kind: "ObjectType", id: "Student" } });
+  assert.deepEqual(studentFormExpanded.projection.operations, {
+    "action-update-student": {
+      operation: { kind: "Action", id: "action-update-student" },
+      target: { input: "target" },
+    },
+  });
+  assert.doesNotThrow(() => productProjectionInputSchema.parse({
+    ...studentFormExpanded.projection, name: "Student form", description: "", visibility: "domain",
+  }));
+
+  // 2. Cross-member write operation with draft in both `operation` + `draft` and `operations.<name>.draft`.
+  const crossSaveMember = panelAuthoringMemberSchema.parse({
+    component: "OperationButton",
+    type: "platform:Relationship",
+    operations: {
+      save: { operation: save.id, draft: "relationForm" },
+    },
+  });
+  assert("component" in crossSaveMember);
+  const crossSaveExpanded = expandPanelAuthoringMember("headerSave", crossSaveMember, {
+    state: customerState, components: extendedComponents, typeTable: customerTable,
+  });
+  assert.deepEqual(crossSaveExpanded.placement.operationDrafts, { save: { slot: "relationForm" } });
+
+  // 3. ObjectRefCard declarative `state: { navigate }` output port works with targetClassName, direct record, and object-union.
+  const typedEndpointCard = panelAuthoringMemberSchema.parse({
+    component: "ObjectRefCard",
+    type: "platform:Relationship",
+    target: "selectedRelation",
+    data: { record: "record" },
+    config: { field: "fromclass", targetClassName: "platform:ObjectType" },
+    state: { navigate: "navigatedObjectType" },
+  });
+  assert("component" in typedEndpointCard);
+  const typedCardExpanded = expandPanelAuthoringMember("sourceCard", typedEndpointCard, {
+    state: customerState, components: extendedComponents, typeTable: customerTable,
+  });
+  assert.deepEqual(typedCardExpanded.projection.outputs.navigate, { kind: "object", objectType: "platform:ObjectType" });
+  assert.deepEqual(typedCardExpanded.placement.outputs, { navigate: { state: "navigatedObjectType" } });
+
+  const unionEndpointCard = panelAuthoringMemberSchema.parse({
+    component: "ObjectRefCard",
+    type: "platform:Relationship",
+    target: "selectedRelation",
+    data: { record: "record" },
+    config: { field: "fromObject" },
+    state: { navigate: "navigatedAny" },
+  });
+  assert("component" in unionEndpointCard);
+  const unionCardExpanded = expandPanelAuthoringMember("unionCard", unionEndpointCard, {
+    state: customerState, components: extendedComponents, typeTable: customerTable,
+  });
+  assert.equal(unionCardExpanded.projection.outputs.navigate.kind, "object-union");
+  assert.deepEqual(unionCardExpanded.placement.outputs, { navigate: { state: "navigatedAny" } });
+
+  const selfRecordCard = panelAuthoringMemberSchema.parse({
+    component: "ObjectRefCard",
+    type: "Student",
+    target: "selectedStudent",
+    data: { record: "record" },
+    state: { navigate: "selectedStudent" },
+  });
+  assert("component" in selfRecordCard);
+  const selfCardExpanded = expandPanelAuthoringMember("studentCard", selfRecordCard, {
+    state: customerState, components: extendedComponents, typeTable: customerTable,
+  });
+  assert.deepEqual(selfCardExpanded.projection.outputs.navigate, { kind: "object", objectType: "Student" });
 });

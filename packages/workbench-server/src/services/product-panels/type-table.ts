@@ -61,7 +61,7 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
 
 function operationTargetCheck(loadActions?: () => ReturnType<ReturnType<typeof createActionReadAdapter>["objectActions"]>) {
   let objectActions: ReturnType<ReturnType<typeof createActionReadAdapter>["objectActions"]> | undefined;
-  return async (projection: Pick<ProductProjectionInput, "inputs" | "operations" | "data">, wiring?: Pick<PanelMember, "inputs" | "readOperationInputs">) => {
+  return async (projection: Pick<ProductProjectionInput, "inputs" | "operations" | "data">, wiring?: Pick<PanelMember, "inputs" | "readOperationInputs" | "operationDrafts">) => {
     for (const { name, binding, owner: platform } of boundProjectionOperations(projection)) {
       const ref = binding.operation;
       if (ref.kind === "Action" && !loadActions) return `operation '${name}' requires a domain action`;
@@ -76,7 +76,8 @@ function operationTargetCheck(loadActions?: () => ReturnType<ReturnType<typeof c
       const { target } = binding;
       if (!projectionOperationTargetMatches(projection, binding, operation.declaration, type))
         return `operation '${name}' takes a target of type '${type}'`;
-      if (!target && platform?.handler.kind === "form.save" && !allowsOperationDraft(projection, platform.handler))
+      const hasDraftSlot = Boolean(wiring?.operationDrafts?.[name]?.slot);
+      if (!target && platform?.handler.kind === "form.save" && !allowsOperationDraft(projection, platform.handler) && !(platform.handler.create && hasDraftSlot))
         return `operation '${name}' needs an edit target or the owner's create form`;
       if (wiring && target && "input" in target && !Object.hasOwn(wiring.inputs ?? {}, target.input))
         return `operation '${name}' expects input '${target.input}', but it is not connected`;

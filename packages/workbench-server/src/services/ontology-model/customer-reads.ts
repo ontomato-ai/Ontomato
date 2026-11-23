@@ -1,5 +1,15 @@
 import { z } from "zod";
-import type { PanelRecord, PanelRecordQuery, PanelRelationNeighbors } from "@ontomato/contracts/panel-projection";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { FormFieldError } from "@ontomato/contracts/form-fields";
+import {
+  panelFormDescriptionSchema,
+  type PanelFormDescription,
+  type PanelFormField,
+  type PanelFormValues,
+  type PanelRecord,
+  type PanelRecordQuery,
+  type PanelRelationNeighbors,
+} from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyNode } from "@ontomato/contracts/platform-ontology";
 import { config } from "../../config/application";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -8,6 +18,11 @@ import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
 
 /** One class attribute from the Java model catalog (GET /ontology/model/attributes). */
+const attributeOptionSchema = z.object({
+  value: z.union([z.string(), z.number()]),
+  label: z.string().min(1),
+  description: z.string().nullish(),
+});
 const classAttributesSchema = z.array(z.object({
   className: z.string(),
   name: z.string(),
@@ -17,6 +32,10 @@ const classAttributesSchema = z.array(z.object({
   enable: z.boolean(),
   businessKey: z.boolean(),
   primaryKey: z.boolean(),
+  required: z.boolean().optional(),
+  readOnly: z.boolean().optional(),
+  options: z.array(attributeOptionSchema).optional(),
+  enum: z.array(z.string()).optional(),
 }));
 type ClassAttribute = z.infer<typeof classAttributesSchema>[number];
 
@@ -69,13 +88,21 @@ export interface CustomerOntologyNeighborsParams {
   limit?: number;
 }
 
+export interface CustomerOntologyFormParams {
+  values?: PanelFormValues;
+  changedField?: string | null;
+}
+
 /**
- * The customer-ontology reads a projection can name: a class's rows and one object (an ObjectType source), and an
- * object's neighbors along one relationship (a Relationship source). Changes to an object go through actions.
+ * The customer-ontology reads a projection can name: a class's rows, one object and standard edit/create forms
+ * (an ObjectType source), and an object's neighbors along one relationship (a Relationship source).
+ * Changes to an object go through actions.
  */
 export interface CustomerOntologyReadAdapter {
   query(typeId: string, params: CustomerOntologyQueryParams): Promise<PanelRecordQuery>;
   record(typeId: string, primaryKey: string): Promise<PanelRecord>;
+  form(typeId: string, primaryKey: string, params?: CustomerOntologyFormParams): Promise<PanelFormDescription>;
+  createForm(typeId: string, params?: CustomerOntologyFormParams): Promise<PanelFormDescription>;
   neighbors(relationshipId: string, params: CustomerOntologyNeighborsParams): Promise<PanelRelationNeighbors>;
 }
 
@@ -117,6 +144,256 @@ function objectFailure(code: "DATA_PERMISSION_DENIED" | "OBJECT_NOT_FOUND" | "QU
   if (code === "DATA_PERMISSION_DENIED") return new HttpError(403, message, "CUSTOMER_DATA_PERMISSION");
   if (code === "OBJECT_NOT_FOUND") return new HttpError(404, message, "OBJECT_NOT_FOUND");
   return new HttpError(502, message, "CUSTOMER_OBJECT_READ_FAILED");
+}
+
+function escapeJsonPointer(segment: string): string {
+  return segment.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
+const INTEGER_TYPES = new Set(["int", "integer", "bigint", "long", "smallint", "tinyint"]);
+const NUMBER_TYPES = new Set(["float", "double", "decimal", "numeric", "number"]);
+const BOOLEAN_TYPES = new Set(["boolean", "bool"]);
+const JSON_TYPES = new Set(["json", "jsonb", "object"]);
+const ARRAY_TYPES = new Set(["array", "string[]", "list"]);
+
+function normalizedAttributeType(type: string): string {
+  return type.trim().toLowerCase();
+}
+
+function attributeSelectOptions(attribute: ClassAttribute): { value: string | number; label: string; description: string | null; disabled: boolean; disabledReason: string | null }[] | null {
+  if (attribute.options && attribute.options.length > 0) {
+    return attribute.options.map(option => ({
+      value: option.value,
+      label: option.label,
+      description: option.description ?? null,
+      disabled: false,
+      disabledReason: null,
+    }));
+  }
+  if (attribute.enum && attribute.enum.length > 0) {
+    return attribute.enum.map(item => ({
+      value: item,
+      label: item,
+      description: null,
+      disabled: false,
+      disabledReason: null,
+    }));
+  }
+  return null;
+}
+
+function buildAttributeFormField(attribute: ClassAttribute, mode: "edit" | "create"): PanelFormField {
+  const path = `/${escapeJsonPointer(attribute.name)}`;
+  const label = attribute.showName.trim() || attribute.name;
+  const help = attribute.attrDesc.trim() || undefined;
+  const required = attribute.primaryKey || Boolean(attribute.required);
+  const readOnly = (mode === "edit" && attribute.primaryKey) || Boolean(attribute.readOnly);
+  const type = normalizedAttributeType(attribute.type);
+  const options = attributeSelectOptions(attribute);
+
+  let control: PanelFormField["control"];
+  let valueSchema: Record<string, RuntimeJsonValue>;
+
+  if (options) {
+    control = { kind: "select", options };
+    const optionValues = options.map(option => option.value);
+    valueSchema = {
+      title: label,
+      enum: required ? optionValues : [...optionValues, null],
+    };
+  } else if (INTEGER_TYPES.has(type)) {
+    control = { kind: "number" };
+    valueSchema = { title: label, type: required ? "integer" : ["integer", "null"] };
+  } else if (NUMBER_TYPES.has(type)) {
+    control = { kind: "number" };
+    valueSchema = { title: label, type: required ? "number" : ["number", "null"] };
+  } else if (BOOLEAN_TYPES.has(type)) {
+    control = { kind: "switch" };
+    valueSchema = { title: label, type: "boolean" };
+  } else if (type === "text") {
+    control = { kind: "text", multiline: true, rows: 3 };
+    valueSchema = { title: label, type: required ? "string" : ["string", "null"] };
+  } else if (type === "datetime" || type === "timestamp") {
+    control = { kind: "text", placeholder: "YYYY-MM-DD HH:mm:ss" };
+    valueSchema = { title: label, type: required ? "string" : ["string", "null"], format: "date-time" };
+  } else if (type === "date") {
+    control = { kind: "text", placeholder: "YYYY-MM-DD" };
+    valueSchema = { title: label, type: required ? "string" : ["string", "null"], format: "date" };
+  } else if (type === "time") {
+    control = { kind: "time" };
+    valueSchema = { title: label, type: required ? "string" : ["string", "null"] };
+  } else if (JSON_TYPES.has(type)) {
+    control = { kind: "code", language: "json" };
+    valueSchema = { title: label, type: ["object", "array", "null"] };
+  } else if (ARRAY_TYPES.has(type)) {
+    control = { kind: "string-array" };
+    valueSchema = { title: label, type: "array", items: { type: "string" } };
+  } else {
+    control = { kind: "text" };
+    valueSchema = { title: label, type: required ? "string" : ["string", "null"] };
+  }
+
+  return {
+    path,
+    label,
+    valueSchema,
+    required,
+    ...(help ? { help } : {}),
+    readOnly,
+    control,
+  };
+}
+
+function emptyAttributeValue(attribute: ClassAttribute): RuntimeJsonValue {
+  const type = normalizedAttributeType(attribute.type);
+  if (attributeSelectOptions(attribute)) return null;
+  if (INTEGER_TYPES.has(type) || NUMBER_TYPES.has(type) || type === "time" || JSON_TYPES.has(type)) return null;
+  if (BOOLEAN_TYPES.has(type)) return false;
+  if (ARRAY_TYPES.has(type)) return [];
+  return "";
+}
+
+function normalizeAttributeValue(attribute: ClassAttribute, raw: unknown): RuntimeJsonValue {
+  if (raw === undefined || raw === null) return emptyAttributeValue(attribute);
+  const type = normalizedAttributeType(attribute.type);
+  const options = attributeSelectOptions(attribute);
+  if (options) {
+    if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") return raw;
+    return displayText(raw);
+  }
+  if (INTEGER_TYPES.has(type) || NUMBER_TYPES.has(type)) {
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string" && raw.trim() !== "") {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  }
+  if (BOOLEAN_TYPES.has(type)) {
+    if (typeof raw === "boolean") return raw;
+    if (typeof raw === "number") return raw !== 0;
+    if (typeof raw === "string") return raw.trim().toLowerCase() === "true" || raw.trim() === "1";
+    return false;
+  }
+  if (ARRAY_TYPES.has(type)) {
+    if (Array.isArray(raw)) return raw.map(item => displayText(item));
+    return [displayText(raw)];
+  }
+  if (JSON_TYPES.has(type)) {
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw) as RuntimeJsonValue;
+      } catch {
+        return raw;
+      }
+    }
+    return raw as RuntimeJsonValue;
+  }
+  return displayText(raw);
+}
+
+function validateAttributeValue(
+  attribute: ClassAttribute,
+  field: PanelFormField,
+  value: RuntimeJsonValue | undefined,
+  checkRequired: boolean,
+): FormFieldError | null {
+  const isEmpty = value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+  if (checkRequired && field.required && !field.readOnly && isEmpty) {
+    return { field: field.path, code: "required", message: `${field.label} is required` };
+  }
+  if (value === undefined || value === null) return null;
+  const type = normalizedAttributeType(attribute.type);
+  const options = attributeSelectOptions(attribute);
+  if (options) {
+    if (!options.some(option => option.value === value)) {
+      return { field: field.path, code: "invalid_option", message: `${field.label} must match one of the declared options` };
+    }
+    return null;
+  }
+  if (INTEGER_TYPES.has(type)) {
+    if (typeof value !== "number" || !Number.isInteger(value)) {
+      return { field: field.path, code: "invalid_number", message: `${field.label} must be an integer` };
+    }
+    return null;
+  }
+  if (NUMBER_TYPES.has(type)) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return { field: field.path, code: "invalid_number", message: `${field.label} must be a number` };
+    }
+    return null;
+  }
+  if (BOOLEAN_TYPES.has(type)) {
+    if (typeof value !== "boolean") {
+      return { field: field.path, code: "invalid_format", message: `${field.label} must be a boolean` };
+    }
+    return null;
+  }
+  if (ARRAY_TYPES.has(type)) {
+    if (!Array.isArray(value) || value.some(item => typeof item !== "string")) {
+      return { field: field.path, code: "invalid_array", message: `${field.label} must be a list of strings` };
+    }
+    return null;
+  }
+  if (JSON_TYPES.has(type)) return null;
+  if (typeof value !== "string") {
+    return { field: field.path, code: type === "time" ? "invalid_time" : "invalid_format", message: `${field.label} must be a string` };
+  }
+  return null;
+}
+
+function buildCustomerFormDescription(
+  typeId: string,
+  attributes: readonly ClassAttribute[],
+  mode: "edit" | "create",
+  rawRow?: Readonly<Record<string, unknown>>,
+  params?: CustomerOntologyFormParams,
+): PanelFormDescription {
+  const enabledAttributes = attributes.filter(attribute => attribute.enable);
+  const fields = enabledAttributes.map(attribute => buildAttributeFormField(attribute, mode));
+  const baseValues: PanelFormValues = {};
+  for (const attribute of enabledAttributes) {
+    baseValues[attribute.name] = rawRow === undefined
+      ? emptyAttributeValue(attribute)
+      : normalizeAttributeValue(attribute, rawRow[attribute.name]);
+  }
+
+  const submitted = params?.values;
+  const values: PanelFormValues = { ...baseValues };
+  const errors: FormFieldError[] = [];
+  if (submitted !== undefined) {
+    const checkRequired = (params?.changedField ?? null) === null;
+    for (let index = 0; index < enabledAttributes.length; index++) {
+      const attribute = enabledAttributes[index]!;
+      const field = fields[index]!;
+      if (!field.readOnly && Object.hasOwn(submitted, attribute.name)) {
+        values[attribute.name] = submitted[attribute.name]!;
+      }
+      const error = validateAttributeValue(attribute, field, values[attribute.name], checkRequired);
+      if (error) errors.push(error);
+    }
+  }
+
+  const requiredNames = enabledAttributes
+    .filter((_attribute, index) => fields[index]!.required)
+    .map(attribute => attribute.name);
+  const bodySchema: Record<string, RuntimeJsonValue> = {
+    type: "object",
+    properties: Object.fromEntries(enabledAttributes.map((attribute, index) => [attribute.name, fields[index]!.valueSchema])),
+    ...(requiredNames.length > 0 && { required: requiredNames }),
+  };
+
+  return panelFormDescriptionSchema.parse({
+    fields,
+    values,
+    errors,
+    save: {
+      method: mode === "edit" ? "PUT" : "POST",
+      path: `/ontology/objects/${encodeURIComponent(typeId)}`,
+      bodySchema,
+      draftOperation: `${typeId}.${mode === "edit" ? "update" : "create"}`,
+    },
+  });
 }
 
 type NeighborDirection = { direction: "outgoing" | "incoming"; targetClass: string };
@@ -305,8 +582,8 @@ export function createCustomerOntologyReadAdapter(
     return classRelationshipsSchema.parse(JSON.parse(response.text));
   }
 
-  /** One object's attribute values; the attributes are read once per call and shared with the caller. */
-  async function readObject(typeId: string, primaryKey: string, attributes: readonly ClassAttribute[]): Promise<PanelRecord> {
+  /** One object's raw attribute row from the owner; enforces viewer data permissions and preserves primary key. */
+  async function readRawObject(typeId: string, primaryKey: string, attributes: readonly ClassAttribute[]): Promise<Record<string, unknown>> {
     const response = await backendPost(
       "customer-object-record",
       `${baseUrl}/data/queryInfoByNode`,
@@ -316,8 +593,12 @@ export function createCustomerOntologyReadAdapter(
     const answer = objectRecordSchema.parse(JSON.parse(response.text));
     if (!answer.success) throw objectFailure(answer.code, answer.message);
     // Java drops a primary-key column literally named "id" from the answer, so the requested key is the authoritative value.
-    const row = { ...answer.data.data, [primaryKeyName(attributes)]: primaryKey };
-    return panelRecord(attributes, row);
+    return { ...answer.data.data, [primaryKeyName(attributes)]: primaryKey };
+  }
+
+  /** One object's attribute values; the attributes are read once per call and shared with the caller. */
+  async function readObject(typeId: string, primaryKey: string, attributes: readonly ClassAttribute[]): Promise<PanelRecord> {
+    return panelRecord(attributes, await readRawObject(typeId, primaryKey, attributes));
   }
 
   /** One relation-direction query: a refusal names the viewer's permission; anything else the owner's or the transport's failure. */
@@ -354,6 +635,23 @@ export function createCustomerOntologyReadAdapter(
 
     async record(typeId, primaryKey) {
       return readObject(typeId, primaryKey, await classAttributes(typeId));
+    },
+
+    async form(typeId, primaryKey, params) {
+      const attributes = await classAttributes(typeId);
+      if (!attributes.some(attribute => attribute.primaryKey)) {
+        throw new HttpError(404, `Object type '${typeId}' has no primary key attribute`, "OBJECT_NOT_FOUND");
+      }
+      const row = await readRawObject(typeId, primaryKey, attributes);
+      return buildCustomerFormDescription(typeId, attributes, "edit", row, params);
+    },
+
+    async createForm(typeId, params) {
+      const attributes = await classAttributes(typeId);
+      if (attributes.length === 0) {
+        throw new HttpError(404, `Object type '${typeId}' has no attributes`, "OBJECT_NOT_FOUND");
+      }
+      return buildCustomerFormDescription(typeId, attributes, "create", undefined, params);
     },
 
     async neighbors(relationshipId, { node, relationKinds, limit: requested }) {

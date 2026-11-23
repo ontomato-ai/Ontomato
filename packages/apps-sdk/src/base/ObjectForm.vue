@@ -15,6 +15,7 @@ import {
   type PanelFormValues,
 } from "@ontomato/contracts/panel-projection";
 import { slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
+import type { FormSubmitOverride } from "../panel/draft";
 import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
@@ -991,7 +992,7 @@ useProjectionForm({
     }
     return evaluated.marked;
   },
-  submit: () => write(),
+  submit: (override) => write(override),
   dirty: () => dirty.value,
   discard,
   snapshot() {
@@ -1131,7 +1132,7 @@ function takeSavedFields(receipt: PlatformObjectRefusal) {
  * fields it named; nothing is retried, and the reader's form stays as they left it. A create selects the object the
  * owner created; every projection showing the saved object reads it again, this form included, at its new revision.
  */
-async function write(): Promise<unknown> {
+async function write(override?: FormSubmitOverride): Promise<unknown> {
   const into = target.value;
   if (!into) throw new Error("This form edits one object, and none is selected");
   if (failure.value) throw failure.value.reason;
@@ -1146,7 +1147,7 @@ async function write(): Promise<unknown> {
     const saved = await forms.save(into, {
       values: payloadValues, submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
       ...(revision === undefined ? {} : { revision }),
-    });
+    }, override);
     submitted.value = new Set();
     held = null;
     ownerOpened.value = { ...ownerShown.value!, values: payloadValues };

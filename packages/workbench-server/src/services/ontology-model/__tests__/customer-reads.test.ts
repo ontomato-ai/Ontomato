@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema } from "@ontomato/contracts/panel-projection";
+import { panelFormDescriptionSchema, panelRecordQuerySchema, panelRecordSchema, panelRelationNeighborsSchema } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { createCustomerOntologyReadAdapter } from "../customer-reads";
@@ -334,4 +334,97 @@ it("fails the whole neighbors read by the record's rule when the anchor is unrea
   await expect(createCustomerOntologyReadAdapter(owner, viewer)
     .neighbors("person_to_org", { node: { className: "person", primaryKey: "p9" } }))
     .rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
+});
+
+it("reads an ordinary customer class edit form from attribute metadata and current object values", async () => {
+  const richAttributes = [
+    { className: "student", name: "id", showName: "Student ID", type: "varchar", attrDesc: "Unique ID", enable: true, businessKey: false, primaryKey: true },
+    { className: "student", name: "name", showName: "Full Name", type: "varchar", attrDesc: "Display name", enable: true, businessKey: true, primaryKey: false },
+    { className: "student", name: "age", showName: "Age", type: "int", attrDesc: "", enable: true, businessKey: false, primaryKey: false },
+    { className: "student", name: "score", showName: "Score", type: "float", attrDesc: "", enable: true, businessKey: false, primaryKey: false },
+    { className: "student", name: "active", showName: "Active", type: "boolean", attrDesc: "", enable: true, businessKey: false, primaryKey: false },
+    { className: "student", name: "bio", showName: "Bio", type: "text", attrDesc: "", enable: true, businessKey: false, primaryKey: false },
+    { className: "student", name: "status", showName: "Status", type: "varchar", attrDesc: "", enable: true, businessKey: false, primaryKey: false, enum: ["pending", "approved"] },
+    { className: "student", name: "legacy", showName: "Legacy", type: "varchar", attrDesc: "", enable: false, businessKey: false, primaryKey: false },
+  ];
+  stubOwner(request => {
+    if (request.url.pathname === "/ontology/model/attributes") return Response.json(richAttributes);
+    if (request.url.pathname === "/data/queryInfoByNode") {
+      expect(request.body).toEqual({ class: "student", id: "student:s-1" });
+      return Response.json({
+        success: true,
+        data: { data: { name: "Li Ming", age: "16", score: 92.5, active: "true", bio: "Track A", status: "pending" } },
+      });
+    }
+    return undefined;
+  });
+
+  const form = await createCustomerOntologyReadAdapter(owner, viewer).form("student", "s-1");
+  expect(panelFormDescriptionSchema.parse(form)).toEqual(form);
+  // Disabled attribute 'legacy' is excluded; primary key is readOnly in edit mode.
+  expect(form.fields.map(field => field.path)).toEqual(["/id", "/name", "/age", "/score", "/active", "/bio", "/status"]);
+  expect(form.fields[0]).toMatchObject({ path: "/id", label: "Student ID", help: "Unique ID", required: true, readOnly: true, control: { kind: "text" } });
+  expect(form.fields[2]).toMatchObject({ path: "/age", control: { kind: "number" } });
+  expect(form.fields[4]).toMatchObject({ path: "/active", control: { kind: "switch" } });
+  expect(form.fields[5]).toMatchObject({ path: "/bio", control: { kind: "text", multiline: true, rows: 3 } });
+  expect(form.fields[6]).toMatchObject({
+    path: "/status",
+    control: {
+      kind: "select",
+      options: [
+        { value: "pending", label: "pending", description: null, disabled: false, disabledReason: null },
+        { value: "approved", label: "approved", description: null, disabled: false, disabledReason: null },
+      ],
+    },
+  });
+  expect(form.values).toEqual({
+    id: "s-1", name: "Li Ming", age: 16, score: 92.5, active: true, bio: "Track A", status: "pending",
+  });
+  expect(form.errors).toEqual([]);
+  expect(form.save.method).toBe("PUT");
+  expect(form.save.draftOperation).toBe("student.update");
+
+  // Draft validation merges editable values, keeps read-only PK, and reports type/option violations.
+  const checked = await createCustomerOntologyReadAdapter(owner, viewer).form("student", "s-1", {
+    values: { id: "hacked", name: "Li Hua", age: 16.5, status: "unknown" },
+    changedField: null,
+  });
+  expect(checked.values.id).toBe("s-1");
+  expect(checked.values.name).toBe("Li Hua");
+  expect(checked.errors).toEqual([
+    expect.objectContaining({ field: "/age", code: "invalid_number" }),
+    expect.objectContaining({ field: "/status", code: "invalid_option" }),
+  ]);
+});
+
+it("reads an ordinary customer class createForm with editable primary key and validates required/typed draft fields", async () => {
+  stubOwner(request => catalogRoute(request));
+
+  const form = await createCustomerOntologyReadAdapter(owner, viewer).createForm("person");
+  expect(panelFormDescriptionSchema.parse(form)).toEqual(form);
+  expect(form.fields.map(field => field.path)).toEqual(["/id", "/name", "/age"]);
+  expect(form.fields[0]).toMatchObject({ path: "/id", required: true, readOnly: false });
+  expect(form.values).toEqual({ id: "", name: "", age: null });
+  expect(form.errors).toEqual([]);
+  expect(form.save.method).toBe("POST");
+  expect(form.save.draftOperation).toBe("person.create");
+
+  const missingPk = await createCustomerOntologyReadAdapter(owner, viewer).createForm("person", {
+    values: { id: "", name: "Bob", age: 25 },
+    changedField: null,
+  });
+  expect(missingPk.errors).toEqual([expect.objectContaining({ field: "/id", code: "required" })]);
+});
+
+it("propagates owner data permission refusals and missing objects on customer form reads", async () => {
+  stubOwner(request => {
+    const route = catalogRoute(request);
+    if (route) return route;
+    if (request.url.pathname === "/data/queryInfoByNode")
+      return Response.json({ success: false, code: "DATA_PERMISSION_DENIED", message: "No read permission" });
+    return undefined;
+  });
+
+  await expect(createCustomerOntologyReadAdapter(owner, viewer).form("person", "p1"))
+    .rejects.toMatchObject({ status: 403, code: "CUSTOMER_DATA_PERMISSION" });
 });

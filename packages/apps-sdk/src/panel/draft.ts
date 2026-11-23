@@ -2,6 +2,7 @@ import { shallowReactive, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageFormSnapshot } from "@ontomato/contracts/page-context";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
+import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { PageDraft, PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import { PanelDraftUnusable } from "./draft-refusal";
@@ -55,6 +56,13 @@ export interface PanelFormHandle {
   reset(options?: { confirm?: boolean }): Promise<boolean>;
 }
 
+/** Cross-member write operation submitting a form member's current draft through its own bound operation. */
+export interface FormSubmitOverride {
+  readonly operationId: string;
+  readonly descriptor: PanelOwnerOperationDescriptor;
+  readonly extraInput?: Readonly<Record<string, unknown>>;
+}
+
 /**
  * One form projection's adapter. The owner's form decides everything about a draft: which operation it is
  * (`save.draftOperation` for the draft's target), whether its values are valid, and what they normalise to.
@@ -70,7 +78,7 @@ export interface PanelFormAdapter {
    */
   receive(draft: PageDraft<Record<string, unknown>>): Promise<ReadonlySet<string> | null>;
   /** Saves what the form holds now, through the owner, at the revision it was read at where the owner has one. */
-  submit(): Promise<unknown>;
+  submit(override?: FormSubmitOverride): Promise<unknown>;
   /** Whether this form holds unsaved changes of the reader's, as the host must be told. */
   dirty(): boolean;
   /** Drops the reader's changes — a received draft included — and shows the form as its owner holds it. */
@@ -354,11 +362,11 @@ export class PanelFormAdapters {
     }
   }
 
-  /** Saves what the form in a slot holds now. */
-  submit(slot: string): Promise<unknown> {
+  /** Saves what the form in a slot holds now, optionally dispatching through another member's bound write operation. */
+  submit(slot: string, override?: FormSubmitOverride): Promise<unknown> {
     const adapter = this.#bySlot.get(slot);
     if (!adapter) throw new Error(`Slot '${slot}' holds no form`);
-    return adapter.submit();
+    return override === undefined ? adapter.submit() : adapter.submit(override);
   }
 
   /** Drops unsaved edits in a slot's form, restoring its owner baseline. */

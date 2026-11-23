@@ -38,16 +38,28 @@ type Wiring = {
   inputs?: PanelMember["inputs"] | PanelPlacement["inputs"];
   outputs?: PanelMember["outputs"];
   readOperationInputs?: PanelMember["readOperationInputs"];
+  operationDrafts?: PanelMember["operationDrafts"];
 };
-type MemberWiring = Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs">;
+type MemberWiring = Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs" | "operationDrafts">;
 
 function toMemberWiring(wiring: Wiring): MemberWiring {
-  if (!wiring.inputs) return { outputs: wiring.outputs, readOperationInputs: wiring.readOperationInputs };
+  if (!wiring.inputs) {
+    return {
+      outputs: wiring.outputs,
+      readOperationInputs: wiring.readOperationInputs,
+      operationDrafts: wiring.operationDrafts,
+    };
+  }
   const inputs: NonNullable<PanelMember["inputs"]> = {};
   for (const [k, v] of Object.entries(wiring.inputs)) {
     if (!("item" in v)) inputs[k] = v;
   }
-  return { inputs, outputs: wiring.outputs, readOperationInputs: wiring.readOperationInputs };
+  return {
+    inputs,
+    outputs: wiring.outputs,
+    readOperationInputs: wiring.readOperationInputs,
+    operationDrafts: wiring.operationDrafts,
+  };
 }
 type SavedPlacement = { field: string; placement: PanelPlacement };
 type Reference = {

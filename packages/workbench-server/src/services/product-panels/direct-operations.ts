@@ -221,10 +221,14 @@ async function admitBoundOperation(
     const described = describeServerOperation(handler, actor.credentials.locale, slot, descriptor);
     return { effect: "read" as const, handler, descriptor: described, fixedTarget: fixed, selected };
   }
+  const writeDraftSlot = placement.member.operationDrafts?.[bound.name]?.slot;
+  if (writeDraftSlot && !Object.hasOwn(placement.panel.manifest.members, writeDraftSlot)) {
+    throw new HttpError(422, `Member '${slot}', operation '${bound.name}' references undeclared form member '${writeDraftSlot}'`, "PANEL_OPERATION_DRAFT_UNBOUND");
+  }
   const draft = handler.kind === "form.save" && selected?.kind !== "object";
-  if (draft && !allowsOperationDraft(projection, handler)) return undefined;
+  if (draft && !allowsOperationDraft(projection, handler) && !(handler.create && writeDraftSlot)) return undefined;
   const described = describeServerOperation(handler, actor.credentials.locale, slot,
-    draft ? { source: "draft", slot } : descriptor);
+    draft ? { source: "draft", slot: writeDraftSlot ?? slot } : descriptor);
   const operation = panelWriteOperationSnapshotSchema.parse({ ...described, ...placement.nested, id, slot });
   return {
     effect: "write" as const,

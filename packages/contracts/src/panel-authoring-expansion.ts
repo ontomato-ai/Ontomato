@@ -41,7 +41,7 @@ export function expandPanelAuthoringMember(
   },
 ): {
   projection: DirectProjectionPorts;
-  placement: Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs">;
+  placement: Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs" | "operationDrafts">;
 } {
   const fail = (field: string, message: string): never => {
     throw new Error(`Member '${key}', field '${field}': ${message}`);
@@ -103,9 +103,13 @@ export function expandPanelAuthoringMember(
 
   const ownerOperation = member.operation === undefined ? undefined : lookupOwnerOperation(member.operation, typeId, "operation");
   const readsDraft = ownerOperation?.operation.effect === "read" && ownerOperation.operation.target.source === "draft";
+  const writesWithDraft = ownerOperation?.operation.effect === "write";
   if (!readsDraft) {
-    for (const field of ["draft", "parameters", "bindingId"] as const) {
+    for (const field of ["parameters", "bindingId"] as const) {
       if (member[field] !== undefined) fail(field, "This field requires an operation that reads a form draft");
+    }
+    if (!writesWithDraft && member.draft !== undefined) {
+      fail("draft", "This field requires a write operation or a read operation that reads a form draft");
     }
   }
   typeId ??= ownerOperation?.type;
@@ -290,7 +294,21 @@ export function expandPanelAuthoringMember(
       const usesOntologyNodes = componentId === "@ontomato/sdk:ObjectList" && readsOntologyObjects && objectTypeOf(output) === "@binding";
       if (usesOntologyNodes && output.kind === "list")
         fail(path, "The objects read exposes several types, but list state requires one object type");
-      const offered = usesOntologyNodes ? ontologyNode : concretePort(output, path);
+      let offered: DirectPanelPortType;
+      if (usesOntologyNodes) {
+        offered = ontologyNode;
+      } else if (componentId === "@ontomato/sdk:ObjectRefCard" && port === "navigate") {
+        const targetClassName = typeof member.config?.targetClassName === "string" ? member.config.targetClassName.trim() : "";
+        if (targetClassName) {
+          offered = { kind: "object", objectType: targetClassName };
+        } else if (member.config?.field === undefined && bindingType !== undefined && dataTypes.get("record") === bindingType) {
+          offered = { kind: "object", objectType: bindingType };
+        } else {
+          offered = concretePort(output, path);
+        }
+      } else {
+        offered = concretePort(output, path);
+      }
       if (!panelPortAccepts(actual, offered))
         fail(path, `State '${fieldName}' cannot receive component output '${port}'`);
       outputTypes.set(port, offered);
@@ -302,6 +320,7 @@ export function expandPanelAuthoringMember(
   const config = { ...member.config };
   const operationEntries: Record<string, ProjectionOperationBinding> = {};
   let readOperationInputs: PanelMember["readOperationInputs"];
+  let operationDrafts: PanelMember["operationDrafts"];
 
   function expandOperationParams(
     rawParams: Record<string, NonNullable<ShortMember["operationParams"]>[string]> | undefined,
@@ -351,6 +370,8 @@ export function expandPanelAuthoringMember(
         parameters: member.parameters ?? { fields: {} },
         ...(member.bindingId && { bindingId: member.bindingId }),
       } };
+    } else if (member.draft !== undefined) {
+      operationDrafts = { [name]: { slot: member.draft } };
     }
     if (component.config?.some(field => field.name === "operation")) {
       if (Object.hasOwn(config, "operation") && config.operation !== name)
@@ -398,6 +419,18 @@ export function expandPanelAuthoringMember(
     };
     if (!projectionOperationTargetMatches({ inputs: Object.fromEntries(inputTypes) }, binding, operation, ownerType))
       fail(`${opPath}.target`, `Operation '${operation.id}' requires a compatible target of type '${ownerType}'`);
+    if (normalized.draft !== undefined) {
+      if (operation.effect === "read" && operation.target.source === "draft") {
+        readOperationInputs = {
+          ...readOperationInputs,
+          [localName]: { draft: { slot: normalized.draft }, parameters: { fields: {} } },
+        };
+      } else if (operation.effect === "write") {
+        operationDrafts = { ...operationDrafts, [localName]: { slot: normalized.draft } };
+      } else {
+        fail(`${opPath}.draft`, "This field requires a write operation or a read operation that reads a form draft");
+      }
+    }
     operationEntries[localName] = binding;
   }
 
@@ -412,6 +445,7 @@ export function expandPanelAuthoringMember(
       ...(inputBindings.size && { inputs: Object.fromEntries(inputBindings) }),
       ...(outputBindings.size && { outputs: Object.fromEntries(outputBindings) }),
       ...(readOperationInputs && { readOperationInputs }),
+      ...(operationDrafts && { operationDrafts }),
     },
   };
 }

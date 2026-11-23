@@ -455,10 +455,15 @@ export type PanelState = z.infer<typeof panelStateSchema>;
 export const directPanelStateFieldSchema = panelStateFieldSchema;
 export type DirectPanelStateField = PanelStateField;
 
+export const panelOperationDraftSchema = z.object({ slot: key }).strict();
+export type PanelOperationDraft = z.infer<typeof panelOperationDraftSchema>;
+
 export const panelMemberSchema = z.object({
   target: panelMemberTargetSchema,
   ...placementPorts,
   readOperationInputs: z.record(key, panelReadOperationInputsSchema).optional(),
+  /** Maps a bound write operation's local name to the form member in this panel whose draft it submits. */
+  operationDrafts: z.record(key, panelOperationDraftSchema).optional(),
 }).strict();
 export type PanelMember = z.infer<typeof panelMemberSchema>;
 
@@ -520,6 +525,9 @@ export const panelManifestSchema = z.object({
         if ("state" in ref) requireName(state, ref.state, [...target, "state"]);
         else requireName(members, ref.formField.slot, [...target, "formField", "slot"]);
       }
+    }
+    for (const [operation, draft] of Object.entries(declaration.operationDrafts ?? {})) {
+      requireName(members, draft.slot, [...path, "operationDrafts", operation, "slot"]);
     }
   }
 });

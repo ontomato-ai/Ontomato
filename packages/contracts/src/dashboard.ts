@@ -69,6 +69,8 @@ export const dashboardMetricDescriptionSchema = z.object({
 export const dashboardMetricOutputSchema = z.object({
   columns: z.array(dashboardColumnSchema), rows: z.array(runtimeJsonObjectSchema),
   truncation: dashboardTruncationSchema.nullable(),
+  /** Ontology object types read by this metric, used to invalidate metric projections after writes. */
+  sourceObjectTypes: z.array(z.string()).optional(),
 });
 export const dashboardParameterFormSchema = z.object({
   revision: text, fields: z.array(formFieldSchema), values: formValuesSchema, readOnly: z.array(text),
