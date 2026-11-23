@@ -97,7 +97,7 @@ export class SkillRegistry {
         await mkdir(path.dirname(target), { recursive: true });
         await writeFile(target, file.content, { mode: 0o444 });
       }
-      await chmod(temp, 0o755);
+      await makeSkillReadable(temp);
       try {
         await rename(temp, directory);
       } catch (e) {

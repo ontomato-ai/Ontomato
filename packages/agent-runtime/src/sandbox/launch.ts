@@ -75,13 +75,15 @@ export async function openSessionSandbox(options: SessionSandboxOptions): Promis
           "--cwd", "/workspace", "--proc_path", "/proc",
           "--time_limit", "0", "--rlimit_cpu", "inf", "--rlimit_as", "inf",
           "--rlimit_fsize", "inf", "--rlimit_nproc", String(options.processCount),
-          "--pass_fd", "3", "--",
+          "--pass_fd", "3", "--pass_fd", "4", "--",
           "/usr/local/bin/python3", "-IS", `${sandboxPolicyDirectory}/engine.py`,
           String(gatewayPort), String(callbackPort), String(options.fileBytes), command, ...args,
-        ], { env: {}, stdio: ["pipe", "pipe", "pipe", fd] }) as ChildProcessWithoutNullStreams;
+        ], { env: {}, stdio: ["pipe", "pipe", "pipe", fd, "pipe"] }) as ChildProcessWithoutNullStreams;
       } finally {
         closeSync(fd);
       }
+      let engineExit = "";
+      child.stdio[4]!.on("data", chunk => { engineExit += chunk.toString(); });
       let killed = false;
       process = {
         stdin: child.stdin,
@@ -89,7 +91,10 @@ export async function openSessionSandbox(options: SessionSandboxOptions): Promis
         stderr: child.stderr,
         exited: new Promise((resolve, reject) => {
           child.once("error", reject);
-          child.once("exit", (code) => resolve(killed ? null : code));
+          child.once("close", code => {
+            const status = engineExit ? Number(engineExit) : code;
+            resolve(killed || (status !== null && status < 0) ? null : status);
+          });
         }),
         kill() {
           // nsjail handles SIGTERM by killing and reaping PID 1 of this namespace.

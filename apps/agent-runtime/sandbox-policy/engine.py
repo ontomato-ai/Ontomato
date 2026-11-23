@@ -34,4 +34,5 @@ while True:
     pid, status = os.wait()
     if pid == engine.pid:
         code = os.waitstatus_to_exitcode(status)
+        os.write(4, str(code).encode("ascii"))
         sys.exit(code if code >= 0 else 128 - code)

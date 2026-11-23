@@ -12,7 +12,8 @@ done < /sandbox-policy/sources.lock
 rmdir nsjail/kafel
 mv kafel nsjail/kafel
 cd nsjail
-make -j2 LDFLAGS="-static -Wl,-z,noexecstack $(pkg-config --static --libs protobuf libnl-route-3.0) -pthread"
+# Keep compiler-driver link options out of Kafel's recursive make, which calls ld.
+make -j2 MAKEOVERRIDES= LDFLAGS="-static -Wl,-z,noexecstack $(pkg-config --static --libs protobuf libnl-route-3.0) -pthread"
 ! readelf -l nsjail | grep -q INTERP
 install -D -m755 nsjail /output/nsjail
 install -D -m644 LICENSE /output/licenses/nsjail.txt
