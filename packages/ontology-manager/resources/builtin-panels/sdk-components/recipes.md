@@ -20,7 +20,7 @@
 1. 从页面上下文和地址参数读 `selected`（组件主键），或在 `search` 非空时按搜索词理解读者指的是哪一批组件。
 2. 用页面技能的「读当前数据」读取页面已声明的数据。按搜索词查看组件列表 `rows`，查看选中组件时读取它的组件声明 `definition`。
 3. 按已读回的组件声明回答。字段含义：
-   - `meaning` 是含义，`effects` 是副作用，`role` 是角色（`presentation` 展示、`control` 控件），`bindsElement` 是它可绑定的本体元素。
+   - `meaning` 是含义，`effects` 是副作用，`role` 是角色（`presentation` 展示、`control` 控件），`bindsElement` 是适用的对象类型（实际绑定通过投影的读法或操作声明）。
    - `data` 是它要的数据：每个数据名接受哪些读取结果（`results`）、是否必需（`required`）、它自己运行时给出哪些读取参数（`runtimeParams`）。
      没有 `data` 或 `data` 为空对象，表示它不读本体数据，只能当界面用。
    - `config` 是配置项：`name`、`type`、`description`、`required`、`default`。

@@ -220,7 +220,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
     const ontologyNode = { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] };
     assert.deepEqual(declared.get("ObjectRefCard").outputs, { navigate: ontologyNode });
-    assert.ok(declared.get("ObjectForm").bindsElement.includes("ObjectType:*"), "ObjectForm binds customer object types");
+    assert.ok(declared.get("ObjectForm").bindsElement.includes("ObjectType:*"), "ObjectForm applies to customer object types");
     // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
     assert.deepEqual(declared.get("OntologyGraph").inputs, {
       mode: { kind: "scalar", type: "string" },
@@ -313,6 +313,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       "UI catalogue must not leak third-party identifiers",
     );
     const componentsDoc = readFileSync(join(out, version, "docs/components.md"), "utf8");
+    assert.doesNotMatch(componentsDoc, /^Binds:/mu, "docs/components.md must not emit misleading bare 'Binds:' lines");
+    assert.match(
+      componentsDoc,
+      /## ObjectForm[\s\S]*?Applicable object types \(bind through a projection's declared reads or operations\): `PlatformObjectType:\*`, `ObjectType:\*`/u,
+      "docs/components.md must explain that applicable object types bind through a projection's declared reads or operations",
+    );
     assert.match(componentsDoc, /`<sdk-button>`/);
     assert.match(componentsDoc, /`v-sdk-loading`/);
     assert.match(componentsDoc, /`--sdk-color-primary`/);

@@ -289,18 +289,18 @@ export function exportedTypeDefinitions({ root, tsconfig, entries }) {
   return definitions;
 }
 
-/** The catalogue's document section: each component's meaning, what it binds and what it takes and hands over. */
+/** The catalogue's document section: each component's meaning, applicable object types, and what it takes and hands over. */
 export function catalogueMarkdown(version, catalogueOrComponents, typeDefinitions = new Map()) {
   const isFull = !Array.isArray(catalogueOrComponents);
   const components = isFull ? catalogueOrComponents.components : catalogueOrComponents;
   const uiPrimitives = isFull ? catalogueOrComponents.uiPrimitives ?? [] : [];
   const uiDirectives = isFull ? catalogueOrComponents.uiDirectives ?? [] : [];
   const themeTokens = isFull ? catalogueOrComponents.themeTokens ?? [] : [];
-  const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can bind. Each one names the module a page imports it from, what it means, the ontology elements it may bind, the data it reads, the configuration a projection sets on it, the values it hands the panel and the events the page can listen to. A projection chooses one component, the data it reads and its configuration, and names the owners' operations it offers; a panel places members of projections.`, ""];
+  const lines = ["# Components of this SDK version", "", `The components \`${version}\` exports that a projection can use. Each one names the module a page imports it from, what it means, its applicable object types (bind through a projection's declared reads or operations), the data it reads, the configuration a projection sets on it, the values it hands the panel and the events the page can listen to. A projection chooses one component, the data it reads and its configuration, and names the owners' operations it offers; a panel places members of projections.`, ""];
   for (const component of components) {
     lines.push(`## ${component.componentId}`, "", `${component.role === "control" ? "Control" : "Presentation"}: \`${component.exportName}\` from \`${component.module}\`.`, "", component.meaning, "");
     if (component.effects) lines.push(`Effects: ${component.effects}`, "");
-    if (component.bindsElement?.length) lines.push(`Binds: ${component.bindsElement.map((element) => `\`${element}\``).join(", ")}`, "");
+    if (component.bindsElement?.length) lines.push(`Applicable object types (bind through a projection's declared reads or operations): ${component.bindsElement.map((element) => `\`${element}\``).join(", ")}`, "");
     if (component.data && Object.keys(component.data).length) {
       lines.push("Data it reads (the projection's `data.<name>`, each an owner's read; its parameters are the read's signature):", "");
       for (const [name, datum] of Object.entries(component.data)) {
