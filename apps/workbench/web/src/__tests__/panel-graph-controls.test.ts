@@ -452,3 +452,183 @@ it("switches declared scalar panel state with SegmentedControl (unbound in catal
   expect(mounted.context.instance.state.values.value.mode).toBe("type");
   expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
 });
+
+it("supports ObjectRelations summary, empty-group collapsing, edge bindings, relation filter, set-as-start, and read-only outputs", async () => {
+  const relationKindList = {
+    kind: "list" as const,
+    items: { kind: "object" as const, objectType: "platform:OntologyRelationKind" },
+  };
+  const relationsProj: ProductProjection = {
+    ...current, id: "enhanced-relations", name: "Enhanced Relations", description: "",
+    componentId: "@ontomato/sdk:ObjectRelations",
+    inputs: { selected: nodeType, visibleRelationKinds: relationKindList },
+    outputs: { selected: nodeType, start: nodeType, visibleRelationKinds: relationKindList },
+    config: {
+      showRelationFilter: true,
+      allowSetStart: true,
+      showSummary: true,
+      collapseEmptyGroups: true,
+    },
+    data: {
+      neighbors: { source: ontologySource, read: "neighbors", params: { node: { input: "selected" } } },
+    },
+  };
+  const manifest = definePanel({
+    state: {
+      selected: { type: nodeType, deepLink: false },
+      start: { type: nodeType, deepLink: false },
+      relationKinds: { type: relationKindList, deepLink: false },
+    },
+    members: {
+      relations: {
+        target: { projectionId: relationsProj.id },
+        inputs: { selected: { state: "selected" }, visibleRelationKinds: { state: "relationKinds" } },
+        outputs: {
+          selected: { state: "selected" },
+          start: { state: "start" },
+          visibleRelationKinds: { state: "relationKinds" },
+        },
+      },
+    },
+  });
+  const panel = panelRecord("panel-enhanced-relations", "Enhanced Relations Panel", manifest);
+  panel.content.html = `<div id="app"><projection slot="relations"></projection></div>`;
+  const use = panelUse("use-enhanced-rel", "enhanced-rel-test", panel.id, "/ontology/assets/enhanced-rel");
+
+  const workflowNode = { className: WORKFLOW, primaryKey: "wf-orders", label: "Orders Workflow", layer: "capability" };
+  const roleNode = { className: ROLE, primaryKey: "role-ops", label: "Operations Role", layer: "governance" };
+  const actionNode = { className: ACTION, primaryKey: "act-approve", label: "Approve Order", layer: "capability" };
+
+  const responses: Record<string, unknown> = {
+    [`${WORKFLOW}:wf-orders`]: {
+      node: workflowNode,
+      neighbors: [roleNode, actionNode],
+      edges: [
+        {
+          id: "e-bind-1",
+          relationKind: "panel.uses-projection",
+          from: { className: WORKFLOW, primaryKey: "wf-orders" },
+          to: { className: ROLE, primaryKey: "role-ops" },
+          direction: "outgoing",
+          derived: false,
+          binding: {
+            reads: ["list", "summary"],
+            operations: ["delete"],
+            viaInput: true,
+          },
+        },
+        {
+          id: "e-act-1",
+          relationKind: "panel.invokes-action",
+          from: { className: WORKFLOW, primaryKey: "wf-orders" },
+          to: { className: ACTION, primaryKey: "act-approve" },
+          direction: "outgoing",
+          derived: true,
+        },
+      ],
+      relations: [
+        { relationKind: "panel.uses-projection", status: "ok", edgeCount: 1 },
+        { relationKind: "panel.empty-one", status: "ok", edgeCount: 0 },
+        { relationKind: "panel.empty-two", status: "ok", edgeCount: 0 },
+        { relationKind: "panel.refused-kind", status: "refused", edgeCount: 0, reason: "Missing panel:read" },
+        { relationKind: "panel.failed-kind", status: "failed", edgeCount: 0, reason: "Upstream 502" },
+        { relationKind: "panel.unavailable-kind", status: "unavailable", edgeCount: 0, reason: "Pending rollout" },
+        { relationKind: "panel.invokes-action", status: "ok", edgeCount: 1 },
+      ],
+    },
+    [`${ACTION}:act-approve`]: {
+      node: actionNode,
+      neighbors: [],
+      edges: [],
+      relations: [
+        { relationKind: "action.empty-kind", status: "ok", edgeCount: 0 },
+      ],
+    },
+  };
+
+  installPlatform(hostWith([relationsProj], (request) => {
+    if (request.path !== "/api/platform-ontology/neighbors") return undefined;
+    const { node } = request.body as { node: { className: string; primaryKey: string } };
+    const payload = responses[`${node.className}:${node.primaryKey}`];
+    return payload ? Response.json(payload) : undefined;
+  }));
+  const frame = panelFrame();
+  platformPanelHost("app-test", use, ignoreChanges).frame(frame, registered("app-test", use, panel), true);
+  writePanelDocument(registered("app-test", use, panel), use.path, {});
+  inside(frame);
+
+  const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+  const mounted = await mountPanel({});
+
+  // Select Orders Workflow
+  mounted.context.instance.state.set("selected", { className: WORKFLOW, primaryKey: "wf-orders" });
+  await vi.waitFor(() => expect(document.querySelectorAll(".sdk-object-relations-group")).toHaveLength(5));
+
+  // Header summary shows edge count and strictly separates refused, failed and unavailable (never no-neighbors here)
+  expect(document.querySelector(".sdk-object-relations-summary-count")?.textContent).toContain("2");
+  expect(document.querySelector('.sdk-object-relations-summary-item[data-status="no-neighbors"]')).toBeNull();
+  expect(document.querySelector('.sdk-object-relations-summary-item[data-status="refused"]')?.textContent).toContain("panel.refused-kind");
+  expect(document.querySelector('.sdk-object-relations-summary-item[data-status="failed"]')?.textContent).toContain("panel.failed-kind");
+  expect(document.querySelector('.sdk-object-relations-summary-item[data-status="unavailable"]')?.textContent).toContain("panel.unavailable-kind");
+
+  // Non-ok groups are expanded first in refused -> failed -> unavailable order, followed by non-empty ok groups
+  const renderedKinds = [...document.querySelectorAll(".sdk-object-relations-group")].map((el) =>
+    el.getAttribute("data-relation-kind"),
+  );
+  expect(renderedKinds).toEqual([
+    "panel.refused-kind",
+    "panel.failed-kind",
+    "panel.unavailable-kind",
+    "panel.uses-projection",
+    "panel.invokes-action",
+  ]);
+  // Two empty ok kinds collapsed into one summary line instead of occupying two group cards
+  expect(document.querySelector('.sdk-object-relations-empty-kinds')?.textContent).toContain("2");
+
+  // Edge binding metadata renders reads, operations, and viaInput tags
+  const binding = document.querySelector('[data-relation-kind="panel.uses-projection"] .sdk-object-relations-binding');
+  expect(binding?.querySelector('[data-binding-part="reads"]')?.textContent).toContain("list, summary");
+  expect(binding?.querySelector('[data-binding-part="operations"]')?.textContent).toContain("delete");
+  expect(binding?.querySelector('[data-binding-part="via-input"]')).not.toBeNull();
+
+  // Read-only outputs are published onto panel instance
+  expect(mounted.context.instance.outputs.relations).toEqual({
+    status: "ready",
+    edgeCount: 2,
+    label: "Orders Workflow",
+  });
+
+  // Relation kind filter control is visible and filters groups via shared panel state
+  expect(document.querySelector(".sdk-object-relations-filter")).not.toBeNull();
+  mounted.context.instance.state.set("relationKinds", [
+    { className: "platform:OntologyRelationKind", primaryKey: "panel.invokes-action" },
+  ]);
+  await vi.waitFor(() => expect(document.querySelectorAll(".sdk-object-relations-group")).toHaveLength(1));
+  expect(document.querySelector(".sdk-object-relations-group")?.getAttribute("data-relation-kind")).toBe("panel.invokes-action");
+  expect(document.querySelector(".sdk-object-relations-empty-kinds")).toBeNull();
+
+  // Clicking "Set as start" writes complete peer identity to start state without losing selected
+  const setStartBtn = document.querySelector<HTMLButtonElement>(
+    '[data-relation-kind="panel.invokes-action"] .sdk-object-relations-set-start',
+  )!;
+  setStartBtn.click();
+  await vi.waitFor(() =>
+    expect(mounted.context.instance.state.values.value.start).toEqual({
+      className: ACTION,
+      primaryKey: "act-approve",
+    }),
+  );
+
+  // Clearing relationKinds filter restores all visible groups
+  mounted.context.instance.state.set("relationKinds", null);
+  await vi.waitFor(() => expect(document.querySelectorAll(".sdk-object-relations-group")).toHaveLength(5));
+
+  // Node with zero edges and no refused/failed/unavailable shows distinct no-neighbors notice
+  mounted.context.instance.state.set("selected", { className: ACTION, primaryKey: "act-approve" });
+  await vi.waitFor(() =>
+    expect(document.querySelector('.sdk-object-relations-summary-item[data-status="no-neighbors"]')).not.toBeNull(),
+  );
+  expect(document.querySelector(".sdk-object-relations-summary-count")?.textContent).toContain("0");
+  expect(document.querySelectorAll(".sdk-object-relations-group")).toHaveLength(0);
+  expect(document.querySelector(".sdk-object-relations-empty-kinds")?.textContent).toContain("1");
+});
