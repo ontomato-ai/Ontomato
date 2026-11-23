@@ -7,7 +7,7 @@ import { AGENT_DEFINITION, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SKILL } from
 import { PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { confirmDiscard, formSaveCalls, humanIntents, ignoreChanges,
-  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, panelWithSlots, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -105,12 +105,18 @@ const manifest = definePanel({
   state: { selectedAgent: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
   members: {
     definition: { target: { projectionId: "agent-definition-form" }, inputs: { agent: { state: "selectedAgent" } } },
-    skills: { target: { projectionId: "agent-skill-choice" }, inputs: {}, formField: { slot: "definition", path: "/skills" } },
-    model: { target: { projectionId: "agent-model-choice" }, inputs: {}, formField: { slot: "definition", path: "/modelSelection/modelId" } },
-    scope: { target: { projectionId: "agent-data-scope" }, inputs: {}, formField: { slot: "definition", path: "/classNames" } },
+    skills: { target: { projectionId: "agent-skill-choice" }, inputs: {} },
+    model: { target: { projectionId: "agent-model-choice" }, inputs: {} },
+    scope: { target: { projectionId: "agent-data-scope" }, inputs: {} },
   },
 });
-const panel = panelRecord("panel-agent-settings", "Agent settings", manifest);
+const panel = panelRecord("panel-agent-settings", "Agent settings", manifest, {
+  definition: {
+    "field-skills": "skills",
+    "field-modelSelection.modelId": "model",
+    "field-classNames": "scope",
+  },
+});
 const use = panelUse("use-agent-settings", "agent-settings", panel.id, "/ontology/agents");
 
 /** A definition as the definitions service returns it. */
@@ -183,7 +189,13 @@ async function open(
   window.addEventListener("message", (event) => {
     if (event.data?.channel === PANEL_HOST_CHANNEL && event.data.kind === "failed") failed.push(event.data.message);
   });
-  const mounted = await mountPanel(panelOf(...formMembers, ...(showScope ? ["scope"] : [])));
+  const mounted = await mountPanel(panelWithSlots(["definition"], {
+    definition: {
+      "field-skills": "skills",
+      "field-modelSelection.modelId": "model",
+      ...(showScope ? { "field-classNames": "scope" } : {}),
+    },
+  }));
   return { ...mounted, sent, failed };
 }
 
@@ -281,7 +293,12 @@ async function openWithDraft(form: PanelFormValues, envelope: { operation: strin
     if (event.data.kind === "failed") failed.push(event.data.message);
     if (event.data.kind === "draft-settled") settled.push(event.data.draft);
   });
-  return { ...(await mountPanel(panelOf(...formMembers))), failed, settled, sent, draft };
+  return {
+    ...(await mountPanel(panelWithSlots(["definition"], {
+      definition: { "field-skills": "skills", "field-modelSelection.modelId": "model" },
+    }))),
+    failed, settled, sent, draft,
+  };
 }
 
 // The owner refusing the draft is the form's to say (panelisation lead, 2026-11-21): on the form, the panel going on.

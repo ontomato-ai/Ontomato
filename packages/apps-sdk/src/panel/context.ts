@@ -16,6 +16,7 @@ import {
   type PlatformObjectQueryResult,
 } from "./platform-objects";
 import { fieldAt, valueAt } from "./form-values";
+import { formFieldSlotKey } from "./slot-context";
 import { projectionElement } from "./projection-element";
 import type { PanelReadPort } from "./direct";
 import type { PanelText } from "./text";
@@ -195,18 +196,15 @@ export interface ProjectionFormField {
 }
 
 /**
- * The form field this projection's slot edits (`formField: {slot, path}`): the value and the dirty state are the form's
- * in the named slot, so a choice made here is the form's own edit, saved, discarded and drafted with it. A path the
- * owner's current form does not describe fails visibly once that form has read its fields. A port with an `itemPath`
- * edits that field in every row and is drawn by the form in each row (`formFieldAt`), not here.
+ * The form field this component edits inside an `ObjectForm`'s `#field-<path>`, `#field-<arrayPath>/*<itemPath>`, or
+ * `#field` Vue slot: the value and dirty state belong to the enclosing `ObjectForm`, so any choice made here is saved,
+ * discarded and drafted with it.
  */
 export function useFormField(): ProjectionFormField {
-  const { instance, manifest } = usePanelContext();
-  const drawn = useProjectionSlot();
-  const port = manifest.members[drawn.slot]?.formField;
-  if (!port) throw new Error(`Slot '${drawn.slot}' edits no form field: its declaration names no formField`);
-  if (port.itemPath) throw new Error(`Slot '${drawn.slot}' edits ${port.itemPath} in each row of ${port.path}, drawn by the form per row`);
-  return formFieldAt(instance, port.slot, () => port.path);
+  const { instance } = usePanelContext();
+  const slot = inject(formFieldSlotKey, null);
+  if (!slot) throw new Error("useFormField() must be called inside an ObjectForm field slot (#field-<path> or #field)");
+  return formFieldAt(instance, slot.formSlot, () => slot.path.value);
 }
 
 /**

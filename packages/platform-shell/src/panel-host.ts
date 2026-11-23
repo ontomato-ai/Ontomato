@@ -20,6 +20,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import {
   matchesDirectPanelValue,
+  normalizeExternalPanelState,
   panelStateValueSchema,
   type PanelObjectIdentity,
   type PanelOperation,
@@ -175,7 +176,7 @@ export interface DirectPanelRun {
   };
   /**
    * Current application frame state for content panels rendered inside a framed application (or beside a conversation
-   * with a `frame` segment in the address). Forwarded in `rowContext.frameState` for row-scoped operations.
+   * with a `frame` segment in the address).
    */
   frameState?: () => Readonly<Record<string, RuntimeJsonValue>> | undefined;
   /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
@@ -848,6 +849,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         options.withdrawn?.();
         return;
       }
+      // Recover a kept instance whose previous mount failed instead of leaving it permanently poisoned.
+      if ((error.value !== "" || displayLoad.value.status === "error") && !direct.value && !document.value) {
+        await adopt(shown);
+        if (!active || !shownToReader()) return;
+      }
       openBridge(true);
       options.reopened?.();
       follow(shown);
@@ -862,6 +868,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const shown = source.value;
     if (!shown) return;
     if (now) {
+      // Deliver any new external address immediately so the kept instance can enter loading state before reopen's
+      // permission/snapshot check finishes instead of flashing the previously viewed record.
+      syncAddress();
       void reopen(shown);
       return;
     }
@@ -891,12 +900,28 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   function requestedState(panel: HostedPanelSource["panel"]) {
-    return Object.fromEntries(Object.entries(options.initial()).filter(([name]) => panel.manifest.state[name]?.deepLink));
+    return normalizeExternalPanelState(panel.manifest, options.initial());
   }
 
   function syncAddress(): boolean {
-    if (!frameReady || !source.value) return false;
-    const requested = panelAddress(pageAddress(), requestedState(source.value.panel));
+    const shown = source.value;
+    if (!shown) return false;
+    const requested = panelAddress(pageAddress(), requestedState(shown.panel));
+    if (error.value !== "" || displayLoad.value.status === "error") {
+      if (requested === address.value) return false;
+      if (!direct.value && !document.value) {
+        void adopt(shown).catch(failure => {
+          if (active) reportPanelUnavailable(failure);
+        });
+        return true;
+      }
+      error.value = "";
+      displayLoad.value = { status: "ready" };
+      frameReady = true;
+      tellAddress(requested);
+      return true;
+    }
+    if (!frameReady) return false;
     if (requested === address.value) return false;
     tellAddress(requested);
     return true;

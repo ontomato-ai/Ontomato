@@ -362,8 +362,15 @@ function onSelect(value: string | undefined) {
         :title="option.unavailableReason ?? option.description"
         :class="{ 'sdk-reference-option-described': Boolean(option.description) }"
       >
-        <span class="sdk-reference-option-label">{{ option.label }}</span>
-        <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
+        <slot
+          name="option"
+          :option="option"
+          :selected="currentKey === option.primaryKey"
+          :disabled="option.unavailableReason !== undefined"
+        >
+          <span class="sdk-reference-option-label">{{ option.label }}</span>
+          <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
+        </slot>
       </el-option>
     </el-select>
     <span v-if="optionDiagnostics.length" class="sdk-inline-reference-picker-note" role="status">

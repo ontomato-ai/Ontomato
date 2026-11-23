@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { useI18n } from "vue-i18n";
 import { ElEmpty } from "element-plus/es/components/empty/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
-import { matchesObjectType, type PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import { matchesObjectType, type PanelObjectRef } from "@ontomato/contracts/panel-manifest";
 import type {
   PlatformOntologyCountsResponse,
   PlatformOntologyStartResponse,
@@ -32,7 +32,7 @@ import type {
   PlatformObjectGraph,
 } from "../panel/platform-objects";
 
-type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
+type PanelObjectValue = PanelObjectRef;
 import {
   encodeGraphNodeId,
   layoutInstanceRadial,

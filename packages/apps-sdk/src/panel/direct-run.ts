@@ -57,7 +57,17 @@ async function mountDirectPanelComponent(component: PanelComponent, port: Direct
   const root = typeof component !== "function" && !component.render && !component.template
     ? { ...component, template: port.template }
     : component;
-  const installTemplateComponents = await prepareTemplateComponents(typeof root === "function" ? undefined : root.template, baseComponents);
+  const declaredDomainComponents = Object.entries(port.manifest.components ?? {});
+  const [installTemplateComponents, loadedDomainComponents] = await Promise.all([
+    prepareTemplateComponents(typeof root === "function" ? undefined : root.template, baseComponents),
+    Promise.all(declaredDomainComponents.map(async ([localName, componentId]) => {
+      const runtime = port.panelDomainComponents?.[componentId];
+      if (!runtime || !port.loadDomainComponent) {
+        throw new Error(`Panel component '${localName}' ('${componentId}') is unavailable`);
+      }
+      return [localName, await port.loadDomainComponent(runtime)] as const;
+    })),
+  ]);
   const mount = mountDirectPanel(port);
   const context = directPanelContext(mount.instance);
   const app = createApp({
@@ -70,8 +80,14 @@ async function mountDirectPanelComponent(component: PanelComponent, port: Direct
   // The one global a panel's HTML and module need, as in a frame: `<Projection slot="…"/>`.
   // eslint-disable-next-line vue/multi-word-component-names
   app.component("Projection", DirectProjection);
+  // Register author-declared template/slot components from `manifest.components`.
+  for (const [localName, loadedComponent] of loadedDomainComponents) {
+    app.component(localName, loadedComponent);
+  }
   // The panel's own words, as its HTML reads them: `{{ t("settings.title") }}`. The platform's words stay `$t`.
   app.config.globalProperties.t = context.t;
+  // Read-only outputs published by projection members (`outputs.list?.filteredCount`, `outputs.form?.label`, etc.).
+  app.config.globalProperties.outputs = mount.instance.outputs;
   app.config.errorHandler = port.run.failed;
   installTemplateComponents(app);
   port.install(app);

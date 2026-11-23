@@ -331,6 +331,11 @@ export function catalogueMarkdown(version, catalogueOrComponents, typeDefinition
     }
     if (component.outputs && Object.keys(component.outputs).length)
       lines.push("Hands over (bindable to the panel's state):", "", ...Object.entries(component.outputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");
+    if (component.readOnlyOutputs && Object.keys(component.readOnlyOutputs).length)
+      lines.push("Read-only outputs (read via `usePanelOutput` / `outputs[member][name]`, separate from writable panel state):", "", ...Object.entries(component.readOnlyOutputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");
+    const slots = component.ports?.slots ?? [];
+    if (slots.length)
+      lines.push("Vue slots on `<projection>`:", "", ...slots.map((slot) => `- \`#${slot.name}\`${slot.type && slot.type !== "{}" ? ` (\`${cell(slot.type)}\`)` : ""}: ${slot.description || "—"}`), "");
     const events = component.ports?.events?.filter(({ name }) => !name.startsWith("update:")) ?? [];
     if (events.length)
       lines.push("Events the page can listen to on `<projection>`:", "", ...events.map(({ name, description }) => `- \`${name}\`: ${description || "—"}`), "");

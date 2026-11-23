@@ -42,20 +42,16 @@ const applicationIconScopes = {
 
 export type ApplicationIconKey = keyof typeof applicationIconScopes;
 export const applicationIconKeys = Object.freeze(Object.keys(applicationIconScopes) as ApplicationIconKey[]);
-type DomainApplicationIconKey = {
-  [Key in ApplicationIconKey]: typeof applicationIconScopes[Key] extends "domain" ? Key : never
-}[ApplicationIconKey];
 
-export const domainApplicationIconKeys = Object.freeze(applicationIconKeys.filter(
-  (key): key is DomainApplicationIconKey => applicationIconScopes[key] === "domain",
-));
+/** All catalogue icons are available to both platform and domain applications. */
+export const domainApplicationIconKeys = applicationIconKeys;
 export const domainApplicationIconSchema = z.string().refine(
-  (value): value is DomainApplicationIconKey => domainApplicationIconKeys.some(key => key === value),
-  value => ({ message: `Icon '${value}' is not available for domain applications. Choose one of ${domainApplicationIconKeys.join(", ")}` }),
+  (value): value is ApplicationIconKey => applicationIconKeys.some(key => key === value),
+  value => ({ message: `Unknown application icon '${value}'. Choose one of ${applicationIconKeys.join(", ")}` }),
 );
 
-export function recommendApplicationIcon(text:string):DomainApplicationIconKey {
- const rules:[RegExp,DomainApplicationIconKey][]=[
+export function recommendApplicationIcon(text:string):ApplicationIconKey {
+ const rules:[RegExp,ApplicationIconKey][]=[
   [/师资|人员|员工|人事|团队|staff|faculty|employee|team|personnel/i,'users'],
   [/科研|研究|实验|research|science|laboratory/i,'microscope'],
   [/交流|会议|演讲|conference|exchange|presentation/i,'presentation'],

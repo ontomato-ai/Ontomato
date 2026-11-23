@@ -24,24 +24,24 @@ full-width detail), read the [management page wiring recipes](references/managem
    component data ports in `sdk read docs/components.md`.
    - For customer ontology classes (e.g. `Student`), projections only bind read and write functions: bind the platform's
      generic read functions parameterized by class (list objects of a class / get one object by ID, shown under
-     `panel type <class>`), MetricViews for filtered/calculated reads, and Actions for writes. Until generic display
-     components bind MetricView results, calculated MetricView displays use `MetricChart` (registered from a dashboard
-     card).
+     `panel type <class>`), MetricViews for filtered/calculated reads, and Actions for writes.
    - For `platform:*` types, bind their built-in platform reads and management operations.
 2. **Respect boundaries and lookup order.**
    - **Hierarchy**: platform sidebar → default application menu (do not hand-author custom frame panels yet) → current
      entry panel → nested panels and components.
-   - **Components first**: start with official component defaults, then `config` (such as `ObjectList` `config.columns`,
-     `ObjectSummary` `config.fields` / `showTitle` / `copyableFields`, `ObjectForm` `config.actions: "footer" | "create-only" | "none"` / `fixedFields`, or `OperationButton` `config.label` / `type` / `plain` / `icon`), and write a formal
-     component only as a last resort. *(Table action columns and standard Vue slots for custom cells, row details, and
-     form fields are provided in the next SDK update — do not write legacy `listColumn`/`listRowDetail`/`formField`
-     bindings.)*
+   - **Components first**: start with official component defaults, then `config` (such as `ObjectList` `config.columns`
+     with column widths and `config.rowActions`, `ObjectSummary` `config.fields` / `showTitle` / `copyableFields`,
+     `ObjectForm` `config.presentation` / `groups` / `actions: "footer" | "header" | "create-only" | "none"` /
+     `fixedFields`, or `OperationButton` `config.label` / `type` / `plain` / `icon`), and use standard Vue slots
+     (`#cell-<key>`, `#actions`, `#row-detail`, `#card`, `#field-<dotPath>`, `#toolbar`, `#overlay`, `#option`) with a
+     focused domain component (declared in `manifest.components`) or nested `<projection>` only when a specific piece
+     still cannot be configured. Legacy `listColumn` / `listRowDetail` / `formField` bindings are removed.
    - **Panels lay out and wire**: write layout in normal HTML, CSS (`@container`), and Vue (no layout components). Place
      pure presentational `<page-header>` at the top of `panel.html` when needed and wire edit Save/Discard with
-     `usePanelFormDraft("form")`. Use `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` tokens, and
-     `usePanelContext().notify()`. Never read business record fields directly in the panel, never compute business
-     calculations in panel/component code, and never write `el-*` tags, `--el-*` tokens, `v-loading`, or `element-plus`
-     imports.
+     `usePanelFormDraft("form")`. Use `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` tokens, `usePanelOutput` /
+     `usePanelOutputs` for read-only component outputs, and `usePanelContext().notify()`. Never read business record
+     fields directly in the panel, never compute business calculations in panel/component code, and never write `el-*`
+     tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
 3. Run `panel check <workspace directory>` to validate the panel source, declarations, and references.
 4. Submit projections, panels, and application uses with `panel register`, then open the application's declared entry.
 
@@ -70,9 +70,11 @@ registered `target.projectionId`.
 
 Use official SDK components and `config` first. When a dedicated custom component is truly needed, register a single
 domain component with `node "$SKILL/scripts/ontomato.mjs" component register <directory>` (which assigns
-`domain-component:<uuid>` into `component.json`, inspectable via `component list` / `component read <id>`). Third-party
-component package installation is not currently available to authors (`sdk package <name>` is read-only inspection only;
-there is no author package upload endpoint).
+`domain-component:<uuid>` into `component.json`, inspectable via `component list` / `component read <id>`). Declare it
+under `manifest.components` in `panel.json` and place it directly inside an official component's Vue slot (see the
+[end-to-end Vue slots, built-in row actions, and domain component example](references/panel-authoring/CODE.md#custom-list-columns-row-detail-and-per-row-operations)).
+Third-party component package installation is not currently available to authors (`sdk package <name>` is read-only
+inspection only; there is no author package upload endpoint).
 
 ### Write projections inside the panel
 
@@ -204,7 +206,7 @@ Positional names, IDs, paths, questions and descriptions are strings. Arguments 
 | `vector-upload`, `vector-delete` | Required class, attribute and object ID; upload requires text and optionally file, delete requires resource path. Vector fields are rejected by ordinary object insert/update. |
 | `sdk current/read` | current has no body. read requires one file path relative to the current SDK release. |
 | `component list/read/register` | list takes no arguments; read requires one `domain-component:<uuid>` ID; register requires a directory with `component.json`, `component.html` and optional `component.mjs`, plus `--revision <n>` when updating an existing component. |
-| `panel check` | Requires an authoring directory. Optional `--material` supplies registration JSON and `--sdk-dir` selects an installed SDK release for offline checks. The command reports structural errors, third-party UI/token violations (`el-*`, `v-loading`, `--el-*`, `element-plus`), and unresolved references without writing to the platform. |
+| `panel check` | Requires an authoring directory. Optional `--material` supplies registration JSON and `--sdk-dir` selects an installed SDK release for offline checks. The command reports structural errors, third-party UI/token violations (`el-*`, `v-loading`, `--el-*`, `element-plus`), and unresolved projection or `manifest.components` references without writing to the platform. |
 | `workspace list/commits/sessions/tree` | Optional page/query JSON defaults to `{}`. IDs are required except for list. Page/query fields are checked by the workspace HTTP schema. |
 | `workspace create/get/rename/delete/content/diff/restore` | Required string positional arguments listed above; content's omitted commit reads the working tree. No body defaults invent missing IDs or commits. |
 | `workspace import` | Use a workspace ID, directory and explicit commit message to import a panel source tree. |

@@ -102,7 +102,7 @@ const formWithPickerManifest: DirectPanelManifest = {
   state: { app: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
   members: {
     form: { target: { projectionId: "settings-form" }, inputs: { app: { state: "app" } } },
-    modelPicker: { target: { projectionId: "model-picker" }, formField: { slot: "form", path: "/diagModel" } },
+    modelPicker: { target: { projectionId: "model-picker" } },
   },
 };
 
@@ -219,7 +219,7 @@ describe("ObjectForm settings parity", () => {
     const element = document.createElement("div");
     document.body.append(element);
     const app = createApp({
-      render: () => h("div", [mount.member("modelPicker"), mount.member("form")]),
+      render: () => h("div", [mount.member("form", { "field-diagModel": () => [mount.member("modelPicker")] })]),
     });
     app.use(i18n()).use(ElementPlus).mount(element);
 

@@ -138,14 +138,18 @@ it("rejects a frame state input without a frame and preserves typed literal wiri
   await expect(validates({ frameState: "privateTerm" }, "frame")).rejects.toMatchObject({ code: "INVALID_PANEL_ENTRY_INPUT" });
 });
 
-it("checks theme values in the application registration preflight with the design-token catalogue", async () => {
+it("checks theme values in the application registration preflight with relaxed CSS value rules", async () => {
   const request = { domainId: owner.domainId, uses: [], delivery: { panels: [], projections: [] } };
   await expect(validateApplicationPanelReferences({
-    ...request, theme: { light: { "--sdk-color-primary": "#498", "--radius-md": "8px" }, dark: { "--elevation-panel": "overlay" } },
+    ...request,
+    theme: {
+      light: { "--sdk-color-primary": "oklch(0.6 0.15 240)", "--radius-md": "calc(2px + 6px)", "--custom-accent": "#498" },
+      dark: { "--elevation-panel": "0 8px 24px rgba(0,0,0,0.2)" },
+    },
   })).resolves.toBeUndefined();
   for (const [name, value] of [
-    ["--unpublished-token", "#fff"], ["--el-color-primary", "#498"], ["--sdk-color-primary", "url(/color)"],
-    ["--radius-md", "-2px"], ["--radius-md", "calc(2px + 2px)"], ["--elevation-panel", "0 8px #000"],
+    ["not-a-var", "#fff"], ["--el-color-primary", "#498"], ["--sdk-color-primary", ""],
+    ["--sdk-color-primary", "#fff; color: red"], ["--radius-md", "8px } body {"], ["--radius-md", "</style><script>"],
   ]) {
     await expect(validateApplicationPanelReferences({
       ...request, theme: { dark: { [name]: value } },

@@ -84,6 +84,34 @@ export async function readProjectionComponent(
   return release?.components.find(component => component.componentId === componentId);
 }
 
+/**
+ * Resolve all author-registered components declared in a panel's `manifest.components` for rendering or validation.
+ * When `authorId` is provided (saving a panel), enforces author visibility (`ownerId === authorId || visibility === "domain"`).
+ */
+export async function readPanelDomainComponents(
+  domainId: string | null,
+  components: Readonly<Record<string, string>> | undefined,
+  options?: { authorId?: string; client?: Pick<PoolClient, "query">; strict?: boolean },
+): Promise<Record<string, DomainComponentRuntime> | undefined> {
+  const uniqueIds = [...new Set(Object.values(components ?? {}))];
+  if (!uniqueIds.length) return undefined;
+  const resolved: Record<string, DomainComponentRuntime> = {};
+  await Promise.all(uniqueIds.map(async (componentId) => {
+    const row = await domainComponentForProjection(domainId, componentId, options?.client);
+    if (row) {
+      const record = domainComponentRecord(row, false);
+      if (options?.authorId === undefined || record.ownerId === options.authorId || record.visibility === "domain") {
+        resolved[componentId] = { componentId, domainId: record.domainId, revision: record.revision, source: record.source };
+        return;
+      }
+    }
+    if (options?.strict) {
+      throw new HttpError(400, `Panel component '${componentId}' is unavailable in this domain`, "PANEL_COMPONENT_UNAVAILABLE");
+    }
+  }));
+  return Object.keys(resolved).length ? resolved : undefined;
+}
+
 export async function validateProjectionComponent(
   id: string, projection: ProductProjectionInput | BuiltinProductProjectionInput, readCatalogue = readPanelComponentCatalogue,
   scope?: { domainId: string | null; authorId?: string; client?: Pick<PoolClient, "query"> },

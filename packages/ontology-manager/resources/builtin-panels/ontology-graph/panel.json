@@ -33,7 +33,7 @@
       },
       "positions": {
         "type": {
-          "kind": "node-positions"
+          "kind": "json"
         },
         "personal": true
       },

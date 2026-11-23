@@ -5,12 +5,11 @@ import { z } from "zod";
 import { skillCatalogDiagnosticsSchema } from "@ontomato/contracts/skills";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import {
-  panelManifestSchema, panelOperationId, type PanelListColumnRef, type PanelListRowDetailRef,
-  type PanelMemberInput,
+  panelManifestSchema, panelOperationId,
 } from "@ontomato/contracts/panel-manifest";
 import { draftTarget, PAGE_DRAFT_QUERY_KEYS, type PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
-import { directReadDeclaration } from "@ontomato/contracts/panel-projection";
+import { directReadDeclaration, projectionOperationIsRowScoped } from "@ontomato/contracts/panel-projection";
 import {
   builtinProductPanelInputSchema, builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
   type BuiltinProductPanelInput, type BuiltinProductProjectionInput, type PanelSkillSource,
@@ -197,19 +196,8 @@ type OperationDescription = BoundProjectionOperation & {
   label: string;
   draft: boolean;
   member: string;
-  listColumn?: PanelListColumnRef;
-  listRowDetail?: PanelListRowDetailRef;
-  memberInputs?: Readonly<Record<string, PanelMemberInput>>;
+  rowScoped: boolean;
 };
-
-function describeHostAttachment(
-  listColumn: PanelListColumnRef | undefined,
-  listRowDetail: PanelListRowDetailRef | undefined,
-): string {
-  if (listColumn) return ` Attached as listColumn on host list \`${listColumn.slot}\`, column \`${listColumn.column}\`.`;
-  if (listRowDetail) return ` Attached as listRowDetail on host list \`${listRowDetail.slot}\`.`;
-  return "";
-}
 
 function describePanel(
   panel: PanelDefinition, records: ReadonlyMap<string, ProjectionDefinition>, components: ComponentCatalogue,
@@ -223,9 +211,6 @@ function describePanel(
     const component = components.get(projection.componentId);
     if (!component)
       throw new SkillSourceRecordError({ resourceId: projectionId, title: panel.name, field: "componentId", reason: "component_missing" });
-    if (declaration.listColumn !== undefined && Object.keys(projection.data).length > 0) {
-      throw new SkillSourceRecordError({ resourceId: projectionId, title: panel.name, field: "data", reason: "invalid_definition" });
-    }
     const data = Object.fromEntries(Object.entries(projection.data).map(([key, read]) => {
       const readDeclaration = directReadDeclaration(projection, read);
       if (!readDeclaration) {
@@ -234,9 +219,8 @@ function describePanel(
       }
       return [key, { ...read, result: readDeclaration.result }];
     }));
-    const attachment = describeHostAttachment(declaration.listColumn, declaration.listRowDetail);
     return [{
-      text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}.${attachment} ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
+      text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
       reads: Object.entries(data).map(([dataName, { read, result }]) => ({ member, dataName, read, result })),
       operations: boundProjectionOperations(projection).flatMap(bound => {
         if (!bound.owner && bound.binding.operation.kind === "PlatformOperation") {
@@ -253,9 +237,7 @@ function describePanel(
           label,
           draft: bound.owner !== undefined && allowsOperationDraft(projection, bound.owner.handler),
           member,
-          ...(declaration.listColumn && { listColumn: declaration.listColumn }),
-          ...(declaration.listRowDetail && { listRowDetail: declaration.listRowDetail }),
-          ...(declaration.inputs && Object.keys(declaration.inputs).length > 0 && { memberInputs: declaration.inputs }),
+          rowScoped: projectionOperationIsRowScoped(bound.binding),
         }];
       }),
     }];
@@ -304,9 +286,9 @@ function describeSkill({ name, description, content, state, projections, operati
       ...(operations.some(operation => operation.owner?.declaration.batch) ? [
         "For an operation marked as batch-capable, use `calls:[{target,input},...]` in place of `call`. Submit all concrete targets and their inputs under one intent for one confirmation. A batch result reports the owner's outcome for each item when available.",
       ] : []),
-      ...(operations.some(operation => operation.listColumn || operation.listRowDetail) ? [
-        "For a row-scoped operation (`listColumn` or `listRowDetail`), act on any row in its host list regardless of the currently selected row: first read the host list member's named data (`rows` or `objects`) via `$ONTOMATO_PANEL_OPERATIONS_URL/read` to locate the intended row and obtain its `itemKey` (`primaryKey` for homogeneous lists, or `{className, primaryKey}` when rows carry `className`).",
-        "Then POST to `$ONTOMATO_PANEL_OPERATIONS_URL/operate` with `memberPath: [{member: \"<row-member>\", itemKey}]` (prepend ancestor segments when nested) and `rowContext: {state?, frameState?, runtimeParams?}` carrying the placement panel's state and any host list `runtimeParams` (such as `search`, `cursor`, `size`, `page`) needed to locate that row. You may omit `call.target` (the server recomputes `target` and injects/verifies any bound `params` from the re-read host list row). Row-scoped operations accept only a single `call`, never `calls`.",
+      ...(operations.some(operation => operation.rowScoped) ? [
+        "For a row-scoped operation declared on a list projection, first read that list member's named data (`rows` or `objects`) via `$ONTOMATO_PANEL_OPERATIONS_URL/read` to inspect the rows and their batch per-row availability (`rowOperations`).",
+        "Then POST to `$ONTOMATO_PANEL_OPERATIONS_URL/operate` with `operationId` (`<listMember>.<opName>`) and `call: {target, input}` using the row's target (when target is `{row: true}` or `{rowField}`) or outer object target, and any row-bound input fields. Entry-pinned and literal parameters are enforced server-side.",
       ] : []),
       "Use the applicationId and useId from the current page context. For a local operation, use the operationId listed above. If the host did not provide a current use, ask the reader to open the panel before attempting a panel operation.",
       ...(hasPlacedMembers ? [
@@ -321,20 +303,13 @@ function describeSkill({ name, description, content, state, projections, operati
   ].filter(Boolean).join("\n\n");
 }
 
-function describeOperation({ id, label, binding, owner, draft, listColumn, listRowDetail, memberInputs }: OperationDescription): string {
+function describeOperation({ id, label, binding, owner, draft, rowScoped }: OperationDescription): string {
   const target = JSON.stringify(binding.target ?? null);
-  const rowScope = listColumn
-    ? ` Row-scoped (listColumn on host list \`${listColumn.slot}\`, column \`${listColumn.column}\`).`
-    : listRowDetail
-      ? ` Row-scoped (listRowDetail on host list \`${listRowDetail.slot}\`).`
-      : "";
-  const rowInputs = (listColumn || listRowDetail) && memberInputs
-    ? ` Row inputs: ${JSON.stringify(memberInputs)}.`
-    : "";
+  const rowScope = rowScoped ? " Row-scoped operation on list rows." : "";
   const boundParams = binding.params && Object.keys(binding.params).length > 0
     ? ` Bound params: ${JSON.stringify(binding.params)}.`
     : "";
-  const suffix = `${rowScope}${rowInputs}${boundParams}`;
+  const suffix = `${rowScope}${boundParams}`;
   if (!owner) return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}.${suffix} Read the admitted description for the actual selected object with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it.`;
   const { handler, declaration } = owner;
   const summary = `- ${label} (${id}), kind ${handler.kind}, handlerRef ${handler.handlerRef}, target ${target}.${suffix}`;

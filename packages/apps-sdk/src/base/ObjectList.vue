@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { Comment, Fragment, Text, computed, nextTick, onBeforeUnmount, ref, useSlots, watch, type VNode } from "vue";
+import { Comment, Fragment, Text, computed, nextTick, onBeforeUnmount, ref, shallowRef, useSlots, watch, type Slot, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelChildObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
+import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
+import type { PanelChildObjectIdentity, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
+import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import {
   authoredReadParameterSource,
   directReadDeclaration,
+  panelRecordItemKey,
   panelRecordObjectRef,
+  panelRowOperationKey,
   type PanelRecordQuery,
   type PanelRecordReferenceFieldValue,
 } from "@ontomato/contracts/panel-projection";
@@ -15,8 +20,10 @@ import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-st
 import { appIcon } from "@ontomato/platform-shell";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
-import { paramValues, readParams } from "../panel/direct";
-import { useMember, useMemberData, useMemberParam } from "../panel/member";
+import { paramValues } from "../panel/direct";
+import type { PanelWriteResult } from "../panel/instance";
+import { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam } from "../panel/member";
+import { admittedOperations } from "../panel/member-operations";
 import type {
   PlatformFieldReference,
   PlatformGraphStatus,
@@ -24,9 +31,26 @@ import type {
   TextHighlightRange,
 } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
-import { listColumnMembersFor, listRowDetailMemberFor } from "../panel/row-member";
+import type { ListRowSlotOperation } from "../panel/slot-context";
 import { stateChildObject, stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
-import ListRowMember from "./ListRowMember.vue";
+import ListRowSlotHost from "./ListRowSlotHost.vue";
+import ObjectListRowActions, { type ResolvedRowActionItem } from "./ObjectListRowActions.vue";
+import OperationInputDialog from "./OperationInputDialog.vue";
+import OperationResult from "./OperationResult.vue";
+import {
+  formatOperationOutcome,
+  resolveOperationInputFields,
+  type OperationOutcome,
+  type SingleOperationOutcome,
+} from "./operation-dispatch";
+import type { OperationInputField } from "./operation-input-schema";
+import {
+  formatColumnLength,
+  matchesRowActionWhen,
+  resolveRowActionAddress,
+  resolveRowOperationParams,
+  resolveRowOperationTarget,
+} from "./object-list-actions";
 import {
   buildObjectListGroups,
   findLocalHighlightRanges,
@@ -35,7 +59,11 @@ import {
   matchesLocalSearch,
   type ObjectListGroup,
 } from "./object-list-local";
-import type { ObjectListColumn, ObjectListRef } from "./object-list-types";
+import type {
+  ObjectListColumn,
+  ObjectListRef,
+  ObjectListRowActions as ObjectListRowActionsConfig,
+} from "./object-list-types";
 import {
   buildVirtualGridBands,
   computeScrollTopForIndex,
@@ -104,6 +132,7 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "groupBy",
   "groupEmptyLabel",
   "localFilters",
+  "rowActions",
 ]);
 
 interface ParsedListData {
@@ -206,6 +235,12 @@ const props = withDefaults(
      * inputs bound on the member also filter locally by matching field key.
      */
     localFilters?: Readonly<Record<string, unknown>>;
+    /**
+     * Built-in per-row action column configuration. Mixes declared projection operations (`kind: "operation"`, rendered
+     * only when admitted and consuming batch per-row availability) and local buttons (`kind: "local"`, for modals,
+     * drawers or navigation), overflowing items beyond `maxVisible` (default 2) into a "More" dropdown menu.
+     */
+    rowActions?: ObjectListRowActionsConfig;
   }>(),
   {
     layout: "auto",
@@ -228,6 +263,7 @@ const props = withDefaults(
     groupBy: undefined,
     groupEmptyLabel: undefined,
     localFilters: undefined,
+    rowActions: undefined,
   },
 );
 
@@ -247,6 +283,49 @@ const emit = defineEmits<{
   navigate: [reference: PlatformFieldReference, columnKey: string];
   /** Emitted when the reader clicks Clear filters from the narrowed empty state. */
   "clear-filters": [];
+  /** Emitted when the reader clicks a local button (`kind: "local"`) in the built-in row action column. */
+  "row-action": [payload: { id: string; row: PlatformObjectRecord; ref: ObjectListRef; index: number }];
+  /** Emitted after a declared row operation dispatches and the owner answers. */
+  "operation-done": [operation: string, outcome: OperationOutcome, row: PlatformObjectRecord];
+}>();
+
+interface RowSlotScope {
+  readonly row: PlatformObjectRecord;
+  readonly ref: ObjectListSelection;
+  readonly index: number;
+  readonly operations: Readonly<Record<string, ListRowSlotOperation>>;
+  readonly runOperation: (operationName: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>) => Promise<void>;
+}
+
+defineSlots<{
+  /** Auxiliary filter controls placed beside search in the top toolbar. */
+  filters?(): unknown;
+  /** Batch controls shown when one or more rows are checked. */
+  "batch-actions"?(props: { checked: readonly ObjectListRef[]; clear: () => void }): unknown;
+  /** Primary toolbar controls on the right side of the top toolbar. */
+  "toolbar-actions"?(): unknown;
+  /** Inline create block shown at the top of the list when `creatingRow` is active. */
+  "create-row"?(): unknown;
+  /** Custom empty state rendered when no rows match or the list is empty. */
+  empty?(props: { narrowed: boolean; clearFilters: () => void }): unknown;
+  /** Custom cell renderer for any column; overrides default rendering when it produces content. */
+  cell?(props: RowSlotScope & { column: ObjectListColumn; value: unknown }): unknown;
+  /** Custom cell renderer for a specific column key (`#cell-<columnKey>`). */
+  [key: `cell-${string}`]: ((props: RowSlotScope & { column: ObjectListColumn; value: unknown }) => unknown) | undefined;
+  /** Custom row actions content; falls back to the built-in `rowActions` column when empty. */
+  actions?(props: RowSlotScope): unknown;
+  /** Expanded detail region rendered inline below a row when toggled open. */
+  "row-detail"?(props: RowSlotScope & { collapse: () => void }): unknown;
+  /** Custom card renderer in `"cards"` layout; falls back to the default card when empty. */
+  card?(
+    props: RowSlotScope & {
+      selected: boolean;
+      checked: boolean;
+      toggleCheck: (next?: boolean) => void;
+      expanded: boolean;
+      toggleExpand: () => void;
+    },
+  ): unknown;
 }>();
 
 const slots = useSlots();
@@ -346,6 +425,7 @@ const currentPage = ref(1);
 interface CursorBatch {
   readonly cursor: string | null;
   readonly rows: readonly PlatformObjectRecord[];
+  readonly rowOperations?: PanelRowOperationsMap;
 }
 const cursorBatches = ref<readonly CursorBatch[]>([]);
 const loadingMore = ref(false);
@@ -397,17 +477,41 @@ const clearableFilterParams = nonPagingParamNames
 const currentParams = computed(() =>
   paramValues(member.projection, datum, placement, member.inputs.value, panel.instance.ownParams(member.key)),
 );
-const hostRuntimeParams = computed<Readonly<Record<string, RuntimeJsonValue>>>(() =>
-  readParams(member.projection, datum, placement, member.inputs.value, panel.instance.ownParams(member.key)).runtime,
+const hasRowDetailSlot = computed(() => Boolean(slots["row-detail"]));
+const hasActionsSlot = computed(() => Boolean(slots.actions));
+const hasActionColumn = computed(
+  () => Boolean(props.rowActions && props.rowActions.items.length > 0) || hasActionsSlot.value,
 );
-const listColumnMembers = computed(() => listColumnMembersFor(panel.manifest, member.key));
-const rowDetailMember = computed(() => listRowDetailMemberFor(panel.manifest, member.key));
-function listColumnMember(columnKey: string): string | null {
-  return listColumnMembers.value.get(columnKey) ?? null;
+function columnCellSlot(columnKey: string): Slot | null {
+  return (slots[`cell-${columnKey}`] ?? slots.cell ?? null) as Slot | null;
 }
-const showRowChevron = computed(() => Boolean(props.showChevron) && isTable.value && canSelect && !rowDetailMember.value);
+function columnStyle(column: ObjectListColumn): Record<string, string | undefined> {
+  return {
+    width: formatColumnLength(column.width),
+    minWidth: formatColumnLength(column.minWidth),
+    textAlign: column.align,
+  };
+}
+const actionColumnHeader = computed(() => {
+  if (props.rowActions?.labelKey) return panel.t(props.rowActions.labelKey);
+  if (props.rowActions?.label) return props.rowActions.label;
+  return t("platform.listActions");
+});
+const actionColumnStyle = computed<Record<string, string | undefined>>(() => ({
+  width: formatColumnLength(props.rowActions?.width),
+  minWidth: formatColumnLength(props.rowActions?.minWidth),
+  textAlign: props.rowActions?.align ?? "right",
+}));
+const showRowChevron = computed(
+  () => Boolean(props.showChevron) && isTable.value && canSelect && !hasRowDetailSlot.value && !hasActionColumn.value,
+);
 const tableColumnCount = computed(
-  () => (rowDetailMember.value ? 1 : 0) + (canCheck ? 1 : 0) + (props.columns?.length ?? 0) + (showRowChevron.value ? 1 : 0),
+  () =>
+    (hasRowDetailSlot.value ? 1 : 0)
+    + (canCheck ? 1 : 0)
+    + (props.columns?.length ?? 0)
+    + (hasActionColumn.value ? 1 : 0)
+    + (showRowChevron.value ? 1 : 0),
 );
 const scrollContainerRef = ref<HTMLElement | null>(null);
 const scrollTop = ref(0);
@@ -603,18 +707,19 @@ watch(
     if (pageMode !== "cursor") return;
     const activeCursor = typeof currentParams.value.cursor === "string" ? currentParams.value.cursor : null;
     const incoming = parsedData.value.rows;
+    const incomingRowOps = state.rowOperations;
     if (activeCursor === null) {
-      cursorBatches.value = [{ cursor: null, rows: incoming }];
+      cursorBatches.value = [{ cursor: null, rows: incoming, rowOperations: incomingRowOps }];
     } else if (pendingAppendCursor === activeCursor) {
       const existingIndex = cursorBatches.value.findIndex((batch) => batch.cursor === activeCursor);
       cursorBatches.value = existingIndex >= 0
-        ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming } : batch))
-        : [...cursorBatches.value, { cursor: activeCursor, rows: incoming }];
+        ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps } : batch))
+        : [...cursorBatches.value, { cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps }];
     } else {
       const existingIndex = cursorBatches.value.findIndex((batch) => batch.cursor === activeCursor);
       cursorBatches.value = existingIndex >= 0
-        ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming } : batch))
-        : [{ cursor: activeCursor, rows: incoming }];
+        ? cursorBatches.value.map((batch, index) => (index === existingIndex ? { cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps } : batch))
+        : [{ cursor: activeCursor, rows: incoming, rowOperations: incomingRowOps }];
     }
     loadingMore.value = false;
     pendingAppendCursor = null;
@@ -697,6 +802,10 @@ function rowSelectionValue(row: PlatformObjectRecord): ObjectListRef {
   return panelRecordObjectRef(row, activeType.value ?? objectType);
 }
 
+function rowItemKey(row: PlatformObjectRecord) {
+  return panelRecordItemKey(row, { fallbackClassName: activeType.value ?? objectType });
+}
+
 function rowClassName(row: PlatformObjectRecord): string {
   return rowSelectionValue(row).className;
 }
@@ -752,7 +861,7 @@ function columnText(row: PlatformObjectRecord, column: ObjectListColumn): string
  * `wrap` runs onto several lines. A table wider than its frame scrolls inside it.
  */
 const columnFit = computed(() => new Map((props.columns ?? []).map((column) => [column.key,
-  listColumnMembers.value.has(column.key) ? (column.wrap ? "sdk-object-list-col-wrap" : "")
+  columnCellSlot(column.key) ? (column.wrap ? "sdk-object-list-col-wrap" : "")
     : column.wrap ? "sdk-object-list-col-wrap"
       : (column.kind === undefined || column.kind === "text" || column.kind === "reference") && rows.value.some((row) => columnText(row, column).length > LONG_TEXT)
         ? "sdk-object-list-col-shrink" : ""])));
@@ -1424,7 +1533,24 @@ watch(rows, (listed) => {
   }
 });
 
+let unregisterRowDetailHost: (() => void) | undefined;
+watch(
+  hasRowDetailSlot,
+  (present) => {
+    unregisterRowDetailHost?.();
+    unregisterRowDetailHost = present ? panel.instance.forms.registerRowDetailHost(member.key) : undefined;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  unregisterRowDetailHost?.();
+  unregisterRowDetailHost = undefined;
+});
+
+const activeRowLabel = ref<string | null>(null);
+
 function choose(row: PlatformObjectRecord) {
+  activeRowLabel.value = row.label || row.primaryKey;
   const identity = rowIdentityKey(row);
   const next = props.toggleable && chosenIdentity.value === identity
     ? null
@@ -1592,6 +1718,245 @@ function selectAllCheckboxRef(element: unknown) {
 watch(someVisibleChecked, () => {
   // Keeps indeterminate synced through the function ref above on reactive updates.
 });
+
+// --- Batch per-row operations availability, built-in action column & row operation runner ---
+
+const memberOperationsState = useMemberOperations();
+const admittedOpMap = computed(() => admittedOperations(memberOperationsState.value));
+
+const mergedRowOperations = computed<PanelRowOperationsMap>(() => {
+  if (pageMode === "cursor" && !usesCursorPages.value && cursorBatches.value.length > 0) {
+    const merged: Record<string, PanelRowOperationsMap[string]> = {};
+    for (const batch of cursorBatches.value) {
+      if (!batch.rowOperations) continue;
+      for (const [key, ops] of Object.entries(batch.rowOperations)) {
+        merged[key] = ops;
+      }
+    }
+    return merged;
+  }
+  return datumState.value.status === "ready" && datumState.value.rowOperations
+    ? datumState.value.rowOperations
+    : {};
+});
+
+function rowOperationsFor(row: PlatformObjectRecord): Readonly<Record<string, ListRowSlotOperation>> {
+  const fallbackClassName = activeType.value ?? objectType;
+  const rowKey = panelRowOperationKey(row, fallbackClassName);
+  const batchForRow = mergedRowOperations.value[rowKey];
+  const admitted = admittedOpMap.value;
+  const bindings = member.projection.operations ?? {};
+  const result: Record<string, ListRowSlotOperation> = {};
+  for (const opName of Object.keys(bindings)) {
+    const descriptor = admitted[opName];
+    if (!descriptor) continue;
+    const binding = bindings[opName]!;
+    const resolvedTarget = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
+    const batchEntry = batchForRow?.[opName];
+    const unavailable = batchEntry ? batchEntry.unavailable : descriptor.unavailable;
+    const available = resolvedTarget !== undefined
+      && (batchEntry ? batchEntry.available : !descriptor.unavailable);
+    result[opName] = {
+      name: opName,
+      label: descriptor.label,
+      available,
+      unavailable,
+      danger: Boolean(descriptor.inspectImpact),
+      effect: descriptor.effect,
+    };
+  }
+  return result;
+}
+
+function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowActionItem[] {
+  const config = props.rowActions;
+  if (!config || config.items.length === 0) return [];
+  const rowOps = rowOperationsFor(row);
+  const resolved: ResolvedRowActionItem[] = [];
+  config.items.forEach((item, index) => {
+    if (!matchesRowActionWhen(row, item.when, true)) return;
+    const disabledByCondition = item.disabledWhen ? matchesRowActionWhen(row, item.disabledWhen, false) : false;
+    if (item.kind === "operation") {
+      const op = rowOps[item.operation];
+      if (!op) return;
+      const label = item.labelKey ? panel.t(item.labelKey) : item.label ?? op.label;
+      resolved.push({
+        key: `op:${item.operation}:${index}`,
+        kind: "operation",
+        operation: item.operation,
+        label,
+        danger: item.danger ?? op.danger,
+        primary: Boolean(item.primary),
+        disabled: disabledByCondition || !op.available,
+        reason: op.unavailable?.reason,
+      });
+      return;
+    }
+    const label = item.labelKey ? panel.t(item.labelKey) : item.label ?? item.id;
+    resolved.push({
+      key: `local:${item.id}:${index}`,
+      kind: "local",
+      id: item.id,
+      to: item.to,
+      label,
+      danger: Boolean(item.danger),
+      primary: Boolean(item.primary),
+      disabled: disabledByCondition,
+    });
+  });
+  return resolved;
+}
+
+const rowOpRunning = ref(false);
+const rowOpFailure = shallowRef<Error | null>(null);
+const rowOpRead = shallowRef<PanelReadOperationResult | null>(null);
+const rowOpReceipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
+const rowOpNamed = shallowRef<PanelWriteResult["named"]>([]);
+const rowOpInputDialogOpen = ref(false);
+const rowOpPendingRow = shallowRef<PlatformObjectRecord | null>(null);
+const rowOpPendingName = ref<string | null>(null);
+const rowOpPendingDescriptor = shallowRef<PanelOwnerOperationDescriptor | null>(null);
+const rowOpPendingBaseInput = shallowRef<Record<string, RuntimeJsonValue>>({});
+
+const rowOpPendingInputFields = computed<readonly OperationInputField[]>(() => {
+  if (!rowOpPendingName.value || !rowOpPendingDescriptor.value) return [];
+  const fields = resolveOperationInputFields(panel, slot, rowOpPendingName.value, rowOpPendingDescriptor.value);
+  const suppliedKeys = new Set(Object.keys(rowOpPendingBaseInput.value));
+  return fields.filter((field) => !suppliedKeys.has(field.name));
+});
+
+const rowOpOutcome = computed<OperationOutcome | null>(() =>
+  rowOpReceipt.value?.kind === "dispatched" ? rowOpReceipt.value.outcome ?? null : null,
+);
+const rowOpBatchItems = computed(() => (rowOpOutcome.value?.kind === "batch" ? rowOpOutcome.value.items : []));
+const rowOpBatchDone = computed(() => rowOpBatchItems.value.filter((item) => item.outcome.kind === "success").length);
+const saidRowOp = (single: SingleOperationOutcome) => formatOperationOutcome(single, t);
+const nameOfRowOp = (target: PanelObjectIdentity) =>
+  rowOpNamed.value.find(({ target: known }) =>
+    known.objectType === target.objectType && known.primaryKey === target.primaryKey)?.label ?? target.primaryKey;
+
+async function executeRowOperation(
+  row: PlatformObjectRecord,
+  operationName: string,
+  descriptor: PanelOwnerOperationDescriptor,
+  input: Record<string, RuntimeJsonValue>,
+) {
+  if (rowOpRunning.value) return;
+  const binding = member.projection.operations?.[operationName];
+  if (!binding) return;
+  const fallbackClassName = activeType.value ?? objectType;
+  const target = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
+  if (target === undefined) return;
+  const operationId = panel.instance.operationIdOf(slot.slot, operationName);
+
+  rowOpRunning.value = true;
+  rowOpFailure.value = null;
+  rowOpRead.value = null;
+  rowOpReceipt.value = null;
+  try {
+    if (descriptor.effect === "read") {
+      rowOpRead.value = await panel.instance.readOperation(operationId, { target, input });
+      return;
+    }
+    const answer = await panel.instance.writeOperation(
+      operationId,
+      { call: { target, input } },
+    );
+    if (answer.decision === "cancel") return;
+    rowOpNamed.value = answer.named;
+    const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
+    if (answered?.kind === "success") panel.notify({ kind: "success", text: saidRowOp(answered) });
+    else rowOpReceipt.value = answer.response;
+    if (answered) emit("operation-done", operationName, answered, row);
+  } catch (reason) {
+    rowOpFailure.value = reason instanceof Error ? reason : new Error(String(reason));
+  } finally {
+    rowOpRunning.value = false;
+  }
+}
+
+async function runRowOperation(
+  row: PlatformObjectRecord,
+  operationName: string,
+  extraInput?: Readonly<Record<string, RuntimeJsonValue>>,
+): Promise<void> {
+  if (rowOpRunning.value) return;
+  const descriptor = admittedOpMap.value[operationName];
+  const binding = member.projection.operations?.[operationName];
+  if (!descriptor || !binding) return;
+  const rowOp = rowOperationsFor(row)[operationName];
+  if (!rowOp || !rowOp.available) return;
+
+  const baseInput: Record<string, RuntimeJsonValue> = {
+    ...resolveRowOperationParams(binding, row, member.inputs.value),
+    ...(extraInput ?? {}),
+  };
+  const allFields = resolveOperationInputFields(panel, slot, operationName, descriptor);
+  const suppliedKeys = new Set(Object.keys(baseInput));
+  const missingFields = allFields.filter((field) => !suppliedKeys.has(field.name));
+  if (missingFields.length > 0) {
+    rowOpFailure.value = null;
+    rowOpPendingRow.value = row;
+    rowOpPendingName.value = operationName;
+    rowOpPendingDescriptor.value = descriptor;
+    rowOpPendingBaseInput.value = baseInput;
+    rowOpInputDialogOpen.value = true;
+    return;
+  }
+  await executeRowOperation(row, operationName, descriptor, baseInput);
+}
+
+async function confirmRowOpInput(providedInput: Record<string, RuntimeJsonValue>) {
+  const row = rowOpPendingRow.value;
+  const operationName = rowOpPendingName.value;
+  const descriptor = rowOpPendingDescriptor.value;
+  if (!row || !operationName || !descriptor) return;
+  const merged = { ...rowOpPendingBaseInput.value, ...providedInput };
+  rowOpInputDialogOpen.value = false;
+  await executeRowOperation(row, operationName, descriptor, merged);
+}
+
+function triggerRowAction(row: PlatformObjectRecord, index: number, item: ResolvedRowActionItem) {
+  activeRowLabel.value = row.label || row.primaryKey;
+  if (item.kind === "operation" && item.operation) {
+    void runRowOperation(row, item.operation);
+    return;
+  }
+  if (item.kind === "local" && item.id) {
+    const ref = rowSelectionValue(row);
+    if (item.to) {
+      const address = resolveRowActionAddress(item.to, row, activeType.value ?? objectType);
+      void panel.navigate(address);
+    }
+    emit("row-action", { id: item.id, row, ref, index });
+  }
+}
+
+function rowSlotProps(row: PlatformObjectRecord, index: number) {
+  return {
+    row,
+    ref: rowSelectionValue(row),
+    index,
+    operations: rowOperationsFor(row),
+    runOperation: (operationName: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>) =>
+      runRowOperation(row, operationName, extraInput),
+  };
+}
+
+// --- Read-only component outputs (kept separate from writable manifest.state) ---
+
+const selectedRowLabel = computed<string | null>(() => {
+  const identity = chosenIdentity.value;
+  if (!identity) return null;
+  const match = rawRows.value.find((row) => rowIdentityKey(row) === identity);
+  return match ? (match.label || match.primaryKey) : null;
+});
+
+useMemberOutput("total", () => (datumState.value.status === "ready" ? parsedData.value.total : 0));
+useMemberOutput("filteredCount", () => (datumState.value.status === "ready" ? rows.value.length : 0));
+useMemberOutput("checkedCount", () => checkedRefs.value.length);
+useMemberOutput("selectedLabel", () => selectedRowLabel.value);
+useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.value);
 </script>
 
 <template>
@@ -1660,6 +2025,12 @@ watch(someVisibleChecked, () => {
       <span class="sdk-object-list-status-label">{{ queryStatusLabel }}</span>
       <span v-if="queryReason" class="sdk-object-list-status-reason">{{ queryReason }}</span>
     </p>
+    <div
+      v-else-if="!isTable && listResult.status === 'empty' && $slots.empty"
+      class="sdk-object-list-custom-empty"
+    >
+      <slot name="empty" :narrowed="narrowed" :clear-filters="clearFilters"></slot>
+    </div>
     <data-state v-else :result="tableDataResult" :labels="dataStateLabels">
       <div
         v-if="isTable"
@@ -1671,7 +2042,7 @@ watch(someVisibleChecked, () => {
         <table class="sdk-object-list-table">
           <thead>
             <tr>
-              <th v-if="rowDetailMember" class="sdk-object-list-expand-col"></th>
+              <th v-if="hasRowDetailSlot" class="sdk-object-list-expand-col"></th>
               <th v-if="canCheck" class="sdk-object-list-check-col">
                 <input
                   :ref="selectAllCheckboxRef"
@@ -1683,14 +2054,26 @@ watch(someVisibleChecked, () => {
                   @change="toggleAllVisible(($event.target as HTMLInputElement).checked)"
                 />
               </th>
-              <th v-for="column in columns" :key="column.key" :class="columnFit.get(column.key)">{{ columnLabel(column) }}</th>
+              <th
+                v-for="column in columns"
+                :key="column.key"
+                :class="columnFit.get(column.key)"
+                :style="columnStyle(column)"
+              >{{ columnLabel(column) }}</th>
+              <th
+                v-if="hasActionColumn"
+                class="sdk-object-list-actions-col"
+                :class="{ 'sdk-object-list-actions-fixed': rowActions?.fixed === 'right' }"
+                :style="actionColumnStyle"
+              >{{ actionColumnHeader }}</th>
               <th v-if="showRowChevron" class="sdk-object-list-chevron-col" aria-hidden="true"></th>
             </tr>
           </thead>
           <tbody v-if="tablePreservesEmpty" class="sdk-object-list-empty-body">
             <tr class="sdk-object-list-empty-row">
               <td :colspan="tableColumnCount" class="sdk-object-list-empty-cell">
-                <data-state :result="listResult" :labels="dataStateLabels" />
+                <slot v-if="$slots.empty" name="empty" :narrowed="narrowed" :clear-filters="clearFilters"></slot>
+                <data-state v-else :result="listResult" :labels="dataStateLabels" />
               </td>
             </tr>
           </tbody>
@@ -1728,7 +2111,7 @@ watch(someVisibleChecked, () => {
                   @click="choose(entry.row)"
                   @keydown="onRowKeydown(entry.row, $event)"
                 >
-                  <td v-if="rowDetailMember" class="sdk-object-list-expand-col" @click.stop>
+                  <td v-if="hasRowDetailSlot" class="sdk-object-list-expand-col" @click.stop>
                     <button
                       type="button"
                       class="sdk-object-list-expand-btn"
@@ -1751,16 +2134,73 @@ watch(someVisibleChecked, () => {
                     v-for="column in columns"
                     :key="column.key"
                     :class="columnFit.get(column.key)"
-                    :title="listColumnMember(column.key) ? undefined : cellTitle(entry.row, column)"
+                    :style="columnStyle(column)"
+                    :title="columnCellSlot(column.key) ? undefined : cellTitle(entry.row, column)"
                   >
-                    <list-row-member
-                      v-if="listColumnMember(column.key)"
-                      :member-key="listColumnMember(column.key)!"
-                      kind="listColumn"
+                    <list-row-slot-host
+                      v-if="columnCellSlot(column.key)"
+                      :list-slot="member.key"
                       :row="entry.row"
-                      :fallback-class-name="activeType ?? objectType"
-                      :host-runtime-params="hostRuntimeParams"
-                    ></list-row-member>
+                      :row-ref="rowSelectionValue(entry.row)"
+                      :index="entry.rowIndex"
+                      :operations="rowOperationsFor(entry.row)"
+                      :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                      :render-slot="columnCellSlot(column.key)!"
+                      :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), column, value: rawRecordField(entry.row, column.key) }"
+                      :fallback-to-default="true"
+                    >
+                      <button
+                        v-if="referenceField(entry.row, column.key)"
+                        type="button"
+                        class="sdk-object-ref-link"
+                        @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
+                      >
+                        <template v-for="(part, index) in textSegmentsFor(entry.row, column.key, referenceDisplayLabel(referenceField(entry.row, column.key)!))" :key="index">
+                          <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                        </template>
+                      </button>
+                      <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
+                        <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
+                          <button
+                            v-if="isRecordReference(item)"
+                            type="button"
+                            class="sdk-object-ref-link"
+                            @click.stop="navigateTo(toFieldReference(item), column.key)"
+                          >
+                            {{ referenceDisplayLabel(item) }}
+                          </button>
+                          <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                        </template>
+                        <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
+                      </span>
+                      <span
+                        v-else-if="column.kind === 'tag' && fieldValue(entry.row, column.key) !== ''"
+                        class="sdk-object-list-tag"
+                        :data-tone="entry.row.tones?.[column.key] ?? 'default'"
+                      >
+                        <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                          <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                        </template>
+                      </span>
+                      <template v-else-if="column.kind === 'time'">{{ fieldValue(entry.row, column.key) !== '' ? timeText(fieldValue(entry.row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
+                      <div v-else class="sdk-object-list-cell" :class="{ 'has-icon': Boolean(column.iconKey && fieldValue(entry.row, column.iconKey)) }">
+                        <span v-if="column.iconKey && fieldValue(entry.row, column.iconKey)" class="sdk-object-list-cell-icon" aria-hidden="true">
+                          <component :is="appIcon(fieldValue(entry.row, column.iconKey))" :size="16" :stroke-width="1.75" />
+                        </span>
+                        <div class="sdk-object-list-cell-text">
+                          <span class="sdk-object-list-cell-main">
+                            <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                              <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                            </template>
+                          </span>
+                          <span v-if="column.subtitleKey && fieldValue(entry.row, column.subtitleKey) !== ''" class="sdk-object-list-cell-sub">
+                            <template v-for="(part, index) in cellSegments(entry.row, column.subtitleKey, '')" :key="index">
+                              <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                            </template>
+                          </span>
+                        </div>
+                      </div>
+                    </list-row-slot-host>
                     <button
                       v-else-if="referenceField(entry.row, column.key)"
                       type="button"
@@ -1813,6 +2253,42 @@ watch(someVisibleChecked, () => {
                       </div>
                     </div>
                   </td>
+                  <td
+                    v-if="hasActionColumn"
+                    class="sdk-object-list-actions-col"
+                    :class="{ 'sdk-object-list-actions-fixed': rowActions?.fixed === 'right' }"
+                    :style="actionColumnStyle"
+                    @click.stop
+                  >
+                    <list-row-slot-host
+                      v-if="hasActionsSlot"
+                      :list-slot="member.key"
+                      :row="entry.row"
+                      :row-ref="rowSelectionValue(entry.row)"
+                      :index="entry.rowIndex"
+                      :operations="rowOperationsFor(entry.row)"
+                      :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                      :render-slot="slots.actions!"
+                      :slot-props="rowSlotProps(entry.row, entry.rowIndex)"
+                      :fallback-to-default="Boolean(rowActions && rowActions.items.length > 0)"
+                    >
+                      <ObjectListRowActions
+                        :items="resolvedRowActionsFor(entry.row)"
+                        :max-visible="rowActions?.maxVisible ?? 2"
+                        :busy="rowOpRunning"
+                        :row-label="entry.row.label || entry.row.primaryKey"
+                        @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                      />
+                    </list-row-slot-host>
+                    <ObjectListRowActions
+                      v-else
+                      :items="resolvedRowActionsFor(entry.row)"
+                      :max-visible="rowActions?.maxVisible ?? 2"
+                      :busy="rowOpRunning"
+                      :row-label="entry.row.label || entry.row.primaryKey"
+                      @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                    />
+                  </td>
                   <td v-if="showRowChevron" class="sdk-object-list-chevron-col" aria-hidden="true">
                     <svg class="sdk-object-list-row-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
                       <path d="M6 3.5 10.5 8 6 12.5" />
@@ -1820,18 +2296,22 @@ watch(someVisibleChecked, () => {
                   </td>
                 </tr>
                 <tr
-                  v-if="rowDetailMember && isRowExpanded(entry.row)"
+                  v-if="hasRowDetailSlot && isRowExpanded(entry.row)"
                   :ref="(el) => setDetailElement(entry.key, el)"
                   class="sdk-object-list-detail-row"
                 >
-                  <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell">
-                    <list-row-member
-                      :member-key="rowDetailMember"
-                      kind="listRowDetail"
+                  <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell sdk-object-list-detail-host">
+                    <list-row-slot-host
+                      :list-slot="member.key"
                       :row="entry.row"
-                      :fallback-class-name="activeType ?? objectType"
-                      :host-runtime-params="hostRuntimeParams"
-                    ></list-row-member>
+                      :row-ref="rowSelectionValue(entry.row)"
+                      :item-key="rowItemKey(entry.row)"
+                      :index="entry.rowIndex"
+                      :operations="rowOperationsFor(entry.row)"
+                      :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                      :render-slot="slots['row-detail']!"
+                      :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
+                    />
                   </td>
                 </tr>
               </template>
@@ -1887,127 +2367,232 @@ watch(someVisibleChecked, () => {
             @click="choose(entry.row)"
             @keydown="onCardKeydown(entry.row, $event)"
           >
-            <div class="sdk-object-list-card-head">
-              <button
-                v-if="rowDetailMember"
-                type="button"
-                class="sdk-object-list-expand-btn"
-                :aria-expanded="isRowExpanded(entry.row)"
-                :aria-label="rowExpandAriaLabel(entry.row)"
-                @click.stop="toggleRowExpanded(entry.row)"
+            <list-row-slot-host
+              v-if="slots.card"
+              :list-slot="member.key"
+              :row="entry.row"
+              :row-ref="rowSelectionValue(entry.row)"
+              :index="entry.rowIndex"
+              :operations="rowOperationsFor(entry.row)"
+              :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+              :render-slot="slots.card!"
+              :slot-props="{
+                ...rowSlotProps(entry.row, entry.rowIndex),
+                selected: entry.key === chosenIdentity,
+                checked: checkedIdentityKeys.has(entry.key),
+                toggleCheck: (next?: boolean) => toggleChecked(entry.row, next ?? !checkedIdentityKeys.has(entry.key)),
+                expanded: isRowExpanded(entry.row),
+                toggleExpand: () => toggleRowExpanded(entry.row),
+              }"
+              :fallback-to-default="true"
+            >
+              <div class="sdk-object-list-card-head">
+                <button
+                  v-if="hasRowDetailSlot"
+                  type="button"
+                  class="sdk-object-list-expand-btn"
+                  :aria-expanded="isRowExpanded(entry.row)"
+                  :aria-label="rowExpandAriaLabel(entry.row)"
+                  @click.stop="toggleRowExpanded(entry.row)"
+                >
+                  <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(entry.row) }" aria-hidden="true">▸</span>
+                </button>
+                <input
+                  v-if="canCheck"
+                  type="checkbox"
+                  class="sdk-object-list-card-check"
+                  :aria-label="entry.row.label"
+                  :checked="checkedIdentityKeys.has(entry.key)"
+                  @click.stop
+                  @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
+                />
+                <span class="sdk-object-list-card-title">
+                  <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </span>
+                <span
+                  v-if="statusField && fieldValue(entry.row, statusField) !== ''"
+                  class="sdk-object-list-tag"
+                  :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                >{{ fieldValue(entry.row, statusField) }}</span>
+              </div>
+              <p
+                v-if="fieldValue(entry.row, summaryKey) !== ''"
+                class="sdk-object-list-card-sub"
+                :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
+                :style="{ WebkitLineClamp: subtitleLines }"
               >
-                <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(entry.row) }" aria-hidden="true">▸</span>
-              </button>
-              <input
-                v-if="canCheck"
-                type="checkbox"
-                class="sdk-object-list-card-check"
-                :aria-label="entry.row.label"
-                :checked="checkedIdentityKeys.has(entry.key)"
-                @click.stop
-                @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
-              />
-              <span class="sdk-object-list-card-title">
-                <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
+                <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
                   <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
                 </template>
-              </span>
-              <span
-                v-if="statusField && fieldValue(entry.row, statusField) !== ''"
-                class="sdk-object-list-tag"
-                :data-tone="entry.row.tones?.[statusField] ?? 'default'"
-              >{{ fieldValue(entry.row, statusField) }}</span>
-            </div>
-            <p
-              v-if="fieldValue(entry.row, summaryKey) !== ''"
-              class="sdk-object-list-card-sub"
-              :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
-              :style="{ WebkitLineClamp: subtitleLines }"
-            >
-              <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
-                <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-              </template>
-            </p>
-            <dl v-if="columns?.length" class="sdk-object-list-card-fields">
-              <template v-for="column in columns" :key="column.key">
-                <dt class="sdk-object-list-card-field-label">{{ columnLabel(column) }}</dt>
-                <dd class="sdk-object-list-card-field-value" :title="listColumnMember(column.key) ? undefined : cellTitle(entry.row, column)">
-                  <list-row-member
-                    v-if="listColumnMember(column.key)"
-                    :member-key="listColumnMember(column.key)!"
-                    kind="listColumn"
-                    :row="entry.row"
-                    :fallback-class-name="activeType ?? objectType"
-                    :host-runtime-params="hostRuntimeParams"
-                  ></list-row-member>
+              </p>
+            </list-row-slot-host>
+            <template v-else>
+              <div class="sdk-object-list-card-head">
+                <button
+                  v-if="hasRowDetailSlot"
+                  type="button"
+                  class="sdk-object-list-expand-btn"
+                  :aria-expanded="isRowExpanded(entry.row)"
+                  :aria-label="rowExpandAriaLabel(entry.row)"
+                  @click.stop="toggleRowExpanded(entry.row)"
+                >
+                  <span class="sdk-object-list-expand-icon" :class="{ expanded: isRowExpanded(entry.row) }" aria-hidden="true">▸</span>
+                </button>
+                <input
+                  v-if="canCheck"
+                  type="checkbox"
+                  class="sdk-object-list-card-check"
+                  :aria-label="entry.row.label"
+                  :checked="checkedIdentityKeys.has(entry.key)"
+                  @click.stop
+                  @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
+                />
+                <span class="sdk-object-list-card-title">
+                  <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
+                    <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                  </template>
+                </span>
+                <span
+                  v-if="statusField && fieldValue(entry.row, statusField) !== ''"
+                  class="sdk-object-list-tag"
+                  :data-tone="entry.row.tones?.[statusField] ?? 'default'"
+                >{{ fieldValue(entry.row, statusField) }}</span>
+              </div>
+              <p
+                v-if="fieldValue(entry.row, summaryKey) !== ''"
+                class="sdk-object-list-card-sub"
+                :class="{ 'sdk-object-list-item-sub-clamped': subtitleLines !== undefined }"
+                :style="{ WebkitLineClamp: subtitleLines }"
+              >
+                <template v-for="(part, index) in textSegmentsFor(entry.row, summaryKey, fieldValue(entry.row, summaryKey))" :key="index">
+                  <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                </template>
+              </p>
+              <dl v-if="columns?.length" class="sdk-object-list-card-fields">
+                <template v-for="column in columns" :key="column.key">
+                  <dt class="sdk-object-list-card-field-label">{{ columnLabel(column) }}</dt>
+                  <dd class="sdk-object-list-card-field-value" :title="columnCellSlot(column.key) ? undefined : cellTitle(entry.row, column)">
+                    <list-row-slot-host
+                      v-if="columnCellSlot(column.key)"
+                      :list-slot="member.key"
+                      :row="entry.row"
+                      :row-ref="rowSelectionValue(entry.row)"
+                      :index="entry.rowIndex"
+                      :operations="rowOperationsFor(entry.row)"
+                      :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                      :render-slot="columnCellSlot(column.key)!"
+                      :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), column, value: rawRecordField(entry.row, column.key) }"
+                      :fallback-to-default="true"
+                    >
+                      <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </list-row-slot-host>
+                    <button
+                      v-else-if="referenceField(entry.row, column.key)"
+                      type="button"
+                      class="sdk-object-ref-link"
+                      @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
+                    >
+                      <template v-for="(part, index) in textSegmentsFor(entry.row, column.key, referenceDisplayLabel(referenceField(entry.row, column.key)!))" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </button>
+                    <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
+                      <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
+                        <button
+                          v-if="isRecordReference(item)"
+                          type="button"
+                          class="sdk-object-ref-link"
+                          @click.stop="navigateTo(toFieldReference(item), column.key)"
+                        >
+                          {{ referenceDisplayLabel(item) }}
+                        </button>
+                        <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                      </template>
+                      <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
+                    </span>
+                    <span
+                      v-else-if="column.kind === 'tag' && fieldValue(entry.row, column.key) !== ''"
+                      class="sdk-object-list-tag"
+                      :data-tone="entry.row.tones?.[column.key] ?? 'default'"
+                    >
+                      <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </span>
+                    <template v-else-if="column.kind === 'time'">{{ fieldValue(entry.row, column.key) !== '' ? timeText(fieldValue(entry.row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
+                    <template v-else>
+                      <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
+                        <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
+                      </template>
+                    </template>
+                  </dd>
+                </template>
+              </dl>
+              <div v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-card-tags">
+                <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
                   <button
-                    v-else-if="referenceField(entry.row, column.key)"
+                    v-if="isRecordReference(item)"
                     type="button"
                     class="sdk-object-ref-link"
-                    @click.stop="navigateTo(toFieldReference(referenceField(entry.row, column.key)!), column.key)"
+                    @click.stop="navigateTo(toFieldReference(item), tagsField)"
                   >
-                    <template v-for="(part, index) in textSegmentsFor(entry.row, column.key, referenceDisplayLabel(referenceField(entry.row, column.key)!))" :key="index">
-                      <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                    </template>
+                    {{ referenceDisplayLabel(item) }}
                   </button>
-                  <span v-else-if="Array.isArray(rawRecordField(entry.row, column.key)) || column.kind === 'tags'" class="sdk-object-list-item-tags">
-                    <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, column.key)" :key="itemIndex">
-                      <button
-                        v-if="isRecordReference(item)"
-                        type="button"
-                        class="sdk-object-ref-link"
-                        @click.stop="navigateTo(toFieldReference(item), column.key)"
-                      >
-                        {{ referenceDisplayLabel(item) }}
-                      </button>
-                      <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
-                    </template>
-                    <template v-if="!recordFieldArrayItems(entry.row, column.key).length">{{ columnEmpty(column) }}</template>
-                  </span>
-                  <span
-                    v-else-if="column.kind === 'tag' && fieldValue(entry.row, column.key) !== ''"
-                    class="sdk-object-list-tag"
-                    :data-tone="entry.row.tones?.[column.key] ?? 'default'"
-                  >
-                    <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
-                      <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                    </template>
-                  </span>
-                  <template v-else-if="column.kind === 'time'">{{ fieldValue(entry.row, column.key) !== '' ? timeText(fieldValue(entry.row, column.key), column.timeFormat) : columnEmpty(column) }}</template>
-                  <template v-else>
-                    <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
-                      <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
-                    </template>
-                  </template>
-                </dd>
-              </template>
-            </dl>
-            <div v-if="tagsField && recordFieldArrayItems(entry.row, tagsField).length" class="sdk-object-list-card-tags">
-              <template v-for="(item, itemIndex) in recordFieldArrayItems(entry.row, tagsField)" :key="itemIndex">
-                <button
-                  v-if="isRecordReference(item)"
-                  type="button"
-                  class="sdk-object-ref-link"
-                  @click.stop="navigateTo(toFieldReference(item), tagsField)"
+                  <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
+                </template>
+              </div>
+              <div v-if="hasActionColumn" class="sdk-object-list-card-actions" @click.stop>
+                <list-row-slot-host
+                  v-if="hasActionsSlot"
+                  :list-slot="member.key"
+                  :row="entry.row"
+                  :row-ref="rowSelectionValue(entry.row)"
+                  :index="entry.rowIndex"
+                  :operations="rowOperationsFor(entry.row)"
+                  :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                  :render-slot="slots.actions!"
+                  :slot-props="rowSlotProps(entry.row, entry.rowIndex)"
+                  :fallback-to-default="Boolean(rowActions && rowActions.items.length > 0)"
                 >
-                  {{ referenceDisplayLabel(item) }}
-                </button>
-                <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
-              </template>
-            </div>
+                  <ObjectListRowActions
+                    :items="resolvedRowActionsFor(entry.row)"
+                    :max-visible="rowActions?.maxVisible ?? 2"
+                    :busy="rowOpRunning"
+                    :row-label="entry.row.label || entry.row.primaryKey"
+                    @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                  />
+                </list-row-slot-host>
+                <ObjectListRowActions
+                  v-else
+                  :items="resolvedRowActionsFor(entry.row)"
+                  :max-visible="rowActions?.maxVisible ?? 2"
+                  :busy="rowOpRunning"
+                  :row-label="entry.row.label || entry.row.primaryKey"
+                  @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                />
+              </div>
+            </template>
             <div
-              v-if="rowDetailMember && isRowExpanded(entry.row)"
+              v-if="hasRowDetailSlot && isRowExpanded(entry.row)"
               :ref="(el) => setDetailElement(entry.key, el)"
-              class="sdk-object-list-card-detail"
+              class="sdk-object-list-card-detail sdk-object-list-detail-host"
               @click.stop
             >
-              <list-row-member
-                :member-key="rowDetailMember"
-                kind="listRowDetail"
+              <list-row-slot-host
+                :list-slot="member.key"
                 :row="entry.row"
-                :fallback-class-name="activeType ?? objectType"
-                :host-runtime-params="hostRuntimeParams"
-              ></list-row-member>
+                :row-ref="rowSelectionValue(entry.row)"
+                :item-key="rowItemKey(entry.row)"
+                :index="entry.rowIndex"
+                :operations="rowOperationsFor(entry.row)"
+                :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                :render-slot="slots['row-detail']!"
+                :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
+              />
             </div>
           </article>
         </template>
@@ -2061,7 +2646,7 @@ watch(someVisibleChecked, () => {
           >
             <div class="sdk-object-list-row-main">
               <button
-                v-if="rowDetailMember"
+                v-if="hasRowDetailSlot"
                 type="button"
                 class="sdk-object-list-expand-btn sdk-object-list-row-expand"
                 :aria-expanded="isRowExpanded(entry.row)"
@@ -2133,20 +2718,54 @@ watch(someVisibleChecked, () => {
                   </template>
                 </span>
               </button>
+              <div v-if="hasActionColumn" class="sdk-object-list-row-inline-actions" @click.stop>
+                <list-row-slot-host
+                  v-if="hasActionsSlot"
+                  :list-slot="member.key"
+                  :row="entry.row"
+                  :row-ref="rowSelectionValue(entry.row)"
+                  :index="entry.rowIndex"
+                  :operations="rowOperationsFor(entry.row)"
+                  :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                  :render-slot="slots.actions!"
+                  :slot-props="rowSlotProps(entry.row, entry.rowIndex)"
+                  :fallback-to-default="Boolean(rowActions && rowActions.items.length > 0)"
+                >
+                  <ObjectListRowActions
+                    :items="resolvedRowActionsFor(entry.row)"
+                    :max-visible="rowActions?.maxVisible ?? 2"
+                    :busy="rowOpRunning"
+                    :row-label="entry.row.label || entry.row.primaryKey"
+                    @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                  />
+                </list-row-slot-host>
+                <ObjectListRowActions
+                  v-else
+                  :items="resolvedRowActionsFor(entry.row)"
+                  :max-visible="rowActions?.maxVisible ?? 2"
+                  :busy="rowOpRunning"
+                  :row-label="entry.row.label || entry.row.primaryKey"
+                  @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                />
+              </div>
             </div>
             <div
-              v-if="rowDetailMember && isRowExpanded(entry.row)"
+              v-if="hasRowDetailSlot && isRowExpanded(entry.row)"
               :ref="(el) => setDetailElement(entry.key, el)"
-              class="sdk-object-list-row-detail"
+              class="sdk-object-list-row-detail sdk-object-list-detail-host"
               @click.stop
             >
-              <list-row-member
-                :member-key="rowDetailMember"
-                kind="listRowDetail"
+              <list-row-slot-host
+                :list-slot="member.key"
                 :row="entry.row"
-                :fallback-class-name="activeType ?? objectType"
-                :host-runtime-params="hostRuntimeParams"
-              ></list-row-member>
+                :row-ref="rowSelectionValue(entry.row)"
+                :item-key="rowItemKey(entry.row)"
+                :index="entry.rowIndex"
+                :operations="rowOperationsFor(entry.row)"
+                :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
+                :render-slot="slots['row-detail']!"
+                :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
+              />
             </div>
           </li>
         </template>
@@ -2242,6 +2861,35 @@ watch(someVisibleChecked, () => {
         {{ loadingMore ? t("platform.readerLoading") : t("platform.listLoadMore") }}
       </button>
     </nav>
+
+    <operation-input-dialog
+      v-if="rowOpPendingInputFields.length > 0"
+      v-model="rowOpInputDialogOpen"
+      :title="rowOpPendingDescriptor?.label"
+      :fields="rowOpPendingInputFields"
+      :busy="rowOpRunning"
+      @confirm="confirmRowOpInput"
+    ></operation-input-dialog>
+
+    <div v-if="rowOpFailure || rowOpRead || rowOpReceipt" class="sdk-object-list-op-feedback">
+      <p v-if="rowOpFailure" class="sdk-object-list-op-alert" role="alert">{{ rowOpFailure.message }}</p>
+      <OperationResult v-if="rowOpRead" :result="rowOpRead" />
+      <template v-if="rowOpReceipt">
+        <p v-if="rowOpReceipt.kind === 'not-dispatched'" class="sdk-object-list-op-alert" role="alert">{{ rowOpReceipt.message }}</p>
+        <p v-else-if="rowOpOutcome === null" class="sdk-object-list-op-alert" role="alert">{{ t("platform.operationUnknown", { message: "" }) }}</p>
+        <div v-else-if="rowOpOutcome.kind === 'batch'" class="sdk-object-list-op-batch" role="status">
+          <p>{{ t("platform.operationBatchDone", { done: rowOpBatchDone, total: rowOpBatchItems.length }) }}</p>
+          <ul>
+            <li
+              v-for="item in rowOpBatchItems"
+              :key="item.target.objectType + ':' + item.target.primaryKey"
+              :data-outcome="item.outcome.kind"
+            >{{ nameOfRowOp(item.target) }}: {{ saidRowOp(item.outcome) }}</li>
+          </ul>
+        </div>
+        <p v-else class="sdk-object-list-op-alert" role="alert" :data-outcome="rowOpOutcome.kind">{{ saidRowOp(rowOpOutcome) }}</p>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -2482,6 +3130,55 @@ watch(someVisibleChecked, () => {
   width: 28px;
   padding-inline: 0 var(--spacing-sm) !important;
   text-align: right;
+}
+.sdk-object-list-actions-col {
+  white-space: nowrap;
+  text-align: right;
+}
+.sdk-object-list-actions-fixed {
+  position: sticky;
+  right: 0;
+  background: var(--el-bg-color);
+  box-shadow: -4px 0 8px -6px rgba(0, 0, 0, 0.12);
+}
+.sdk-object-list-table tbody tr:hover .sdk-object-list-actions-fixed {
+  background: var(--ui-fill-tertiary);
+}
+.sdk-object-list-table tbody tr.chosen .sdk-object-list-actions-fixed {
+  background: var(--ui-fill-secondary);
+}
+.sdk-object-list-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--spacing-xs);
+  border-top: 1px solid var(--ui-divider);
+}
+.sdk-object-list-row-inline-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding-inline-end: var(--spacing-xs);
+}
+.sdk-object-list-op-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.sdk-object-list-op-alert {
+  margin: 0;
+  color: var(--el-color-danger);
+  font-size: var(--text-xs);
+}
+.sdk-object-list-op-batch {
+  font-size: var(--text-xs);
+  color: var(--el-text-color-regular);
+}
+.sdk-object-list-op-batch p {
+  margin: 0 0 var(--spacing-2xs);
+}
+.sdk-object-list-op-batch ul {
+  margin: 0;
+  padding-inline-start: var(--spacing-md);
 }
 .sdk-object-list-row-chevron {
   display: inline-block;

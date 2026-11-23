@@ -20,7 +20,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { assertAppBuilderAccess } from "../app-builder/access";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
-import { readPanelComponentCatalogue, readProjectionComponent } from "./component-catalogue";
+import { readPanelComponentCatalogue, readPanelDomainComponents, readProjectionComponent } from "./component-catalogue";
 import { listObjectDetailPanelMappings } from "./object-detail";
 import { panelStateDomainPrefix, panelStateKeyNamespace } from "./personal-state-key";
 import type { panelOperationTargetCheck } from "./type-table";
@@ -34,7 +34,21 @@ type PanelDefinition = z.infer<typeof panelReferenceDefinitionSchema>;
 type ReferenceManifest = PanelDefinition["manifest"];
 type ProjectionDefinition = ProductProjectionInput | BuiltinProductProjectionInput;
 type Target = { kind: CurrentProductKind; id: string };
-type Wiring = Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs" | "listColumn">;
+type Wiring = {
+  inputs?: PanelMember["inputs"] | PanelPlacement["inputs"];
+  outputs?: PanelMember["outputs"];
+  readOperationInputs?: PanelMember["readOperationInputs"];
+};
+type MemberWiring = Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs">;
+
+function toMemberWiring(wiring: Wiring): MemberWiring {
+  if (!wiring.inputs) return { outputs: wiring.outputs, readOperationInputs: wiring.readOperationInputs };
+  const inputs: NonNullable<PanelMember["inputs"]> = {};
+  for (const [k, v] of Object.entries(wiring.inputs)) {
+    if (!("item" in v)) inputs[k] = v;
+  }
+  return { inputs, outputs: wiring.outputs, readOperationInputs: wiring.readOperationInputs };
+}
 type SavedPlacement = { field: string; placement: PanelPlacement };
 type Reference = {
   key: string;
@@ -266,9 +280,10 @@ async function incompatiblePort(
   const reads = "data" in definition ? Object.entries(definition.data).map(([name, datum]) => ({
     name, datum, declaration: directReadDeclaration(definition, datum)!,
   })) : [];
+  const normalizedWiring = toMemberWiring(wiring);
   for (const name of new Set([...Object.keys(wiring.inputs ?? {}), ...Object.keys(wiring.outputs ?? {})])) {
     for (const { datum, declaration } of reads) {
-      const binding = authoredReadParameterSource(datum.params, name, wiring);
+      const binding = authoredReadParameterSource(datum.params, name, normalizedWiring);
       const parameter = panelReadParameterId(declaration, name);
       if (!binding || !("state" in binding) || !parameter) continue;
       if (!panelReadInputMatches(parameter, source.state[binding.state]?.type))
@@ -276,15 +291,11 @@ async function incompatiblePort(
       implicit.add(name);
     }
   }
-  if ("data" in definition && wiring.listColumn !== undefined && Object.keys(definition.data).length > 0) {
-    return "listColumn members cannot declare independent data reads";
-  }
   for (const [name, value] of Object.entries(wiring.inputs ?? {})) {
     const type = target.inputs[name];
     if (!type && "state" in value && implicit.has(name)) continue;
     if (!type) return `input '${name}' was removed or is not exposed`;
-    // The view supplies a repeated row or row field as an input; the read/operation boundary checks its value against this port.
-    if ("item" in value || "itemField" in value) continue;
+    if ("item" in value) continue;
     const offered = "state" in value ? source.state[value.state]?.type : undefined;
     if (!("literal" in value) && offered === undefined) return `input '${name}' has no declared value source`;
     const accepts = "literal" in value ? type.kind === "json" || matchesDirectPanelValue(type, value.literal)
@@ -300,10 +311,10 @@ async function incompatiblePort(
   }
   if ("data" in definition) {
     for (const { name, datum, declaration } of reads) {
-      if (!missingRequiredReadParameters(declaration, datum.params, undefined, wiring).length) continue;
+      if (!missingRequiredReadParameters(declaration, datum.params, undefined, normalizedWiring).length) continue;
       const component = await readProjectionComponent(definition.componentId, readCatalogue, domainId, client);
       const runtimeParams = appsSdkComponentDatum(component?.data, name)?.runtimeParams;
-      const [missing] = missingRequiredReadParameters(declaration, datum.params, runtimeParams, wiring);
+      const [missing] = missingRequiredReadParameters(declaration, datum.params, runtimeParams, normalizedWiring);
       if (missing !== undefined) return `data '${name}' requires parameter '${missing}'`;
     }
   }
@@ -335,7 +346,7 @@ export async function validateCurrentProductReferences(
   const checkMember = async (manifest: ReferenceManifest, reference: Reference, definition: PanelDefinition | ProjectionDefinition) => {
     if ("componentId" in definition && definition.operations) {
       checkOperationTarget ??= (await import("./type-table")).panelOperationTargetCheck(owner, credentials);
-      const issue = await checkOperationTarget(definition, reference.wiring);
+      const issue = await checkOperationTarget(definition, toMemberWiring(reference.wiring));
       if (issue) return issue;
     }
     return incompatiblePort(manifest, reference, definition, readCatalogue, isBuiltinProductId(reference.target.id) ? null : owner.domainId, client);
@@ -344,6 +355,9 @@ export async function validateCurrentProductReferences(
   const saved = await loadSavedPlacements(owner.domainId, panels, client);
   if ("manifest" in input) {
     rejectCycles(panels, details, [id]);
+    await readPanelDomainComponents(owner.domainId, input.manifest.components, {
+      authorId: owner.userId, client, strict: true,
+    });
 
     const inspected = new Map<string, PanelDefinition | ProjectionDefinition>();
     const authorized = new Set<string>();
@@ -428,7 +442,7 @@ export async function validateBuiltinProductReferences(
       const { target, key } = reference;
       const definition = target.kind === "panel" ? panels.get(target.id) : projections.get(target.id);
       if (!definition) throw new Error(`Platform panel '${id}', member '${key}' refers to missing ${target.kind} '${target.id}'`);
-      const issue = "componentId" in definition ? await checkOperationTarget(definition, reference.wiring) : undefined;
+      const issue = "componentId" in definition ? await checkOperationTarget(definition, toMemberWiring(reference.wiring)) : undefined;
       const incompatible = issue ?? await incompatiblePort(panel.manifest, reference, definition, readCatalogue);
       if (incompatible) throw new Error(`Platform panel '${id}', member '${key}': ${incompatible}`);
       // A platform panel ships to every language: the opening sentence its entry names by key is in each one it declares.

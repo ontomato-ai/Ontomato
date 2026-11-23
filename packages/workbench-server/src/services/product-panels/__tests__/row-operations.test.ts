@@ -4,8 +4,9 @@ import {
   isPanelHumanOperationIntent, type CreatePanelHumanOperationIntentRequest, type CreatePanelOperationIntentRequest,
   type PanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
-import { APPLICATION, BUSINESS_KNOWLEDGE, ONTOLOGY_TYPE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, BUSINESS_KNOWLEDGE, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import type { PanelRecord } from "@ontomato/contracts/panel-projection";
+import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
 import type { ApplicationPanelUse, ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import type { RuntimeRun } from "@ontomato/contracts/agent-runtime";
 import { components as sdkComponents } from "../../../../../apps-sdk/src/catalogue";
@@ -182,11 +183,16 @@ function makePanel(id: string, manifest: ProductPanel["manifest"]): FixtureProdu
   });
 }
 
-function makeProjection(id: string, def: Omit<ProductProjection, "id" | "domainId" | "ownerId" | "revision" | "editable" | "createdAt" | "updatedAt" | "name" | "description" | "visibility">): FixtureProduct {
+function makeProjection(
+  id: string,
+  def: Partial<Pick<ProductProjection, "outputs" | "config">> & Omit<ProductProjection, "id" | "domainId" | "ownerId" | "revision" | "editable" | "createdAt" | "updatedAt" | "name" | "description" | "visibility" | "outputs" | "config">,
+): FixtureProduct {
   return productRow("projection", id, {
     name: id,
     description: `${id} projection`,
     visibility: "domain",
+    outputs: {},
+    config: {},
     ...def,
   });
 }
@@ -325,14 +331,14 @@ beforeEach(() => {
       if (!intents.has(id)) intents.set(id, structuredClone(args[4] as PanelOperationIntent));
       return { rows: [] };
     }
-    if (sql.startsWith("UPDATE panel_operation_intents SET intent=$4")) {
+    if (sql.includes("AND intent->>'dispatched'='false'")) {
       const id = String(args[2]);
       const existing = intents.get(id);
       if (!existing || existing.dispatched) return { rowCount: 0, rows: [] };
       intents.set(id, structuredClone(args[3] as PanelOperationIntent));
       return { rowCount: 1, rows: [{ id }] };
     }
-    if (sql.startsWith("UPDATE panel_operation_intents SET intent=jsonb_set")) {
+    if (sql.includes("jsonb_set")) {
       const id = String(args[2]);
       const existing = intents.get(id);
       if (existing) intents.set(id, { ...existing, outcome: JSON.parse(String(args[3])) });
@@ -346,10 +352,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("row-scoped operations server resolution, anti-tampering and isolation", () => {
-  it("recomputes target on human & agent channels, rejects tampered target, and dispatches stably even if pagination shifts", async () => {
-    const executed: Array<{ target: unknown; input: unknown }> = [];
-    const inspected: Array<unknown> = [];
+describe("list row-scoped operations, batch availability, and server-pinned injection", () => {
+  it("returns batch per-row operation availability alongside list data without N+1 requests", async () => {
+    const unavailableBatch = vi.fn(async (_host, targets: readonly { target: { primaryKey: string }; rowKey: string }[]) => {
+      const map = new Map<string, { reason: string }>();
+      for (const entry of targets) {
+        if (entry.target.primaryKey === "task-2") {
+          map.set(entry.rowKey, { reason: "Built-in schedule cannot be deleted" });
+        }
+      }
+      return map;
+    });
+    const unavailableSingle = vi.fn(async (_host, target: { primaryKey: string }) =>
+      target.primaryKey === "app-1" ? { reason: "Application is archived" } : undefined);
+
     const deleteTaskOp: serverOperations.PanelWriteServerOperation = {
       effect: "write",
       kind: "action",
@@ -363,148 +379,111 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
       resultSchema: z.object({ deleted: z.boolean() }).strict(),
       batch: false,
       targetLabel: async (_host, target) => `Task:${target.primaryKey}`,
-      inspectImpact: {
-        handlerRef: "schedules.deleteTask.inspect",
-        inspect: async (_host, calls) => {
-          inspected.push(calls);
-          const pk = calls[0]!.target?.kind === "object" ? calls[0]!.target.primaryKey : "unknown";
-          return { objects: [{ target: { objectType: SCHEDULED_TASK, primaryKey: pk }, label: `Task:${pk}` }], total: 1, summary: `Delete ${pk}` };
-        },
-      },
-      execute: async (_host, target, input) => {
-        executed.push({ target, input });
-        return { kind: "success", data: { deleted: true } };
-      },
+      unavailableBatch,
+      execute: async () => ({ kind: "success", data: { deleted: true } }),
     };
-    registerMockOp({ "schedules.deleteTask": deleteTaskOp });
 
-    const tasks: PanelRecord[] = [
-      { primaryKey: "task-A", label: "Task A", fields: {} },
-      { primaryKey: "task-B", label: "Task B", fields: {} },
+    const revokeGrantOp: serverOperations.PanelWriteServerOperation = {
+      effect: "write",
+      kind: "action",
+      handlerRef: "applications.revokeGrant",
+      labelKey: "test.revokeGrant",
+      binding: { kind: "PlatformOperation", id: "applications.revokeGrant" },
+      targetType: APPLICATION,
+      targetInput: "application",
+      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(APPLICATION), primaryKey: z.string() }),
+      inputSchema: z.object({ taskId: z.string() }).strict(),
+      resultSchema: z.object({ revoked: z.boolean() }).strict(),
+      batch: false,
+      targetLabel: async (_host, target) => `App:${target.primaryKey}`,
+      unavailable: unavailableSingle,
+      execute: async () => ({ kind: "success", data: { revoked: true } }),
+    };
+
+    registerMockOp({
+      "schedules.deleteTask": deleteTaskOp,
+      "applications.revokeGrant": revokeGrantOp,
+    });
+
+    const rows: PanelRecord[] = [
+      { primaryKey: "task-1", className: SCHEDULED_TASK, label: "Daily Sync", fields: { schedule: "0 0 * * *" } },
+      { primaryKey: "task-2", className: SCHEDULED_TASK, label: "System GC", fields: { schedule: "0 3 * * *" } },
+      { primaryKey: "task-3", className: SCHEDULED_TASK, label: "Weekly Report", fields: { schedule: "0 9 * * 1" } },
     ];
-    let listedTasks = tasks;
-    mocks.listScheduledTasks.mockImplementation(async () => listedTasks);
+    mocks.listScheduledTasks.mockResolvedValue(rows);
 
     setProduct(makeProjection("list-proj", {
       componentId: "@ontomato/sdk:ObjectList",
-      inputs: {},
-      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
-      config: {},
-    }));
-    setProduct(makeProjection("row-delete-proj", {
-      componentId: "@ontomato/sdk:OperationButton",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-      outputs: {},
-      data: {},
-      operations: {
-        deleteTask: {
-          operation: { kind: "PlatformOperation", id: "schedules.deleteTask" },
-          target: { input: "task" },
+      inputs: {
+        app: { kind: "object", objectType: APPLICATION },
+      },
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          read: "list",
+          params: {},
         },
       },
-      config: { operation: "deleteTask" },
+      operations: {
+        remove: {
+          operation: { kind: "PlatformOperation", id: "schedules.deleteTask" },
+          target: { row: true },
+        },
+        revoke: {
+          operation: { kind: "PlatformOperation", id: "applications.revokeGrant" },
+          target: { input: "app" },
+          params: { taskId: { rowField: "primaryKey" } },
+        },
+      },
     }));
+
     setProduct(makePanel("P", {
       state: {
-        selected: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false, default: null },
+        app: { type: { kind: "object", objectType: APPLICATION }, default: null, personal: false, deepLink: false, external: true },
       },
       members: {
-        tasks: { target: { projectionId: "list-proj" }, outputs: { selected: { state: "selected" } } },
-        rowDelete: {
-          target: { projectionId: "row-delete-proj" },
-          listColumn: { slot: "tasks", column: "actions" },
-          inputs: { task: { item: true } },
+        tasks: {
+          target: { projectionId: "list-proj" },
+          inputs: { app: { state: "app" } },
         },
       },
     }));
 
-    // 1. Human channel: omit call.target while selected is task-A, acting on row task-B.
-    const humanReq: CreatePanelHumanOperationIntentRequest = {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "rowDelete.deleteTask",
-      memberPath: [{ member: "rowDelete", itemKey: "task-B" }],
-      rowContext: { state: { selected: { className: SCHEDULED_TASK, primaryKey: "task-A" } } },
-      call: { input: {} },
-    };
-    const prep = await prepareHumanPanelOperation(owner, credentials, humanReq);
-    expect(prep.confirmation).toMatchObject({
-      kind: "impact",
-      impact: {
-        summary: "Delete task-B",
-        objects: [{ target: { objectType: SCHEDULED_TASK, primaryKey: "task-B" }, label: "Task:task-B" }],
+    const res = await readProductPanelData(owner, credentials, {
+      source: { kind: "registered", applicationId: "A", useId: "tasks" },
+      memberPath: [{ member: "tasks" }],
+      dataName: "rows",
+      inputs: { app: { className: APPLICATION, primaryKey: "app-1" } },
+    });
+
+    expect(res.status).toBe("ready");
+    if (res.status !== "ready") throw new Error("expected ready");
+    // unavailableBatch called once for all 3 rows, not 3 times.
+    expect(unavailableBatch).toHaveBeenCalledTimes(1);
+    // Shared outer target `app-1` deduplicated: called once across all 3 rows, not 3 times.
+    expect(unavailableSingle).toHaveBeenCalledTimes(1);
+
+    const k1 = panelRowOperationKey(rows[0]!, SCHEDULED_TASK);
+    const k2 = panelRowOperationKey(rows[1]!, SCHEDULED_TASK);
+    const k3 = panelRowOperationKey(rows[2]!, SCHEDULED_TASK);
+    expect(res.rowOperations).toEqual({
+      [k1]: {
+        remove: { available: true },
+        revoke: { available: false, unavailable: { reason: "Application is archived" } },
+      },
+      [k2]: {
+        remove: { available: false, unavailable: { reason: "Built-in schedule cannot be deleted" } },
+        revoke: { available: false, unavailable: { reason: "Application is archived" } },
+      },
+      [k3]: {
+        remove: { available: true },
+        revoke: { available: false, unavailable: { reason: "Application is archived" } },
       },
     });
-    const storedHuman = intents.get(prep.intentId)!;
-    expect("call" in storedHuman && storedHuman.call.target).toEqual({
-      kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-B",
-    });
-
-    // Even if the list changes/empties before dispatch, dispatch executes the frozen intent without re-reading the list.
-    listedTasks = [];
-    const listReadsBeforeDispatch = mocks.listScheduledTasks.mock.calls.length;
-    const dispatchedHuman = await dispatchHumanPanelOperation(owner, credentials, prep.intentId);
-    expect(dispatchedHuman).toMatchObject({ kind: "dispatched", outcome: { kind: "success", data: { deleted: true } } });
-    expect(mocks.listScheduledTasks.mock.calls.length).toBe(listReadsBeforeDispatch);
-    expect(executed[0]!.target).toEqual({ kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-B" });
-    listedTasks = tasks;
-
-    // 2. Human channel: consistent call.target is accepted; tampered call.target (task-A instead of task-B) is rejected.
-    const consistentPrep = await prepareHumanPanelOperation(owner, credentials, {
-      ...humanReq,
-      call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-B" }, input: {} },
-    });
-    expect(consistentPrep.intentId).toBeTruthy();
-
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      ...humanReq,
-      call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-A" }, input: {} },
-    })).rejects.toMatchObject({ status: 403, code: "TARGET_ID_MISMATCH" });
-
-    // 3. Agent channel: omitted call.target recomputed, confirmation inspects task-B, dispatch succeeds, idempotent replay works after row removal.
-    const agentIntentId = uuid(50);
-    const agentReq: CreatePanelOperationIntentRequest = {
-      intentId: agentIntentId,
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "rowDelete.deleteTask",
-      memberPath: [{ member: "rowDelete", itemKey: "task-B" }],
-      rowContext: { state: { selected: { className: SCHEDULED_TASK, primaryKey: "task-A" } } },
-      call: { input: {} },
-    };
-    const agentPrep = await operatePanel(currentRun.id, agentReq);
-    expect(agentPrep.kind).toBe("confirmation-required");
-    expect(inspected.at(-1)).toEqual([
-      { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-B" }, input: {} },
-    ]);
-
-    // Agent tampered target is rejected.
-    await expect(operatePanel(currentRun.id, {
-      ...agentReq,
-      intentId: uuid(51),
-      call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-A" }, input: {} },
-    })).rejects.toMatchObject({ status: 403, code: "TARGET_ID_MISMATCH" });
-
-    // Approve and dispatch agent intent.
-    approveAgentIntent(agentIntentId);
-    listedTasks = [];
-    const agentReadsBeforeDispatch = mocks.listScheduledTasks.mock.calls.length;
-    const agentDispatched = await dispatchPanel(owner, credentials, currentRun.id, agentIntentId);
-    expect(agentDispatched).toMatchObject({ kind: "dispatched", outcome: { kind: "success", data: { deleted: true } } });
-    expect(mocks.listScheduledTasks.mock.calls.length).toBe(agentReadsBeforeDispatch);
-
-    // Idempotent retry with omitted target replays cleanly even though task-B is gone.
-    expect(await operatePanel(currentRun.id, agentReq)).toMatchObject({ kind: "dispatched", intentId: agentIntentId });
-    // Retry with altered target refuses as INTENT_CHANGED.
-    await expect(operatePanel(currentRun.id, {
-      ...agentReq,
-      call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-A" }, input: {} },
-    })).rejects.toMatchObject({ status: 409, code: "INTENT_CHANGED" });
   });
 
-  it("matches heterogeneous list rows by {className, primaryKey} and prevents cross-class tampering", async () => {
-    const executed: Array<{ target: unknown }> = [];
+  it("executes row-scoped operations on human and agent channels and rejects wrong target class", async () => {
+    const executed: Array<{ target: unknown; input: unknown }> = [];
     const deleteTaskOp: serverOperations.PanelWriteServerOperation = {
       effect: "write",
       kind: "action",
@@ -512,105 +491,115 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
       labelKey: "test.deleteRow",
       binding: { kind: "PlatformOperation", id: "schedules.deleteTask" },
       targetType: SCHEDULED_TASK,
-      targetInput: "item",
+      targetInput: "task",
       targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string() }),
-      inputSchema: z.object({}).strict(),
-      resultSchema: z.object({ ok: z.boolean() }).strict(),
+      inputSchema: z.object({ note: z.string().optional(), source: z.string() }).strict(),
+      resultSchema: z.object({ deleted: z.boolean() }).strict(),
       batch: false,
-      targetLabel: async (_host, target) => target.primaryKey,
-      execute: async (_host, target) => {
-        executed.push({ target });
-        return { kind: "success", data: { ok: true } };
+      targetLabel: async (_host, target) => `Task:${target.primaryKey}`,
+      execute: async (_host, target, input) => {
+        executed.push({ target, input });
+        return { kind: "success", data: { deleted: true } };
       },
     };
     registerMockOp({ "schedules.deleteTask": deleteTaskOp });
 
-    // Two rows with the SAME primaryKey but DIFFERENT className!
-    mocks.readOntologyObjects.mockResolvedValue({
-      type: SCHEDULED_TASK,
-      layer: "capability",
-      status: "ok",
-      items: [
-        { node: { className: APPLICATION, primaryKey: "shared-1" }, label: "App Shared" },
-        { node: { className: SCHEDULED_TASK, primaryKey: "shared-1" }, label: "Task Shared" },
-      ],
-      total: 2,
-      page: 1,
-      pageSize: 20,
-    });
-
-    setProduct(makeProjection("hetero-list", {
+    setProduct(makeProjection("list-proj", {
       componentId: "@ontomato/sdk:ObjectList",
-      inputs: { type: { kind: "scalar", type: "string" } },
-      outputs: {},
+      inputs: {},
       data: {
-        objects: {
-          source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-          read: "objects",
-          params: { type: { input: "type" } },
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          read: "list",
+          params: {},
         },
       },
-      config: {},
-    }));
-    setProduct(makeProjection("hetero-delete", {
-      componentId: "@ontomato/sdk:OperationButton",
-      inputs: { item: { kind: "object-union", objectTypes: [SCHEDULED_TASK, APPLICATION] } },
-      outputs: {},
-      data: {},
       operations: {
-        deleteTask: {
+        remove: {
           operation: { kind: "PlatformOperation", id: "schedules.deleteTask" },
-          target: { input: "item" },
+          target: { row: true },
+          params: {
+            note: { rowField: "schedule" },
+            source: { literal: "list-action-column" },
+          },
         },
       },
-      config: { operation: "deleteTask" },
     }));
+
     setProduct(makePanel("P", {
-      state: {
-        nodeType: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false, default: SCHEDULED_TASK },
-      },
+      state: {},
       members: {
-        list: { target: { projectionId: "hetero-list" }, inputs: { type: { state: "nodeType" } } },
-        rowDelete: {
-          target: { projectionId: "hetero-delete" },
-          listColumn: { slot: "list", column: "actions" },
-          inputs: { item: { item: true } },
-        },
+        tasks: { target: { projectionId: "list-proj" } },
       },
     }));
 
-    // Ambiguous scalar itemKey matches both classes -> 422.
+    // 1. Human channel succeeds; server injects literal param `source`.
+    const humanReq: CreatePanelHumanOperationIntentRequest = {
+      applicationId: "A",
+      useId: "tasks",
+      operationId: "tasks.remove",
+      call: {
+        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-2" },
+        input: { note: "0 3 * * *" },
+      },
+    };
+    const prepared = await prepareHumanPanelOperation(owner, credentials, humanReq);
+    expect(prepared.intentId).toBeTruthy();
+    const dispatched = await dispatchHumanPanelOperation(owner, credentials, prepared.intentId);
+    expect(dispatched.kind).toBe("dispatched");
+    if (dispatched.kind === "dispatched") expect(dispatched.outcome?.kind).toBe("success");
+    expect(executed).toEqual([
+      {
+        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-2" },
+        input: { note: "0 3 * * *", source: "list-action-column" },
+      },
+    ]);
+
+    // 2. Rejects tampered literal param on human channel.
     await expect(prepareHumanPanelOperation(owner, credentials, {
       applicationId: "A",
       useId: "tasks",
-      operationId: "rowDelete.deleteTask",
-      memberPath: [{ member: "rowDelete", itemKey: "shared-1" }],
-      call: { input: {} },
-    })).rejects.toMatchObject({ status: 422, code: "ROW_OPERATION_ROW_AMBIGUOUS" });
+      operationId: "tasks.remove",
+      call: {
+        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-2" },
+        input: { note: "0 3 * * *", source: "tampered" },
+      },
+    })).rejects.toMatchObject({ code: "OPERATION_PARAM_MISMATCH" });
 
-    // Typed PanelObjectRef itemKey matches the exact ScheduledTask row.
-    const prep = await prepareHumanPanelOperation(owner, credentials, {
+    // 3. Rejects mismatched objectType for target: { row: true }.
+    await expect(prepareHumanPanelOperation(owner, credentials, {
       applicationId: "A",
       useId: "tasks",
-      operationId: "rowDelete.deleteTask",
-      memberPath: [{ member: "rowDelete", itemKey: { className: SCHEDULED_TASK, primaryKey: "shared-1" } }],
-      call: { input: {} },
+      operationId: "tasks.remove",
+      call: {
+        target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "bk-1" },
+        input: { note: "0 3 * * *" },
+      },
+    })).rejects.toMatchObject({ code: "TARGET_ID_MISMATCH" });
+
+    // 4. Agent channel succeeds with confirmation and server-injected literal param.
+    const agentIntent = await operatePanel(currentRun.id, {
+      intentId: uuid(104),
+      applicationId: "A",
+      useId: "tasks",
+      operationId: "tasks.remove",
+      call: {
+        target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" },
+        input: { note: "0 0 * * *" },
+      },
     });
-    const dispatched = await dispatchHumanPanelOperation(owner, credentials, prep.intentId);
-    expect(dispatched).toMatchObject({ kind: "dispatched", outcome: { kind: "success", data: { ok: true } } });
-    expect(executed[0]!.target).toEqual({ kind: "object", objectType: SCHEDULED_TASK, primaryKey: "shared-1" });
-
-    // Cross-class target tampering rejected.
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "rowDelete.deleteTask",
-      memberPath: [{ member: "rowDelete", itemKey: { className: SCHEDULED_TASK, primaryKey: "shared-1" } }],
-      call: { target: { kind: "object", objectType: APPLICATION, primaryKey: "shared-1" }, input: {} },
-    })).rejects.toMatchObject({ status: 403, code: "TARGET_ID_MISMATCH" });
+    expect(agentIntent.kind).toBe("confirmation-required");
+    approveAgentIntent(uuid(104));
+    const agentDone = await dispatchPanel(owner, credentials, currentRun.id, uuid(104));
+    expect(agentDone.kind).toBe("dispatched");
+    if (agentDone.kind === "dispatched") expect(agentDone.outcome?.kind).toBe("success");
+    expect(executed[1]).toEqual({
+      target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" },
+      input: { note: "0 0 * * *", source: "list-action-column" },
+    });
   });
 
-  it("recomputes and injects operation.params from row inputs & literals, rejects tampering, and enforces row/batch boundaries", async () => {
+  it("enforces entry-pinned and nested-panel-pinned targets and bound params server-side against client tampering", async () => {
     const executed: Array<{ target: unknown; input: unknown }> = [];
     const revokeOp: serverOperations.PanelWriteServerOperation = {
       effect: "write",
@@ -619,620 +608,134 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
       labelKey: "test.revokeGrant",
       binding: { kind: "PlatformOperation", id: "applications.revokeGrant" },
       targetType: APPLICATION,
-      targetInput: "app",
+      targetInput: "application",
       targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(APPLICATION), primaryKey: z.string() }),
-      inputSchema: z.object({
-        entryId: z.string(),
-        principalId: z.string(),
-        permission: z.string(),
-        mode: z.literal("revoke"),
-        reason: z.string().optional(),
-      }).strict(),
-      resultSchema: z.object({ revoked: z.boolean() }).strict(),
-      batch: true,
-      targetLabel: async (_host, target) => target.primaryKey,
-      execute: async (_host, target, input) => {
-        executed.push({ target, input });
-        return { kind: "success", data: { revoked: true } };
-      },
-      executeBatch: async () => ({ kind: "success", data: { revoked: true } }),
-    };
-    const archiveOp: serverOperations.PanelWriteServerOperation = {
-      effect: "write",
-      kind: "action",
-      handlerRef: "schedules.archive",
-      labelKey: "test.archive",
-      binding: { kind: "PlatformOperation", id: "schedules.archive" },
-      targetType: SCHEDULED_TASK,
-      targetInput: "task",
-      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string() }),
-      inputSchema: z.object({ mode: z.literal("soft") }).strict(),
+      inputSchema: z.object({ scope: z.string(), rowId: z.string(), fixedTag: z.string() }).strict(),
       resultSchema: z.object({ ok: z.boolean() }).strict(),
       batch: false,
-      targetLabel: async (_host, target) => target.primaryKey,
+      targetLabel: async (_host, target) => `App:${target.primaryKey}`,
       execute: async (_host, target, input) => {
         executed.push({ target, input });
         return { kind: "success", data: { ok: true } };
       },
     };
-    registerMockOp({
-      "applications.revokeGrant": revokeOp,
-      "schedules.archive": archiveOp,
-    });
+    registerMockOp({ "applications.revokeGrant": revokeOp });
 
-    mocks.listScheduledTasks.mockResolvedValue([
-      { primaryKey: "grant-1", label: "Alice", fields: { principalId: "user-alice", permission: "use" } },
-      { primaryKey: "grant-2", label: "Bob", fields: { principalId: "user-bob", permission: "edit" } },
-      { primaryKey: "grant-missing", label: "Broken", fields: { principalId: "user-x" } },
-    ]);
+    // Entry pins `app` and `scope` as server-verified literals.
+    currentUse = {
+      id: "tasks",
+      pageKey: "tasks",
+      path: "/applications/A/tasks",
+      panelId: "P",
+      access: { kind: "domain-member" },
+      inputs: {
+        pinnedApp: { literal: { className: APPLICATION, primaryKey: "app-pinned" } },
+        pinnedScope: { literal: "tenant-prod" },
+      },
+    };
 
-    setProduct(makeProjection("grants-list", {
+    setProduct(makeProjection("child-list", {
       componentId: "@ontomato/sdk:ObjectList",
-      inputs: {},
-      outputs: {},
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
-      config: {},
-    }));
-    setProduct(makeProjection("revoke-btn", {
-      componentId: "@ontomato/sdk:OperationButton",
       inputs: {
         app: { kind: "object", objectType: APPLICATION },
-        entryId: { kind: "scalar", type: "string" },
-        principalId: { kind: "scalar", type: "string" },
-        permission: { kind: "scalar", type: "string" },
+        scope: { kind: "scalar", type: "string" },
       },
-      outputs: {},
-      data: {},
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } },
+          read: "list",
+          params: {},
+        },
+      },
       operations: {
-        revokeGrant: {
+        revoke: {
           operation: { kind: "PlatformOperation", id: "applications.revokeGrant" },
           target: { input: "app" },
           params: {
-            entryId: { input: "entryId" },
-            principalId: { input: "principalId" },
-            permission: { input: "permission" },
-            mode: { literal: "revoke" },
+            scope: { input: "scope" },
+            rowId: { rowField: "primaryKey" },
+            fixedTag: { literal: "server-only" },
           },
         },
       },
-      config: { operation: "revokeGrant" },
     }));
-    setProduct(makeProjection("plain-archive", {
-      componentId: "@ontomato/sdk:OperationButton",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-      outputs: {},
-      data: {},
-      operations: {
-        archive: {
-          operation: { kind: "PlatformOperation", id: "schedules.archive" },
-          target: { input: "task" },
-          params: { mode: { literal: "soft" } },
-        },
-      },
-      config: { operation: "archive" },
-    }));
-    setProduct(makePanel("P", {
+
+    setProduct(makePanel("CHILD", {
       state: {
-        app: { type: { kind: "object", objectType: APPLICATION }, personal: false, deepLink: true, external: false, default: null },
-        task: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false, default: null },
+        childApp: { type: { kind: "object", objectType: APPLICATION }, default: null, personal: false, deepLink: false, external: true },
+        childScope: { type: { kind: "scalar", type: "string" }, default: null, personal: false, deepLink: false, external: true },
       },
       members: {
-        grants: { target: { projectionId: "grants-list" } },
-        revoke: {
-          target: { projectionId: "revoke-btn" },
-          listColumn: { slot: "grants", column: "actions" },
-          inputs: {
-            app: { state: "app" },
-            entryId: { item: "primaryKey" },
-            principalId: { itemField: "principalId" },
-            permission: { itemField: "permission" },
-          },
-        },
-        plain: {
-          target: { projectionId: "plain-archive" },
-          inputs: { task: { state: "task" } },
-        },
-      },
-    }));
-
-    const appRef = { className: APPLICATION, primaryKey: "app-42" };
-    // Auto-inject all bound params while preserving unbound user input `reason`.
-    const prep = await prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "revoke.revokeGrant",
-      memberPath: [{ member: "revoke", itemKey: "grant-2" }],
-      rowContext: { state: { app: appRef } },
-      call: { input: { reason: "Left team" } },
-    });
-    const stored = intents.get(prep.intentId)!;
-    expect("call" in stored && stored.call).toEqual({
-      target: { kind: "object", objectType: APPLICATION, primaryKey: "app-42" },
-      input: {
-        entryId: "grant-2",
-        principalId: "user-bob",
-        permission: "edit",
-        mode: "revoke",
-        reason: "Left team",
-      },
-    });
-    await dispatchHumanPanelOperation(owner, credentials, prep.intentId);
-    expect(executed[0]).toEqual({
-      target: { kind: "object", objectType: APPLICATION, primaryKey: "app-42" },
-      input: {
-        entryId: "grant-2",
-        principalId: "user-bob",
-        permission: "edit",
-        mode: "revoke",
-        reason: "Left team",
-      },
-    });
-
-    // Tampering bound param principalId (trying to revoke Alice while clicking Bob's row) -> 403.
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "revoke.revokeGrant",
-      memberPath: [{ member: "revoke", itemKey: "grant-2" }],
-      rowContext: { state: { app: appRef } },
-      call: { input: { principalId: "user-alice" } },
-    })).rejects.toMatchObject({ status: 403, code: "OPERATION_PARAM_MISMATCH" });
-
-    // Missing required itemField on row -> 422.
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "revoke.revokeGrant",
-      memberPath: [{ member: "revoke", itemKey: "grant-missing" }],
-      rowContext: { state: { app: appRef } },
-      call: { input: {} },
-    })).rejects.toMatchObject({ status: 422, code: "ROW_OPERATION_INPUT_INVALID" });
-
-    // Omitting itemKey on a row member whose params depend on row inputs -> 422.
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "revoke.revokeGrant",
-      call: { target: { kind: "object", objectType: APPLICATION, primaryKey: "app-42" }, input: {} },
-    })).rejects.toMatchObject({ status: 422, code: "ROW_OPERATION_ITEM_KEY_REQUIRED" });
-
-    // Passing itemKey on an ordinary (non-listColumn/listRowDetail) member -> 422.
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "plain.archive",
-      memberPath: [{ member: "plain", itemKey: "task-1" }],
-      call: { input: {} },
-    })).rejects.toMatchObject({ status: 422, code: "ROW_OPERATION_MEMBER_INVALID" });
-
-    // Batch `calls` on a row operation (`memberPath` with `itemKey`) -> 422.
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "revoke.revokeGrant",
-      memberPath: [{ member: "revoke", itemKey: "grant-2" }],
-      calls: [{ target: { kind: "object", objectType: APPLICATION, primaryKey: "app-42" }, input: {} }],
-    })).rejects.toMatchObject({ status: 422, code: "ROW_OPERATION_BATCH_UNSUPPORTED" });
-
-    // Non-row operation with literal operation.params: injects literal and rejects tampering.
-    const plainPrep = await prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "plain.archive",
-      call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" }, input: {} },
-    });
-    await dispatchHumanPanelOperation(owner, credentials, plainPrep.intentId);
-    expect(executed[1]!.input).toEqual({ mode: "soft" });
-
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "plain.archive",
-      call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" }, input: { mode: "hard" } },
-    })).rejects.toMatchObject({ status: 403, code: "OPERATION_PARAM_MISMATCH" });
-  });
-
-  it("enforces entry.inputs > rowContext.state > defaults precedence including frameState and nested panels", async () => {
-    const deleteKnowledgeOp: serverOperations.PanelWriteServerOperation = {
-      effect: "write",
-      kind: "action",
-      handlerRef: "knowledge.deleteKnowledge",
-      labelKey: "test.deleteRow",
-      binding: { kind: "PlatformOperation", id: "knowledge.deleteKnowledge" },
-      targetType: BUSINESS_KNOWLEDGE,
-      targetInput: "item",
-      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(BUSINESS_KNOWLEDGE), primaryKey: z.string() }),
-      inputSchema: z.object({}).strict(),
-      resultSchema: z.object({ ok: z.boolean() }).strict(),
-      batch: false,
-      targetLabel: async (_host, target) => target.primaryKey,
-      execute: async () => ({ kind: "success", data: { ok: true } }),
-    };
-    registerMockOp({ "knowledge.deleteKnowledge": deleteKnowledgeOp });
-
-    const seenQueries: Array<Record<string, unknown>> = [];
-    mocks.queryKnowledge.mockImplementation(async (_viewer: unknown, params: Record<string, unknown>) => {
-      seenQueries.push(params);
-      if (params.status === "pending") {
-        return { rows: [{ primaryKey: "pending-kb-1", label: "Pending 1", fields: {} }] };
-      }
-      if (params.status === "approved") {
-        return { rows: [{ primaryKey: "approved-kb-1", label: "Approved 1", fields: {} }] };
-      }
-      return { rows: [{ primaryKey: "rejected-kb-1", label: "Rejected 1", fields: {} }] };
-    });
-
-    setProduct(makeProjection("kb-list", {
-      componentId: "@ontomato/sdk:ObjectList",
-      inputs: { status: { kind: "scalar", type: "string" } },
-      outputs: {},
-      data: {
         rows: {
-          source: { type: { kind: "PlatformObjectType", id: BUSINESS_KNOWLEDGE } },
-          read: "query",
-          params: { status: { input: "status" } },
-        },
-      },
-      config: {},
-    }));
-    setProduct(makeProjection("kb-delete", {
-      componentId: "@ontomato/sdk:OperationButton",
-      inputs: { item: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
-      outputs: {},
-      data: {},
-      operations: {
-        deleteKnowledge: {
-          operation: { kind: "PlatformOperation", id: "knowledge.deleteKnowledge" },
-          target: { input: "item" },
-        },
-      },
-      config: { operation: "deleteKnowledge" },
-    }));
-    setProduct(makePanel("ContentPanel", {
-      state: {
-        status: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: true, default: "rejected" },
-      },
-      members: {
-        list: { target: { projectionId: "kb-list" }, inputs: { status: { state: "status" } } },
-        rowDelete: {
-          target: { projectionId: "kb-delete" },
-          listColumn: { slot: "list", column: "actions" },
-          inputs: { item: { item: true } },
-        },
-      },
-    }));
-    setProduct(makePanel("FramePanel", {
-      state: {
-        frameStatus: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: true, default: "pending" },
-      },
-      members: {
-        content: { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } },
-      },
-    }));
-    setProduct(makePanel("OuterPanel", {
-      state: {
-        outerStatus: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: true, default: "pending" },
-      },
-      members: {
-        child: {
-          target: { panelId: "ContentPanel" },
-          inputs: { status: { state: "outerStatus" } },
+          target: { projectionId: "child-list" },
+          inputs: {
+            app: { state: "childApp" },
+            scope: { state: "childScope" },
+          },
         },
       },
     }));
 
-    // Case 1: entry.inputs literal controls status="pending"; attacker tries rowContext.state={status:"approved"} -> ignored!
-    currentUse = {
-      id: "kb",
-      pageKey: "kb",
-      path: "/applications/A/kb",
-      panelId: "ContentPanel",
-      access: { kind: "domain-member" },
-      inputs: { status: { literal: "pending" } },
-    };
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "kb",
-      operationId: "rowDelete.deleteKnowledge",
-      memberPath: [{ member: "rowDelete", itemKey: "approved-kb-1" }],
-      rowContext: { state: { status: "approved" } },
-      call: { input: {} },
-    })).rejects.toMatchObject({ status: 404, code: "ROW_OPERATION_ROW_NOT_FOUND" });
-    expect(seenQueries.at(-1)).toMatchObject({ status: "pending" });
-
-    // Allowed runtimeParams (`search`, `size`) pass through; disallowed runtimeParams (`status`) rejected.
-    const okWithSearch = await prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "kb",
-      operationId: "rowDelete.deleteKnowledge",
-      memberPath: [{ member: "rowDelete", itemKey: "pending-kb-1" }],
-      rowContext: { state: { status: "approved" }, runtimeParams: { search: "Pending", size: 10 } },
-      call: { input: {} },
-    });
-    expect(okWithSearch.intentId).toBeTruthy();
-    expect(seenQueries.at(-1)).toEqual({ status: "pending", search: "Pending", size: 10 });
-
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "kb",
-      operationId: "rowDelete.deleteKnowledge",
-      memberPath: [{ member: "rowDelete", itemKey: "pending-kb-1" }],
-      rowContext: { runtimeParams: { status: "approved" } },
-      call: { input: {} },
-    })).rejects.toMatchObject({ status: 400, code: "PANEL_RUNTIME_PARAMETER_UNKNOWN" });
-
-    // Case 2: nested inside FramePanel with entry.inputs { status: { frameState: "frameStatus" } }.
-    // rowContext.state MUST NOT override frameState!
-    currentFramePanelId = "FramePanel";
-    currentUse = {
-      ...currentUse,
-      inputs: { status: { frameState: "frameStatus" } },
-    };
-    const nestedPrep = await prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "kb",
-      root: "frame",
-      operationId: "content.rowDelete.deleteKnowledge",
-      memberPath: [{ member: "content" }, { member: "rowDelete", itemKey: "approved-kb-1" }],
-      rowContext: {
-        frameState: { frameStatus: "approved" },
-        state: { status: "rejected" },
-      },
-      call: { input: {} },
-    });
-    expect(nestedPrep.intentId).toBeTruthy();
-    expect(seenQueries.at(-1)).toEqual({ status: "approved" });
-
-    // When frameState is omitted, falls back to FramePanel's default ("pending"), NEVER rowContext.state ("approved")!
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "kb",
-      root: "frame",
-      operationId: "content.rowDelete.deleteKnowledge",
-      memberPath: [{ member: "content" }, { member: "rowDelete", itemKey: "approved-kb-1" }],
-      rowContext: {
-        state: { status: "approved" },
-      },
-      call: { input: {} },
-    })).rejects.toMatchObject({ status: 404, code: "ROW_OPERATION_ROW_NOT_FOUND" });
-    expect(seenQueries.at(-1)).toEqual({ status: "pending" });
-
-    // Case 3: OuterPanel -> ContentPanel via parent member inputs; rowContext.state cannot override parent-controlled input.
-    currentFramePanelId = undefined;
-    currentUse = {
-      ...currentUse,
-      panelId: "OuterPanel",
-      inputs: { outerStatus: { literal: "pending" } },
-    };
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "kb",
-      operationId: "child.rowDelete.deleteKnowledge",
-      memberPath: [{ member: "child" }, { member: "rowDelete", itemKey: "approved-kb-1" }],
-      rowContext: { state: { status: "approved" } },
-      call: { input: {} },
-    })).rejects.toMatchObject({ status: 404, code: "ROW_OPERATION_ROW_NOT_FOUND" });
-    expect(seenQueries.at(-1)).toEqual({ status: "pending" });
-  });
-
-  it("refuses when host list read is forbidden, refused, failed, unavailable, or missing the target row", async () => {
-    const deleteTaskOp: serverOperations.PanelWriteServerOperation = {
-      effect: "write",
-      kind: "action",
-      handlerRef: "schedules.deleteTask",
-      labelKey: "test.deleteRow",
-      binding: { kind: "PlatformOperation", id: "schedules.deleteTask" },
-      targetType: SCHEDULED_TASK,
-      targetInput: "task",
-      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string() }),
-      inputSchema: z.object({}).strict(),
-      resultSchema: z.object({ ok: z.boolean() }).strict(),
-      batch: false,
-      targetLabel: async (_host, target) => target.primaryKey,
-      execute: async () => ({ kind: "success", data: { ok: true } }),
-    };
-    registerMockOp({ "schedules.deleteTask": deleteTaskOp });
-
-    setProduct(makeProjection("obj-list", {
-      componentId: "@ontomato/sdk:ObjectList",
-      inputs: {},
-      outputs: {},
-      data: {
-        objects: {
-          source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
-          read: "objects",
-          params: { type: { literal: SCHEDULED_TASK } },
-        },
-      },
-      config: {},
-    }));
-    setProduct(makeProjection("row-del", {
-      componentId: "@ontomato/sdk:OperationButton",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-      outputs: {},
-      data: {},
-      operations: {
-        deleteTask: {
-          operation: { kind: "PlatformOperation", id: "schedules.deleteTask" },
-          target: { input: "task" },
-        },
-      },
-      config: { operation: "deleteTask" },
-    }));
     setProduct(makePanel("P", {
-      state: {},
+      state: {
+        pinnedApp: { type: { kind: "object", objectType: APPLICATION }, default: null, personal: false, deepLink: false, external: true },
+        pinnedScope: { type: { kind: "scalar", type: "string" }, default: null, personal: false, deepLink: false, external: true },
+      },
       members: {
-        list: { target: { projectionId: "obj-list" } },
-        rowDelete: {
-          target: { projectionId: "row-del" },
-          listColumn: { slot: "list", column: "actions" },
-          inputs: { task: { item: true } },
+        nested: {
+          target: { panelId: "CHILD" },
+          inputs: {
+            childApp: { state: "pinnedApp" },
+            childScope: { state: "pinnedScope" },
+          },
         },
       },
     }));
 
-    const baseReq: CreatePanelHumanOperationIntentRequest = {
+    // 1. Tampering with pinned outer target is rejected.
+    await expect(prepareHumanPanelOperation(owner, credentials, {
       applicationId: "A",
       useId: "tasks",
-      operationId: "rowDelete.deleteTask",
-      memberPath: [{ member: "rowDelete", itemKey: { className: SCHEDULED_TASK, primaryKey: "task-missing" } }],
-      call: { input: {} },
-    };
-
-    // status: "refused" -> 403
-    mocks.readOntologyObjects.mockResolvedValueOnce({
-      type: SCHEDULED_TASK, layer: "capability", status: "refused", reason: "No permission",
-      items: [], total: 0, page: 1, pageSize: 20,
-    });
-    await expect(prepareHumanPanelOperation(owner, credentials, baseReq)).rejects.toMatchObject({ status: 403, code: "HOST_LIST_FORBIDDEN" });
-
-    // status: "failed" -> 422
-    mocks.readOntologyObjects.mockResolvedValueOnce({
-      type: SCHEDULED_TASK, layer: "capability", status: "failed", reason: "Upstream error",
-      items: [], total: 0, page: 1, pageSize: 20,
-    });
-    await expect(prepareHumanPanelOperation(owner, credentials, baseReq)).rejects.toMatchObject({ status: 422, code: "HOST_LIST_UNAVAILABLE" });
-
-    // status: "unavailable" -> 422
-    mocks.readOntologyObjects.mockResolvedValueOnce({
-      type: SCHEDULED_TASK, layer: "capability", status: "unavailable", reason: "Service down",
-      items: [], total: 0, page: 1, pageSize: 20,
-    });
-    await expect(prepareHumanPanelOperation(owner, credentials, baseReq)).rejects.toMatchObject({ status: 422, code: "HOST_LIST_UNAVAILABLE" });
-
-    // adapter throws 403 -> 403
-    mocks.readOntologyObjects.mockRejectedValueOnce(new HttpError(403, "Forbidden", "FORBIDDEN"));
-    await expect(prepareHumanPanelOperation(owner, credentials, baseReq)).rejects.toMatchObject({ status: 403 });
-
-    // host list has rows, but requested itemKey is absent -> 404 (never falls back to first row!)
-    mocks.readOntologyObjects.mockResolvedValueOnce({
-      type: SCHEDULED_TASK, layer: "capability", status: "ok",
-      items: [{ node: { className: SCHEDULED_TASK, primaryKey: "task-first" }, label: "First" }],
-      total: 1, page: 1, pageSize: 20,
-    });
-    await expect(prepareHumanPanelOperation(owner, credentials, baseReq)).rejects.toMatchObject({ status: 404, code: "ROW_OPERATION_ROW_NOT_FOUND" });
-  });
-
-  it("supports listRowDetail row operations with impact on row B while row A is selected, and rejects listColumn data reads", async () => {
-    const deleteTaskOp: serverOperations.PanelWriteServerOperation = {
-      effect: "write",
-      kind: "action",
-      handlerRef: "schedules.deleteTask",
-      labelKey: "test.deleteRow",
-      binding: { kind: "PlatformOperation", id: "schedules.deleteTask" },
-      targetType: SCHEDULED_TASK,
-      targetInput: "task",
-      targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(SCHEDULED_TASK), primaryKey: z.string() }),
-      inputSchema: z.object({}).strict(),
-      resultSchema: z.object({ ok: z.boolean() }).strict(),
-      batch: false,
-      targetLabel: async (_host, target) => `Label:${target.primaryKey}`,
-      inspectImpact: {
-        handlerRef: "schedules.deleteTask.inspect",
-        inspect: async (_host, calls) => {
-          const pk = calls[0]!.target?.kind === "object" ? calls[0]!.target.primaryKey : "none";
-          return {
-            objects: [{ target: { objectType: SCHEDULED_TASK, primaryKey: pk }, label: `Label:${pk}` }],
-            total: 1,
-            summary: `Impact for ${pk}`,
-          };
-        },
+      memberPath: [{ member: "nested" }, { member: "rows" }],
+      operationId: "nested.rows.revoke",
+      call: {
+        target: { kind: "object", objectType: APPLICATION, primaryKey: "app-other" },
+        input: { rowId: "row-1" },
       },
-      execute: async () => ({ kind: "success", data: { ok: true } }),
-    };
-    registerMockOp({ "schedules.deleteTask": deleteTaskOp });
+    })).rejects.toMatchObject({ code: "TARGET_ID_MISMATCH" });
 
-    mocks.listScheduledTasks.mockResolvedValue([
-      { primaryKey: "row-A", label: "Row A", fields: {} },
-      { primaryKey: "row-B", label: "Row B", fields: {} },
+    // 2. Tampering with entry-pinned bound param `scope` is rejected.
+    await expect(prepareHumanPanelOperation(owner, credentials, {
+      applicationId: "A",
+      useId: "tasks",
+      memberPath: [{ member: "nested" }, { member: "rows" }],
+      operationId: "nested.rows.revoke",
+      call: {
+        target: { kind: "object", objectType: APPLICATION, primaryKey: "app-pinned" },
+        input: { scope: "evil-scope", rowId: "row-1" },
+      },
+    })).rejects.toMatchObject({ code: "OPERATION_PARAM_MISMATCH" });
+
+    // 3. Valid request has pinned `scope` and literal `fixedTag` automatically injected server-side.
+    const prepared = await prepareHumanPanelOperation(owner, credentials, {
+      applicationId: "A",
+      useId: "tasks",
+      memberPath: [{ member: "nested" }, { member: "rows" }],
+      operationId: "nested.rows.revoke",
+      call: {
+        target: { kind: "object", objectType: APPLICATION, primaryKey: "app-pinned" },
+        input: { rowId: "row-1" },
+      },
+    });
+    expect(prepared.intentId).toBeTruthy();
+    const done = await dispatchHumanPanelOperation(owner, credentials, prepared.intentId);
+    expect(done.kind).toBe("dispatched");
+    if (done.kind === "dispatched") expect(done.outcome?.kind).toBe("success");
+    expect(executed).toEqual([
+      {
+        target: { kind: "object", objectType: APPLICATION, primaryKey: "app-pinned" },
+        input: { scope: "tenant-prod", rowId: "row-1", fixedTag: "server-only" },
+      },
     ]);
-
-    setProduct(makeProjection("tasks-list", {
-      componentId: "@ontomato/sdk:ObjectList",
-      inputs: {},
-      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK } },
-      data: { rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} } },
-      config: {},
-    }));
-    // listRowDetail IS allowed to declare data (e.g. record) AND an operation.
-    setProduct(makeProjection("row-detail-proj", {
-      componentId: "@ontomato/sdk:ObjectSummary",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-      outputs: {},
-      data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
-      operations: {
-        deleteTask: {
-          operation: { kind: "PlatformOperation", id: "schedules.deleteTask" },
-          target: { input: "task" },
-        },
-      },
-      config: {},
-    }));
-    // Bad listColumn projection declaring independent data -> must be rejected at runtime too!
-    setProduct(makeProjection("bad-col-proj", {
-      componentId: "@ontomato/sdk:ObjectSummary",
-      inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
-      outputs: {},
-      data: { record: { source: { object: { input: "task" } }, read: "record", params: {} } },
-      operations: {
-        deleteTask: {
-          operation: { kind: "PlatformOperation", id: "schedules.deleteTask" },
-          target: { input: "task" },
-        },
-      },
-      config: {},
-    }));
-    setProduct(makePanel("P", {
-      state: {
-        selected: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false, default: null },
-      },
-      members: {
-        tasks: { target: { projectionId: "tasks-list" }, outputs: { selected: { state: "selected" } } },
-        detail: {
-          target: { projectionId: "row-detail-proj" },
-          listRowDetail: { slot: "tasks" },
-          inputs: { task: { item: true } },
-        },
-        badCol: {
-          target: { projectionId: "bad-col-proj" },
-          listColumn: { slot: "tasks", column: "actions" },
-          inputs: { task: { item: true } },
-        },
-      },
-    }));
-
-    // listRowDetail row operation while panel has row-A selected -> impact shows row-B!
-    const prep = await prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "detail.deleteTask",
-      memberPath: [{ member: "detail", itemKey: "row-B" }],
-      rowContext: { state: { selected: { className: SCHEDULED_TASK, primaryKey: "row-A" } } },
-      call: { input: {} },
-    });
-    expect(prep.confirmation).toMatchObject({
-      kind: "impact",
-      impact: {
-        summary: "Impact for row-B",
-        objects: [{ target: { objectType: SCHEDULED_TASK, primaryKey: "row-B" }, label: "Label:row-B" }],
-      },
-    });
-
-    // listColumn declaring data is refused at both readProductPanelData and prepareHumanPanelOperation!
-    const readAttempt = await readProductPanelData(owner, credentials, {
-      source: { kind: "registered", applicationId: "A", useId: "tasks" },
-      memberPath: [{ member: "badCol" }],
-      dataName: "record",
-      inputs: { task: { className: SCHEDULED_TASK, primaryKey: "row-B" } },
-    });
-    expect(readAttempt).toMatchObject({ status: "error", message: expect.stringContaining("listColumn") });
-
-    await expect(prepareHumanPanelOperation(owner, credentials, {
-      applicationId: "A",
-      useId: "tasks",
-      operationId: "badCol.deleteTask",
-      memberPath: [{ member: "badCol", itemKey: "row-B" }],
-      call: { input: {} },
-    })).rejects.toMatchObject({ status: 422, code: "LIST_COLUMN_DATA_FORBIDDEN" });
   });
 });

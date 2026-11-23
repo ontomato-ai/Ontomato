@@ -119,13 +119,16 @@ paths beginning with a single `/` and pass raw JSON once into `URLSearchParams` 
    - For customer ontology classes, bind the platform's generic read functions parameterized by class (list / get one,
      shown by `panel type <class>`), MetricViews for calculated/filtered reads, and Actions for writes.
    - For `platform:*` types, bind their built-in platform reads and operations.
-   - Currently, MetricView results are tabular and bind to `MetricChart` (registered from a dashboard card); generic
-     display components binding MetricViews are coming in the next update.
-2. **Use official defaults first, then `config`.** Start with `component`, `type`/`target`, and `data`. Adjust columns,
-   visible fields, copyable fields, subtitles, tags, button labels/styles, or page size via `config`.
-3. **Custom components are a last resort.** Do not wrap a whole page in a custom component or hand-roll a table with
-   `PanelData`. *(Table action columns and standard Vue slots for custom cells, row details, and form fields are
-   provided in the next SDK update — do not write legacy `listColumn` / `listRowDetail` / `formField` bindings.)*
+2. **Use official defaults first, then `config`.** Start with `component`, `type`/`target`, and `data`. Adjust columns
+   (including `width` / `minWidth`), `rowActions`, visible fields, copyable fields, subtitles, tags, button
+   labels/styles, or page size via `config`.
+3. **Write a focused slot component only as a last resort.** When default rendering and `config` still leave a specific
+   gap — a single table column (`#cell-<key>`), action cell (`#actions`), expandable row detail (`#row-detail`), or form
+   field (`#field-<dotPath>`) — place a small domain component (declared in `manifest.components`) or nested
+   `<projection>` into the official component's Vue slot (see
+   [Custom list columns, row detail and per-row operations](#custom-list-columns-row-detail-and-per-row-operations)).
+   Do not wrap a whole page in a custom component or hand-roll a table with `PanelData`. Legacy
+   `listColumn` / `listRowDetail` / `formField` bindings are removed.
 
 ## Read declared data
 
@@ -165,7 +168,7 @@ For multi-column table mode, set `config.columns` (omitting `config.columns` ren
 
 | Property | Type | Required | Default / behavior |
 | --- | --- | --- | --- |
-| `key` | `string` | Yes | Owner field key (or `"label"` for the record's primary label). |
+| `key` | `string` | Yes | Owner field key (or `"label"` for the record's primary label). Also the column identifier matched by a `#cell-<key>` Vue slot. |
 | `labelKey` | `string` | No | Flat key in `content.messages` for the column header. Omit to use the owner's `fieldLabels[key]`. |
 | `kind` | `"text" \| "tag" \| "tags" \| "reference" \| "time"` | No | Defaults to `"text"`. `"tag"` draws an owner-toned badge; `"tags"` draws a tag list; `"reference"` draws a clickable link emitting `navigate`; `"time"` formats an ISO timestamp in the reader's locale and time zone. |
 | `subtitleKey` | `string` | No | Second field key rendered beneath the primary cell value. |
@@ -214,6 +217,99 @@ operations). Defaults to the owner's operation label; override display label and
 }
 ```
 
+## Custom list columns, row detail and per-row operations
+
+Use `ObjectList`'s built-in `config.rowActions` for per-row operation buttons and local buttons (dialog/navigation),
+and use standard Vue slots (`#cell-<key>`, `#cell`, `#actions`, `#row-detail`, `#card`, `#empty`) to customize any
+piece of a list without replacing the whole table.
+
+### 1. Built-in row action column (`config.rowActions`) and row operations
+
+Declare row operations directly on the `ObjectList` member under `operations` (each binding specifies `operation`,
+`target`: `{ "row": true }` / `{ "rowField": "..." }` / `{ "input": "..." }` / `{ "literal": ... }`, and optional
+`params` taking `{ "rowField": "..." }`, `{ "row": "primaryKey" | "label" }`, `{ "input": "..." }`, or
+`{ "literal": ... }`). Configure `config.rowActions` to display them inline and overflow extras into a "More" menu:
+
+```json
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": { "kind": "object", "objectType": "platform:Application" },
+        "deepLink": true
+      }
+    },
+    "components": {
+      "app-icon-name-cell": "domain-component:11111111-1111-4111-8111-111111111111"
+    },
+    "members": {
+      "apps": {
+        "component": "ObjectList",
+        "type": "platform:Application",
+        "data": { "rows": "query" },
+        "state": { "selected": "selected" },
+        "config": {
+          "columns": [
+            { "key": "name", "labelKey": "col.app", "width": "240px" },
+            { "key": "status", "labelKey": "col.status", "kind": "tag", "width": 120 }
+          ],
+          "rowActions": {
+            "maxVisible": 2,
+            "items": [
+              { "kind": "local", "id": "edit", "labelKey": "action.edit" },
+              { "kind": "operation", "operation": "disable", "when": { "field": "status", "equals": "active" } }
+            ]
+          }
+        },
+        "operations": {
+          "disable": { "operation": "applications.disable", "target": { "row": true } }
+        }
+      },
+      "rowDetail": {
+        "component": "ObjectSummary",
+        "type": "platform:Application",
+        "data": { "record": "record" }
+      }
+    }
+  }
+}
+```
+
+Per-row availability for declared operations is returned in one batch alongside the list read (eliminating N+1
+requests), and entry/parent fixed parameters are still injected by the server.
+
+### 2. Custom cells, actions, and expandable row details via Vue slots
+
+Author-registered components placed inside Vue slots (`manifest.components`) only draw the props passed to them and
+do not need to be registered as projections. Components that read their own data (such as a form or summary inside
+`#row-detail`) remain projections and receive the current row via `:inputs`:
+
+```html
+<projection slot="apps" @row-action="onRowAction">
+  <template #cell-name="{ row }">
+    <app-icon-name-cell
+      :icon="row.fields.icon"
+      :names="row.fields.names"
+      :fallback-label="row.label"
+    ></app-icon-name-cell>
+  </template>
+  <template #row-detail="{ ref }">
+    <projection slot="rowDetail" :inputs="{ target: ref }"></projection>
+  </template>
+</projection>
+```
+
+For `ObjectForm`, place field-level pickers or custom inputs inside `#field-<dotPath>` (for example `#field-skills`,
+`#field-modelSelection.modelId`, or `#field-items.*.skillId` for array rows). `ReferencePicker` and `ObjectGraph`
+connect automatically to the enclosing form field.
+
+Register a domain component and check/register the panel workspace:
+
+```sh
+node "$SKILL/scripts/ontomato.mjs" component register ./app-icon-name-cell
+node "$SKILL/scripts/ontomato.mjs" panel check ./apps-panel
+node "$SKILL/scripts/ontomato.mjs" panel register ./apps-panel
+```
 ## Bind read parameters and listen to component events
 
 Inspect each component's Data and Events sections in `sdk read docs/components.md` and read parameter signatures in

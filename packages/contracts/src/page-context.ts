@@ -44,7 +44,7 @@ const pageChildSelection = pageSelection.extend({
   id: panelChildObjectIdentitySchema.shape.primaryKey,
   parent: panelChildObjectIdentitySchema.shape.parent,
   collection: z.string().min(1).max(200),
-}).refine(({ parent, collection }) => platformHasChildCollection(parent.objectType, collection), {
+}).refine(({ parent, collection }) => !parent.objectType.startsWith("platform:") || platformHasChildCollection(parent.objectType, collection), {
   path: ["collection"], message: "Undeclared child collection for this parent type",
 });
 

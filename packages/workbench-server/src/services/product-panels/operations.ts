@@ -69,10 +69,6 @@ export async function requirePanelSkillForRun(owner: AssistantOwner, credentials
   return { use, framePanelId, view };
 }
 
-function hasMemberPathItemKey(memberPath?: PanelMemberPath): boolean {
-  return Boolean(memberPath?.some(segment => segment.itemKey !== undefined));
-}
-
 async function admitted(
   owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
   ref: PanelOperationRef, target: PanelOperationCall["target"] | undefined,
@@ -93,7 +89,7 @@ async function declaredOperation(
   const panel = frame ?? await readCurrentPanelRecord(owner, credentials, use.panelId);
   const operation = await declaredDirectOperation(owner, credentials, use, panel, ref.operationId, target, ref.memberPath, {
     ...options,
-    ...(frame && { framePanel: frame, isFrameRoot: true }),
+    ...(frame && { isFrameRoot: true }),
   });
   return { ...operation, rootPanelId: frame?.id ?? use.panelId };
 }
@@ -117,15 +113,6 @@ function invocationTarget(
   return "call" in input ? input.call.target : undefined;
 }
 
-function requireConcreteInvocation(
-  input: CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest,
-): PanelOperationInvocation {
-  if ("call" in input && input.call.target === undefined) {
-    throw new HttpError(400, "Row operation target resolution requires a concrete call.target", "ROW_OPERATION_TARGET_REQUIRED");
-  }
-  return input as PanelOperationInvocation;
-}
-
 function mergeBoundParams(
   supplied: Record<string, unknown>,
   boundParams: Readonly<Record<string, unknown>> | undefined,
@@ -142,18 +129,11 @@ function mergeBoundParams(
   return merged;
 }
 
-function assertRowNotBatch(memberPath: PanelMemberPath | undefined, input: object) {
-  if (hasMemberPathItemKey(memberPath) && "calls" in input) {
-    throw new HttpError(422, "Row operations do not support batch calls", "ROW_OPERATION_BATCH_UNSUPPORTED");
-  }
-}
-
 /** Shared server-side materialization for both human and agent write operations. */
 function materializeWriteInvocation(
   input: CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest | z.infer<typeof inspectPanelOperationImpactRequestSchema>,
-  resolved: Pick<ReturnType<typeof writeOperation>, "resolvedTarget" | "boundParams">,
+  resolved: Pick<ReturnType<typeof writeOperation>, "boundParams">,
 ): PanelOperationInvocation {
-  assertRowNotBatch(input.memberPath, input);
   const rejectParamMismatch = (key: string): never => {
     throw new HttpError(403, `Operation input '${key}' does not match the panel member binding`, "OPERATION_PARAM_MISMATCH");
   };
@@ -164,22 +144,9 @@ function materializeWriteInvocation(
     }));
     return { calls } as PanelOperationInvocation;
   }
-  let target: PanelOperationCall["target"];
-  if (resolved.resolvedTarget !== undefined) {
-    if (input.call.target !== undefined && !isDeepStrictEqual(input.call.target, resolved.resolvedTarget)) {
-      throw new HttpError(403, "Operation target does not match the resolved row target", "TARGET_ID_MISMATCH");
-    }
-    target = resolved.resolvedTarget;
-  } else {
-    if (input.call.target === undefined) {
-      throw new HttpError(400, "Row operation target resolution requires a concrete call.target", "ROW_OPERATION_TARGET_REQUIRED");
-    }
-    target = input.call.target;
-  }
   return {
     call: {
       ...input.call,
-      target,
       input: mergeBoundParams(input.call.input, resolved.boundParams, rejectParamMismatch),
     },
   };
@@ -196,9 +163,6 @@ export async function readPanelOperationDescriptor(owner: AssistantOwner, creden
 }
 
 export async function readPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, request: ReadPanelOperationRequest) {
-  if (hasMemberPathItemKey(request.memberPath)) {
-    throw new HttpError(422, "Read operations do not accept itemKey", "ROW_OPERATION_MEMBER_INVALID");
-  }
   const current = await operationForUse(owner, credentials, request, request.call.target, { mode: "read" });
   if (current.effect !== "read") throw new HttpError(422, "This operation requires a write intent", "OPERATION_READ_REQUIRED");
   const { handler, fixedTarget, boundParams } = current;
@@ -289,23 +253,7 @@ function matchingInvocation(
     }
     return;
   }
-  // Replaying an already-dispatched row operation must not depend on re-reading a row that may have been removed.
-  if (hasMemberPathItemKey(request.memberPath) && "call" in request && "call" in intent) {
-    if (request.call.target !== undefined && !isDeepStrictEqual(intent.call.target, request.call.target)) {
-      throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
-    }
-    if (!isDeepStrictEqual(intent.call.draft, request.call.draft)) {
-      throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
-    }
-    for (const [key, value] of Object.entries(request.call.input)) {
-      if (!isDeepStrictEqual(intent.call.input[key], value)) {
-        throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
-      }
-    }
-    return;
-  }
-  const fallbackConcrete = requireConcreteInvocation(request);
-  if (!isDeepStrictEqual(invocationOf(intent), invocationOf(fallbackConcrete))) {
+  if (!isDeepStrictEqual(invocationOf(intent), invocationOf(request))) {
     throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
   }
 }
@@ -409,7 +357,6 @@ function refuseAgentUpload(handler: PanelWriteServerOperation, locale?: string) 
 export async function inspectPanelOperationImpact(owner: AssistantOwner, credentials: AssistantCredentials,
   input: z.infer<typeof inspectPanelOperationImpactRequestSchema>,
 ) {
-  assertRowNotBatch(input.memberPath, input);
   const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input), { mode: "prepare" }));
   const concrete = materializeWriteInvocation(input, current);
   const { handler, fixedTarget } = current;
@@ -458,13 +405,10 @@ async function humanConfirmation(
 }
 
 export async function prepareHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials,
-  input: CreatePanelHumanOperationIntentRequest, callerUserName?: string,
+  input: CreatePanelHumanOperationIntentRequest, _callerUserName?: string,
 ): Promise<PanelHumanOperationPreparation> {
-  assertRowNotBatch(input.memberPath, input);
   const current = writeOperation(await operationForUse(owner, credentials, input, invocationTarget(input), {
     mode: "prepare",
-    rowContext: input.rowContext,
-    hostReadActor: { owner, credentials, callerUserName },
   }));
   const concrete = materializeWriteInvocation(input, current);
   const prepared = validateInvocation(current.handler, concrete, current.fixedTarget);
@@ -536,7 +480,6 @@ function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOut
   return { kind: "batch", items, affected: { objects, objectTypes: [...objectTypes], ...(removed.length && { removed }) } };
 }
 export async function operatePanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, input: CreatePanelOperationIntentRequest, initiatorName: string): Promise<PanelOperateResponse> {
-  assertRowNotBatch(input.memberPath, input);
   const run = await runForOwner(owner,runId);
   const source = {session:{providerId:run.channel!.agent.providerId,sessionId:run.sessionId},runId};
   const stored = await store.find(owner,input.intentId);
@@ -547,29 +490,15 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
     return replay(record, owner, credentials);
   }
   const { use, framePanelId, view } = await requirePanelSkillForRun(owner, credentials, run, input);
-  const isRowOp = hasMemberPathItemKey(input.memberPath);
-  let executor: Awaited<ReturnType<typeof credentialsForRun>> | undefined;
-  if (isRowOp) {
-    executor = await credentialsForRun(owner, runId, credentials, run.sessionId);
-  }
-  const hostReadActor = executor
-    ? {
-      owner: { domainId: owner.domainId, userId: executor.executionUserId ?? owner.userId },
-      credentials: executor.credentials,
-      callerUserName: executor.executionUserId === null ? initiatorName : undefined,
-    }
-    : undefined;
   const current = {
     ...writeOperation(await declaredOperation(owner, credentials, use, input, invocationTarget(input), undefined, {
       mode: "prepare",
-      rowContext: input.rowContext,
       framePanelId,
-      hostReadActor,
     })),
     view,
   };
   refuseAgentUpload(current.handler, credentials.locale);
-  executor ??= await credentialsForRun(owner,runId,credentials,run.sessionId);
+  const executor = await credentialsForRun(owner,runId,credentials,run.sessionId);
   const root = rootOf(run);
   if (!root) throw new HttpError(409,"Execution has no authenticated human session","USER_SESSION_UNAVAILABLE");
   if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");

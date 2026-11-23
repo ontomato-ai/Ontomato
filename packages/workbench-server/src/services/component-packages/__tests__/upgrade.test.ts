@@ -41,7 +41,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [alpha, beta].map(ref => ({
     ...ref, component: component.componentId, definition: { inputs: { value } },
-  })) });
+  })) }).mockResolvedValueOnce({ rows: [] });
   mocks.findProjectionPanelUsers.mockResolvedValue(new Map([
     [productReferenceKey(alpha), new Map([panelUse(alphaPanel), panelUse(hiddenPanel)])],
     [productReferenceKey(beta), new Map([panelUse(betaPanel)])],

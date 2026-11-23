@@ -5,9 +5,11 @@ import { pageContextSchema } from "./page-context";
 import { pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import {
-  matchesDirectPanelValue, panelMemberPathSchema, panelMemberPathSegmentSchema, panelObjectIdentitySchema, panelObjectRefSchema,
-  panelOpenRequestSchema, panelOperationSchema, type PanelDeepLinkStateValue, type PanelManifest, type PanelObjectIdentity,
+  matchesDirectPanelValue, panelDeepLinkStateValueSchema, panelMemberPathSchema, panelMemberPathSegmentSchema,
+  panelObjectIdentitySchema, panelObjectRefSchema, panelOpenRequestSchema, panelOperationSchema,
+  panelOperationUnavailableSchema, type PanelDeepLinkStateValue, type PanelManifest, type PanelObjectIdentity,
 } from "./panel-manifest";
+import { domainComponentIdSchema, domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { panelOwnerOperationDescriptorSchema } from "./panel-operations";
 import { panelLocalOperationNameSchema } from "./panel-projection";
 import { applicationFrameSourceSchema, applicationPanelUsePathSchema, applicationPanelUseSchema, panelDefinitionContentSchema, productPanelSchema } from "./product-panels";
@@ -37,6 +39,8 @@ export const candidatePanelSourceSchema = z.object({
   kind: z.literal("candidate"),
   workspace: z.object({ id: workspaceIdSchema, ref: workspaceDiffSchema.shape.to }).strict(),
   panel: panelDefinitionContentSchema,
+  /** Author-registered components declared in `panel.manifest.components`, bundled for preview rendering. */
+  domainComponents: z.record(domainComponentIdSchema, domainComponentRuntimeSchema).optional(),
   previewContext: z.object({
     kind: z.literal("build-test"),
     /** Null is the existing build-test NONE state; it never denotes live execution. */
@@ -100,6 +104,8 @@ export const productPanelNestedReadResponseSchema = z.object({
     id: productCurrentIdParamsSchema.shape.id,
     revision: definitionRevisionSchema.shape.revision,
   }),
+  /** Author-registered components declared in the nested panel's `manifest.components`. */
+  domainComponents: z.record(domainComponentIdSchema, domainComponentRuntimeSchema).optional(),
 }).strict();
 export type ProductPanelNestedReadResponse = z.infer<typeof productPanelNestedReadResponseSchema>;
 
@@ -108,7 +114,7 @@ const readPanelMemberPathSchema = z.array(readPanelMemberPathSegmentSchema).none
 
 const panelMemberReadRequestSchema = z.object({
   source: productPanelReadSourceSchema,
-  /** Reads never carry `itemKey` or `rowContext`; listRowDetail reads its own data via normal `inputs`. */
+  /** Reads carry normal memberPath and inputs. */
   memberPath: readPanelMemberPathSchema,
   inputs: runtimeJsonObjectSchema,
   /** Component-supplied parameter values for this datum, separate from the projection's bound inputs. */
@@ -136,8 +142,27 @@ export type PanelPersonalStateReadRequest = z.infer<typeof panelPersonalStateRea
 export type PanelPersonalStateWriteRequest = z.infer<typeof panelPersonalStateWriteRequestSchema>;
 export type PanelPersonalStateResponse = z.infer<typeof panelPersonalStateResponseSchema>;
 
+/** Per-row availability of one declared operation on a list projection, returned in batch alongside list rows. */
+export const panelRowOperationAvailabilitySchema = z.object({
+  available: z.boolean(),
+  unavailable: panelOperationUnavailableSchema.optional(),
+}).strict();
+export type PanelRowOperationAvailability = z.infer<typeof panelRowOperationAvailabilitySchema>;
+
+/** Map from row key (`primaryKey` or `${className}:${primaryKey}`) -> local operation name -> availability status. */
+export const panelRowOperationsMapSchema = z.record(
+  z.string().min(1),
+  z.record(panelLocalOperationNameSchema, panelRowOperationAvailabilitySchema),
+);
+export type PanelRowOperationsMap = z.infer<typeof panelRowOperationsMapSchema>;
+
 const panelReadResults = [
-  z.object({ status: z.literal("ready"), value: runtimeJsonValueSchema }).strict(),
+  z.object({
+    status: z.literal("ready"),
+    value: runtimeJsonValueSchema,
+    /** Batch per-row operation availability returned together with list query data to eliminate N+1 requests. */
+    rowOperations: panelRowOperationsMapSchema.optional(),
+  }).strict(),
   z.object({ status: z.literal("empty") }).strict(),
   z.object({ status: z.literal("error"), message: z.string().min(1) }).strict(),
   z.object({ status: z.literal("forbidden"), reason: z.string().min(1).optional() }).strict(),
@@ -325,8 +350,25 @@ export function panelAddress(path: string, state: Record<string, unknown>): stri
   return rest ? `${route}?${rest}` : route!;
 }
 
-/** The state an address restores, or none. The host checks it against the panel's declaration before using it. */
+/**
+ * The state an address restores, or none. Malformed JSON or entries that cannot cross the deep-link boundary are
+ * safely ignored so a hand-edited or stale URL never crashes the route; the host further normalizes and validates
+ * remaining entries against the panel's manifest.
+ */
 export function panelAddressState(address: string): Record<string, PanelDeepLinkStateValue> {
-  const value = new URL(address, "http://page.invalid").searchParams.get("state");
-  return value === null ? {} : panelOpenRequestSchema.shape.state.parse(JSON.parse(value));
+  const raw = new URL(address, "http://page.invalid").searchParams.get("state");
+  if (raw === null) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const result: Record<string, PanelDeepLinkStateValue> = {};
+  for (const [name, value] of Object.entries(parsed)) {
+    const entry = panelDeepLinkStateValueSchema.safeParse(value);
+    if (entry.success) result[name] = entry.data;
+  }
+  return result;
 }

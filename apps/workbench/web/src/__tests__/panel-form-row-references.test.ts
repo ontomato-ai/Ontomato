@@ -6,7 +6,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { AGENT_DEFINITION, SKILL } from "@ontomato/contracts/platform-object-types";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import {
-  humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, panelWithSlots, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -86,11 +86,12 @@ const manifest = definePanel({
     definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selected" } } },
     skills: {
       target: { projectionId: "parameter-skills" },
-      formField: { slot: "definition", path: "/function/parameters", itemPath: "/skills" },
     },
   },
 });
-const panel = panelRecord("panel-row-references", "Row references", manifest);
+const panel = panelRecord("panel-row-references", "Row references", manifest, {
+  definition: { "field-function.parameters.*.skills": "skills" },
+});
 /** The same form in a panel that declares no projection for the rows' skills. */
 const bare = panelRecord("panel-row-references-bare", "Row references", definePanel({
   state: manifest.state, members: { definition: manifest.members.definition! },
@@ -120,7 +121,11 @@ async function open(slots: string[], shown = panel) {
   platformPanelHost("ontology", use, ignoreChanges).frame(frame, registered("ontology", use, shown), true);
   writePanelDocument(registered("ontology", use, shown), use.path, { selected: { className: AGENT_DEFINITION, primaryKey: ID } } as never);
   inside(frame);
-  const mounted = await mountPanel(panelOf(...slots));
+  const mounted = await mountPanel(
+    slots.includes("skills")
+      ? panelWithSlots(["definition"], { definition: { "field-function.parameters.*.skills": "skills" } })
+      : panelWithSlots(["definition"], {}),
+  );
   await vi.waitFor(() => expect(item("/name")?.querySelector("input")?.value).toBe("Ship order"), { timeout: 5000 });
   return { ...mounted, sent };
 }

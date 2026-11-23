@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { domainComponentRuntimeSchema } from "./domain-component-runtime";
+import { domainComponentIdSchema, domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { defaultAgentSchema } from "./default-agent";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import { runtimeSkillRefSchema } from "./agent-runtime-skills";
@@ -115,7 +115,11 @@ function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.Ref
   if (projection.conversationEntry?.target.kind === "id") reject(["conversationEntry", "target", "id"]);
   for (const [side, ports] of Object.entries({ inputs: projection.inputs, outputs: projection.outputs })) {
     for (const [name, port] of Object.entries(ports)) {
-      const objectType = port.kind === "object" ? port.objectType : port.kind === "list" ? port.items.objectType : undefined;
+      const objectType = port.kind === "object"
+        ? port.objectType
+        : port.kind === "list" && port.items.kind === "object"
+          ? port.items.objectType
+          : undefined;
       if (objectType !== undefined && !Object.hasOwn(platformObjectTypes, objectType)) reject([side, name]);
     }
   }
@@ -195,7 +199,7 @@ export type PanelMessages = z.infer<typeof panelMessagesSchema>;
 /** The shared sources of a registered panel or workspace candidate. */
 export const productPanelContentSchema = z.object({
   html: panelText,
-  module: panelText,
+  module: panelText.optional(),
   style: panelText.optional(),
   recipes: panelText.optional(),
   messages: panelMessagesSchema.optional(),
@@ -235,6 +239,9 @@ function validateBuiltinPanel(panel: PanelDefinitionContent, ctx: z.RefinementCt
   }
   for (const [name, state] of Object.entries(panel.manifest.state)) {
     if (state.default !== undefined && containsObjectIdentity(state.default)) reject(["manifest", "state", name, "default"]);
+  }
+  for (const name of Object.keys(panel.manifest.components ?? {})) {
+    reject(["manifest", "components", name]);
   }
 }
 
@@ -483,6 +490,8 @@ export const productPanelResponseSchema = z.object({
   panel: currentPanelRecordSchema,
   pageSkillContext: pageSkillContextSchema.optional(),
   projections: z.record(id, bundledPanelProjectionSchema).optional(),
+  /** Author-registered components declared in `panel.manifest.components` for direct template/slot rendering. */
+  domainComponents: z.record(domainComponentIdSchema, domainComponentRuntimeSchema).optional(),
 }).strict();
 export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;
 

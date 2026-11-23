@@ -151,8 +151,15 @@ function choose(keys: string | string[] | undefined) {
         :class="{ 'sdk-reference-option-described': option.description }"
       >
         <!-- A choice its owner describes is offered with what it does: a reader judges it by that, not its name. -->
-        <span class="sdk-reference-option-label">{{ option.value === null ? localized(option.label) : option.label }}</span>
-        <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
+        <slot
+          name="option"
+          :option="option"
+          :selected="Array.isArray(chosen) ? chosen.includes(option.primaryKey) : chosen === option.primaryKey"
+          :disabled="option.unavailable !== undefined"
+        >
+          <span class="sdk-reference-option-label">{{ option.value === null ? localized(option.label) : option.label }}</span>
+          <span v-if="option.description" class="sdk-reference-option-description">{{ option.description }}</span>
+        </slot>
       </el-option>
     </el-select>
     <template #after>

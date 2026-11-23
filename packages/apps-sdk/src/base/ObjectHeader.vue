@@ -6,7 +6,7 @@ import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-op
 import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelContextKey, projectionKey } from "../panel/context";
-import { panelMemberKey, readerDataState } from "../panel/member";
+import { panelMemberKey, readerDataState, useMemberOutput } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
 import { useDataStateLabels } from "./data-state-labels";
@@ -215,7 +215,7 @@ const admittedOperations = computed<readonly HeaderOperationItem[]>(() => {
     if (!descriptor) continue;
     const targetInfo = resolveOperationTarget(panel, slot, currentMember, descriptor, stateValues.value);
     const label = spec.label?.trim() || formatOperationLabel(descriptor, targetInfo, t);
-    const ready = isOperationReady(descriptor, targetInfo, Boolean(currentMember.rowOperation), false);
+    const ready = isOperationReady(descriptor, targetInfo, false);
     items.push({
       name: spec.name,
       descriptor,
@@ -248,6 +248,10 @@ watch(
     resetMoreRunner();
   },
 );
+
+if (member.value) {
+  useMemberOutput("label", () => resolvedTitle.value || null);
+}
 
 function handleMoreCommand(command: string | number | Record<string, unknown>) {
   if (typeof command !== "string") return;

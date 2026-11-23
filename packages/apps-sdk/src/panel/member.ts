@@ -1,26 +1,12 @@
-import { computed, inject, type ComputedRef, type InjectionKey } from "vue";
+import { computed, inject, onBeforeUnmount, watch, type ComputedRef, type InjectionKey } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelMemberItemKey } from "@ontomato/contracts/panel-object-ref";
+import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
 import type { MemberData, MemberDataState, MemberInputs } from "./direct";
 import { usePanelContext } from "./context";
 import type { MemberOperationsState } from "./member-operations";
 import type { MemberFormDraftChannel } from "./member-forms";
-import type { PanelWriteResult } from "./instance";
-
-/**
- * Row-scoped write operation runner provided to components mounted inside `listColumn` or `listRowDetail`.
- * Automatically attaches the row's `itemKey` on `memberPath` and the host list's `rowContext`; callers
- * cannot override the operation target or any `operation.params` bound by the panel member.
- */
-export interface PanelMemberRowOperation {
-  run(
-    operationName: string,
-    input?: Readonly<Record<string, unknown>>,
-    hooks?: { onConfirmed?: () => void },
-  ): Promise<PanelWriteResult>;
-}
 
 /*
  * The member a component is drawn as in a directly rendered panel (design 4.2): its projection with the named data it
@@ -37,11 +23,11 @@ export interface PanelMemberContext {
   readonly operations: ComputedRef<MemberOperationsState>;
   /** Pending draft channel held by a directly rendered ObjectForm member so unmounted forms hand off drafts on mount. */
   readonly formDraft?: MemberFormDraftChannel;
-  /** Optional isolated parameter store for per-row mounted members (`listRowDetail` / `listColumn`). */
+  /** Optional isolated parameter store for per-slot scoped projection instances (e.g. inside `#row-detail`). */
   readonly param?: (name: string) => MemberParam;
-  /** Present on `listColumn` / `listRowDetail` row instances: executes a declared write operation on that row. */
-  readonly rowOperation?: PanelMemberRowOperation;
-  /** Present on `listColumn` / `listRowDetail` row instances: canonical `itemKey` of the mounted row. */
+  /** True when mounted as a per-instance scoped projection inside a Vue slot (suppresses writing top-level member outputs). */
+  readonly scoped?: boolean;
+  /** Row identity when mounted inside an ObjectList row Vue slot (e.g. `#row-detail`). */
   readonly rowItemKey?: PanelMemberItemKey;
 }
 
@@ -100,4 +86,20 @@ export function useMemberParam(name: string): MemberParam {
 export function useMemberRead(name: string): (params: Readonly<Record<string, RuntimeJsonValue>>) => Promise<MemberDataState> {
   const { data } = member();
   return (params) => data.read(name, params);
+}
+
+/**
+ * Publish one read-only output from a projection component onto the panel instance (`outputs[member][name]`),
+ * kept separate from the panel's writable `manifest.state`. Cleaned up automatically when the component unmounts.
+ */
+export function useMemberOutput(name: string, getter: () => RuntimeJsonValue | null): void {
+  const current = member();
+  if (current.scoped) return;
+  const { instance } = usePanelContext();
+  watch(getter, (value) => {
+    instance.setMemberOutput(current.key, name, value);
+  }, { immediate: true });
+  onBeforeUnmount(() => {
+    instance.setMemberOutput(current.key, name, null);
+  });
 }

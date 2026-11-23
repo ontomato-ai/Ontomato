@@ -10,7 +10,6 @@
  */
 const agent = { kind: "object", objectType: "platform:AgentDefinition" };
 const shown = { agent: { state: "selectedAgent" } };
-const field = (path) => ({ slot: "definition", path });
 
 export default {
   state: {
@@ -21,9 +20,9 @@ export default {
     agents: { target: { projectionId: "agent-list" }, outputs: { selected: { state: "selectedAgent" } } },
     summary: { target: { projectionId: "agent-summary" }, inputs: shown },
     definition: { target: { projectionId: "agent-definition-form" }, inputs: shown },
-    model: { target: { projectionId: "agent-model-choice" }, formField: field("/modelSelection/modelId") },
-    skills: { target: { projectionId: "agent-skill-choice" }, formField: field("/skills") },
-    executor: { target: { projectionId: "agent-executor-choice" }, formField: field("/executionUserId") },
-    scope: { target: { projectionId: "agent-data-scope" }, formField: field("/classNames") },
+    model: { target: { projectionId: "agent-model-choice" } },
+    skills: { target: { projectionId: "agent-skill-choice" } },
+    executor: { target: { projectionId: "agent-executor-choice" } },
+    scope: { target: { projectionId: "agent-data-scope" } },
   },
 };

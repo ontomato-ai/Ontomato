@@ -50,6 +50,11 @@ export interface ComponentMetadata {
    * A signal that carries no state (a click to open, a viewport) is one of its events, not an output.
    */
   readonly outputs?: Readonly<Record<string, DirectPanelPortType>>;
+  /**
+   * Read-only outputs published to the panel instance (`outputs[member][name]`), kept separate from writable
+   * `manifest.state` so panels can read counts, labels, dirty flags or form drafts without exposing them to page agents.
+   */
+  readonly readOnlyOutputs?: Readonly<Record<string, DirectPanelPortType>>;
 }
 
 /**

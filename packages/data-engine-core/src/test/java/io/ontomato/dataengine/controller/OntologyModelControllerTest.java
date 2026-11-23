@@ -43,6 +43,8 @@ import io.ontomato.dataengine.service.OntologyModelService.FormTarget;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeCreate;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeView;
+import io.ontomato.dataengine.service.agent.AgentExecutionScope;
+import io.ontomato.dataengine.service.agent.OntologyAgentAccess;
 import io.ontomato.dataengine.util.SpringBeanUtil;
 
 /**
@@ -51,7 +53,8 @@ import io.ontomato.dataengine.util.SpringBeanUtil;
  */
 class OntologyModelControllerTest {
 
-	private final OntologyModelController controller = new OntologyModelController();
+	private final OntologyModelController controller =
+			new OntologyModelController(new AgentExecutionScope(mock(OntologyAgentAccess.class)));
 	private final OntologyModelService service = mock(OntologyModelService.class);
 	private final User user = mock(User.class);
 
@@ -63,6 +66,7 @@ class OntologyModelControllerTest {
 		context.registerBean(IdentityService.class, () -> identityService);
 		context.refresh();
 		new SpringBeanUtil().setApplicationContext(context);
+		ReflectionTestUtils.setField(controller, "identityService", identityService);
 		ReflectionTestUtils.setField(controller, "service", service);
 	}
 

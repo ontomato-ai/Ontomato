@@ -42,7 +42,9 @@ export { ElInputTag as SdkInputTag } from "element-plus/es/components/input-tag/
 export { ElLink as SdkLink } from "element-plus/es/components/link/index";
 export { ElMention as SdkMention } from "element-plus/es/components/mention/index";
 export { ElMenu as SdkMenu, ElMenuItem as SdkMenuItem, ElMenuItemGroup as SdkMenuItemGroup, ElSubMenu as SdkSubMenu } from "element-plus/es/components/menu/index";
+export { ElPageHeader as SdkPageHeader } from "element-plus/es/components/page-header/index";
 export { ElPagination as SdkPagination } from "element-plus/es/components/pagination/index";
+export { ElPopconfirm as SdkPopconfirm } from "element-plus/es/components/popconfirm/index";
 export { ElPopover as SdkPopover } from "element-plus/es/components/popover/index";
 export { ElProgress as SdkProgress } from "element-plus/es/components/progress/index";
 export { ElRadio as SdkRadio, ElRadioButton as SdkRadioButton, ElRadioGroup as SdkRadioGroup } from "element-plus/es/components/radio/index";
@@ -76,6 +78,8 @@ export { ElTreeSelect as SdkTreeSelect } from "element-plus/es/components/tree-s
 export { ElTreeV2 as SdkTreeV2 } from "element-plus/es/components/tree-v2/index";
 export { ElUpload as SdkUpload } from "element-plus/es/components/upload/index";
 export { ElWatermark as SdkWatermark } from "element-plus/es/components/watermark/index";
+
+export { ElMessageBox as SdkMessageBox } from "element-plus/es/components/message-box/index";
 
 // UI directives registered directly via `app.directive(...)` or imported in custom components.
 export { vLoading as vSdkLoading } from "element-plus/es/components/loading/index";

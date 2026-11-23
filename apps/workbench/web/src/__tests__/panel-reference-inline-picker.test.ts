@@ -57,6 +57,7 @@ function mountPanel(
     locale?: string;
     messages?: Record<string, Record<string, string>>;
     members?: readonly string[];
+    memberSlots?: (instance: ReturnType<typeof createDirectPanelInstance>) => Record<string, Record<string, () => ReturnType<typeof h>[]>>;
   } = {},
 ) {
   const localeRef = ref(options.locale ?? "en");
@@ -84,8 +85,9 @@ function mountPanel(
     fallbackLocale: "en",
     messages: { en: publicEn, "zh-CN": publicEn },
   });
+  const resolvedSlots = options.memberSlots?.(instance);
   const app = createApp({
-    render: () => memberKeys.map((member) => h(PanelMember, { instance, member })),
+    render: () => memberKeys.map((member) => h(PanelMember, { instance, member }, resolvedSlots?.[member])),
   });
   app.use(i18n).use(ElementPlus).mount(container);
   cleanup = () => {
@@ -145,7 +147,7 @@ it("keeps form field mode intact when formField is declared and renders nothing 
     },
     members: {
       form: { target: { projectionId: formProjection.id }, inputs: { agent: { state: "agent" } } },
-      model: { target: { projectionId: pickerProjection.id }, inputs: {}, formField: { slot: "form", path: "/model" } },
+      model: { target: { projectionId: pickerProjection.id }, inputs: {} },
     },
   };
 
@@ -189,7 +191,11 @@ it("keeps form field mode intact when formField is declared and renders nothing 
         save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.update" },
       });
     },
-    { initial: { agent: { className: AGENT_DEFINITION, primaryKey: "a-1" } } },
+    {
+      initial: { agent: { className: AGENT_DEFINITION, primaryKey: "a-1" } },
+      members: ["form"],
+      memberSlots: (instance) => ({ form: { "field-model": () => [h(PanelMember, { instance, member: "model" })] } }),
+    },
   );
 
   await vi.waitFor(() => {

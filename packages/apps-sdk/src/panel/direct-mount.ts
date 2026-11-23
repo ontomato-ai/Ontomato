@@ -1,9 +1,10 @@
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { DomainComponentRuntime } from "@ontomato/contracts/domain-components";
 import { effectScope, h, ref, watch, type Component, type Ref, type VNode, type Slots } from "vue";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-host";
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
-import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions } from "./direct";
+import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type MemberInputs } from "./direct";
 import { runPanel } from "./lifecycle";
 import { type PanelMessages, type ProductProjectionRenderResponse } from "@ontomato/contracts/product-panels";
 import { panelHumanOperations, type PanelOperationUse } from "./human-operations";
@@ -12,7 +13,6 @@ import { readComponentPackage, readPageDraft, readProjectionForRender, recordDra
 import type { ComponentPackageResponse } from "@ontomato/contracts/component-packages";
 import { createPanelText } from "./text";
 import { draftRefusalText } from "./draft-refusal";
-import { isListAttachedPanelMember } from "./row-member";
 import { checkPanelValue, type PanelFieldValue } from "./state";
 import PanelMember from "./PanelMember.vue";
 
@@ -35,6 +35,8 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
    */
   readProjection?(id: string): Promise<ProductProjectionRenderResponse>;
   loadDomainComponent?(runtime: DomainComponentRuntime): Promise<Component>;
+  /** Author-registered components declared in `manifest.components`, keyed by component ID. */
+  panelDomainComponents?: Readonly<Record<string, DomainComponentRuntime>>;
   /** The application use the panel runs as (with `root: "frame"` for the frame); a preview runs as none and runs no operation. */
   use: PanelOperationUse | null;
   /** The panel's own words (its content's messages), in the platform's language with the deployment's default behind. */
@@ -65,8 +67,8 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
  */
 export interface DirectPanelMount extends HostDirectPanelMount {
   readonly instance: DirectPanelInstance;
-  /** The member the panel's template places under this key, with what the template places in its component's slots. */
-  member(ref: string, slots?: Slots): VNode;
+  /** The member the panel's template places under this key, with optional slot overrides and slot content. */
+  member(ref: string, slots?: Slots, inputs?: Readonly<Record<string, RuntimeJsonValue>>): VNode;
 }
 
 export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelMount {
@@ -126,6 +128,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       readPageDraft: (sessionId, runId, path) => readPageDraft(requests, sessionId, runId, path),
       projectionChanged: (id, revision) => instance.projectionChanged(id, revision),
       refreshObject: (target) => (target ? instance.refresh({ objects: [target], objectTypes: [] }) : instance.refreshObjects()),
+      onAddressPending: (pending) => instance.setAddressPending(pending),
       reports: { ...run, draftRefused: (refusal) => run.draftRefused(draftRefusalText(refusal, translate)) },
     });
     // A draft that none of this panel's forms performs is not this panel's: once every member has registered and none
@@ -137,9 +140,7 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     // to it, and the panel's own code reads its data, whether or not a layout or a template places it.
     // A member that cannot be read is that member's failure, not the panel's: whoever draws it (`<Projection>`) or reads
     // it (`usePanelData`) shows the reason in its place, from this same hold; the rest of the panel goes on.
-    const declaredMembers = Object.entries(options.manifest.members)
-      .filter(([, member]) => !isListAttachedPanelMember(member))
-      .map(([memberKey]) => memberKey);
+    const declaredMembers = Object.keys(options.manifest.members);
     if (declaredMembers.length) {
       instance.forms.setUndrawnReady(false);
       void Promise.allSettled(declaredMembers.map((member) => instance.placing(member)))
@@ -148,7 +149,12 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
     void panelRun.start().catch(run.failed);
     return {
       instance,
-      member: (ref, slots) => h(PanelMember, { instance, member: ref, key: `${ref}:${instance.projectionVersion(ref)}` }, slots),
+      member: (ref, slots, inputs) => h(PanelMember, {
+        instance,
+        member: ref,
+        ...(inputs ? { inputs: inputs as MemberInputs } : {}),
+        key: `${ref}:${instance.projectionVersion(ref)}`,
+      }, slots),
       address: (url, addressOptions) => panelRun.address(url, addressOptions),
       setState(patch) {
         const entries = Object.entries(patch);

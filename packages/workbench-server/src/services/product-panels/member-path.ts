@@ -16,6 +16,7 @@ import { HttpError } from "../../utils/errors";
 import { requireProductGrant, type ProductOwner } from "../product-governance/grants";
 import { requirePanelEntry } from "./application-use";
 import { parseStoredDefinition } from "./definition-diagnostics";
+import { readPanelDomainComponents } from "./component-catalogue";
 import { findObjectDetailPanelId } from "./object-detail";
 import { panelStateKey, type PanelStatePathKey } from "./personal-state-key";
 
@@ -132,33 +133,23 @@ async function selectedPlacement(
   return placement;
 }
 
-function pathKey(
-  segment: Pick<PanelMemberPath[number], "member" | "itemKey">,
-  isFinal: boolean,
-  allowTerminalItemKey: boolean,
-): PanelStatePathKey {
-  if (segment.itemKey !== undefined) {
-    if (!allowTerminalItemKey) unavailable();
-    if (!isFinal) {
-      throw new HttpError(422, "Only the final memberPath segment may carry itemKey", "ROW_OPERATION_MEMBER_INVALID");
-    }
-  }
+function pathKey(segment: Pick<PanelMemberPath[number], "member" | "itemKey">): PanelStatePathKey {
+  if (segment.itemKey !== undefined) unavailable();
   return [segment.member];
 }
 
 /** Re-resolve the requested path from an authorized root. A denied member never supplies its definition. */
 export function resolvePanelMemberPath<Root extends PanelPathRoot>(
   owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: PanelMemberPath,
-  entry?: ApplicationPanelUse, client?: QueryClient, options?: ResolvePanelMemberPathOptions,
+  entry?: ApplicationPanelUse, client?: QueryClient,
 ) {
-  return resolveMemberPath(owner, viewer, root, memberPath, entry, client, options);
+  return resolveMemberPath(owner, viewer, root, memberPath, entry, client);
 }
 
 async function resolveMemberPath<Root extends PanelPathRoot>(
   owner: ProductOwner, viewer: AssistantCredentials, root: Root, memberPath: readonly AnyPathSegment[],
-  entry?: ApplicationPanelUse, client?: QueryClient, options?: ResolvePanelMemberPathOptions,
+  entry?: ApplicationPanelUse, client?: QueryClient,
 ) {
-  const allowTerminalItemKey = options?.allowTerminalItemKey === true;
   let panel: Root | ProductPanel = root;
   const ancestors = new Set(root.id === undefined ? [] : [root.id]);
   const keys: PanelStatePathKey[] = [];
@@ -175,7 +166,7 @@ async function resolveMemberPath<Root extends PanelPathRoot>(
       unavailable();
     }
     const member = declared ?? placement!;
-    const key = pathKey(segment, isFinal, allowTerminalItemKey);
+    const key = pathKey(segment);
     if (placement) keys.push([key[0], key[1], placement.id]);
     else keys.push(key);
     const target = await declaredTarget(owner, panel, member.target, placement ? undefined : segment.selection, entry, client);
@@ -216,6 +207,10 @@ export async function readNestedPanel(
   })();
   if (placement.kind !== "panel" || !("revision" in placement.panel))
     throw new HttpError(404, "The member path does not select a panel", "PANEL_MEMBER_UNAVAILABLE");
-  const { id, revision, content, manifest, theme } = placement.panel;
-  return { panel: { id, revision, content, manifest, ...(theme !== undefined && { theme }) } };
+  const { id, revision, content, manifest, theme, domainId } = placement.panel;
+  const domainComponents = await readPanelDomainComponents(domainId, manifest.components);
+  return {
+    panel: { id, revision, content, manifest, ...(theme !== undefined && { theme }) },
+    ...(domainComponents && { domainComponents }),
+  };
 }

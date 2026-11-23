@@ -64,6 +64,11 @@ interface ServerOperation {
   inspectImpact?: PanelImpactInspector;
   /** The current reader's display reason, only looked up for a concrete record on the operations read. */
   unavailable?(host: PanelOperationHost, target: PanelRecordTarget): Promise<PanelOwnerOperationDescriptor["unavailable"]>;
+  /** Optional batch availability lookup across a page of list rows to avoid per-row backend requests. */
+  unavailableBatch?(
+    host: PanelOperationHost,
+    targets: readonly { target: PanelRecordTarget; rowKey: string }[],
+  ): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>>;
   targetType: string;
   inputSchema: z.ZodType<Record<string, unknown>>;
   resultSchema: z.ZodTypeAny;
