@@ -7,6 +7,7 @@ import rawExamples from "../../../../../contracts/examples/platform-schedules.js
 import {platformTaskSchema,platformScheduleFormSchema} from "@ontomato/contracts/platform-schedules";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { type CreatePanelHumanOperationIntentRequest, type PanelOperationIntent } from "@ontomato/contracts/panel-agent";
+import type { PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { APPROVE_KNOWLEDGE, BUSINESS_KNOWLEDGE } from "@ontomato/contracts/panel-client-requests";
 import { BUILD_TEST_HEADER } from "@ontomato/contracts/build-tests";
 import { panelReadOperationInputSchema, panelReadOperationResultSchema } from "@ontomato/contracts/panel-operations";
@@ -50,7 +51,7 @@ vi.mock("../current",()=>({
         ...(form && { target: { input: form } }),
       },
     };
-    return { member, projection: { ...projection, data, operations } };
+    return { member, projection: { ...projection, data, operations: projection.operations ?? operations } };
   },
 }));
 import {
@@ -131,18 +132,18 @@ beforeEach(()=>{
    if(sql.startsWith("SELECT intent"))return {rows:intents.has(id)?[{intent:structuredClone(intents.get(id)),owner_id:owner.userId}]:[]};
    if(sql.startsWith("INSERT INTO panel_operation_intents")){if(!intents.has(String(args[1])))intents.set(String(args[1]),structuredClone(args[4] as PanelOperationIntent));return {rows:[]};}
    if(sql.includes("'{invalidated}'") && sql.includes("id<>$3")){
-     const excludeId=String(args[2]), appId=String(args[3]), useId=String(args[4]);
-     const reason=JSON.parse(String(args.at(-1)));
-     let count=0;
-     for(const [key,val] of intents.entries()){
-       if(key===excludeId || val.source.kind!=="agent-page" || val.operation.kind!=="form.save" || val.dispatched || val.invalidated) continue;
-       if(val.use.applicationId!==appId || val.use.useId!==useId) continue;
-       const matchesObject = sql.includes("call'->'target'->>'kind'='object'")
-         ? "call" in val && val.call.target?.kind==="object" && val.call.target.objectType===args[5] && val.call.target.primaryKey===args[6]
-         : val.panelId===args[5] && val.projectionId===args[6] && val.operation.id===args[7];
-       if(matchesObject){val.invalidated=reason;count++;}
+     const [domainId, userId, excludeId, targetsJson, reasonJson] = args;
+     const targets = JSON.parse(String(targetsJson)) as { target: PanelOperationCall["target"] }[];
+     const reason = JSON.parse(String(reasonJson));
+     for (const [id, intent] of intents) {
+       if (intent.initiator.domainId !== domainId || intent.initiator.userId !== userId || id === excludeId
+         || intent.source.kind !== "agent-page" || intent.source.questionId === null || intent.dispatched || intent.invalidated) continue;
+       const calls = "call" in intent ? [intent.call] : intent.calls;
+       if (calls.some(({ target }) => target?.kind === "object" && targets.some(item =>
+         item.target?.kind === "object" && target.objectType === item.target.objectType && target.primaryKey === item.target.primaryKey
+       ))) intent.invalidated = reason;
      }
-     return {rowCount:count};
+     return {};
    }
    if(sql.includes("'{invalidated}'") && sql.includes("WHERE domain_id=$1 AND owner_id=$2 AND id=$3")){
      const val=intents.get(id);
@@ -379,6 +380,8 @@ it("adds owner availability only to a live descriptor for the selected record", 
 it("dispatches one frozen batch once and merges affected evidence from successful items only", async () => {
   const { handler, request, impact } = installBatchOwner();
   const first = impact.objects[0]!.target, refused = impact.objects[1]!.target;
+  const pending = await prepareLiveAction({ ...request, intentId: uuid(55), calls: [request.calls[4]!] });
+  const unchanged = await prepareLiveAction({ ...request, intentId: uuid(56), calls: [request.calls[1]!] });
   const statuses = [
     { kind: "success", data: { done: true }, affected: { objects: [first], objectTypes: [first.objectType] } },
     { kind: "refusal", code: "REVISION_CONFLICT", message: "The task changed" },
@@ -399,6 +402,10 @@ it("dispatches one frozen batch once and merges affected evidence from successfu
   expect(handler.executeBatch).toHaveBeenCalledTimes(1);
   expect(handler.executeBatch).toHaveBeenCalledWith(expect.objectContaining({ request: expect.any(Function) }), request.calls, intentId);
   expect(handler.execute).not.toHaveBeenCalled();
+  expect(await dispatchHumanPanelOperation(owner, credentials, pending.intentId)).toMatchObject({
+    kind: "not-dispatched", code: "FORM_CONFIRMATION_STALE",
+  });
+  expect(intents.get(unchanged.intentId)?.invalidated).toBeUndefined();
 });
 
 it("keeps an uncertain owner batch terminal", async () => {
@@ -601,15 +608,18 @@ it("resolves the actual panel-use member and refuses a run that only loaded a si
   expect(ownerWrites()).toHaveLength(0);
 });
 
-it("rechecks a customer action and reads the confirmation label as the initiator, then executes with the same user", async () => {
+it.each([false, true])("handles an Action-backed form with another tab saving first = %s", async (humanSavesFirst) => {
  const order = { kind: "object" as const, objectType: "Order", primaryKey: "o1" };
  const identity = { kind: "object", objectType: "Order" };
+ const binding = { kind: "Action", id: "approve-order" };
+ const token = "private-customer-action-token";
  mocks.panel.mockResolvedValue({ id: "P", manifest: {
    state: { order: { type: identity } },
-   members: { run: { target: { projectionId: "approval" }, inputs: { target: { state: "order" } } } },
+   members: { form: { target: { projectionId: "approval" }, inputs: { target: { state: "order" } } } },
  } });
  mocks.projection.mockResolvedValue({ id: "approval", name: "Approve order",
-   binding: { kind: "Action", id: "approve-order" }, inputs: { target: identity },
+   binding, inputs: { target: identity },
+   operations: { save: { operation: binding, target: { input: "target" } } },
  });
  const originalBackend = mocks.backend.getMockImplementation()!;
  mocks.backend.mockImplementation(async (...args) => {
@@ -638,7 +648,7 @@ it("rechecks a customer action and reads the confirmation label as the initiator
      return Response.json({ success: true, data: {
        id: "approve-order", name: "Approve order", codeHash: "a".repeat(64),
        target: { className: "Order", keyParameter: "key" },
-       function: { parameters: [{ name: "key", type: "TYPE_STRING" }] },
+       function: { parameters: [{ name: "key", type: "TYPE_STRING" }, { name: "token", type: "TYPE_STRING" }] },
      } });
    }
    if (path === "/action/form") {
@@ -649,25 +659,40 @@ it("rechecks a customer action and reads the confirmation label as the initiator
      } else {
        expect(headers.get("X-API-Key")).toBeNull();
        expect(headers.get("tk")).toBe("U-token");
+       expect(submitted.values).toMatchObject({ token });
        ownerCalls.push("submit");
      }
      return Response.json({ success: true, data: {
        fields: [{ key: "key", label: "Key", required: false, defaultValue: null, help: null,
          type: "text", multiline: false, placeholder: null, maxLength: 200 }],
-       values: { key: "o1" }, errors: [], parameters: submitted.values === undefined ? null : { key: "o1" },
+       values: { key: "o1" }, errors: [], parameters: submitted.values === undefined ? null : { key: "o1", token },
      } });
    }
    expect(path).toBe("/action/execute");
    expect(headers.get("X-API-Key")).toBeNull();
    expect(headers.get("tk")).toBe("U-token");
-   expect((init.body as FormData).get("param")).toBe(JSON.stringify({ key: "o1" }));
+   expect((init.body as FormData).get("param")).toBe(JSON.stringify({ key: "o1", token }));
    ownerCalls.push("execute");
    return Response.json({ success: true, data: { result: "{}", affects: ["Order"] } });
  }));
- const input = { ...action(), operationId: "run.execute", call: { target: order, input: { values: {} } } };
+ const input = { ...action(), operationId: "form.save", call: { target: order, input: { values: { token } } } };
  const { intentId } = await prepareLiveAction(input);
- expect(JSON.stringify(mocks.request.mock.calls[0]?.[2])).toContain("Purchase order");
+ const { message } = mocks.request.mock.calls[0]![2] as { message: string };
+ expect(message).toContain("Purchase order");
+ expect(message).toContain("token");
+ expect(message).not.toContain(token);
  expect(ownerCalls).toEqual(["definition", "open"]);
+ if (humanSavesFirst) {
+   const manual = await prepareHumanPanelOperation(owner, credentials, input);
+   expect(await dispatchHumanPanelOperation(owner, credentials, manual.intentId)).toMatchObject({
+     kind: "dispatched", outcome: { kind: "success" },
+   });
+   expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
+     kind: "not-dispatched", code: "FORM_CONFIRMATION_STALE",
+   });
+   expect(ownerCalls.filter(call => call === "execute")).toHaveLength(1);
+   return;
+ }
  expect(await dispatchHumanPanelOperation(owner, credentials, intentId)).toMatchObject({
    kind: "dispatched", outcome: { kind: "success" },
  });
@@ -874,8 +899,21 @@ it("marks a batch operation unavailable only when every item in a non-empty arra
   expect(unavailableFallback).toHaveBeenCalledTimes(4);
 });
 
-it("invalidates pending agent-page form save intents when another tab saves the same object", async () => {
-  const execute = vi.fn(async () => ({ kind: "success" as const, data: { saved: true } }));
+it.each([
+  { scenario: "two tabs on one entry", crossEntry: false, targetKind: "same" },
+  { scenario: "two different applications and entries", crossEntry: true, targetKind: "same" },
+  { scenario: "two different objects", crossEntry: false, targetKind: "different" },
+  { scenario: "two independent new drafts", crossEntry: false, targetKind: "draft" },
+])("scopes pending form confirmation invalidation for $scenario", async ({ crossEntry, targetKind }) => {
+  const objectType = "platform:ScheduledTask";
+  const objectTarget = { kind: "object" as const, objectType, primaryKey: uuid(9) };
+  const target = targetKind === "draft" ? { kind: "draft" as const } : objectTarget;
+  const manualTarget = targetKind === "different" ? { ...objectTarget, primaryKey: uuid(10) } : target;
+  const execute = vi.fn(async () => ({
+    kind: "success" as const,
+    data: {},
+    ...(targetKind === "draft" && { affected: { objects: [{ objectType, primaryKey: uuid(11) }], objectTypes: [objectType] } }),
+  }));
   const saveHandlerRef = "platform:ScheduledTask.save";
   mockRegisteredOperation({
     handlerRef: saveHandlerRef,
@@ -884,42 +922,72 @@ it("invalidates pending agent-page form save intents when another tab saves the 
     kind: "form.save",
     effect: "write",
     batch: false,
-    targetType: "platform:ScheduledTask",
-    targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal("platform:ScheduledTask"), primaryKey: z.string() }).strict(),
+    targetType: objectType,
+    targetSchema: z.union([
+      z.object({ kind: z.literal("object"), objectType: z.literal(objectType), primaryKey: z.string() }).strict(),
+      z.object({ kind: z.literal("draft") }).strict(),
+    ]),
     inputSchema: z.object({ values: z.record(z.unknown()), submittedFields: z.array(z.string()).optional() }),
     resultSchema: z.object({}),
     draftOperation: () => "task.save",
     draftInput: input => input,
+    create: {
+      draftValues: values => z.record(z.unknown()).parse(values),
+      createdObject: () => ({ objectType, primaryKey: uuid(11) }),
+    },
     execute,
   });
+  if (targetKind === "draft") {
+    mocks.panel.mockResolvedValue({
+      id: "P", manifest: { state: {}, members: { form: { target: { projectionId: "form" } } } },
+    });
+    mocks.projection.mockResolvedValue({
+      id: "form", binding: { kind: "PlatformObjectType", id: objectType }, inputs: {},
+    });
+  }
+  if (crossEntry) {
+    const read = mocks.backend.getMockImplementation()!;
+    mocks.backend.mockImplementation(async (...args) => {
+      const url = new URL(args[1]);
+      if (url.searchParams.get("applicationId") !== "B" || url.searchParams.get("useId") !== "other-tasks") {
+        return read(...args);
+      }
+      const otherUse = { ...use, id: "other-tasks", path: "/applications/B/other-tasks" };
+      return { text: JSON.stringify({ success: true, data: {
+        applicationId: "B", use: otherUse, menu: { groups: [], panelUses: [] },
+      } }) };
+    });
+  }
 
-  const target = { kind: "object" as const, objectType: "platform:ScheduledTask", primaryKey: uuid(9) };
-  // Tab A prepares an agent-page form save (awaiting confirmation).
+  const values = { title: "private-title-value", password: "private-password-value", credentials: { token: "private-token-value" }, untouched: true };
   const agentPrepared = await prepareLiveAction({
     intentId: uuid(51),
     applicationId: "A",
     useId: "tasks",
     operationId: "form.save",
-    call: { target, input: { values: { title: "Agent title", note: "A" }, submittedFields: ["/title"] } },
+    call: { target, input: { values, submittedFields: ["/title", "/password", "/credentials/token"] } },
   });
-  // Confirmation question includes the submitted field summary (二.7).
-  const questionCall = mocks.request.mock.calls.find(([path]) => path === "/v1/channel/user-questions");
-  expect(questionCall?.[2]).toMatchObject({ message: expect.stringContaining("title: Agent title") });
+  const { message } = mocks.request.mock.calls[0]![2] as { message: string };
+  for (const field of ["title", "password", "credentials/token"]) expect(message).toContain(field);
+  for (const secret of [values.title, values.password, values.credentials.token]) expect(message).not.toContain(secret);
+  expect(message).not.toContain("untouched");
 
-  // Tab B manually saves the same object as human.
   const humanPrepared = await prepareHumanPanelOperation(owner, credentials, {
-    applicationId: "A",
-    useId: "tasks",
+    applicationId: crossEntry ? "B" : "A",
+    useId: crossEntry ? "other-tasks" : "tasks",
     operationId: "form.save",
-    call: { target, input: { values: { title: "Manual title" }, submittedFields: ["/title"] } },
+    call: { target: manualTarget, input: { values: { title: "Manual title" }, submittedFields: ["/title"] } },
   });
   const humanDispatched = await dispatchHumanPanelOperation(owner, credentials, humanPrepared.intentId);
   expect(humanDispatched).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
 
-  // Tab A's pending agent-page intent is now invalidated on the server and cannot be dispatched.
-  const staleDispatch = await dispatchHumanPanelOperation(owner, credentials, agentPrepared.intentId);
-  expect(staleDispatch).toMatchObject({ kind: "not-dispatched", code: "FORM_CONFIRMATION_STALE" });
-  expect(execute).toHaveBeenCalledTimes(1);
+  const agentDispatched = await dispatchHumanPanelOperation(owner, credentials, agentPrepared.intentId);
+  if (targetKind === "same") {
+    expect(agentDispatched).toMatchObject({ kind: "not-dispatched", code: "FORM_CONFIRMATION_STALE" });
+    expect(execute).toHaveBeenCalledTimes(1);
+  } else {
+    expect(agentDispatched).toMatchObject({ kind: "dispatched", outcome: { kind: "success" } });
+  }
 });
 
 it("persists the agent-page intent before publishing the confirmation question and cancels it if publishing fails", async () => {

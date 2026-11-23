@@ -1,5 +1,5 @@
 import { readStoredPanelOperationIntent, type PanelOperationIntent, type PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
-import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
+import type { PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
 import { getPostgresPool, qualifiedTable as t } from "../../infrastructure/postgres";
 import { HttpError } from "../../utils/errors";
@@ -64,72 +64,28 @@ export const panelOperationStore = {
     )).rows[0];
     return row ? { intentId: row.id } : null;
   },
-  async invalidatePendingFormSaves(
+  async invalidatePendingObjectWrites(
     owner: AssistantOwner,
-    match: {
-      applicationId: string;
-      useId: string | null;
-      panelId: string;
-      projectionId: string | null;
-      operationId: string;
-      target: PanelFormTarget;
-      excludeIntentId: string;
-    },
+    excludeIntentId: string,
+    objects: readonly PanelObjectIdentity[],
     reason: { code: string; message: string },
-  ): Promise<number> {
-    if (match.target.kind === "object") {
-      const result = await db().query(
-        `UPDATE ${t("panel_operation_intents")}
-         SET intent=jsonb_set(intent,'{invalidated}',$8::jsonb)
-         WHERE domain_id=$1 AND owner_id=$2 AND id<>$3
-           AND intent->'source'->>'kind'='agent-page'
-           AND intent->'operation'->>'kind'='form.save'
-           AND intent->>'dispatched'='false'
-           AND intent->'invalidated' IS NULL
-           AND intent->'use'->>'applicationId'=$4
-           AND intent->'use'->>'useId' IS NOT DISTINCT FROM $5
-           AND intent->'call'->'target'->>'kind'='object'
-           AND intent->'call'->'target'->>'objectType'=$6
-           AND intent->'call'->'target'->>'primaryKey'=$7`,
-        [
-          owner.domainId,
-          owner.userId,
-          match.excludeIntentId,
-          match.applicationId,
-          match.useId,
-          match.target.objectType,
-          match.target.primaryKey,
-          JSON.stringify(reason),
-        ],
-      );
-      return result.rowCount ?? 0;
-    }
-    const result = await db().query(
+  ): Promise<void> {
+    const targets = objects.map(({ objectType, primaryKey }) => ({ target: { kind: "object", objectType, primaryKey } }));
+    await db().query(
       `UPDATE ${t("panel_operation_intents")}
-       SET intent=jsonb_set(intent,'{invalidated}',$9::jsonb)
+       SET intent=jsonb_set(intent,'{invalidated}',$5::jsonb)
        WHERE domain_id=$1 AND owner_id=$2 AND id<>$3
          AND intent->'source'->>'kind'='agent-page'
-         AND intent->'operation'->>'kind'='form.save'
+         AND question_id IS NOT NULL
          AND intent->>'dispatched'='false'
          AND intent->'invalidated' IS NULL
-         AND intent->'use'->>'applicationId'=$4
-         AND intent->'use'->>'useId' IS NOT DISTINCT FROM $5
-         AND intent->>'panelId'=$6
-         AND intent->>'projectionId' IS NOT DISTINCT FROM $7
-         AND intent->'operation'->>'id'=$8`,
-      [
-        owner.domainId,
-        owner.userId,
-        match.excludeIntentId,
-        match.applicationId,
-        match.useId,
-        match.panelId,
-        match.projectionId,
-        match.operationId,
-        JSON.stringify(reason),
-      ],
+         AND EXISTS (
+           SELECT 1 FROM jsonb_array_elements($4::jsonb) AS affected(call)
+           WHERE intent->'call' @> affected.call
+              OR intent->'calls' @> jsonb_build_array(affected.call)
+         )`,
+      [owner.domainId, owner.userId, excludeIntentId, JSON.stringify(targets), JSON.stringify(reason)],
     );
-    return result.rowCount ?? 0;
   },
   async claim(owner: AssistantOwner, intent: PanelOperationIntent) {
     return (await db().query(`UPDATE ${t("panel_operation_intents")} SET intent=$4::jsonb WHERE domain_id=$1 AND owner_id=$2 AND id=$3 AND intent->>'dispatched'='false' AND intent->'invalidated' IS NULL RETURNING id`, [owner.domainId,owner.userId,intent.intentId,{...intent,dispatched:true}])).rowCount !== 0;

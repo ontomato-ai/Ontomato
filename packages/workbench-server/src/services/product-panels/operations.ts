@@ -537,23 +537,7 @@ export async function dispatchHumanPanelOperation(owner: AssistantOwner, credent
   const host = operationHost({ owner, credentials }, view);
   const result = await claimAndExecutePanel(owner, host, claimedIntent, current.handler, staged.invocation);
   // A refused call keeps its file for the reader's retry, such as confirming an overwrite.
-  if (result?.outcome.kind === "success") {
-    if (staged.upload) await uploads.remove(owner, staged.upload.id);
-    if ("call" in intent && intent.call.target !== null) {
-      await store.invalidatePendingFormSaves(owner, {
-        applicationId: intent.use.applicationId,
-        useId: intent.use.useId,
-        panelId: intent.panelId,
-        projectionId: intent.projectionId,
-        operationId: intent.operation.id,
-        target: intent.call.target,
-        excludeIntentId: intent.intentId,
-      }, {
-        code: "FORM_CONFIRMATION_STALE",
-        message: "This record was already saved in another action or tab.",
-      });
-    }
-  }
+  if (result?.outcome.kind === "success" && staged.upload) await uploads.remove(owner, staged.upload.id);
   return result
     ? { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome: result.outcome }, owner, credentials, view) }
     : replay(await store.get(owner, id), owner, credentials);
@@ -583,63 +567,24 @@ function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOut
   const objectTypes = new Set(successes.flatMap(affected => affected.objectTypes));
   return { kind: "batch", items, affected: { objects, objectTypes: [...objectTypes], ...(removed.length && { removed }) } };
 }
-function formatSummaryValue(value: unknown): string | undefined {
-  if (typeof value === "string") {
-    const text = value.trim();
-    if (!text) return undefined;
-    return text.length > 60 ? `${text.slice(0, 57)}...` : text;
-  }
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return undefined;
-}
-
-function readPointerValue(root: Record<string, unknown>, pointer: string): unknown {
-  const parts = pointer.split("/").slice(1).map(part => part.replaceAll("~1", "/").replaceAll("~0", "~"));
-  let current: unknown = root;
-  for (const part of parts) {
-    if (current === null || typeof current !== "object") return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
-}
-
 function confirmationInputSummary(handler: PanelWriteServerOperation, invocation: CheckedInvocation): string | undefined {
   if (!("call" in invocation)) return undefined;
   const isFormSave = handler.kind === "form.save";
   const isObjectAction = handler.kind === "action" && handler.handlerRef === EXECUTE_OBJECT_ACTION;
   if (!isFormSave && !isObjectAction) return undefined;
-  const values = invocation.call.input.values;
-  if (!values || typeof values !== "object" || Array.isArray(values)) return undefined;
-  const record = values as Record<string, unknown>;
-  const submitted = isFormSave && Array.isArray(invocation.call.input.submittedFields)
-    ? invocation.call.input.submittedFields.filter((field): field is string => typeof field === "string")
-    : [];
-  const entries = submitted.length > 0
-    ? submitted.slice(0, 8).map(pointer => {
-      const label = pointer.replace(/^\//u, "");
-      const formatted = formatSummaryValue(readPointerValue(record, pointer));
-      return formatted !== undefined ? `${label}: ${formatted}` : label;
-    })
-    : Object.entries(record)
-      .flatMap(([param, value]) => {
-        const formatted = formatSummaryValue(value);
-        return formatted !== undefined ? [`${param}: ${formatted}`] : [];
-      })
-      .slice(0, 6);
-  return entries.length > 0 ? entries.join(", ") : undefined;
+  const { values, submittedFields } = invocation.call.input;
+  const fields = isFormSave && Array.isArray(submittedFields)
+    ? (submittedFields as string[]).map(pointer => pointer.replace(/^\//u, ""))
+    : Object.keys(values as Record<string, unknown>);
+  return fields.length ? fields.join(", ") : undefined;
 }
 
 async function confirmationTarget(handler: PanelWriteServerOperation,
   host: PanelOperationHost, invocation: CheckedInvocation, operationLabel: string,
 ) {
   if (handler.kind === "form.save") {
-    if ("call" in invocation) {
-      const values = invocation.call.input.values as Record<string, unknown>;
-      const recordName = ["name", "displayName", "showName", "title", "label"]
-        .map(key => values[key])
-        .find((value): value is string => typeof value === "string" && value.trim().length > 0);
-      if (recordName) return recordName.trim();
-      if (invocation.target?.kind === "object") return `${invocation.target.objectType} (${invocation.target.primaryKey})`;
+    if ("call" in invocation && invocation.target?.kind === "object") {
+      return `${invocation.target.objectType} (${invocation.target.primaryKey})`;
     }
     return operationLabel;
   }
@@ -674,7 +619,24 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
     outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
   }
   await store.outcome(owner,id,outcome);
+  const written = outcome.kind === "batch"
+    ? outcome.items.flatMap(item => writtenObjects(item.outcome, [item.target]))
+    : writtenObjects(outcome, "calls" in prepared
+      ? prepared.calls.map(call => call.target)
+      : prepared.target?.kind === "object" ? [prepared.target] : []);
+  if (written.length) {
+    await store.invalidatePendingObjectWrites(owner, id, written, {
+      code: "FORM_CONFIRMATION_STALE",
+      message: "This record was already saved in another action or tab.",
+    });
+  }
   return { outcome };
+}
+
+function writtenObjects(outcome: SinglePanelOperationOutcome, targets: readonly PanelObjectIdentity[]): PanelObjectIdentity[] {
+  if (outcome.kind === "unknown") return [];
+  const writtenTargets = outcome.kind === "success" || Object.keys(outcome.savedFields ?? {}).length > 0 ? targets : [];
+  return [...writtenTargets, ...(outcome.affected?.objects ?? []), ...(outcome.affected?.removed ?? [])];
 }
 /** The checked target was parsed by this handler's own target schema, so it is the one its `execute` takes. */
 function executeOwner(handler: PanelWriteServerOperation, host: PanelOperationHost, target: PanelOperationTarget | null,

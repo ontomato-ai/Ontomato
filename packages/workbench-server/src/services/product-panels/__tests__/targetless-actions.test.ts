@@ -146,7 +146,7 @@ describe("admitting targetless customer Actions in direct-operations", () => {
 describe("targetless page Action preparation, dispatch, and cancellation", () => {
   const fixture = customerActionDispatchFixture();
 
-  it("prompts with action name and input parameters, freezes without action.object, and dispatches with affected.objectTypes", async () => {
+  it("prompts with action and field names, freezes without action.object, and dispatches with affected.objectTypes", async () => {
     const { intentId } = await prepareHumanPanelOperation(owner, credentials, {
       agentRun: { runId: uuid(2), sessionId: uuid(3), toolCallId: "create-order" },
       applicationId: "app-1",
@@ -157,7 +157,10 @@ describe("targetless page Action preparation, dispatch, and cancellation", () =>
 
     const questionBody = mocks.request.mock.calls[0]?.[2] as { message: string };
     expect(questionBody.message).toContain("Create order");
-    expect(questionBody.message).toContain("customer: ACME, amount: 42");
+    expect(questionBody.message).toContain("customer");
+    expect(questionBody.message).toContain("amount");
+    expect(questionBody.message).not.toContain("ACME");
+    expect(questionBody.message).not.toContain("42");
     expect(fixture.intent(intentId)?.operation.action).toEqual({
       actionId: "create-order",
       codeHash,

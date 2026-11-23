@@ -11,6 +11,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { callbackCredential } from "../agent-runtime/callback-credential";
 import { panelOperationStore } from "../product-panels/operation-store";
+import type { SinglePanelOperationOutcome } from "../product-panels/server-operations";
 import type { AgentHostOwner, AgentHostService, AgentPresentationHost } from "./types";
 import type { AgentVisibilityReader } from "./visibility";
 
@@ -97,6 +98,13 @@ function notExecuted(
 const receiptMissing: Extract<PresentationResult, { status: "unknown" }> = {
   status: "unknown", reason: "receipt_missing", current: { known: false, reason: "receipt_missing" },
 };
+
+function hasRecordedPanelWrites(outcome: SinglePanelOperationOutcome): boolean {
+  if (outcome.kind === "success") return true;
+  if (outcome.kind === "unknown") return false;
+  return Object.keys(outcome.savedFields ?? {}).length > 0
+    || Boolean(outcome.affected?.objects.length || outcome.affected?.removed?.length || outcome.affected?.objectTypes.length);
+}
 
 const callKey = (connectionId: string, runId: string, toolCallId: string) =>
   JSON.stringify([connectionId, runId, toolCallId]);
@@ -216,7 +224,7 @@ export async function requestPresentation(
                 });
                 return;
               }
-              if (outcome.kind === "refusal" || outcome.kind === "failure") {
+              if ((outcome.kind === "refusal" || outcome.kind === "failure") && !hasRecordedPanelWrites(outcome)) {
                 finish({
                   status: "not_executed",
                   reason: "failed",
@@ -244,7 +252,7 @@ export async function requestPresentation(
                 const firstProblem = outcome.items.map(item => item.outcome).find(
                   item => item.kind === "refusal" || item.kind === "failure",
                 );
-                if (firstProblem && !outcome.items.some(item => item.outcome.kind === "success")) {
+                if (firstProblem && !outcome.items.some(item => hasRecordedPanelWrites(item.outcome))) {
                   finish({
                     status: "not_executed",
                     reason: "failed",
