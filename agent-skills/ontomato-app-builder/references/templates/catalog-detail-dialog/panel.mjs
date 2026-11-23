@@ -1,5 +1,5 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelBack, usePanelContext } from "@ontomato/sdk/panel";
+import { draftTarget, mountPanel, usePanelBack, usePanelContext, usePanelFormDraft } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:AgentDefinition";
 
@@ -30,17 +30,7 @@ await mountPanel({
     function cancelCreate() {
       instance.state.setState({ creating: false, selected: null });
     }
-    const formHandle = computed(() => instance.forms.handle("form"));
-    const saving = computed(() => Boolean(formHandle.value?.busy.value));
-    const canSave = computed(() => Boolean(formHandle.value) && !saving.value);
-    async function saveDetail() {
-      if (!canSave.value || !instance.forms.dirty()) return;
-      try {
-        await instance.forms.submit("form");
-      } catch {
-        // ObjectForm renders the owner's validation or refusal message inline on the form.
-      }
-    }
+    const formDraft = usePanelFormDraft("form", { when: () => Boolean(selectedKey.value) });
     function onSaved(saved) {
       instance.state.set("creating", false);
       instance.state.set("selected", { className: saved.className || TYPE, primaryKey: saved.primaryKey });
@@ -50,9 +40,10 @@ await mountPanel({
     }
     watch(instance.draft, draft => {
       if (!draft) return;
-      if (draft.target?.id) {
+      const target = draftTarget(draft);
+      if (target.kind === "update") {
         instance.state.set("creating", false);
-        if (draft.target.id !== selectedKey.value) instance.state.set("selected", { className: TYPE, primaryKey: draft.target.id });
+        if (target.id !== selectedKey.value) instance.state.set("selected", { className: TYPE, primaryKey: target.id });
       } else {
         instance.state.setState({ creating: true, selected: null });
       }
@@ -60,7 +51,7 @@ await mountPanel({
     function backToCatalog() {
       instance.state.setState({ selected: null, creating: false });
     }
-    const { back } = usePanelBack(() => Boolean(selectedKey.value), backToCatalog, { pushHistory: true });
-    return { selectedKey, selectedTitle, back, creating, createDialog, startCreate, stopCreating, cancelCreate, saving, canSave, saveDetail, onSaved, onDiscarded };
+    const { back } = usePanelBack(() => Boolean(selectedKey.value), backToCatalog, { pushHistory: true, forms: "form" });
+    return { selectedKey, selectedTitle, back, creating, createDialog, startCreate, stopCreating, cancelCreate, formDraft, onSaved, onDiscarded };
   },
 });

@@ -1,203 +1,152 @@
 # Write a Vue panel
 
-Write the Vue template and scoped panel styles in `panel.html`. Put the template inside `<div id="app">`. Place a
-declared member with `<projection slot="detail"></projection>`. The slot names the key in `manifest.members`.
-Use Vue attributes, events, `v-if` and `v-for` for interactions. Adapt the layout to the container width and
-[content-box height](#content-box-height-and-layout).
-Panel CSS positions member containers. Set colors, font sizes, spacing and corner radii with the platform's
-design variables (`--sdk-*`, `--text-*`, `--spacing-*`, `--radius-*`) from
-`node "$SKILL/ontomato.mjs" sdk read docs/components.md` (`Theme tokens`) or `sdk read components.json`
-(`themeTokens`). Never use `--el-*` variables in CSS or `panel.json` `theme`. The product design guide in
-`docs/design/DESIGN.md` explains which roles to use.
+Write the Vue template and scoped panel styles in `panel.html` inside `<div id="app">`. Place each declared member
+with `<projection slot="memberKey"></projection>`, where `slot` matches a key in `manifest.members`. Use standard Vue
+templates, CSS (`@container`), and events for layout and interactions.
 
-Declare the panel descriptor (`{ manifest, content?, theme?, template? }`) and projections using the
-[panel descriptor and member fields](FIELDS.md), and declare public typed state in `panel.json`.
-Keep page-local state in Vue. An object state
-such as `selected` stores `{className, primaryKey}`. Enable `deepLink` when the address should restore the selection.
-Declare named page-header commands in `manifest.commands`. Give each command a `labelKey` and a `do`
-action. Fields changed by a `do.set` command need `deepLink: true` so the assistant can open the same state.
-Use `recipes.md` for tasks the assistant needs to know how to do.
+Style colors, typography, spacing, and radii with platform design variables (`--sdk-*`, `--text-*`, `--spacing-*`,
+`--radius-*`, `--page-gutter`, `--page-content-gap`) from `node "$SKILL/ontomato.mjs" sdk read docs/components.md`
+(`Theme tokens`) or `sdk read components.json` (`themeTokens`). Never use `--el-*` variables in CSS or `panel.json`
+`theme`.
 
-Use the required `panel.mjs` to mount the Vue page as in the [catalog-detail template module](../templates/catalog-detail-dialog/panel.mjs).
-The platform runs panels directly. Read [runtime imports and setup](RUNTIME.md#imports-and-application-icons)
-and the current SDK guide with `node "$SKILL/ontomato.mjs" sdk read docs/index.md`. For component behavior,
-configuration and ports, use `sdk read docs/components.md`. The repository's
-`packages/apps-sdk/src/panel/mount.ts` implements the legacy iframe runtime.
+Declare `{ manifest, content?, theme?, template? }` in `panel.json` using the
+[panel descriptor and member fields](FIELDS.md). Keep page-local UI state in Vue; declare shared or shareable state in
+`manifest.state` (an object state such as `selected` stores `{ className, primaryKey }`, and `deepLink: true` syncs it
+to the URL `?state=` parameter). Put assistant instructions in `recipes.md`.
 
-Use the platform’s interface components directly in the template: `<markdown-view>`, `<code-editor readonly>`
-for code viewing, `<e-chart>`, `<table-preview>`, `<html-preview>` and `<form-fields>`.
+Mount the Vue page in `panel.mjs` with `mountPanel` (see the
+[two-entry catalog → detail template](../templates/two-entry-catalog-detail/README.md) or
+[single-panel catalog-detail template](../templates/catalog-detail-dialog/panel.mjs)). Read
+[runtime imports and setup](RUNTIME.md#imports), `node "$SKILL/ontomato.mjs" sdk read docs/index.md`, and
+`sdk read docs/components.md` for component data ports, `config`, outputs, and events.
 
-For translations, put flat message keys under locale tags in `panel.json`'s `content.messages`. For example,
-`{"en":{"panel.greeting":"Hello, {name}"}}` is a message table. Use `t("panel.greeting", { name })` in the
-template and `usePanelContext().t` in `setup()`. The direct runtime supplies the template function.
-Use the flat `panel.name` key for the panel title, for example
-`{"zh-CN":{"panel.name":"治理报告"},"en":{"panel.name":"Governance report"}}`. The host uses an entry's menu name
-when present. Otherwise it uses the panel name in the reader's locale, then the platform's default locale and the
-name in `registration.json`. Keep the entry's menu metadata for entries that belong in the menu.
+Use the platform's data-free interface components directly as template tags (no script import needed):
+- `<page-header>` (pure presentational page header)
+- `<sdk-*>` UI primitives (`<sdk-button>`, `<sdk-input>`, `<sdk-dialog>`, `<sdk-drawer>`, `<sdk-tag>`, `<sdk-tabs>`, …) and `v-sdk-*` directives (`v-sdk-loading`, `v-sdk-infinite-scroll`, `v-sdk-popover`)
+- `<markdown-view>`, `<code-editor readonly>`, `<e-chart>`, `<table-preview>`, `<html-preview>`, `<form-fields>`
 
-## Content box height and layout
+For multi-locale panels, put flat message keys under locale tags in `panel.json`'s `content.messages` (for example
+`{"en":{"panel.name":"Students"},"zh-CN":{"panel.name":"学员名册"}}`) and call `t("panel.name")` in the template or
+`usePanelContext().t` in `setup()`. Single-locale panels may write UI text directly in `panel.html` / `panel.mjs` or
+use `content.messages`.
 
-Panels do not know where they are hosted — full page, beside a conversation, or inside a custom frame — and size only
-against the box given to them, never the browser window.
+## Layout, `<page-header>`, and container responsiveness
 
-- **Host content box.** Every entry receives a definite-height content box from below the page header to the bottom edge
-  of the page, with **no host padding or outer card frame** (outer gutter is controlled by the panel's CSS, e.g.
-  `--page-gutter`). Its height tracks window resizes and banners; taller content scrolls inside the box while the header
-  stays fixed. **The bottom composer floats over the page and does not occupy content-box height** — add bottom scroll
-  room such as `calc(var(--page-content-gap) + 56px)` on scrollable views so bottom controls stay clear when scrolled to
-  the end. Full page, beside-conversation, and a custom frame's current-entry slot share this exact contract. The panel
-  root mounts directly inside that box (with no indeterminate-height wrapper between them), so filling it works with
-  normal CSS.
-- **Layout belongs in the panel, not in layout components.** Write catalog tables, full-width detail cards, split panes,
-  tabs, and workbenches with normal HTML, CSS, and Vue inside `panel.html` / `panel.mjs` using platform design tokens
-  (`--page-gutter`, `--page-content-gap`, `--pane-list-width`, `--pane-narrow-breakpoint`, `--spacing-*`, `--ui-divider`).
-  Start from the matching [page template](../templates/README.md). Do not use legacy layout components (`TwoPaneLayout`,
-  `WorkbenchLayout`), which are being removed. To switch layout at narrow widths (including when hosted beside a
-  conversation), use CSS `@container` or [`usePanelNarrow`](RUNTIME.md#usepanelnarrow) rather than `window.innerWidth`
-  or `@media` viewport queries. To render a single platform header on full-width detail views, use
-  [`usePanelDetailHeader`](RUNTIME.md#usepaneldetailheader). To wire browser Back, Escape, and the host's unified
-  unsaved-changes confirmation when leaving a detail view or sub-view, use [`usePanelBack`](RUNTIME.md#usepanelback).
-- **Two normal-CSS height patterns (no extra manifest declaration):**
-  - **Flow / stack naturally:** Let content take its natural height and let the content box scroll. Use this for lists,
-    forms, and long pages — write nothing special.
-  - **Fill the content box:** Have the panel root fill the content box (for example `height: 100%` with a flex/grid
-    layout) and scroll inner panes independently (`min-height: 0; overflow: auto`). Use this for workbenches, graphs,
-    and list-plus-detail views. Give each filling region a `min-height` in `rem` or `px`: when the box is shorter than
-    `min-height`, or when the panel is placed inside another panel's auto-height slot, it lays out at `min-height` and
-    the outer box scrolls.
-- **Member slots.** Panel CSS sizes each member container. Official components fill the slot they receive and fall back
-  to their own default height when the slot has no definite height.
-- **Forbidden.** Never write CSS viewport units (`vh`, `vw`, `vmin`, `vmax`, `vi`, `vb`, `sv*`, `lv*`, `dv*`) or
-  subtract magic header/composer constants from window height (`calc(100vh - ...)`). Use `<sdk-dialog>` or
-  `<sdk-drawer>` for modal overlays so theme, stacking, and Escape handling stay consistent across hosts.
+- **Host content box.** Every entry (full page or beside a conversation) receives a content box with no host page
+  header, host padding, or outer card frame. Style outer gutter and layout directly in your panel CSS (for example
+  `padding: var(--spacing-lg) var(--page-gutter) var(--page-content-gap)`). Prefer container-relative sizing and CSS
+  `@container` rather than `window.innerWidth` or viewport units (`vh`/`vw`/`dvh`) so the layout stays comfortable
+  both full-width and beside a conversation.
+- **No layout components.** Write catalog tables, full-width detail cards, split panes, and tabs with normal HTML, CSS
+  grid/flex, and Vue. Start from a matching [page template](../templates/README.md).
+- **Pure presentational `<page-header>`.** Place `<page-header>` at the top of `panel.html` when the page needs a
+  header (omit it for headerless pages):
+  - `title` (string) or `#title` slot (e.g. a projection-bound component)
+  - optional `description` (string) or `#description` slot
+  - optional `back-label` + `@back` (wired to `navigate(CATALOG_PATH)` or `usePanelBack`)
+  - `#actions` slot for right-side buttons (`<sdk-button>`, `<projection slot="remove">`, inline counts, search inputs)
+  - `:draft="formDraft"` wired to `usePanelFormDraft("form")` for automatic Save, Discard, and unsaved-changes state
+
+```html
+<page-header :title="selectedTitle" :back-label="t('detail.back')" :draft="formDraft" @back="goBack">
+  <template #actions>
+    <projection slot="remove" @done="onRemoveDone"></projection>
+  </template>
+</page-header>
+```
+
+```js
+import { mountPanel, usePanelContext, usePanelFormDraft } from "@ontomato/sdk/panel";
+
+await mountPanel({
+  setup() {
+    const { navigate } = usePanelContext();
+    const formDraft = usePanelFormDraft("form");
+    // Routing back to the catalog entry triggers the platform's unified unsaved-changes leave guard automatically.
+    const goBack = () => { void navigate(CATALOG_PATH).catch(() => undefined); };
+    return { formDraft, goBack };
+  },
+});
+```
+
+- **Two-entry catalog → detail *(recommended)*.** Put the catalog in the application menu (`names` set on its
+  `panelUse`) and give the detail page its own non-menu entry (`names` omitted). Clicking a row (`@choose`) builds
+  `${DETAIL_PATH}?${new URLSearchParams({ state: JSON.stringify({ selected }) })}` and calls `navigate(address)`. For a
+  single-panel variant, toggle `v-if="!selectedKey"` and wire `usePanelBack(..., { pushHistory: true, forms: "form" })`.
 
 ## Panel controls and platform behavior
 
-Use only the Ontomato SDK's own interface controls for panel chrome that does not render business fields:
-
-- **Template tags (`panel.html` and `component.html`).** Use `<sdk-*>` tags (such as `<sdk-button>`, `<sdk-tag>`,
-  `<sdk-dialog>`, `<sdk-alert>`, `<sdk-input>`, `<sdk-select>`, `<sdk-drawer>`) and `v-sdk-*` directives
-  (`v-sdk-loading`, `v-sdk-infinite-scroll`, `v-sdk-popover`) directly in templates without importing them.
-- **Theme variables.** Use `--sdk-*` and platform tokens (`--text-*`, `--spacing-*`, `--radius-*`) listed in
-  `sdk read docs/components.md` (`Theme tokens`) or `sdk read components.json` (`themeTokens`). Overridable tokens
-  may also be set in `panel.json` `theme.light` / `theme.dark`.
-- **Authoritative manifest.** The exact supported tags, props, events, slots, directives and theme tokens of the
-  target deployment are published in `sdk read docs/components.md` and `sdk read components.json` (`uiPrimitives`,
-  `uiDirectives`, `themeTokens`). Rely on that SDK manifest rather than assuming undocumented third-party APIs.
-- **Script imports.**
-  - In `panel.mjs`, import only `vue` and `@ontomato/sdk/panel` (`mountPanel`, `usePanelContext`, `usePanelBack`,
-    `usePanelDetailHeader`, `usePanelNarrow`, `usePanelData`, `usePanelOperation`, `savePanelFile`, `draftTarget`,
-    `appIcon`).
-  - In custom component packages, import `Sdk*` controls and `vSdk*` directives from `@ontomato/sdk/ui`.
-  - In domain-registered components (`component.mjs`), export Vue component options (`export default { ... }`) and
-    import only `vue` and `@ontomato/sdk/panel` (`useMember`, `useMemberData`, `useMemberOperations`,
-    `useMemberParam`, `useMemberRead`); use `<sdk-*>` / `v-sdk-*` directly in `component.html`.
-- **Transient notifications.** Import `usePanelContext` from `@ontomato/sdk/panel`, capture
-  `const panel = usePanelContext()` in `setup()`, and call
-  `panel.notify({ kind: "success", text: "Export complete" })` from the event handler (`kind` accepts `"success"`,
-  `"info"`, `"warning"` or `"error"`).
-- **Forbidden patterns.** Never write `el-*` tags, `v-loading`, `--el-*`
-  CSS/theme variables, `import ... from "element-plus"`, or CSS viewport units (`vh`, `vw`, `dvh`, etc.). Do not use
-  `mountPanel` to draw business data — neither by looping over `PanelData` / `usePanelData` records in `panel.html`, nor
-  by defining an inline business component with `defineComponent({ template })` inside `panel.mjs` to bypass component
-  registration.
-
-If a dialog or drawer mounts at the page root, check its theme, stacking and keyboard focus in the
-application that opens it. Include a check when the panel is beside a conversation.
-
-Leave the following to the platform.
-
-- **Write confirmation and execution.** Have the button invoke the [declared owner operation](#invoke-declared-owner-operations).
-  Button clicks and assistant calls use the same confirmation rules, and the platform executes an accepted write once.
-  Use local dialogs for interface choices.
-- **Form drafts.** The platform delivers drafts to the form. Follow the [form draft flow](#save-a-form-or-hand-off-a-draft).
-- **Page header and refresh (no business data in the header).** The host renders the title, description, back control,
-  commands and **Refresh** button solely from declared metadata — the host never reads business data to render the
-  header. Put counts, totals, and other business summaries inside the panel content, rendered by the component that
-  owns that data. Clicking the host Refresh button automatically re-reads every mounted projection and `usePanelData`
-  datum in the panel (including nested panels) — do not wire a manual refresh handler or call `refreshObjects()` for
-  page-header refresh. To keep what the page shows current while something runs elsewhere (a task run), call
-  `instance.refreshObjects()` on a timer and stop it when nothing runs: it reads everything shown again, exactly as the
-  header's Refresh does. Declare page-header commands in `manifest.commands` (or `commands: {}` when none are needed)
-  and keep the panel template focused on page content.
+- **Allowed imports in `panel.mjs`.** Only `vue` and `@ontomato/sdk/panel` (`mountPanel`, `usePanelContext`,
+  `usePanelFormDraft`, `usePanelBack`, `usePanelData`, `usePanelOperation`, `savePanelFile`, `draftTarget`,
+  `appIcon`). Never import `element-plus` or any third-party UI library, and never write `<el-*>` tags, `v-loading`,
+  or `--el-*` CSS tokens.
+- **Overlays & notifications.** Use `<sdk-dialog>` / `<sdk-drawer>` for modal/drawer overlays (such as centered create
+  forms). Call `usePanelContext().notify({ kind: "success" | "info" | "warning" | "error", text })` for transient
+  feedback.
+- **Keep business reads and writes declared.** Never call business HTTP APIs from `panel.mjs`. Panels may show
+  projection outputs (selected title, counts, draft status) in headers, tabs, or dialogs, but never read raw business
+  record fields in the panel or compute business logic.
 
 ## Open a panel at a specific state
 
-Choose the target fields marked `deepLink` and use the [address and child-state contracts](RUNTIME.md#state-in-an-address).
-Run `node "$SKILL/ontomato.mjs" panel uses <destination-app-id>` to get the destination use's registered `path`.
-Use its path with the encoded state on `usePanelContext().navigate`, captured during setup. The
-[generated capability-map address example](RUNTIME.md#state-in-an-address) opens the type view at a selected class.
-Give `URLSearchParams` raw JSON once. Give readers page and draft links as site-relative paths beginning with
-a single `/`. Include any needed query parameters and omit the scheme and hostname.
-See [header commands and navigation](RUNTIME.md#header-commands-and-navigation) when wiring a button to an entry.
+Mark target state fields with `deepLink: true` in `manifest.state`. Use `node "$SKILL/ontomato.mjs" panel uses <app-id>`
+to confirm the destination entry's registered `path`, encode `?state=` once via `URLSearchParams`
+(for example `` `${path}?${new URLSearchParams({ state: JSON.stringify(state) })}` ``), and call
+`usePanelContext().navigate(address)` (captured in `setup()`). For links in Markdown or recipes, give site-relative
+paths beginning with a single `/` and pass raw JSON once into `URLSearchParams` (`?state=...`). See
+[state in an address](RUNTIME.md#state-in-an-address) and the
+[object reference shapes table](RUNTIME.md#object-reference-shapes-quick-reference).
 
 ## Component vs. panel responsibility
 
-Judge by responsibility, not by HTML tag: **whoever turns business fields into reader-visible text, graphics, options,
-or executable business operations is a component.** The **panel** coordinates layout, visibility, selection, navigation,
-and passing references between members based on what components emit.
-
-- Put coordination state that the assistant must be able to describe or restore (such as path-finding start and end) in
-  declared `manifest.state`. Keep transient UI-only toggles (such as a local expand/collapse flag) in Vue.
-- Reading declared data in panel code is legitimate only for coordination, and should prefer a component's own output
-  whenever available. Do not pull a data port into `panel.html` to render business fields.
-
-| Case | Wrong (rendering business data in the panel) | Right (component renders, panel coordinates) |
-| --- | --- | --- |
-| Path-finding start and end dropdowns | Looping over business records in `panel.html` to generate `<option>` items | An object-picker component renders the names and outputs object references; the panel only stores both endpoints and triggers path lookup. Mapping business records into dropdown options is still rendering business data and belongs in a component. |
-| Section heading `"Attributes · 37"` | Interpolating the owner-returned count into a panel heading | Write the static label `"Attributes"` in the panel; let the component reading that data display the count. |
-| `"Revoke"` inside a grant row | A plain panel button that first mutates panel selection and then invokes an operation | The component invokes a declared per-row operation whose target and parameters come from that row. |
+- **Display belongs to universal components.** Components render business fields, graphics, options, and executable
+  operations according to their projection declarations.
+- **Logic belongs to the capability layer.** Calculations, filtered aggregations, derived judgments, and writes belong
+  to MetricViews (reads), Actions (writes), or platform-owned reads — not panel scripts or templates.
+- **Panels only lay out and wire.** Panels arrange projections, own UI layout and public state, wire projection outputs
+  into other projections or text slots (titles, tabs, counts, notices), and trigger navigation. Panels do not read
+  record fields directly or compute business values; unsaved form drafts do not count as ontology data.
+- **No panel-private components.** A block that appears on one page should first be composed from official components;
+  when official components + `config` cannot cover it, author a formal component.
 
 ### Choose an official component before writing one
 
-Follow these three steps in order before writing any custom rendering code:
-
-1. **Match the owner's read to an official component's data port.** Run `panel type <type-id> --read <name>` and
-   compare `result` and `resultSchema` with the component's Data section in `sdk read docs/components.md`. If they do
-   not match, that is a gap on the owner or shared-record side — report or extend the owner/contract rather than
-   rendering business fields by hand in the panel.
-2. **Use the default first, then check `config`.** Start with the component's default appearance (`component`,
-   `type`/`target`, and `data`). For common adjustments — columns, visible fields, subtitles, status/tags, node sizing
-   and coloring, page size — check `sdk read docs/components.md` and add a `config` option.
-3. **Write a focused component only as a last resort.** When default rendering and `config` still leave a specific gap
-   — a single table column, an expandable row detail area, or a single form field — write a small component for that
-   slot and declare it as a `listColumn`, `listRowDetail`, or `formField` member (see
-   [Custom list columns, row detail and per-row operations](#custom-list-columns-row-detail-and-per-row-operations)).
-   Do not wrap an entire page in a custom component or re-implement list selection, field validation, or write
-   confirmation.
+1. **Match the read function to an official component's data port.** Run `panel type <type-id> --read <name>` and
+   compare `result` / `resultSchema` with the component's Data section in `sdk read docs/components.md`.
+   - For customer ontology classes, bind the platform's generic read functions parameterized by class (list / get one,
+     shown by `panel type <class>`), MetricViews for calculated/filtered reads, and Actions for writes.
+   - For `platform:*` types, bind their built-in platform reads and operations.
+   - Currently, MetricView results are tabular and bind to `MetricChart` (registered from a dashboard card); generic
+     display components binding MetricViews are coming in the next update.
+2. **Use official defaults first, then `config`.** Start with `component`, `type`/`target`, and `data`. Adjust columns,
+   visible fields, copyable fields, subtitles, tags, button labels/styles, or page size via `config`.
+3. **Custom components are a last resort.** Do not wrap a whole page in a custom component or hand-roll a table with
+   `PanelData`. *(Table action columns and standard Vue slots for custom cells, row details, and form fields are
+   provided in the next SDK update — do not write legacy `listColumn` / `listRowDetail` / `formField` bindings.)*
 
 ## Read declared data
 
-Before binding a member, inspect its read with `panel type <type-id> --read <name>`. For example, run
-`node "$SKILL/ontomato.mjs" panel type platform:Action --read definition` for `actionDefinition`. Read its
-`resultSchema` next to `result`, and use `params` and `requiredParams` for inputs. Omit `--read` to list the
-type's reads and the operations with their effect, target, batch support and input schema.
+Inspect any read with `panel type <type-id> --read <name>` (for example
+`node "$SKILL/ontomato.mjs" panel type platform:Action --read definition`). Omit `--read` to see all reads and
+operations for that type.
 
-Use the [generated member fields](FIELDS.md) to connect each component's named datum to an owner read and
-its parameters. Bind an output by its port name in the short member's `state` map, with the declared panel
-state field as its value.
-
-A non-rendering `PanelData` member and [`usePanelData`](RUNTIME.md#usepaneldata) (called in synchronous setup, before
-any `await`) remain available for **coordination reads** when no component output already carries the value (for
-example, deciding visibility, navigation or follow-up state) or for declaring operations invoked via
-[`usePanelOperation`](RUNTIME.md#usepaneloperation). Never use `PanelData` and `usePanelData` to render business fields
-in `panel.html`.
-
-For an assistant's named read, pass the member and datum separately. For the `detail` member's
-`data.record`, send `memberPath: [{member: "detail"}]` and `dataName: "record"`. Use the entry source
-and declared inputs shown in the page skill.
+Use the [member fields reference](FIELDS.md) to bind each component's named datum and map ports via `state`. A
+non-rendering `PanelData` member + [`usePanelData`](RUNTIME.md#usepaneldata) (called in synchronous `setup()`, before
+any `await`) is available for coordination when no component output carries the needed signal, or to declare operations
+called via [`usePanelOperation`](RUNTIME.md#usepaneloperation). Never use `PanelData` / `usePanelData` to render
+business record fields in `panel.html`.
 
 ### Configure an official list or summary
 
-These short members go in `manifest.members`. Each example uses the business knowledge owner's standard reads.
+These short members go in `manifest.members`.
 
-**ObjectList.** Start with the compact list and its owner-supplied labels and subtitles.
+**ObjectList.** Default compact list:
 
 ```json
 {"component":"ObjectList","type":"platform:BusinessKnowledge","data":{"rows":"query"}}
 ```
 
-Configure the compact rows to show the knowledge text on up to two lines, the owner status and tags, and 20 rows per page.
+Compact rows with subtitle, status badge, tags, and page size:
 
 ```json
 {
@@ -208,381 +157,150 @@ Configure the compact rows to show the knowledge text on up to two lines, the ow
 }
 ```
 
-The toolbar displays a total when the search or paginated read returns one. For table mode, set `config.columns`
-instead of the compact-row settings (omitting `config.columns` renders compact rows). Each entry in `config.columns`
-is an `ObjectListColumn`:
+For multi-column table mode, set `config.columns` (omitting `config.columns` renders compact rows). Each entry is an
+`ObjectListColumn`:
 
 | Property | Type | Required | Default / behavior |
 | --- | --- | --- | --- |
-| `key` | `string` | Yes | Owner field key (or `"label"` for the record's primary label). Also the column identifier matched by a `listColumn` member's `column` field. |
+| `key` | `string` | Yes | Owner field key (or `"label"` for the record's primary label). |
 | `labelKey` | `string` | No | Flat key in `content.messages` for the column header. Omit to use the owner's `fieldLabels[key]`. |
-| `kind` | `"text" \| "tag" \| "tags" \| "reference" \| "time"` | No | Defaults to `"text"`. `"tag"` draws a status badge colored by the owner's `tones`; `"tags"` draws the field's tag list; `"reference"` draws a clickable link emitting `navigate`; `"time"` formats an ISO timestamp in the reader's locale and time zone (full string in title). |
-| `subtitleKey` | `string` | No | Second field key rendered as a subtle line beneath the primary cell value. |
+| `kind` | `"text" \| "tag" \| "tags" \| "reference" \| "time"` | No | Defaults to `"text"`. `"tag"` draws an owner-toned badge; `"tags"` draws a tag list; `"reference"` draws a clickable link emitting `navigate`; `"time"` formats an ISO timestamp in the reader's locale and time zone. |
+| `subtitleKey` | `string` | No | Second field key rendered beneath the primary cell value. |
 | `emptyKey` | `string` | No | Flat key in `content.messages` shown when the cell value is empty. |
-| `wrap` | `boolean` | No | Defaults to `false`. Set `true` to wrap long cell text across multiple lines. |
+| `wrap` | `boolean` | No | Defaults to `false` (single-line ellipsis). Set `true` to wrap long cell text. |
 
-For example, `{"key":"label","kind":"text","subtitleKey":"knowledgeText"}` shows the label with a second line,
-`{"key":"status","kind":"tag"}` renders the owner-toned badge, and `{"key":"knowledgeTags","kind":"tags"}` renders
-the tag list.
-
-Place the member with `<projection slot="list"></projection>`. In its template, `#toolbar-actions` adds a
-control to the visible toolbar and `#batch-actions="{ checked, clear }"` adds controls for checked rows.
-For example, place an already declared `review` member in the toolbar.
+Place the member with `<projection slot="list"></projection>`. Listen to `@choose` for row clicks (e.g. navigating to a
+detail entry) and `@navigate` for clicking `"reference"` cells. Use `#toolbar-actions` and `#batch-actions="{ checked, clear }"`
+to place toolbar or batch controls:
 
 ```html
-<projection slot="list">
+<projection slot="list" @choose="openDetail">
   <template #toolbar-actions>
     <projection slot="review"></projection>
   </template>
 </projection>
 ```
 
-**ObjectSummary.** Bind `target` to an object state field of type `platform:BusinessKnowledge`, here `selected`.
-The default displays the record's fields in the owner's order.
-
-```json
-{"component":"ObjectSummary","target":"selected","data":{"record":"record"}}
-```
-
-List field names in `config.fields` to choose and order the visible facts, and set `config.showTitle: false` when a
-separate `ObjectHeader` above the summary already renders the record's title. This shows status before tags.
+**ObjectSummary.** Bind `target` to an object state field (e.g. `selected`):
 
 ```json
 {
   "component": "ObjectSummary",
   "target": "selected",
   "data": {"record": "record"},
-  "config": {"fields": ["status", "knowledgeTags"], "showTitle": false}
+  "config": {"fields": ["status", "knowledgeTags"], "showTitle": false, "copyableFields": ["id"]}
 }
 ```
 
-**ObjectHeader.** Use `ObjectHeader` for a selected record's detail header (title, optional `subtitleField` / `statusField`,
-inline regular operations, and an overflow "More" menu that places destructive operations last with danger styling).
-See `sdk read docs/components.md` for its full configuration.
+- `config.fields`: choose and order visible facts.
+- `config.showTitle: false`: hide the duplicate heading when `<page-header>` or `ObjectHeader` already shows the title.
+- `config.copyableFields`: add one-click copy buttons on the listed field keys.
 
-## Custom list columns, row detail and per-row operations
+**ObjectHeader.** Use `ObjectHeader` inside split/card views for a selected record's heading, status badge, inline
+operations, and overflow menu. See `sdk read docs/components.md` for its full configuration.
 
-When one column of an `ObjectList` needs custom rendering (such as an icon key beside a localized name) or a column
-must run an operation on an **unselected** row (such as revoking one grant row while another row or application is
-selected), attach a dedicated member to the list with `listColumn` instead of replacing the whole table.
-
-### 1. Write and register a small domain component
-
-Put `component.json`, `component.html`, and optional `component.mjs` in a directory (for example `./app-icon-name-cell/`).
-
-- **Inputs boundary.** Declare every row field the cell needs under `declaration.inputs`. The platform resolves
-  those inputs from the row's declared bindings and passes **only** those declared inputs to the component (via its
-  declared `props` or `useMember().inputs`) — never undeclared fields of the row.
-- **No independent data or outputs on `listColumn`.** Omit `data` and `outputs` for a column cell; the host
-  `ObjectList` owns the read, selection, keyboard navigation, and row container.
-- **SDK UI only.** Use `<sdk-*>` tags and `--sdk-*` tokens in `component.html`. In `component.mjs`, `export default`
-  a Vue component options object and import only `vue` and `@ontomato/sdk/panel` (`useMember`, `useMemberData`,
-  `useMemberOperations`, `useMemberParam`, `useMemberRead`).
-
-`app-icon-name-cell/component.json`:
+**OperationButton.** Binds one declared operation on `target` (a single object state or a checked list for batch
+operations). Defaults to the owner's operation label; override display label and styling in `config`:
 
 ```json
 {
-  "name": "Application icon and localized name cell",
-  "visibility": "domain",
-  "declaration": {
-    "role": "presentation",
-    "meaning": "Displays an application's icon key badge beside its localized display name inside a list column.",
-    "inputs": {
-      "icon": { "kind": "scalar", "type": "string" },
-      "names": { "kind": "json" },
-      "fallbackLabel": { "kind": "scalar", "type": "string" }
-    },
-    "ports": { "props": [], "events": [], "slots": [] }
-  }
+  "component": "OperationButton",
+  "operation": "platform:RelationType.delete",
+  "target": "selected",
+  "config": { "label": "Delete", "type": "danger", "plain": true, "icon": "trash" }
 }
-```
-
-`app-icon-name-cell/component.html`:
-
-```html
-<span class="app-icon-name-cell" style="display:inline-flex;align-items:center;gap:var(--spacing-xs);">
-  <sdk-tag v-if="icon" size="small" effect="plain">{{ icon }}</sdk-tag>
-  <span style="color:var(--sdk-text-color-primary);font-weight:500;">{{ displayName }}</span>
-</span>
-```
-
-`app-icon-name-cell/component.mjs`:
-
-```js
-import { computed } from "vue";
-
-export default {
-  // The host passes only the inputs declared in component.json and bound by the panel member.
-  props: {
-    icon: { type: String, default: "" },
-    names: { type: Object, default: null },
-    fallbackLabel: { type: String, default: "" },
-  },
-  setup(props) {
-    const displayName = computed(() => {
-      const map = props.names && typeof props.names === "object" ? props.names : null;
-      const locale = typeof document !== "undefined" ? document.documentElement.lang : "";
-      if (map) {
-        if (locale && typeof map[locale] === "string" && map[locale].trim()) return map[locale];
-        if (typeof map.en === "string" && map.en.trim()) return map.en;
-        const first = Object.values(map).find(value => typeof value === "string" && value.trim());
-        if (first) return first;
-      }
-      return props.fallbackLabel || "";
-    });
-    return { displayName };
-  },
-};
-```
-
-Register the component in the current domain using the exact `ontomato.mjs` commands:
-
-```sh
-# 1. Create the domain component — writes declaration.componentId ("domain-component:<uuid>") into component.json
-node "$SKILL/ontomato.mjs" component register ./app-icon-name-cell
-
-# 2. List visible domain components or inspect one component's declaration, source and revision
-node "$SKILL/ontomato.mjs" component list
-node "$SKILL/ontomato.mjs" component read domain-component:<uuid>
-
-# 3. Update an existing domain component using its current revision
-node "$SKILL/ontomato.mjs" component register ./app-icon-name-cell --revision 1
-```
-
-### 2. Mount the column cell and a per-row operation in `panel.json`
-
-Use the returned `domain-component:<uuid>` ID in a `listColumn` member, and use official `OperationButton` in another
-`listColumn` member for a per-row write operation. Host-mounted members (`listColumn`, `listRowDetail`, `formField`)
-are rendered by their host `ObjectList` / `ObjectForm` — **do not** place `<projection slot="appNameCell">` or
-`<projection slot="revokeGrant">` in `panel.html`.
-
-```json
-{
-  "manifest": {
-    "state": {
-      "selected": {
-        "type": { "kind": "object", "objectType": "platform:Application" },
-        "deepLink": true
-      }
-    },
-    "members": {
-      "apps": {
-        "component": "ObjectList",
-        "type": "platform:Application",
-        "data": { "rows": "query" },
-        "state": { "selected": "selected" },
-        "config": {
-          "columns": [
-            { "key": "name", "labelKey": "col.app" },
-            { "key": "status", "labelKey": "col.status", "kind": "tag" }
-          ]
-        }
-      },
-      "appNameCell": {
-        "component": "domain-component:11111111-1111-4111-8111-111111111111",
-        "listColumn": { "slot": "apps", "column": "name" },
-        "inputs": {
-          "icon": { "itemField": "icon" },
-          "names": { "itemField": "names" },
-          "fallbackLabel": { "item": "label" }
-        }
-      },
-      "grants": {
-        "component": "ObjectList",
-        "type": "platform:Application",
-        "target": "selected",
-        "data": { "rows": "grants" },
-        "config": {
-          "columns": [
-            { "key": "principalId", "labelKey": "col.principal" },
-            { "key": "verb", "labelKey": "col.verb", "kind": "tag" },
-            { "key": "actions", "labelKey": "col.actions" }
-          ]
-        }
-      },
-      "revokeGrant": {
-        "component": "OperationButton",
-        "listColumn": { "slot": "grants", "column": "actions" },
-        "type": "platform:Application",
-        "target": "selected",
-        "operation": "applications.grant",
-        "operationParams": {
-          "principalKind": { "itemField": "principalKind" },
-          "principalId": { "itemField": "principalId" },
-          "verb": { "itemField": "verb" },
-          "remove": { "literal": true }
-        }
-      }
-    },
-    "commands": {}
-  },
-  "content": {
-    "messages": {
-      "en": {
-        "panel.name": "Applications",
-        "col.app": "Application",
-        "col.status": "Status",
-        "col.principal": "Principal",
-        "col.verb": "Permission",
-        "col.actions": "Actions"
-      }
-    }
-  }
-}
-```
-
-How per-row execution stays safe and works on **unselected** rows:
-
-- Clicking **Revoke** on row B while row A is selected resolves `target` (here the outer `platform:Application` from
-  `selected`) and `operationParams` (`principalKind`, `principalId`, `verb` from row B, plus `remove: true`) on the
-  platform side without changing panel selection.
-- When an operation targets the row itself rather than an outer parent object, omit `target` and pass
-  `"inputs": { "target": { "item": true } }` (plus any `{ "item": "primaryKey" }`, `{ "itemField": "..." }`,
-  `{ "state": "..." }`, or `{ "literal": ... }` entries in `operationParams`).
-- The confirmation dialog, execution, and generated page skill all read this same declaration, so the assistant can
-  also target an unselected row by name and confirm the exact row.
-
-### 3. Expandable row detail (`listRowDetail`)
-
-When clicking a row should expand an inline detail section beneath it (for example, listing tools inside an MCP
-service or child items under a record), declare one `listRowDetail` member pointing at the host `ObjectList`. Unlike
-`listColumn`, a `listRowDetail` member **may** declare its own `data` read bound to the row's identity via
-`{ "item": true }`:
-
-```json
-"rowDetail": {
-  "component": "ObjectSummary",
-  "listRowDetail": { "slot": "apps" },
-  "type": "platform:Application",
-  "inputs": { "target": { "item": true } },
-  "data": { "record": "record" }
-}
-```
-
-Check and register the panel workspace once the domain component is registered:
-
-```sh
-node "$SKILL/ontomato.mjs" panel check ./apps-panel
-node "$SKILL/ontomato.mjs" panel register ./apps-panel
 ```
 
 ## Bind read parameters and listen to component events
 
-Use the component's Data and Events sections in `sdk read docs/components.md`. Use
-`panel type <type-id> --read <name>` for the chosen owner's parameter names, types and required inputs.
-Explicit `data.<name>.params` map read parameters to `{state: "fieldName"}` or `{literal: value}`.
-A short member can also bind a named read parameter through its `state` map. The component supplies its catalogued runtime parameters when the author leaves them unbound. When a non-rendering
-coordination read requires runtime parameters, pass them through [the SDK read hook](RUNTIME.md#usepaneldata).
+Inspect each component's Data and Events sections in `sdk read docs/components.md` and read parameter signatures in
+`panel type <type-id> --read <name>`. Explicit `data.<name>.params` map read parameters to `{ state: "fieldName" }` or
+`{ literal: value }`, or bind a same-named read parameter via the member's `state` map. Components supply their own
+runtime parameters (such as search/page/cursor) automatically when unbound.
 
-Listen on the placed `<projection>` using Vue's event binding. For the `ObjectList` event `navigate`,
-for example, wire `<projection slot="list" @navigate="openReference"></projection>` to the Vue handler
-returned from setup. Bind component output values through the member's `state` map.
-Write component-driven state changes in Vue. For example, a list's `@update:selected` can call a setup
-handler that runs `instance.state.set("filePath", null)`.
+Listen to component events directly on `<projection>` (`@choose`, `@navigate`, `@saved`, `@discarded`, `@done`).
 
 ## Connect a graph and its relations
 
-Run `node "$SKILL/ontomato.mjs" sdk read docs/components.md` and use the `OntologyGraph` and `ObjectRelations`
-sections for each component's datum names, accepted result types, `config`, outputs and events. Inspect named
-reads with `panel type <type-id> --read <name>`. Declare the shared [graph selection type](RUNTIME.md#graph-selection)
-in `manifest.state`. In new members, map component ports to that field using the member's `state` map. For example,
-`OntologyGraph` can write `selectedNode` and `ObjectRelations` can write `selected` to the same state field.
-
-Mount the graph and list as `<projection slot="graph"></projection>` and
-`<projection slot="relations"></projection>` when those are the member keys. Use the
-[Vue setup reference](RUNTIME.md#vue-setup) for reads or actions added in page code.
+Inspect `OntologyGraph` and `ObjectRelations` in `sdk read docs/components.md` and named reads via
+`panel type <type-id> --read <name>`. Declare the shared [graph selection type](RUNTIME.md#graph-selection) in
+`manifest.state`, and map `OntologyGraph`'s `selectedNode` and `ObjectRelations`'s `selected` to that same state field
+so selections stay synchronized. Mount them with `<projection slot="graph">` and `<projection slot="relations">`.
 
 ## Select a child record and read from its parent
 
-A knowledge governance question belongs to its report's `issues` collection. Use the
-[child-object field and value shapes](RUNTIME.md#child-objects) for the question selection, and a separate report
-object state for the parent's reads. Set the read member's `target` to the report state. The `issues` read
-returns the report's questions, so the selected child's key identifies the row to display. For the report's
-`sourcePage` read, bind the required `source` parameter to the selected source ID using
-[the member data field](FIELDS.md). A link to a selected question carries both the report and question state.
+Use the [child-object field and value shapes](RUNTIME.md#child-objects) for child selection, alongside a parent object
+state for the parent's reads. Set the read member's `target` to the parent state and pass any required child/source
+parameters through `data.<name>.params` (see [FIELDS.md](FIELDS.md)).
 
 ## Invoke declared owner operations
 
-Use the owner's full operation ID in the member declaration. Bind the target to the selected object or to a
-checked list for an operation that supports batches. The official button uses the owner's label. From Vue code,
-call [`usePanelOperation`](RUNTIME.md#usepaneloperation) in synchronous setup and invoke its `run` method
-with the input the owner's description admits. The hook takes the target from the member's binding. The
-platform handles the request, impact details and confirmation. For agent calls and write receipts, see
-[operation IDs and write results](RUNTIME.md#operation-ids-and-write-results).
+Use the owner's full operation ID in the member declaration and bind `target` to the selected object (or a checked list
+for batch operations). Place `<projection slot="remove">` directly in `<page-header #actions>` or toolbar slots —
+override button text with `config.label` when needed. From Vue code, call
+[`usePanelOperation`](RUNTIME.md#usepaneloperation) in synchronous `setup()` and run `handle.run(input)`. The platform
+handles permissions, confirmation, and write receipts (see
+[operation IDs and write results](RUNTIME.md#operation-ids-and-write-results)).
 
 ## Save a form or hand off a draft
 
-An `ObjectForm` projection binds one owner operation whose kind is `form.save`. The component sends `call.input`
-with `values`, the `revision` from the owner form when present, and `submittedFields` as JSON Pointer strings.
-Fields omitted from `submittedFields` remain unchanged.
-To trigger save from a custom detail-header button (such as `usePanelDetailHeader`), check `instance.forms.dirty()` and
-call `instance.forms.submit("form")` (or read `instance.forms.handle("form")?.busy.value` for loading state).
-Set `config.actions` to `"footer"` (default, non-overlapping bottom bar), `"header"` (host header Save/Discard),
-`"create-only"` (Cancel/Create bar only in create mode when edit Save lives in the detail header), or `"none"`.
-`ObjectForm` automatically renders word counters for schema `maxLength` fields and disables dependent select fields when
-the owner declares `disabledWhenEmpty`.
+An `ObjectForm` projection binds one `form.save` operation and submits `values`, `revision`, and `submittedFields`.
 
-A populated object input edits that record. An empty input opens creation when the owner supports it and the
-projection has the same type's `createForm` read. The successful create selects the returned object.
-
-For child creation, use `ObjectForm.config.fixedFields` as shown in the current SDK guide
-(`sdk read docs/components.md`). The owner validates these read-only field values at each save.
+- **`config.actions`**:
+  - `"footer"` (default): non-overlapping document-flow Save/Discard/Cancel bar at the bottom of the form.
+  - `"create-only"`: Cancel/Create bar only in create mode (pair with `<page-header :draft="formDraft">` in edit mode).
+  - `"none"`: omit the form's own bar in both modes (ideal on a dedicated detail entry with `<page-header :draft="formDraft">`).
+- **`usePanelFormDraft("form")`**: wire directly into `<page-header :draft="formDraft">` for Save, Discard (with
+  confirmation), busy state, and unsaved-changes notice — no manual submit boilerplate needed.
+- **`config.fixedFields`**: fix parent-determined fields by JSON Pointer path (`{"state":"selected","path":"/primaryKey"}`
+  or `{"literal":"..."}`) so they display read-only and submit with every save.
+- `ObjectForm` automatically renders word counters for schema `maxLength` fields and disables cascading select fields
+  when the owner declares `disabledWhenEmpty`.
 
 The SDK evaluates incoming drafts against declared form members even before `ObjectForm` mounts, so you can mount
-`<projection slot="form">` conditionally inside a detail view or create `<sdk-dialog>` (`v-if`) and watch
-`instance.draft` to open the target detail view or create dialog. The `saved` event carries the saved object as
-`{className, primaryKey}`. A failed save keeps the form open.
+`<projection slot="form">` conditionally (`v-if`) inside a detail view or create `<sdk-dialog>` and watch
+`instance.draft`. The `saved` event carries `{ className, primaryKey }`.
 
-```html
-<projection v-if="createDialog" slot="form"
-  @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"></projection>
+Always use `draftTarget(draft)` to inspect an accepted draft's effective target (`{ kind: "create", objectType }` vs.
+`{ kind: "update", objectType, id }`, including reopened saved creation drafts):
+
+```js
+import { draftTarget, usePanelContext } from "@ontomato/sdk/panel";
+import { watch } from "vue";
+
+const { instance } = usePanelContext();
+watch(instance.draft, (draft) => {
+  if (!draft) return;
+  const target = draftTarget(draft);
+  if (target.kind === "update") {
+    // open detail view for target.id
+  } else {
+    // open create dialog
+  }
+}, { immediate: true });
 ```
 
-Keep `recipes.md` for page-specific business guidance. Use this section as the single reference for the draft format.
+### Assistant draft format
 
-For an assistant draft, look up the form's `objectType` in the entry's generated page skill. Read the owner form
-and copy `save.draftOperation` into the artifact's `operation`. Use the entry's `pageKey`. For an edit, include
-the opaque ID returned by the owner (and `itemKey` when drafting a child row inside a parent record's row-attached
-`ObjectForm`) and put only the changed field values in `form`. When an owner form field's
-JSON Pointer is a nested path (for example `/modelConfig/modelId`), organize `form` as nested objects
-(`{"modelConfig": {"modelId": "..."}}`) — never use a flat JSON Pointer string key such as `"/modelConfig/modelId"`.
+For an assistant draft artifact (`outputs/drafts/<name>.page-draft.json`), copy `save.draftOperation` from the owner
+form into `operation`, set `pageKey` to the entry's `pageKey`, set `target` to `{ "objectType": "...", "id": "..." }`
+(omit `id` for creation; include `itemKey` for row-attached child forms), and place only changed fields as nested
+objects in `form` (never flat JSON Pointer keys like `"/modelConfig/modelId"`):
 
 ```json
 {
-  "pageKey": "app-template-catalog-detail",
+  "pageKey": "app-template-two-entry-detail",
   "operation": "platform:AgentDefinition.save",
-  "target": {"objectType": "platform:AgentDefinition", "id": "<selected agent ID>"},
+  "target": { "objectType": "platform:AgentDefinition", "id": "<selected ID>" },
   "form": {
     "name": "Review assistant",
-    "modelConfig": {"modelId": "default"}
+    "modelConfig": { "modelId": "default" }
   }
 }
 ```
 
-For creation, read the owner's create form and set `target` to `{"objectType": "platform:AgentDefinition"}` for this example.
-Omit `id`. The target always needs a nonempty `objectType`, and a supplied `id` must be a nonempty string.
-
-If the Vue page needs the effective target of an accepted draft, call the SDK helper with the draft itself.
-
-```js
-import { draftTarget, usePanelContext } from "@ontomato/sdk/panel";
-import { computed } from "vue";
-
-// In setup
-const { instance } = usePanelContext();
-const draftMode = computed(() => {
-  const draft = instance.draft.value;
-  return draft ? draftTarget(draft).kind : null;
-});
-```
-
-The helper returns `{kind: "create", objectType}` before creation and `{kind: "update", objectType, id}` for an edit.
-Reopening a saved creation draft also returns `update` with the ID the first save created.
-
-Publish the draft as a run artifact, such as `outputs/drafts/edit.page-draft.json`.
-Build the reader's link from the registered entry path and query. Pass the run-relative artifact path
-to `draftPath`, starting at `outputs/drafts/` with no leading slash.
+Build the site-relative reader link with `URLSearchParams` (one encoding pass; `draftPath` must start with
+`outputs/drafts/` with no leading slash):
 
 ```js
 const entry = new URL(usePath, window.location.origin);
@@ -592,83 +310,53 @@ entry.searchParams.set("draftPath", "outputs/drafts/edit.page-draft.json");
 const draftLink = `${entry.pathname}${entry.search}`;
 ```
 
-Use the session and run that wrote the draft. For each newly generated draft, set `draftRunId` to the run ID of
-the turn that wrote it. Pass the raw value to `searchParams.set` for one encoding pass and keep any existing
-entry parameters. See [the complete reader link and invalid path example](RUNTIME.md#draft-links-and-instance-state).
+See [draft links and instance state](RUNTIME.md#draft-links-and-instance-state) for invalid path examples.
 
-For a chart from a dashboard card, declare `component: "MetricChart"` and `sourceCard: {dashboardId, cardId}`.
-Connect the chart inputs in `state`. If the owner has not registered that card, `panel check` lists its inputs as
-unchecked. `panel register` asks the card owner to register the chart and uses the returned projection ID.
+### Metric charts from dashboard cards
+
+For a calculated MetricView chart, declare `component: "MetricChart"` and `sourceCard: { dashboardId, cardId }`, and
+connect its inputs in `state`. If the card is not yet registered, `panel check` lists it in `unchecked` and
+`panel register` asks the card owner to register it and writes the projection ID.
 
 ## Open the page composer
 
-Add a `ConversationEntry` member when the page needs a named assistant or opening line. Use the generated
-[`agent` and opening-line fields](FIELDS.md) and place the member with `<projection>`. The reader sends the message
-from the opened composer.
+Add a `ConversationEntry` member when the page needs a button that opens the composer with a specific agent and an
+optional opening line (`prefill` or multi-locale `prefillKey` in `content.messages`). The reader still sends the
+message.
 
 ## Register and open
 
-Write each new projection directly in `manifest.members`. Run `panel check <directory>` and
-`panel register <directory>` with the same `registration.json` metadata. Registration writes the projection UUID
-as the member's `id` in `panel.json`. Keep it when rearranging or renaming the member. Use `target.projectionId`
-to reuse an existing projection.
+Write each new projection inline in `manifest.members`, run `panel check <directory>`, then `panel register <directory>`.
+Registration writes each new projection's UUID into `panel.json` as `id` (keep it on future edits). Use
+`target.projectionId` to reuse an existing projection.
 
-Register trial pages under an application ID starting with `app-`. Give every application use a `pageKey` unique within its domain.
-For a trial app open to its domain, set `entryAccess: ["domain-member"]` and each public use's
-`access: {kind: "domain-member"}`. For a restricted trial, declare a permission owned by that app, such as
-`app:app-my-management-page:view`, and use it in `entryAccess` and `access.permissionCode`.
-Set the use's localized `names` for the title beside conversations. The panel name supplies the fallback title.
-Choose a domain app's `declaration.icon` from the [domain icon choices](RUNTIME.md#imports-and-application-icons).
-
-Omit the use's `defaultAgent` for the general assistant in a trial. Set `{kind: "id", id}` or
-`{kind: "preset", agentKind}` when that agent already selects this panel's skill and appears in the page
-input box's candidates. Keep the general assistant while the preset's owner wires up its skill. When replacing
-a built-in page, retain its existing default-agent behavior.
-
-For an application delivery list, declare only extra `packages`, `agents` and `skills`. The platform derives the
-panel and projection dependencies from registered uses.
-
-Use the [catalog-detail template](../templates/catalog-detail-dialog/panel.html) for the complete layout, detail header,
-and owner form wiring. Give your own panel and use their own IDs. The template opens at
-`/applications/app-template-catalog-detail/manage`.
-Exercise the page and run the [assistant check](SKILL.md#check-the-assistant-from-the-page).
+- Application IDs start with `app-`, and paths start with `/applications/<application-id>/`.
+- Give every `panelUse` a domain-unique `pageKey`. Include `names` for menu entries; omit `names` for detail entries
+  opened only via navigation or deep links.
+- For domain-member apps, set `entryAccess: ["domain-member"]` and `access: { kind: "domain-member" }`. For restricted
+  apps, declare app-owned permissions (e.g. `app:app-my-app:view`).
+- Set `"allowStandalone": true` when the application should support standalone external links (`standalone=1`, copied
+  from the sidebar application menu or application properties).
+- Choose `declaration.icon` from `node "$SKILL/ontomato.mjs" sdk icons`.
+- Omit `defaultAgent` to use the general assistant; set `{ kind: "id", id }` or `{ kind: "preset", agentKind }` only
+  when that agent already selects this panel's skill.
 
 ## When a panel looks wrong
 
-Open the same registered entry without draft or state query parameters first. In the browser, keep the
-Network log while reloading and read the first relevant failure and its response. Use the console's first
-error for a Vue or module failure. Keep the browser's storage and cookies intact.
+Open the registered entry without query parameters first, keep browser Network and Console logs open across a hard
+reload, and inspect the first failing request or error:
 
-- **Blank panel or `panel-host-error`.** Start with the alert, console, the panel's
-  `GET /api/product-panels/<id>` (or `/snapshot` on a recheck), and the SDK asset requests. Use
-  `panel uses <app-id>` to verify the path and bound panel, `panel get <panel-id>` for its manifest and revision,
-  and `panel projection <id>` for a member's registered definition. Compare with the workspace and run
-  `panel check <directory>`. If the definition loads and the module fails, check the import rules, Vue template
-  and member slots.
-- **List is empty or waiting.** Find that member's `POST /api/product-panels/read` by `memberPath` and `dataName`.
-  Compare `inputs` and `runtimeParams` with `panel type <type-id> --read <name>`. Missing required inputs can
-  leave it awaiting with no request. If the owner returns no rows, check the selection, filters and reader's
-  data access. If it returns rows, check the slot and the component's accepted result shape.
-- **Draft does not fill or shows `Required`.** Inspect `GET /api/assistant/sessions/<session-id>/runs/<run-id>/page-draft?path=…`,
-  then the form's `POST /api/product-panels/read`. Match the producing run and artifact, the entry's
-  `pageKey`, the target's `objectType` and optional owner ID, and the owner's `save.draftOperation`.
-  A successful draft read confirms that the artifact loaded. Follow the form read's response to see whether
-  the owner accepted the proposal, and verify that `watch(instance.draft, ...)` opens the detail view or create dialog
-  for that draft.
-
-A field or path named by `panel check` points to the material to fix. For a rejected request, use its response
-to distinguish missing records, denied access and invalid values. If the registered material matches the
-current SDK and owner contract but a conforming request still fails, report the first failing response or console
-error, entry and member IDs, panel revision and the release from `sdk current` to the platform or owner team.
+- **Blank panel or `panel-host-error`.** Inspect console errors, `GET /api/product-panels/<id>`, and SDK asset
+  requests. Verify with `panel uses <app-id>`, `panel get <panel-id>`, `panel projection <id>`, and
+  `panel check <directory>`.
+- **List is empty or waiting.** Check `POST /api/product-panels/read` for `memberPath` and `dataName` against
+  `panel type <type-id> --read <name>`. Missing required inputs leave a datum `awaiting`.
+- **Draft does not fill or shows `Required`.** Inspect `GET /api/assistant/sessions/<session-id>/runs/<run-id>/page-draft?path=…`
+  and the form's `POST /api/product-panels/read`. Verify `pageKey`, `target.objectType`, `target.id`, `save.draftOperation`,
+  and `watch(instance.draft, ...)` using `draftTarget(draft)`.
 
 ## What the assistant receives
 
-The platform builds page context from the registered entry's title and address and the current object and
-child-object selections in declared panel state. A selection supplies the type and ID, including a child's
-parent and collection, plus a display name when the page already knows it. The assistant uses the panel's
-declared reads to obtain current fields for that selection.
-
-Put page-specific instructions in `recipes.md` beside the panel files. Registration includes them as
-`content.recipes`. The platform derives the panel skill from its declared reads, state, forms and operations
-and these recipes. The composer sends the current registered use so the platform can admit that skill for the
-reader. Verify this through the [page input box](SKILL.md#check-the-assistant-from-the-page).
+The platform derives the panel's page skill from its declared reads, state, forms, operations, and `recipes.md`, and
+passes current entry metadata plus declared selections in `pageContext`. Keep page-specific guidance in `recipes.md`
+and verify via the [page input box](SKILL.md#check-the-assistant-from-the-page).

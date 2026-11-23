@@ -112,11 +112,11 @@ export function managementPanel(type, checks, typeTable, {
   const html = [
     "<style>",
     "  .catalog-page { display: flex; flex-direction: column; min-width: 0; min-height: 100%; container: catalog-page / inline-size; }",
-    "  .catalog-view { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-lg) var(--page-gutter) calc(var(--page-content-gap) + 56px); }",
+    "  .catalog-view { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-lg) var(--page-gutter) var(--page-content-gap); }",
     ...(toolbarControls.length ? ["  .catalog-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }"] : []),
     ...(hasDetail ? [
       "  .detail-view { display: flex; flex-direction: column; min-width: 0; min-height: 100%; }",
-      `  .detail-body { display: grid; grid-template-columns: ${twoCards ? "minmax(320px, 0.85fr) minmax(420px, 1.15fr)" : "minmax(0, 1fr)"}; gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px); align-items: stretch; }`,
+      `  .detail-body { display: grid; grid-template-columns: ${twoCards ? "minmax(320px, 0.85fr) minmax(420px, 1.15fr)" : "minmax(0, 1fr)"}; gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter); align-items: stretch; }`,
       "  .detail-card { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--page-section-padding, var(--spacing-lg)); border: 1px solid var(--sdk-border-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--sdk-bg-color); }",
       "  .detail-card h2 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); }",
       ...(create ? [
@@ -145,14 +145,15 @@ export function managementPanel(type, checks, typeTable, {
     ...(hasDetail ? [
       "    </template>",
       '    <div v-else class="detail-view">',
-      '      <page-header :title="selectedTitle" :back-label="t(\'detail.back\')" @back="back">',
-      ...(singleButtons.length || edit ? [
+      ...(singleButtons.length ? [
+        `      <page-header :title="selectedTitle" :back-label="t('detail.back')"${edit ? ' :draft="formDraft"' : ""} @back="back">`,
         '        <template #actions>',
         ...singleButtons.map(key => `          ${member(key)}`),
-        ...(edit ? ['          <sdk-button type="primary" :loading="saving" :disabled="!canSave" @click="saveDetail">{{ t("detail.save") }}</sdk-button>'] : []),
         "        </template>",
-      ] : []),
-      "      </page-header>",
+        "      </page-header>",
+      ] : [
+        `      <page-header :title="selectedTitle" :back-label="t('detail.back')"${edit ? ' :draft="formDraft"' : ""} @back="back"></page-header>`,
+      ]),
       '      <div class="detail-body">',
       ...(edit ? [
         '        <section class="detail-card">',
@@ -181,9 +182,17 @@ export function managementPanel(type, checks, typeTable, {
     "",
   ].join("\n");
 
+  const sdkImports = [
+    ...(edit ? ["draftTarget"] : []),
+    "mountPanel",
+    "usePanelBack",
+    "usePanelContext",
+    ...(edit ? ["usePanelFormDraft"] : []),
+  ];
+
   const module = hasDetail ? [
     `import { computed${edit ? ", watch" : ""} } from "vue";`,
-    'import { mountPanel, usePanelBack, usePanelContext } from "@ontomato/sdk/panel";',
+    `import { ${sdkImports.join(", ")} } from "@ontomato/sdk/panel";`,
     "",
     `const TYPE = ${JSON.stringify(type)};`,
     "",
@@ -217,17 +226,7 @@ export function managementPanel(type, checks, typeTable, {
       "    }",
     ] : []),
     ...(edit ? [
-      '    const formHandle = computed(() => instance.forms.handle("form"));',
-      "    const saving = computed(() => Boolean(formHandle.value?.busy.value));",
-      "    const canSave = computed(() => Boolean(formHandle.value) && !saving.value);",
-      "    async function saveDetail() {",
-      "      if (!canSave.value || !instance.forms.dirty()) return;",
-      "      try {",
-      '        await instance.forms.submit("form");',
-      "      } catch {",
-      "        // ObjectForm renders the owner's validation or refusal message inline on the form.",
-      "      }",
-      "    }",
+      '    const formDraft = usePanelFormDraft("form", { when: () => Boolean(selectedKey.value) });',
       "    function onSaved(saved) {",
       ...(create ? ['      instance.state.set("creating", false);'] : []),
       '      instance.state.set("selected", { className: saved.className || TYPE, primaryKey: saved.primaryKey });',
@@ -237,9 +236,10 @@ export function managementPanel(type, checks, typeTable, {
       "    }",
       "    watch(instance.draft, draft => {",
       "      if (!draft) return;",
-      "      if (draft.target?.id) {",
+      "      const target = draftTarget(draft);",
+      '      if (target.kind === "update") {',
       ...(create ? ['        instance.state.set("creating", false);'] : []),
-      '        if (draft.target.id !== selectedKey.value) instance.state.set("selected", { className: TYPE, primaryKey: draft.target.id });',
+      '        if (target.id !== selectedKey.value) instance.state.set("selected", { className: TYPE, primaryKey: target.id });',
       ...(create ? [
         "      } else {",
         "        instance.state.setState({ creating: true, selected: null });",
@@ -250,11 +250,11 @@ export function managementPanel(type, checks, typeTable, {
     "    function backToCatalog() {",
     ...(create ? ["      instance.state.setState({ selected: null, creating: false });"] : ['      instance.state.set("selected", null);']),
     "    }",
-    "    const { back } = usePanelBack(() => Boolean(selectedKey.value), backToCatalog, { pushHistory: true });",
+    `    const { back } = usePanelBack(() => Boolean(selectedKey.value), backToCatalog, { pushHistory: true${edit ? ', forms: "form"' : ""} });`,
     `    return { ${[
       "selectedKey", "selectedTitle", "back",
       ...(create ? ["creating", "createDialog", "startCreate", "stopCreating", "cancelCreate"] : []),
-      ...(edit ? ["saving", "canSave", "saveDetail", "onSaved", "onDiscarded"] : []),
+      ...(edit ? ["formDraft", "onSaved", "onDiscarded"] : []),
     ].join(", ")} };`,
     "  },",
     "});",
@@ -267,7 +267,7 @@ export function managementPanel(type, checks, typeTable, {
     "panel.name": title,
     ...(create && { "command.new": `New ${title}`, "dialog.createTitle": `New ${title}` }),
     ...(hasDetail && { "detail.back": `Back to ${title}` }),
-    ...(edit && { "detail.save": "Save", "detail.basicInfo": "Basic information" }),
+    ...(edit && { "detail.basicInfo": "Basic information" }),
     ...(members.detail && { "detail.overview": "Overview" }),
   };
   const content = { messages: { en: messages } };
