@@ -310,7 +310,9 @@ describe("platform-ontology composite query", () => {
 
     const application = byId.get(APPLICATION);
     expect(application?.definition).toBe(platformTypeDetails[APPLICATION]?.definition);
-    expect(Object.keys(application?.reads ?? {}).sort()).toEqual(["createForm", "entries", "form", "grants", "query", "record"]);
+    expect(Object.keys(application?.reads ?? {}).sort()).toEqual([
+      "createForm", "entries", "entryRows", "form", "grantRows", "grants", "query", "record", "usedPanels",
+    ]);
     expect(application?.operations?.map((op) => op.id)).toContain(`${APPLICATION}.save`);
 
     const projection = byId.get(PRODUCT_PROJECTION);
@@ -320,7 +322,9 @@ describe("platform-ontology composite query", () => {
 
     const panel = byId.get(PRODUCT_PANEL);
     expect(panel?.definition).toBe(platformTypeDetails[PRODUCT_PANEL]?.definition);
-    expect(Object.keys(panel?.reads ?? {}).sort()).toEqual(["createForm", "form", "grants", "members", "query", "record", "usedBy"]);
+    expect(Object.keys(panel?.reads ?? {}).sort()).toEqual([
+      "createForm", "form", "grants", "memberRows", "members", "query", "record", "usedBy",
+    ]);
     expect(panel?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PANEL}.save`);
 
     const sdkComponent = byId.get(SDK_COMPONENT);
