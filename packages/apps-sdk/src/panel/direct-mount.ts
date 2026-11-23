@@ -4,7 +4,10 @@ import { effectScope, h, ref, type Component, type Ref, type VNode, type Slots }
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelNestedReadRequest } from "@ontomato/contracts/panel-host";
 import type { DirectPanelMount as HostDirectPanelMount, DirectPanelRun } from "@ontomato/platform-shell";
-import { createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type MemberInputs } from "./direct";
+import {
+  createDirectPanelInstance, type DirectPanelInstance, type DirectPanelInstanceOptions, type DirectProjectionReadOptions,
+  type MemberInputs,
+} from "./direct";
 import { runPanel } from "./lifecycle";
 import { type PanelMessages, type ProductProjectionRenderResponse } from "@ontomato/contracts/product-panels";
 import { panelHumanOperations, type PanelOperationUse } from "./human-operations";
@@ -32,7 +35,7 @@ export interface DirectPanelMountOptions extends Pick<DirectPanelInstanceOptions
    * Optional host hook for reading a projection's render payload (e.g. from bundled panel definitions or a
    * revision-checked client cache). Falls back to `readProjectionForRender(requests, id)` when omitted.
    */
-  readProjection?(id: string): Promise<ProductProjectionRenderResponse>;
+  readProjection?(id: string, options?: DirectProjectionReadOptions): Promise<ProductProjectionRenderResponse>;
   loadDomainComponent?(runtime: DomainComponentRuntime): Promise<Component>;
   /** Author-registered components declared in `manifest.components`, keyed by component ID. */
   panelDomainComponents?: Readonly<Record<string, DomainComponentRuntime>>;
@@ -91,8 +94,11 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       translate: options.translate,
       text: createPanelText(options.messages, options.locale, options.defaultLocale),
       operations: panelHumanOperations(options.use, requests),
-      readProjection: async (id) => {
-        const { projection, domainComponent } = await (options.readProjection?.(id) ?? readProjectionForRender(requests, id));
+      readProjection: async (id, readOptions) => {
+        const read = options.readProjection
+          ? (readOptions ? options.readProjection(id, readOptions) : options.readProjection(id))
+          : readProjectionForRender(requests, id);
+        const { projection, domainComponent } = await read;
         if (domainComponent) domainSources.set(projection, domainComponent);
         return projection;
       },
