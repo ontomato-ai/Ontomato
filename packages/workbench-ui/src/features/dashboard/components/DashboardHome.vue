@@ -31,6 +31,8 @@ const route = useRoute();
 const router = useRouter();
 const openMenuId = ref<string | null>(null);
 const panelDirty = ref(false);
+const boardPreviewActive = ref(false);
+const previewBlockedReason = computed(() => t("dashboard.previewLocksBoardEdits"));
 const panelRef = ref<{
   reload: () => Promise<void>;
   selectCardById: (cardId: string) => boolean;
@@ -45,8 +47,15 @@ function onPanelDirty(dirty: boolean) {
   emit("display-dirty", dirty);
 }
 
+function onBoardPreviewActive(active: boolean) {
+  boardPreviewActive.value = active;
+}
+
 watch(currentDashboardId, (next, prev) => {
-  if (next !== prev && panelDirty.value) onPanelDirty(false);
+  if (next !== prev) {
+    if (boardPreviewActive.value) boardPreviewActive.value = false;
+    if (panelDirty.value) onPanelDirty(false);
+  }
 });
 
 async function confirmDiscardUnsaved(): Promise<boolean> {
@@ -70,15 +79,17 @@ async function openDashboardTab(id: string) {
   store.openDashboard(id);
 }
 
-const removeLeaveGuard = router.beforeEach(async (to, from) => {
-  // Beside a conversation, the host conversation display owns the leave confirmation via display-dirty.
-  if (typeof route.query.page === "string" && route.query.page) return true;
-  if (to.path === from.path) return true;
-  return confirmDiscardUnsaved();
-});
+async function createDashboard() {
+  if (!(await confirmDiscardUnsaved())) return;
+  await store.promptCreateDashboard();
+}
+
+function handleDashboardCommand(command: string, item: { id: string; name: string }) {
+  if (boardPreviewActive.value && item.id === currentDashboardId.value) return;
+  store.handleDashboardCommand(command, item);
+}
 
 onBeforeUnmount(() => {
-  removeLeaveGuard();
   if (panelDirty.value) emit("display-dirty", false);
 });
 
@@ -152,11 +163,28 @@ watch(
   { immediate: true },
 );
 
+function targetDashboardIdFromNavigation(next: {
+  address: string;
+  state?: Readonly<Record<string, unknown>>;
+}): string {
+  const fromState = typeof next.state?.dashboardId === "string" ? next.state.dashboardId.trim() : "";
+  if (fromState) return fromState;
+  const query = next.address.split("?")[1]?.split("#")[0] ?? "";
+  return new URLSearchParams(query).get("dashboardId")?.trim() ?? "";
+}
+
 if (props.registerPageController) {
   const unregister = props.registerPageController({
+    blocksNavigation(next) {
+      if (!panelDirty.value) return false;
+      const targetId = targetDashboardIdFromNavigation(next);
+      return Boolean(targetId && targetId !== currentDashboardId.value);
+    },
     applyState(patch) {
-      if (typeof patch.dashboardId === "string" && patch.dashboardId.trim()) {
-        void store.selectDashboard(patch.dashboardId.trim());
+      const nextDashboardId = typeof patch.dashboardId === "string" ? patch.dashboardId.trim() : "";
+      if (nextDashboardId && nextDashboardId !== currentDashboardId.value) {
+        if (panelDirty.value) return;
+        void store.selectDashboard(nextDashboardId);
       }
       if (typeof patch.cardId === "string" && patch.cardId.trim()) {
         panelRef.value?.selectCardById(patch.cardId.trim());
@@ -303,15 +331,34 @@ onMounted(async () => {
               placement="bottom-end"
               :popper-options="dropdownBoundaryOptions"
               @visible-change="(visible: boolean) => { if (visible) openMenuId = item.id; else if (openMenuId === item.id) openMenuId = null; }"
-              @command="(command: string) => store.handleDashboardCommand(command, item)"
+              @command="(command: string) => handleDashboardCommand(command, item)"
             >
               <button type="button" class="tab-more" :aria-label="t('common.more')">
                 <MoreHorizontal :size="14" />
               </button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="rename">{{ t("common.rename") }}</el-dropdown-item>
-                  <el-dropdown-item command="delete">{{ t("common.delete") }}</el-dropdown-item>
+                  <li
+                    v-if="boardPreviewActive && item.id === currentDashboardId"
+                    class="tab-preview-lock-hint"
+                    role="note"
+                  >
+                    {{ previewBlockedReason }}
+                  </li>
+                  <el-dropdown-item
+                    command="rename"
+                    :disabled="boardPreviewActive && item.id === currentDashboardId"
+                    :title="boardPreviewActive && item.id === currentDashboardId ? previewBlockedReason : undefined"
+                  >
+                    {{ t("common.rename") }}
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    command="delete"
+                    :disabled="boardPreviewActive && item.id === currentDashboardId"
+                    :title="boardPreviewActive && item.id === currentDashboardId ? previewBlockedReason : undefined"
+                  >
+                    {{ t("common.delete") }}
+                  </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -328,7 +375,7 @@ onMounted(async () => {
       >
         <ChevronRight :size="16" />
       </button>
-      <el-button class="create" @click="store.promptCreateDashboard()">
+      <el-button class="create" @click="createDashboard()">
         <Plus :size="15" />
         <span>{{ t("analysis.createDashboard") }}</span>
       </el-button>
@@ -342,6 +389,7 @@ onMounted(async () => {
         :card-id="chosenCardId"
         @select-card="(card: { id: string; name: string } | null) => writeCard(card)"
         @dirty="onPanelDirty"
+        @preview-active="onBoardPreviewActive"
         @board-saved="() => store.loadDashboards()"
       />
       <el-empty v-else-if="!loadingDashboards" :description="t('analysis.noDashboards')" />
@@ -455,6 +503,15 @@ onMounted(async () => {
 }
 .tab-more:hover {
   color: var(--el-text-color-primary);
+}
+.tab-preview-lock-hint {
+  max-width: 240px;
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  list-style: none;
 }
 .rename {
   width: 160px;

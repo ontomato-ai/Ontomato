@@ -36,10 +36,18 @@
         <div class="empty-state__icon">📊</div>
         <div class="empty-state__title">{{ t("hotData.noDimensionInDashboard") }}</div>
         <div class="empty-state__desc">{{ t("hotData.createDimensionFirstHint") }}</div>
-        <el-button type="primary" size="large" @click="handleCreateDimension">
-          <el-icon class="btn-icon"><Plus /></el-icon>
-          {{ t("analysis.createDimension") }}
-        </el-button>
+        <span :title="hasBoardPreview ? previewBlockedReason : undefined">
+          <el-button
+            type="primary"
+            size="large"
+            :disabled="hasBoardPreview"
+            :title="hasBoardPreview ? previewBlockedReason : undefined"
+            @click="handleCreateDimension"
+          >
+            <el-icon class="btn-icon"><Plus /></el-icon>
+            {{ t("analysis.createDimension") }}
+          </el-button>
+        </span>
       </div>
     </div>
 
@@ -63,7 +71,12 @@
       <template #item="{ element: g }">
         <div class="block" :data-group-id="g.id">
           <div class="group-header">
-            <span class="group-drag-handle" :title="t('dashboard.dragToMoveGroup')">
+            <span
+              class="group-drag-handle"
+              :class="{ 'is-disabled': hasBoardPreview }"
+              :aria-disabled="hasBoardPreview ? 'true' : undefined"
+              :title="hasBoardPreview ? previewBlockedReason : t('dashboard.dragToMoveGroup')"
+            >
               <el-icon :size="16"><GripVertical /></el-icon>
             </span>
 
@@ -74,6 +87,8 @@
             <DropdownMenu
               scene="dimension"
               trigger-class="group-more"
+              :board-locked="hasBoardPreview"
+              :lock-reason="previewBlockedReason"
               @command="(cmd) => handleDimensionCommand(cmd, g)"
             />
           </div>
@@ -103,6 +118,8 @@
                 :data-card-id="m.id"
                 :class="{ 'is-preview-modified': modifiedCardIds.has(m.id) }"
                 :selected="isSelected(m.id, 'metric')"
+                :board-locked="hasBoardPreview"
+                :lock-reason="previewBlockedReason"
                 :style="gridSpanStyle(m?.layout)"
                 @select="(card) => selectCard(card)"
                 @command="(cmd) => handleMetricCommand(cmd, m)"
@@ -142,6 +159,8 @@
                   :style="gridSpanStyle(c.layout)"
                   :dashboard-id="normalizeId(props.dashboardId)"
                   :selected="isSelected(c.id, 'chart')"
+                  :board-locked="hasBoardPreview"
+                  :lock-reason="previewBlockedReason"
                   @select="(card) => selectCard(card)"
                   @chart-renamed="handleChartRenamed"
                   @chart-deleted="handleChartDeleted"
@@ -203,6 +222,9 @@ import {
   boardPreviewModifiedCards,
   buildBoardSavePlan,
   canonicalBoardPreviewSnapshot,
+  findMissingPreviewTargets,
+  hasBoardPreviewEntries,
+  mergeBoardPreview,
   parseBoardPreviewFill,
   summarizeBoardPreview,
 } from "../board-preview";
@@ -248,7 +270,7 @@ const props = defineProps({
   /** The card the page's own address names as chosen, so a board reopened at that address shows the same one chosen. */
   cardId: { type: String, default: "" },
 });
-const emit = defineEmits(["select-card", "dirty", "board-saved"]);
+const emit = defineEmits(["select-card", "dirty", "preview-active", "board-saved"]);
 
 const dragDisabled = ref(false);
 const boardName = ref("");
@@ -270,6 +292,7 @@ const parameterDialogRef = ref(null);
 const parametersDirty = ref(false);
 
 const hasBoardPreview = computed(() => Boolean(boardPreview.value));
+const previewBlockedReason = computed(() => t("dashboard.previewLocksBoardEdits"));
 const displayedGroups = computed(() =>
   Array.isArray(chartGroups.value) ? applyBoardPreviewOverlay(chartGroups.value, boardPreview.value) : chartGroups.value
 );
@@ -285,6 +308,7 @@ const boardPreviewFailureHeadline = computed(() =>
   boardPreviewFailure.value ? cardErrorHeadline(boardPreviewFailure.value, t) : null
 );
 const isDirty = computed(() => hasBoardPreview.value || parametersDirty.value);
+watch(hasBoardPreview, (active) => emit("preview-active", active), { flush: "sync", immediate: true });
 watch(isDirty, (dirty) => emit("dirty", dirty), { flush: "sync", immediate: true });
 
 const loader = createDashboardLoader();
@@ -521,6 +545,7 @@ function persistLayoutDebounced() {
 /* ======================== create dimension ======================== */
 
 async function handleCreateDimension(insertIndex) {
+  if (hasBoardPreview.value) return;
   const id = normalizeId(props.dashboardId);
   if (!id) return;
 
@@ -675,6 +700,7 @@ onBeforeUnmount(() => {
   unmounted = true;
   boardPreview.value = null;
   parametersDirty.value = false;
+  emit("preview-active", false);
   emit("dirty", false);
   loader.abort();
 
@@ -697,6 +723,7 @@ onBeforeUnmount(() => {
 /* ======================== dimension ops ======================== */
 
 async function handleDimensionCommand(cmd, g) {
+  if (hasBoardPreview.value) return;
   const id = normalizeId(props.dashboardId);
   const groupId = normalizeId(g?.id);
   if (!id || !groupId) return;
@@ -778,6 +805,8 @@ async function handleMetricCommand(cmd, m) {
     openParameters(m);
     return;
   }
+
+  if (hasBoardPreview.value) return;
 
   if (cmd === "rename") {
     try {
@@ -959,40 +988,206 @@ async function openParametersForCard(cardId, options = {}) {
 async function saveBoardPreview() {
   const id = normalizeId(props.dashboardId);
   const preview = boardPreview.value;
-  if (!id || !preview) return { ok: false, message: "There are no unsaved dashboard changes to save." };
+  if (!id || !preview) {
+    return {
+      ok: false,
+      partial: false,
+      succeeded: [],
+      failed: [],
+      remaining: [],
+      message: "There are no unsaved dashboard changes to save.",
+    };
+  }
+  const missingTargets = Array.isArray(chartGroups.value)
+    ? findMissingPreviewTargets(chartGroups.value, preview)
+    : [];
+  if (missingTargets.length > 0) {
+    const message = `Target objects no longer exist on the dashboard: ${missingTargets.join(", ")}.`;
+    boardPreviewFailure.value = { code: null, message };
+    return {
+      ok: false,
+      stale: true,
+      partial: false,
+      succeeded: [],
+      failed: [],
+      remaining: [],
+      message,
+    };
+  }
+
   savingBoardPreview.value = true;
   boardPreviewFailure.value = null;
   try {
+    const groups = Array.isArray(chartGroups.value) ? chartGroups.value : [];
+    const groupTitleOf = (groupId) =>
+      groups.find((item) => item.id === groupId)?.title || groupId;
+    const chartNameOf = (chartId) =>
+      groups.flatMap((group) => group.charts || []).find((item) => item.id === chartId)?.name || chartId;
+    const metricNameOf = (metricId) =>
+      groups.flatMap((group) => group.metrics || []).find((item) => item.id === metricId)?.name || metricId;
+
     const plan = buildBoardSavePlan(boardName.value, preview);
+    const remainingPreview = {
+      version: preview.version,
+      ...(preview.boardName !== undefined ? { boardName: preview.boardName } : {}),
+      groupRenames: { ...preview.groupRenames },
+      chartRenames: { ...preview.chartRenames },
+      metricRenames: { ...preview.metricRenames },
+      ...(preview.layoutGroups ? { layoutGroups: preview.layoutGroups } : {}),
+    };
+
+    const steps = [];
     if (plan.renameBoard !== undefined) {
-      const ok = await renameDashboard(id, plan.renameBoard);
-      if (!ok) throw new Error(t("common.renameFailed"));
+      steps.push({
+        label: "rename dashboard",
+        run: async () => {
+          const ok = await renameDashboard(id, plan.renameBoard);
+          if (!ok) throw new Error(t("common.renameFailed"));
+        },
+        onSuccess: () => {
+          boardName.value = plan.renameBoard;
+          delete remainingPreview.boardName;
+        },
+      });
     }
     if (plan.layoutGroups) {
-      const ok = await modifyDashboardLayout(id, plan.layoutGroups);
-      if (!ok) throw new Error(t("dashboard.layoutSaveFailedRetry"));
+      steps.push({
+        label: "update dashboard layout",
+        run: async () => {
+          const ok = await modifyDashboardLayout(id, plan.layoutGroups);
+          if (!ok) throw new Error(t("dashboard.layoutSaveFailedRetry"));
+        },
+        onSuccess: () => {
+          delete remainingPreview.layoutGroups;
+          remainingPreview.groupRenames = {};
+          remainingPreview.chartRenames = {};
+          remainingPreview.metricRenames = {};
+        },
+      });
     } else {
       for (const item of plan.groupRenames) {
-        const ok = await modifyDimensionName(id, item.groupId, item.dimensionName);
-        if (!ok) throw new Error(t("common.renameFailed"));
+        steps.push({
+          label: `rename group "${groupTitleOf(item.groupId)}"`,
+          run: async () => {
+            const ok = await modifyDimensionName(id, item.groupId, item.dimensionName);
+            if (!ok) throw new Error(t("common.renameFailed"));
+          },
+          onSuccess: () => {
+            chartGroups.value = patchDimensionTitle(chartGroups.value, item.groupId, item.dimensionName);
+            delete remainingPreview.groupRenames[item.groupId];
+          },
+        });
       }
       for (const item of plan.chartRenames) {
-        const ok = await modifyResultSetName(id, item.chartId, item.resultSetName);
-        if (!ok) throw new Error(t("common.renameFailed"));
+        steps.push({
+          label: `rename chart "${chartNameOf(item.chartId)}"`,
+          run: async () => {
+            const ok = await modifyResultSetName(id, item.chartId, item.resultSetName);
+            if (!ok) throw new Error(t("common.renameFailed"));
+          },
+          onSuccess: () => {
+            chartGroups.value = patchChartTitle(chartGroups.value, item.chartId, item.resultSetName);
+            delete remainingPreview.chartRenames[item.chartId];
+          },
+        });
       }
       for (const item of plan.metricRenames) {
-        const ok = await modifyMetricName(id, item.metricId, item.metricName);
-        if (!ok) throw new Error(t("common.renameFailed"));
+        steps.push({
+          label: `rename metric "${metricNameOf(item.metricId)}"`,
+          run: async () => {
+            const ok = await modifyMetricName(id, item.metricId, item.metricName);
+            if (!ok) throw new Error(t("common.renameFailed"));
+          },
+          onSuccess: () => {
+            chartGroups.value = patchMetricTitle(chartGroups.value, item.metricId, item.metricName);
+            delete remainingPreview.metricRenames[item.metricId];
+          },
+        });
       }
     }
+
+    const succeeded = [];
+    const failed = [];
+    const remaining = [];
+    for (let index = 0; index < steps.length; index += 1) {
+      const step = steps[index];
+      try {
+        await step.run();
+        step.onSuccess();
+        succeeded.push(step.label);
+      } catch (error) {
+        const parsedError = cardError(error);
+        failed.push({ label: step.label, error: parsedError.message });
+        for (let nextIndex = index + 1; nextIndex < steps.length; nextIndex += 1) {
+          remaining.push(steps[nextIndex].label);
+        }
+        break;
+      }
+    }
+
+    if (failed.length > 0) {
+      if (succeeded.length > 0) {
+        const failedText = failed.map((item) => `${item.label} (${item.error})`).join(", ");
+        const remainingText = remaining.length > 0 ? ` Not run: ${remaining.join(", ")}.` : "";
+        const partialMessage = `Partially saved dashboard changes. Saved: ${succeeded.join(", ")}. Failed: ${failedText}.${remainingText}`;
+        boardPreview.value = hasBoardPreviewEntries(remainingPreview)
+          ? { ...remainingPreview, version: ++boardPreviewVersion }
+          : null;
+        boardPreviewFailure.value = { code: null, message: partialMessage };
+        emit("board-saved");
+        try {
+          await loadDashboardAll(id);
+        } catch {
+          // Best-effort refresh after partial save; keep remaining unsaved preview visible.
+        }
+        return {
+          ok: false,
+          partial: true,
+          succeeded,
+          failed,
+          remaining,
+          message: partialMessage,
+        };
+      }
+      boardPreviewFailure.value = { code: null, message: failed[0].error };
+      return {
+        ok: false,
+        partial: false,
+        succeeded: [],
+        failed,
+        remaining,
+        message: failed[0].error,
+      };
+    }
+
     boardPreview.value = null;
     boardPreviewFailure.value = null;
     emit("board-saved");
-    await loadDashboardAll(id);
-    return { ok: true };
-  } catch (error) {
-    boardPreviewFailure.value = cardError(error);
-    return { ok: false, message: boardPreviewFailure.value.message };
+    try {
+      await loadDashboardAll(id);
+    } catch (reloadErr) {
+      const reloadError = reloadErr instanceof Error ? reloadErr.message : String(reloadErr);
+      const message = `Dashboard changes were saved, but refreshing the board failed: ${reloadError}`;
+      ElMessage.warning(message);
+      return {
+        ok: true,
+        partial: false,
+        succeeded,
+        failed: [],
+        remaining: [],
+        reloadFailed: true,
+        reloadError,
+        message,
+      };
+    }
+    return {
+      ok: true,
+      partial: false,
+      succeeded,
+      failed: [],
+      remaining: [],
+      reloadFailed: false,
+    };
   } finally {
     savingBoardPreview.value = false;
   }
@@ -1060,6 +1255,17 @@ async function saveBoardFromAction(operation, agentRun) {
     ) {
       return { ok: false, reason: "stale", message: "The dashboard preview changed after confirmation was requested." };
     }
+    if (!Array.isArray(chartGroups.value)) {
+      return { ok: false, reason: "stale", message: "The dashboard is not loaded." };
+    }
+    const missingTargets = findMissingPreviewTargets(chartGroups.value, boardPreview.value);
+    if (missingTargets.length > 0) {
+      return {
+        ok: false,
+        reason: "stale",
+        message: `Target objects no longer exist on the dashboard: ${missingTargets.join(", ")}.`,
+      };
+    }
     if (savingBoardPreview.value) {
       return { ok: false, reason: "stale", message: "Dashboard changes are currently saving." };
     }
@@ -1073,8 +1279,48 @@ async function saveBoardFromAction(operation, agentRun) {
     }
     dispatched = true;
     const saved = await saveBoardPreview();
-    if (saved.ok) return { ok: true, kind: "executed", operation, intentId: prepared.intentId };
-    return { ok: false, reason: "failed", operation, intentId: prepared.intentId, message: saved.message };
+    if (saved.ok) {
+      return {
+        ok: true,
+        kind: "executed",
+        operation,
+        intentId: prepared.intentId,
+        ...(saved.reloadFailed
+          ? {
+              outcome: {
+                dashboardId: capturedDashboardId,
+                saved: saved.succeeded,
+                reloadFailed: true,
+                reloadError: saved.reloadError,
+                message: saved.message,
+              },
+            }
+          : {}),
+      };
+    }
+    if (saved.partial) {
+      return {
+        ok: true,
+        kind: "executed",
+        operation,
+        intentId: prepared.intentId,
+        outcome: {
+          dashboardId: capturedDashboardId,
+          partial: true,
+          succeeded: saved.succeeded,
+          failed: saved.failed,
+          remaining: saved.remaining,
+          message: saved.message,
+        },
+      };
+    }
+    return {
+      ok: false,
+      reason: saved.stale ? "stale" : "failed",
+      operation,
+      intentId: prepared.intentId,
+      message: saved.message,
+    };
   }
 
   const confirmation = {
@@ -1094,14 +1340,39 @@ async function saveBoardFromAction(operation, agentRun) {
         return {
           ok: true,
           intentId: prepared.intentId,
-          outcome: { dashboardId: capturedDashboardId },
-          summary: prepared.label,
+          outcome: {
+            dashboardId: capturedDashboardId,
+            ...(saved.reloadFailed
+              ? {
+                  saved: saved.succeeded,
+                  reloadFailed: true,
+                  reloadError: saved.reloadError,
+                  message: saved.message,
+                }
+              : {}),
+          },
+          summary: saved.reloadFailed ? saved.message : prepared.label,
+        };
+      }
+      if (saved.partial) {
+        return {
+          ok: true,
+          intentId: prepared.intentId,
+          outcome: {
+            dashboardId: capturedDashboardId,
+            partial: true,
+            succeeded: saved.succeeded,
+            failed: saved.failed,
+            remaining: saved.remaining,
+            message: saved.message,
+          },
+          summary: saved.message,
         };
       }
       return {
         ok: false,
         intentId: prepared.intentId,
-        reason: "failed",
+        reason: saved.stale ? "stale" : "failed",
         message: saved.message || "Failed to save dashboard changes.",
       };
     },
@@ -1132,17 +1403,17 @@ async function fillForm(request) {
         message: "The dashboard is not loaded yet.",
       };
     }
-    if (boardPreview.value && request.overwriteUnsaved !== true) {
+    if (savingBoardPreview.value) {
       return {
         ok: false,
-        reason: "blocked_unsaved",
+        reason: "form_not_ready",
         member: "board",
-        message: "The dashboard already has unsaved preview changes.",
+        message: "Dashboard changes are currently saving.",
       };
     }
     const parsed = parseBoardPreviewFill(id, chartGroups.value, request.values, ++boardPreviewVersion);
     if (!parsed.ok) return parsed;
-    boardPreview.value = parsed.preview;
+    boardPreview.value = mergeBoardPreview(boardPreview.value, parsed.preview);
     boardPreviewFailure.value = null;
     return {
       ok: true,

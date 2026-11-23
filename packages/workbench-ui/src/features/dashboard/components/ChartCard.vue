@@ -24,6 +24,8 @@
         </span>
         <ChartToolbar
           :data-open="dataOpen"
+          :board-locked="boardLocked"
+          :lock-reason="lockReason"
           @edit-parameters="emit('edit-parameters', props.chart)"
           @open-zoom="openZoom"
           @toggle-data="toggleData"
@@ -71,12 +73,17 @@
       @close="closeZoom"
     />
     <!-- Bottom-right resize handle -->
-    <span class="resize-handle" :title="t('dashboard.dragToResize')" />
+    <span
+      class="resize-handle"
+      :class="{ 'is-disabled': boardLocked }"
+      :aria-disabled="boardLocked ? 'true' : undefined"
+      :title="boardLocked ? lockReason : t('dashboard.dragToResize')"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, useId } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import interact from "interactjs";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { TriangleAlert } from "lucide-vue-next";
@@ -103,6 +110,8 @@ const props = defineProps({
   dashboardId: { type: String, default: "" },
   /** Whether this card is the one the reader chose: a message sent from beside the page asks about it. */
   selected: { type: Boolean, default: false },
+  boardLocked: { type: Boolean, default: false },
+  lockReason: { type: String, default: "" },
 });
 const emit = defineEmits([
   "chart-renamed",
@@ -161,6 +170,7 @@ function selectUnlessControl(event) {
 }
 
 async function handleCommand(cmd) {
+  if (props.boardLocked && (cmd === "rename" || cmd === "delete")) return;
   const dashboardId = String(props.dashboardId || "").trim();
   const chartId = String(props.chart?.id || "").trim();
 
@@ -237,13 +247,16 @@ function setupResize() {
   if (!el) return;
 
   interactable = interact(el).resizable({
+    enabled: !props.boardLocked,
     allowFrom: ".resize-handle",
     edges: { right: true, bottom: true, left: false, top: false },
     listeners: {
       start() {
+        if (props.boardLocked) return;
         emit("resize-active", true);
       },
       move(event) {
+        if (props.boardLocked) return;
         const target = event.target;
         const gridEl = target.closest(".charts-section");
         const { colCount, colWidth, gap } = parseGridColumns(gridEl);
@@ -274,6 +287,13 @@ function setupResize() {
 }
 
 onMounted(setupResize);
+
+watch(
+  () => props.boardLocked,
+  (locked) => {
+    interactable?.resizable?.({ enabled: !locked });
+  },
+);
 
 onBeforeUnmount(() => {
   if (interactable) {

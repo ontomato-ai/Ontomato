@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
+import type { AgentPrepareRequest, AgentRunContext } from "@ontomato/contracts/agent-channel";
 import type { AgentHostSessionLiveFrame } from "@ontomato/contracts/agent-host";
 import { isDirectUserRun } from "@ontomato/contracts/agent-visibility";
 import type {
@@ -18,6 +18,7 @@ import type { AgentVisibilityReader } from "./visibility";
 interface Pending {
   connection: Connection;
   sessionId: string;
+  runId: string;
   finish(result: PresentationResult): void;
 }
 
@@ -29,14 +30,90 @@ interface Connection {
   signal: AbortSignal;
 }
 
+interface AuthorizedRunView {
+  viewId: string;
+  expiresAt: number;
+}
+
 const views = new Map<string, Connection>();
 const pendingCalls = new Map<string, Pending>();
+const runViews = new Map<string, AuthorizedRunView>();
 const viewKey = (host: AgentPresentationHost, owner: AgentHostOwner, viewId: string) =>
   JSON.stringify([host, owner.domainId, owner.userId, viewId]);
+const runViewKey = (host: AgentPresentationHost, owner: AgentHostOwner, runId: string) =>
+  JSON.stringify([host, owner.domainId, owner.userId, runId]);
 const hostPaths: Record<AgentPresentationHost, string> = {
   workbench: "/api/assistant",
   observe: "/api/observe/agent",
 };
+
+export interface LivePresentationRunEligibility {
+  readonly host: AgentPresentationHost;
+  readonly owner: AgentHostOwner;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly channel: Pick<
+    AgentRunContext,
+    "agent" | "actor" | "authority" | "requestedBy" | "root" | "userRecipient"
+  >;
+}
+
+/**
+ * Shared run-level eligibility rule for live page presentation and browser-side agent confirmation:
+ * direct user root run on the matching host, same initiator/recipient actor and domain, and live authority.
+ */
+export function isLivePresentationEligibleRun(input: LivePresentationRunEligibility): boolean {
+  const { host, owner, runId, sessionId, channel } = input;
+  if (channel.requestedBy) return false;
+  if (!isDirectUserRun(channel, sessionId)) return false;
+  if (channel.root.runId !== runId || channel.root.session.sessionId !== sessionId) return false;
+  if (channel.root.session.providerId !== host || channel.agent.providerId !== host) return false;
+  if (channel.authority.executionKind !== "live") return false;
+  if (!channel.userRecipient) return false;
+  if (channel.userRecipient.actor.id !== channel.actor.id) return false;
+  if (channel.userRecipient.actor.domainId !== owner.domainId || channel.actor.domainId !== owner.domainId) {
+    return false;
+  }
+  return true;
+}
+
+/** Returns true when `runId` is bound to a currently connected live presentation view for `owner`. */
+export function hasActivePresentationForRun(
+  host: AgentPresentationHost,
+  owner: AgentHostOwner,
+  runId: string,
+): boolean {
+  const key = runViewKey(host, owner, runId);
+  const authorized = runViews.get(key);
+  if (authorized) {
+    if (authorized.expiresAt <= Date.now()) {
+      runViews.delete(key);
+    } else if (views.has(viewKey(host, owner, authorized.viewId))) {
+      return true;
+    }
+  }
+  for (const pending of pendingCalls.values()) {
+    if (
+      pending.runId === runId
+      && pending.connection.host === host
+      && pending.connection.owner.domainId === owner.domainId
+      && pending.connection.owner.userId === owner.userId
+      && !pending.connection.signal.aborted
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Releases the run-to-view binding once a run settles or cancels. */
+export function releasePresentationRun(
+  host: AgentPresentationHost,
+  owner: AgentHostOwner,
+  runId: string,
+): void {
+  runViews.delete(runViewKey(host, owner, runId));
+}
 
 export const PRESENTATION_CALL_PATH = "/sessions/:sessionId/runs/:runId/presentation-call/:viewId";
 
@@ -64,10 +141,10 @@ export function presentationCallback(
   credentials: AssistantCredentials, expiresAt: number,
 ): RuntimePresentationCallback | undefined {
   const viewId = body.presentationBinding?.viewId;
-  if (!viewId || body.mode !== "run" || body.input.role !== "user" || visibilityReader(body) !== "user" ||
-      body.root.runId !== body.runId || body.root.session.sessionId !== body.sessionId ||
-      body.root.session.providerId !== host || body.userRecipient?.actor.id !== body.actor.id ||
-      body.userRecipient.actor.domainId !== owner.domainId || !views.has(viewKey(host, owner, viewId))) return;
+  if (!viewId || body.mode !== "run" || body.input.role !== "user" ||
+      !isLivePresentationEligibleRun({ host, owner, runId: body.runId, sessionId: body.sessionId, channel: body }) ||
+      !views.has(viewKey(host, owner, viewId))) return;
+  runViews.set(runViewKey(host, owner, body.runId), { viewId, expiresAt });
   const path = `${hostPaths[host]}/sessions/${body.sessionId}/runs/${body.runId}/presentation-call/${viewId}`;
   return {
     url: environment.agentRuntime().callbackUrl.replace(/\/$/, "") + path,
@@ -304,7 +381,7 @@ export async function requestPresentation(
         finish(receiptMissing);
       }, () => finish(receiptMissing));
     };
-    pendingCalls.set(key, { connection, sessionId, finish });
+    pendingCalls.set(key, { connection, sessionId, runId, finish });
     deadline.addEventListener("abort", abandon, { once: true });
     connection.send({ type: "presentation", sessionId, runId, toolCallId, target });
   });

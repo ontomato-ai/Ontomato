@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
-import ElementPlus from "element-plus";
+import ElementPlus, { ElMessageBox } from "element-plus";
 import type { DisplayPageController } from "@ontomato/agent-shell-ui";
 import { MetricChart } from "@ontomato/foundation-ui/chart";
+import { FormFields } from "@ontomato/foundation-ui/form";
 import DashboardHome from "../DashboardHome.vue";
+import ChartCard from "../ChartCard.vue";
+import DropdownMenu from "../DropdownMenu.vue";
 import { workbenchI18n } from "../../../../i18n";
 
 const api = vi.hoisted(() => ({
@@ -15,10 +18,15 @@ const api = vi.hoisted(() => ({
   renameMetric: [] as unknown[],
   layouts: [] as unknown[],
   savedParams: [] as unknown[],
+  createdBoards: [] as string[],
   confirmCalls: [] as Array<Record<string, unknown>>,
   confirmMode: { autoMode: false, nextSeq: 1 },
   detailReads: 0,
   listReads: 0,
+  failLayoutMessage: null as string | null,
+  failGroupRenameMessage: null as string | null,
+  failDetailAfterReads: null as number | null,
+  boardOverride: null as null | typeof board,
 }));
 
 const savedChartFile = {
@@ -75,11 +83,17 @@ const board = {
 vi.mock("../../api", () => ({
   fetchDashboardList: async () => {
     api.listReads += 1;
-    return [{ id: "d1", name: "Sales", createdAt: 0, updatedAt: 0 }];
+    return [
+      { id: "d1", name: "Sales", createdAt: 0, updatedAt: 0 },
+      { id: "d2", name: "Operations", createdAt: 0, updatedAt: 0 },
+    ];
   },
   fetchDashboardLocalDetail: async () => {
     api.detailReads += 1;
-    return structuredClone(board);
+    if (api.failDetailAfterReads !== null && api.detailReads > api.failDetailAfterReads) {
+      throw new Error("Reload network timeout");
+    }
+    return structuredClone(api.boardOverride ?? board);
   },
   queryDashboardCard: async (_dashboardId: string, cardId: string) =>
     cardId === "c1"
@@ -101,17 +115,31 @@ vi.mock("../../api", () => ({
           rows: [{ total: 60 }],
           truncation: null,
         },
+  createDashboard: async (name: string) => {
+    api.createdBoards.push(name);
+    return { id: "d-new", name };
+  },
+  deleteDashboard: async () => true,
   renameDashboard: async (...args: unknown[]) => { api.renameBoard.push(args); return true; },
-  modifyDimensionName: async (...args: unknown[]) => { api.renameGroup.push(args); return true; },
+  modifyDimensionName: async (...args: unknown[]) => {
+    api.renameGroup.push(args);
+    if (api.failGroupRenameMessage) throw new Error(api.failGroupRenameMessage);
+    return true;
+  },
   modifyResultSetName: async (...args: unknown[]) => { api.renameChart.push(args); return true; },
   modifyMetricName: async (...args: unknown[]) => { api.renameMetric.push(args); return true; },
-  modifyDashboardLayout: async (...args: unknown[]) => { api.layouts.push(args); return true; },
+  modifyDashboardLayout: async (...args: unknown[]) => {
+    api.layouts.push(args);
+    if (api.failLayoutMessage) throw new Error(api.failLayoutMessage);
+    return true;
+  },
   fetchCardParameterForm: async () => ({
     revision: "r1",
     fields: [
       { key: "year", label: "Year", required: false, defaultValue: null, help: null, placeholder: null, maxLength: 200, multiline: false, type: "text" },
+      { key: "region", label: "Region", required: false, defaultValue: null, help: null, placeholder: null, maxLength: 200, multiline: false, type: "text" },
     ],
-    values: { year: "2026" },
+    values: { year: "2026", region: "East" },
     readOnly: [],
   }),
   saveCardParameters: async (input: unknown) => {
@@ -177,10 +205,16 @@ afterEach(() => {
   api.renameMetric = [];
   api.layouts = [];
   api.savedParams = [];
+  api.createdBoards = [];
   api.confirmCalls = [];
   api.confirmMode = { autoMode: false, nextSeq: 1 };
   api.detailReads = 0;
   api.listReads = 0;
+  api.failLayoutMessage = null;
+  api.failGroupRenameMessage = null;
+  api.failDetailAfterReads = null;
+  api.boardOverride = null;
+  vi.restoreAllMocks();
   document.body.innerHTML = "";
 });
 
@@ -241,12 +275,17 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
     expect(api.renameBoard).toEqual([]);
     expect(api.layouts).toEqual([]);
 
-    // 3. Protects existing unsaved preview unless overwriteUnsaved is true.
-    const blocked = await controller.fillForm!({
+    // 3. Consecutive agent board fills merge onto the active preview instead of rejecting or dropping prior fields.
+    const merged = await controller.fillForm!({
       member: "board",
-      values: { operation: "dashboard.rename", name: "Another Name" },
+      values: { operation: "dashboard.rename", name: "Q4 Sales Final" },
     });
-    expect(blocked).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "board" });
+    await flushPromises();
+    expect(merged).toEqual({ ok: true, member: "board", filledFields: ["name"] });
+    // Previous layout/chartFile edits remain intact alongside the updated board name.
+    expect(wrapper.find(".group-title").text()).toBe("Q4 Overview");
+    expect(wrapper.find(".chart-container h3").text()).toBe("Revenue Trend");
+    expect(wrapper.find(".board-preview-bar__text").text()).toContain("Q4 Sales Final");
 
     // 4. Human clicks Cancel on the preview banner: discards preview and reloads saved board.
     const readsBeforeDiscard = api.detailReads;
@@ -321,6 +360,7 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
     await flushPromises();
     expect(dispatched).toMatchObject({ ok: true, intentId: "intent-2" });
     expect(api.renameBoard).toEqual([["d1", "Updated Board Name"]]);
+    expect(api.renameGroup).toEqual([["d1", "g1", "Secret Group"]]);
     expect(dirtyEvents.at(-1)).toBe(false);
     expect(wrapper.find(".board-preview-bar").exists()).toBe(false);
 
@@ -403,5 +443,255 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
     expect(api.savedParams).toEqual([{ dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2024" } }]);
 
     wrapper.unmount();
+  });
+
+  it("disables direct board-write entries with a reason while a board preview is active, while keeping read-only controls and Save/Cancel usable", async () => {
+    const { wrapper, controller } = await mountDashboardHome();
+
+    // Before preview: menus are unlocked.
+    const menusBefore = wrapper.findAllComponents(DropdownMenu);
+    expect(menusBefore.length).toBeGreaterThanOrEqual(3);
+    expect(menusBefore.every((menu) => (menu.props() as Record<string, unknown>).boardLocked === false)).toBe(true);
+
+    await controller.fillForm!({
+      member: "board",
+      values: { name: "Preview Name" },
+    });
+    await flushPromises();
+
+    // Direct write menus (dimension, metric, chart) are locked with an explicit reason.
+    const menusLocked = wrapper.findAllComponents(DropdownMenu);
+    for (const menu of menusLocked) {
+      const menuProps = menu.props() as Record<string, unknown>;
+      expect(menuProps.boardLocked).toBe(true);
+      expect(String(menuProps.lockReason)).toContain("Save or discard");
+    }
+
+    // Group drag handle and card resize handles carry disabled state and lock reason title.
+    expect(wrapper.find(".group-drag-handle").classes()).toContain("is-disabled");
+    expect(wrapper.find(".group-drag-handle").attributes("title")).toContain("Save or discard");
+    for (const handle of wrapper.findAll(".resize-handle")) {
+      expect(handle.classes()).toContain("is-disabled");
+      expect(handle.attributes("title")).toContain("Save or discard");
+    }
+
+    // Read-only chart toolbar buttons (zoom & toggle data) stay enabled, as do preview Save/Cancel buttons.
+    const toolButtons = wrapper.findAll("button.ai-chart-tool-btn");
+    expect(toolButtons.length).toBeGreaterThanOrEqual(2);
+    expect(toolButtons[0]!.attributes("disabled")).toBeUndefined();
+    expect(toolButtons[1]!.attributes("disabled")).toBeUndefined();
+    const previewButtons = wrapper.findAll(".board-preview-bar__actions button");
+    expect(previewButtons).toHaveLength(2);
+    expect(previewButtons[0]!.attributes("disabled")).toBeUndefined();
+    expect(previewButtons[1]!.attributes("disabled")).toBeUndefined();
+
+    // Active board tab dropdown items are disabled with reason; other board tabs stay enabled.
+    const activeTabDropdown = wrapper.findAll(".tab")[0]!;
+    expect(activeTabDropdown.classes()).toContain("active");
+    const tabMoreBtn = activeTabDropdown.find("button.tab-more");
+    await tabMoreBtn.trigger("click");
+    await flushPromises();
+    const lockHints = [...document.querySelectorAll(".tab-preview-lock-hint")];
+    expect(lockHints.some((el) => el.textContent?.includes("Save or discard"))).toBe(true);
+
+    wrapper.unmount();
+  });
+
+  it("blocks cross-board navigation via blocksNavigation/applyState and confirms before creating a new board when dirty", async () => {
+    const { wrapper, controller, router } = await mountDashboardHome();
+
+    await controller.fillForm!({
+      member: "board",
+      values: { name: "Unsaved Draft" },
+    });
+    await flushPromises();
+
+    // blocksNavigation blocks switching to another board (by address or state), but allows switching cardId on the same board.
+    expect(controller.blocksNavigation?.({ address: "/dashboards?dashboardId=d2" })).toBe(true);
+    expect(controller.blocksNavigation?.({ address: "/dashboards", state: { dashboardId: "d2" } })).toBe(true);
+    expect(controller.blocksNavigation?.({ address: "/dashboards?dashboardId=d1&cardId=n1" })).toBe(false);
+    expect(controller.blocksNavigation?.({ address: "/dashboards", state: { cardId: "n1" } })).toBe(false);
+
+    // applyState also refuses switching to another board while dirty.
+    controller.applyState({ dashboardId: "d2" });
+    await flushPromises();
+    expect(router.currentRoute.value.query.dashboardId).toBe("d1");
+    expect(wrapper.find(".board-preview-bar").exists()).toBe(true);
+
+    // Clicking "Create dashboard" asks confirmDiscardUnsaved first; cancelling keeps the current board and preview intact.
+    const confirmSpy = vi.spyOn(ElMessageBox, "confirm").mockRejectedValueOnce("cancel");
+    const promptSpy = vi.spyOn(ElMessageBox, "prompt").mockResolvedValue({ value: "New Board", action: "confirm" } as never);
+    await wrapper.find("button.create").trigger("click");
+    await flushPromises();
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(promptSpy).not.toHaveBeenCalled();
+    expect(api.createdBoards).toEqual([]);
+    expect(wrapper.find(".board-preview-bar").exists()).toBe(true);
+
+    // Confirming discard allows creating the new dashboard.
+    confirmSpy.mockResolvedValueOnce("confirm" as never);
+    await wrapper.find("button.create").trigger("click");
+    await flushPromises();
+    expect(confirmSpy).toHaveBeenCalledTimes(2);
+    expect(promptSpy).toHaveBeenCalledTimes(1);
+    expect(api.createdBoards).toEqual(["New Board"]);
+
+    wrapper.unmount();
+  });
+
+  it("merges consecutive agent and non-conflicting user parameter edits, and blocks only conflicting user-edited keys", async () => {
+    const { wrapper, controller } = await mountDashboardHome();
+
+    // 1. Consecutive agent fills merge cleanly without blocked_unsaved.
+    expect(await controller.fillForm!({
+      member: "card.parameters",
+      values: { year: "2025" },
+    })).toEqual({ ok: true, member: "card.parameters", filledFields: ["year"] });
+    await flushPromises();
+
+    expect(await controller.fillForm!({
+      member: "card.parameters",
+      values: { region: "West" },
+    })).toEqual({ ok: true, member: "card.parameters", filledFields: ["region"] });
+    await flushPromises();
+
+    // Agent can also refine its own previously filled key.
+    expect(await controller.fillForm!({
+      member: "card.parameters",
+      values: { year: "2024" },
+    })).toEqual({ ok: true, member: "card.parameters", filledFields: ["year"] });
+    await flushPromises();
+
+    // 2. User manually edits 'year'; agent fills non-conflicting 'region' -> merges both without blocked_unsaved.
+    const formFields = wrapper.findComponent(FormFields);
+    formFields.vm.$emit("input", "year", "2023-manual");
+    await flushPromises();
+
+    expect(await controller.fillForm!({
+      member: "card.parameters",
+      values: { region: "North" },
+    })).toEqual({ ok: true, member: "card.parameters", filledFields: ["region"] });
+    await flushPromises();
+
+    // 3. Agent attempts to overwrite user-edited 'year' without overwriteUnsaved -> blocked_unsaved naming 'year'.
+    const blocked = await controller.fillForm!({
+      member: "card.parameters",
+      values: { year: "2022" },
+    });
+    expect(blocked).toMatchObject({
+      ok: false,
+      reason: "blocked_unsaved",
+      member: "card.parameters",
+    });
+    expect(blocked.ok ? "" : blocked.message).toContain("year");
+
+    // 4. User reverts 'year' back to baseline ('2026') -> removed from userEditedKeys -> agent can fill 'year' again.
+    formFields.vm.$emit("input", "year", "2026");
+    await flushPromises();
+    expect(await controller.fillForm!({
+      member: "card.parameters",
+      values: { year: "2022" },
+    })).toEqual({ ok: true, member: "card.parameters", filledFields: ["year"] });
+    await flushPromises();
+
+    // Approve save and confirm both merged parameters are sent.
+    api.confirmMode.autoMode = true;
+    const saved = await controller.executeAction!({ operation: "card.parameters.save", agentRun });
+    expect(saved).toMatchObject({ ok: true, kind: "executed" });
+    expect(api.savedParams).toEqual([
+      { dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2022", region: "North" } },
+    ]);
+
+    wrapper.unmount();
+  });
+
+  it("reports multi-step partial save truthfully, reports success when only final reload fails, and rejects stale deleted targets", async () => {
+    // 1. Multi-step partial save: renameDashboard succeeds, modifyDimensionName fails.
+    api.failGroupRenameMessage = "Group write failed";
+    const { wrapper, controller } = await mountDashboardHome();
+
+    await controller.fillForm!({
+      member: "board",
+      values: { name: "Renamed Board", groupNames: { g1: "Renamed Group" } },
+    });
+    await flushPromises();
+
+    const pending = await controller.executeAction!({ operation: "board.save", agentRun });
+    if (!pending.ok || pending.kind !== "awaiting_confirmation") throw new Error("Expected awaiting_confirmation");
+    const dispatched = await pending.confirmation.dispatch();
+    await flushPromises();
+
+    // Never disguised as blanket failure or not_executed: truthfully reports succeeded & failed steps.
+    expect(dispatched).toMatchObject({
+      ok: true,
+      intentId: "intent-1",
+      outcome: {
+        dashboardId: "d1",
+        partial: true,
+        succeeded: ["rename dashboard"],
+        failed: [{ label: 'rename group "Overview"', error: "Group write failed" }],
+      },
+    });
+    if (dispatched.ok) {
+      expect(dispatched.summary).toContain("rename dashboard");
+      expect(dispatched.summary).toContain("Group write failed");
+    }
+    // Banner remains visible with only the failed item's error, and succeeded step was removed from preview.
+    expect(wrapper.find(".board-preview-bar__failure").text()).toContain("rename dashboard");
+    expect(wrapper.find(".board-preview-bar__failure").text()).toContain("Group write failed");
+    wrapper.unmount();
+
+    // 2. All writes succeed, only final reload fails -> clears preview and reports saved success (never save failure).
+    api.failGroupRenameMessage = null;
+    api.confirmMode = { autoMode: true, nextSeq: 1 };
+    api.detailReads = 0;
+    const second = await mountDashboardHome();
+    api.failDetailAfterReads = api.detailReads; // Next detail read (the post-save reload) throws!
+
+    await second.controller.fillForm!({
+      member: "board",
+      values: { name: "Saved Despite Reload Failure" },
+    });
+    await flushPromises();
+
+    const executed = await second.controller.executeAction!({ operation: "board.save", agentRun });
+    await flushPromises();
+    expect(executed).toMatchObject({
+      ok: true,
+      kind: "executed",
+      operation: "board.save",
+      outcome: {
+        dashboardId: "d1",
+        reloadFailed: true,
+      },
+    });
+    expect(second.wrapper.find(".board-preview-bar").exists()).toBe(false);
+    expect(second.dirtyEvents.at(-1)).toBe(false);
+    second.wrapper.unmount();
+
+    // 3. Target card deleted before approval -> isStillValid() and dispatch() reject as stale with zero writes.
+    api.failDetailAfterReads = null;
+    api.confirmMode = { autoMode: false, nextSeq: 1 };
+    api.renameChart = [];
+    const third = await mountDashboardHome();
+
+    await third.controller.fillForm!({
+      member: "board",
+      values: { operation: "dashboard.chart.rename", chartId: "c1", resultSetName: "Ghost Chart" },
+    });
+    await flushPromises();
+
+    const pendingChart = await third.controller.executeAction!({ operation: "board.save", agentRun });
+    if (!pendingChart.ok || pendingChart.kind !== "awaiting_confirmation") throw new Error("Expected awaiting_confirmation");
+
+    // Simulate chart c1 disappearing from the loaded board before confirmation approval.
+    third.wrapper.findComponent(ChartCard).vm.$emit("chart-deleted", { chartId: "c1" });
+    await flushPromises();
+
+    expect(pendingChart.confirmation.isStillValid()).toMatchObject({ ok: false, reason: "stale" });
+    const staleResult = await pendingChart.confirmation.dispatch();
+    expect(staleResult).toMatchObject({ ok: false, reason: "stale" });
+    expect(api.renameChart).toEqual([]);
+    third.wrapper.unmount();
   });
 });
