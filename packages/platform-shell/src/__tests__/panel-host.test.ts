@@ -10,7 +10,6 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import {
   panelFrameDocument,
   usePanelInstance,
-  type DirectPanelMountStateOptions,
   type DirectPanelRun,
   type PanelHostLabels,
   type PanelHostPort,
@@ -98,7 +97,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
     addresses: string[];
     invoked: string[];
     statePatches: Record<string, unknown>[];
-    stateUpdates: { patch: Record<string, unknown>; options?: DirectPanelMountStateOptions }[];
+    stateCalls: unknown[][];
   }>();
   const frames = new Map<Window, unknown[]>();
   const sent = new WeakMap<Window, unknown[]>();
@@ -121,7 +120,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
             addresses: [] as string[],
             invoked: [] as string[],
             statePatches: [] as Record<string, unknown>[],
-            stateUpdates: [] as { patch: Record<string, unknown>; options?: DirectPanelMountStateOptions }[],
+            stateCalls: [] as unknown[][],
           };
           coded.set(use.id, started);
           // The instance runs: it reports its state at the address it was given.
@@ -129,9 +128,10 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
           return {
             refresh() {}, activate() {}, dispose() {},
             address: url => { started.addresses.push(url); },
-            setState: (patch, options) => {
+            setState: (...args: unknown[]) => {
+              const patch = args[0] as Record<string, unknown>;
               started.statePatches.push({ ...patch });
-              started.stateUpdates.push({ patch: { ...patch }, ...(options ? { options } : {}) });
+              started.stateCalls.push([{ ...patch }, ...args.slice(1)]);
             },
             invoke: id => { started.invoked.push(id); return Promise.resolve(`answer of ${id}`); },
             projectionsChanged: projections => { started.projectionsChanged.push([...projections]); },
@@ -759,15 +759,15 @@ describe("the panel host", () => {
       { term: "spring", campus: null },
       { term: "autumn" },
     ]);
-    expect(started.stateUpdates).toEqual([
-      { patch: { term: "spring", campus: null }, options: { external: true, withdrawn: ["campus"] } },
-      { patch: { term: "autumn" }, options: { external: true, withdrawn: ["term"] } },
+    expect(started.stateCalls).toEqual([
+      [{ term: "spring", campus: null }],
+      [{ term: "autumn" }],
     ]);
     expect(view.address.value).toBe(path);
     scope.stop();
   });
 
-  it("marks withdrawn external-only fields including personal fields so personal-state hosts can restore saved preferences", async () => {
+  it("resets withdrawn external-only fields including personal fields to declared defaults with a plain setState patch", async () => {
     const manifest = definePanel({
       state: {
         term: { type: { kind: "scalar", type: "string" }, external: true, personal: true, default: "autumn" },
@@ -796,9 +796,9 @@ describe("the panel host", () => {
     await nextTick();
 
     const started = port.started("use-a");
-    expect(started.stateUpdates).toEqual([
-      { patch: { term: "spring", campus: "north" }, options: { external: true } },
-      { patch: { term: "autumn", campus: null }, options: { external: true, withdrawn: ["term", "campus"] } },
+    expect(started.stateCalls).toEqual([
+      [{ term: "spring", campus: "north" }],
+      [{ term: "autumn", campus: null }],
     ]);
     scope.stop();
   });
