@@ -2282,7 +2282,7 @@ test("platform ontology catalogues publish standard list, record and required de
     source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
     outputs: {
       directoryPath: { kind: "scalar", type: "string" },
-      directoryNameKey: { kind: "scalar", type: "string" },
+      directoryName: { kind: "scalar", type: "string" },
     },
   });
   for (const name of ["properties", "typeRelations", "reads", "operations"]) {

@@ -492,7 +492,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
         outputs: {
           directoryPath: { kind: "scalar", type: "string" },
-          directoryNameKey: { kind: "scalar", type: "string" },
+          directoryName: { kind: "scalar", type: "string" },
         },
       },
       properties: ontologyTypeDetailList,

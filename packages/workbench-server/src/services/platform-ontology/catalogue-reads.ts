@@ -1,14 +1,11 @@
-import {
-  panelRecordFieldText,
-  type PanelRecord,
-} from "@ontomato/contracts/panel-projection";
+import type { PanelRecord } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyTypeCount } from "@ontomato/contracts/platform-ontology";
-import { ONTOLOGY_RELATION_KIND, type PlatformRelationKindDeclaration } from "@ontomato/contracts/platform-object-types";
+import { ONTOLOGY_RELATION_KIND, platformObjectTypes, type PlatformRelationKindDeclaration } from "@ontomato/contracts/platform-object-types";
 import { platformTypeDetails } from "@ontomato/contracts/platform-type-details";
+import { tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { HttpError } from "../../utils/errors";
 import type { ProductOwner } from "../product-governance/grants";
-import { countStatusNames, layerNames, localized, relationNames, typeDetailsZh, typeNames } from "./catalogue-text";
 import { readPlatformOntologyCounts } from "./query";
 import {
   AGENT_DEFINITION,
@@ -24,15 +21,17 @@ import {
   relationTargets,
 } from "./schema";
 
-const instanceDirectories: Readonly<Partial<Record<string, NonNullable<PanelRecord["outputs"]>>>> = {
-  [SDK_COMPONENT]: { directoryPath: "/ontology/components", directoryNameKey: "cm.dirComponents" },
-  [PRODUCT_PROJECTION]: { directoryPath: "/ontology/projections", directoryNameKey: "cm.dirProjections" },
-  [PRODUCT_PANEL]: { directoryPath: "/ontology/panels", directoryNameKey: "cm.dirPanels" },
-  [APPLICATION]: { directoryPath: "/ontology/applications", directoryNameKey: "cm.dirApplications" },
-  [AGENT_DEFINITION]: { directoryPath: "/ontology/agents", directoryNameKey: "cm.dirAgents" },
+const instanceDirectories: Readonly<Partial<Record<string, { path: string; name: string }>>> = {
+  [SDK_COMPONENT]: { path: "/ontology/components", name: "dirComponents" },
+  [PRODUCT_PROJECTION]: { path: "/ontology/projections", name: "dirProjections" },
+  [PRODUCT_PANEL]: { path: "/ontology/panels", name: "dirPanels" },
+  [APPLICATION]: { path: "/ontology/applications", name: "dirApplications" },
+  [AGENT_DEFINITION]: { path: "/ontology/agents", name: "dirAgents" },
 };
 
 const countTones = { ok: "success", refused: "warning", failed: "danger", unavailable: "info" } as const;
+
+const detailKey = (typeLabelKey: string) => typeLabelKey.replace("platformOntology.types.", "platformOntology.typeDetails.");
 
 function requireType(type: string) {
   const spec = PLATFORM_ONTOLOGY_TYPE_MAP.get(type);
@@ -46,34 +45,36 @@ async function readTypeSignatures(type: string) {
 }
 
 export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer: AssistantCredentials) {
-  const text = (value: PanelRecord["fields"][string]) => panelRecordFieldText(value, viewer.locale, "en");
-  const typeLabel = (type: string) => text(typeNames[type] ?? type);
-  const relationLabel = (relation: PlatformRelationKindDeclaration) => text(relationNames[relation.id] ?? relation.id);
+  const text = (key: string) => tForLocale(viewer.locale, key);
+  const word = (key: string) => text(`panels.platformOntology.${key}`);
 
   function typeRow(entry: PlatformOntologyTypeCount): PanelRecord {
     const { type, layer, status, count, reason } = entry;
     const tone = countTones[status];
+    const countStatusLabel = word(`countStatus.${status}`);
     return {
       className: ONTOLOGY_TYPE,
       primaryKey: type,
-      label: typeLabel(type),
+      label: text(PLATFORM_ONTOLOGY_TYPE_MAP.get(type)!.labelKey),
       fields: {
         typeId: type,
-        layer: layerNames[layer],
+        layer: text(`platformOntology.layers.${layer}`),
         layerId: layer,
         countStatus: status,
-        countStatusLabel: countStatusNames[status],
-        ...(count !== undefined && { count }),
+        countStatusLabel,
+        countDisplay: status === "ok" ? String(count) : countStatusLabel,
+        ...(status === "ok" && { count: count! }),
         ...(reason !== undefined && { countReason: reason }),
       },
       fieldLabels: {
-        typeId: text(localized("Type ID", "类型 ID")),
-        layer: text(localized("Layer", "层级")),
-        count: text(localized("Readable instances", "可读实例数")),
-        countStatusLabel: text(localized("Count status", "计数状态")),
-        countReason: text(localized("Reason", "原因")),
+        typeId: word("typeId"),
+        layer: word("layer"),
+        count: word("count"),
+        countDisplay: word("count"),
+        countStatusLabel: word("countStatus"),
+        countReason: word("countReason"),
       },
-      tones: { countStatus: tone, countStatusLabel: tone },
+      tones: { countStatus: tone, countStatusLabel: tone, countDisplay: tone },
     };
   }
 
@@ -82,9 +83,11 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
   ): PanelRecord {
     return {
       primaryKey: `${direction}:${relation.id}:${peer}`,
-      label: relationLabel(relation),
+      label: text(relation.labelKey),
       fields: {
-        direction, relationKind: relation.id, peer, peerLabel: typeNames[peer] ?? peer, derived: relation.derived,
+        direction, relationKind: relation.id, peer,
+        peerLabel: text(platformObjectTypes[peer].labelKey!),
+        derived: relation.derived,
       },
     };
   }
@@ -105,45 +108,42 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
       const spec = requireType(type);
       const { counts: [count] } = await readPlatformOntologyCounts(owner, viewer, [spec]);
       const row = typeRow(count);
-      const detail = platformTypeDetails[type];
-      const zh = typeDetailsZh[type];
-      const outputs = instanceDirectories[type];
+      const detail = detailKey(spec.labelKey);
+      const directory = instanceDirectories[type];
+      const outputs = directory && { directoryPath: directory.path, directoryName: word(directory.name) };
       return {
         ...row,
         fields: {
           ...row.fields,
-          ...(detail && {
-            definition: zh ? localized(detail.definition, zh.definition) : detail.definition,
-            rules: zh ? localized(detail.rules, zh.rules) : detail.rules,
+          ...(platformTypeDetails[type] && {
+            definition: text(`${detail}.definition`),
+            rules: text(`${detail}.rules`),
           }),
           ...outputs,
         },
         fieldLabels: {
           ...row.fieldLabels,
-          definition: text(localized("Definition", "定义")),
-          rules: text(localized("Creation and use rules", "创建与使用规则")),
-          directoryPath: text(localized("Instance directory", "实例目录")),
+          definition: word("definition"),
+          rules: word("rules"),
+          directoryPath: word("directoryPath"),
         },
         ...(outputs && { outputs }),
       };
     },
 
     properties(type: string): PanelRecord[] {
-      requireType(type);
-      const translations = typeDetailsZh[type]?.properties;
-      return (platformTypeDetails[type]?.properties ?? []).map(property => {
-        const zh = translations?.[property.name];
-        return {
-          primaryKey: property.name,
-          label: property.name,
-          fields: {
-            name: property.name,
-            type: property.type,
-            optional: property.optional ?? false,
-            description: zh ? localized(property.description, zh) : property.description,
-          },
-        };
-      });
+      const spec = requireType(type);
+      const detail = detailKey(spec.labelKey);
+      return (platformTypeDetails[type]?.properties ?? []).map(property => ({
+        primaryKey: property.name,
+        label: property.name,
+        fields: {
+          name: property.name,
+          type: property.type,
+          optional: property.optional ?? false,
+          description: text(`${detail}.properties.${property.name}`),
+        },
+      }));
     },
 
     typeRelations(type: string): PanelRecord[] {
@@ -184,7 +184,7 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
       return PLATFORM_ONTOLOGY_RELATION_KINDS.map(relation => ({
         className: ONTOLOGY_RELATION_KIND,
         primaryKey: relation.id,
-        label: relationLabel(relation),
+        label: text(relation.labelKey),
         fields: {
           id: relation.id, from: relation.from, to: relation.to, derived: relation.derived, owner: relation.owner,
         },
