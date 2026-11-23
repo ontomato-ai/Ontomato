@@ -226,6 +226,7 @@ async function waitFor(check: () => boolean, label: string | (() => string)): Pr
 function mountMetricViews(initialState: Record<string, unknown> = {}) {
   const reads: DataReadRequest[] = [];
   const opsReads: OpsReadRequest[] = [];
+  let localConfirmSeq = 0;
   let controller: PageControllerHandle | null = null;
   let latestContext: PageContext | null = null;
 
@@ -239,6 +240,15 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
     if (path === `/api/data-query/platform/applications/${APP_ID}/panel-uses`) {
       return Response.json({
         data: { applicationId: APP_ID, entry: { path: "/ontology", renderer: "panels" }, panelUses: [use] },
+      });
+    }
+    if (path === "/api/panel-operations/local-confirmations") {
+      localConfirmSeq += 1;
+      const body = request.body as { operationLabel?: string } | null;
+      return Response.json({
+        intentId: `8f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d0${localConfirmSeq}`,
+        questionId: `9f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d0${localConfirmSeq}`,
+        label: body?.operationLabel ?? "Discard",
       });
     }
     if (path === `/api/product-panels/${metricViewsPanel.id}`) return panelAnswer(metricViewsPanel, request);
@@ -501,8 +511,21 @@ describe("metric-views builtin panel detail mount lifecycle", () => {
         () => (mounted.element.querySelector(".mv-detail input") as HTMLInputElement | null)?.value === "Revenue Revised",
         "definition form input updated via fillForm",
       );
-      expect(await harness.controller()!.executeAction!({ operation: "definition.discard", agentRun: AGENT_RUN })).toMatchObject({
+      const discardAwaiting = await harness.controller()!.executeAction!({
+        operation: "definition.discard",
+        agentRun: AGENT_RUN,
+      });
+      expect(discardAwaiting).toMatchObject({
         ok: true,
+        kind: "awaiting_confirmation",
+        operation: "definition.discard",
+      });
+      if (!discardAwaiting.ok || discardAwaiting.kind !== "awaiting_confirmation") {
+        throw new Error("Expected definition.discard to require conversation confirmation");
+      }
+      expect(await discardAwaiting.confirmation.dispatch()).toMatchObject({
+        ok: true,
+        outcome: { discarded: true },
       });
 
       // 3. Return to catalog: mv-detail & definition unmount, mv-catalog stays the same element and becomes visible again.
@@ -577,9 +600,22 @@ describe("metric-views builtin panel detail mount lifecycle", () => {
         "detailTitle updates reactively from live definition form handle",
       );
 
-      // Discarding create form triggers onDiscarded -> setCreating(false) -> unmounts mv-detail & definition.
-      expect(await harness.controller()!.executeAction!({ operation: "definition.discard", agentRun: AGENT_RUN })).toMatchObject({
+      // Discarding create form requires confirmation, then triggers onDiscarded -> setCreating(false) -> unmounts mv-detail & definition.
+      const createDiscardAwaiting = await harness.controller()!.executeAction!({
+        operation: "definition.discard",
+        agentRun: AGENT_RUN,
+      });
+      expect(createDiscardAwaiting).toMatchObject({
         ok: true,
+        kind: "awaiting_confirmation",
+        operation: "definition.discard",
+      });
+      if (!createDiscardAwaiting.ok || createDiscardAwaiting.kind !== "awaiting_confirmation") {
+        throw new Error("Expected create definition.discard to require conversation confirmation");
+      }
+      expect(await createDiscardAwaiting.confirmation.dispatch()).toMatchObject({
+        ok: true,
+        outcome: { discarded: true },
       });
 
       await waitFor(
