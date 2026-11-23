@@ -77,7 +77,8 @@ const emit = defineEmits<{ selectApp: [id: string] }>();
 function appFor(path: string): PlatformAppDeclaration | null {
   let match: PlatformAppDeclaration | null = null;
   for (const app of props.apps ?? []) {
-    if (path !== app.prefix && !path.startsWith(`${app.prefix}/`)) continue;
+    // The application gallery owns `/applications` alone; `/applications/<id>` belongs to that application.
+    if (path !== app.prefix && (app.id === "application-gallery" || !path.startsWith(`${app.prefix}/`))) continue;
     if (!match || app.prefix.length > match.prefix.length) match = app;
   }
   return match;
