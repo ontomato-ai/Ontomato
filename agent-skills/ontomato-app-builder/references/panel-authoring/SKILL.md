@@ -11,8 +11,9 @@ description: Build and register an Ontomato panel from declared read functions, 
      `bindsElement` in the SDK catalogue indicates applicable ontology element types, while every actual binding MUST go
      through a projection's declared read or operation (binding a class alone is rejected). For customer classes, bind
      the platform's generic read functions (`query`, `record`, `form`, `createForm` shown under `panel type <class>`),
-     MetricViews for calculated/filtered reads, and Actions for writes (object-targeted Actions under `panel type <class>`
-     and top-level targetless Actions with `target: { source: "none" }` under `panel type --all`'s `operations`).
+     MetricViews for calculated/filtered reads, and Actions for writes (object-targeted Actions and affecting targetless
+     Actions under `panel type <class>`'s `operations` / `targetlessOperations`, or all top-level targetless Actions via
+     `panel type --all`).
    - **Platform types** (`platform:*`, e.g., `platform:Relationship`, `platform:Application`): bind their built-in
      platform reads and management operations.
 2. **Respect the four boundaries:**

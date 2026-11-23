@@ -538,3 +538,33 @@ export async function checkPanelWorkspace(directory, {
   }
   return { status: "valid", version, ...(digest && { digest }), unchecked };
 }
+
+export function describePanelType(typeTable, id, readName = null) {
+  const { objectTypes, resultSchemas, operations: topLevelOperations = [] } = typeTable;
+  if (!Object.hasOwn(objectTypes, id)) {
+    throw new Error(`Type ${id} is not listed in the author's type table`);
+  }
+  const { reads = {}, ...metadata } = objectTypes[id];
+  const describe = read => ({ ...read, resultSchema: resultSchemas[read.result] });
+  if (readName !== null) {
+    if (!Object.hasOwn(reads, readName)) {
+      throw new Error(`Type ${id} has no read '${readName}'`);
+    }
+    return { id, read: readName, ...describe(reads[readName]) };
+  }
+  const targetlessOperations = topLevelOperations
+    .filter(operation => Array.isArray(operation.affects) && operation.affects.includes(id))
+    .map(operation => ({ ...operation, targetless: true, callTarget: null }));
+  const result = {
+    id,
+    reads: Object.fromEntries(Object.entries(reads).map(([name, read]) => [name, describe(read)])),
+    ...metadata,
+  };
+  if (targetlessOperations.length > 0 || !id.startsWith("platform:") || topLevelOperations.length > 0) {
+    result.targetlessOperations = targetlessOperations;
+    result.targetlessOperationsHint = targetlessOperations.length > 0
+      ? 'Targetless operations (target.source: "none", call with target: null) whose affects include this type. Run `panel type --all` to list all top-level targetless operations.'
+      : "No top-level targetless operations declare this type in affects. Run `panel type --all` to list all top-level targetless operations.";
+  }
+  return result;
+}

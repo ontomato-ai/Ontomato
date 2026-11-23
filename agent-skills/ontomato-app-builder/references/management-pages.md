@@ -30,8 +30,9 @@ The starter writes `panel.html`, `panel.mjs`, `panel.json`, and `registration.js
 structure. Review the generated application entry, columns, and access before registration. Use
 `panel type <type-id>` to inspect reads and operations:
 - For customer ontology classes (e.g., `Student`, `Order`), `panel type <class>` lists the platform's generic reads
-  (`query`, `record`, `form`, `createForm`) and object-targeted Actions; run `panel type --all` to inspect top-level
-  targetless Actions (`operations`, with `target: { source: "none" }` and `affects`) for creation or global writes.
+  (`query`, `record`, `form`, `createForm`), object-targeted Actions, and top-level targetless Actions whose `affects`
+  include `<class>` (under `targetlessOperations`, with `target: { source: "none" }` and `callTarget: null`). Run
+  `panel type --all` to inspect all top-level targetless Actions (including ones that did not declare `affects`).
 - For `platform:*` types (e.g., `platform:Relationship`, `platform:Application`), it lists built-in platform reads and
   operations.
 
@@ -50,7 +51,7 @@ and `--batch <owner operation ID>` for a toolbar button targeting checked rows. 
 | Two-entry catalog → detail *(recommended)* | Keep the catalog entry in the menu (`names` set) and omit `names` on the detail entry. On `@choose` in the catalog, build the flat URL with `panelAddress(DETAIL_PATH, { selected: item.primaryKey })` from `@ontomato/sdk/panel` and call `navigate(address)`. In the detail panel, place `<page-header :title="..." :back-label="..." :draft="formDraft" @back="goBack">` (`goBack` calls `navigate(CATALOG_PATH)`). |
 | Single-panel catalog → detail | Toggle `v-if="!selectedKey"` between catalog and detail; wire `usePanelFormDraft("form")` into `<page-header :draft="formDraft">` and `usePanelBack` for Back/Escape unsaved-changes confirmation. |
 | New in centered dialog, edit in `<page-header>` | Declare `creating` in `manifest.state` **without** `deepLink: true`. Set `ObjectForm` `config.actions: "create-only"` (or `"none"` on a dedicated detail entry). Mount `<projection slot="form">` in the detail card (saved via `usePanelFormDraft`) and inside `<sdk-dialog v-model="createDialog">` when creating. |
-| Customer class edit & create forms | Bind `data: { form: "form" }` + an object-targeted save `Action` for edit (use `{ formField: "/ptr" }` / `{ formFields: { k: "/ptr" } }` when parameter names differ; unmapped attributes become read-only). Bind `data: { createForm: "createForm" }` + a targetless `Action` (`target: { source: "none" }`) for create. See [CODE.md](panel-authoring/CODE.md#customer-objecttype-forms-and-targetless-actions). |
+| Customer class edit & create forms | Bind `data: { form: "form" }` + an object-targeted write `Action` for edit (not just `form.save`; use `{ formField: "/ptr" }` / `{ formFields: { k: "/ptr" } }` when parameter names differ; unmapped attributes become read-only). Bind `data: { createForm: "createForm" }` + a targetless `Action` (`target: { source: "none" }`) for create. Review the 4 current runtime boundaries (restricted-scope `ACTION_TARGET_OUT_OF_SCOPE`, required `affects` for auto-refresh, `affected.objects: []` on targetless Actions, text clear submits `""`) in [CODE.md](panel-authoring/CODE.md#customer-objecttype-forms-and-targetless-actions). |
 | Single operation in `<page-header>` | Declare an `OperationButton` member (`operation`, `target: "selected"`, optional `config: { label: "Delete", type: "danger", plain: true, icon: "trash", hideWhenUnavailable: true }`) and place `<projection slot="remove">` directly inside `<page-header #actions>`. |
 | Batch operation | Connect the list's `state.checked` and the button's `target` to the same list of object references on a batch-capable operation. |
 | Detail header inside split/card views | Use `ObjectHeader` with `target: "selected"`, `data.record`, and declared `operations`. Read `usePanelOutput("header", "label" \| "status" \| "errorMessage")` and any owner-declared scalar outputs. Pair with `ObjectSummary` (`config.showTitle: false`, optional `config.copyableFields`). |

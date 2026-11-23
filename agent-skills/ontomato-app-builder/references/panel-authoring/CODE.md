@@ -316,9 +316,12 @@ through the platform's generic `form` / `createForm` reads paired with published
 ### 2. Create a customer object or run a global Action (targetless `Action`, `target: null`)
 
 - Targetless customer Actions (creating a new object, importing, batch generation, etc.) do **not** invent a new `kind`.
-  In the author type table (`panel type --all`), they live once at the top level under `operations` keyed uniquely by
-  Action ID, with `target: { source: "none" }` and `affects: ["Order", ...]` for discovery and automatic post-write
-  refresh. When an agent invokes one via `/operate`, it sends `call.target: null`.
+  In the author type table, they live once at the top level under `operations` keyed uniquely by Action ID, with
+  `target: { source: "none" }` and `affects: ["Order", ...]` for discovery and automatic post-write refresh.
+  - `panel type <ObjectType>` directly lists top-level targetless Actions whose `affects` include `<ObjectType>` under
+    `targetlessOperations` (annotated with `targetless: true` and `callTarget: null`); run `panel type --all` to inspect
+    every top-level targetless Action (including ones that did not declare `affects`).
+  - When an agent invokes one via `/operate`, it sends `call.target: null`.
 - **Example A — `ObjectForm` in create mode bound to a targetless `Action`:**
 
 ```json
@@ -364,7 +367,22 @@ through the platform's generic `form` / `createForm` reads paired with published
    "jump straight to the newly created record's detail page", have the Action owner return the created object identity in
    the capability layer.
 
-### 4. Cross-member write submitting a form draft (`draft`)
+### 4. Current capability boundaries (customer forms & targetless Actions)
+
+Design your Actions and panel UX around these four current runtime boundaries:
+
+1. **Restricted data-scope grants reject targetless creates (`ACTION_TARGET_OUT_OF_SCOPE`):** If a role is granted a
+   targetless create Action only under a restricted data scope (rather than unrestricted scope), the owner rejects
+   execution with `ACTION_TARGET_OUT_OF_SCOPE` for both humans and agents alike.
+2. **Missing `affects` skips post-create auto-refresh:** If a create Action omits `affects` (the affected object types),
+   lists and metrics for that class will **not** auto-refresh after creation. Always declare `affects` on create Actions.
+3. **No auto-selection from plain `result` text:** Even if a targetless customer Action includes a new primary key or
+   student ID inside its plain `result` message text, the current Action adapter always returns `affected.objects: []`,
+   so the form will **not** auto-select or navigate to the newly created object.
+4. **Clearing text fields sends `""` (not SQL `NULL`):** Current nullable text clearing submits `""` (empty string) and
+   cannot yet distinguish database `NULL` from `""` on text attributes.
+
+### 5. Cross-member write submitting a form draft (`draft`)
 
 When a button or operation declared on **another** member submits a form member's current draft, explicitly specify
 `draft: "<formMemberKey>"` in that member's operation binding (either top-level `draft` on `OperationButton` or inside
@@ -486,7 +504,13 @@ synchronous `setup()` and run `handle.run(input)`. The platform handles permissi
 
 ## Save a form or hand off a draft
 
-An `ObjectForm` projection binds one save operation (platform `form.save` or customer `Action`).
+An `ObjectForm` projection binds one save operation:
+- For `platform:*` types, bind the type's declared `form.save` operation (for example `platform:AgentDefinition.save`).
+- For customer ontology `ObjectType`s (such as `Student`, `Order`), bind a published write `Action`: an object-targeted
+  `Action` for edit (`data: { form: "form" }`, `target: "<selectedState>"`) or a top-level targetless `Action`
+  (`target: { source: "none" }`) for create (`data: { createForm: "createForm" }`), wiring parameter names with
+  `{ "formField": "/pointer" }` or `{ "formFields": { ... } }` whenever they differ from form attribute names (see
+  [Customer `ObjectType` forms and targetless Actions](#customer-objecttype-forms-and-targetless-actions)).
 
 - **`config.actions`**:
   - `"footer"` (default): non-overlapping document-flow Save/Discard/Cancel bar at the bottom of the form.

@@ -704,3 +704,70 @@ test("panel check accepts top-level targetless customer Actions on ObjectForm an
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("describePanelType includes top-level targetless operations affecting the queried type", async () => {
+  const { describePanelType } = await import(PANEL_CHECK_URL);
+  const typeTable = {
+    resultSchemas: {
+      panelFormDescription: { type: "object", properties: { fields: { type: "array" } } },
+    },
+    objectTypes: {
+      Student: {
+        reads: { form: { source: "object", parameterMode: "fixed", params: {}, result: "panelFormDescription" } },
+        operations: [
+          {
+            id: "action-update-student",
+            kind: "action",
+            effect: "write",
+            target: { source: "input", input: "target" },
+            inputSchema: { type: "object", properties: {} },
+            batch: false,
+          },
+        ],
+      },
+      Course: {
+        reads: {},
+        operations: [],
+      },
+    },
+    operations: [
+      {
+        id: "action-create-student",
+        kind: "action",
+        effect: "write",
+        target: { source: "none" },
+        inputSchema: { type: "object", properties: {} },
+        batch: false,
+        affects: ["Student"],
+      },
+      {
+        id: "action-import-other",
+        kind: "action",
+        effect: "write",
+        target: { source: "none" },
+        inputSchema: { type: "object", properties: {} },
+        batch: false,
+        affects: ["Order"],
+      },
+    ],
+  };
+
+  const student = describePanelType(typeTable, "Student");
+  assert.equal(student.id, "Student");
+  assert.equal(student.operations.length, 1);
+  assert.equal(student.operations[0].id, "action-update-student");
+  assert.equal(student.targetlessOperations.length, 1);
+  assert.equal(student.targetlessOperations[0].id, "action-create-student");
+  assert.equal(student.targetlessOperations[0].targetless, true);
+  assert.equal(student.targetlessOperations[0].callTarget, null);
+  assert.match(student.targetlessOperationsHint, /target: null/);
+  assert.match(student.targetlessOperationsHint, /panel type --all/);
+
+  const course = describePanelType(typeTable, "Course");
+  assert.deepEqual(course.targetlessOperations, []);
+  assert.match(course.targetlessOperationsHint, /panel type --all/);
+
+  const formRead = describePanelType(typeTable, "Student", "form");
+  assert.equal(formRead.read, "form");
+  assert.equal(formRead.targetlessOperations, undefined);
+});
