@@ -2,9 +2,9 @@
 import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type AppMenuGroup, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import { applicationPanelAddress, panelAddress, panelAddressState, panelUsePath, parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
-import { applicationRootPath } from "@ontomato/contracts/platform-identity";
+import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationFrameContextOf, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
@@ -17,6 +17,7 @@ import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelO
 import EntryUnit from "./EntryUnit.vue";
 import { entryCountsChanged } from "../entry-counts";
 import { expandDeclaredComposer, hostThemeMode } from "../app-host";
+import { platformApplicationsKey } from "../apps";
 import { useApplicationCatalog } from "../catalog";
 
 /**
@@ -70,8 +71,10 @@ const language = computed(() => ({ locale: locale.value, fallback: String(fallba
 /** What the conversation's and an operation's changes reach: the shown page's instance. */
 type ShownInstance = Pick<PanelInstanceView, "refresh">;
 const host = ref<ShownInstance | null>(null);
+const frameHost = ref<ShownInstance | null>(null);
 /** The Manager's counts, where it is installed: told which object types a write changed, they decide whether to re-read. */
 const countedTypesChanged = inject(countedTypesChangedKey, null);
+const platformApplications = inject(platformApplicationsKey, null);
 /**
  * A change to objects the page shows, from the conversation or from a receipt for an operation in the shown frame: the
  * one place either is taken in. The shown instance re-reads what it displays of the target, and the counts hear of the
@@ -79,6 +82,7 @@ const countedTypesChanged = inject(countedTypesChangedKey, null);
  */
 function changed(change: PanelObjectChange) {
   host.value?.refresh(change.target, change.affected);
+  frameHost.value?.refresh(change.target, change.affected);
   if (change.affected) {
     countedTypesChanged?.(change.affected.objectTypes);
     entryCountsChanged();
@@ -233,8 +237,11 @@ const frameState = computed((): FrameState => {
   // While the next entry's answer is coming, the frame that stands is still the one that reported.
   return lastFrame.value?.state ?? named;
 });
+const catalogApp = computed(() => catalog.applications.value.find((app) => app.id === props.applicationId) ?? null);
 const framed = computed(() => !props.navigate && Boolean(resolution.value?.framePanelId));
-useApplicationFrame(() => framed.value);
+/** True while this full-page route is framed or awaiting admission for an application that declares a frame panel. */
+const expectingFrame = computed(() => !props.navigate && Boolean(resolution.value?.framePanelId ?? (!answered.value && catalogApp.value?.framePanelId)));
+useApplicationFrame(() => expectingFrame.value);
 let frameFor: { framePanelId: string; port: PanelHostPort } | null = null;
 const framePort = computed(() => {
   const answer = resolution.value;
@@ -244,12 +251,28 @@ const framePort = computed(() => {
   return frameFor.port;
 });
 const frameContext = computed(() => resolution.value ? applicationFrameContextOf(resolution.value) : null);
+/**
+ * Host-supplied menu groups for hybrid built-in applications (such as Ontology Manager while native pages still coexist
+ * alongside panel entries); null for pure panel applications, which read Java's `entryMenu` directly.
+ */
+const hostMenu = computed<readonly AppMenuGroup[] | null>(() => {
+  const app = catalogApp.value;
+  if (!app || isPanelApplication(app)) return null;
+  const declaration = platformApplications?.value.find((item) => item.id === props.applicationId);
+  if (!declaration?.groups?.length) return null;
+  return declaration.groups.map((group) => ({
+    key: group.key,
+    ...(group.label ? { label: group.label } : {}),
+    items: group.pages,
+  }));
+});
 /** Where the entry's page is while no frame holds it, and the unit itself. */
 const holder = ref<HTMLElement | null>(null);
 const unit = ref<{ $el: HTMLElement } | null>(null);
 const currentEntry: NonNullable<DirectPanelRun["currentEntry"]> = {
   entry: computed(() => frameContext.value!.currentEntry),
   menu: computed(() => frameContext.value!.menu),
+  hostMenu,
   place(element) {
     // The unit the route holds is moved into the frame's place, never mounted again: the frame cannot replace it.
     const stop = watchEffect(() => {
@@ -534,6 +557,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
     <template v-if="!failure">
       <PanelHost
         v-if="framePort"
+        ref="frameHost"
         key="frame"
         class="panel-application-frame"
         :port="framePort"
@@ -583,7 +607,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           </template>
         </EntryUnit>
       </div>
-      <template v-else>
+      <template v-else-if="!expectingFrame">
         <PanelHost
           v-for="page in kept"
           v-show="page === shownPage"

@@ -1,0 +1,52 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AgentDefinition"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:AgentDefinition.save",
+        "config": {
+          "actions": "none"
+        }
+      },
+      "detail": {
+        "component": "ObjectSummary",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Agent Definition Detail",
+        "detail.back": "Back to Agent Definitions",
+        "detail.basicInfo": "Basic information",
+        "detail.overview": "Overview"
+      },
+      "zh-CN": {
+        "panel.name": "智能体定义详情",
+        "detail.back": "返回智能体定义",
+        "detail.basicInfo": "基本信息",
+        "detail.overview": "概览"
+      }
+    }
+  }
+}

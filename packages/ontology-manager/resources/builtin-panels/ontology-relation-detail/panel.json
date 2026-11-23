@@ -1,0 +1,66 @@
+{
+  "manifest": {
+    "state": {
+      "selected": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Relationship"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "headerTitle": {
+        "component": "ObjectHeader",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitle": ""
+        },
+        "id": "builtin-product-d5aa517c-1026-44bc-b278-cf9d79b777a3"
+      },
+      "detail": {
+        "component": "PanelData",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "id": "builtin-product-1aaa68ea-6ded-4fe8-abb7-f8c51b43d8e7"
+      },
+      "types": {
+        "component": "PanelData",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "id": "builtin-product-6ca49ecf-1311-4017-a2b1-68e5b29276e3"
+      },
+      "form": {
+        "component": "ObjectForm",
+        "target": "selected",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:Relationship.save",
+        "config": {
+          "actions": "none"
+        },
+        "id": "builtin-product-e05469f5-4507-4df0-9aed-61b8c396fe99"
+      },
+      "remove": {
+        "component": "OperationButton",
+        "operation": "relationships.delete",
+        "target": "selected",
+        "config": {
+          "type": "danger",
+          "plain": true,
+          "icon": "trash",
+          "label": "删除"
+        },
+        "id": "builtin-product-655a5639-5fd3-4e29-9192-096597b6a77d"
+      }
+    }
+  }
+}

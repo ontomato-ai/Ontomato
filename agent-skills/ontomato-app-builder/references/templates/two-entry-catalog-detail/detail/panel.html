@@ -1,0 +1,22 @@
+<style>
+  .detail-page { display: flex; flex-direction: column; min-width: 0; min-height: 100%; container: detail-page / inline-size; }
+  .detail-body { display: grid; grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr); gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter); align-items: stretch; }
+  .detail-card { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--page-section-padding, var(--spacing-lg)); border: 1px solid var(--sdk-border-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--sdk-bg-color); }
+  .detail-card h2 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); }
+  @container detail-page (max-width: 850px) { .detail-body { grid-template-columns: minmax(0, 1fr); } }
+</style>
+<div id="app">
+  <section class="detail-page">
+    <page-header :title="selectedTitle" :back-label="t('detail.back')" :draft="formDraft" @back="goBack"></page-header>
+    <div class="detail-body">
+      <section class="detail-card">
+        <h2>{{ t("detail.basicInfo") }}</h2>
+        <projection slot="form" @saved="onSaved"></projection>
+      </section>
+      <section class="detail-card">
+        <h2>{{ t("detail.overview") }}</h2>
+        <projection slot="detail"></projection>
+      </section>
+    </div>
+  </section>
+</div>
