@@ -400,6 +400,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       usedBy: { ...catalogueRecord, result: "productPanelUsedBy" },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       members: { ...catalogueRecord, result: "productPanelMembers" },
+      memberRows: { ...catalogueRecord, result: "panelRecordList" },
     },
     operations: productCatalogueOperations(PRODUCT_PANEL, "productPanels"),
   },
@@ -413,7 +414,10 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       },
       record: { ...catalogueRecord, result: "panelRecord" },
       entries: { ...catalogueRecord, result: "applicationEntries" },
+      entryRows: { ...catalogueRecord, result: "panelRecordList" },
+      usedPanels: { ...catalogueRecord, result: "panelRecordList" },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
+      grantRows: { ...catalogueRecord, result: "panelRecordList" },
       form: {
         ...modelReads.form,
         params: { ...definitionFormParams, section: "applicationFormSection", entryId: "applicationEntryId" },

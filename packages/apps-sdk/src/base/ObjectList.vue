@@ -254,6 +254,12 @@ const props = withDefaults(
      * drawers or navigation), overflowing items beyond `maxVisible` (default 2) into a "More" dropdown menu.
      */
     rowActions?: ObjectListRowActionsConfig;
+    /**
+     * Optional primary key of the currently active row when no `selected` state is wired on the member (for example,
+     * a related-object list whose rows belong to a different object type than the bound parent). Highlights the matching
+     * row and resolves `selectedLabel` / `activeLabel` outputs.
+     */
+    selectedKey?: string | null;
   }>(),
   {
     layout: "auto",
@@ -280,6 +286,7 @@ const props = withDefaults(
     groupEmptyLabel: undefined,
     localFilters: undefined,
     rowActions: undefined,
+    selectedKey: undefined,
   },
 );
 
@@ -497,9 +504,14 @@ const currentParams = computed(() =>
 );
 const hasRowDetailSlot = computed(() => Boolean(slots["row-detail"]));
 const hasActionsSlot = computed(() => Boolean(slots.actions));
-const hasActionColumn = computed(
-  () => Boolean(props.rowActions && props.rowActions.items.length > 0) || hasActionsSlot.value,
-);
+const hasActionColumn = computed(() => {
+  if (hasActionsSlot.value) return true;
+  if (!props.rowActions || props.rowActions.items.length === 0) return false;
+  if (rows.value.length > 0 && rows.value.every((row) => resolvedRowActionsFor(row).length === 0)) {
+    return false;
+  }
+  return true;
+});
 function columnCellSlot(columnKey: string): Slot | null {
   return (slots[`cell-${columnKey}`] ?? slots.cell ?? null) as Slot | null;
 }
@@ -849,7 +861,15 @@ const chosenRef = computed<ObjectListSelection | null>(() => {
   const raw = selectedParam.value.value as PanelFieldValue;
   return stateChildObject(raw) ?? stateObject(raw);
 });
-const chosenIdentity = computed<string | null>(() => selectionIdentity(chosenRef.value));
+const chosenIdentity = computed<string | null>(() => {
+  const fromState = selectionIdentity(chosenRef.value);
+  if (fromState !== null) return fromState;
+  if (props.selectedKey) {
+    const match = rawRows.value.find((row) => row.primaryKey === props.selectedKey);
+    if (match) return rowIdentityKey(match);
+  }
+  return null;
+});
 
 const checkedRefs = computed<readonly ObjectListRef[]>(() =>
   stateObjects(checkedParam.value.value as PanelFieldValue),
@@ -2016,6 +2036,12 @@ useMemberOutput("filteredCount", () => (datumState.value.status === "ready" ? ro
 useMemberOutput("checkedCount", () => checkedRefs.value.length);
 useMemberOutput("selectedLabel", () => selectedRowLabel.value);
 useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.value);
+useMemberOutput("firstItem", () => {
+  const first = rows.value[0];
+  if (!first) return null;
+  const ref = rowSelectionValue(first);
+  return { className: ref.className, primaryKey: ref.primaryKey, label: first.label || first.primaryKey };
+});
 </script>
 
 <template>

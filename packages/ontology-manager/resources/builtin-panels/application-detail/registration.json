@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-application-detail",
+      "input": {
+        "name": "应用详情",
+        "description": "本体管理器产品层的“应用详情”：查看与维护单个应用的身份、单独打开与对外链接、导航入口、用到的面板与投影、以及权限与共享"
+      }
+    }
+  ]
+}

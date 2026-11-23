@@ -82,6 +82,26 @@ export function formatOperationLabel(
     : descriptor.label;
 }
 
+export function resolveBoundOperationParams(
+  slot: ProjectionSlot | null,
+  member: PanelMemberContext | null,
+  operationName: string,
+): Record<string, RuntimeJsonValue> {
+  const binding = slot?.projection.operations?.[operationName];
+  if (!binding?.params) return {};
+  const inputs = member?.inputs.value ?? {};
+  const resolved: Record<string, RuntimeJsonValue> = {};
+  for (const [paramKey, spec] of Object.entries(binding.params)) {
+    if ("literal" in spec) {
+      resolved[paramKey] = spec.literal;
+    } else if ("input" in spec && Object.hasOwn(inputs, spec.input)) {
+      const val = inputs[spec.input];
+      if (val !== undefined && val !== null) resolved[paramKey] = val;
+    }
+  }
+  return resolved;
+}
+
 /**
  * Editable parameter fields declared by the owner's `inputSchema.properties`.
  * Absent for file-upload actions, draft/readOperationInputs-bound reads, and keys already bound by `operation.params`.
@@ -227,6 +247,9 @@ export function useOperationRunner(options: {
     read.value = null;
     receipt.value = null;
     try {
+      const boundInput = resolveBoundOperationParams(slot, member, operationName);
+      const effectiveInput = { ...boundInput, ...providedInput };
+
       if (descriptor.effect === "read") {
         const { target: owned } = descriptor;
         const hasDeclaredReadInputs = panel.manifest.members[slot.slot]?.readOperationInputs?.[operationName] !== undefined;
@@ -237,7 +260,7 @@ export function useOperationRunner(options: {
               operationName,
               owned.source === "draft" ? panel.instance.forms.handle(owned.slot)!.values.value : {},
             )
-          : providedInput;
+          : effectiveInput;
         read.value = await panel.instance.readOperation(operationId, { target: targetInfo.target, input });
         return;
       }
@@ -245,10 +268,10 @@ export function useOperationRunner(options: {
       const onConfirmed = () => {
         dispatchingOperation.value = operationName;
       };
-      const [first, ...rest] = targetInfo.checkedTargets.map((object) => ({ target: object, input: providedInput }));
+      const [first, ...rest] = targetInfo.checkedTargets.map((object) => ({ target: object, input: effectiveInput }));
       const answer = await panel.instance.writeOperation(
         operationId,
-        first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: providedInput } },
+        first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: effectiveInput } },
         { onConfirmed },
       );
       if (answer.decision === "cancel") return;

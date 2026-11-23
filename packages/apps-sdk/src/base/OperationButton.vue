@@ -60,12 +60,16 @@ const props = withDefaults(
     showBatchCount?: boolean;
     /** Optional leading icon on the button (`trash` for destructive removal, `check` for approval). */
     icon?: "trash" | "check";
-    /** Optional custom surface label for the button; defaults to the owner's formal operation label (confirmation dialogs and agent operation catalogs always keep the owner's formal label). */
+    /** Optional custom surface label for the button; defaults to the owner's formal operation label (confirmation dialogs and agent catalogs always keep the owner's formal label). */
     label?: string;
+    /** Optional panel message key resolved via `panel.t` for localized surface labels. */
+    labelKey?: string;
     /** Button size: `default` or compact `small` (for example in inline batch-action toolbars). */
     size?: "small" | "default";
+    /** Optional external disabled override (for example while a bound state input is empty). */
+    disabled?: boolean;
   }>(),
-  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, size: "default" },
+  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false },
 );
 
 const emit = defineEmits<{
@@ -134,6 +138,11 @@ const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => 
  * continue to use the owner's formal operation name.
  */
 const label = computed(() => {
+  const key = (props.labelKey ?? readConfigString(rawConfig.value, "labelKey"))?.trim();
+  if (key) {
+    const translated = panel.t(key);
+    if (translated && translated !== key) return translated;
+  }
   const custom = (props.label ?? readConfigString(rawConfig.value, "label"))?.trim();
   if (custom) return custom;
   return props.showBatchCount ? formatOperationLabel(descriptor.value!, targetInfo.value, t) : descriptor.value!.label;
@@ -154,7 +163,7 @@ watch(targetKey, () => {
 });
 
 const ready = computed(() =>
-  isOperationReady(descriptor.value, targetInfo.value, running.value),
+  !props.disabled && isOperationReady(descriptor.value, targetInfo.value, running.value),
 );
 
 function onTriggerClick() {

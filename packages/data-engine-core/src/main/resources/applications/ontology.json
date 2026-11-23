@@ -131,6 +131,9 @@
       "descriptions": {"en": "Every application visible in this domain, built-in and domain-built alike. Open one to see its identity, entries and the panels it uses.", "zh-CN": "本域可见的全部应用：内置的与域内建的同列。展开一行看它的身份、入口和用到的面板。"},
       "names": {"en": "Applications","zh-CN": "应用"}, "groupKey": "products"
     }, {
+      "id": "use-ontology-application-detail", "pageKey": "ontology-application-detail", "panelId": "builtin-product-ontology-application-detail",
+      "path": "/ontology/applications/detail", "access": {"permissionCode": "ontology-modeling"}
+    }, {
       "id": "ontology-agent-settings", "pageKey": "agent-settings", "panelId": "builtin-product-agent-settings",
       "path": "/ontology/agents", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "The agents of this domain: choose one to read or change its name, avatar, instructions, model and skills, or create one.", "zh-CN": "本域的智能体：选中一个查看或修改它的名称、头像、提示词、模型和技能，也可以新建一个。"},
