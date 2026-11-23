@@ -25,6 +25,7 @@ function setup(options: {
   const serialized: { page: DisplayPage | null; view: DisplayView; history: string }[] = [];
   const pages: Record<string, string> = {
     "/actions": "Actions",
+    "/dashboards": "Dashboards",
     "/graph": "Ontology Graph",
     "/admin/users": "Users",
     "/ontology/panels": "Panels",
@@ -648,6 +649,75 @@ describe("live agent page control (requirement-64995244)", () => {
       toolCallId: "call-unknown",
       result,
     }).success).toBe(true);
+    unregister();
+  });
+
+  it("blocks same-instance navigation when controller.blocksNavigation returns true without rewriting address or calling applyState", async () => {
+    const { display, serialized } = setup();
+    await display.present(frame({ kind: "page", address: "/dashboards?dashboardId=board-a" }));
+    serialized.length = 0;
+
+    const applyState = vi.fn();
+    let dirty = true;
+    const unregister = display.registerPageController("/dashboards", {
+      blocksNavigation(next) {
+        if (!dirty) return false;
+        const fromState = typeof next.state?.dashboardId === "string" ? next.state.dashboardId : "";
+        const fromQuery = new URLSearchParams(next.address.split("?")[1] ?? "").get("dashboardId") ?? "";
+        const targetId = fromState || fromQuery;
+        return Boolean(targetId && targetId !== "board-a");
+      },
+      applyState,
+    });
+    display.dirty(true);
+    expect(display.isDirty.value).toBe(true);
+
+    // Navigating to another board on the same mounted page instance is blocked before URL write or applyState.
+    const blockedByQuery = await display.present(frame({
+      kind: "page",
+      address: "/dashboards?dashboardId=board-b",
+    }));
+    expect(blockedByQuery).toMatchObject({
+      status: "not_opened",
+      reason: "blocked_unsaved",
+      error: { code: "UNSAVED_CHANGES" },
+    });
+    expect(display.page.value?.address).toBe("/dashboards?dashboardId=board-a");
+    expect(serialized).toEqual([]);
+    expect(applyState).not.toHaveBeenCalled();
+
+    const blockedByState = await display.present(frame({
+      kind: "page",
+      address: "/dashboards",
+      state: { dashboardId: "board-b" },
+    }));
+    expect(blockedByState).toMatchObject({
+      status: "not_opened",
+      reason: "blocked_unsaved",
+      error: { code: "UNSAVED_CHANGES" },
+    });
+    expect(applyState).not.toHaveBeenCalled();
+
+    // Selecting a card on the SAME board is NOT blocked.
+    const sameBoardCard = await display.present(frame({
+      kind: "page",
+      address: "/dashboards?dashboardId=board-a",
+      state: { cardId: "c2" },
+    }));
+    expect(sameBoardCard).toMatchObject({ status: "opened", reason: "target_selected" });
+    expect(applyState).toHaveBeenCalledWith({ cardId: "c2" });
+
+    // Once clean, navigating to board-b succeeds.
+    dirty = false;
+    display.dirty(false);
+    expect(display.isDirty.value).toBe(false);
+    const allowed = await display.present(frame({
+      kind: "page",
+      address: "/dashboards?dashboardId=board-b",
+    }));
+    expect(allowed).toMatchObject({ status: "opened", reason: "target_selected" });
+    expect(display.page.value?.address).toBe("/dashboards?dashboardId=board-b");
+
     unregister();
   });
 });

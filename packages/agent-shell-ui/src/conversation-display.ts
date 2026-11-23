@@ -66,6 +66,8 @@ export interface DisplayStateUpdate {
 /** In-place controls exposed by a currently mounted panel page to its display controller. */
 export interface DisplayPageController {
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
+  /** Returns true when navigating within the same mounted page instance would discard unsaved changes. */
+  blocksNavigation?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
   /** Live binding metadata (nested panel instance IDs and list checked keys) included in display snapshots. */
@@ -167,8 +169,8 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   function refreshObjects(change: DisplayObjectChange) {
     objectRefresh.value = { seq: (objectRefresh.value?.seq ?? 0) + 1, ...change };
   }
-  /** Whether the shown page instance (a panel) holds unsaved changes; native pages answer through `host.leave`. */
-  let unsaved = false;
+  /** Whether the shown page instance reports unsaved changes via `display-dirty`; native pages answer through `host.leave`. */
+  const unsaved = shallowRef(false);
   /** The page address a serialisation is writing: the address bar arriving there is this controller's own write. */
   let writing: string | null | undefined;
   /**
@@ -213,7 +215,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       reported.value = null;
       reportedSkill.value = null;
       load.value = READY;
-      unsaved = false;
+      unsaved.value = false;
       pageInstanceId.value = next.target?.kind === "page" ? randomId() : null;
       controllerMountedForCurrentPage = false;
       if (liveState.value && (next.target?.kind !== "page" || liveState.value.instance !== next.target.instance)) {
@@ -235,7 +237,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   function dropsUnsaved(next: DisplayTarget | null): boolean {
     const current = page.value;
     if (!current || (next?.kind === "page" && next.instance === current.instance)) return false;
-    return unsaved || host.leave.leaves(next?.kind === "page" ? next.address : null);
+    return unsaved.value || host.leave.leaves(next?.kind === "page" ? next.address : null);
   }
 
   /** Leaving the shown page instance with unsaved changes asks the reader first; staying in it never asks. */
@@ -421,6 +423,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
     restorable: computed(() => shown.value.restorable),
     pageContext,
     pageSkill,
+    isDirty: computed(() => unsaved.value),
     load: computed(() => load.value),
     /** What the shown page reads its objects again by; it keeps counting across pages. */
     objectRefresh: computed(() => objectRefresh.value),
@@ -509,7 +512,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
       load.value = next;
     },
     dirty(value: boolean) {
-      unsaved = value;
+      unsaved.value = value;
     },
     /** A mounted panel page registers its in-place live state controller for `present`. */
     registerPageController(instance: string, controller: DisplayPageController): () => void {
@@ -972,6 +975,12 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
 
         if (sameInstance && currentPage) {
           const controller = controllers.get(resolved.instance);
+          if (controller?.blocksNavigation?.({ address: resolved.address, ...(rawState !== undefined ? { state: rawState } : {}) })) {
+            return notOpened("blocked_unsaved", {
+              code: "UNSAVED_CHANGES",
+              message: "The current page has unsaved changes. Ask the user to save or discard them before navigating away.",
+            });
+          }
           const hasStatePatch = rawState !== undefined && Object.keys(rawState).length > 0;
           const basePathOf = (value: string) => value.split(/[?#]/, 1)[0]!;
           const addressSpecifiesParamsOrPathChange =

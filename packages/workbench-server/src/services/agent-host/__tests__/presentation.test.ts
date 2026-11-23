@@ -3,7 +3,16 @@ import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 import { presentationResultSchema } from "@ontomato/contracts/agent-presentation";
 import { GENERAL_SETTINGS } from "@ontomato/contracts/platform-object-types";
 import { panelOperationStore } from "../../product-panels/operation-store";
-import { openPresentationView, presentationCallback, receivePresentation, requestPresentation, visibilityReader } from "../presentation";
+import {
+  hasActivePresentationForRun,
+  isLivePresentationEligibleRun,
+  openPresentationView,
+  presentationCallback,
+  receivePresentation,
+  releasePresentationRun,
+  requestPresentation,
+  visibilityReader,
+} from "../presentation";
 
 const owner = { userId: "reader", domainId: "domain" };
 const actor = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", domainId: owner.domainId };
@@ -39,6 +48,21 @@ it("issues a callback only for the same host's directly admitted human run with 
 
   try {
     expect(issue(bound)?.url).toContain(`/runs/${runId}/presentation-call/${binding.viewId}`);
+    expect(hasActivePresentationForRun("workbench", owner, runId)).toBe(true);
+    expect(isLivePresentationEligibleRun({
+      host: "workbench",
+      owner,
+      runId,
+      sessionId: session.sessionId,
+      channel: bound,
+    })).toBe(true);
+    expect(isLivePresentationEligibleRun({
+      host: "workbench",
+      owner,
+      runId,
+      sessionId: session.sessionId,
+      channel: { ...bound, authority: { classNames: [], executionKind: "build-test" } },
+    })).toBe(false);
     expect(issue(direct)).toBeUndefined();
     expect(issue({ ...bound, requestedBy: direct.root })).toBeUndefined();
     expect(issue({ ...bound, input: notification })).toBeUndefined();
@@ -50,9 +74,11 @@ it("issues a callback only for the same host's directly admitted human run with 
       root: { session: observe, runId }, userRecipient: { session: observe, actor },
     }, "observe")).toBeUndefined();
     view.abort();
+    expect(hasActivePresentationForRun("workbench", owner, runId)).toBe(false);
     expect(issue(bound)).toBeUndefined();
   } finally {
     view.abort();
+    releasePresentationRun("workbench", owner, runId);
     vi.unstubAllEnvs();
   }
 });

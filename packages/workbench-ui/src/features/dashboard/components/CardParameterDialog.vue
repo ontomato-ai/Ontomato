@@ -35,7 +35,9 @@ const loadedCardId = ref<string | null>(null);
 const loadedDashboardId = ref<string | null>(null);
 const values = ref<Record<string, string>>({});
 const original = ref<Record<string, string>>({});
-const edited = ref(new Set<string>());
+const userEditedKeys = ref(new Set<string>());
+const agentEditedKeys = ref(new Set<string>());
+const edited = computed(() => new Set<string>([...userEditedKeys.value, ...agentEditedKeys.value]));
 const fieldErrors = ref<Record<string, string>>({});
 const failure = ref<CardError | null>(null);
 const loading = ref(false);
@@ -88,7 +90,8 @@ watch(
     form.value = null;
     values.value = {};
     original.value = {};
-    edited.value = new Set();
+    userEditedKeys.value = new Set();
+    agentEditedKeys.value = new Set();
     fieldErrors.value = {};
     failure.value = null;
     if (!open || !cardId) {
@@ -123,7 +126,16 @@ watch(
 function edit(key: string, value: string) {
   editSeq += 1;
   values.value = { ...values.value, [key]: value };
-  edited.value = new Set(edited.value).add(key);
+  const nextUser = new Set(userEditedKeys.value);
+  const nextAgent = new Set(agentEditedKeys.value);
+  nextAgent.delete(key);
+  if (value === (original.value[key] ?? "")) {
+    nextUser.delete(key);
+  } else {
+    nextUser.add(key);
+  }
+  userEditedKeys.value = nextUser;
+  agentEditedKeys.value = nextAgent;
   const { [key]: _, ...rest } = fieldErrors.value;
   fieldErrors.value = rest;
 }
@@ -147,17 +159,9 @@ async function fillValues(
       message: "The card parameter form is not loaded.",
     };
   }
-  if (edited.value.size > 0 && !overwriteUnsaved) {
-    return {
-      ok: false,
-      reason: "blocked_unsaved",
-      member: "card.parameters",
-      message: "The card parameter form already has unsaved edits.",
-    };
-  }
   const known = new Set(form.value.fields.map((field) => field.key));
   const readOnly = new Set(form.value.readOnly);
-  const filledFields: string[] = [];
+  const validEntries: Array<{ key: string; value: string }> = [];
   const rejectedFields: FormFieldRejection[] = [];
   for (const [rawKey, rawValue] of Object.entries(patch)) {
     const key = normalizeParameterKey(rawKey);
@@ -173,10 +177,20 @@ async function fillValues(
       rejectedFields.push({ path: rawKey, reason: "invalid_value", message: `Parameter '${key}' must be a scalar value.` });
       continue;
     }
-    edit(key, rawValue === null ? "" : String(rawValue));
-    filledFields.push(key);
+    validEntries.push({ key, value: rawValue === null ? "" : String(rawValue) });
   }
-  if (!filledFields.length) {
+  const conflicts = validEntries
+    .map((entry) => entry.key)
+    .filter((key) => userEditedKeys.value.has(key));
+  if (conflicts.length > 0 && !overwriteUnsaved) {
+    return {
+      ok: false,
+      reason: "blocked_unsaved",
+      member: "card.parameters",
+      message: `The card parameter form has unsaved user edits on: ${conflicts.join(", ")}.`,
+    };
+  }
+  if (!validEntries.length) {
     return {
       ok: false,
       reason: "all_fields_rejected",
@@ -185,6 +199,23 @@ async function fillValues(
       message: "No parameter fields could be filled.",
     };
   }
+  editSeq += 1;
+  const nextValues = { ...values.value };
+  const nextUser = new Set(userEditedKeys.value);
+  const nextAgent = new Set(agentEditedKeys.value);
+  const nextErrors = { ...fieldErrors.value };
+  const filledFields: string[] = [];
+  for (const { key, value } of validEntries) {
+    nextValues[key] = value;
+    nextUser.delete(key);
+    nextAgent.add(key);
+    delete nextErrors[key];
+    filledFields.push(key);
+  }
+  values.value = nextValues;
+  userEditedKeys.value = nextUser;
+  agentEditedKeys.value = nextAgent;
+  fieldErrors.value = nextErrors;
   return {
     ok: true,
     member: "card.parameters",
