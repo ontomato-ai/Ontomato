@@ -260,8 +260,8 @@
 
       <!-- Tab 2: Entries -->
       <template v-else-if="tabModel === 'entries'">
-        <div class="apps-table-bar">
-          <span class="apps-muted">{{ t('entries.count', { count: entryTotal }) }}</span>
+        <div v-if="entryTotal !== null || canEditEntries" class="apps-table-bar">
+          <span class="apps-muted">{{ entryTotal !== null ? t('entries.count', { count: entryTotal }) : '' }}</span>
           <div v-if="canEditEntries" class="apps-table-bar-actions">
             <sdk-button v-if="!entriesBulkMode" size="small" type="primary" @click="openAddEntry">
               {{ t('entries.add') }}
@@ -296,7 +296,9 @@
       <template v-else-if="tabModel === 'assets'">
         <div class="apps-assets-grid">
           <section class="apps-card">
-            <h2 class="apps-card-title">{{ t('assets.usedPanels', { count: usedPanelsTotal }) }}</h2>
+            <h2 class="apps-card-title">
+              {{ usedPanelsTotal !== null ? t('assets.usedPanels', { count: usedPanelsTotal }) : t('assets.usedPanelsTitle') }}
+            </h2>
             <projection slot="usedPanelsList"></projection>
           </section>
 

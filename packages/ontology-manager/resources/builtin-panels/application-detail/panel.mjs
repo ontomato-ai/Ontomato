@@ -82,8 +82,8 @@ const ApplicationDetailPanel = {
     const openPath = computed(() => (typeof openPathOutput.value === "string" ? openPathOutput.value : ""));
     const domainShared = computed(() => domainSharedOutput.value === true);
 
-    const entryTotal = computed(() => (typeof entryTotalOutput.value === "number" ? entryTotalOutput.value : 0));
-    const usedPanelsTotal = computed(() => (typeof usedPanelsTotalOutput.value === "number" ? usedPanelsTotalOutput.value : 0));
+    const entryTotal = computed(() => (typeof entryTotalOutput.value === "number" ? entryTotalOutput.value : null));
+    const usedPanelsTotal = computed(() => (typeof usedPanelsTotalOutput.value === "number" ? usedPanelsTotalOutput.value : null));
 
     const recordErrorText = computed(() => {
       const message = typeof recordError.value === "string" ? recordError.value : "";
@@ -117,10 +117,15 @@ const ApplicationDetailPanel = {
       { immediate: true },
     );
 
-    // Reset sub-views when switching to a different application.
-    watch(selectedKey, (next, prev) => {
-      if (prev && next !== prev) {
-        instance.state.setState({
+    // Reset sub-views belonging to the previous application when switching `selected`, while preserving any
+    // sub-view fields explicitly provided in the same atomic state update (e.g. host address restoration or
+    // agent `setState({ selected, inspectedPanel })`, even when both applications reference the same panel ID).
+    watch(
+      selectedKey,
+      (next, prev) => {
+        if (!prev || next === prev) return;
+        const patched = instance.state.lastPatchedKeys;
+        const defaults = {
           entriesView: "list",
           editingEntryId: null,
           inspectedPanel: null,
@@ -128,9 +133,19 @@ const ApplicationDetailPanel = {
           grantUser: null,
           grantRole: null,
           grantPrincipalId: null,
-        });
-      }
-    });
+        };
+        const resetPatch = {};
+        for (const [field, fallback] of Object.entries(defaults)) {
+          if (!patched?.has(field) && values.value[field] !== fallback) {
+            resetPatch[field] = fallback;
+          }
+        }
+        if (Object.keys(resetPatch).length > 0) {
+          instance.state.setState(resetPatch);
+        }
+      },
+      { flush: "sync" },
+    );
 
     // Fall back from grants tab if the current reader cannot grant on this application.
     watch(

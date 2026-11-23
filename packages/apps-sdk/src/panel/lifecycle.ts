@@ -91,14 +91,23 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     // selections (which would unmount conditional `v-if` forms before the draft is even read).
     if (!hasState && hasDraft) return null;
     const normalized = panelAddressState(next, instance.manifest);
-    const patch: Record<string, PanelFieldValue> = {};
+    const resolved: Record<string, PanelFieldValue> = {};
+    let changed = false;
     for (const [name, field] of Object.entries(instance.manifest.state)) {
       if (!field.deepLink) continue;
       const desired = Object.hasOwn(normalized, name) ? normalized[name]! : (field.default ?? null);
       const value = checkPanelValue(instance.manifest, name, desired);
-      if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) patch[name] = value;
+      const current = instance.state.values.value[name]!;
+      if (JSON.stringify(current) !== JSON.stringify(value)) {
+        resolved[name] = value;
+        changed = true;
+      } else {
+        // Keep the existing reference to avoid spurious watcher churn while still recording every deep-link
+        // field as explicitly reconciled by this address restoration (e.g. same child ID across two parents).
+        resolved[name] = current;
+      }
     }
-    return patch;
+    return changed ? resolved : {};
   }
   async function followAddress(next: string, addressOptions?: { overwriteUnsavedDraft?: boolean }) {
     const hasDraft = pageDraftLinkOf(next) !== null;
