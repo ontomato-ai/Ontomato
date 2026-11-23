@@ -76,7 +76,7 @@ const { t, locale, fallbackLocale } = useI18n();
 const language = computed(() => ({ locale: locale.value, fallback: String(fallbackLocale.value) }));
 /** The shown page's instance, which the conversation's object signal reaches; kept pages are reconciled when shown again. */
 /** What the conversation's and an operation's changes reach: the shown page's instance. */
-type ShownInstance = Pick<PanelInstanceView, "refresh" | "applyState" | "fillForm" | "executeAction" | "snapshotMeta" | "isLoading">;
+type ShownInstance = Pick<PanelInstanceView, "refresh" | "validateState" | "applyState" | "fillForm" | "executeAction" | "snapshotMeta" | "isLoading">;
 const host = ref<ShownInstance | null>(null);
 const frameHost = ref<ShownInstance | null>(null);
 let pendingControllerState: Record<string, RuntimeJsonValue> | null = null;
@@ -92,6 +92,9 @@ watch(host, (nextHost) => {
 });
 if (props.registerPageController) {
   const unregister = props.registerPageController({
+    validateState(patch) {
+      host.value?.validateState(patch);
+    },
     applyState(patch) {
       if (!host.value) {
         pendingControllerState = { ...(pendingControllerState ?? {}), ...patch };

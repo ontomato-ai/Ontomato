@@ -507,6 +507,43 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
   return humanPreparation(intent);
 }
 
+const pendingLocalConfirmations = new Map<string, {
+  readonly domainId: string;
+  readonly userId: string;
+  readonly intentId: string;
+  readonly createdAt: number;
+}>();
+const MAX_PENDING_LOCAL_CONFIRMATIONS = 1000;
+
+export function registerPendingLocalConfirmation(owner: AssistantOwner, questionId: string, intentId: string): void {
+  pendingLocalConfirmations.set(questionId, {
+    domainId: owner.domainId,
+    userId: owner.userId,
+    intentId,
+    createdAt: Date.now(),
+  });
+  while (pendingLocalConfirmations.size > MAX_PENDING_LOCAL_CONFIRMATIONS) {
+    const oldest = pendingLocalConfirmations.keys().next().value;
+    if (oldest === undefined) break;
+    pendingLocalConfirmations.delete(oldest);
+  }
+}
+
+export function claimPendingLocalConfirmation(
+  owner: AssistantOwner,
+  questionId: string,
+): { readonly ok: true; readonly intentId: string } | { readonly ok: false; readonly message: string } {
+  const entry = pendingLocalConfirmations.get(questionId);
+  if (!entry || entry.domainId !== owner.domainId || entry.userId !== owner.userId) {
+    return {
+      ok: false,
+      message: "The local confirmation question was already consumed, cancelled, or expired.",
+    };
+  }
+  pendingLocalConfirmations.delete(questionId);
+  return { ok: true, intentId: entry.intentId };
+}
+
 export async function cancelHumanPanelOperation(owner: AssistantOwner, id: string, reason: { code: string; message: string }) {
   const cancelled = await store.cancelIntent(owner, id, reason);
   return { intentId: id, cancelled };
@@ -514,7 +551,13 @@ export async function cancelHumanPanelOperation(owner: AssistantOwner, id: strin
 
 export async function cancelPendingAgentPageQuestion(owner: AssistantOwner, questionId: string, reason: { code: string; message: string }) {
   const cancelled = await store.cancelPendingAgentPageQuestion(owner, questionId, reason);
-  return cancelled ? { stale: true as const, intentId: cancelled.intentId } : { stale: false as const };
+  if (cancelled) return { stale: true as const, intentId: cancelled.intentId };
+  const local = pendingLocalConfirmations.get(questionId);
+  if (local && local.domainId === owner.domainId && local.userId === owner.userId) {
+    pendingLocalConfirmations.delete(questionId);
+    return { stale: true as const, intentId: local.intentId };
+  }
+  return { stale: false as const };
 }
 
 export async function dispatchHumanPanelOperation(owner: AssistantOwner, credentials: AssistantCredentials, id: string): Promise<PanelHumanOperationDispatchResponse> {

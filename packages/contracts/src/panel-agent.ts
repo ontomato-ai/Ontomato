@@ -289,3 +289,173 @@ export const panelHumanOperationDispatchResponseSchema = z.discriminatedUnion("k
   dispatchedResponseSchema, notDispatchedResponseSchema,
 ]);
 export type PanelHumanOperationDispatchResponse = z.infer<typeof panelHumanOperationDispatchResponseSchema>;
+
+export type SinglePanelOperationOutcome = z.infer<typeof singleOutcomeSchema>;
+
+/**
+ * Single authoritative classification of an owner panel operation outcome for agent-facing receipts,
+ * shared by live browser receipts, confirmed-dispatch summaries, and server timeout recovery.
+ *
+ * Strictly distinguishes the 4 real states:
+ * - `executed`: single success or batch where every item succeeded.
+ * - `partial`: refusal/failure that still persisted `savedFields` or recorded affected writes, or a batch with both
+ *   recorded writes and explicit refusals/failures (never disguised as full `executed` or clean `failed`).
+ * - `failed`: `not-dispatched`, refusal/failure with no recorded writes, or an all-failed batch — preserving the
+ *   owner's exact error code (e.g. `TASK_RUNNING`) rather than collapsing to a generic code.
+ * - `unknown`: null outcome, `unknown`, or any batch containing an `unknown` item.
+ */
+export type PanelOperationAgentClassification =
+  | {
+      readonly kind: "executed";
+      readonly outcome: PanelOperationOutcome;
+      readonly summary: string;
+    }
+  | {
+      readonly kind: "partial";
+      readonly code: string;
+      readonly message: string;
+      readonly outcome: PanelOperationOutcome;
+      readonly savedFields?: readonly string[];
+      readonly summary: string;
+    }
+  | {
+      readonly kind: "failed";
+      readonly code: string;
+      readonly message: string;
+      readonly outcome?: PanelOperationOutcome;
+    }
+  | {
+      readonly kind: "unknown";
+      readonly code: "ACTION_OUTCOME_UNKNOWN";
+      readonly message: string;
+      readonly outcome?: PanelOperationOutcome | null;
+    };
+
+function hasRecordedSingleWrites(outcome: SinglePanelOperationOutcome): boolean {
+  if (outcome.kind === "success") return true;
+  if (outcome.kind === "unknown") return false;
+  return Object.keys(outcome.savedFields ?? {}).length > 0
+    || Boolean(outcome.affected?.objects.length || outcome.affected?.removed?.length || outcome.affected?.objectTypes.length);
+}
+
+/** Classifies a recorded `PanelOperationOutcome` (or `null` when dispatched without an outcome yet). */
+export function classifyPanelOperationOutcome(
+  outcome: PanelOperationOutcome | null | undefined,
+  intentId?: string,
+): PanelOperationAgentClassification {
+  if (!outcome) {
+    return {
+      kind: "unknown",
+      code: "ACTION_OUTCOME_UNKNOWN",
+      message: intentId
+        ? `Operation was dispatched, but its outcome is not yet recorded. Check /api/panel-operation-intents/${intentId} without retrying.`
+        : "Operation was dispatched, but its outcome is unknown.",
+      outcome: null,
+    };
+  }
+  if (outcome.kind === "unknown") {
+    return {
+      kind: "unknown",
+      code: "ACTION_OUTCOME_UNKNOWN",
+      message: outcome.message || "Operation was dispatched, but its outcome is unknown.",
+      outcome,
+    };
+  }
+  if (outcome.kind === "success") {
+    return {
+      kind: "executed",
+      outcome,
+      summary: outcome.message ?? "Completed successfully.",
+    };
+  }
+  if (outcome.kind === "refusal" || outcome.kind === "failure") {
+    const savedFields = Object.keys(outcome.savedFields ?? {});
+    if (hasRecordedSingleWrites(outcome)) {
+      const summary = savedFields.length
+        ? `Partially completed (saved: ${savedFields.join(", ")}); ${outcome.message}`
+        : `Partially completed: ${outcome.message}`;
+      return {
+        kind: "partial",
+        code: outcome.code,
+        message: outcome.message,
+        outcome,
+        ...(savedFields.length ? { savedFields } : {}),
+        summary,
+      };
+    }
+    return {
+      kind: "failed",
+      code: outcome.code,
+      message: outcome.message,
+      outcome,
+    };
+  }
+  // Batch outcome.
+  const unknownItem = outcome.items.find((item) => item.outcome.kind === "unknown");
+  if (unknownItem) {
+    const detail = unknownItem.outcome.kind === "unknown" && unknownItem.outcome.message
+      ? unknownItem.outcome.message
+      : intentId
+        ? `Batch operation was dispatched with an unknown item outcome. Check /api/panel-operation-intents/${intentId} without retrying.`
+        : "Batch operation was dispatched with an unknown item outcome.";
+    return {
+      kind: "unknown",
+      code: "ACTION_OUTCOME_UNKNOWN",
+      message: detail,
+      outcome,
+    };
+  }
+  const problems = outcome.items
+    .map((item) => item.outcome)
+    .filter((item): item is Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }> =>
+      item.kind === "refusal" || item.kind === "failure",
+    );
+  const succeededCount = outcome.items.filter((item) => item.outcome.kind === "success").length;
+  if (problems.length === 0) {
+    return {
+      kind: "executed",
+      outcome,
+      summary: `Batch completed: ${succeededCount}/${outcome.items.length} succeeded.`,
+    };
+  }
+  const firstProblem = problems[0]!;
+  const anyRecordedWrites = outcome.items.some((item) => hasRecordedSingleWrites(item.outcome));
+  if (!anyRecordedWrites) {
+    return {
+      kind: "failed",
+      code: firstProblem.code,
+      message: firstProblem.message,
+      outcome,
+    };
+  }
+  const savedFields = [...new Set(
+    outcome.items.flatMap((item) =>
+      item.outcome.kind === "refusal" || item.outcome.kind === "failure"
+        ? Object.keys(item.outcome.savedFields ?? {})
+        : [],
+    ),
+  )];
+  return {
+    kind: "partial",
+    code: firstProblem.code,
+    message: firstProblem.message,
+    outcome,
+    ...(savedFields.length ? { savedFields } : {}),
+    summary: `Batch partially completed: ${succeededCount}/${outcome.items.length} succeeded, ${problems.length} failed (${firstProblem.code}: ${firstProblem.message}).`,
+  };
+}
+
+/** Classifies a full dispatch response (`not-dispatched` or `dispatched` + outcome) via the single shared classifier. */
+export function classifyPanelOperationDispatch(
+  response: PanelHumanOperationDispatchResponse,
+  intentId?: string,
+): PanelOperationAgentClassification {
+  if (response.kind === "not-dispatched") {
+    return {
+      kind: "failed",
+      code: response.code,
+      message: response.message,
+    };
+  }
+  return classifyPanelOperationOutcome(response.outcome, intentId ?? response.intentId);
+}

@@ -50,12 +50,10 @@ export { usePanelOutput, usePanelOutputs } from "../panel/panel-output";
 export { useFormFieldSlot, useListRowSlot, type FormFieldSlotContext, type ListRowSlotContext, type ListRowSlotOperation } from "../panel/slot-context";
 export {
   usePanelOperation,
-  usePanelOperationAction,
-  type PanelOperationActionAvailability,
-  type PanelOperationActionContext,
-  type PanelOperationActionHandle,
+  type PanelOperationAvailability,
+  type PanelOperationContext,
   type PanelOperationHandle,
-  type UsePanelOperationActionOptions,
+  type UsePanelOperationOptions,
 } from "../panel/panel-operation";
 export { ElMessageBox as SdkMessageBox } from "element-plus/es/components/message-box/index";
 export { savePanelFile, type PanelDownloadReceipt } from "../panel/save-file";

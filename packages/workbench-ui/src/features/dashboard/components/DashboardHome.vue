@@ -35,6 +35,7 @@ const boardPreviewActive = ref(false);
 const previewBlockedReason = computed(() => t("dashboard.previewLocksBoardEdits"));
 const panelRef = ref<{
   reload: () => Promise<void>;
+  snapshotMeta: () => { readonly dashboardId?: string; readonly cardId?: string };
   selectCardById: (cardId: string) => boolean;
   fillForm: (request: FormFillRequestInput) => Promise<FormFillOutcome>;
   executeAction: (request: PageActionRequestInput) => Promise<PageActionOutcome>;
@@ -164,6 +165,15 @@ watch(
 );
 
 if (props.registerPageController) {
+  function currentDashboardMeta() {
+    const panelMeta = panelRef.value?.snapshotMeta?.();
+    const dashboardId = panelMeta?.dashboardId ?? (currentDashboardId.value || undefined);
+    const cardId = panelMeta?.cardId ?? (chosenCardId.value || undefined);
+    return {
+      ...(dashboardId ? { dashboardId } : {}),
+      ...(cardId ? { cardId } : {}),
+    };
+  }
   const unregister = props.registerPageController({
     blocksNavigation(next) {
       if (!panelDirty.value) return false;
@@ -195,6 +205,16 @@ if (props.registerPageController) {
         && Object.keys(next.state!).every((key) => key === "cardId");
       return !isSameBoardCardPatch;
     },
+    validateState(patch) {
+      for (const [key, value] of Object.entries(patch)) {
+        if (key !== "dashboardId" && key !== "cardId") {
+          throw new Error(`Dashboard page has no declared public state field '${key}'.`);
+        }
+        if (value !== null && typeof value !== "string") {
+          throw new TypeError(`Dashboard state '${key}' expects a string or null value.`);
+        }
+      }
+    },
     applyState(patch) {
       const nextDashboardId = typeof patch.dashboardId === "string" ? patch.dashboardId.trim() : "";
       if (nextDashboardId && nextDashboardId !== currentDashboardId.value) {
@@ -205,7 +225,31 @@ if (props.registerPageController) {
         panelRef.value?.selectCardById(patch.cardId.trim());
       }
     },
+    snapshotMeta() {
+      return currentDashboardMeta();
+    },
     fillForm(request) {
+      const meta = currentDashboardMeta();
+      if (request.expectedDashboardId !== undefined && request.expectedDashboardId !== (meta.dashboardId ?? null)) {
+        return Promise.resolve({
+          ok: false,
+          reason: "stale",
+          ...(request.member ? { member: request.member } : {}),
+          message: "The displayed dashboard board changed since the last observation.",
+        });
+      }
+      if (
+        request.member !== "board"
+        && request.expectedCardId !== undefined
+        && request.expectedCardId !== (meta.cardId ?? null)
+      ) {
+        return Promise.resolve({
+          ok: false,
+          reason: "stale",
+          ...(request.member ? { member: request.member } : {}),
+          message: "The selected dashboard card changed since the last observation.",
+        });
+      }
       if (!panelRef.value) {
         return Promise.resolve({
           ok: false,
@@ -217,6 +261,15 @@ if (props.registerPageController) {
       return panelRef.value.fillForm(request);
     },
     async executeAction(request) {
+      const meta = currentDashboardMeta();
+      if (request.expectedDashboardId !== undefined && request.expectedDashboardId !== (meta.dashboardId ?? null)) {
+        return {
+          ok: false,
+          reason: "stale",
+          operation: request.operation,
+          message: "The displayed dashboard board changed since the last observation.",
+        };
+      }
       if (request.operation === "page.refresh") {
         await store.loadDashboards();
         await panelRef.value?.reload();

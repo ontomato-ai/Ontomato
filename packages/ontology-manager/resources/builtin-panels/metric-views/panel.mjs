@@ -74,11 +74,6 @@ await mountPanel({
 
     // ---- Test current unsaved draft ----
 
-    const trial = usePanelOperation("definition", "test");
-    const trialJson = usePanelOperation("definition", "testExecute");
-    const trialReady = computed(() => Boolean(trial.operation.value));
-    const trialJsonReady = computed(() => Boolean(trialJson.operation.value));
-
     const testOpen = ref(false);
     const testSource = ref("explicit");
     const testValues = ref({});
@@ -149,19 +144,61 @@ await mountPanel({
       return row?.parameters ? JSON.parse(JSON.stringify(row.parameters)) : {};
     }
 
+    const canRunTrial = computed(() => Boolean(detailVisible.value && formValues.value?.function));
+    const trial = usePanelOperation("definition", "test", {
+      available: canRunTrial,
+      busy: () => testingMarkdown.value,
+      prepareInput(provided) {
+        return {
+          draft: draftValues(),
+          parameters: provided.parameters !== undefined ? provided.parameters : chosenParameters(),
+        };
+      },
+      onSettled(result) {
+        testOpen.value = true;
+        testFailure.value = "";
+        testMarkdown.value = (result?.kind === "markdown" && result.markdown) || t("metricViews.testNoResult");
+        testTab.value = "markdown";
+        markdownView.value = "preview";
+      },
+      onError(error) {
+        testOpen.value = true;
+        testFailure.value = t("metricViews.testFailed", { message: errorText(error) });
+      },
+    });
+    const trialJson = usePanelOperation("definition", "testExecute", {
+      available: canRunTrial,
+      busy: () => testingJson.value,
+      prepareInput(provided) {
+        // Pass the form's current draft parameters (never bindingId) so unsaved edits to a binding's values are tested.
+        return {
+          draft: draftValues(),
+          parameters: provided.parameters !== undefined ? provided.parameters : chosenParameters(),
+        };
+      },
+      onSettled(result) {
+        testOpen.value = true;
+        testFailure.value = "";
+        const value = result?.kind === "json" ? result.value : null;
+        testJson.value = JSON.stringify(value && "result" in value ? value.result : value, null, 2);
+        truncation.value = value?.truncated
+          ? { rowLimit: value.rowLimit ?? null, hint: value.truncationHint ?? null }
+          : null;
+        testTab.value = "json";
+      },
+      onError(error) {
+        testOpen.value = true;
+        testFailure.value = t("metricViews.testFailed", { message: errorText(error) });
+      },
+    });
+    const trialReady = computed(() => Boolean(trial.operation.value));
+    const trialJsonReady = computed(() => Boolean(trialJson.operation.value));
+
     async function runMarkdown() {
       testFailure.value = "";
       testingMarkdown.value = true;
       try {
-        const result = await trial.run({
-          draft: draftValues(),
-          parameters: chosenParameters(),
-        });
-        testMarkdown.value = (result?.kind === "markdown" && result.markdown) || t("metricViews.testNoResult");
-        testTab.value = "markdown";
-        markdownView.value = "preview";
-      } catch (error) {
-        testFailure.value = t("metricViews.testFailed", { message: errorText(error) });
+        await trial.run({});
       } finally {
         testingMarkdown.value = false;
       }
@@ -171,19 +208,7 @@ await mountPanel({
       testFailure.value = "";
       testingJson.value = true;
       try {
-        // Pass the form's current draft parameters (never bindingId) so unsaved edits to a binding's values are tested.
-        const result = await trialJson.run({
-          draft: draftValues(),
-          parameters: chosenParameters(),
-        });
-        const value = result?.kind === "json" ? result.value : null;
-        testJson.value = JSON.stringify(value && "result" in value ? value.result : value, null, 2);
-        truncation.value = value?.truncated
-          ? { rowLimit: value.rowLimit ?? null, hint: value.truncationHint ?? null }
-          : null;
-        testTab.value = "json";
-      } catch (error) {
-        testFailure.value = t("metricViews.testFailed", { message: errorText(error) });
+        await trialJson.run({});
       } finally {
         testingJson.value = false;
       }

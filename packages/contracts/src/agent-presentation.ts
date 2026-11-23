@@ -65,14 +65,8 @@ export const fillFormRequestSchema = z.object({
     (values) => Object.keys(values).length > 0,
     { message: "values must include at least one field" },
   ),
-  /** Explicitly allow modifying a form that already has unsaved edits after the user confirms. */
+  /** Explicitly allow overwriting fields edited by the user after explicit user confirmation. */
   overwriteUnsaved: z.boolean().optional(),
-  /** Expected mounted page instance ID observed from `observe_display`/`present`; rejects as `stale` on mismatch. */
-  expectedPageInstanceId: runtimeKeySchema.optional(),
-  /** Expected mounted nested panel member instance ID observed from `memberInstances`; rejects as `stale` on mismatch. */
-  expectedMemberInstanceId: runtimeKeySchema.optional(),
-  /** Expected form target (object or create-draft) observed on screen; rejects as `stale` if the form switched target. */
-  expectedTarget: expectedPageTargetSchema.optional(),
 }).strict();
 export type FillFormRequest = z.infer<typeof fillFormRequestSchema>;
 
@@ -84,20 +78,12 @@ export const pageActionRequestSchema = z.object({
   /** Optional nested panel member path keys when disambiguating nested panel actions. */
   memberPath: z.array(runtimeKeySchema).min(1).optional(),
   /**
-   * For row actions on a list member: the composite `<className>:<primaryKey>` key (required to disambiguate
-   * mixed-type lists) or the plain `<primaryKey>` on single-type lists.
+   * For row actions on a list member: the composite `<className>:<primaryKey>` key (required on mixed-type or
+   * dynamic-type lists) or the plain `<primaryKey>` on single-type lists.
    */
   rowKey: runtimeKeySchema.optional(),
   /** Optional unbound action parameters (never form save field values). */
   input: runtimeJsonObjectSchema.optional(),
-  /** Expected mounted page instance ID observed from `observe_display`/`present`; rejects as `stale` on mismatch. */
-  expectedPageInstanceId: runtimeKeySchema.optional(),
-  /** Expected mounted nested panel member instance ID observed from `memberInstances`; rejects as `stale` on mismatch. */
-  expectedMemberInstanceId: runtimeKeySchema.optional(),
-  /** Expected target object or create-draft observed on screen; rejects as `stale` on mismatch. */
-  expectedTarget: expectedPageTargetSchema.optional(),
-  /** Expected checked row keys (`<className>:<primaryKey>`, or plain `<primaryKey>` for single-type lists) for batch actions. */
-  expectedCheckedKeys: z.array(runtimeKeySchema).optional(),
 }).strict();
 export type PageActionRequest = z.infer<typeof pageActionRequestSchema>;
 
@@ -154,10 +140,18 @@ const selectedDisplaySchema = observedDisplaySchema.extend({
       state: runtimeJsonObjectSchema.optional(),
       /** Unique ID of this mounted page instance; changes on remount or switching pages. */
       pageInstanceId: runtimeKeySchema.optional(),
+      /** Unique ID of the mounted top-level direct panel instance; changes when the panel definition is swapped in place. */
+      panelInstanceId: runtimeKeySchema.optional(),
       /** Unique instance IDs of mounted nested panel members keyed by dotted member path. */
       memberInstances: z.record(runtimeKeySchema, runtimeKeySchema).optional(),
+      /** Unique instance IDs of mounted action/list/form entries keyed by full operation ID (or `row:<opId>`). */
+      entryInstances: z.record(runtimeKeySchema, runtimeKeySchema).optional(),
       /** Current checked row keys (`<className>:<primaryKey>`) per list-of-object state field. */
       checkedKeys: z.record(runtimeKeySchema, z.array(runtimeKeySchema)).optional(),
+      /** Current dashboard board ID on dashboard pages. */
+      dashboardId: runtimeKeySchema.optional(),
+      /** Current selected or parameter-dialog card ID on dashboard pages. */
+      cardId: runtimeKeySchema.optional(),
     }),
   ]),
   load: displayLoadSchema,
@@ -179,15 +173,16 @@ const notOpenedResultSchema = z.object({
   status: z.literal("not_opened"),
   reason: z.enum([
     "view_unavailable", "not_viewing_session", "sidebar_unavailable",
-    "forbidden", "not_found", "unsupported_target", "blocked_unsaved", "superseded",
+    "forbidden", "not_found", "unsupported_target", "blocked_unsaved", "superseded", "previous_step_failed",
   ]),
   current: displaySnapshotSchema,
   error: displayErrorSchema.optional(),
 }).strict();
 const observedDisplayResultSchema = z.object({
   status: z.literal("observed"),
-  reason: z.enum(["current_display", "view_unavailable", "not_viewing_session"]),
+  reason: z.enum(["current_display", "view_unavailable", "not_viewing_session", "previous_step_failed"]),
   current: displaySnapshotSchema,
+  error: displayErrorSchema.optional(),
 }).strict();
 export const formFieldRejectionSchema = z.object({
   path: runtimeKeySchema,
@@ -203,8 +198,12 @@ export interface FormFillRequestInput {
   readonly values: Readonly<Record<string, RuntimeJsonValue>>;
   readonly overwriteUnsaved?: boolean;
   readonly expectedPageInstanceId?: string;
+  readonly expectedPanelInstanceId?: string;
   readonly expectedMemberInstanceId?: string;
+  readonly expectedFormInstanceId?: string;
   readonly expectedTarget?: ExpectedPageTarget;
+  readonly expectedDashboardId?: string;
+  readonly expectedCardId?: string;
 }
 
 /** In-browser outcome returned by a mounted panel or form adapter for a `fill_form` request. */
@@ -255,6 +254,7 @@ const notFilledResultSchema = z.object({
     "blocked_unsaved",
     "all_fields_rejected",
     "stale",
+    "previous_step_failed",
   ]),
   member: runtimeKeySchema.optional(),
   memberPath: z.array(runtimeKeySchema).min(1).optional(),
@@ -269,9 +269,13 @@ export interface PageActionRequestInput {
   readonly rowKey?: string;
   readonly input?: Readonly<Record<string, RuntimeJsonValue>>;
   readonly expectedPageInstanceId?: string;
+  readonly expectedPanelInstanceId?: string;
   readonly expectedMemberInstanceId?: string;
+  readonly expectedEntryInstanceId?: string;
   readonly expectedTarget?: ExpectedPageTarget;
   readonly expectedCheckedKeys?: readonly string[];
+  readonly expectedDashboardId?: string;
+  readonly expectedCardId?: string;
   readonly agentRun: {
     readonly sessionId: string;
     readonly runId: string;
@@ -290,7 +294,10 @@ export type PageActionConfirmedDispatchResult =
   | {
       readonly ok: false;
       readonly intentId: string;
-      readonly reason: "stale" | "not_dispatched" | "failed" | "unknown";
+      readonly reason: "stale" | "not_dispatched" | "failed" | "partial" | "unknown";
+      readonly code?: string;
+      readonly savedFields?: readonly string[];
+      readonly outcome?: unknown;
       readonly message: string;
     };
 
@@ -325,6 +332,17 @@ export type PageActionOutcome =
     }
   | {
       readonly ok: false;
+      readonly kind: "partially_executed";
+      readonly reason: "partial_completion";
+      readonly operation: string;
+      readonly intentId?: string;
+      readonly code: string;
+      readonly message: string;
+      readonly savedFields?: readonly string[];
+      readonly outcome: unknown;
+    }
+  | {
+      readonly ok: false;
       readonly kind: "unknown";
       readonly reason: "outcome_unknown";
       readonly operation: string;
@@ -345,6 +363,7 @@ export type PageActionOutcome =
         | "failed";
       readonly operation?: string;
       readonly intentId?: string;
+      readonly code?: string;
       readonly message?: string;
     };
 
@@ -355,6 +374,16 @@ const pageActionExecutedResultSchema = z.object({
   intentId: runtimeIdSchema.optional(),
   outcome: z.unknown().optional(),
   current: displaySnapshotSchema,
+}).strict();
+const pageActionPartiallyExecutedResultSchema = z.object({
+  status: z.literal("partially_executed"),
+  reason: z.literal("partial_completion"),
+  operation: runtimeKeySchema,
+  intentId: runtimeIdSchema.optional(),
+  savedFields: z.array(runtimeKeySchema).optional(),
+  outcome: z.unknown(),
+  current: displaySnapshotSchema,
+  error: displayErrorSchema,
 }).strict();
 const pageActionAwaitingConfirmationResultSchema = z.object({
   status: z.literal("awaiting_confirmation"),
@@ -382,6 +411,7 @@ const pageActionNotExecutedResultSchema = z.object({
     "cancelled",
     "stale",
     "failed",
+    "previous_step_failed",
   ]),
   operation: runtimeKeySchema.optional(),
   intentId: runtimeIdSchema.optional(),
@@ -412,6 +442,7 @@ const observedResultSchema = z.discriminatedUnion("status", [
   filledResultSchema,
   notFilledResultSchema,
   pageActionExecutedResultSchema,
+  pageActionPartiallyExecutedResultSchema,
   pageActionAwaitingConfirmationResultSchema,
   pageActionNotExecutedResultSchema,
   pageActionUnknownResultSchema,
@@ -447,8 +478,12 @@ export const presentationFrameSchema = z.object({
       values: runtimeJsonObjectSchema,
       overwriteUnsaved: z.boolean().optional(),
       expectedPageInstanceId: runtimeKeySchema.optional(),
+      expectedPanelInstanceId: runtimeKeySchema.optional(),
       expectedMemberInstanceId: runtimeKeySchema.optional(),
+      expectedFormInstanceId: runtimeKeySchema.optional(),
       expectedTarget: expectedPageTargetSchema.optional(),
+      expectedDashboardId: runtimeKeySchema.optional(),
+      expectedCardId: runtimeKeySchema.optional(),
     }).strict(),
     z.object({
       kind: z.literal("page_action"),
@@ -457,9 +492,13 @@ export const presentationFrameSchema = z.object({
       rowKey: runtimeKeySchema.optional(),
       input: runtimeJsonObjectSchema.optional(),
       expectedPageInstanceId: runtimeKeySchema.optional(),
+      expectedPanelInstanceId: runtimeKeySchema.optional(),
       expectedMemberInstanceId: runtimeKeySchema.optional(),
+      expectedEntryInstanceId: runtimeKeySchema.optional(),
       expectedTarget: expectedPageTargetSchema.optional(),
       expectedCheckedKeys: z.array(runtimeKeySchema).optional(),
+      expectedDashboardId: runtimeKeySchema.optional(),
+      expectedCardId: runtimeKeySchema.optional(),
     }).strict(),
   ]),
 }).strict();

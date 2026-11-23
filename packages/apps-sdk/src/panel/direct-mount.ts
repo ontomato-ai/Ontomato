@@ -179,9 +179,12 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
       executeAction: (request) => instance.executeAction(request),
       snapshotMeta() {
         const memberInstances = instance.memberInstances();
+        const entryInstances = instance.entryInstances();
         const checkedKeys = instance.checkedKeys();
         return {
+          panelInstanceId: instance.instanceId,
           ...(Object.keys(memberInstances).length ? { memberInstances } : {}),
+          ...(Object.keys(entryInstances).length ? { entryInstances } : {}),
           ...(Object.keys(checkedKeys).length ? { checkedKeys } : {}),
         };
       },

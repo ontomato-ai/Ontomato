@@ -256,9 +256,13 @@ provide(shellContextKey, {
               );
             }
             const dispatched = await bound.confirmation.dispatch();
+            const codePrefix = !dispatched.ok && dispatched.code ? `${dispatched.code}: ` : "";
+            const savedSuffix = !dispatched.ok && dispatched.savedFields?.length
+              ? ` (savedFields: ${dispatched.savedFields.join(", ")})`
+              : "";
             const note = dispatched.ok
               ? `[intent=${dispatched.intentId}: executed - ${dispatched.summary}]`
-              : `[intent=${dispatched.intentId}: ${dispatched.reason} - ${dispatched.message}]`;
+              : `[intent=${dispatched.intentId}: ${dispatched.reason} - ${codePrefix}${dispatched.message}${savedSuffix}]`;
             return base.answer(requestId, `${answer} ${note}`, selectedOption);
           }
           await bound.confirmation

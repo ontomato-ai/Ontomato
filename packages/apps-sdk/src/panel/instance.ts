@@ -29,15 +29,17 @@ import { PanelFormAdapters } from "./forms";
 import { handlerFor } from "./handlers";
 import type { PanelOperationBinding } from "./types";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
-import type {
-  PanelAgentRunRef,
-  PanelHumanOperationDispatchResponse,
-  PanelHumanOperationPreparation,
+import {
+  classifyPanelOperationDispatch,
+  type PanelAgentRunRef,
+  type PanelHumanOperationDispatchResponse,
+  type PanelHumanOperationPreparation,
 } from "@ontomato/contracts/panel-agent";
 import type { PanelCompletedOperation, PanelOperationAffected, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type {
   ConfirmPanelOperation,
   PanelHumanOperations,
+  PanelLocalConfirmationClaimResponse,
   PanelLocalConfirmationRequest,
   PanelLocalConfirmationResponse,
   PanelOperationDescriptor,
@@ -166,7 +168,10 @@ export type PanelMountedActionResult =
         | "validation_failed"
         | "cancelled"
         | "stale"
+        | "partial"
         | "failed";
+      readonly code?: string;
+      readonly savedFields?: readonly string[];
       readonly outcome?: unknown;
       readonly message?: string;
     };
@@ -174,6 +179,7 @@ export type PanelMountedActionResult =
 export type PanelMountedActionHandler = (request: {
   readonly rowKey?: string;
   readonly input?: Readonly<Record<string, RuntimeJsonValue>>;
+  readonly expectedEntryInstanceId?: string;
   readonly expectedTarget?: ExpectedPageTarget;
   readonly expectedCheckedKeys?: readonly string[];
   readonly agentContext?: PanelAgentActionContext;
@@ -181,74 +187,47 @@ export type PanelMountedActionHandler = (request: {
 
 /** Formats a concise human/agent summary of a dispatched panel operation response. */
 export function summarizeDispatchResponse(response: PanelHumanOperationDispatchResponse): string {
-  if (response.kind === "not-dispatched") return response.message;
-  const { outcome } = response;
-  if (!outcome) return "Execution outcome unknown.";
-  if (outcome.kind === "success") return outcome.message ?? "Completed successfully.";
-  if (outcome.kind === "batch") {
-    const succeeded = outcome.items.filter((item) => item.outcome.kind === "success").length;
-    return `Batch completed: ${succeeded}/${outcome.items.length} succeeded.`;
-  }
-  return outcome.message;
+  const classified = classifyPanelOperationDispatch(response);
+  if (classified.kind === "executed" || classified.kind === "partial") return classified.summary;
+  return classified.message;
 }
 
 /**
- * Classifies an authoritative dispatch response for a mounted `page_action` handler:
- * - Only authoritative success (or a batch with at least one success and zero unknown items) is `ok: true`.
- * - Missing outcome, `unknown`, or a batch containing any `unknown` item is `reason: "unknown"`.
- * - `not-dispatched`, `refusal`, `failure`, or an all-failed batch is `reason: "failed"`.
+ * Classifies an authoritative dispatch response for a mounted `page_action` handler using the single
+ * shared `@ontomato/contracts/panel-agent` classifier so live receipts and server timeout recovery match.
  */
 export function classifyDispatchResponseForAction(
   response: PanelHumanOperationDispatchResponse,
 ): PanelMountedActionResult {
-  if (response.kind === "not-dispatched") {
-    return { ok: false, reason: "failed", message: response.message };
+  const classified = classifyPanelOperationDispatch(response);
+  if (classified.kind === "executed") {
+    return { ok: true, outcome: classified.outcome };
   }
-  const { outcome } = response;
-  if (!outcome) {
+  if (classified.kind === "partial") {
+    return {
+      ok: false,
+      reason: "partial",
+      code: classified.code,
+      ...(classified.savedFields?.length ? { savedFields: classified.savedFields } : {}),
+      outcome: classified.outcome,
+      message: classified.message,
+    };
+  }
+  if (classified.kind === "unknown") {
     return {
       ok: false,
       reason: "unknown",
-      message: "Operation was dispatched, but its outcome is unknown.",
+      ...(classified.outcome !== undefined ? { outcome: classified.outcome } : {}),
+      message: classified.message,
     };
   }
-  if (outcome.kind === "unknown") {
-    return {
-      ok: false,
-      reason: "unknown",
-      outcome,
-      message: outcome.message || "Operation was dispatched, but its outcome is unknown.",
-    };
-  }
-  if (outcome.kind === "refusal" || outcome.kind === "failure") {
-    return { ok: false, reason: "failed", outcome, message: outcome.message };
-  }
-  if (outcome.kind === "batch") {
-    const unknownItem = outcome.items.find((item) => item.outcome.kind === "unknown");
-    if (unknownItem) {
-      return {
-        ok: false,
-        reason: "unknown",
-        outcome,
-        message: unknownItem.outcome.kind === "unknown" && unknownItem.outcome.message
-          ? unknownItem.outcome.message
-          : "Batch operation was dispatched with an unknown item outcome.",
-      };
-    }
-    if (!outcome.items.some((item) => item.outcome.kind === "success")) {
-      const firstProblem = outcome.items.map((item) => item.outcome).find(
-        (item) => item.kind === "refusal" || item.kind === "failure",
-      );
-      return {
-        ok: false,
-        reason: "failed",
-        outcome,
-        message: firstProblem && "message" in firstProblem ? firstProblem.message : "Batch operation failed.",
-      };
-    }
-    return { ok: true, outcome };
-  }
-  return { ok: true, outcome };
+  return {
+    ok: false,
+    reason: "failed",
+    code: classified.code,
+    ...(classified.outcome !== undefined ? { outcome: classified.outcome } : {}),
+    message: classified.message,
+  };
 }
 
 /** Classifies an authoritative dispatch response after the user approves a deferred confirmation in chat. */
@@ -257,22 +236,43 @@ export function classifyDispatchResponseForConfirmation(
   response: PanelHumanOperationDispatchResponse,
 ): PageActionConfirmedDispatchResult {
   if (response.kind === "not-dispatched") {
-    return { ok: false, intentId, reason: "not_dispatched", message: response.message };
+    return { ok: false, intentId, reason: "not_dispatched", code: response.code, message: response.message };
   }
-  const actionResult = classifyDispatchResponseForAction(response);
-  if (!actionResult.ok) {
+  const classified = classifyPanelOperationDispatch(response, intentId);
+  if (classified.kind === "executed") {
+    return {
+      ok: true,
+      intentId,
+      outcome: classified.outcome,
+      summary: classified.summary,
+    };
+  }
+  if (classified.kind === "partial") {
     return {
       ok: false,
       intentId,
-      reason: actionResult.reason === "unknown" ? "unknown" : "failed",
-      message: actionResult.message ?? "Operation did not complete.",
+      reason: "partial",
+      code: classified.code,
+      ...(classified.savedFields?.length ? { savedFields: classified.savedFields } : {}),
+      outcome: classified.outcome,
+      message: classified.summary,
+    };
+  }
+  if (classified.kind === "unknown") {
+    return {
+      ok: false,
+      intentId,
+      reason: "unknown",
+      code: classified.code,
+      message: classified.message,
     };
   }
   return {
-    ok: true,
+    ok: false,
     intentId,
-    outcome: response.outcome,
-    summary: summarizeDispatchResponse(response),
+    reason: "failed",
+    code: classified.code,
+    message: classified.message,
   };
 }
 
@@ -283,6 +283,7 @@ export interface NestedPublisher {
   dirty(): boolean;
   readonly context: PageContext | null;
   memberInstances?(): Readonly<Record<string, string>>;
+  entryInstances?(): Readonly<Record<string, string>>;
   checkedKeys?(): Readonly<Record<string, readonly string[]>>;
   isLoading?(): boolean;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
@@ -394,10 +395,16 @@ export interface PanelInstance {
   publicState(): Record<string, RuntimeJsonValue>;
   /** Instance IDs of currently mounted nested panel members keyed by dotted member path. */
   memberInstances(): Readonly<Record<string, string>>;
+  /** Instance IDs of currently mounted action/form/list entries keyed by full operation ID (or `row:<opId>`). */
+  entryInstances(): Readonly<Record<string, string>>;
   /** Current checked row keys (`<className>:<primaryKey>`) per object-list state field (including nested panels). */
   checkedKeys(): Readonly<Record<string, readonly string[]>>;
   /** Posts a conversation confirmation question for a destructive local UI action (e.g. discarding dirty form edits). */
   requestLocalConfirmation?(input: PanelLocalConfirmationRequest): Promise<PanelLocalConfirmationResponse>;
+  /** Atomically claims a pending local confirmation question before executing the local UI action. */
+  claimLocalConfirmation?(questionId: string): Promise<PanelLocalConfirmationClaimResponse>;
+  /** Cancels a pending local confirmation question when the form changes, closes, or the user declines. */
+  cancelLocalConfirmation?(questionId: string, reason: { code: string; message: string }): Promise<void>;
   /** Fills explicit fields on a mounted live form (top-level or nested panel) using the form's own edit entry. */
   fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
   /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
@@ -406,7 +413,7 @@ export interface PanelInstance {
   registerActionHandler(
     id: string,
     handler: PanelMountedActionHandler,
-    options?: { readonly scope?: "default" | "row" },
+    options?: { readonly scope?: "default" | "row"; readonly entryInstanceId?: () => string },
   ): () => void;
   /** Notifies mounted members that a panel operation completed. */
   operationCompleted(event: PanelOperationCompletion): void;
@@ -457,16 +464,21 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   function operationPath(operationId: string): PanelMemberPath | undefined {
     return operations.value.find((operation) => operation.id === operationId)?.memberPath;
   }
-  const actionHandlers = new Map<string, { scope: "default" | "row"; handler: PanelMountedActionHandler }[]>();
+  const actionHandlers = new Map<
+    string,
+    { scope: "default" | "row"; handler: PanelMountedActionHandler; entryInstanceId: () => string }[]
+  >();
 
   function registerActionHandler(
     id: string,
     handler: PanelMountedActionHandler,
-    handlerOptions?: { readonly scope?: "default" | "row" },
+    handlerOptions?: { readonly scope?: "default" | "row"; readonly entryInstanceId?: () => string },
   ) {
     const scope = handlerOptions?.scope ?? "default";
+    const defaultEntryId = randomId();
+    const entryInstanceId = handlerOptions?.entryInstanceId ?? (() => defaultEntryId);
     const list = actionHandlers.get(id) ?? [];
-    const entry = { scope, handler };
+    const entry = { scope, handler, entryInstanceId };
     list.push(entry);
     actionHandlers.set(id, list);
     return () => {
@@ -496,17 +508,19 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       ? await options.operations.prepare(operationId, invocation, path, agentScope.agentRun)
       : await options.operations.prepare(operationId, invocation, path);
     const named = namedTargets(preparation.confirmation);
-    if (agentScope && preparation.autoMode === false && preparation.questionId) {
-      if (frozen?.ok && evaluator) {
-        const preCheck = verifySubmissionUnchanged(frozen, evaluator, "auto-dispatch");
-        if (!preCheck.ok) {
-          await options.operations.cancel?.(preparation.intentId, {
-            code: "ACTION_CONFIRMATION_STALE",
-            message: preCheck.message,
-          }).catch(() => undefined);
-          throw new PanelSubmissionStaleError(preCheck.message, preparation.intentId);
-        }
+    const verifyOrCancel = async (phase: "auto-dispatch" | "confirm") => {
+      if (!frozen?.ok || !evaluator) return;
+      const check = verifySubmissionUnchanged(frozen, evaluator, phase);
+      if (!check.ok) {
+        await options.operations.cancel?.(preparation.intentId, {
+          code: "ACTION_CONFIRMATION_STALE",
+          message: check.message,
+        }).catch(() => undefined);
+        throw new PanelSubmissionStaleError(check.message, preparation.intentId);
       }
+    };
+    if (agentScope && preparation.autoMode === false && preparation.questionId) {
+      await verifyOrCancel("auto-dispatch");
       const isStillValid: () => SubmissionCheckResult = frozen?.ok && evaluator
         ? () => verifySubmissionUnchanged(frozen, evaluator, "confirm")
         : () => ({ ok: true as const });
@@ -517,24 +531,22 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
         dispatchNow: () => options.confirmOperation(preparation, {
           ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
           skipDialog: true,
+          beforeDispatch: () => verifyOrCancel("confirm"),
         }),
         cancelNow: (reason) => options.operations.cancel?.(preparation.intentId, reason) ?? Promise.resolve(),
       });
     }
-    if (agentScope && preparation.autoMode === true && frozen?.ok && evaluator) {
+    if (agentScope && preparation.autoMode === true) {
       // Full-auto skips only the conversation question — never the universal 4-tuple verification before dispatch.
-      const check = verifySubmissionUnchanged(frozen, evaluator, "auto-dispatch");
-      if (!check.ok) {
-        await options.operations.cancel?.(preparation.intentId, {
-          code: "ACTION_CONFIRMATION_STALE",
-          message: check.message,
-        }).catch(() => undefined);
-        throw new PanelSubmissionStaleError(check.message, preparation.intentId);
-      }
+      await verifyOrCancel("auto-dispatch");
     }
     const skipDialog = Boolean(agentScope && preparation.autoMode === true);
     const confirmHooks = writeOptions?.onConfirmed || skipDialog
-      ? { ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}), ...(skipDialog ? { skipDialog: true } : {}) }
+      ? {
+          ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
+          ...(skipDialog ? { skipDialog: true } : {}),
+          ...(skipDialog ? { beforeDispatch: () => verifyOrCancel("auto-dispatch") } : {}),
+        }
       : undefined;
     const confirmed = confirmHooks
       ? await options.confirmOperation(preparation, confirmHooks)
@@ -564,20 +576,30 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     return found.invoke(input);
   }
   async function fillForm(request: FormFillRequestInput): Promise<FormFillOutcome> {
+    if (request.expectedPanelInstanceId !== undefined && request.expectedPanelInstanceId !== instanceId) {
+      return {
+        ok: false,
+        reason: "stale",
+        ...(request.member ? { member: request.member } : {}),
+        ...(request.memberPath?.length ? { memberPath: request.memberPath } : {}),
+        message: "The mounted panel definition was replaced or remounted since the last observation.",
+      };
+    }
     if (request.memberPath?.length) {
       const [head, ...rest] = request.memberPath;
       const publisher = publishers.get(head!)?.value;
       if (!publisher?.fillForm) {
         return {
           ok: false,
-          reason: request.expectedMemberInstanceId !== undefined ? "stale" : "form_not_found",
+          reason: request.expectedMemberInstanceId !== undefined || request.expectedFormInstanceId !== undefined ? "stale" : "form_not_found",
           ...(request.member ? { member: request.member } : {}),
           memberPath: request.memberPath,
           message: `Nested panel member '${head}' is not mounted.`,
         };
       }
+      const { expectedPanelInstanceId: _checkedRoot, ...childRequest } = request;
       const nested = await publisher.fillForm({
-        ...request,
+        ...childRequest,
         memberPath: rest.length ? rest : undefined,
       });
       return {
@@ -596,6 +618,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       }
       return forms.fill(request.member, request.values, {
         overwriteUnsaved: request.overwriteUnsaved,
+        ...(request.expectedFormInstanceId !== undefined ? { expectedFormInstanceId: request.expectedFormInstanceId } : {}),
         ...(request.expectedTarget ? { expectedTarget: request.expectedTarget } : {}),
       });
     }
@@ -611,7 +634,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     if (mounted.length === 0) {
       return {
         ok: false,
-        reason: request.expectedMemberInstanceId !== undefined ? "stale" : "form_not_found",
+        reason: request.expectedMemberInstanceId !== undefined || request.expectedFormInstanceId !== undefined ? "stale" : "form_not_found",
         message: "No form is currently open on this page.",
       };
     }
@@ -626,19 +649,28 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     return fillForm({ ...request, member: only.member, memberPath: only.memberPath });
   }
   async function executeAction(request: PageActionRequestInput): Promise<PageActionOutcome> {
+    if (request.expectedPanelInstanceId !== undefined && request.expectedPanelInstanceId !== instanceId) {
+      return {
+        ok: false,
+        reason: "stale",
+        operation: request.operation,
+        message: "The mounted panel definition was replaced or remounted since the last observation.",
+      };
+    }
     if (request.memberPath?.length) {
       const [head, ...rest] = request.memberPath;
       const publisher = publishers.get(head!)?.value;
       if (!publisher?.executeAction) {
         return {
           ok: false,
-          reason: request.expectedMemberInstanceId !== undefined ? "stale" : "action_not_found",
+          reason: request.expectedMemberInstanceId !== undefined || request.expectedEntryInstanceId !== undefined ? "stale" : "action_not_found",
           operation: request.operation,
           message: `Nested panel member '${head}' is not mounted.`,
         };
       }
+      const { expectedPanelInstanceId: _checkedRoot, ...childRequest } = request;
       return publisher.executeAction({
-        ...request,
+        ...childRequest,
         memberPath: rest.length ? rest : undefined,
       });
     }
@@ -660,8 +692,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const prefixMember = request.operation.slice(0, dot);
       const nestedPublisher = publishers.get(prefixMember)?.value;
       if (nestedPublisher?.executeAction) {
+        const { expectedPanelInstanceId: _checkedRoot, ...childRequest } = request;
         return nestedPublisher.executeAction({
-          ...request,
+          ...childRequest,
           operation: request.operation.slice(dot + 1),
         });
       }
@@ -681,26 +714,43 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       : request.operation;
     const entries = actionHandlers.get(fullOperationId) ?? actionHandlers.get(request.operation) ?? [];
     const preferredScope = request.rowKey !== undefined ? "row" : "default";
-    const matchedHandler =
-      entries.find((entry) => entry.scope === preferredScope)?.handler
-      ?? (request.rowKey === undefined ? entries[0]?.handler : undefined);
+    const matchedEntry =
+      entries.find((entry) => entry.scope === preferredScope)
+      ?? (request.rowKey === undefined ? entries[0] : undefined);
 
-    if (!matchedHandler) {
+    if (!matchedEntry) {
       return {
         ok: false,
-        reason: "action_not_found",
+        reason: request.expectedEntryInstanceId !== undefined ? "stale" : "action_not_found",
         operation: request.operation,
-        message: request.rowKey !== undefined
-          ? `Row action '${request.operation}' is not mounted on a list member.`
-          : `The currently displayed page offers no mounted action '${request.operation}'.`,
+        message: request.expectedEntryInstanceId !== undefined
+          ? `Action entry '${request.operation}' was unmounted or replaced since the last observation.`
+          : request.rowKey !== undefined
+            ? `Row action '${request.operation}' is not mounted on a list member.`
+            : `The currently displayed page offers no mounted action '${request.operation}'.`,
       };
     }
+
+    if (
+      request.expectedEntryInstanceId !== undefined
+      && matchedEntry.entryInstanceId() !== request.expectedEntryInstanceId
+    ) {
+      return {
+        ok: false,
+        reason: "stale",
+        operation: request.operation,
+        message: `Action entry '${request.operation}' changed its bound target or was remounted since the last observation.`,
+      };
+    }
+
+    const matchedHandler = matchedEntry.handler;
 
     const agentContext: PanelAgentActionContext = { agentRun: request.agentRun };
     try {
       const result = await matchedHandler({
         ...(request.rowKey !== undefined ? { rowKey: request.rowKey } : {}),
         ...(request.input !== undefined ? { input: request.input } : {}),
+        ...(request.expectedEntryInstanceId !== undefined ? { expectedEntryInstanceId: request.expectedEntryInstanceId } : {}),
         ...(request.expectedTarget !== undefined ? { expectedTarget: request.expectedTarget } : {}),
         ...(request.expectedCheckedKeys !== undefined ? { expectedCheckedKeys: request.expectedCheckedKeys } : {}),
         agentContext,
@@ -723,11 +773,30 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
               ...(mountedResult.message ? { message: mountedResult.message } : {}),
             };
           }
+          if (mountedResult.reason === "partial") {
+            const partialOutcome = mountedResult.outcome !== undefined
+              ? mountedResult.outcome
+              : agentContext.completed?.response.kind === "dispatched"
+                ? agentContext.completed.response.outcome
+                : undefined;
+            return {
+              ok: false,
+              kind: "partially_executed",
+              reason: "partial_completion",
+              operation: request.operation,
+              ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+              code: mountedResult.code ?? "PARTIAL_COMPLETION",
+              message: mountedResult.message ?? "Operation partially completed with refusals or failures.",
+              ...(mountedResult.savedFields?.length ? { savedFields: mountedResult.savedFields } : {}),
+              outcome: partialOutcome,
+            };
+          }
           return {
             ok: false,
             reason: mountedResult.reason,
             operation: request.operation,
             ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+            ...(mountedResult.code ? { code: mountedResult.code } : {}),
             ...(mountedResult.message ? { message: mountedResult.message } : {}),
           };
         }
@@ -779,14 +848,37 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       }
       if (agentContext.completed) {
         const classified = classifyDispatchResponseForAction(agentContext.completed.response);
-        if (!classified.ok && classified.reason === "unknown") {
+        if (!classified.ok) {
+          if (classified.reason === "unknown") {
+            return {
+              ok: false,
+              kind: "unknown",
+              reason: "outcome_unknown",
+              operation: request.operation,
+              intentId: agentContext.completed.intentId,
+              ...(classified.outcome !== undefined ? { outcome: classified.outcome } : {}),
+              ...(classified.message ? { message: classified.message } : {}),
+            };
+          }
+          if (classified.reason === "partial") {
+            return {
+              ok: false,
+              kind: "partially_executed",
+              reason: "partial_completion",
+              operation: request.operation,
+              intentId: agentContext.completed.intentId,
+              code: classified.code ?? "PARTIAL_COMPLETION",
+              message: classified.message ?? "Operation partially completed with refusals or failures.",
+              ...(classified.savedFields?.length ? { savedFields: classified.savedFields } : {}),
+              outcome: classified.outcome,
+            };
+          }
           return {
             ok: false,
-            kind: "unknown",
-            reason: "outcome_unknown",
+            reason: classified.reason,
             operation: request.operation,
             intentId: agentContext.completed.intentId,
-            ...(classified.outcome !== undefined ? { outcome: classified.outcome } : {}),
+            ...(classified.code ? { code: classified.code } : {}),
             ...(classified.message ? { message: classified.message } : {}),
           };
         }
@@ -863,6 +955,19 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       for (const [subKey, subId] of Object.entries(publisher.value.memberInstances?.() ?? {})) {
         result[`${member}.${subKey}`] = subId;
       }
+    }
+    return result;
+  }
+  function entryInstances(): Readonly<Record<string, string>> {
+    const result: Record<string, string> = {};
+    for (const [opId, list] of actionHandlers.entries()) {
+      const defaultEntry = list.find((entry) => entry.scope === "default");
+      if (defaultEntry) result[opId] = defaultEntry.entryInstanceId();
+      const rowEntry = list.find((entry) => entry.scope === "row");
+      if (rowEntry) result[`row:${opId}`] = rowEntry.entryInstanceId();
+    }
+    for (const publisher of publishers.values()) {
+      Object.assign(result, publisher.value.entryInstances?.() ?? {});
     }
     return result;
   }
@@ -993,9 +1098,16 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     deepLink: () => state.deepLinkable(),
     publicState,
     memberInstances,
+    entryInstances,
     checkedKeys,
     ...(options.operations.requestLocalConfirmation
       ? { requestLocalConfirmation: (input: PanelLocalConfirmationRequest) => options.operations.requestLocalConfirmation!(input) }
+      : {}),
+    ...(options.operations.claimLocalConfirmation
+      ? { claimLocalConfirmation: (questionId: string) => options.operations.claimLocalConfirmation!(questionId) }
+      : {}),
+    ...(options.operations.cancelLocalConfirmation
+      ? { cancelLocalConfirmation: (questionId: string, reason: { code: string; message: string }) => options.operations.cancelLocalConfirmation!(questionId, reason) }
       : {}),
     fillForm,
     executeAction,

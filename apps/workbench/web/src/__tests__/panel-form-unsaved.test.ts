@@ -105,6 +105,7 @@ it("reports live form contents and unsaved user edits reactively in instance.pag
   await vi.waitFor(() => expect(mount.instance.pageContext.value.forms).toEqual([
     {
       member: "form",
+      formInstanceId: expect.any(String),
       target: { kind: "object", objectType: FUNCTION, primaryKey: "a-1" },
       dirty: false,
       values: { name: "Orders", slug: "orders", entries: [{ title: "Home", inputs: "{}" }] },
@@ -116,6 +117,7 @@ it("reports live form contents and unsaved user edits reactively in instance.pag
   await vi.waitFor(() => expect(mount.instance.pageContext.value.forms).toEqual([
     {
       member: "form",
+      formInstanceId: expect.any(String),
       target: { kind: "object", objectType: FUNCTION, primaryKey: "a-1" },
       dirty: true,
       dirtyFields: ["/name"],

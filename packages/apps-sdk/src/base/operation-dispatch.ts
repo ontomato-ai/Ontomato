@@ -476,6 +476,14 @@ export function useOperationRunner(options: {
                 applyWriteAnswer({ ...confirmed, named: deferred.named });
                 return classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
               } catch (dispatchReason) {
+                if (dispatchReason instanceof PanelSubmissionStaleError) {
+                  return {
+                    ok: false,
+                    intentId: preparation.intentId,
+                    reason: "stale",
+                    message: dispatchReason.message,
+                  };
+                }
                 failure.value = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
                 return {
                   ok: false,

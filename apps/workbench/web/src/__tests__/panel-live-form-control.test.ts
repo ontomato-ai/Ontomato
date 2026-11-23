@@ -226,7 +226,17 @@ describe("live form fillForm and executeAction confirmation lifecycle", () => {
       expect(harness.input("/note").value).toBe("agent updated");
       expect(harness.instance.dirty()).toBe(true);
 
-      // Dirty form blocks another fillForm unless overwriteUnsaved is explicitly true.
+      // Agent re-filling its own previously filled field merges cleanly without blocked_unsaved.
+      expect(await harness.instance.fillForm({ values: { "/note": "agent refined" } })).toMatchObject({
+        ok: true,
+        member: "form",
+        filledFields: ["/note"],
+      });
+
+      // Manual user edit on a field blocks overwriting that same field unless overwriteUnsaved is explicitly true.
+      harness.input("/note").value = "user typed note";
+      harness.input("/note").dispatchEvent(new Event("input"));
+      await nextTick();
       expect(await harness.instance.fillForm({ values: { "/note": "second attempt" } })).toMatchObject({
         ok: false,
         reason: "blocked_unsaved",
