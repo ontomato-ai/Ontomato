@@ -75,12 +75,30 @@ export const inspectPanelOperationImpactRequestSchema = z.union([
 /** Dispatch reads the immutable stored call and channel evidence. No questionId, approval or changed call is accepted. */
 export const dispatchPanelOperationIntentRequestSchema = z.object({}).strict();
 
+/** Identifies the active agent tool call that asked the displayed page to execute an operation. */
+export const panelAgentRunRefSchema = z.object({
+  sessionId: runtimeIdSchema,
+  runId: runtimeIdSchema,
+  toolCallId: runtimeKeySchema,
+}).strict();
+export type PanelAgentRunRef = z.infer<typeof panelAgentRunRefSchema>;
+
+const panelHumanIntentScopeSchema = panelOperationRefSchema.extend({
+  agentRun: panelAgentRunRefSchema.optional(),
+});
+
 /** Node supplies the intent ID and the initiator from the authenticated reader. */
 export const createPanelHumanOperationIntentRequestSchema = z.union([
-  panelOperationRefSchema.merge(panelHumanSingleInvocationSchema),
-  panelOperationRefSchema.merge(panelBatchInvocationSchema),
+  panelHumanIntentScopeSchema.merge(panelHumanSingleInvocationSchema),
+  panelHumanIntentScopeSchema.merge(panelBatchInvocationSchema),
 ]);
 export type CreatePanelHumanOperationIntentRequest = z.infer<typeof createPanelHumanOperationIntentRequestSchema>;
+
+export const cancelPanelOperationIntentRequestSchema = z.object({
+  code: key,
+  message: z.string().min(1).max(1000),
+}).strict();
+export type CancelPanelOperationIntentRequest = z.infer<typeof cancelPanelOperationIntentRequestSchema>;
 
 /** A multi-target batch names its targets. A single call confirms only when its owner inspects the impact. */
 export const panelHumanOperationConfirmationSchema = z.discriminatedUnion("kind", [
@@ -105,6 +123,10 @@ export const panelHumanOperationPreparationSchema = z.object({
   operationId: panelOperationIdSchema,
   label: z.string().min(1).max(200),
   confirmation: panelHumanOperationConfirmationSchema,
+  /** Present for agent-initiated page actions: true when the conversation runs in full-auto mode. */
+  autoMode: z.boolean().optional(),
+  /** Present for agent-initiated page actions that require user confirmation in the conversation. */
+  questionId: runtimeIdSchema.optional(),
 }).strict();
 export type PanelHumanOperationPreparation = z.infer<typeof panelHumanOperationPreparationSchema>;
 
@@ -220,9 +242,22 @@ export type PanelAgentOperationIntent = z.infer<typeof panelAgentOperationIntent
 
 const humanIntentFactsSchema = commonIntentFactsSchema.extend({
   ...currentOperationFields,
-  source: z.object({ kind: z.literal("human") }).strict(),
+  source: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("human") }).strict(),
+    z.object({
+      kind: z.literal("agent-page"),
+      sessionId: runtimeIdSchema,
+      runId: runtimeIdSchema,
+      toolCallId: runtimeKeySchema,
+      autoMode: z.boolean(),
+      questionId: runtimeIdSchema.nullable(),
+      confirmedBy: runtimeKeySchema.nullable().optional(),
+    }).strict(),
+  ]),
   /** The host reads the frozen decision and names from Node for the same request. */
   confirmation: panelHumanOperationConfirmationSchema,
+  /** Set when an unexecuted confirmation is cancelled or invalidated because page/form state changed. */
+  invalidated: z.object({ code: key, message: z.string() }).strict().optional(),
 });
 export const panelHumanOperationIntentSchema = z.union([
   humanIntentFactsSchema.merge(panelHumanSingleInvocationSchema),

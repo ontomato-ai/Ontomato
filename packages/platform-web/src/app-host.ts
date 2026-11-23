@@ -330,14 +330,14 @@ async function confirmPanelOperation(source:object,{intentId}:AppBridgeConfirmPa
  */
 export async function confirmPanelIntent(
   use:PanelUseRef,intentId:string,changed:(change:PanelObjectChange)=>void,admit?:(operationId:string)=>void,
-  options?:{onConfirmed?:()=>void},
+  options?:{onConfirmed?:()=>void;skipDialog?:boolean},
 ):Promise<AppBridgeConfirmPanelOperationResult>{
   const read=await nodeApiRequest(`/api/panel-operation-intents/${encodeURIComponent(intentId)}?${new URLSearchParams(use)}`);
   const intent=await read.json();
   if(!read.ok)throw new Error(intent.error?.message??'Operation request unavailable');
   const {operationId,label,confirmation}=panelHumanOperationPreparationSchema.parse(intent);
   admit?.(operationId);
-  if(confirmation.kind!=='none'&&!await askPerson(label,confirmation))return {decision:'cancel'};
+  if(!options?.skipDialog&&confirmation.kind!=='none'&&!await askPerson(label,confirmation))return {decision:'cancel'};
   options?.onConfirmed?.();
   const sent=await nodeApiRequest(`/api/panel-operations/intents/${encodeURIComponent(intentId)}/dispatch`,{method:'POST',body:'{}'});
   const answer=await sent.json();

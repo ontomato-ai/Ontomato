@@ -149,6 +149,68 @@ function observeDisplayTool(runId: string, callback: RuntimePresentationCallback
   };
 }
 
+function fillFormTool(runId: string, callback: RuntimePresentationCallback): AgentTool {
+  return {
+    name: "fill_form",
+    label: "Fill form",
+    description: "Fill explicit fields into a live form currently displayed on the page beside the conversation, using the form's own editing entry so changed fields are highlighted, owner-driven dynamic updates run, and the form remains unsaved until saved. Does not navigate or save; open the target page/tab/dialog with `present` first if the form is not mounted yet. Keys in `values` are JSON Pointer field paths (e.g. \"/name\") or top-level field names (e.g. \"name\"). When the form already has unsaved edits, refuses without overwriting (not_filled / blocked_unsaved) — ask the user first and pass overwriteUnsaved: true only after explicit user confirmation.",
+    parameters: Type.Object({
+      member: Type.Optional(Type.String()),
+      memberPath: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
+      values: Type.Record(Type.String(), Type.Unknown()),
+      overwriteUnsaved: Type.Optional(Type.Boolean()),
+    }, { additionalProperties: false }),
+    replay: "never",
+    async execute(toolCallId, input, signal) {
+      const response = await fetch(callback.url, {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ontomato-Callback-Credential": callback.credential,
+          "X-Ontomato-Run-Id": runId,
+        },
+        body: JSON.stringify({ toolCallId, input: { mode: "fill_form", ...(input as Record<string, unknown>) } }),
+        signal,
+      });
+      const body: unknown = await response.json();
+      const result = response.ok ? presentationResultSchema.parse(body) : body;
+      return { content: [{ type: "text", text: JSON.stringify(result) }], details: {}, isError: !response.ok };
+    },
+  };
+}
+
+function pageActionTool(runId: string, callback: RuntimePresentationCallback): AgentTool {
+  return {
+    name: "page_action",
+    label: "Page action",
+    description: "Execute a declared operation or local page action on the page currently displayed beside the conversation, through the exact same UI entry a user clicks (for example saving a live form with its current contents, clicking a bound action button, running a list row/batch action, refreshing data with \"page.refresh\", or discarding form edits with \"<form>.discard\"). Never pass form field values here — fill the form with `fill_form` first, then invoke its save operation. For business writes in default mode, this prepares the operation and asks the user to confirm in the conversation (`awaiting_confirmation`); in full-auto sessions it executes immediately (`executed`). For list row actions, pass `rowKey` with the row's primary key. If receipt is missing (`unknown`), check the returned `intentId` instead of retrying.",
+    parameters: Type.Object({
+      operation: Type.String(),
+      memberPath: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
+      rowKey: Type.Optional(Type.String()),
+      input: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+    }, { additionalProperties: false }),
+    replay: "never",
+    async execute(toolCallId, input, signal) {
+      const response = await fetch(callback.url, {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ontomato-Callback-Credential": callback.credential,
+          "X-Ontomato-Run-Id": runId,
+        },
+        body: JSON.stringify({ toolCallId, input: { mode: "page_action", ...(input as Record<string, unknown>) } }),
+        signal,
+      });
+      const body: unknown = await response.json();
+      const result = response.ok ? presentationResultSchema.parse(body) : body;
+      return { content: [{ type: "text", text: JSON.stringify(result) }], details: {}, isError: !response.ok };
+    },
+  };
+}
+
 export interface RuntimeOptions {
   store: RuntimeStore;
   worker?: WorkerPolicy;
@@ -719,6 +781,8 @@ export class AgentRuntime {
       if (presentationCallback) {
         tools.push(presentationTool(run.id, presentationCallback));
         tools.push(observeDisplayTool(run.id, presentationCallback));
+        tools.push(fillFormTool(run.id, presentationCallback));
+        tools.push(pageActionTool(run.id, presentationCallback));
       }
       if (new Set(tools.map((t) => t.name)).size !== tools.length)
         throw new Error("Exposed tool names must be unique");

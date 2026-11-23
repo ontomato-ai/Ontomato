@@ -6,6 +6,14 @@ import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
   type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
+import type {
+  FormFillOutcome,
+  FormFillRequestInput,
+  PageActionConfirmedDispatchResult,
+  PageActionOutcome,
+  PageActionRequestInput,
+  PendingPageActionConfirmation,
+} from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import {
@@ -20,7 +28,12 @@ import { handlerFor } from "./handlers";
 import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelOperationBinding } from "./types";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
-import type { PanelHumanOperationPreparation, PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
+import type {
+  PanelAgentRunRef,
+  PanelFormEditedTarget,
+  PanelHumanOperationDispatchResponse,
+  PanelHumanOperationPreparation,
+} from "@ontomato/contracts/panel-agent";
 import type { PanelCompletedOperation, PanelOperationAffected, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelReadCall, PanelWriteInvocation } from "./human-operations";
 
@@ -72,11 +85,80 @@ export interface PanelWriteOperationOptions {
   onConfirmed?: () => void;
 }
 
+/** Thrown internally by `writeOperation` when an agent-initiated write awaits default conversation confirmation. */
+export class PanelOperationDeferred extends Error {
+  readonly preparation: PanelHumanOperationPreparation;
+  readonly named: PanelWriteResult["named"];
+  readonly dispatchNow: () => Promise<AppBridgeConfirmPanelOperationResult>;
+  readonly cancelNow: (reason: { readonly code: string; readonly message: string }) => Promise<void>;
+  constructor(input: {
+    preparation: PanelHumanOperationPreparation;
+    named: PanelWriteResult["named"];
+    dispatchNow: () => Promise<AppBridgeConfirmPanelOperationResult>;
+    cancelNow: (reason: { readonly code: string; readonly message: string }) => Promise<void>;
+  }) {
+    super("Operation awaiting conversation confirmation");
+    this.name = "PanelOperationDeferred";
+    this.preparation = input.preparation;
+    this.named = input.named;
+    this.dispatchNow = input.dispatchNow;
+    this.cancelNow = input.cancelNow;
+  }
+}
+
+/** Thrown by a component after wrapping `PanelOperationDeferred` with its own live guard and post-dispatch settlement. */
+export class PanelConfirmationDeferred extends Error {
+  readonly confirmation: PendingPageActionConfirmation;
+  constructor(confirmation: PendingPageActionConfirmation) {
+    super("Operation confirmation prepared by mounted component");
+    this.name = "PanelConfirmationDeferred";
+    this.confirmation = confirmation;
+  }
+}
+
+/** Result returned by a mounted component action handler registered on `PanelInstance`. */
+export type PanelMountedActionResult =
+  | { readonly ok: true; readonly outcome?: unknown }
+  | { readonly ok: true; readonly confirmation: PendingPageActionConfirmation }
+  | {
+      readonly ok: false;
+      readonly reason:
+        | "action_not_found"
+        | "action_unavailable"
+        | "action_not_ready"
+        | "input_required"
+        | "validation_failed"
+        | "cancelled"
+        | "stale"
+        | "failed";
+      readonly message?: string;
+    };
+
+export type PanelMountedActionHandler = (request: {
+  readonly rowKey?: string;
+  readonly input?: Readonly<Record<string, RuntimeJsonValue>>;
+}) => Promise<PanelMountedActionResult>;
+
+/** Formats a concise human/agent summary of a dispatched panel operation response. */
+export function summarizeDispatchResponse(response: PanelHumanOperationDispatchResponse): string {
+  if (response.kind === "not-dispatched") return response.message;
+  const { outcome } = response;
+  if (!outcome) return "Execution outcome unknown.";
+  if (outcome.kind === "success") return outcome.message ?? "Completed successfully.";
+  if (outcome.kind === "batch") {
+    const succeeded = outcome.items.filter((item) => item.outcome.kind === "success").length;
+    return `Batch completed: ${succeeded}/${outcome.items.length} succeeded.`;
+  }
+  return outcome.message;
+}
+
 /** What a panel placed in one of an instance's members publishes into it: its operations, its unsaved changes. */
 export interface NestedPublisher {
   readonly operations: readonly PanelOperationBinding[];
   dirty(): boolean;
   readonly context: PageContext | null;
+  fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
+  executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
 }
 
 /** A completed panel write operation reported by the host (e.g. an agent `/operate` dispatch). */
@@ -196,6 +278,16 @@ export interface PanelInstance {
   deepLink(): Record<string, PanelDeepLinkStateValue>;
   /** All declared public state fields with their current values. */
   publicState(): Record<string, RuntimeJsonValue>;
+  /** Fills explicit fields on a mounted live form (top-level or nested panel) using the form's own edit entry. */
+  fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
+  /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
+  executeAction(request: PageActionRequestInput): Promise<PageActionOutcome>;
+  /** Registers a mounted component's actual UI action entry (form save, button runner, list row runner, local action). */
+  registerActionHandler(
+    id: string,
+    handler: PanelMountedActionHandler,
+    options?: { readonly scope?: "default" | "row" },
+  ): () => void;
   /** Notifies the host that the user manually edited an unsaved form, invalidating pending agent save confirmations. */
   notifyFormEdited(target: PanelFormEditedTarget): void;
   onFormEdited(listener: (target: PanelFormEditedTarget) => void): () => void;
@@ -248,6 +340,32 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   function operationPath(operationId: string): PanelMemberPath | undefined {
     return operations.value.find((operation) => operation.id === operationId)?.memberPath;
   }
+  interface ActiveAgentActionScope {
+    readonly agentRun: PanelAgentRunRef;
+    completed?: { readonly intentId: string; readonly response: PanelHumanOperationDispatchResponse };
+  }
+  let activeAgentAction: ActiveAgentActionScope | null = null;
+  const actionHandlers = new Map<string, { scope: "default" | "row"; handler: PanelMountedActionHandler }[]>();
+
+  function registerActionHandler(
+    id: string,
+    handler: PanelMountedActionHandler,
+    handlerOptions?: { readonly scope?: "default" | "row" },
+  ) {
+    const scope = handlerOptions?.scope ?? "default";
+    const list = actionHandlers.get(id) ?? [];
+    const entry = { scope, handler };
+    list.push(entry);
+    actionHandlers.set(id, list);
+    return () => {
+      const current = actionHandlers.get(id);
+      if (!current) return;
+      const next = current.filter((item) => item !== entry);
+      if (next.length) actionHandlers.set(id, next);
+      else actionHandlers.delete(id);
+    };
+  }
+
   async function writeOperation(
     operationId: string,
     invocation: PanelWriteInvocation,
@@ -256,11 +374,31 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
     // write does, and is read again from there; the receipt itself rereads nothing.
     const path = writeOptions?.memberPath ?? operationPath(operationId);
-    const preparation = await options.operations.prepare(operationId, invocation, path);
-    const confirmed = writeOptions?.onConfirmed
-      ? await options.confirmOperation(preparation, { onConfirmed: writeOptions.onConfirmed })
+    const agentScope = activeAgentAction;
+    const preparation = await options.operations.prepare(operationId, invocation, path, agentScope?.agentRun);
+    const named = namedTargets(preparation.confirmation);
+    if (agentScope && preparation.autoMode === false && preparation.questionId) {
+      throw new PanelOperationDeferred({
+        preparation,
+        named,
+        dispatchNow: () => options.confirmOperation(preparation, {
+          ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}),
+          skipDialog: true,
+        }),
+        cancelNow: (reason) => options.operations.cancel?.(preparation.intentId, reason) ?? Promise.resolve(),
+      });
+    }
+    const skipDialog = Boolean(agentScope && preparation.autoMode === true);
+    const confirmHooks = writeOptions?.onConfirmed || skipDialog
+      ? { ...(writeOptions?.onConfirmed ? { onConfirmed: writeOptions.onConfirmed } : {}), ...(skipDialog ? { skipDialog: true } : {}) }
+      : undefined;
+    const confirmed = confirmHooks
+      ? await options.confirmOperation(preparation, confirmHooks)
       : await options.confirmOperation(preparation);
-    return { ...confirmed, named: namedTargets(preparation.confirmation) };
+    if (agentScope && confirmed.decision === "confirm") {
+      agentScope.completed = { intentId: preparation.intentId, response: confirmed.response };
+    }
+    return { ...confirmed, named };
   }
   const operations = computed<PanelOperationBinding[]>(() => [
     ...panelOperations(manifest, registrations.value, state, forms, writeOperation,
@@ -280,6 +418,227 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     const found = operations.value.find((operation) => operation.id === id);
     if (!found) throw new Error(`The panel offers no operation '${id}'`);
     return found.invoke(input);
+  }
+  async function fillForm(request: FormFillRequestInput): Promise<FormFillOutcome> {
+    if (request.memberPath?.length) {
+      const [head, ...rest] = request.memberPath;
+      const publisher = publishers.get(head!)?.value;
+      if (!publisher?.fillForm) {
+        return {
+          ok: false,
+          reason: "form_not_found",
+          ...(request.member ? { member: request.member } : {}),
+          memberPath: request.memberPath,
+          message: `Nested panel member '${head}' is not mounted.`,
+        };
+      }
+      const nested = await publisher.fillForm({
+        ...request,
+        memberPath: rest.length ? rest : undefined,
+      });
+      return {
+        ...nested,
+        memberPath: [head!, ...(nested.memberPath ?? [])],
+      };
+    }
+    if (request.member) {
+      return forms.fill(request.member, request.values, { overwriteUnsaved: request.overwriteUnsaved });
+    }
+    const mounted = forms.mountedSlots().map((slot) => ({ member: slot, memberPath: undefined as readonly string[] | undefined }));
+    for (const [member, publisher] of publishers.entries()) {
+      for (const form of publisher.value.context?.forms ?? []) {
+        mounted.push({
+          member: form.member,
+          memberPath: [member, ...(form.memberPath?.map((segment) => segment.member) ?? [])],
+        });
+      }
+    }
+    if (mounted.length === 0) {
+      return { ok: false, reason: "form_not_found", message: "No form is currently open on this page." };
+    }
+    if (mounted.length > 1) {
+      return {
+        ok: false,
+        reason: "form_ambiguous",
+        message: `Multiple forms are open (${mounted.map((item) => [...(item.memberPath ?? []), item.member].join(".")).join(", ")}); specify member (and memberPath if nested).`,
+      };
+    }
+    const only = mounted[0]!;
+    return fillForm({ ...request, member: only.member, memberPath: only.memberPath });
+  }
+  async function executeAction(request: PageActionRequestInput): Promise<PageActionOutcome> {
+    if (request.memberPath?.length) {
+      const [head, ...rest] = request.memberPath;
+      const publisher = publishers.get(head!)?.value;
+      if (!publisher?.executeAction) {
+        return {
+          ok: false,
+          reason: "action_not_found",
+          operation: request.operation,
+          message: `Nested panel member '${head}' is not mounted.`,
+        };
+      }
+      return publisher.executeAction({
+        ...request,
+        memberPath: rest.length ? rest : undefined,
+      });
+    }
+    if (request.operation === "page.refresh") {
+      objectChanged(null);
+      return { ok: true, kind: "executed", operation: "page.refresh" };
+    }
+    // Allow addressing nested panel actions via "<nestedMember>.<op>" as published in panel operations.
+    const dot = request.operation.indexOf(".");
+    if (dot > 0) {
+      const prefixMember = request.operation.slice(0, dot);
+      const nestedPublisher = publishers.get(prefixMember)?.value;
+      if (nestedPublisher?.executeAction) {
+        return nestedPublisher.executeAction({
+          ...request,
+          operation: request.operation.slice(dot + 1),
+        });
+      }
+    }
+
+    const fullOperationId = prefix.length
+      ? `${prefix.map((segment) => segment.member).join(".")}.${request.operation}`
+      : request.operation;
+    const entries = actionHandlers.get(fullOperationId) ?? actionHandlers.get(request.operation) ?? [];
+    const preferredScope = request.rowKey !== undefined ? "row" : "default";
+    const matchedHandler =
+      entries.find((entry) => entry.scope === preferredScope)?.handler
+      ?? (request.rowKey === undefined ? entries[0]?.handler : undefined);
+
+    const scope: ActiveAgentActionScope = { agentRun: request.agentRun };
+    const previousScope = activeAgentAction;
+    activeAgentAction = scope;
+    try {
+      if (matchedHandler) {
+        const result = await matchedHandler({
+          ...(request.rowKey !== undefined ? { rowKey: request.rowKey } : {}),
+          ...(request.input !== undefined ? { input: request.input } : {}),
+        });
+        if (!result.ok) {
+          return {
+            ok: false,
+            reason: result.reason,
+            operation: request.operation,
+            ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
+            ...(result.message ? { message: result.message } : {}),
+          };
+        }
+        if ("confirmation" in result) {
+          return {
+            ok: true,
+            kind: "awaiting_confirmation",
+            operation: request.operation,
+            intentId: result.confirmation.intentId,
+            questionId: result.confirmation.questionId,
+            label: result.confirmation.label,
+            confirmation: result.confirmation,
+          };
+        }
+        return {
+          ok: true,
+          kind: "executed",
+          operation: request.operation,
+          ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
+          outcome: result.outcome ?? (scope.completed?.response.kind === "dispatched" ? scope.completed.response.outcome : scope.completed?.response),
+        };
+      }
+
+      const binding = operations.value.find((op) => op.id === fullOperationId || op.id === request.operation);
+      if (!binding) {
+        return {
+          ok: false,
+          reason: "action_not_found",
+          operation: request.operation,
+          message: `The currently displayed page offers no mounted action '${request.operation}'.`,
+        };
+      }
+      if (request.rowKey !== undefined) {
+        return {
+          ok: false,
+          reason: "action_not_found",
+          operation: request.operation,
+          message: `Row action '${request.operation}' is not mounted on a list member.`,
+        };
+      }
+      const outcome = await binding.invoke(request.input);
+      return {
+        ok: true,
+        kind: "executed",
+        operation: request.operation,
+        ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
+        outcome: scope.completed?.response.kind === "dispatched" ? scope.completed.response.outcome : outcome,
+      };
+    } catch (error) {
+      if (error instanceof PanelConfirmationDeferred) {
+        const { confirmation } = error;
+        return {
+          ok: true,
+          kind: "awaiting_confirmation",
+          operation: request.operation,
+          intentId: confirmation.intentId,
+          questionId: confirmation.questionId,
+          label: confirmation.label,
+          confirmation,
+        };
+      }
+      if (error instanceof PanelOperationDeferred) {
+        const { preparation, dispatchNow, cancelNow } = error;
+        const confirmation: PendingPageActionConfirmation = {
+          intentId: preparation.intentId,
+          questionId: preparation.questionId!,
+          operationId: preparation.operationId,
+          label: preparation.label,
+          isStillValid: () => ({ ok: true }),
+          async dispatch(): Promise<PageActionConfirmedDispatchResult> {
+            try {
+              const confirmed = await dispatchNow();
+              if (confirmed.decision !== "confirm") {
+                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "Operation was cancelled." };
+              }
+              if (confirmed.response.kind === "not-dispatched") {
+                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
+              }
+              return {
+                ok: true,
+                intentId: preparation.intentId,
+                outcome: confirmed.response.outcome,
+                summary: summarizeDispatchResponse(confirmed.response),
+              };
+            } catch (dispatchError) {
+              return {
+                ok: false,
+                intentId: preparation.intentId,
+                reason: "failed",
+                message: dispatchError instanceof Error ? dispatchError.message : String(dispatchError),
+              };
+            }
+          },
+          cancel: cancelNow,
+        };
+        return {
+          ok: true,
+          kind: "awaiting_confirmation",
+          operation: request.operation,
+          intentId: preparation.intentId,
+          questionId: preparation.questionId!,
+          label: preparation.label,
+          confirmation,
+        };
+      }
+      return {
+        ok: false,
+        reason: "failed",
+        operation: request.operation,
+        ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
+        message: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      activeAgentAction = previousScope;
+    }
   }
   const topLevelMemberKeys = Object.keys(manifest.members);
   const forms = new PanelFormAdapters(options.reportDraftError, topLevelMemberKeys);
@@ -464,6 +823,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     deepLink: () => state.deepLinkable(),
     publicState,
+    fillForm,
+    executeAction,
+    registerActionHandler,
     notifyFormEdited(target) {
       for (const listener of formEditedListeners) listener(target);
     },

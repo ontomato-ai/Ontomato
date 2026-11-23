@@ -178,6 +178,8 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
         panelRun.activity(next);
       },
       invoke: (id, input) => instance.invoke(id, input),
+      fillForm: (request) => instance.fillForm(request),
+      executeAction: (request) => instance.executeAction(request),
       dispose: () => scope.stop(),
     };
   })!;

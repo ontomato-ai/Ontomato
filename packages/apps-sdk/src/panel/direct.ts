@@ -529,7 +529,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       nestedMounts.add(mount);
       const placed = mount.instance;
       onScopeDispose(instance.publish(member, computed(() => ({
-        operations: placed.operations.value, dirty: () => placed.dirty(), context: placed.pageContext.value,
+        operations: placed.operations.value,
+        dirty: () => placed.dirty(),
+        context: placed.pageContext.value,
+        fillForm: (request) => placed.fillForm(request),
+        executeAction: (request) => placed.executeAction(request),
       }))));
       // Its inputs follow this instance's state; its outputs write it.
       watch(() => JSON.stringify(nestedInputs(member)), () => placed.state.setState(nestedInputs(member)));
