@@ -228,13 +228,16 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectCount",
     role: "presentation",
     meaning:
-      "Draws a compact, inline tabular-numeral count strip from its `rows` (`panelRecordList` or `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum, suitable for canvas headers and workbench toolbars. Configure `label`, `labelKey`, or `labels` (localized label map), or `items` for multiple labels on the same count. Complete unpaged lists (`panelRecordList`) display `rows.length`; paged queries (`panelRecordQuery`) and `panelOntologyObjects` display strictly the owner-returned `total` (never falling back to loaded row counts; shows `—` when unknown). Shows `…` while loading, `0` when empty, and a muted `—` with an explanatory tooltip when forbidden, awaiting inputs, or unreachable.",
+      "Draws a compact, inline tabular-numeral count strip from its `rows` (`panelRecordList` or `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum, suitable for canvas headers, workbench toolbars, and compact trailing badges. Configure `label`, `labelKey`, or `labels` (localized label map), or `items` for multiple labels on the same count. Set `appearance` to `\"badge\"` for a bare compact numeral that omits rendering any node whenever no finite count is available (`omitWhenUnavailable` defaults to `true` for `\"badge\"` and `false` for `\"default\"`). Complete unpaged lists (`panelRecordList`) display `rows.length`; paged queries (`panelRecordQuery`) and `panelOntologyObjects` display strictly the owner-returned `total` (never falling back to loaded row counts; shows `—` when unknown in default appearance). Shows `…` while loading, `0` when empty, and a muted `—` with an explanatory tooltip when forbidden, awaiting inputs, or unreachable. Exposes `total` (`number | null`) as a read-only output.",
     effects: "Reads the bound type's list, query, or ontology objects datum as the reader; writes nothing.",
     bindsElement: ["PlatformObjectType:*"],
     // Either `rows` (list/query) or `objects` (ontology objects) supplies the counted collection; at least one is declared.
     data: {
       rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
       objects: { results: ["panelOntologyObjects"], required: false },
+    },
+    readOnlyOutputs: {
+      total: { kind: "scalar", type: "number" },
     },
   }),
   defineComponentMeta({
@@ -513,7 +516,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AppMenu",
     role: "control",
     meaning:
-      "Official application navigation menu column shared by the platform shell and application frame panels. Inside an application frame panel, `<app-menu>` automatically renders the admitted entries from `usePanelContext().entryMenu`, highlights `usePanelContext().currentEntry.path`, adapts to a compact selector on narrow screens, and navigates via `usePanelContext().navigate(id)` unless a custom `@select` handler is provided. Supply `:counts` (from declared `PanelData` owner reads) and `:icons` (curated platform icon keys) to attach live directory badges and row icons, or supply explicit `:groups` and `:active-id` for custom menus.",
+      "Official application navigation menu column shared by the platform shell and application frame panels. Inside an application frame panel, `<app-menu>` automatically renders the admitted entries from `usePanelContext().entryMenu`, highlights `usePanelContext().currentEntry.path`, adapts to a compact selector on narrow screens, and navigates via `usePanelContext().navigate(id)` unless a custom `@select` handler is provided. Use the `#item-trailing` slot (`{ item }`) to place trailing projections or indicators per row, `:item-trailing-text` for plain-text option suffixes in the compact mobile selector, and `:icons` for curated platform icon keys; `:counts` remains supported when `#item-trailing` and `:item-trailing-text` are omitted.",
     effects: "Navigates within the platform through the panel host when the reader selects a menu entry; reads no business data itself.",
   }),
   defineComponentMeta({

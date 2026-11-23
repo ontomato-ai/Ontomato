@@ -270,6 +270,15 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const countItems = declared.get("ObjectCount").config.find(prop => prop.name === "items");
     assert.equal(countItems?.required, false);
     assert.match(countItems?.type ?? "", /ObjectCountItem/);
+    const countAppearance = declared.get("ObjectCount").config.find(prop => prop.name === "appearance");
+    assert.equal(countAppearance?.required, false);
+    assert.match(countAppearance?.type ?? "", /badge/);
+    const countOmit = declared.get("ObjectCount").config.find(prop => prop.name === "omit-when-unavailable");
+    assert.equal(countOmit?.required, false);
+    assert.match(countOmit?.type ?? "", /boolean/);
+    const appMenuPorts = declared.get("AppMenu").ports;
+    assert.ok(appMenuPorts.props.some(prop => prop.name === "item-trailing-text"), "AppMenu publishes item-trailing-text prop");
+    assert.ok(appMenuPorts.slots.some(slot => slot.name === "item-trailing"), "AppMenu publishes #item-trailing slot");
     const metricCardItems = declared.get("MetricCard").config.find(prop => prop.name === "items");
     assert.equal(metricCardItems?.required, false);
     assert.match(metricCardItems?.type ?? "", /MetricCardItem/);
@@ -295,6 +304,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(Object.keys(declared.get("ObjectList").readOnlyOutputs ?? {}).sort(), [
       "activeLabel", "checkedCount", "filteredCount", "loadedCount", "selectedLabel", "status", "total",
     ]);
+    assert.deepEqual(declared.get("ObjectCount").readOnlyOutputs, {
+      total: { kind: "scalar", type: "number" },
+    });
     assert.deepEqual(Object.keys(declared.get("ObjectForm").readOnlyOutputs ?? {}).sort(), ["dirty", "draft", "label"]);
     assert.deepEqual(Object.keys(declared.get("ObjectSummary").readOnlyOutputs ?? {}), ["label"]);
     assert.deepEqual(Object.keys(declared.get("ObjectHeader").readOnlyOutputs ?? {}).sort(), [

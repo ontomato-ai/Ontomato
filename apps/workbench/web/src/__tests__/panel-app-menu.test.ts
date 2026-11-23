@@ -199,4 +199,60 @@ describe("official SDK AppMenu component", () => {
 
     app.unmount();
   });
+
+  it("forwards #item-trailing slot and :item-trailing-text to PlatformAppMenu while preserving :counts fallback", async () => {
+    const { context } = createMockPanelContext({
+      currentEntry: {
+        applicationId: "ontology",
+        useId: "objects",
+        pageKey: "ontology-objects",
+        panelId: "panel-objects",
+        path: "/ontology/objects",
+      },
+      entryMenu: { groups: [], panelUses: [] },
+      hostMenu: [
+        {
+          key: "facts",
+          label: "Facts",
+          items: [
+            { id: "/ontology/playground", label: "Ontology graph" },
+            { id: "/ontology/objects", label: "Object types" },
+          ],
+        },
+      ],
+    });
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const app = createApp(defineComponent({
+      setup() {
+        provide(panelContextKey, context);
+        return () =>
+          h(
+            AppMenu,
+            {
+              title: "Ontology manager",
+              itemTrailingText: { "/ontology/objects": "(12)", "/ontology/playground": undefined },
+            },
+            {
+              "item-trailing": ({ item }: { item: { id: string; label: string } }) =>
+                item.id === "/ontology/objects" ? h("span", { class: "slot-trailing" }, "12") : null,
+            },
+          );
+      },
+    }));
+    app.use(i18n("en"));
+    app.mount(host);
+    await nextTick();
+
+    expect(host.querySelectorAll(".page-count")).toHaveLength(0);
+    const rows = [...host.querySelectorAll<HTMLButtonElement>(".page-row")];
+    expect(rows.find((row) => row.textContent?.includes("Ontology graph"))?.querySelector(".slot-trailing")).toBeNull();
+    expect(rows.find((row) => row.textContent?.includes("Object types"))?.querySelector(".slot-trailing")?.textContent).toBe("12");
+
+    const options = [...host.querySelectorAll(".mobile-page-select option")].map((opt) => opt.textContent?.trim());
+    expect(options).toEqual(["Ontology graph", "Object types (12)"]);
+
+    app.unmount();
+  });
 });

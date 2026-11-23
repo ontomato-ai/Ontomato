@@ -33,6 +33,17 @@
     min-height: 0;
   }
 
+  .ontology-frame-trailing {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .ontology-frame-trailing:empty,
+  .ontology-frame-trailing:not(:has(.sdk-object-count)) {
+    display: none;
+  }
+
   @container (max-width: 760px) {
     .ontology-frame {
       flex-direction: column;
@@ -50,10 +61,18 @@
   <div class="ontology-frame">
     <app-menu
       :title="t('frame.title')"
-      :counts="counts"
+      :item-trailing-text="trailingText"
       :icons="icons"
       @select="openEntry"
-    />
+    >
+      <template #item-trailing="{ item }">
+        <projection
+          v-if="countMemberFor(item.id)"
+          :slot="countMemberFor(item.id)"
+          class="ontology-frame-trailing"
+        />
+      </template>
+    </app-menu>
     <div class="ontology-frame-content">
       <current-entry member="content" />
     </div>

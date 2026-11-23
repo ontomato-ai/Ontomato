@@ -16,6 +16,8 @@ const props = withDefaults(
     groups?: readonly AppMenuGroup[];
     /** Optional map of `item.id -> count` overlaid onto matching items; finite numbers override item counts. */
     counts?: Readonly<Record<string, number | null | undefined>>;
+    /** Optional map of `item.id -> trailing text` appended after the option label in the compact mobile selector. */
+    itemTrailingText?: Readonly<Record<string, string | null | undefined>>;
     /** Optional map of `item.id -> icon` overlaid onto matching items (falls back to `item.icon`). */
     icons?: Readonly<Record<string, AppMenuIcon>>;
     /** Optional single footer entry rendered under a hairline at the bottom of the column. */
@@ -29,6 +31,7 @@ const props = withDefaults(
     title: "",
     groups: () => [],
     counts: undefined,
+    itemTrailingText: undefined,
     icons: undefined,
     foot: null,
     activeId: null,
@@ -40,6 +43,19 @@ const emit = defineEmits<{
   /** Fired when the reader chooses a navigation entry from either the column list or mobile selector. */
   select: [id: string];
 }>();
+
+defineSlots<{
+  /** Optional trailing content rendered at the end of each navigation row. */
+  "item-trailing"?: (props: { item: AppMenuItem }) => unknown;
+}>();
+
+function optionLabel(page: PlatformPanelPage): string {
+  if (props.itemTrailingText !== undefined) {
+    const trailing = props.itemTrailingText[page.id]?.trim();
+    return trailing ? `${page.label} ${trailing}` : page.label;
+  }
+  return page.count !== null && page.count !== undefined ? `${page.label} (${page.count})` : page.label;
+}
 
 function resolveCount(item: AppMenuItem): number | null {
   if (props.counts && Object.hasOwn(props.counts, item.id)) {
@@ -107,10 +123,12 @@ const matchedActiveId = computed<string | null>(() => {
     >
       <optgroup v-for="group in panelGroups" :key="group.key" :label="group.label || title || ariaLabel">
         <option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">
-          {{ page.count !== null && page.count !== undefined ? `${page.label} (${page.count})` : page.label }}
+          {{ optionLabel(page) }}
         </option>
       </optgroup>
-      <option v-if="panelFoot" :value="panelFoot.id">{{ panelFoot.label }}</option>
+      <option v-if="panelFoot" :value="panelFoot.id">
+        {{ props.itemTrailingText !== undefined ? optionLabel(panelFoot) : panelFoot.label }}
+      </option>
     </select>
     <AppPanelPages
       class="app-menu-pages"
@@ -118,7 +136,11 @@ const matchedActiveId = computed<string | null>(() => {
       :foot="panelFoot"
       :active-page-id="matchedActiveId"
       @select-page="emit('select', $event)"
-    />
+    >
+      <template v-if="$slots['item-trailing']" #item-trailing="slotProps">
+        <slot name="item-trailing" :item="slotProps.item" />
+      </template>
+    </AppPanelPages>
   </aside>
 </template>
 
