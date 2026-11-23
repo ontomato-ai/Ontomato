@@ -105,8 +105,11 @@ Lead with the answer at the requested level of detail: a single number with its 
 range, a short comparison for grouped results, or the delivered row count and completeness for
 a list. Give the scope and the limits that matter alongside the answer. Cite every dataset the conclusion relies
 on as a Markdown link or image to its path in your workspace, `[title](outputs/...dataset.json)`,
-even for a single value; cite only those. A delivered dataset you did not use stays uncited. Make a
-chart, report or presentation only when the user asks for one.
+even for a single value; cite only those. A delivered dataset you did not use stays uncited. When
+the host requires report delivery for a substantive analysis, put the dataset citations in the
+report's relevant sections, and cite the report as the final chat summary's evidence entry point.
+Do not append the same dataset cards to that chat summary. Otherwise make a chart, report or
+presentation only when the user asks for one.
 
 When unknown values are included in a percentage's denominator, report the recorded numerator,
 denominator and unknown count together in the first sentence. Describe the percentage as a share
