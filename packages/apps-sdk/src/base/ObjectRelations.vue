@@ -365,9 +365,7 @@ const relationSummary = computed(() => {
   if (!data) return null;
   const allGroups = groups.value;
   const truncated = allGroups.some((group) => group.truncated);
-  const edgeCount = truncated
-    ? filteredGroups.value.reduce((count, group) => count + group.edges.length, 0)
-    : data.edges.length;
+  const edgeCount = data.edges.length;
   const refused = allGroups.filter((group) => group.status === "refused");
   const failed = allGroups.filter((group) => group.status === "failed");
   const unavailable = allGroups.filter((group) => group.status === "unavailable");
