@@ -101,6 +101,13 @@ vi.mock("../../api", async () => {
         revision: input.revision ?? "r1",
       };
     },
+    prepareDashboardAgentConfirm: async () => ({
+      intentId: "intent-auto",
+      autoMode: true,
+      questionId: null,
+      label: "Save card parameters",
+    }),
+    renameDashboard: async () => true,
     modifyResultSetName: async () => true,
     deleteResultSet: async () => true,
     deleteDimension: async () => true,
@@ -306,7 +313,7 @@ describe("the card parameter form", () => {
     const wrapper = await openDialog();
     const vm = wrapper.vm as unknown as {
       fillValues: (values: Record<string, unknown>, overwriteUnsaved?: boolean) => Promise<unknown>;
-      saveFromAction: (operation: string) => Promise<unknown>;
+      saveFromAction: (operation: string, agentRun: { sessionId: string; runId: string; toolCallId: string }) => Promise<unknown>;
     };
     const filled = await vm.fillValues({ year: "2024", owner: "someone" });
     await flushPromises();
@@ -324,9 +331,9 @@ describe("the card parameter form", () => {
     const blocked = await vm.fillValues({ year: "2023" });
     expect(blocked).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "card.parameters" });
 
-    const saved = await vm.saveFromAction("card.parameters.save");
+    const saved = await vm.saveFromAction("card.parameters.save", { sessionId: "s1", runId: "r1", toolCallId: "t1" });
     await flushPromises();
-    expect(saved).toEqual({ ok: true, kind: "executed", operation: "card.parameters.save" });
+    expect(saved).toEqual({ ok: true, kind: "executed", operation: "card.parameters.save", intentId: "intent-auto" });
     expect(api.saved).toEqual([{ dashboardId: "d1", cardId: "c-new", revision: "r1", values: { year: "2024" } }]);
     wrapper.unmount();
   });
@@ -407,8 +414,9 @@ describe("the card parameter form", () => {
     const vm = wrapper.vm as unknown as {
       selectCardById: (id: string) => boolean;
       fillForm: (request: { member?: string; values: Record<string, unknown>; overwriteUnsaved?: boolean }) => Promise<unknown>;
-      executeAction: (request: { operation: string; input?: Record<string, unknown> }) => Promise<unknown>;
+      executeAction: (request: { operation: string; input?: Record<string, unknown>; agentRun?: { sessionId: string; runId: string; toolCallId: string } }) => Promise<unknown>;
     };
+    const agentRun = { sessionId: "s1", runId: "r1", toolCallId: "t1" };
 
     // Open card A (c-new) and create unsaved edits.
     expect(await vm.executeAction({ operation: "card.parameters.open", input: { cardId: "c-new" } })).toEqual({
@@ -437,10 +445,11 @@ describe("the card parameter form", () => {
     const filledB = await vm.fillForm({ member: "card.parameters", values: { quarter: "Q2" }, overwriteUnsaved: true });
     await flushPromises();
     expect(filledB).toEqual({ ok: true, member: "card.parameters", filledFields: ["quarter"] });
-    expect(await vm.executeAction({ operation: "card.parameters.save" })).toEqual({
+    expect(await vm.executeAction({ operation: "card.parameters.save", agentRun })).toEqual({
       ok: true,
       kind: "executed",
       operation: "card.parameters.save",
+      intentId: "intent-auto",
     });
     expect(api.saved).toEqual([{ dashboardId: "d1", cardId: "n-new", revision: "r2", values: { quarter: "Q2" } }]);
 
@@ -461,10 +470,11 @@ describe("the card parameter form", () => {
       member: "card.parameters",
       filledFields: ["quarter"],
     });
-    expect(await vm.executeAction({ operation: "card.parameters.save" })).toEqual({
+    expect(await vm.executeAction({ operation: "card.parameters.save", agentRun })).toEqual({
       ok: true,
       kind: "executed",
       operation: "card.parameters.save",
+      intentId: "intent-auto",
     });
     expect(api.saved).toEqual([{ dashboardId: "d1", cardId: "n-new", revision: "r2", values: { quarter: "Q3" } }]);
     wrapper.unmount();

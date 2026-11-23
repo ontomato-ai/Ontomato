@@ -134,3 +134,30 @@ export async function saveCardParameters(
   const json = await nodeApiPost("/dashboards/save-card-parameters", input);
   return json.data;
 }
+
+export interface DashboardAgentConfirmInput {
+  dashboardId: string;
+  operation: "board.save" | "card.parameters.save";
+  targetLabel: string;
+  impactSummary?: string;
+  agentRun: {
+    sessionId: string;
+    runId: string;
+    toolCallId: string;
+  };
+}
+
+export interface DashboardAgentConfirmResult {
+  intentId: string;
+  autoMode: boolean;
+  questionId: string | null;
+  label: string;
+}
+
+/** Prepares confirmation for an agent-driven save on the currently open dashboard page. */
+export async function prepareDashboardAgentConfirm(
+  input: DashboardAgentConfirmInput,
+): Promise<DashboardAgentConfirmResult> {
+  const json = await nodeApiPost("/dashboards/agent-confirm", input);
+  return json.data;
+}

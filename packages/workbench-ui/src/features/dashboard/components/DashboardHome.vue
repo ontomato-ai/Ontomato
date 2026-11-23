@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { ElMessageBox } from "element-plus";
 import { dropdownBoundaryOptions } from "@ontomato/foundation-ui/overlay";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
@@ -22,12 +23,14 @@ const props = defineProps<{
   objectRefresh?: DisplayObjectRefresh | null;
   registerPageController?: (controller: DisplayPageController) => () => void;
 }>();
+const emit = defineEmits<{ "display-dirty": [dirty: boolean] }>();
 
 const { t } = useI18n();
 const store = useDashboardStore();
 const route = useRoute();
 const router = useRouter();
 const openMenuId = ref<string | null>(null);
+const panelDirty = ref(false);
 const panelRef = ref<{
   reload: () => Promise<void>;
   selectCardById: (cardId: string) => boolean;
@@ -36,6 +39,48 @@ const panelRef = ref<{
 } | null>(null);
 const { dashboardItems, loadingDashboards, currentDashboardId, editingDashboardId, editingDashboardName } =
   storeToRefs(store);
+
+function onPanelDirty(dirty: boolean) {
+  panelDirty.value = dirty;
+  emit("display-dirty", dirty);
+}
+
+watch(currentDashboardId, (next, prev) => {
+  if (next !== prev && panelDirty.value) onPanelDirty(false);
+});
+
+async function confirmDiscardUnsaved(): Promise<boolean> {
+  if (!panelDirty.value) return true;
+  try {
+    await ElMessageBox.confirm(t("platform.formDiscardConfirm"), t("platform.unsavedChanges"), {
+      confirmButtonText: t("platform.discard"),
+      cancelButtonText: t("common.cancel"),
+      type: "warning",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function openDashboardTab(id: string) {
+  if (id === currentDashboardId.value) return;
+  if (!(await confirmDiscardUnsaved())) return;
+  onPanelDirty(false);
+  store.openDashboard(id);
+}
+
+const removeLeaveGuard = router.beforeEach(async (to, from) => {
+  // Beside a conversation, the host conversation display owns the leave confirmation via display-dirty.
+  if (typeof route.query.page === "string" && route.query.page) return true;
+  if (to.path === from.path) return true;
+  return confirmDiscardUnsaved();
+});
+
+onBeforeUnmount(() => {
+  removeLeaveGuard();
+  if (panelDirty.value) emit("display-dirty", false);
+});
 
 /**
  * The address this page is shown at: its own query at its own address, the page parameter's own address beside a
@@ -249,7 +294,7 @@ onMounted(async () => {
               role="tab"
               class="tab-open"
               :aria-selected="item.id === currentDashboardId"
-              @click="store.openDashboard(item.id)"
+              @click="openDashboardTab(item.id)"
             >
               {{ item.name }}
             </button>
@@ -296,6 +341,8 @@ onMounted(async () => {
         :dashboard-id="currentDashboardId"
         :card-id="chosenCardId"
         @select-card="(card: { id: string; name: string } | null) => writeCard(card)"
+        @dirty="onPanelDirty"
+        @board-saved="() => store.loadDashboards()"
       />
       <el-empty v-else-if="!loadingDashboards" :description="t('analysis.noDashboards')" />
     </div>

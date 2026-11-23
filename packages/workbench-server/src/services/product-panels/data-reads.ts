@@ -366,6 +366,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [PRODUCT_PANEL]: {
       ...catalogueReads(panelCatalogue),
+      unavailable: () => panelCatalogue.unavailable(),
       usedByRows: selection => panelCatalogue.usedByRows(selection.primaryKey!),
       grantRows: selection => panelCatalogue.grantRows(selection.primaryKey!),
       members: selection => panelCatalogue.members(selection.primaryKey!),

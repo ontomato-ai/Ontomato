@@ -1,4 +1,5 @@
-import { APPLICATION, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, APPLICATION_PANEL_USE, OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
 import { productProjectionSchema } from "@ontomato/contracts/product-panels";
 import { beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -16,7 +17,20 @@ vi.mock("../application-catalogue", async importOriginal => {
   };
 });
 
-import { fieldPatterns } from "../catalog-operations";
+vi.mock("../catalog", async importOriginal => ({
+  ...await importOriginal<typeof import("../catalog")>(),
+  currentProductUsedBy: vi.fn(),
+}));
+vi.mock("../current", async importOriginal => ({
+  ...await importOriginal<typeof import("../current")>(),
+  readCurrentPanelLabel: vi.fn(),
+  readCurrentProjection: vi.fn(),
+}));
+
+import { fieldPatterns, productCatalogServerOperations } from "../catalog-operations";
+import { currentProductUsedBy } from "../catalog";
+import { readCurrentPanelLabel, readCurrentProjection } from "../current";
+import type { PanelOperationHost } from "../server-operations";
 import { installContentLayout } from "../../../content/layout";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
@@ -34,6 +48,67 @@ beforeAll(() => {
 
 beforeEach(() => {
   applicationRecord.mockReset();
+});
+
+const impactReader = { owner: { domainId: "domain", userId: "reader" }, credentials: { locale: "en" } };
+const unusedRequest = async () => { throw new Error("Unexpected operation request"); };
+const impactHost: PanelOperationHost = {
+  initiator: impactReader, executor: impactReader, request: unusedRequest, requestWorkbench: unusedRequest,
+};
+const targetInfo = (objectType: string, primaryKey: string, label: string) => ({ target: { objectType, primaryKey }, label });
+
+async function inspectDelete(collection: string, objectType: string, primaryKey: string) {
+  const handler = productCatalogServerOperations.find(op => op.handlerRef === `${collection}.delete`)!;
+  const result = await handler.inspectImpact!.inspect(impactHost, [{
+    target: { kind: "object", objectType, primaryKey }, input: { revision: 2 },
+  }]);
+  return panelOperationImpactSchema.parse(result);
+}
+
+it("names all visible panel users and counts hidden references in the delete impact", async () => {
+  vi.mocked(readCurrentPanelLabel).mockResolvedValue("Orders dashboard");
+  vi.mocked(currentProductUsedBy).mockResolvedValueOnce({
+    panels: [{ id: "home", name: "Operations Home" }],
+    applicationEntries: [{ entryId: "orders-entry", applicationId: "app-orders", applicationName: "Orders", path: "/applications/app-orders/list" }],
+    classNames: ["Order"], hiddenCount: 2,
+  });
+
+  const impact = await inspectDelete("productPanels", PRODUCT_PANEL, "orders");
+  expect(impact.total).toBe(5);
+  expect(impact.objects).toEqual(expect.arrayContaining([
+    targetInfo(PRODUCT_PANEL, "home", "Operations Home"),
+    targetInfo(APPLICATION_PANEL_USE, "orders-entry", "Orders (/applications/app-orders/list)"),
+    targetInfo(OBJECT_TYPE, "Order", "Order"),
+  ]));
+  expect(impact.objects).toHaveLength(3);
+  expect(impact.summary).toContain("Orders dashboard");
+  expect(impact.summary).toContain("2");
+});
+
+it("always supplies a confirmation for an unreferenced healthy panel", async () => {
+  vi.mocked(readCurrentPanelLabel).mockResolvedValue("Orders dashboard");
+  vi.mocked(currentProductUsedBy).mockResolvedValueOnce({ panels: [], applicationEntries: [], classNames: [], hiddenCount: 0 });
+  expect(await inspectDelete("productPanels", PRODUCT_PANEL, "orders")).toMatchObject({
+    total: 1, objects: [targetInfo(PRODUCT_PANEL, "orders", "Orders dashboard")],
+  });
+});
+
+it.each([
+  { panels: [{ id: "orders", name: "Orders dashboard" }], hiddenCount: 2, total: 3, objects: [targetInfo(PRODUCT_PANEL, "orders", "Orders dashboard")] },
+  { panels: [], hiddenCount: 1, total: 1, objects: [] },
+  { panels: [], hiddenCount: 0, total: 1, objects: [targetInfo(PRODUCT_PROJECTION, "table", "Order table")] },
+])("previews projection deletion with $hiddenCount hidden users", async ({ panels, hiddenCount, total, objects }) => {
+  vi.mocked(readCurrentProjection).mockResolvedValueOnce(productProjectionSchema.parse({
+    id: "table", domainId: "domain", ownerId: "reader", editable: true, revision: 2,
+    createdAt: "2026-11-21T00:00:00.000Z", updatedAt: "2026-11-21T00:00:00.000Z",
+    name: "Order table", description: "", visibility: "private", componentId: "@ontomato/sdk:ObjectList",
+    inputs: {}, outputs: {}, config: {}, data: {},
+  }));
+  vi.mocked(currentProductUsedBy).mockResolvedValueOnce({ panels, hiddenCount });
+  const impact = await inspectDelete("productProjections", PRODUCT_PROJECTION, "table");
+  expect(impact).toMatchObject({ total, objects });
+  expect(impact.summary).toContain("Order table");
+  if (hiddenCount) expect(impact.summary).toContain(String(hiddenCount));
 });
 
 it.each([PRODUCT_PROJECTION, PRODUCT_PANEL, APPLICATION])("describes %s save in the reader's language", async type => {
