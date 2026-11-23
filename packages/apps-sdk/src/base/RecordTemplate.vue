@@ -243,6 +243,7 @@ function handleNavigate(reference: PlatformFieldReference, fieldName: string) {
           :number-format="fieldFormats?.[token.key]?.numberFormat"
           :separator="fieldFormats?.[token.key]?.separator"
           :list-style="fieldFormats?.[token.key]?.listStyle"
+          :value-map="fieldFormats?.[token.key]?.valueMap"
           :empty-text="emptyPlaceholder"
           @navigate="(ref) => handleNavigate(ref, token.key)"
         />

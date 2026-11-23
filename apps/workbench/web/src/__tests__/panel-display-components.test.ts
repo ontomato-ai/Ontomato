@@ -650,3 +650,252 @@ describe("MetricCard", () => {
     expect(standalone.container.querySelector(".sdk-metric-card-description")?.textContent?.trim()).toBe("Enforced across workspace");
   });
 });
+
+describe("valueMap pure presentation mapping (Standard 3.1 #4)", () => {
+  it("maps exact scalar values in TypedValue to localized labels, tones, and platform icons, with exact fallback", async () => {
+    const valueMap = {
+      APPROVED: {
+        labels: { en: "Approved", "zh-CN": "已通过" },
+        tone: "success" as const,
+        icon: "check-circle",
+      },
+      REJECTED: {
+        labelKey: "status.rejected",
+        tone: "danger" as const,
+        icon: "x-circle",
+      },
+      true: {
+        label: "Enabled",
+        icon: "eye",
+      },
+      ONLY_TONE: {
+        tone: "warning" as const,
+        icon: "unknown-nonexistent-icon",
+      },
+    };
+
+    const approved = mountStandalone(TypedValue, { value: "APPROVED", valueMap }, { locale: "zh-CN" });
+    const tag = approved.container.querySelector(".sdk-typed-value-tag")!;
+    expect(tag).not.toBeNull();
+    expect(tag.getAttribute("data-tone")).toBe("success");
+    expect(tag.textContent?.trim()).toBe("已通过");
+    expect(tag.querySelector("svg.sdk-typed-value-icon")?.getAttribute("data-icon")).toBe("check-circle");
+
+    const rejectedProj: DirectProjection = {
+      ...meta,
+      id: "status-rejected",
+      name: "Review status",
+      componentId: "@ontomato/sdk:TypedValue",
+      inputs: {},
+      outputs: {},
+      config: { field: "decision", valueMap },
+      data: {
+        record: {
+          source: { object: { literal: { className: OBJECT_TYPE, primaryKey: "rev-1" } } },
+          read: "record",
+          params: {},
+        },
+      },
+    };
+    const rejected = mountProjection(
+      rejectedProj,
+      () => ready({ primaryKey: "rev-1", label: "Review 1", fields: { decision: "REJECTED" } }),
+      { locale: "zh-CN", messages: { "zh-CN": { "status.rejected": "已驳回" } } },
+    );
+    await vi.waitFor(() => {
+      expect(rejected.container.querySelector(".sdk-typed-value")?.getAttribute("data-state")).toBe("ready");
+    });
+    const rejTag = rejected.container.querySelector(".sdk-typed-value-tag")!;
+    expect(rejTag.getAttribute("data-tone")).toBe("danger");
+    expect(rejTag.textContent?.trim()).toBe("已驳回");
+    expect(rejTag.querySelector("svg.sdk-typed-value-icon")?.getAttribute("data-icon")).toBe("x-circle");
+
+    // Boolean key without tone renders inline text + icon (not forced into a tag)
+    const enabled = mountStandalone(TypedValue, { value: true, valueMap });
+    expect(enabled.container.querySelector(".sdk-typed-value-tag")).toBeNull();
+    expect(enabled.container.querySelector(".sdk-typed-value-text")?.textContent?.trim()).toBe("Enabled");
+    expect(enabled.container.querySelector("svg.sdk-typed-value-icon")?.getAttribute("data-icon")).toBe("eye");
+
+    // Entry with tone only keeps original text and ignores unknown icon names
+    const toneOnly = mountStandalone(TypedValue, { value: "ONLY_TONE", valueMap });
+    const toneTag = toneOnly.container.querySelector(".sdk-typed-value-tag")!;
+    expect(toneTag.getAttribute("data-tone")).toBe("warning");
+    expect(toneTag.textContent?.trim()).toBe("ONLY_TONE");
+    expect(toneTag.querySelector(".sdk-typed-value-icon")).toBeNull();
+
+    // Unmatched value falls back as-is
+    const unmatched = mountStandalone(TypedValue, { value: "PENDING", valueMap });
+    expect(unmatched.container.querySelector(".sdk-typed-value-tag")).toBeNull();
+    expect(unmatched.container.textContent?.trim()).toBe("PENDING");
+  });
+
+  it("never evaluates numeric ranges, thresholds, or expressions in valueMap keys", () => {
+    const thresholdMap = {
+      "> 3": { label: "Abnormal", tone: "danger" as const, icon: "alert-triangle" },
+      ">= 10": { label: "Critical", tone: "danger" as const },
+      "count > 0": { label: "Positive", tone: "warning" as const },
+      "5": { label: "Exactly five", tone: "info" as const },
+    };
+
+    const twelve = mountStandalone(TypedValue, { value: 12, valueMap: thresholdMap });
+    expect(twelve.container.querySelector(".sdk-typed-value-tag")).toBeNull();
+    expect(twelve.container.textContent?.trim()).toBe("12");
+
+    const five = mountStandalone(TypedValue, { value: 5, valueMap: thresholdMap });
+    expect(five.container.querySelector(".sdk-typed-value-tag")?.getAttribute("data-tone")).toBe("info");
+    expect(five.container.textContent?.trim()).toBe("Exactly five");
+  });
+
+  it("propagates fieldFormats.valueMap inside RecordTemplate and maps InfoBanner tone/icon/label from metric or record", async () => {
+    const templateRes = mountStandalone(
+      RecordTemplate,
+      {
+        template: "审核结论：{decision}",
+        values: { decision: "APPROVED" },
+        fieldFormats: {
+          decision: {
+            valueMap: {
+              APPROVED: { label: "已通过", tone: "success", icon: "check-circle" },
+            },
+          },
+        },
+      },
+      { locale: "zh-CN" },
+    );
+    expect(templateRes.container.textContent?.replace(/\s+/g, " ").trim()).toBe("审核结论：已通过");
+    expect(templateRes.container.querySelector(".sdk-typed-value-tag")?.getAttribute("data-tone")).toBe("success");
+    expect(templateRes.container.querySelector("svg.sdk-typed-value-icon")?.getAttribute("data-icon")).toBe("check-circle");
+
+    const bannerProj: DirectProjection = {
+      ...meta,
+      id: "review-banner",
+      name: "Review banner",
+      componentId: "@ontomato/sdk:InfoBanner",
+      inputs: {},
+      outputs: {},
+      config: {
+        field: "decision",
+        valueMap: {
+          REJECTED: {
+            labels: { en: "Rejected by reviewer", "zh-CN": "审核已驳回" },
+            tone: "danger",
+            icon: "x-circle",
+          },
+        },
+      },
+      data: {
+        result: {
+          source: { object: { literal: { className: METRIC_VIEW, primaryKey: "mv-decision" } } },
+          read: "result",
+          params: {},
+        },
+      },
+    };
+    const banner = mountProjection(
+      bannerProj,
+      () =>
+        ready({
+          columns: [{ key: "decision", label: "Decision", type: "string" }],
+          rows: [{ decision: "REJECTED" }],
+          truncation: null,
+        }),
+      { locale: "zh-CN" },
+    );
+    await vi.waitFor(() => {
+      expect(banner.container.querySelector("aside.sdk-info-banner")?.getAttribute("data-state")).toBe("ready");
+    });
+    const aside = banner.container.querySelector("aside.sdk-info-banner")!;
+    expect(aside.getAttribute("data-tone")).toBe("danger");
+    expect(aside.getAttribute("role")).toBe("alert");
+    expect(aside.querySelector(".sdk-info-banner-icon")?.getAttribute("data-icon")).toBe("x-circle");
+    expect(aside.textContent).toContain("审核已驳回");
+
+    const toneMapBannerProj: DirectProjection = {
+      ...meta,
+      id: "severity-banner",
+      name: "Severity banner",
+      componentId: "@ontomato/sdk:InfoBanner",
+      inputs: {},
+      outputs: {},
+      config: {
+        toneField: "level",
+        toneMap: { WARN: "warning", OK: "success" },
+        template: "{count} items flagged",
+      },
+      data: {
+        result: {
+          source: { object: { literal: { className: METRIC_VIEW, primaryKey: "mv-sev" } } },
+          read: "result",
+          params: {},
+        },
+      },
+    };
+    const sevBanner = mountProjection(toneMapBannerProj, () =>
+      ready({
+        columns: [
+          { key: "level", label: "Level", type: "string" },
+          { key: "count", label: "Count", type: "integer" },
+        ],
+        rows: [{ level: "WARN", count: 4 }],
+        truncation: null,
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(sevBanner.container.querySelector("aside.sdk-info-banner")?.getAttribute("data-state")).toBe("ready");
+    });
+    expect(sevBanner.container.querySelector("aside.sdk-info-banner")?.getAttribute("data-tone")).toBe("warning");
+    expect(sevBanner.container.textContent?.replace(/\s+/g, " ")).toContain("4 items flagged");
+  });
+
+  it("applies column.valueMap in ObjectList table cells with tone, platform icon, localized label, and raw fallback", async () => {
+    const listProjection: DirectProjection = {
+      ...meta,
+      id: "review-table",
+      name: "Review list",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: {
+        layout: "table",
+        columns: [
+          { key: "label", labelKey: "col.name" },
+          {
+            key: "reviewResult",
+            labelKey: "col.result",
+            valueMap: {
+              APPROVED: { labels: { en: "Approved", "zh-CN": "已通过" }, tone: "success", icon: "check-circle" },
+              REJECTED: { labels: { en: "Rejected", "zh-CN": "已驳回" }, tone: "danger", icon: "x-circle" },
+            },
+          },
+        ],
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} } },
+    };
+    const { container } = mountProjection(
+      listProjection,
+      () =>
+        ready([
+          { primaryKey: "r1", label: "Case A", fields: { reviewResult: "APPROVED" } },
+          { primaryKey: "r2", label: "Case B", fields: { reviewResult: "REJECTED" } },
+          { primaryKey: "r3", label: "Case C", fields: { reviewResult: "PENDING" } },
+        ]),
+      { locale: "zh-CN", messages: { "zh-CN": { "col.name": "名称", "col.result": "审核结果" } } },
+    );
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll("tbody tr")).toHaveLength(3);
+    });
+    const rows = [...container.querySelectorAll("tbody tr")];
+    const r1Tag = rows[0]!.querySelector(".sdk-object-list-tag")!;
+    expect(r1Tag.getAttribute("data-tone")).toBe("success");
+    expect(r1Tag.textContent?.trim()).toBe("已通过");
+    expect(r1Tag.querySelector("svg.sdk-object-list-tag-icon")?.getAttribute("data-icon")).toBe("check-circle");
+
+    const r2Tag = rows[1]!.querySelector(".sdk-object-list-tag")!;
+    expect(r2Tag.getAttribute("data-tone")).toBe("danger");
+    expect(r2Tag.textContent?.trim()).toBe("已驳回");
+    expect(r2Tag.querySelector("svg.sdk-object-list-tag-icon")?.getAttribute("data-icon")).toBe("x-circle");
+
+    expect(rows[2]!.querySelector(".sdk-object-list-tag")).toBeNull();
+    expect(rows[2]!.textContent).toContain("PENDING");
+  });
+});
