@@ -5,6 +5,7 @@
 - 面板状态 `selected` 为空时是**目录**：通过 `catalog`（`ObjectList`）列出全部对象类型（`platform:ObjectType.list`），可按 `search` 里的关键词在显示名、API 名、业务说明与属性名里筛选。
 - `selected` 指向一个 `platform:ObjectType`（主键就是类的 API 名）时是这个类的**详情**：页头与摘要由 `detail`（`ObjectHeader`）和 `summary`（`MetricCard`）读取 `platform:ObjectType.record`（属性数、业务键数、关系数、主键状态 `primaryKeyStatus` 与主键名 `primaryKeyName`），右侧展示属性列表 `attributes`（`ObjectList`，读取 `platform:Attribute.list`）与关联关系列表 `relations`（`ObjectList`，读取 `platform:Relationship.list`）。
 - 新建对象类型通过页头「新建对象类型」触发，将公开状态 `creating` 置为 `true` 并打开 `objectForm` 创建弹窗；填完保存后进入新类的详情。
+- 公开状态 `creatingAttribute`（不写地址）为 `true` 时，在当前选中类（`selected`）下打开 `attributeForm` 新建属性弹窗（与属性编辑抽屉 `selectedAttribute` 互斥）；填完保存后关闭弹窗并打开新属性的编辑抽屉。
 - 目录、类详情、属性编辑抽屉都在同一张面板；直接打开某个类用本页地址 `<页地址>?selected=<类 API 名>`。
 - `selectedAttribute` 指向一个 `platform:Attribute`（主键是 JSON 文本 `["<类 API 名>","<属性名>"]`）时，详情页会打开该属性的编辑抽屉（由 `attributeDetail` 展示标题与主键状态，由 `attributeForm` 编辑字段）。
 
@@ -16,7 +17,7 @@
 
 - 新建对象类型：用 `present` 设 `creating: true` 打开 `objectForm` 创建弹窗，再对 `objectForm` 调 `fill_form` 填 API 名、主键名、显示名、业务描述。格式和重名由属主校验，原因显示在字段旁。
 - 修改对象类型：用 `present` 选中类（`selected: { className: "platform:ObjectType", primaryKey: "<类 API 名>" }`），对 `objectForm` 调 `fill_form`（只有显示名和业务描述可改，API 名只读）。
-- 新建属性：先用 `present` 选中所属类并打开新建属性表单，所属对象类型由页面固定为当前类，读者不能改；对 `attributeForm` 调 `fill_form`。
+- 新建属性：用 `present` 选中所属类（`selected`）并设 `creatingAttribute: true`（同时确保 `selectedAttribute: null`）打开新建属性弹窗，所属对象类型由页面固定为当前类，读者不能改；再对 `attributeForm` 调 `fill_form`。
 - 修改属性：用 `present` 选中类与属性（`selected` 与 `selectedAttribute`），对 `attributeForm` 调 `fill_form`（可改显示名、描述、启用、业务键，主键不在表单里改）。
 
 ## 需要确认才执行的操作

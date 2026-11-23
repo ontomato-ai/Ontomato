@@ -175,7 +175,7 @@
     </template>
 
     <div v-else class="attrs-detail">
-      <page-header :back-label="t('attr.back')" @back="back">
+      <page-header :back-label="t('attr.back')" :draft="formDraft" @back="back">
         <template #title>
           <span v-show="detailStatus === 'ready'">
             <projection slot="detail"></projection>
