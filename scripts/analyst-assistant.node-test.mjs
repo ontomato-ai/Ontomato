@@ -169,6 +169,24 @@ test("a stalled recall leaves the admitted retrieval available after the timeout
   });
 });
 
+test("invalid condition mappings fail locally without creating a failed child task", async () => {
+  await withAssistantPackage((_request, res) => reply(res, 500, { error: "Unexpected request" }),
+    async ({ requests, base, directory, script }) => {
+      for (const condition of [
+        { id: "degree", quote: "without a doctorate", mapping: { className: "/person", field: "degree", operator: "not equals", value: "doctorate" } },
+        { id: "degree", quote: "without a doctorate" },
+      ]) {
+        await writeFile(path.join(directory, "intent.json"), JSON.stringify({
+          schema: "ontomato.query-intent.v1", conditions: [condition], outputs: ["Professors"],
+        }));
+        await assert.rejects(run(process.execPath, [script, "start-retrieval", "Professors without a doctorate", "--intent", "@intent.json"], {
+          cwd: directory, env: { PATH: process.env.PATH, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "fixture" },
+        }), /mapping/);
+      }
+      assert.deepEqual(requests, []);
+    });
+});
+
 test("start-retrieval preserves taskId on recall failure and reports start failure with exit code 1", async () => {
   const runId = randomUUID(), taskId = randomUUID(), sessionId = randomUUID();
   let mode = "recall-error";

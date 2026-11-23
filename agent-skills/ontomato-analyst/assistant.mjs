@@ -147,6 +147,21 @@ async function startRetrieval(args) {
     if (!Array.isArray(queryIntent.conditions) || queryIntent.conditions.some(condition =>
         typeof condition?.quote !== "string" || !condition.quote.trim() || !question.includes(condition.quote)))
       throw new Error("Each intent condition quote must be copied verbatim from the complete question");
+    const nonblank = value => typeof value === "string" && !!value.trim();
+    const fields = (value, allowed) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every(key => allowed.includes(key));
+    const ids = new Set();
+    for (const condition of queryIntent.conditions) {
+      if (!fields(condition, ["id", "quote", "mapping"]) || !nonblank(condition.id) || ids.has(condition.id) || !Object.hasOwn(condition, "mapping"))
+        throw new Error("Each intent condition requires a unique id, quote and mapping (null when unknown)");
+      ids.add(condition.id);
+      const mapping = condition.mapping;
+      if (mapping !== null && (!fields(mapping, ["className", "field", "operator", "value"]) ||
+          !nonblank(mapping.className) || !nonblank(mapping.field) ||
+          !["=", "!=", ">", ">=", "<", "<=", "in", "like"].includes(mapping.operator) || !Object.hasOwn(mapping, "value")))
+        throw new Error("Intent mapping requires className, field, a supported operator and value; use null for unknown mappings");
+    }
+    if (queryIntent.conditions.length > 64 || !Array.isArray(queryIntent.outputs) || !queryIntent.outputs.length || !queryIntent.outputs.every(nonblank))
+      throw new Error("Intent requires at most 64 conditions and nonempty output descriptions");
   }
   const descriptor = JSON.parse(fs.readFileSync(path.join(dir, "retriever-ref.json"), "utf8"));
   const retrieverRef = descriptor.ref ?? descriptor;

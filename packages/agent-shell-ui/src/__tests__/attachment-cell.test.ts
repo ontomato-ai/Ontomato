@@ -50,3 +50,39 @@ it("opens an image viewer and gives PDFs a separate-window link", async () => {
     expect(document.body.querySelector(".el-image-viewer__img")?.getAttribute("src")).toBe("/files/b.png");
   } finally { app.unmount(); root.remove(); }
 });
+
+it("recognizes named download attachments and URLs with spaces without rewriting signed URLs", () => {
+  expect(cellAttachments(JSON.stringify([
+    { url: "https://files.test/download?id=1&signature=abc", name: "论文.pdf" },
+    { path: "/files/研究 图片.png", text: "Figure" },
+    { url: "/files/opaque", mimeType: "image/jpeg", name: "Experiment" },
+  ]))).toEqual([
+    { url: "https://files.test/download?id=1&signature=abc", caption: "论文.pdf", kind: "pdf" },
+    { url: "/files/研究 图片.png", caption: "Figure", kind: "image" },
+    { url: "/files/opaque", caption: "Experiment", kind: "image" },
+  ]);
+});
+
+it("opens the clicked image in the row gallery, updates its caption and closes the lightbox", async () => {
+  const root = document.createElement("div"); document.body.append(root);
+  const gallery = [
+    { url: "/files/a.jpg", caption: "First figure", kind: "image" as const },
+    { url: "/files/b.png", caption: "Second figure", kind: "image" as const },
+  ];
+  const app = createApp({ render: () => h(AttachmentCell, {
+    text: JSON.stringify({ path: gallery[1].url, text: gallery[1].caption }), gallery,
+  }) });
+  app.mount(root);
+  try {
+    root.querySelector<HTMLElement>(".image-open")!.click();
+    await nextTick();
+    expect(document.body.querySelector(".el-image-viewer__img")?.getAttribute("src")).toBe("/files/b.png");
+    expect(document.body.querySelector(".viewer-caption")?.textContent).toBe("Second figure");
+    document.body.querySelector<HTMLElement>(".el-image-viewer__prev")!.click();
+    await nextTick();
+    expect(document.body.querySelector(".viewer-caption")?.textContent).toBe("First figure");
+    document.body.querySelector<HTMLElement>(".el-image-viewer__close")!.click();
+    await nextTick();
+    expect(document.body.querySelector(".el-image-viewer__wrapper")).toBeNull();
+  } finally { app.unmount(); root.remove(); }
+});

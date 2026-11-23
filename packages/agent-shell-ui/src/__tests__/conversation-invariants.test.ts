@@ -135,6 +135,28 @@ describe("delegated tasks in a reply", () => {
     expect(response.reviews).toEqual([]);
   });
 
+  it("keeps a late failed-task acknowledgement out of answer actions while its replacement works and after replay", () => {
+    const state = emptyConversation(sessionId);
+    const acknowledgement = "The earlier attempt failed; the replacement is still working.";
+    const answerRun = "12121212-1212-4121-8121-121212121212";
+    const message = { contextSeq: 1, id: replyId, runId, messageSeq: 1,
+      message: { ...partial, stopReason: "stop" as const, content: [{ type: "text" as const, text: acknowledgement }] } };
+    applyRunSnapshot(state, snapshot({ run: run({ status: "stopped", answerMessageId: replyId, finishedAt: at(5) }), messages: [user, message] }));
+    const working = { ...tasks, tasks: tasks.tasks.map(task => task.kind === "agent" ? { ...task, status: "running" as const } : task) };
+    expect(conversationItems(state, working).filter(item => item.kind === "response" && item.answerMessageId)).toHaveLength(0);
+    const final = { contextSeq: 2, id: partialId, runId: answerRun, messageSeq: 2,
+      message: { ...partial, timestamp: 10, stopReason: "stop" as const, content: [{ type: "text" as const, text: "The requested result." }] } };
+    const finalRun = run({ id: answerRun, status: "stopped", answerMessageId: partialId, createdAt: at(8), finishedAt: at(10) });
+    applyRunSnapshot(state, snapshot({ run: finalRun, messages: [final] }));
+    const replay = emptyConversation(sessionId);
+    applyHistoryPage(replay, history([user, message, final], [run({ status: "stopped", answerMessageId: replyId, finishedAt: at(5) }), finalRun]));
+    for (const source of [state, replay]) {
+      const answers = conversationItems(source, tasks).filter(item => item.kind === "response" && item.answerMessageId);
+      expect(answers).toHaveLength(1);
+      expect(answers[0]).toMatchObject({ runId: answerRun, answerText: "The requested result." });
+    }
+  });
+
   it("shows real retrieval progress through the handoff and clears it when the answer settles", () => {
     const state = emptyConversation(sessionId);
     applyRunSnapshot(state, snapshot({
