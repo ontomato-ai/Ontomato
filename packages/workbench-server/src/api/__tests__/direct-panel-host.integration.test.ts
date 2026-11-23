@@ -257,7 +257,8 @@ it("reports the allowed icons when the domain application registration preflight
     headers: { "Content-Type": "application/json", "X-Ontomato-Query-Service-Token": "fixture-service" },
     body: JSON.stringify(body),
   });
-  for (const icon of ["settings", "not-an-icon"]) {
+  expect((await validate({ ...request, icon: "settings" })).status).toBe(204);
+  for (const icon of ["not-an-icon"]) {
     const response = await validate({ ...request, icon });
     expect(response.status).toBe(400);
     const { error } = await response.json();
@@ -426,14 +427,14 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     visibility: "platform", data: { form: { read: "form" }, createForm: { read: "createForm" } },
     operations: { save: { operation: { id: "platform:AgentDefinition.save" } } },
   });
-  for (const [slot, field, ownerType] of [
-    ["model", "/modelSelection/modelId", "platform:ModelOption"],
-    ["skills", "/skills", "platform:Skill"],
-    ["tools", "/enabledMcpServiceIds", "platform:McpServiceOption"],
-    ["executor", "/executionUserId", "platform:User"],
+  for (const [slot, slotName, ownerType] of [
+    ["model", "#field-modelSelection.modelId", "platform:ModelOption"],
+    ["skills", "#field-skills", "platform:Skill"],
+    ["tools", "#field-enabledMcpServiceIds", "platform:McpServiceOption"],
+    ["executor", "#field-executionUserId", "platform:User"],
   ]) {
     const member = settings.manifest.members[slot];
-    expect(member).toMatchObject({ formField: { slot: "form", path: field } });
+    expect(settings.content.html).toContain(slotName);
     if (!member || !("projectionId" in member.target)) throw new Error(`Expected a projection for ${slot}`);
     const response = await request("GET", `product-projections/${member.target.projectionId}`);
     expect(productProjectionResponseSchema.parse(await response.json()).projection).toMatchObject({
@@ -445,7 +446,7 @@ it("registers the shipped ontology catalogues with addressable creation, preview
     });
   }
   const scope = settings.manifest.members.scope;
-  expect(scope).toMatchObject({ formField: { slot: "form", path: "/classNames" } });
+  expect(settings.content.html).toContain("#field-classNames");
   if (!scope || !("projectionId" in scope.target)) throw new Error("Expected a data-scope projection");
   const scopeResponse = await request("GET", `product-projections/${scope.target.projectionId}`);
   expect(productProjectionResponseSchema.parse(await scopeResponse.json()).projection).toMatchObject({

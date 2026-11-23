@@ -146,8 +146,15 @@ function resolveTarget(
   const { input } = target;
   const wire = member.inputs?.[input];
   const port = projection.inputs[input];
+  if (!wire) {
+    throw new HttpError(
+      422,
+      tForLocale(locale, "panels.operation.targetInputUnbound", { ...problem, input }),
+      "PANEL_OPERATION_TARGET_UNBOUND",
+    );
+  }
   if ((port?.kind !== "object" && port?.kind !== "object-union" && port?.kind !== "list") ||
-    (wire && "state" in wire && !panelPortAccepts(port, panel.manifest.state[wire.state].type))) {
+    ("state" in wire && !panelPortAccepts(port, panel.manifest.state[wire.state].type))) {
     const message = owner?.targetType
       ? tForLocale(locale, "panels.operation.targetInputMismatch", { ...problem, input, objectType: owner.targetType })
       : `Operation '${bound.name}' has an incompatible object input '${input}' on member '${slot}'`;
@@ -155,10 +162,15 @@ function resolveTarget(
   }
   const hasPinned = pinnedInputs.has(input);
   const pinnedValue = hasPinned ? pinnedInputs.get(input) : undefined;
-  const fixed: PlacedOperationTarget | undefined = !hasPinned
-    ? undefined
-    : port.kind === "list"
-      ? { kind: "list", objects: pinnedValue == null ? [] : panelObjectRefSchema.array().parse(pinnedValue).map(placedObject) }
+  const fixed: PlacedOperationTarget | undefined = port.kind === "list"
+    ? {
+        kind: "list",
+        objects: !hasPinned
+          ? undefined
+          : pinnedValue == null ? [] : panelObjectRefSchema.array().parse(pinnedValue).map(placedObject),
+      }
+    : !hasPinned
+      ? undefined
       : pinnedValue == null ? null : placedObject(panelObjectRefSchema.parse(pinnedValue));
   const supplied = selection(input);
   requirePinnedObject(fixed, supplied);
@@ -199,19 +211,20 @@ async function admitBoundOperation(
   if (handler.effect === "read") {
     if (handler.target.source === "draft") {
       const draftSlot = placement.member.readOperationInputs?.[bound.name]?.draft?.slot;
-      if (!draftSlot) {
+      if (!draftSlot || !Object.hasOwn(placement.panel.manifest.members, draftSlot)) {
         throw new HttpError(422, `Member '${slot}', operation '${bound.name}' must declare a form member in readOperationInputs.${bound.name}.draft.slot`, "PANEL_OPERATION_DRAFT_UNBOUND");
       }
-      const described = describeServerOperation(handler, actor.credentials.locale, draftSlot);
+      const described = describeServerOperation(handler, actor.credentials.locale, slot, { source: "draft", slot: draftSlot });
       return { effect: "read" as const, handler, descriptor: described, fixedTarget: undefined, selected: undefined };
     }
+    if (handler.target.source === "input" && selected?.kind !== "object") return undefined;
     const described = describeServerOperation(handler, actor.credentials.locale, slot, descriptor);
     return { effect: "read" as const, handler, descriptor: described, fixedTarget: fixed, selected };
   }
-  const draft = handler.kind === "form.save" && selected == null && allowsOperationDraft(projection, handler);
-  if (handler.kind === "form.save" && selected == null && !draft) return undefined;
+  const draft = handler.kind === "form.save" && selected?.kind !== "object";
+  if (draft && !allowsOperationDraft(projection, handler)) return undefined;
   const described = describeServerOperation(handler, actor.credentials.locale, slot,
-    handler.kind === "form.save" ? { source: "draft", slot } : descriptor);
+    draft ? { source: "draft", slot } : descriptor);
   const operation = panelWriteOperationSnapshotSchema.parse({ ...described, ...placement.nested, id, slot });
   return {
     effect: "write" as const,

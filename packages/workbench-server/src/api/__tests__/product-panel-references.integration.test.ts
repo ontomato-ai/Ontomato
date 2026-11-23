@@ -668,7 +668,7 @@ it("writes declared personal state under the authenticated viewer and isolates i
   const child = await savePanel(personalChildId, {
     state: {
       chosen: { type: portType, personal: true }, transient: { type: portType },
-      positions: { type: { kind: "node-positions" }, personal: true },
+      positions: { type: { kind: "json" }, personal: true },
     },
     members: {},
   });
