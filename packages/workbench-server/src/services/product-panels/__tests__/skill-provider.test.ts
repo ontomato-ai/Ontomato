@@ -789,9 +789,9 @@ it("never treats a targetless customer Action as a customer form save when a pro
   });
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   const markdown = (await offering!.provide(taskRef)).files[0]!.content;
-  const draftSection = markdown.split("### Draft a change")[1]!.split(/\n### /)[0]!;
-  expect(draftSection).toContain("knowledgeForm.save");
-  expect(draftSection).not.toContain("knowledgeForm.review");
+  const formSection = markdown.split("### Fill a live form")[1]!.split(/\n### /)[0]!;
+  expect(formSection).toContain("knowledgeForm.save");
+  expect(formSection).not.toContain("knowledgeForm.review");
   const opsSection = markdown.split("### Declared operations")[1]!;
   expect(opsSection).toContain("Submit review (knowledgeForm.review)");
   expect(opsSection).not.toContain("form save via Action review-action");
