@@ -1,11 +1,11 @@
 # 业务知识管理
 
-本页是业务知识的列表/详情/编辑管理页。页面状态里有当前的搜索词（`search`）、状态筛选（`status`：`all` / `pending` / `approved`，分别对应全部、待审核、已通过）、选中的条目（`selected`）、勾选的条目（`checked`）和当前模式（`mode`：`view` / `edit` / `create`），这些都在页面上下文里，可以直接看到。页头的「添加知识」命令（`create`）会把 `mode` 设为 `create` 打开新建表单。
+本页是业务知识的列表/详情/编辑管理页。页面状态里有当前的搜索词（`search`）、状态筛选（`status`：`all` / `pending` / `approved`，分别对应全部、待审核、已通过）、选中的条目（`selected`）、勾选的条目（`checked`）和当前模式（`mode`：`view` / `edit` / `create`），这些都在页面上下文里，可以直接看到。页头的「添加知识」按钮会把 `mode` 设为 `create` 打开新建表单。
 
 ## 读取
 
 - 选中条目的字段（标题、内容、标签、状态）通过本页 `record` 读数拿到；需要看整条时先确认 `selected`，再读它。
-- 列表行、状态计数由共享的 `search`/`status` 决定，解释筛选结果时以它们为准。
+- 列表行由共享的 `search` 与 `status` 共同决定；状态计数（全部/待审核/已通过）只随 `search` 变化、不随 `status` 筛选变化，解释筛选结果时以它们为准。
 
 ## 填写新增或修改表单
 
@@ -16,6 +16,6 @@
 
 ## 审核通过与删除
 
-- 单条操作走 `selected`。用 `present` 选中条目，再调用 `page_action({ operation: "approve.approve" })` 或 `page_action({ operation: "remove.delete" })`。
+- 单条操作走 `selected`，且单条审核（`approve.approve`）和单条删除（`remove.delete`）只在查看态（`mode === "view"`）且条目详情就绪时挂载可用，编辑态或新建态不可用。先用 `present` 切到查看态并选中条目，待条目详情就绪后再调用 `page_action({ operation: "approve.approve" })` 或 `page_action({ operation: "remove.delete" })`。
 - 批量操作走 `checked`。用 `present` 把 `checked` 设为目标条目的对象引用数组，再调用 `page_action({ operation: "approveAll.approve" })` 或 `page_action({ operation: "deleteAll.delete" })`。
 - 写入操作由页面按会话确认设置走对话确认（默认）或全自动执行；执行失败要如实报告失败条数。

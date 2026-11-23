@@ -150,7 +150,7 @@
       </div>
     <div class="bk-body">
       <div class="bk-list">
-        <projection slot="list" class="bk-list-member" @choose="onUserSelect">
+        <projection slot="list" class="bk-list-member" @update:selected="onListUpdateSelected" @choose="onUserSelect">
           <template #batch-actions>
             <projection slot="approveAll"></projection>
             <projection slot="deleteAll"></projection>
@@ -181,7 +181,7 @@
         <projection slot="form" v-if="editing" @saved="onSaved" @discarded="onDiscarded"></projection>
         <div class="bk-form-actions" v-if="editing">
           <sdk-button :disabled="formBusy" @click="cancelEdit">{{ t("panel.cancel") }}</sdk-button>
-          <sdk-button type="primary" :loading="formBusy" :disabled="formBusy || (mode === 'edit' && !formDirty)" @click="saveForm">
+          <sdk-button type="primary" :loading="formBusy" :disabled="!formCanSubmit" @click="saveForm">
             {{ t("panel.save") }}
           </sdk-button>
         </div>
