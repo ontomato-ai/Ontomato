@@ -899,4 +899,126 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       },
     });
   });
+
+  it("wraps customer Action row operation bound and dialog params into { values: Record<string, string> }", async () => {
+    const rows = [
+      { className: "Student", primaryKey: "stu-1", label: "Alice", fields: { grade: "G3" } },
+    ];
+    const listProjection: DirectProjection = {
+      ...meta,
+      id: "students-action-list",
+      name: "Students",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { activeTerm: { kind: "scalar", type: "string" } },
+      outputs: {},
+      config: {
+        columns: [{ key: "label", labelKey: "col.student" }],
+        rowActions: {
+          items: [{ kind: "operation", operation: "enroll", label: "Enroll" }],
+        },
+      },
+      data: {
+        rows: { source: { type: { kind: "ObjectType", id: "Student" } }, read: "query", params: {} },
+      },
+      operations: {
+        enroll: {
+          operation: { kind: "Action", id: "enroll-student" },
+          params: {
+            campus: { literal: "north" },
+            limit: { literal: 10 },
+            term: { input: "activeTerm" },
+            studentId: { row: "primaryKey" },
+            grade: { rowField: "grade" },
+          },
+        },
+      },
+    };
+    const manifest = definePanel({
+      state: {},
+      members: {
+        students: {
+          target: { projectionId: "students-action-list" },
+          inputs: { activeTerm: { literal: "2026-fall" } },
+        },
+      },
+    });
+    const { element, preparedCalls } = mountPanel({
+      manifest,
+      projections: { "students-action-list": listProjection },
+      members: ["students"],
+      messages: { en: { "col.student": "Student" } },
+      answer(request) {
+        if (request.operations) {
+          return ready({
+            enroll: {
+              kind: "action",
+              handlerRef: "actions.execute",
+              label: "Enroll",
+              effect: "write",
+              target: { source: "none" },
+              inputSchema: {
+                type: "object",
+                properties: {
+                  values: {
+                    type: "object",
+                    properties: {
+                      campus: { type: "string", title: "Campus" },
+                      limit: { type: "string", title: "Limit", contentMediaType: "application/json" },
+                      term: { type: "string", title: "Term" },
+                      studentId: { type: "string", title: "Student ID" },
+                      grade: { type: "string", title: "Grade" },
+                      note: { type: "string", title: "Note" },
+                    },
+                    additionalProperties: false,
+                  },
+                },
+                required: ["values"],
+                additionalProperties: false,
+              },
+              resultSchema: {},
+              batch: false,
+            },
+          });
+        }
+        return ready({ rows, total: rows.length });
+      },
+    });
+
+    await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(1));
+    const enrollBtn = element.querySelector<HTMLButtonElement>(".sdk-object-list-row-actions button")!;
+    enrollBtn.click();
+
+    await vi.waitFor(() => expect(document.querySelector('[data-input-field="note"]')).not.toBeNull());
+    // Bound params must not appear in the dialog.
+    expect(document.querySelector('[data-input-field="campus"]')).toBeNull();
+    expect(document.querySelector('[data-input-field="limit"]')).toBeNull();
+    expect(document.querySelector('[data-input-field="term"]')).toBeNull();
+    expect(document.querySelector('[data-input-field="studentId"]')).toBeNull();
+    expect(document.querySelector('[data-input-field="grade"]')).toBeNull();
+
+    const noteInput = document.querySelector<HTMLInputElement>('[data-input-field="note"] input')!;
+    noteInput.value = "priority";
+    noteInput.dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector<HTMLButtonElement>(".sdk-operation-input-dialog .el-button--primary")!.click();
+
+    await vi.waitFor(() => expect(preparedCalls).toHaveLength(1));
+    expect(preparedCalls[0]).toMatchObject({
+      operationId: "students.enroll",
+      invocation: {
+        call: {
+          target: null,
+          input: {
+            values: {
+              campus: "north",
+              limit: "10",
+              term: "2026-fall",
+              studentId: "stu-1",
+              grade: "G3",
+              note: "priority",
+            },
+          },
+        },
+      },
+    });
+  });
 });

@@ -82,6 +82,66 @@ export function isActionValuesEnvelope(inputSchema: Record<string, RuntimeJsonVa
 }
 
 /**
+ * Serializes a single customer Action parameter value into the string format expected by `/action/form`:
+ * - JSON-typed parameters (`contentMediaType: "application/json"`, e.g. numbers, arrays, objects) encode `null` as
+ *   `"null"` so `ParameterForms.interactive` parses an explicit null without rejecting empty text.
+ * - Text parameters (`TYPE_STRING`, `TYPE_TIME`) encode `null`/`undefined` as `""`.
+ */
+export function serializeActionParamValue(raw: unknown, isJson: boolean): string {
+  if (raw === null || raw === undefined) return isJson ? "null" : "";
+  if (isJson || typeof raw === "object") return JSON.stringify(raw);
+  return String(raw);
+}
+
+/** Returns the declared `values.properties` schema map of a customer Action envelope, or `null` otherwise. */
+export function actionValuesParamSchemas(
+  inputSchema: Record<string, RuntimeJsonValue>,
+): Readonly<Record<string, { contentMediaType?: string }>> | null {
+  if (!isActionValuesEnvelope(inputSchema)) return null;
+  const valuesSchema = (inputSchema.properties as Record<string, unknown>).values as {
+    properties?: Record<string, { contentMediaType?: string }>;
+  };
+  return valuesSchema.properties ?? null;
+}
+
+/**
+ * Wraps projection-bound (typed JSON) and caller/dialog-provided inputs into the `{ values: Record<string, string> }`
+ * envelope required by customer Actions (`actions.execute`), serializing bound values according to each declared
+ * parameter's text vs JSON schema so they match server-side `boundParams` materialization.
+ */
+export function wrapActionOperationInput(
+  inputSchema: Record<string, RuntimeJsonValue>,
+  boundParams: Readonly<Record<string, unknown>>,
+  providedParams: Readonly<Record<string, unknown>> = {},
+): { values: Record<string, string> } {
+  const declared = actionValuesParamSchemas(inputSchema);
+  const isJsonParam = (key: string): boolean => declared?.[key]?.contentMediaType === "application/json";
+  const values: Record<string, string> = {};
+
+  for (const [key, raw] of Object.entries(providedParams)) {
+    if (raw === undefined || raw === null) continue;
+    // Dialog inputs for `actions.execute` are already formatted strings (`type: "string"` in the envelope schema);
+    // programmatic non-string extras are serialized according to the parameter schema.
+    values[key] = typeof raw === "string"
+      ? raw
+      : serializeActionParamValue(raw, isJsonParam(key));
+  }
+
+  const boundEntries = boundParams.values
+    && typeof boundParams.values === "object"
+    && !Array.isArray(boundParams.values)
+    ? (boundParams.values as Record<string, unknown>)
+    : boundParams;
+  for (const [key, raw] of Object.entries(boundEntries)) {
+    if (key === "values" && boundEntries === boundParams) continue;
+    if (raw === undefined) continue;
+    values[key] = serializeActionParamValue(raw, isJsonParam(key));
+  }
+
+  return { values };
+}
+
+/**
  * Extracts editable parameter fields from an owner operation's JSON Schema `inputSchema`.
  * Excludes any keys already bound by the projection (`operation.params`) so the dialog never prompts for them.
  */
