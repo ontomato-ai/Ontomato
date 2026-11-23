@@ -129,6 +129,9 @@ export const useDashboardStore = defineStore("dashboard", () => {
     if (!id || !name) return cancelDashboardRename();
     try {
       await apiRenameDashboard(id, name);
+      dashboardItems.value = dashboardItems.value.map((item) =>
+        item.id === id ? { ...item, name } : item
+      );
       ElMessage.success(t("common.renamed"));
       cancelDashboardRename();
       await loadDashboards();

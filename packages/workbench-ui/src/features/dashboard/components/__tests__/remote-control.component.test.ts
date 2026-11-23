@@ -85,8 +85,9 @@ const board = {
 vi.mock("../../api", () => ({
   fetchDashboardList: async () => {
     api.listReads += 1;
+    const currentD1 = api.boardOverride ?? board;
     return [
-      { id: "d1", name: "Sales", createdAt: 0, updatedAt: 0 },
+      { id: "d1", name: currentD1.name, createdAt: 0, updatedAt: 0 },
       { id: "d2", name: "Operations", createdAt: 0, updatedAt: 0 },
     ];
   },
@@ -1063,6 +1064,83 @@ describe("dashboard whole-board live preview and confirmed remote control", () =
     });
     expect(staleCardAction).toMatchObject({ ok: false, reason: "stale" });
     expect(api.savedParams).toEqual([]);
+
+    wrapper.unmount();
+  });
+
+  it("updates local preview baseline after a direct tab rename without breaking mid-preview stale protection", async () => {
+    const { wrapper, controller } = await mountDashboardHome();
+    const store = useDashboardStore();
+    api.confirmMode = { autoMode: true, nextSeq: 1 };
+
+    // 1. User directly renames the active board tab while no preview is active.
+    api.boardOverride = { ...structuredClone(board), name: "Q4 Sales" };
+    store.startDashboardRename({ id: "d1", name: "Sales" });
+    store.editingDashboardName = "Q4 Sales";
+    await store.saveDashboardRename({ id: "d1", name: "Sales" });
+    await flushPromises();
+
+    // Immediate chart swap (whole-board layout fill) and save succeed against the updated baseline.
+    const swapFill = await controller.fillForm!({
+      member: "board",
+      values: {
+        groups: [
+          {
+            id: "g1",
+            title: "Overview",
+            charts: [{ id: "c1", chartFile: lineChartFile }],
+            metrics: [{ id: "n1" }],
+          },
+        ],
+      },
+    });
+    expect(swapFill).toEqual({ ok: true, member: "board", filledFields: ["groups"] });
+    await flushPromises();
+
+    const swapSave = await controller.executeAction!({ operation: "board.save", agentRun });
+    await flushPromises();
+    expect(swapSave).toMatchObject({ ok: true, operation: "board.save" });
+
+    // 2. Another direct tab rename followed by a single-field preview and save also succeeds without reloading.
+    api.boardOverride = { ...structuredClone(board), name: "Q4 Sales Final" };
+    store.startDashboardRename({ id: "d1", name: "Q4 Sales" });
+    store.editingDashboardName = "Q4 Sales Final";
+    await store.saveDashboardRename({ id: "d1", name: "Q4 Sales" });
+    await flushPromises();
+
+    const renameGroupFill = await controller.fillForm!({
+      member: "board",
+      values: { groupNames: { g1: "Summary" } },
+    });
+    expect(renameGroupFill).toEqual({ ok: true, member: "board", filledFields: ["groupNames.g1"] });
+    await flushPromises();
+
+    const renameGroupSave = await controller.executeAction!({ operation: "board.save", agentRun });
+    await flushPromises();
+    expect(renameGroupSave).toMatchObject({ ok: true, operation: "board.save" });
+
+    // 3. Conversely, if a preview is ALREADY active when a tab rename commits, saving that preview is still rejected as stale.
+    const activePreviewFill = await controller.fillForm!({
+      member: "board",
+      values: { groupNames: { g1: "Draft Title" } },
+    });
+    expect(activePreviewFill).toEqual({ ok: true, member: "board", filledFields: ["groupNames.g1"] });
+    await flushPromises();
+
+    api.boardOverride = { ...structuredClone(board), name: "Renamed Mid-Preview" };
+    store.startDashboardRename({ id: "d1", name: "Q4 Sales Final" });
+    store.editingDashboardName = "Renamed Mid-Preview";
+    await store.saveDashboardRename({ id: "d1", name: "Q4 Sales Final" });
+    await flushPromises();
+
+    const staleSave = await controller.executeAction!({ operation: "board.save", agentRun });
+    await flushPromises();
+    expect(staleSave).toMatchObject({
+      ok: false,
+      reason: "stale",
+      operation: "board.save",
+      message: BOARD_MODIFIED_SINCE_PREVIEW_MESSAGE,
+    });
 
     wrapper.unmount();
   });
