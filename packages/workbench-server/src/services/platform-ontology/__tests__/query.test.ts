@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runtimeSkillKey } from "@ontomato/contracts/agent-runtime-skills";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import {
@@ -7,6 +7,7 @@ import {
   platformOntologySchemaResponseSchema,
 } from "@ontomato/contracts/platform-ontology";
 import {
+  ACTION,
   AGENT_DEFINITION,
   APPLICATION,
   APPROVE_KNOWLEDGE,
@@ -22,6 +23,7 @@ import {
   ROLE,
   SCHEDULED_TASK,
   SDK_COMPONENT,
+  USER,
   platformObjectTypes,
   platformRelationKinds,
 } from "@ontomato/contracts/platform-object-types";
@@ -39,6 +41,7 @@ import { listPublishedDefinitions } from "../../business-definitions/definitions
 import { grantedProductIds } from "../../product-governance/grants";
 import { readPanelComponentCatalogue } from "../../product-panels/component-catalogue";
 import { listObjectDetailPanelMappings } from "../../product-panels/object-detail";
+import { PlatformOntologyOwnerReaders } from "../owners";
 import {
   readPlatformOntologyCounts,
   readPlatformOntologyNeighbors,
@@ -82,6 +85,10 @@ const owner = { domainId: "domain-1", userId: "user-1" };
 const credentials = { token: "tok-1", locale: "zh-CN" };
 const panelMainSkillRef = protectedSkillRef("product-panels", owner.domainId, "panel-main");
 const panelMainSkillKey = runtimeSkillKey(panelMainSkillRef);
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function okJson(data: unknown) {
   return {
@@ -506,6 +513,62 @@ describe("platform-ontology composite query", () => {
       "user.published-action",
     ]);
     expect(ossNeighbors.edges.every((e) => e.derived === false)).toBe(true);
+  });
+
+  it.each([
+    { className: USER, primaryKey: "missing" },
+    { className: ONTOLOGY_TYPE, primaryKey: "platform:Nope" },
+  ])("rejects an unknown center $className~$primaryKey", async (node) => {
+    await expect(readPlatformOntologyNeighbors(owner, credentials, { node }))
+      .rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
+  });
+
+  it.each([
+    { upstreamStatus: 403, status: 403, code: "FORBIDDEN" },
+    { upstreamStatus: 500, status: 502, code: "UPSTREAM_FAILED" },
+  ])("rejects an unreadable center with $status $code", async ({ upstreamStatus, status, code }) => {
+    vi.mocked(backendPost).mockRejectedValueOnce(new BackendResponseError(
+      upstreamStatus, JSON.stringify({ message: "Cannot read subjects" }),
+    ));
+
+    await expect(readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: USER, primaryKey: "other-user" },
+    })).rejects.toMatchObject({ status, code });
+  });
+
+  it("rejects a center whose type has no owner adapter", async () => {
+    await expect(readPlatformOntologyNeighbors(owner, credentials, {
+      node: { className: SCHEDULED_TASK, primaryKey: "task-1" },
+    })).rejects.toMatchObject({ status: 503, code: "SERVICE_UNAVAILABLE" });
+  });
+
+  it.each(["refused", "unavailable"] as const)("keeps the caller's start and relations when subjects are %s", async (status) => {
+    if (status === "refused") {
+      vi.mocked(backendPost).mockRejectedValueOnce(new BackendResponseError(
+        403, JSON.stringify({ message: "Cannot read subjects" }),
+      ));
+    } else {
+      const readers: {
+        subjects(): Promise<
+          Awaited<ReturnType<PlatformOntologyOwnerReaders["subjects"]>> |
+          { ok: false; status: "unavailable"; reason: string }
+        >;
+      } = PlatformOntologyOwnerReaders.prototype;
+      vi.spyOn(readers, "subjects").mockResolvedValue({ ok: false, status, reason: "Subjects unavailable" });
+    }
+
+    const node = { className: USER, primaryKey: owner.userId };
+    const neighbors = await readPlatformOntologyNeighbors(owner, credentials, {
+      node,
+      relationKinds: ["user.created-action"],
+    }, "Alice Fallback");
+
+    expect(neighbors.node).toMatchObject({ ...node, label: "Alice Fallback" });
+    expect(neighbors.edges).toContainEqual(expect.objectContaining({
+      relationKind: "user.created-action",
+      from: node,
+      to: { className: ACTION, primaryKey: "act-1" },
+    }));
   });
 
   it("expands 1-hop neighbors for a User with both outgoing and incoming edges and isolates per-relation 403 refusal", async () => {

@@ -439,6 +439,16 @@ describe("platform ontology catalogue reads", () => {
     await expect(reads.record("platform:Unknown")).rejects.toMatchObject({ status: 404, code: "OBJECT_NOT_FOUND" });
   });
 
+  it("explains when a type registers no definition or creation and use rules", async () => {
+    stubOwnerHttp();
+    const reads = createPlatformOntologyReadAdapter(owner, viewer);
+    const component = panelReadResultSchemas.panelRecord.parse(await reads.record(SDK_COMPONENT));
+    expect(component.fields).toMatchObject({
+      definition: "This type registers no one-line definition.",
+      rules: "This type declares no creation or use rule.",
+    });
+  });
+
   it("returns typed rows for public properties and registered read and operation signatures", async () => {
     const reads = createPlatformOntologyReadAdapter(owner, viewer);
     const properties = panelReadResultSchemas.panelRecordList.parse(reads.properties(AGENT_DEFINITION));

@@ -109,16 +109,15 @@ export function createPlatformOntologyCatalogueReads(owner: ProductOwner, viewer
       const { counts: [count] } = await readPlatformOntologyCounts(owner, viewer, [spec]);
       const row = typeRow(count);
       const detail = detailKey(spec.labelKey);
+      const hasDetails = Boolean(platformTypeDetails[type]);
       const directory = instanceDirectories[type];
       const outputs = directory && { directoryPath: directory.path, directoryName: word(directory.name) };
       return {
         ...row,
         fields: {
           ...row.fields,
-          ...(platformTypeDetails[type] && {
-            definition: text(`${detail}.definition`),
-            rules: text(`${detail}.rules`),
-          }),
+          definition: hasDetails ? text(`${detail}.definition`) : word("noDefinition"),
+          rules: hasDetails ? text(`${detail}.rules`) : word("noRules"),
           ...outputs,
         },
         fieldLabels: {
