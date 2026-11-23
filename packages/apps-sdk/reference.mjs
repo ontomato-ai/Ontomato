@@ -251,7 +251,10 @@ export function checkCatalogue(entries, declared, root, tsconfig) {
 
 /** A port's type as the reference names it: `@binding` is the type the projection binds. */
 function portTypeText(type) {
-  if (type.kind === "object") return type.objectType === "@binding" ? "one object of the projection's type" : `one ${type.objectType}`;
+  if (type.kind === "object") {
+    if (type.objectType === "@any") return "any ontology object";
+    return type.objectType === "@binding" ? "one object of the projection's type" : `one ${type.objectType}`;
+  }
   if (type.kind === "list") return `a list of ${portTypeText(type.items).replace(/^one object/, "objects").replace(/^one /, "")}`;
   if (type.kind === "object-union") return `one object of ${type.objectTypes ? type.objectTypes.join(" or ") : `the ${type.layers.join(", ")} layers`}`;
   if (type.kind === "scalar") return type.type;
@@ -309,8 +312,11 @@ export function catalogueMarkdown(version, catalogueOrComponents, typeDefinition
       }
       lines.push("");
     }
+    const relationPortText = (name, type) => component.componentId === "ObjectRelations"
+      ? name === "visibleRelationKinds" ? "a list of relation kind IDs or object references" : portTypeText(type)
+      : undefined;
     if (component.inputs && Object.keys(component.inputs).length)
-      lines.push("Inputs:", "", ...Object.entries(component.inputs).map(([name, type]) => `- \`${name}\`: ${type.kind === "object" ? type.objectType : type.type ?? type.kind}`), "");
+      lines.push("Inputs:", "", ...Object.entries(component.inputs).map(([name, type]) => `- \`${name}\`: ${relationPortText(name, type) ?? (type.kind === "object" ? type.objectType : type.type ?? type.kind)}`), "");
     if (component.config?.length) {
       lines.push("Configuration (the projection's `config`):", "");
       const referencedTypes = new Set();
@@ -330,7 +336,7 @@ export function catalogueMarkdown(version, catalogueOrComponents, typeDefinition
       }
     }
     if (component.outputs && Object.keys(component.outputs).length)
-      lines.push("Hands over (bindable to the panel's state):", "", ...Object.entries(component.outputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");
+      lines.push("Hands over (bindable to the panel's state):", "", ...Object.entries(component.outputs).map(([name, type]) => `- \`${name}\`: ${relationPortText(name, type) ?? portTypeText(type)}`), "");
     if (component.readOnlyOutputs && Object.keys(component.readOnlyOutputs).length)
       lines.push("Read-only outputs (read via `usePanelOutput` / `outputs[member][name]`, separate from writable panel state):", "", ...Object.entries(component.readOnlyOutputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");
     const slots = component.ports?.slots ?? [];

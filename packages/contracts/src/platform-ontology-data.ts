@@ -20,6 +20,7 @@ export type PlatformOntologyNodeRef = z.infer<typeof platformOntologyNodeRefSche
 
 export const platformOntologyNodeSchema = platformOntologyNodeRefSchema.extend({
   label: z.string(),
+  typeLabel: z.string().optional(),
   layer: platformOntologyLayerSchema,
   detail: z.string().optional(),
 });
@@ -35,6 +36,7 @@ export type PlatformOntologyEdgeBinding = z.infer<typeof platformOntologyEdgeBin
 export const platformOntologyEdgeSchema = z.object({
   id: z.string().min(1),
   relationKind,
+  label: z.string().optional(),
   from: platformOntologyNodeRefSchema,
   to: platformOntologyNodeRefSchema,
   direction: z.enum(["outgoing", "incoming"]),
@@ -45,6 +47,7 @@ export type PlatformOntologyEdge = z.infer<typeof platformOntologyEdgeSchema>;
 
 export const platformOntologyRelationStatusSchema = z.object({
   relationKind,
+  label: z.string().optional(),
   status: platformOntologyStatusSchema,
   edgeCount: recordCount,
   reason: z.string().optional(),

@@ -285,6 +285,8 @@ export default {
     "relationsBoundOperations": "Operations: {names}",
     "relationsBoundViaInput": "Bound via input",
     "relationsSummaryCount": "{count} relations",
+    "relationsGroupTruncated": "Showing first {count} (truncated)",
+    "relationsSummaryTruncated": "{count} relations shown (truncated)",
     "relationsEmptyKinds": "{count} other declared relation kinds have no neighbors",
     "formAdd": "Add",
     "formAdvanced": "Advanced",
