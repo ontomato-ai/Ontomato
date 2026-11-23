@@ -45,6 +45,7 @@ const DECLARED_DATA = {
   ObjectSummary: { record: ["panelRecord"] },
   ObjectHeader: { record: ["panelRecord"] },
   TypedValue: { record: ["panelRecord"], result: ["metricOutput"] },
+  RecordTemplate: { record: ["panelRecord"], result: ["metricOutput"] },
   InfoBanner: { record: ["panelRecord"], result: ["metricOutput"] },
   ObjectRefCard: { record: ["panelRecord"], result: ["metricOutput"] },
   MetricCard: {

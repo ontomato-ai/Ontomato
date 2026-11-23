@@ -15,13 +15,15 @@ import {
 } from "./display-value";
 import { resolveLocalizedText } from "./localized-text";
 import { displayFieldText, rawRecordField } from "./record-field";
+import RecordTemplate from "./RecordTemplate.vue";
 
 type BannerTone = "info" | "success" | "warning" | "danger";
 
 /**
  * Standardized informational, reminder, warning, success, or danger callout banner (for example relationship detail
- * guidance cards or read-only explanations). Supports static or localized copy, custom slot content, or binding one
- * field value from a projection's `record` (`panelRecord`) or metric `result` (`metricOutput`) datum.
+ * guidance cards or read-only explanations). Supports static or localized copy, custom slot content, or binding to a
+ * projection's `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field` or a fixed `{fieldKey}`
+ * `template` (with no calculation or conditional branching).
  */
 const props = withDefaults(
   defineProps<{
@@ -43,6 +45,12 @@ const props = withDefaults(
     texts?: Readonly<Record<string, string>>;
     /** Optional field key on a bound `record` or column key on a bound metric `result` providing the body text. */
     field?: string;
+    /** Optional fixed `{fieldKey}` sentence template formatted against the bound `record` or metric `result` row. */
+    template?: string;
+    /** Panel or platform i18n key resolving `template` in the active locale. */
+    templateKey?: string;
+    /** Locale-keyed templates formatted against the bound `record` or metric `result` row. */
+    templates?: Readonly<Record<string, string>>;
     /** Zero-based row index when reading from a bound metric `result` (`metricOutput`) table. Defaults to `0`. */
     rowIndex?: number;
     /** Tighter padding for dense sidebars and narrow detail cards. Defaults to `false`. */
@@ -62,6 +70,9 @@ const props = withDefaults(
     textKey: undefined,
     texts: undefined,
     field: undefined,
+    template: undefined,
+    templateKey: undefined,
+    templates: undefined,
     rowIndex: 0,
     compact: false,
     hideIcon: false,
@@ -96,27 +107,29 @@ const boundDatum = useOptionalMemberDatum(member, ["record", "result"] as const)
 interface ResolvedBound {
   readonly state: DisplayDataStateKind;
   readonly record: PlatformObjectRecord | null;
+  readonly metricRow: Readonly<Record<string, unknown>> | null;
   readonly fieldText: string;
   readonly notice?: string;
 }
 
 const resolvedBound = computed<ResolvedBound>(() => {
   if (!boundDatum) {
-    return { state: "standalone", record: null, fieldText: "" };
+    return { state: "standalone", record: null, metricRow: null, fieldText: "" };
   }
   const current = boundDatum.state.value;
-  if (current.status === "loading") return { state: "loading", record: null, fieldText: "" };
-  if (current.status === "empty") return { state: "empty", record: null, fieldText: "" };
+  if (current.status === "loading") return { state: "loading", record: null, metricRow: null, fieldText: "" };
+  if (current.status === "empty") return { state: "empty", record: null, metricRow: null, fieldText: "" };
   if (current.status === "forbidden") {
-    return { state: "forbidden", record: null, fieldText: "", notice: translate("platform.dataForbidden") };
+    return { state: "forbidden", record: null, metricRow: null, fieldText: "", notice: translate("platform.dataForbidden") };
   }
   if (current.status === "awaiting") {
-    return { state: "awaiting", record: null, fieldText: "", notice: translate("platform.dataAwaiting") };
+    return { state: "awaiting", record: null, metricRow: null, fieldText: "", notice: translate("platform.dataAwaiting") };
   }
   if (current.status === "error") {
     return {
       state: "error",
       record: null,
+      metricRow: null,
       fieldText: "",
       notice: current.message || translate("platform.dataUnreachable"),
     };
@@ -124,16 +137,16 @@ const resolvedBound = computed<ResolvedBound>(() => {
   if (boundDatum.name === "result") {
     const output = current.value as unknown as DashboardMetricOutput;
     const row = extractMetricRow(output, props.rowIndex);
-    if (!row) return { state: "empty", record: null, fieldText: "" };
+    if (!row) return { state: "empty", record: null, metricRow: null, fieldText: "" };
     const cell = extractMetricCell(output, props.field, props.rowIndex);
     const fieldText = cell.value === undefined || cell.value === null ? "" : String(cell.value);
-    return { state: "ready", record: null, fieldText };
+    return { state: "ready", record: null, metricRow: row, fieldText };
   }
   const record = current.value as unknown as PlatformObjectRecord;
   const fieldKey = props.field;
   const raw = fieldKey ? rawRecordField(record, fieldKey) : undefined;
   const fieldText = raw !== undefined ? displayFieldText(raw as PanelRecordFieldValue, locale.value, translate) : "";
-  return { state: "ready", record, fieldText };
+  return { state: "ready", record, metricRow: null, fieldText };
 });
 
 function toBannerTone(tone: PanelFieldTone | undefined): BannerTone | undefined {
@@ -177,11 +190,13 @@ const resolvedStaticText = computed(() =>
   }),
 );
 
+const hasTemplate = computed(() => Boolean(props.template || props.templateKey || props.templates));
+
 const bodyText = computed(() => {
   if (boundDatum && props.field) {
     return resolvedBound.value.fieldText;
   }
-  if (boundDatum && !resolvedStaticText.value && !slots.default && boundDatum.name === "result") {
+  if (boundDatum && !hasTemplate.value && !resolvedStaticText.value && !slots.default && boundDatum.name === "result") {
     return resolvedBound.value.fieldText;
   }
   return resolvedStaticText.value;
@@ -192,6 +207,9 @@ const isHidden = computed(() => {
   if (slots.default) return false;
   if (resolvedBound.value.state === "loading") return false;
   if (resolvedBound.value.state === "empty") return true;
+  if (hasTemplate.value) {
+    return Boolean(boundDatum && resolvedBound.value.state !== "ready");
+  }
   return !resolvedTitle.value && !bodyText.value;
 });
 
@@ -236,6 +254,16 @@ const ariaRole = computed(() => (effectiveTone.value === "warning" || effectiveT
         <slot>
           <span v-if="resolvedBound.state === 'loading'" class="sdk-info-banner-muted">…</span>
           <span v-else-if="resolvedBound.notice" class="sdk-info-banner-muted">{{ resolvedBound.notice }}</span>
+          <RecordTemplate
+            v-else-if="hasTemplate"
+            :template="template"
+            :template-key="templateKey"
+            :templates="templates"
+            :record="resolvedBound.record"
+            :values="resolvedBound.metricRow"
+            :row-index="rowIndex"
+            :inline="true"
+          />
           <span v-else-if="bodyText">{{ bodyText }}</span>
         </slot>
       </div>

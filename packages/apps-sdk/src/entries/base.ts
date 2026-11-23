@@ -17,10 +17,12 @@ export type { PageHeaderDraft, PageHeaderLabels } from "../base/page-header-type
 export { default as AppMenu } from "../base/AppMenu.vue";
 export type { AppMenuGroup, AppMenuIcon, AppMenuItem } from "../base/app-menu-types";
 export { default as TypedValue } from "../base/TypedValue.vue";
+export { default as RecordTemplate } from "../base/RecordTemplate.vue";
 export { default as InfoBanner } from "../base/InfoBanner.vue";
 export { default as ObjectRefCard } from "../base/ObjectRefCard.vue";
 export { default as MetricCard } from "../base/MetricCard.vue";
 export type {
+  TypedFieldFormat,
   TypedNumberFormat,
   TypedValueKind,
 } from "../base/display-value";

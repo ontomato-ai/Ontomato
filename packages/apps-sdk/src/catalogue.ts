@@ -486,12 +486,26 @@ export const components: readonly ComponentMetadata[] = [
     },
   }),
   defineComponentMeta({
+    componentId: "RecordTemplate",
+    module: "@ontomato/sdk/base",
+    exportName: "RecordTemplate",
+    role: "presentation",
+    meaning:
+      "Fills already-provided values from one record (`record`) or one metric result row (`result` at `rowIndex`) into a fixed `{fieldKey}` sentence template (`template`, `templateKey`, or locale-keyed `templates`), with optional per-field `fieldFormats`. Pure display with no expressions, calculation, or conditional sentence branching — derived values and business conditions belong in a MetricView, Action, or owner read. Each placeholder renders via `TypedValue`, keeping references clickable (`navigate`), booleans/names localized, tones tinted, and numbers tabular.",
+    effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      record: { results: ["panelRecord"], required: false },
+      result: { results: ["metricOutput"], required: false },
+    },
+  }),
+  defineComponentMeta({
     componentId: "InfoBanner",
     module: "@ontomato/sdk/base",
     exportName: "InfoBanner",
     role: "presentation",
     meaning:
-      "Standardized informational, reminder, warning, success, or danger callout banner (`tone` or `toneField`) for detail cards and guidance notices. Renders static or localized copy (`title`/`text`, `titleKey`/`textKey`, `titles`/`texts`), custom slot content (`#default`, `#actions`), or a single value bound from a `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field`.",
+      "Standardized informational, reminder, warning, success, or danger callout banner (`tone` or `toneField`) for detail cards and guidance notices. Renders static or localized copy (`title`/`text`, `titleKey`/`textKey`, `titles`/`texts`), custom slot content (`#default`, `#actions`), or already-provided values bound from a `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field` or a fixed `{fieldKey}` `template` (no calculation or conditional branching).",
     effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
     bindsElement: ["PlatformObjectType:*", "MetricView:*"],
     data: {

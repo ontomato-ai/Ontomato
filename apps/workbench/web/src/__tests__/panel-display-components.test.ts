@@ -11,13 +11,14 @@ import { createDirectPanelInstance, type PanelMemberReadRequest } from "../../..
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import TypedValue from "../../../../../packages/apps-sdk/src/base/TypedValue.vue";
+import RecordTemplate from "../../../../../packages/apps-sdk/src/base/RecordTemplate.vue";
 import InfoBanner from "../../../../../packages/apps-sdk/src/base/InfoBanner.vue";
 import ObjectRefCard from "../../../../../packages/apps-sdk/src/base/ObjectRefCard.vue";
 import MetricCard from "../../../../../packages/apps-sdk/src/base/MetricCard.vue";
 import { noOperations } from "./panel-frame";
 
 /*
- * Official SDK general display components (TypedValue, InfoBanner, ObjectRefCard, MetricCard):
+ * Official SDK general display components (TypedValue, RecordTemplate, InfoBanner, ObjectRefCard, MetricCard):
  * - Projection-bound rendering from `panelRecord`, `metricOutput` (`result` table), `panelRecordList`/`panelRecordQuery`,
  *   and `panelOntologyObjects` without duplicating reads or computing business logic.
  * - Standalone / slot rendering with direct props, localized copy, reference navigation, and loading/empty/forbidden/error states.
@@ -285,8 +286,95 @@ describe("TypedValue", () => {
   });
 });
 
+describe("RecordTemplate", () => {
+  it("interpolates record fields into a fixed sentence with clickable references, tones, and escaped braces", async () => {
+    const navigated: unknown[] = [];
+    const { container } = mountStandalone(RecordTemplate, {
+      template: "{source} → {target} ({{cardinality}}: {cardinality}, {status})",
+      record: {
+        primaryKey: "rel-1",
+        label: "Owns",
+        fields: {
+          source: { kind: "reference", className: OBJECT_TYPE, primaryKey: "User", label: "User" },
+          target: { kind: "reference", className: OBJECT_TYPE, primaryKey: "Order", label: "Order" },
+          cardinality: "1:N",
+          status: "Active",
+        },
+        tones: { status: "success" },
+      },
+      onNavigate: (r: unknown, f: unknown) => navigated.push([r, f]),
+    });
+
+    expect(container.textContent?.replace(/\s+/g, " ").trim()).toBe("User → Order ({cardinality}: 1:N, Active)");
+    expect(container.querySelector(".sdk-typed-value-tag")?.getAttribute("data-tone")).toBe("success");
+    const links = [...container.querySelectorAll<HTMLButtonElement>("button.sdk-typed-value-link")];
+    expect(links.map((b) => b.textContent?.trim())).toEqual(["User", "Order"]);
+    links[0]!.click();
+    expect(navigated).toEqual([[{ className: OBJECT_TYPE, primaryKey: "User", label: "User" }, "source"]]);
+  });
+
+  it("fills MetricView result cells into a localized fixed sentence via templateKey without computation", async () => {
+    const projection: DirectProjection = {
+      ...meta,
+      id: "metric-sentence",
+      name: "Metric summary sentence",
+      componentId: "@ontomato/sdk:RecordTemplate",
+      inputs: {},
+      outputs: {},
+      config: {
+        templateKey: "summary.line",
+        fieldFormats: {
+          total_people: { kind: "number", numberFormat: { maximumFractionDigits: 0 } },
+          pending_review: { kind: "number", numberFormat: { maximumFractionDigits: 0 } },
+        },
+      },
+      data: {
+        result: {
+          source: { object: { literal: { className: METRIC_VIEW, primaryKey: "mv-people" } } },
+          read: "result",
+          params: {},
+        },
+      },
+    };
+    const { container } = mountProjection(
+      projection,
+      () =>
+        ready({
+          columns: [
+            { key: "total_people", label: "Total", type: "integer" },
+            { key: "pending_review", label: "Pending", type: "integer" },
+          ],
+          rows: [{ total_people: 12, pending_review: 3 }],
+          truncation: null,
+        }),
+      {
+        locale: "zh-CN",
+        messages: {
+          en: { "summary.line": "{total_people} people total, {pending_review} pending review" },
+          "zh-CN": { "summary.line": "共 {total_people} 人，其中 {pending_review} 人待审" },
+        },
+      },
+    );
+
+    await vi.waitFor(() => {
+      expect(container.querySelector(".sdk-record-template")?.getAttribute("data-state")).toBe("ready");
+    });
+    expect(container.textContent?.replace(/\s+/g, " ").trim()).toBe("共 12 人，其中 3 人待审");
+  });
+
+  it("never evaluates arithmetic expressions or conditional branches inside placeholders", () => {
+    const { container } = mountStandalone(RecordTemplate, {
+      template: "Direct: {total}, Expr: {total - pending}, Branch: {pending > 0 ? 'warn' : 'ok'}",
+      values: { total: 12, pending: 3 },
+      emptyPlaceholder: "—",
+    });
+
+    expect(container.textContent?.replace(/\s+/g, " ").trim()).toBe("Direct: 12, Expr: —, Branch: —");
+  });
+});
+
 describe("InfoBanner", () => {
-  it("renders static tones with semantic ARIA roles and displays a bound metric result single-field value", async () => {
+  it("renders static tones with semantic ARIA roles and supports bound metric result fixed template", async () => {
     const warn = mountStandalone(InfoBanner, {
       tone: "warning",
       title: "Read-only type",
@@ -308,7 +396,7 @@ describe("InfoBanner", () => {
       config: {
         tone: "info",
         titleKey: "banner.title",
-        field: "summary_notice",
+        template: "{pending} pending reviews across {domains} domains",
       },
       data: {
         result: {
@@ -323,9 +411,10 @@ describe("InfoBanner", () => {
       () =>
         ready({
           columns: [
-            { key: "summary_notice", label: "Summary", type: "string" },
+            { key: "pending", label: "Pending", type: "integer" },
+            { key: "domains", label: "Domains", type: "integer" },
           ],
-          rows: [{ summary_notice: "12 pending reviews across 3 domains" }],
+          rows: [{ pending: 12, domains: 3 }],
           truncation: null,
         }),
       { messages: { en: { "banner.title": "Review queue" } } },

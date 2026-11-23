@@ -8,7 +8,7 @@ import { readerDataState, type PanelMemberContext } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { isRecordReference } from "./record-field";
 
-/** Supported display modes for `TypedValue` single-value formatting. */
+/** Supported display modes for `TypedValue` and `RecordTemplate` field formatting. */
 export type TypedValueKind =
   | "auto"
   | "text"
@@ -38,6 +38,27 @@ export interface TypedNumberFormat {
   /** Whether to use grouping separators such as thousands commas. Defaults to `true`. */
   readonly useGrouping?: boolean;
 }
+
+/** Per-field formatting options accepted by `RecordTemplate`'s `fieldFormats` prop. */
+export interface TypedFieldFormat {
+  /** Explicit display kind; defaults to `"auto"`. */
+  readonly kind?: TypedValueKind;
+  /** Optional tone override for `"tag"` values. */
+  readonly tone?: PanelFieldTone;
+  /** Optional unit suffix shown after numeric/scalar values. */
+  readonly unit?: string;
+  /** Optional `Intl.NumberFormat` options for `"number"` values. */
+  readonly numberFormat?: TypedNumberFormat;
+  /** Optional list separator for `"list"` values. */
+  readonly separator?: string;
+  /** Optional list style (`"inline"` or `"tags"`). */
+  readonly listStyle?: "inline" | "tags";
+}
+
+/** Token produced by `parseTemplateTokens` when splitting a declarative fixed-sentence template string. */
+export type TemplateToken =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "field"; readonly key: string };
 
 /** Column metadata resolved from a `DashboardMetricOutput` table. */
 export interface MetricColumnMeta {
@@ -274,6 +295,59 @@ export function formatTypedTime(
     text: formatListTime(iso) || fullTitle,
     title: fullTitle,
   };
+}
+
+/**
+ * Splits a fixed sentence template string (for example `"{source} → {target} ({cardinality})"`) into alternating
+ * literal text and `{fieldKey}` placeholder tokens. Double braces (`{{` / `}}`) produce literal braces. Pure
+ * presentation only: no expressions, calculation, or conditional sentence branching are evaluated.
+ */
+export function parseTemplateTokens(template: string): readonly TemplateToken[] {
+  if (!template) return [];
+  const tokens: TemplateToken[] = [];
+  let literal = "";
+  let index = 0;
+
+  const flushLiteral = () => {
+    if (literal.length > 0) {
+      tokens.push({ kind: "text", text: literal });
+      literal = "";
+    }
+  };
+
+  while (index < template.length) {
+    const ch = template[index]!;
+    if (ch === "{") {
+      if (template[index + 1] === "{") {
+        literal += "{";
+        index += 2;
+        continue;
+      }
+      const close = template.indexOf("}", index + 1);
+      if (close > index + 1) {
+        const key = template.slice(index + 1, close).trim();
+        if (key.length > 0 && !key.includes("{")) {
+          flushLiteral();
+          tokens.push({ kind: "field", key });
+          index = close + 1;
+          continue;
+        }
+      }
+      literal += ch;
+      index += 1;
+      continue;
+    }
+    if (ch === "}" && template[index + 1] === "}") {
+      literal += "}";
+      index += 2;
+      continue;
+    }
+    literal += ch;
+    index += 1;
+  }
+
+  flushLiteral();
+  return tokens;
 }
 
 /** Numeric contribution of one record field value when summing across rows (`MetricCard` / `ObjectCount`). */

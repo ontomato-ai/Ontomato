@@ -7,6 +7,7 @@ export const baseComponents = {
   PageHeader: () => import("./base/PageHeader.vue").then(module => module.default),
   AppMenu: () => import("./base/AppMenu.vue").then(module => module.default),
   TypedValue: () => import("./base/TypedValue.vue").then(module => module.default),
+  RecordTemplate: () => import("./base/RecordTemplate.vue").then(module => module.default),
   InfoBanner: () => import("./base/InfoBanner.vue").then(module => module.default),
   ObjectRefCard: () => import("./base/ObjectRefCard.vue").then(module => module.default),
   MetricCard: () => import("./base/MetricCard.vue").then(module => module.default),

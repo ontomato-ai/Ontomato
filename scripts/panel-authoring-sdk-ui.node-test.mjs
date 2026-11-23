@@ -593,6 +593,13 @@ test("checkPanelWorkspace accepts official display components bound to metricOut
           data: { result: "result" },
           config: { field: "total_count", kind: "number" },
         },
+        sentence: {
+          component: "RecordTemplate",
+          type: "platform:MetricView",
+          target: "selectedMetric",
+          data: { result: "result" },
+          config: { template: "{region}: {total_count}" },
+        },
         notice: {
           component: "InfoBanner",
           type: "platform:MetricView",
@@ -631,6 +638,7 @@ test("checkPanelWorkspace accepts official display components bound to metricOut
     '  <info-banner tone="info" text="Static hint" />',
     '  <projection slot="kpi"></projection>',
     '  <projection slot="scalar"></projection>',
+    '  <projection slot="sentence"></projection>',
     '  <projection slot="notice"></projection>',
     '  <projection slot="sourceCard"></projection>',
     '  <projection slot="editForm">',
@@ -651,6 +659,7 @@ test("checkPanelWorkspace accepts official display components bound to metricOut
       components: [
         { componentId: "MetricCard", module: "@ontomato/sdk/base", exportName: "MetricCard", role: "presentation", meaning: "Metric card", data: { result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
         { componentId: "TypedValue", module: "@ontomato/sdk/base", exportName: "TypedValue", role: "presentation", meaning: "Typed value", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
+        { componentId: "RecordTemplate", module: "@ontomato/sdk/base", exportName: "RecordTemplate", role: "presentation", meaning: "Record template", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
         { componentId: "InfoBanner", module: "@ontomato/sdk/base", exportName: "InfoBanner", role: "presentation", meaning: "Info banner", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
         { componentId: "ObjectRefCard", module: "@ontomato/sdk/base", exportName: "ObjectRefCard", role: "presentation", meaning: "Object ref card", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
         { componentId: "ObjectForm", module: "@ontomato/sdk/base", exportName: "ObjectForm", role: "control", meaning: "Object form", data: { form: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] } }, ports: { props: [], events: [], slots: [] } },
