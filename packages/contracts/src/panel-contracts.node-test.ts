@@ -861,6 +861,104 @@ test("application addresses carry flat named frame and entry state while preserv
   assert.throws(() => validateApplicationPanelAddressState("state", { privateSelection: "x" }, manifest), /state\.privateSelection/);
 });
 
+test("clearing non-empty defaults encodes explicit empty markers and round-trips without snapping back", async () => {
+  const {
+    applicationPanelAddress,
+    panelAddress,
+    panelAddressState,
+    parseApplicationPanelAddress,
+  } = await import("./panel-host");
+  const path = "/applications/app-school/orders";
+  const defaultAction = { className: "platform:Action", primaryKey: "act-default" };
+  const defaultChild = { parent: { objectType: "platform:ObjectType", primaryKey: "Order" }, primaryKey: "id" };
+  const manifest = panelManifestSchema.parse({
+    state: {
+      tags: { type: { kind: "list", items: { kind: "scalar", type: "string" } }, deepLink: true, default: ["a", "b"] },
+      emptyDefaultTags: { type: { kind: "list", items: { kind: "scalar", type: "string" } }, deepLink: true, default: [] },
+      items: { type: { kind: "list", items: { kind: "object", objectType: "platform:Action" } }, deepLink: true, default: [defaultAction] },
+      mode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "cards" },
+      emptyDefaultMode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "" },
+      page: { type: { kind: "scalar", type: "number" }, deepLink: true, default: 1 },
+      onlyMine: { type: { kind: "scalar", type: "boolean" }, deepLink: true, default: true },
+      since: { type: { kind: "scalar", type: "date" }, deepLink: true, default: "2026-11-01" },
+      selected: { type: { kind: "object", objectType: "platform:Action" }, deepLink: true, default: defaultAction },
+      unionNode: {
+        type: { kind: "object-union", objectTypes: ["platform:Action", "platform:ObjectType"] },
+        deepLink: true,
+        default: defaultAction,
+      },
+      childAttr: {
+        type: { kind: "child-object", parentType: "platform:ObjectType", collection: "attributes" },
+        deepLink: true,
+        default: defaultChild,
+      },
+      optionalSelected: { type: { kind: "object", objectType: "platform:Action" }, deepLink: true },
+    },
+    members: {},
+  });
+
+  // Values matching declared defaults (including non-empty lists and empty defaults) are omitted cleanly.
+  assert.equal(
+    panelAddress(path, {
+      tags: ["a", "b"],
+      emptyDefaultTags: [],
+      items: [defaultAction],
+      mode: "cards",
+      emptyDefaultMode: "",
+      page: 1,
+      onlyMine: true,
+      since: "2026-11-01",
+      selected: defaultAction,
+      unionNode: defaultAction,
+      childAttr: defaultChild,
+      optionalSelected: null,
+    }, manifest),
+    path,
+  );
+
+  // Clearing non-empty list defaults to `[]`, non-empty string default to `""`, and non-null scalar/object
+  // defaults to `null` emits explicit `?k=` markers that round-trip to empty/null instead of snapping back.
+  const clearedUrl = panelAddress(path, {
+    tags: [],
+    emptyDefaultTags: [],
+    items: [],
+    mode: "",
+    emptyDefaultMode: "",
+    page: null,
+    onlyMine: null,
+    since: null,
+    selected: null,
+    unionNode: null,
+    childAttr: null,
+    optionalSelected: null,
+  }, manifest);
+  assert.equal(
+    clearedUrl,
+    `${path}?tags=&items=&mode=&page=&onlyMine=&since=&selected=&unionNode=&childAttr=`,
+  );
+  assert.deepEqual(panelAddressState(clearedUrl, manifest), {
+    tags: [],
+    items: [],
+    mode: "",
+    page: null,
+    onlyMine: null,
+    since: null,
+    selected: null,
+    unionNode: null,
+    childAttr: null,
+  });
+
+  // Manifest-free parse -> serialize preserves explicit empty markers in both frame and entry segments.
+  const framedCleared = `${path}?frame.term=&tags=`;
+  const parsedRaw = parseApplicationPanelAddress(framedCleared);
+  assert.deepEqual(parsedRaw.frame, { term: "" });
+  assert.deepEqual(parsedRaw.state, { tags: "" });
+  assert.equal(applicationPanelAddress(parsedRaw.path, { frame: parsedRaw.frame, state: parsedRaw.state, query: parsedRaw.query }), framedCleared);
+
+  // An empty segment mixed into a multi-value non-string list is rejected rather than producing `[null, ...]`.
+  assert.deepEqual(panelAddressState(`${path}?items=&items=act-1`, manifest), {});
+});
+
 test("the application reference check carries both theme modes as literal strings", async () => {
   const { applicationPanelReferencesRequestSchema } = await import("./product-panels");
   const theme = { light: { "--radius-md": "6px" }, dark: { "--radius-md": "8px" } };

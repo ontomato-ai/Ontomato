@@ -7,20 +7,6 @@
           "type": "boolean"
         }
       },
-      "selected": {
-        "type": {
-          "kind": "object",
-          "objectType": "platform:Application"
-        },
-        "deepLink": true
-      },
-      "tab": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        },
-        "deepLink": true
-      },
       "search": {
         "type": {
           "kind": "scalar",
@@ -63,7 +49,6 @@
           }
         },
         "state": {
-          "selected": "selected",
           "search": "search"
         },
         "config": {

@@ -137,8 +137,13 @@ export function createPanelState(manifest: PanelManifest, initial: PanelInitialS
       values.value = { ...values.value, ...checked };
     },
     deepLinkable() {
-      return Object.fromEntries(Object.entries(values.value).filter((entry): entry is [string, PanelDeepLinkStateValue] =>
-        entry[1] !== null && manifest.state[entry[0]]!.deepLink));
+      return Object.fromEntries(Object.entries(values.value).filter((entry): entry is [string, PanelDeepLinkStateValue] => {
+        const field = manifest.state[entry[0]]!;
+        if (!field.deepLink) return false;
+        if (entry[1] !== null) return true;
+        // Preserve explicit `null` when clearing a field that declares a non-null default so the host writes `?k=`.
+        return field.default !== undefined && field.default !== null;
+      }));
     },
   };
 }
