@@ -1,16 +1,13 @@
 import type { Readable, Writable } from "node:stream";
 import type { RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
+import type { RuntimeMessage, RuntimeToolDeclaration } from "@ontomato/contracts/agent-runtime-messages";
 import type {
-  RuntimeAssistantStreamEvent,
-  RuntimeImage,
-  RuntimeMessage,
-  RuntimeSettledMessage,
-  RuntimeText,
-} from "@ontomato/contracts/agent-runtime-messages";
-import type { RuntimeToolDeclaration } from "@ontomato/contracts/agent-runtime-messages";
-import type { RuntimeToolOutcome, RuntimeUsageUpdate } from "@ontomato/contracts/agent-runtime-events";
-import type { RuntimeRunDetail } from "@ontomato/contracts/agent-runtime-details";
-import type { RuntimeJsonObject, RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+  RuntimeAgentEvent,
+  RuntimeToolOutcome,
+  RuntimeToolResult,
+  RuntimeUsageUpdate,
+} from "@ontomato/contracts/agent-runtime-events";
+import type { RuntimeJsonObject } from "@ontomato/contracts/agent-runtime-values";
 import type { CodeLimits } from "@ontomato/contracts/agent-runtime-code";
 
 /**
@@ -196,22 +193,27 @@ export interface HarnessTurnHost {
   consumed(inputId: string): Promise<void>;
 }
 
+/** A platform tool call, in PI's `tool_execution_start` fields. */
 export interface HarnessToolCall {
   readonly toolCallId: string;
-  readonly name: string;
-  readonly arguments: RuntimeJsonObject;
+  readonly toolName: string;
+  readonly args: RuntimeJsonObject;
   readonly signal: AbortSignal;
   /** Partial output while the tool runs, replacing the previous partial for the same call. */
-  readonly onUpdate: (update: HarnessToolUpdate) => void;
+  readonly onUpdate: (partialResult: HarnessToolPartialResult) => void;
 }
-export interface HarnessToolUpdate {
-  readonly text: string;
+export type HarnessToolPartialResult = PublicEvent<"tool_execution_update">["partialResult"];
+/**
+ * A tool result as an engine reports it: the public result without the artifact ids, which the runtime
+ * collects itself for the call.
+ */
+export interface HarnessToolResult {
+  readonly content: RuntimeToolResult["content"];
+  readonly details: Omit<RuntimeToolResult["details"], "artifactIds">;
 }
 export interface HarnessToolCallResult {
-  readonly content: readonly (RuntimeText | RuntimeImage)[];
+  readonly result: HarnessToolResult;
   readonly outcome: RuntimeToolOutcome;
-  /** Structured result a consumer can read without parsing text; JSON only. */
-  readonly data?: RuntimeJsonValue;
 }
 
 export interface HarnessTurnResult {
@@ -223,57 +225,45 @@ export interface HarnessTurnResult {
    */
   readonly unsettledToolCalls: readonly HarnessUnsettledToolCall[];
 }
-export interface HarnessUnsettledToolCall {
-  readonly toolCallId: string;
-  readonly toolName: string;
-  readonly arguments: RuntimeJsonObject;
-}
+export type HarnessUnsettledToolCall = Omit<PublicEvent<"tool_execution_start">, "type">;
 
 export type HarnessSteerResult =
   | { readonly accepted: true }
   | { readonly accepted: false; readonly reason: string };
 
+type PublicEvent<T extends RuntimeAgentEvent["type"]> = Extract<RuntimeAgentEvent, { type: T }>;
+type Native<E, PlatformFields extends keyof E> = Omit<E, PlatformFields> & { readonly nativeId: string };
+
 /**
- * The event face: what an engine may report, and all it may report. The runtime turns these into its own
- * persisted events and gives them message ids, sequence numbers and a cursor.
+ * The event face: what an engine may report, and all it may report. It is the public event contract, which is
+ * PI's agent events, minus what only the runtime knows; the runtime adds those and gives every event its
+ * sequence number and cursor. A PI plugin forwards PI's events nearly as they are; any other engine
+ * translates into PI's shapes.
  *
- * Message identities are the engine's own item ids (`nativeId`), so an engine never invents or guesses a
- * platform id: the runtime keeps the mapping and allocates the platform message id on `message_start`.
- * Tool call ids pass through unchanged, because the same id must join the call's start, progress and result
- * and the tool result message.
+ * Where it differs from the public events, and why:
+ * - Messages are named by the engine's own item id (`nativeId`): an engine never invents a platform id. The
+ *   runtime allocates `messageId` on `message_start` and the session sequence numbers on `message_end`.
+ * - `message_update` keeps PI's partial `message`, the snapshot a reader may take at that point; the public
+ *   event carries only the delta.
+ * - A tool result has no artifact ids, and its `outcome` replaces `isError`, which the runtime derives
+ *   (anything but `success` is an error to the model).
+ * - Usage names its message by `nativeId`, null when it cannot be attributed to one; a `run_detail` with
+ *   `message` scope names its message in `ref` by `nativeId` too. The runtime replaces both with `messageId`.
+ * - `agent_start`, `agent_end`, `turn_start`, `turn_end`, `input_received`, `artifact_registered` and
+ *   `pending_questions_changed` are the runtime's and are absent here.
  */
 export type HarnessEvent =
-  | { readonly type: "message_start"; readonly nativeId: string; readonly message: RuntimeMessage }
-  | {
-      readonly type: "message_update";
-      readonly nativeId: string;
-      readonly event: RuntimeAssistantStreamEvent;
-      /** The full partial so far, for the snapshot a reader may take at this point. */
-      readonly partial: RuntimeMessage;
-    }
-  | { readonly type: "message_end"; readonly nativeId: string; readonly message: RuntimeSettledMessage }
-  | {
-      readonly type: "tool_execution_start";
-      readonly toolCallId: string;
-      readonly toolName: string;
-      readonly arguments: RuntimeJsonObject;
-    }
-  | {
-      readonly type: "tool_execution_update";
-      readonly toolCallId: string;
-      readonly toolName: string;
-      readonly arguments: RuntimeJsonObject;
-      readonly text: string;
-    }
-  | {
-      readonly type: "tool_execution_end";
-      readonly toolCallId: string;
-      readonly toolName: string;
-      readonly content: readonly (RuntimeText | RuntimeImage)[];
-      /** Structured result a consumer can read without parsing text; JSON only. */
-      readonly data?: RuntimeJsonValue;
+  | Native<PublicEvent<"message_start">, "messageId">
+  | Native<PublicEvent<"message_update">, "messageId"> & { readonly message: RuntimeMessage }
+  | Native<PublicEvent<"message_end">, "messageId" | "messageSeq" | "contextSeq">
+  | PublicEvent<"tool_execution_start">
+  | PublicEvent<"tool_execution_update">
+  | Omit<PublicEvent<"tool_execution_end">, "result" | "isError" | "outcome"> & {
+      readonly result: HarnessToolResult;
       readonly outcome: RuntimeToolOutcome;
-      readonly durationMs?: number;
     }
-  | { readonly type: "run_detail"; readonly detail: RuntimeRunDetail }
-  | { readonly type: "usage_updated"; readonly usage: RuntimeUsageUpdate };
+  | PublicEvent<"run_detail">
+  | {
+      readonly type: "usage_updated";
+      readonly usage: Omit<RuntimeUsageUpdate, "messageId"> & { readonly nativeId: string | null };
+    };

@@ -231,4 +231,5 @@ export type RuntimeSessionRunFrame = z.infer<
   typeof runtimeSessionRunFrameSchema
 >;
 export type RuntimeToolOutcome = z.infer<typeof runtimeToolOutcomeSchema>;
+export type RuntimeToolResult = z.infer<typeof runtimeToolResultSchema>;
 export type RuntimeUsageUpdate = z.infer<typeof runtimeUsageUpdateSchema>;
