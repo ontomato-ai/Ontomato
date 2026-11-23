@@ -51,10 +51,29 @@ function deferred<T>() {
   return { resolve, promise };
 }
 
-function openForm({ platform = false, auxiliary = false, campus }: {
+function customerAction(
+  target: PanelOwnerOperationDescriptor["target"] = { source: "none" },
+  properties: PanelOwnerOperationDescriptor["inputSchema"] = { name: {}, campus: {} },
+): PanelOwnerOperationDescriptor {
+  return {
+    kind: "action", handlerRef: "actions.execute", effect: "write", target,
+    batch: false, label: "Customer action", resultSchema: {},
+    inputSchema: { type: "object", properties: { values: { type: "object", properties } } },
+  };
+}
+
+const editTarget = { input: "target" };
+const updateCustomer = { operation: { kind: "Action", id: "update-customer" }, target: editTarget } as const;
+
+function openForm({ platform = false, auxiliary = false, campus, actions, createForm = description("") }: {
   platform?: boolean;
   auxiliary?: boolean;
   campus?: ProjectionOperationParam;
+  actions?: {
+    declared: NonNullable<ProductProjection["operations"]>;
+    admitted: Record<string, PanelOwnerOperationDescriptor>;
+  };
+  createForm?: PanelFormDescription;
 } = {}) {
   const className = platform ? platformType : customerType;
   const type = platform ? { kind: "PlatformObjectType" as const, id: className } : { kind: "ObjectType" as const, id: className };
@@ -62,11 +81,6 @@ function openForm({ platform = false, auxiliary = false, campus }: {
   const sideOperation: PanelOwnerOperationDescriptor = {
     kind: "action", handlerRef: "knowledge.approve", effect: "write", target: { source: "literal", literal: article },
     batch: true, label: "Approve", inputSchema: {}, resultSchema: {},
-  };
-  const action: PanelOwnerOperationDescriptor = {
-    kind: "action", handlerRef: "actions.execute", effect: "write", target: { source: "none" },
-    batch: false, label: "Create customer", resultSchema: {},
-    inputSchema: { type: "object", properties: { values: { type: "object", properties: { name: {}, campus: {} } } } },
   };
   const platformSave: PanelOwnerOperationDescriptor = {
     kind: "form.save", handlerRef: `${platformType}.save`, effect: "write", target: { source: "draft", slot: "form" },
@@ -84,7 +98,9 @@ function openForm({ platform = false, auxiliary = false, campus }: {
       createForm: { read: "createForm", source: { type }, params: {} },
     },
     operations: {
-      create: { operation: { kind: "Action", id: "create-customer" }, params: campus ? { campus } : undefined },
+      ...(actions?.declared ?? {
+        create: { operation: { kind: "Action", id: "create-customer" }, params: campus ? { campus } : undefined },
+      }),
       ...(auxiliary ? {
         approve: { operation: { kind: "PlatformOperation" as const, id: sideOperation.handlerRef }, target: { literal: article } },
       } : {}),
@@ -100,7 +116,7 @@ function openForm({ platform = false, auxiliary = false, campus }: {
   const selectedRead = deferred<PanelFormDescription>();
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const read: PanelMemberContext["data"]["read"] = async name => ({
-    status: "ready", value: name === "createForm" ? description("") : await selectedRead.promise,
+    status: "ready", value: name === "createForm" ? createForm : await selectedRead.promise,
   });
   const write = vi.fn<Parameters<PanelInstance["writeOperation"]>, ReturnType<PanelInstance["writeOperation"]>>()
     .mockResolvedValue(receipt());
@@ -117,7 +133,12 @@ function openForm({ platform = false, auxiliary = false, campus }: {
   const notify = vi.fn();
   const panel = { instance, manifest, notify } satisfies Pick<PanelContext, "manifest" | "notify"> & { instance: typeof instance };
   const operations = shallowRef<MemberOperationsState>({
-    status: "ready", value: { create: action, ...(auxiliary ? { approve: sideOperation } : {}), ...(platform ? { persist: platformSave } : {}) },
+    status: "ready",
+    value: {
+      ...(actions?.admitted ?? { create: customerAction() }),
+      ...(auxiliary ? { approve: sideOperation } : {}),
+      ...(platform ? { persist: platformSave } : {}),
+    },
   });
   const member: PanelMemberContext = {
     key: "form", projection, scoped: true, operations: computed(() => operations.value),
@@ -239,6 +260,159 @@ describe("ObjectForm save", () => {
         input: { values: { name: "Updated article", campus: "North", note: "" }, submittedFields: ["/name", "/campus"] },
       },
     });
+    wrapper.unmount();
+  });
+
+  it("makes an edit form read-only when the owner admits review but not its declared save", async () => {
+    const { wrapper, form, write, state, selectedRead } = openForm({
+      actions: {
+        declared: {
+          save: updateCustomer,
+          submitReview: { operation: { kind: "Action", id: "submit-customer-review" }, target: editTarget },
+        },
+        admitted: { submitReview: customerAction({ source: "input", ...editTarget }) },
+      },
+    });
+    state.set("selected", objectRef(customerType, "existing-customer"));
+    selectedRead.resolve(description("Existing customer"));
+    await flushPromises();
+
+    expect(form.fields.value.length).toBeGreaterThan(0);
+    expect(form.fields.value.every(field => field.readOnly)).toBe(true);
+    form.set("/name", "Programmatic edit");
+    expect(form.canSubmit.value).toBe(false);
+    await expect(form.submit()).rejects.toBeInstanceOf(Error);
+    expect(write).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("makes an edit form read-only when its only admitted action creates without a target", async () => {
+    const { wrapper, form, write, state, selectedRead } = openForm();
+    state.set("selected", objectRef(customerType, "existing-customer"));
+    selectedRead.resolve(description("Existing customer"));
+    await flushPromises();
+
+    expect(form.fields.value.length).toBeGreaterThan(0);
+    expect(form.fields.value.every(field => field.readOnly)).toBe(true);
+    form.set("/name", "Programmatic edit");
+    expect(form.canSubmit.value).toBe(false);
+    await expect(form.submit()).rejects.toBeInstanceOf(Error);
+    expect(write).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("submits all four Action wiring sources and preserves scalar and nested clears", async () => {
+    const baseline = description("Original customer");
+    const { wrapper, form, write } = openForm({
+      createForm: {
+        ...baseline,
+        values: { ...baseline.values, note: "Original note", contact: { grade: "B", phone: "555-0100" } },
+        fields: [
+          ...baseline.fields.filter(field => field.path === "/name"),
+          {
+            path: "/note", label: "Note", valueSchema: { type: ["string", "null"] },
+            required: false, readOnly: false, control: { kind: "text" },
+          },
+          {
+            path: "/contact", label: "Contact", valueSchema: { type: "object" }, required: false, readOnly: false,
+            control: {
+              kind: "object",
+              fields: ["grade", "phone"].map(key => ({
+                path: `/${key}`, label: key, valueSchema: { type: "string" },
+                required: false, readOnly: false, control: { kind: "text" },
+              })),
+            },
+          },
+        ],
+      },
+      actions: {
+        declared: {
+          create: {
+            operation: { kind: "Action", id: "create-customer" },
+            params: {
+              campus: { literal: "North" },
+              customer_note: { formField: "/note" },
+              contact_json: { formFields: { grade: "/contact/grade", phone: "/contact/phone" } },
+            },
+          },
+        },
+        admitted: {
+          create: customerAction({ source: "none" }, {
+            campus: { type: "string" }, name: { type: "string" }, customer_note: { type: "string" },
+            contact_json: { type: "string", contentMediaType: "application/json" },
+          }),
+        },
+      },
+    });
+    await flushPromises();
+    form.set("/name", "Ada");
+    form.set("/note", null);
+    form.set("/contact", { grade: "B" });
+
+    await form.submit();
+    expect(write).toHaveBeenCalledWith("form.create", {
+      call: {
+        target: null,
+        input: { values: {
+          campus: "North", name: "Ada", customer_note: "", contact_json: JSON.stringify({ grade: "B", phone: null }),
+        } },
+      },
+    });
+    wrapper.unmount();
+  });
+
+  it("resets to the create baseline and emits success when the receipt has no key", async () => {
+    const baseline = description("New customer");
+    const { wrapper, form, state, notify } = openForm({ createForm: baseline });
+    await flushPromises();
+    form.set("/name", "Ada");
+    expect(form.dirty.value).toBe(true);
+
+    await expect(form.submit()).resolves.toMatchObject({ primaryKey: null });
+    expect(state.values.value.selected).toBeNull();
+    expect(form.values.value).toEqual(baseline.values);
+    expect(form.dirty.value).toBe(false);
+    expect(wrapper.emitted("saved")).toEqual([[{ className: customerType, primaryKey: null }]]);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "success" }));
+    wrapper.unmount();
+  });
+
+  it("selects the created object and clears dirty state when the receipt has a key", async () => {
+    const { wrapper, form, state, write, selectedRead } = openForm();
+    await flushPromises();
+    form.set("/name", "Ada");
+    expect(form.dirty.value).toBe(true);
+    write.mockResolvedValueOnce(receipt("new-customer"));
+    selectedRead.resolve(description("Ada"));
+
+    await expect(form.submit()).resolves.toMatchObject({ primaryKey: "new-customer" });
+    await flushPromises();
+    expect(state.values.value.selected).toEqual(objectRef(customerType, "new-customer"));
+    expect(form.values.value.name).toBe("Ada");
+    expect(form.dirty.value).toBe(false);
+    expect(wrapper.emitted("saved")).toEqual([[{ className: customerType, primaryKey: "new-customer" }]]);
+    wrapper.unmount();
+  });
+
+  it("keeps the submitted values and clears dirty state after an edit", async () => {
+    const { wrapper, form, state, selectedRead } = openForm({
+      actions: {
+        declared: { save: updateCustomer },
+        admitted: { save: customerAction({ source: "input", ...editTarget }) },
+      },
+    });
+    const selected = objectRef(customerType, "existing-customer");
+    state.set("selected", selected);
+    selectedRead.resolve(description("Existing customer"));
+    await flushPromises();
+    form.set("/name", "Ada");
+    expect(form.dirty.value).toBe(true);
+
+    await expect(form.submit()).resolves.toMatchObject({ primaryKey: "existing-customer" });
+    expect(state.values.value.selected).toEqual(selected);
+    expect(form.values.value.name).toBe("Ada");
+    expect(form.dirty.value).toBe(false);
+    expect(wrapper.emitted("saved")).toEqual([[selected]]);
     wrapper.unmount();
   });
 });
