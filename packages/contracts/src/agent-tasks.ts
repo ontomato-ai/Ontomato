@@ -53,6 +53,8 @@ export const agentTasksSnapshotSchema = z.object({
   notifications: z.array(runtimeMessageRecordSchema.extend({ message: agentNotificationSchema })).optional(),
   /** Failed preparations have no run; the intent owns this diagnostic, never a synthetic user message. */
   preparationFailures: z.array(z.object({ runId: id, inputId: id, error: z.string(), createdAt: runtimeTimestampSchema }).strict()).optional(),
+  /** Runs accepted and waiting in the session queue before starting (`status === "starting"`). */
+  queuedRuns: z.array(z.object({ runId: id, inputIds: z.array(id), createdAt: runtimeTimestampSchema }).strict()).optional(),
 }).strict();
 /**
  * One `event: tasks` frame of a session's task stream: always the complete snapshot. `settled` says nothing will change

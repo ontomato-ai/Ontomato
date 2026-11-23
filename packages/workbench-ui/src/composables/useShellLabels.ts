@@ -36,6 +36,7 @@ return computed<ShellLabels>(() => ({
   steps: (count) => t("assistant.steps", { n: count }, count),
   thinking: t("assistant.thinking"),
   working: t("assistant.working"),
+  queuedWaiting: t("assistant.queuedWaiting"),
   switchWhileRunning: t("assistant.switchWhileRunning"),
   pageAgentUnavailable: t("assistant.pageAgentUnavailable"),
   collapseComposer: t("assistant.collapseComposer"),
