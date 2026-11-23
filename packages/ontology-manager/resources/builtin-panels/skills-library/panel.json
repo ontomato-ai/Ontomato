@@ -62,30 +62,24 @@
         "id": "builtin-product-e22c6690-9ea4-43cc-974a-9dd77eb068a0"
       },
       "detail": {
-        "component": "PanelData",
+        "component": "ObjectHeader",
         "type": "platform:Skill",
         "target": "selected",
         "data": {
           "record": "record"
         },
-        "id": "builtin-product-ca166b98-1ea4-4411-b040-a439f78e0e49"
-      },
-      "export": {
-        "component": "OperationButton",
-        "type": "platform:Skill",
-        "operation": "skills.export",
-        "target": "selected",
-        "id": "builtin-product-d262d3ad-b49b-4973-ace4-00922490dc1c"
-      },
-      "remove": {
-        "component": "OperationButton",
-        "type": "platform:Skill",
-        "operation": "skills.delete",
-        "target": "selected",
-        "config": {
-          "type": "danger"
+        "operations": {
+          "export": "skills.export",
+          "remove": "skills.delete"
         },
-        "id": "builtin-product-d7696552-3f70-425c-b1f2-880ab17b3dd8"
+        "config": {
+          "subtitleField": "description",
+          "statusField": "source",
+          "dangerOperations": [
+            "remove"
+          ]
+        },
+        "id": "builtin-product-ca166b98-1ea4-4411-b040-a439f78e0e49"
       },
       "tree": {
         "component": "ObjectTree",
@@ -137,8 +131,6 @@
         "panel.importRuleOverwrite": "已有同名技能时会先询问，确认后整包覆盖。",
         "panel.importChoose": "选择 ZIP 文件",
         "panel.select": "从左侧选择一条技能，查看它的技能包",
-        "panel.loading": "正在读取这条技能…",
-        "panel.recordForbidden": "你没有权限查看这条技能",
         "panel.empty": "暂无技能",
         "panel.files": "技能包文件",
         "panel.filesEmpty": "这个技能包没有文件",
@@ -153,8 +145,6 @@
         "panel.importRuleOverwrite": "If a skill with the same name exists, you are asked first; confirming replaces the whole package.",
         "panel.importChoose": "Choose ZIP file",
         "panel.select": "Select a skill on the left to inspect its package",
-        "panel.loading": "Reading this skill…",
-        "panel.recordForbidden": "You cannot read this skill",
         "panel.empty": "No skills yet",
         "panel.files": "Package files",
         "panel.filesEmpty": "This package has no files",
@@ -169,8 +159,6 @@
         "panel.importRuleOverwrite": "已有同名技能時會先詢問，確認後整包覆蓋。",
         "panel.importChoose": "選擇 ZIP 檔案",
         "panel.select": "從左側選擇一條技能，查看它的技能包",
-        "panel.loading": "正在讀取這條技能…",
-        "panel.recordForbidden": "你沒有權限查看這條技能",
         "panel.empty": "尚無 Skill",
         "panel.files": "技能包檔案",
         "panel.filesEmpty": "這個技能包沒有檔案",
@@ -185,8 +173,6 @@
         "panel.importRuleOverwrite": "同名のスキルがある場合は先に確認し、確定するとパッケージ全体を置き換えます。",
         "panel.importChoose": "ZIP ファイルを選択",
         "panel.select": "左側からスキルを選択すると、パッケージ内容を確認できます",
-        "panel.loading": "このスキルを読み込んでいます…",
-        "panel.recordForbidden": "このスキルを閲覧する権限がありません",
         "panel.empty": "Skill はまだありません",
         "panel.files": "パッケージファイル",
         "panel.filesEmpty": "このパッケージにファイルはありません",
@@ -201,8 +187,6 @@
         "panel.importRuleOverwrite": "إذا وُجدت مهارة بالاسم نفسه فسيُطلب التأكيد أولًا، والتأكيد يستبدل الحزمة كاملة.",
         "panel.importChoose": "اختيار ملف ZIP",
         "panel.select": "اختر مهارة من القائمة لعرض حزمتها",
-        "panel.loading": "جارٍ قراءة هذه المهارة…",
-        "panel.recordForbidden": "ليست لديك صلاحية عرض هذه المهارة",
         "panel.empty": "لا توجد مهارات بعد",
         "panel.files": "ملفات الحزمة",
         "panel.filesEmpty": "لا تحتوي هذه الحزمة على ملفات",
@@ -217,8 +201,6 @@
         "panel.importRuleOverwrite": "Si une compétence du même nom existe, une confirmation est demandée ; confirmer remplace tout le paquet.",
         "panel.importChoose": "Choisir un fichier ZIP",
         "panel.select": "Sélectionnez une compétence à gauche pour inspecter son paquet",
-        "panel.loading": "Lecture de cette compétence…",
-        "panel.recordForbidden": "Vous n'avez pas l'autorisation de consulter cette compétence",
         "panel.empty": "Aucun Skill pour le moment",
         "panel.files": "Fichiers du paquet",
         "panel.filesEmpty": "Ce paquet ne contient aucun fichier",
@@ -233,8 +215,6 @@
         "panel.importRuleOverwrite": "Gibt es bereits einen Skill mit diesem Namen, wird zuerst nachgefragt; nach Bestätigung wird das ganze Paket ersetzt.",
         "panel.importChoose": "ZIP-Datei auswählen",
         "panel.select": "Wählen Sie links einen Skill aus, um sein Paket anzusehen",
-        "panel.loading": "Dieser Skill wird geladen…",
-        "panel.recordForbidden": "Sie haben keine Berechtigung, diesen Skill anzusehen",
         "panel.empty": "Noch keine Skills",
         "panel.files": "Paketdateien",
         "panel.filesEmpty": "Dieses Paket enthält keine Dateien",
@@ -249,8 +229,6 @@
         "panel.importRuleOverwrite": "Se esiste già una skill con lo stesso nome viene chiesta conferma; confermando si sostituisce l'intero pacchetto.",
         "panel.importChoose": "Scegli file ZIP",
         "panel.select": "Seleziona una skill a sinistra per ispezionarne il pacchetto",
-        "panel.loading": "Lettura della skill in corso…",
-        "panel.recordForbidden": "Non disponi dell'autorizzazione per leggere questa skill",
         "panel.empty": "Nessuno Skill presente",
         "panel.files": "File del pacchetto",
         "panel.filesEmpty": "Questo pacchetto non contiene file",
