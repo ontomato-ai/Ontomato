@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   boardPreviewModifiedCards,
+  computeDashboardBoardFingerprint,
+  findBoardInlineEditConflicts,
   findMissingPreviewTargets,
   mergeBoardPreview,
   parseBoardPreviewFill,
@@ -138,6 +140,151 @@ describe("mergeBoardPreview", () => {
     expect(mergedRename.chartRenames).toEqual({ c1: "Revenue Line" });
     expect(mergedRename.layoutGroups?.[0]?.charts[0]?.chartFile).toEqual(lineChartFile);
     expect(mergedRename.layoutGroups?.[0]?.charts[0]?.layout).toEqual({ colSpan: 24, rowSpan: 2 });
+  });
+
+  it("preserves prior groupNames/cardNames renames and swapped chartFile when a follow-up groups layout repeats baseline values", () => {
+    const renameFill = parseBoardPreviewFill("d1", savedGroups, {
+      name: "Q4 Sales",
+      groupNames: { g1: "Q4 Overview" },
+      cardNames: { c1: "Revenue Trend", n1: "Q4 Total" },
+    }, 1, "Sales");
+    if (!renameFill.ok) throw new Error("expected ok");
+
+    // Follow-up full layout carries stale baseline group/card names from an earlier board read while swapping c1's chartFile.
+    const chartSwapFill = parseBoardPreviewFill("d1", savedGroups, {
+      groups: [
+        {
+          id: "g1",
+          title: "Overview",
+          charts: [
+            { id: "c1", name: "Revenue by region", chartFile: lineChartFile, layout: { colSpan: 12, rowSpan: 1 } },
+            { id: "c2", name: "Margin trend", layout: { colSpan: 12, rowSpan: 1 } },
+          ],
+          metrics: [{ id: "n1", name: "Total revenue", layout: { colSpan: 4, rowSpan: 1 } }],
+        },
+        {
+          id: "g2",
+          title: "Details",
+          charts: [],
+          metrics: [{ id: "n2", name: "Active customers", layout: { colSpan: 4, rowSpan: 1 } }],
+        },
+      ],
+    }, 2, "Sales");
+    if (!chartSwapFill.ok) throw new Error("expected ok");
+
+    const merged = mergeBoardPreview(renameFill.preview, chartSwapFill.preview, savedGroups);
+    expect(merged.baselineFingerprint).toBe(renameFill.preview.baselineFingerprint);
+    expect(merged.boardName).toBe("Q4 Sales");
+    expect(merged.layoutGroups?.[0]?.title).toBe("Q4 Overview");
+    expect(merged.layoutGroups?.[0]?.charts[0]?.name).toBe("Revenue Trend");
+    expect(merged.layoutGroups?.[0]?.charts[0]?.chartFile).toEqual(lineChartFile);
+    expect(merged.layoutGroups?.[0]?.metrics[0]?.name).toBe("Q4 Total");
+
+    // A third groups layout repeating baseline chartFile and names still preserves prior renames and swapped chartFile,
+    // while an explicit non-baseline name overrides the earlier rename.
+    const thirdFill = parseBoardPreviewFill("d1", savedGroups, {
+      groups: [
+        {
+          id: "g1",
+          title: "Final Overview",
+          charts: [
+            { id: "c1", name: "Revenue by region", chartFile: barChartFile, layout: { colSpan: 24, rowSpan: 2 } },
+            { id: "c2", name: "Margin trend" },
+          ],
+          metrics: [{ id: "n1", name: "Total revenue" }],
+        },
+        {
+          id: "g2",
+          title: "Details",
+          charts: [],
+          metrics: [{ id: "n2", name: "Active customers" }],
+        },
+      ],
+    }, 3, "Sales");
+    if (!thirdFill.ok) throw new Error("expected ok");
+
+    const mergedThird = mergeBoardPreview(merged, thirdFill.preview, savedGroups);
+    expect(mergedThird.layoutGroups?.[0]?.title).toBe("Final Overview");
+    expect(mergedThird.layoutGroups?.[0]?.charts[0]?.name).toBe("Revenue Trend");
+    expect(mergedThird.layoutGroups?.[0]?.charts[0]?.chartFile).toEqual(lineChartFile);
+    expect(mergedThird.layoutGroups?.[0]?.charts[0]?.layout).toEqual({ colSpan: 24, rowSpan: 2 });
+    expect(mergedThird.layoutGroups?.[0]?.metrics[0]?.name).toBe("Q4 Total");
+  });
+});
+
+describe("computeDashboardBoardFingerprint and findBoardInlineEditConflicts", () => {
+  it("ignores transient render fields and detects persisted structural changes", () => {
+    const withRenderFields = savedGroups.map((group) => ({
+      ...group,
+      charts: group.charts.map((chart) => ({
+        ...chart,
+        title: chart.name,
+        state: "ready",
+        rows: [{ region: "East", revenue: 100 }],
+        columns: [{ key: "region", label: "Region", type: null }],
+        truncation: undefined,
+      })),
+      metrics: group.metrics.map((metric) => ({
+        ...metric,
+        state: "ready",
+        rows: [{ total: 100 }],
+        error: undefined,
+      })),
+    }));
+
+    const base = computeDashboardBoardFingerprint("Sales", savedGroups);
+    expect(computeDashboardBoardFingerprint("Sales", withRenderFields)).toBe(base);
+    expect(computeDashboardBoardFingerprint("Sales Updated", savedGroups)).not.toBe(base);
+
+    const reordered = [savedGroups[1]!, savedGroups[0]!];
+    expect(computeDashboardBoardFingerprint("Sales", reordered)).not.toBe(base);
+
+    const addedCard = [
+      {
+        ...savedGroups[0]!,
+        charts: [
+          ...savedGroups[0]!.charts,
+          {
+            id: "c-added",
+            name: "New Card",
+            query: { kind: "metric" as const, metricId: "m-9", parameters: {} },
+            chartFile: lineChartFile,
+            layout: { colSpan: 12, rowSpan: 1 },
+          },
+        ],
+      },
+      savedGroups[1]!,
+    ];
+    expect(computeDashboardBoardFingerprint("Sales", addedCard)).not.toBe(base);
+  });
+
+  it("detects inline edit conflicts only on matching board/group/card targets", () => {
+    const renameBoard = parseBoardPreviewFill("d1", savedGroups, { name: "New Board" }, 1, "Sales");
+    const renameGroup = parseBoardPreviewFill("d1", savedGroups, { groupNames: { g1: "New Group" } }, 2, "Sales");
+    const renameCard = parseBoardPreviewFill("d1", savedGroups, { cardNames: { c1: "New Chart" } }, 3, "Sales");
+    const swapChartKeepingBaselineNames = parseBoardPreviewFill("d1", savedGroups, {
+      groups: [
+        {
+          id: "g1",
+          title: "Overview",
+          charts: [{ id: "c1", name: "Revenue by region", chartFile: lineChartFile }, { id: "c2" }],
+          metrics: [{ id: "n1" }],
+        },
+        { id: "g2", title: "Details", charts: [], metrics: [{ id: "n2" }] },
+      ],
+    }, 4, "Sales");
+    if (!renameBoard.ok || !renameGroup.ok || !renameCard.ok || !swapChartKeepingBaselineNames.ok) {
+      throw new Error("expected ok");
+    }
+
+    expect(findBoardInlineEditConflicts("Sales", savedGroups, renameBoard.preview, { boardName: true })).toHaveLength(1);
+    expect(findBoardInlineEditConflicts("Sales", savedGroups, renameGroup.preview, { boardName: true })).toEqual([]);
+    expect(findBoardInlineEditConflicts("Sales", savedGroups, renameGroup.preview, { groupId: "g1" })).toHaveLength(1);
+    expect(findBoardInlineEditConflicts("Sales", savedGroups, renameCard.preview, { groupId: "g1" })).toEqual([]);
+    expect(findBoardInlineEditConflicts("Sales", savedGroups, renameCard.preview, { cardId: "c1" })).toHaveLength(1);
+    expect(findBoardInlineEditConflicts("Sales", savedGroups, renameCard.preview, { cardId: "n1" })).toEqual([]);
+    // Layout swapping chartFile while leaving group/card names at baseline does not conflict with inline rename of g1 or c1.
+    expect(findBoardInlineEditConflicts("Sales", savedGroups, swapChartKeepingBaselineNames.preview, { groupId: "g1", cardId: "c1" })).toEqual([]);
   });
 });
 
