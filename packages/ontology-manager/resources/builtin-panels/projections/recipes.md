@@ -8,7 +8,7 @@
 - 左侧列表（`catalogue`）是本域里**当前读者有使用授权**的投影，按游标分页（支持切换 10/20/50 每页条数）。列：名称与说明、所用组件、所属人、共享范围、更新时间。
 - 范围（`scope`）：`all`（全部，默认）＝有使用授权的全部投影；`mine`（我的）＝所属人是当前读者的；`shared`（共享）＝所属人不是当前读者的。
 - 排序（`sort`）：`updated`（最近更新，默认）或 `name`（名称）。检索（`search`）同时匹配名称和说明。
-- 地址深链只携带视图定位状态（扁平具名查询参数）：`selected`、`search`、`scope`、`sort`、`tab`（`overview` / `definition` / `usage` / `grants`）。对话框开关与编辑态（`creating`、`detailMode`、`copyDialog`、`deleteDialog`、`grantDialog` 等）为公开状态，智能体可读可改，但不写入地址。
+- 地址深链只携带视图定位状态（扁平具名查询参数）：`selected`、`search`、`scope`、`sort`、`tab`（`overview` / `definition` / `usage` / `grants`）。对话框开关与编辑态（`creating`、`detailMode`、`copyDialog`、`grantDialog` 等）为公开状态，智能体可读可改，但不写入地址；只切换 `selected` 时自动回到查看态并关闭已打开的弹窗。
 - 选中一条投影后，右侧分标签展示：
   - `overview`（概览与预览）：基础属性摘要（含可跳转的组件引用）与原位预览（`preview` 槽位挂载当前选中投影）。
   - `definition`（定义与绑定）：数据来处/读法/参数表（`dataList`，来处引用可跳转至能力图谱、对象类、关系类、行动或指标视图）、组件配置表（`configList`）、输入/输出端口表（`inputsList` / `outputsList`）、属主登记的操作表（`operationsList`），以及可展开的完整 JSON 定义（`definitionSummary`）。
@@ -35,8 +35,8 @@
 
 | 成员与操作 | 属主操作 | 输入参数 | 说明 |
 | --- | --- | --- | --- |
-| `copySubmit.copy` | `productProjections.copy` | `{ id, name }` | 复制为一条新的**私有**投影；图投影不可复制，属主会拒绝。 |
-| `deleteSubmit.delete` | `productProjections.delete` | `{ revision }` | 删除选中投影；被任何面板使用时属主拒绝（`PRODUCT_IN_USE`）。 |
+| `copySubmit.copy` | `productProjections.copy` | `{ id, name }` | 复制为一条新的**私有**投影（需具备编辑权且非图投影）；复制成功后仅按属主回执的 `data.id` 切换选中。 |
+| `deleteProjection.delete` | `productProjections.delete` | `{ revision }` | 删除选中投影；由宿主经属主 `inspectImpact` 弹出确认框，列出可见使用面板名称与隐藏引用提示，被任何面板使用时属主拒绝（`PRODUCT_IN_USE`）。 |
 | `grantSubmit.grant` | `productProjections.grant` | `{ principalKind: "principal" \| "role", principalId, verb: "use" \| "edit" }` | 给成员或角色授予使用或编辑权。 |
 | `grantsList.revoke` | `productProjections.revoke` | `{ principalKind, principalId, verb }` | 撤销授权列表中的单条成员/角色授权（域内共享行不可在行内撤销，请使用域内共享开关）。 |
 | `shareEnable.share` / `shareDisable.share` | `productProjections.share` | `{ shared: boolean }` | 开启或关闭域内所有成员的使用授权。 |
