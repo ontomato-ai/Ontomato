@@ -43,10 +43,10 @@
           <span v-else class="agent-settings-summary"></span>
           <div class="agent-settings-actions">
             <sdk-button text size="small" @click="viewType">{{ t('agents.viewType') }}</sdk-button>
-            <projection v-if="mode === 'edit'" slot="remove"></projection>
+            <projection v-if="selectedReady" slot="remove"></projection>
           </div>
         </div>
-        <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
+        <section-group v-if="mode === 'create' || selectedReady" :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
           <projection slot="form">
             <template #field-modelSelection.modelId><projection slot="model"></projection></template>
             <template #field-skills><projection slot="skills"></projection></template>

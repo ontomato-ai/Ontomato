@@ -421,6 +421,7 @@ describe("agent-settings builtin panel", () => {
   function mountBuiltinRoute(options: {
     initialState?: Record<string, unknown>;
     onListRead: () => Response | Promise<Response>;
+    onSummaryRead?: (targetPrimaryKey: string | undefined) => Response | Promise<Response>;
     onDelete?: (targetPrimaryKey: string) => void;
   }) {
     const router = createRouter({
@@ -500,6 +501,7 @@ describe("agent-settings builtin panel", () => {
         }
         if (member === "summary") {
           const target = (body.inputs.agent ?? body.inputs.target) as { primaryKey?: string } | undefined;
+          if (options.onSummaryRead) return options.onSummaryRead(target?.primaryKey);
           const id = target?.primaryKey ?? AGENT;
           const label = id === OTHER ? "Planner" : String(stored.name);
           return Response.json({
@@ -767,35 +769,53 @@ describe("agent-settings builtin panel", () => {
     }
   });
 
-  it("replaces a missing deep-linked selected agent with the first listed agent, or clears to list mode when empty", async () => {
+  it("keeps an explicit missing or forbidden deep-linked selection in place without falling back to another agent", { timeout: 20000 }, async () => {
     const missingId = "0b6f6a62-4f0a-4c5e-9d4f-2f1f8a0c1a99";
-    const fallbackRoute = mountBuiltinRoute({
+    const missingRoute = mountBuiltinRoute({
       initialState: { selected: { className: AGENT_DEFINITION, primaryKey: missingId } },
       onListRead: () => Response.json({ status: "ready", value: [agentRow(OTHER, "Planner", "Plans tasks")] }),
+      onSummaryRead: (primaryKey) => primaryKey === missingId
+        ? Response.json({ status: "error", message: "Agent definition not found" })
+        : Response.json({
+          status: "ready",
+          value: { primaryKey: OTHER, label: "Planner", fields: { description: "Plans tasks", enabled: true } },
+        }),
     });
-    const fallbackPage = await fallbackRoute.open();
+    const missingPage = await missingRoute.open();
     try {
       await vi.waitFor(() => {
-        expect(fallbackRoute.router.currentRoute.value.query.selected).toBe(OTHER);
-        expect(fallbackRoute.router.currentRoute.value.query.mode).toBe("edit");
+        expect(missingPage.element.querySelectorAll(".sdk-object-list [role=option]")).toHaveLength(1);
+        expect(missingPage.element.textContent).toContain("Agent definition not found");
       }, { timeout: 5000 });
+      expect(missingRoute.router.currentRoute.value.query.selected).toBe(missingId);
+      expect(missingRoute.router.currentRoute.value.query.mode).toBe("edit");
+      expect(fieldItem("/name")).toBeNull();
+      const deleteButtons = [...missingPage.element.querySelectorAll<HTMLButtonElement>(".agent-settings-actions button")]
+        .filter((button) => button.textContent?.trim() === "Delete");
+      expect(deleteButtons).toHaveLength(0);
     } finally {
-      fallbackPage.app.unmount();
+      missingPage.app.unmount();
     }
 
-    const emptyRoute = mountBuiltinRoute({
+    const forbiddenRoute = mountBuiltinRoute({
       initialState: { selected: { className: AGENT_DEFINITION, primaryKey: missingId } },
-      onListRead: () => Response.json({ status: "ready", value: [] }),
+      onListRead: () => Response.json({ status: "ready", value: [agentRow(OTHER, "Planner", "Plans tasks")] }),
+      onSummaryRead: () => Response.json({ status: "forbidden" }),
     });
-    const emptyPage = await emptyRoute.open();
+    const forbiddenPage = await forbiddenRoute.open();
     try {
       await vi.waitFor(() => {
-        expect(emptyRoute.router.currentRoute.value.query.selected).toBeUndefined();
-        expect(emptyRoute.router.currentRoute.value.query.mode).toBe("list");
-        expect(emptyPage.element.textContent).toContain("Select an agent on the left, or create one.");
+        expect(forbiddenPage.element.querySelectorAll(".sdk-object-list [role=option]")).toHaveLength(1);
+        expect(forbiddenPage.element.querySelector(".agent-settings-summary")?.textContent?.trim()).toBeTruthy();
       }, { timeout: 5000 });
+      expect(forbiddenRoute.router.currentRoute.value.query.selected).toBe(missingId);
+      expect(forbiddenRoute.router.currentRoute.value.query.mode).toBe("edit");
+      expect(fieldItem("/name")).toBeNull();
+      const deleteButtons = [...forbiddenPage.element.querySelectorAll<HTMLButtonElement>(".agent-settings-actions button")]
+        .filter((button) => button.textContent?.trim() === "Delete");
+      expect(deleteButtons).toHaveLength(0);
     } finally {
-      emptyPage.app.unmount();
+      forbiddenPage.app.unmount();
     }
   });
 });
