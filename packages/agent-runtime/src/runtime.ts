@@ -1,4 +1,5 @@
 import { AgentChannel, type AgentProvider } from "./channel";
+import { processLanguageInstruction } from "./process-language";
 import { agentChannelCommandSchema, agentNotificationSchema, type AgentRunIntent } from "@ontomato/contracts/agent-channel";
 import { BUILD_TEST_UNSUPPORTED } from "@ontomato/contracts/build-tests";
 import { presentationResultSchema, type RuntimePresentationCallback } from "@ontomato/contracts/agent-presentation";
@@ -440,7 +441,7 @@ export class AgentRuntime {
     }
     if (envelope.event.type === "agent_end") active.subscribers.clear();
   }
-  private publishSessionRun(scope: Scope, frame: RuntimeSessionRunFrame) {
+  publishSessionRun(scope: Scope, frame: RuntimeSessionRunFrame) {
     const id = canonical([scope.hostId, scope.domainId]);
     for (const subscriber of this.sessionRunSubscribers.get(id) ?? [])
       subscriber(frame);
@@ -550,6 +551,12 @@ export class AgentRuntime {
         message: projectMessage(event.message as Message),
       });
     if (event.type === "tool_execution_end") {
+      if (process.env.NODE_ENV === "development" && event.durationMs !== undefined) {
+        runtimeLogger.info("Query timing tool execution", {
+          kind: "downstream", target: event.toolName,
+          durationMs: event.durationMs, outcome: event.isError ? "failure" : "success",
+        });
+      }
       const result = {
         content: event.result.content,
         details: {
@@ -559,7 +566,14 @@ export class AgentRuntime {
             : { data: event.result.structuredContent }),
         },
       };
+      const collectionStarted = performance.now();
       result.details.artifactIds = await this.collect(active, event.toolCallId);
+      if (process.env.NODE_ENV === "development") {
+        runtimeLogger.info("Query timing tool artifact collection", {
+          kind: "downstream", target: event.toolName,
+          durationMs: Math.round(performance.now() - collectionStarted), outcome: "success",
+        });
+      }
       const envelope = await this.emit(active, { ...event, result });
       event.result.details = result.details;
       const args = active.toolArgs.get(event.toolCallId);
@@ -693,6 +707,7 @@ export class AgentRuntime {
               request.definition.systemPrompt,
               request.definition.context,
               skillCatalog(sandbox.workspace, skills),
+              processLanguageInstruction(request.language),
             ]
               .filter(Boolean)
               .join("\n\n");

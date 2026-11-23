@@ -161,6 +161,7 @@ export const runtimeStreamFrameSchema = z.discriminatedUnion("type", [
  */
 export const runtimeSessionRunFrameSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ready") }).strict(),
+  z.object({ type: z.literal("delegated_changed"), sessionId: runtimeIdSchema, runId: runtimeIdSchema }).strict(),
   z
     .object({
       type: z.literal("run_started"),

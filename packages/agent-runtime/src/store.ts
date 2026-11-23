@@ -390,7 +390,14 @@ export class RuntimeStore {
     // One statement gives session pointers and latest statuses the same MVCC snapshot.
     const { rows } = await this.pool.query(
       `SELECT s.id,s.workspace_id,s.active_run_id,s.latest_run_id,s.created_at,s.updated_at,
-        r.id AS run_id,r.run->>'status' AS run_status,r.run->>'stopReason' AS stop_reason
+        r.id AS run_id,r.run->>'status' AS run_status,r.run->>'stopReason' AS stop_reason,
+        EXISTS (SELECT 1 FROM ${this.table("admissions")} a
+          WHERE a.domain_id=s.domain_id AND a.intent->'channel'->'root'->'session' =
+            jsonb_build_object('providerId',s.channel->'agent'->>'providerId','sessionId',s.id::text)
+          AND a.intent->'channel'->'requestedBy' IS NOT NULL
+          AND a.intent->'channel'->'requestedBy' <> 'null'::jsonb
+          AND a.intent->>'status' IN ('starting','running')
+          AND COALESCE((a.intent->>'cancelled')::boolean,false)=false) AS delegated_running
        FROM ${this.table("sessions")} s LEFT JOIN ${this.table("runs")} r
          ON r.host_id=s.host_id AND r.domain_id=s.domain_id AND r.session_id=s.id AND r.id=s.latest_run_id
        WHERE s.host_id=$1 AND s.domain_id=$2 AND s.id=ANY($3::uuid[])`,
@@ -415,6 +422,7 @@ export class RuntimeStore {
               id: row.run_id,
               status: row.run_status,
               stopReason: row.stop_reason,
+              delegatedRunning: row.delegated_running,
             }
           : null,
       };

@@ -4,6 +4,7 @@ import type { ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
 import type { AgentHostRunSnapshot } from "@ontomato/contracts/agent-host";
 import type { ShellTaskPort } from "../host";
 import TaskDrawer from "../components/tasks/TaskDrawer.vue";
+import TaskCard from "../components/tasks/TaskCard.vue";
 import ShellResponse from "../components/ShellResponse.vue";
 import { shellContextKey, type ShellContext } from "../context";
 import type { ResponseItem } from "../view";
@@ -18,6 +19,36 @@ const item: ResponseItem = {
   end: { stopReason: "stop", errorMessage: null }, answerMessageId: null, answerText: "", reviews: [],
   process: [{ kind: "task", key: `task:${task.id}`, task }], startedAt: 0, finishedAt: 25_000,
 };
+
+it("retains a retriever's loaded content and subscription across collapse and reopen", async () => {
+  const running: ChannelAgentTask = { ...task, status: "running", process: {
+    mode: "inline", runtimeSessionId: task.sessionRef.sessionId, runtimeRunId: task.runId,
+  } };
+  const snapshot: AgentHostRunSnapshot = { pendingQuestions: [],
+    run: { id: task.runId, sessionId: task.sessionRef.sessionId, status: "running", stopReason: null,
+      errorMessage: null, answerMessageId: null, workspaceCommit: null, createdAt: new Date(0).toISOString(), finishedAt: null, resolvedSkills: [] },
+    cursor: { runId: task.runId, seq: 1, streamId: task.id }, messages: [], toolExecutions: [], artifacts: [],
+    pendingMessages: [{ id: "note", message: { role: "assistant", content: [{ type: "text", text: "Inspecting records" }],
+      api: null, provider: null, model: null, usage: null, stopReason: "pending", timestamp: 1 } }],
+  };
+  const detach = vi.fn();
+  const port: ShellTaskPort = { subscribe: vi.fn(), readProcess: vi.fn().mockResolvedValue(snapshot), subscribeProcess: vi.fn().mockReturnValue(detach) };
+  const root = document.createElement("div"); document.body.append(root);
+  const app = createApp({ render: () => h(TaskCard, { task: running, sessionId: task.root.sessionId }) });
+  app.provide(shellContextKey, { labels: ref({ tasks: { retriever: "Retriever", status: { running: "Running" } } }), tasks: port } as unknown as ShellContext);
+  app.mount(root);
+  try {
+    await vi.waitFor(() => expect(root.textContent).toContain("Inspecting records"));
+    root.querySelector<HTMLButtonElement>(".task-summary")!.click(); await nextTick();
+    expect((root.querySelector(".task-body") as HTMLElement).style.display).toBe("none");
+    expect(detach).not.toHaveBeenCalled();
+    root.querySelector<HTMLButtonElement>(".task-summary")!.click(); await nextTick();
+    expect(root.textContent).toContain("Inspecting records");
+    expect(port.readProcess).toHaveBeenCalledTimes(1);
+    expect(port.subscribeProcess).toHaveBeenCalledTimes(1);
+  } finally { app.unmount(); root.remove(); }
+  expect(detach).toHaveBeenCalledOnce();
+});
 
 it("opens a finished reply's folded process when the reader picks one of its tasks from the list", async () => {
   const root = document.createElement("div");

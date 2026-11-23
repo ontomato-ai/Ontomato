@@ -11,6 +11,7 @@ final class DatasetFileContract {
     AgentJson.fields(
         body,
         "recipe",
+        "conditionBindings",
         "sourceAnalysis",
         "title",
         "question",

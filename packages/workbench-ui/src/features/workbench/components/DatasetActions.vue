@@ -25,7 +25,9 @@ onMounted(async () => {
 
 <template>
   <template v-if="source">
-    <el-button class="scope-action" text size="small" :icon="SlidersHorizontal" @click="adjusting = true">{{ t('assistant.adjustScope') }}</el-button>
+    <button type="button" class="dataset-action" :title="t('assistant.adjustScope')" :aria-label="t('assistant.adjustScope')" @click="adjusting = true">
+      <SlidersHorizontal :size="15" />
+    </button>
     <AnalysisScopeDialog v-model="adjusting" :artifact="artifact" :title="title" />
     <button
       type="button"
@@ -47,7 +49,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.scope-action { flex-shrink: 0; }
 .dataset-action {
   display: grid;
   place-items: center;

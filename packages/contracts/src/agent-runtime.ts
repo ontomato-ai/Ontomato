@@ -212,6 +212,7 @@ export const runtimeSessionStatusSchema = z
         id: runtimeIdSchema,
         status: runtimeRunStatusSchema,
         stopReason: runtimeStopReasonSchema.nullable(),
+        delegatedRunning: z.boolean().optional(),
       })
       .strict()
       .nullable(),

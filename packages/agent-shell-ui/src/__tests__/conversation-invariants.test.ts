@@ -105,6 +105,26 @@ describe("delegated tasks in a reply", () => {
     expect(review.datasets).toEqual([{ id: dataset, title: "Sales" }]);
   });
 
+  it("keeps a running retrieval handoff without a second answer action target", () => {
+    const state = emptyConversation(sessionId);
+    const answer = { ...partial, stopReason: "stop" as const, timestamp: 5, content: [
+      { type: "text" as const, text: "取数任务已启动，结果返回后我再给出结论。" },
+    ] };
+    applyRunSnapshot(state, snapshot({
+      run: run({ status: "stopped", stopReason: "stop", answerMessageId: replyId, finishedAt: timestamp }),
+      messages: [user, { contextSeq: 1, id: replyId, runId, messageSeq: 1, message: answer }],
+    }));
+
+    const running = { ...tasks, tasks: tasks.tasks.map(task => task.kind === "agent" ? { ...task, status: "running" as const } : task) };
+    const response = conversationItems(state, running).find((item) => item.kind === "response")!;
+    expect(response.answerMessageId).toBeNull();
+    expect(response.answerText).toBe("");
+    expect(response.process.map((block) => block.kind)).toEqual(["task", "note"]);
+    expect(response.process.at(-1)).toMatchObject({ kind: "note", text: "取数任务已启动，结果返回后我再给出结论。" });
+    // Without evidence of a handoff, a completed delegation must not hide a real answer.
+    expect(conversationItems(state, tasks).find(item => item.kind === "response")?.answerMessageId).toBe(replyId);
+  });
+
   it("puts a check under the reply that cited the data, not the reply that delegated the retrieval", () => {
     const state = emptyConversation(sessionId);
     applyRunSnapshot(state, snapshot({ messages: [user], pendingMessages: [{ id: partialId, message: partial }] }));
@@ -113,6 +133,29 @@ describe("delegated tasks in a reply", () => {
     const response = conversationItems(state, later).find((item) => item.kind === "response")!;
     expect(response.process.some((block) => block.kind === "task")).toBe(true);
     expect(response.reviews).toEqual([]);
+  });
+
+  it("shows real retrieval progress through the handoff and clears it when the answer settles", () => {
+    const state = emptyConversation(sessionId);
+    applyRunSnapshot(state, snapshot({
+      run: run({ status: "stopped", stopReason: "stop", answerMessageId: replyId, finishedAt: at(5) }),
+      messages: [user, { contextSeq: 1, id: replyId, runId, messageSeq: 1, message: { ...partial, stopReason: "stop" } }],
+    }));
+    const progress = (snapshot: AgentTasksSnapshot) => conversationItems(state, snapshot).flatMap(item =>
+      item.kind === "response" && item.retrievalProgress ? [[item.runId, item.retrievalProgress]] : []);
+    const retrieving = { ...tasks, tasks: tasks.tasks.map(task => task.kind === "agent" ? { ...task, status: "running" as const } : task) };
+    expect(progress(retrieving)).toEqual([[runId, "retrieving"]]);
+    expect(progress(tasks)).toEqual([[runId, "datasetReady"]]);
+    const answerRun = "12121212-1212-4121-8121-121212121212";
+    const notification = { contextSeq: 0, id: answerRun, runId: answerRun, messageSeq: 2, message: {
+      role: "notification" as const, kind: "agent-result" as const, source: { session: { providerId: "ontology", sessionId: roundId }, runId: roundId },
+      content: "Delivered", timestamp: 6,
+    } };
+    const continuation = snapshot({ run: run({ id: answerRun }), cursor: { runId: answerRun, seq: 3, streamId }, messages: [notification] });
+    applyRunSnapshot(state, continuation);
+    expect(progress(tasks)).toEqual([[answerRun, "answering"]]);
+    applyRunSnapshot(state, { ...continuation, run: run({ id: answerRun, status: "stopped", finishedAt: at(9) }) });
+    expect(progress(tasks)).toEqual([]);
   });
 });
 

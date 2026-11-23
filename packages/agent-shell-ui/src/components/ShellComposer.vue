@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from "vue";
-import { ArrowUp, MessageSquare, Minus, Send, Square } from "lucide-vue-next";
+import { ArrowUp, LoaderCircle, MessageSquare, Minus, Send, Square } from "lucide-vue-next";
 import { ActionTooltip } from "@ontomato/foundation-ui/overlay";
 import type { ShellLabels } from "../types";
 import type { ComposerEntry } from "../page-composer-entry";
@@ -160,7 +160,7 @@ defineExpose({ focus: () => input.value?.focus() });
         </template>
         <div v-if="$slots.context" class="composer-context"><slot name="context" /></div>
         <div class="composer-actions">
-          <ActionTooltip v-if="busy" :content="tooltipText(labels.stop)">
+           <ActionTooltip v-if="busy && !sending" :content="tooltipText(labels.stop)">
           <button
             type="button"
             class="composer-button stop"
@@ -170,14 +170,16 @@ defineExpose({ focus: () => input.value?.focus() });
             <Square :size="12" fill="currentColor" />
           </button>
           </ActionTooltip>
-          <ActionTooltip v-if="!busy || hasText" :content="tooltipText(labels.send)">
+           <ActionTooltip v-if="sending || !busy || hasText" :content="tooltipText(labels.send)">
           <button
             type="submit"
             class="composer-button"
             :disabled="!canSend"
-            :aria-label="labels.send"
+             :aria-label="labels.send"
+             :aria-busy="sending || undefined"
           >
-            <Send v-if="sendIcon === 'plane'" :size="13" aria-hidden="true" />
+             <LoaderCircle v-if="sending" :size="16" class="sending-spinner" aria-hidden="true" />
+             <Send v-else-if="sendIcon === 'plane'" :size="13" aria-hidden="true" />
             <ArrowUp v-else :size="16" aria-hidden="true" />
           </button>
           </ActionTooltip>
@@ -188,6 +190,9 @@ defineExpose({ focus: () => input.value?.focus() });
 </template>
 
 <style scoped>
+.sending-spinner { animation: composer-spin 1s linear infinite; }
+@keyframes composer-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sending-spinner { animation: none; } }
 /*
  * One block. Under a conversation: the input across the whole width, two lines high to start, and the controls on the
  * line under it — what the message carries on the left, send on the right. Floating over a page: an upper layer with the

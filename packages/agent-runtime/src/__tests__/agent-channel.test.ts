@@ -26,6 +26,7 @@ function channel() {
     importAgentFile: vi.fn(async () => "outputs/agents/delivered.dataset.json"),
     locked: async (_scope: unknown, _session: unknown, fn: () => Promise<unknown>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     questionsChanged: vi.fn(async()=>{}),
+    publishSessionRun: vi.fn(),
     seal: vi.fn(() => expect(locked).toBe(true)),
   } as unknown as AgentRuntime;
   const port = new AgentChannel(runtime);
@@ -418,10 +419,13 @@ it("fails explicitly after runtime memory is lost and never passes a missing cre
   expect(fetch).not.toHaveBeenCalled();
 });
 it("retains only the root credential until delegated business attachments finish, then drops it",async()=>{
-  const {channel:port}=channel();
+  const {runtime,channel:port}=channel();
   const child={id:inputId,session:{...source.session,sessionId:inputId},channel:{...context,requestedBy:source},inputId,language:"en",status:"running" as const,createdAt:new Date(0).toISOString(),error:null,cancelled:false};
   const reserve=vi.spyOn(port.facts,"reserve").mockResolvedValue(child);vi.spyOn(port,"prepare").mockResolvedValue();
   await port.execute(scope,run,{op:"start",agent:context.agent,message:"Inspect"});
+  expect(runtime.publishSessionRun).toHaveBeenCalledWith(scope, {
+    type: "delegated_changed", sessionId, runId,
+  });
   expect(JSON.stringify(reserve.mock.calls)).not.toContain("initiating-token");
   vi.mocked(port.facts.intent).mockImplementation(async (_scope,id) => id===child.id ? {...child,status:"completed"} : {...child,id:runId,session:source.session,channel:context});
   const projection={status:"completed",summary:"Done",process:{mode:"none"},results:[],files:[]};

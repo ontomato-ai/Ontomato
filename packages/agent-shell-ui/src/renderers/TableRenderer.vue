@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from "vue";
+import { ChevronDown, ChevronUp } from "lucide-vue-next";
 import { CodeEditor } from "@ontomato/foundation-ui/code";
 import { TablePreview, jsonTable, parseCsv, type TableArrangeLabels, type TableData } from "@ontomato/foundation-ui/preview";
 import { shellContextKey } from "../context";
@@ -9,6 +10,7 @@ import { useArtifactText } from "./useArtifactBlob";
 import SubgraphView from "./SubgraphView.vue";
 import SlotOutlet from "../components/SlotOutlet.vue";
 import DatasetSelectionButton from "../components/DatasetSelectionButton.vue";
+import AttachmentCell from "./AttachmentCell.vue";
 
 /**
  * .csv and .json datasets in the shared table, a page at a time, which the reader can sort and filter without changing
@@ -116,13 +118,16 @@ watch(() => props.artifact.id, () => {
         :selection-disabled="continuing"
         :arrange="arrange"
         @update:selected="selected = $event"
-      />
+      >
+        <template #cell="{ text: cellText }"><AttachmentCell :text="cellText ?? ''" /></template>
+      </TablePreview>
       <p v-if="parsed.rowLimit !== null" class="partial" role="note">{{ labels.truncatedRows(parsed.rowLimit) }}</p>
       <section v-if="parsed.graph" class="lineage" :aria-label="labels.datasetLineage">
         <div class="lineage-head">
           <span class="lineage-title">{{ labels.datasetLineage }}</span>
           <button type="button" class="lineage-toggle" :aria-expanded="lineageOpen" @click="lineageOpen = !lineageOpen">
             {{ lineageOpen ? labels.hideLineage : labels.showLineage }}
+            <component :is="lineageOpen ? ChevronUp : ChevronDown" :size="14" aria-hidden="true" />
           </button>
         </div>
         <ul class="lineage-queries">
@@ -161,7 +166,7 @@ watch(() => props.artifact.id, () => {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md) 0;
+  padding: var(--spacing-sm) var(--spacing-md);
 }
 .lineage-title {
   color: var(--el-text-color-primary);
@@ -169,7 +174,12 @@ watch(() => props.artifact.id, () => {
   font-weight: var(--font-semibold, 600);
 }
 .lineage-toggle {
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
   border: 0;
   background: transparent;
   color: var(--el-color-primary);
@@ -181,6 +191,7 @@ watch(() => props.artifact.id, () => {
   outline: 2px solid var(--el-color-primary);
   outline-offset: 1px;
 }
+.lineage-toggle:hover { background: var(--el-fill-color-light); }
 .lineage-queries {
   list-style: none;
   margin: 0;

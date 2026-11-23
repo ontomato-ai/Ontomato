@@ -163,7 +163,9 @@ function toggle(row: number, selected: number[]) {
             @change="filter(index, $event)"
           />
         </template>
-        <template #default="{ row }">{{ row.cells[index] }}</template>
+        <template #default="{ row }">
+          <slot name="cell" :text="row.cells[index]" :row-index="row.source" :column-index="index">{{ row.cells[index] }}</slot>
+        </template>
       </el-table-column>
     </el-table>
     <el-pagination
@@ -221,6 +223,42 @@ function toggle(row: number, selected: number[]) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.table-preview :deep(.caret-wrapper) {
+  width: 20px;
+  height: 24px;
+  margin-left: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.table-preview :deep(.caret-wrapper:hover) {
+  background: var(--el-fill-color-light);
+}
+
+/* Keep the table's sorting controls and hit targets, with light outline chevrons. */
+.table-preview :deep(.sort-caret) {
+  width: 6px;
+  height: 6px;
+  left: 7px;
+  border: 0;
+  border-top: 1.5px solid var(--el-text-color-placeholder);
+  border-left: 1.5px solid var(--el-text-color-placeholder);
+}
+
+.table-preview :deep(.sort-caret.ascending) {
+  top: 5px;
+  transform: rotate(45deg);
+}
+
+.table-preview :deep(.sort-caret.descending) {
+  bottom: 5px;
+  transform: rotate(225deg);
+}
+
+.table-preview :deep(.ascending .sort-caret.ascending),
+.table-preview :deep(.descending .sort-caret.descending) {
+  border-color: var(--el-color-primary);
 }
 
 /* Element Plus gives a checkbox a 32px line of its own; here it is only as tall as its box and sits in the middle of
