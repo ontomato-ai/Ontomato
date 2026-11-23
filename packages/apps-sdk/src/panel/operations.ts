@@ -1,6 +1,6 @@
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
 import { projectionOperation } from "@ontomato/contracts/panel-projection";
-import { operationCall, operationInvocation, type PanelProjectionRegistration } from "./ports";
+import { operationCall, operationInvocation, slotInputValues, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
 import type { PanelFormAdapters } from "./forms";
@@ -47,7 +47,7 @@ export function panelOperations(
               operationId: operation.id,
               descriptor,
               ...(binding ? { binding } : {}),
-              extraInput: input,
+              memberInputs: slotInputValues(manifest, registration.slot, state.values.value),
             });
           }
           return write(operation.id, operationInvocation(operation, state.values.value, input ?? {}));

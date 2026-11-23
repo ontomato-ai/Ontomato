@@ -9,6 +9,7 @@ import type { FormFieldRejection, PageActionConfirmedDispatchResult, PendingPage
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
 import {
+  declaredCustomerFormSaveName,
   panelFormObjectActiveFields,
   pruneInactivePanelFormVariants,
   type PanelFormDescription,
@@ -22,10 +23,12 @@ import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember, useMemberOutput } from "../panel/member";
+import { missingOperationDescriptorResult } from "../panel/member-operations";
 import {
   PanelConfirmationDeferred,
   PanelOperationDeferred,
   summarizeDispatchResponse,
+  type PanelAgentActionContext,
 } from "../panel/instance";
 import {
   applyActionSaveReadOnly,
@@ -44,7 +47,14 @@ import {
 import { formControlsKey } from "./form-controls";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldPlace from "./FormFieldPlace.vue";
-import { activeFieldAt, changedFieldPaths, fieldShowing, preserveInactiveVariantValues } from "./form-placement";
+import {
+  activeFieldAt,
+  changedFieldPaths,
+  fieldShowing,
+  preserveInactiveVariantValues,
+  resolveActiveField,
+  validateFormFieldValue,
+} from "./form-placement";
 import { resolveLocalizedText } from "./localized-text";
 import {
   formFieldsContextKey,
@@ -503,15 +513,45 @@ const unregisterReset = panel.instance.registerActionHandler(
     return { ok: true, outcome: { discarded: true } };
   },
 );
+const saveOperationName = computed<string | null>(() => {
+  if (admittedSave.value) return admittedSave.value.name;
+  if (isCustomerForm) {
+    return declaredCustomerFormSaveName(member.projection.operations, isCreate.value) ?? null;
+  }
+  const platformSave = Object.entries(member.projection.operations ?? {}).find(
+    ([name, binding]) => binding.operation.kind === "PlatformOperation"
+      && (binding.operation.id.endsWith(".save") || name === "save"),
+  );
+  return platformSave?.[0] ?? null;
+});
+
 let unregisterSave: (() => void) | null = null;
-watch(admittedSave, (save) => {
+watch(saveOperationName, (name) => {
   unregisterSave?.();
   unregisterSave = null;
-  if (!save) return;
+  if (!name) return;
   unregisterSave = panel.instance.registerActionHandler(
-    panel.instance.operationIdOf(slot.slot, save.name),
-    async () => {
-      const outcome = await write();
+    panel.instance.operationIdOf(slot.slot, name),
+    async ({ agentContext }) => {
+      if (!mounted || unmounted || !target.value || !opened.value || loading.value || asking.value) {
+        return { ok: false, reason: "action_not_ready", message: "The form is not ready to save." };
+      }
+      if (failure.value) {
+        return { ok: false, reason: "failed", message: failure.value.reason.message };
+      }
+      if (saving.value) {
+        return { ok: false, reason: "action_unavailable", message: "The form is currently saving." };
+      }
+      if (!admittedSave.value) {
+        return missingOperationDescriptorResult(member.operations.value, name);
+      }
+      if (!isCreate.value && !canSettle.value) {
+        return { ok: false, reason: "action_unavailable", message: "The form has no unsaved changes to save." };
+      }
+      if (Object.keys(activeInvalid.value).length > 0) {
+        return { ok: false, reason: "validation_failed", message: t("platform.formFixInvalid") };
+      }
+      const outcome = await write(undefined, agentContext);
       return { ok: true, outcome };
     },
   );
@@ -1061,17 +1101,71 @@ useProjectionForm({
       filledFields.push(pointer);
     };
 
+    const fillableFields = () => (
+      props.groups && props.groups.length > 0 && props.unassignedFields === "omit"
+        ? resolvedGroups.value.flatMap((group) => group.fields)
+        : drawn.value
+    );
+
+    const validateEntry = (
+      pointer: string,
+      value: RuntimeJsonValue,
+    ): { readonly ok: true; readonly field: PanelFormField } | { readonly ok: false; readonly rejection: FormFieldRejection } => {
+      if (isFixed(pointer)) {
+        return { ok: false, rejection: { path: pointer, reason: "fixed", message: `Field ${pointer} is fixed by page state.` } };
+      }
+      const resolved = resolveActiveField(fillableFields(), values.value, pointer);
+      if (!resolved) {
+        return { ok: false, rejection: { path: pointer, reason: "unknown_field", message: `Field ${pointer} is not active or shown in this form.` } };
+      }
+      if (resolved.readOnly) {
+        return {
+          ok: false,
+          rejection: {
+            path: pointer,
+            reason: "read_only",
+            message: resolved.readOnlyReason ?? `Field ${pointer} is read-only.`,
+          },
+        };
+      }
+      const valueRejection = validateFormFieldValue(resolved.field, pointer, value, values.value, fixedValues.value);
+      if (valueRejection) {
+        return { ok: false, rejection: valueRejection };
+      }
+      return { ok: true, field: resolved.field };
+    };
+
+    const rejectRemaining = (
+      reason: FormFieldRejection["reason"],
+      messageFor: (pointer: string) => string,
+    ) => {
+      for (const pointer of pending.keys()) {
+        rejectedFields.push({ path: pointer, reason, message: messageFor(pointer) });
+      }
+      pending.clear();
+    };
+
     while (pending.size > 0) {
-      if (unmounted || latestRead !== startReading || targetKey(target.value) !== startTargetKey || failure.value || saving.value) {
+      if (unmounted || targetKey(target.value) !== startTargetKey) {
+        rejectRemaining("unknown_field", (pointer) => `Field ${pointer} was not applied because the form target changed or closed.`);
         break;
       }
-      // Apply any currently active `refreshOnChange` field first so dependent fields unlock before validation.
+      const loopFailure = failure.value as { reason: Error; retry: () => void } | null;
+      if (latestRead !== startReading || loopFailure || saving.value) {
+        const detail = loopFailure
+          ? `form refresh failed: ${loopFailure.reason.message}`
+          : saving.value
+            ? "the form started saving"
+            : "the form reloaded during fill";
+        rejectRemaining("read_only", (pointer) => `Field ${pointer} was not applied because ${detail}.`);
+        break;
+      }
+      // Apply any currently active, valid `refreshOnChange` field first so dependent fields unlock before validation.
       let refreshEntry: [string, RuntimeJsonValue] | null = null;
       for (const entry of pending) {
-        const [pointer] = entry;
-        if (isFixed(pointer)) continue;
-        const field = activeFieldAt(fields.value, values.value, pointer);
-        if (field && field.control.kind !== "hidden" && !field.readOnly && field.refreshOnChange) {
+        const [pointer, value] = entry;
+        const checked = validateEntry(pointer, value);
+        if (checked.ok && checked.field.refreshOnChange) {
           refreshEntry = entry;
           break;
         }
@@ -1082,22 +1176,21 @@ useProjectionForm({
         applyField(pointer, value);
         const editsAfter = edits;
         await waitForOwnerAsk();
-        if (edits !== editsAfter) break;
+        if (unmounted || targetKey(target.value) !== startTargetKey) {
+          rejectRemaining("unknown_field", (remaining) => `Field ${remaining} was not applied because the form target changed or closed.`);
+          break;
+        }
+        if (edits !== editsAfter) {
+          rejectRemaining("read_only", (remaining) => `Field ${remaining} was not applied because the form was edited during refresh.`);
+          break;
+        }
         continue;
       }
 
       for (const [pointer, value] of pending) {
-        if (isFixed(pointer)) {
-          rejectedFields.push({ path: pointer, reason: "fixed", message: `Field ${pointer} is fixed by page state.` });
-          continue;
-        }
-        const field = activeFieldAt(fields.value, values.value, pointer);
-        if (!field || field.control.kind === "hidden") {
-          rejectedFields.push({ path: pointer, reason: "unknown_field", message: `Field ${pointer} is not active in this form.` });
-          continue;
-        }
-        if (field.readOnly) {
-          rejectedFields.push({ path: pointer, reason: "read_only", message: field.readOnlyReason ?? `Field ${pointer} is read-only.` });
+        const checked = validateEntry(pointer, value);
+        if (!checked.ok) {
+          rejectedFields.push(checked.rejection);
           continue;
         }
         applyField(pointer, value);
@@ -1293,11 +1386,12 @@ function saveInput(payloadValues: PanelFormValues) {
   };
 }
 
-function saveContext() {
+function saveContext(agentContext?: PanelAgentActionContext) {
   return {
     fixedFieldPaths: Object.keys(fixedValues.value),
     changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
     baselineValues: opened.value!.values,
+    ...(agentContext ? { agentContext } : {}),
     formatUnwiredFieldRefusal: (paths: readonly string[]) => ({
       message: te("platform.formActionUnwiredFields")
         ? t("platform.formActionUnwiredFields", { fields: paths.join(", ") })
@@ -1333,10 +1427,11 @@ function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
  * fields it named; nothing is retried, and the reader's form stays as they left it. A create selects the object the
  * owner created; every projection showing the saved object reads it again, this form included, at its new revision.
  */
-async function write(override?: FormSubmitOverride): Promise<unknown> {
+async function write(override?: FormSubmitOverride, agentContext?: PanelAgentActionContext): Promise<unknown> {
   const into = target.value;
   if (!into) throw new Error("This form edits one object, and none is selected");
   if (failure.value) throw failure.value.reason;
+  if (saving.value) throw new Error("The form is currently saving.");
   if (loading.value || asking.value) throw new Error(t("common.loading"));
   if (Object.keys(activeInvalid.value).length) throw new Error(t("platform.formFixInvalid"));
   const capturedTargetKey = targetKey(into);
@@ -1363,7 +1458,7 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
   const payloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
   const finishSave = settleSave(into, payloadValues);
   try {
-    const saved = await forms.save(into, saveInput(payloadValues), override, saveContext());
+    const saved = await forms.save(into, saveInput(payloadValues), override, saveContext(agentContext ?? override?.agentContext));
     await finishSave(saved);
     return saved;
   } catch (reason) {

@@ -9,6 +9,7 @@ import {
   PanelConfirmationDeferred,
   PanelOperationDeferred,
   summarizeDispatchResponse,
+  type PanelAgentActionContext,
   type PanelWriteResult,
 } from "../panel/instance";
 import type { PanelMemberContext } from "../panel/member";
@@ -132,6 +133,23 @@ export function resolveOperationInputFields(
   return operationInputFields(descriptor.inputSchema, boundParams);
 }
 
+/**
+ * Filters caller-supplied operation inputs strictly to the interactive fields a human would be prompted to enter.
+ * Parameters sourced from form fields, fixed literals, or state/input wirings are excluded.
+ */
+export function filterAllowedOperationInput(
+  input: Readonly<Record<string, RuntimeJsonValue>> | undefined,
+  fields: readonly OperationInputField[],
+): Record<string, RuntimeJsonValue> {
+  if (!input) return {};
+  const allowed = new Set(fields.map((field) => field.name));
+  const filtered: Record<string, RuntimeJsonValue> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (allowed.has(key) && value !== undefined) filtered[key] = value;
+  }
+  return filtered;
+}
+
 /** Renders one single-item operation outcome in the reader's language using the owner's own message when provided. */
 export function formatOperationOutcome(outcome: SingleOperationOutcome, t: OperationTranslator): string {
   return outcome.kind === "success"
@@ -165,7 +183,8 @@ export interface OperationRunner {
     operationName: string,
     descriptor: PanelOwnerOperationDescriptor,
     providedInput?: Record<string, RuntimeJsonValue>,
-  ): Promise<void>;
+    agentContext?: PanelAgentActionContext,
+  ): Promise<"executed" | "cancelled" | "skipped">;
   reset(): void;
 }
 
@@ -244,11 +263,12 @@ export function useOperationRunner(options: {
     operationName: string,
     descriptor: PanelOwnerOperationDescriptor,
     providedInput: Record<string, RuntimeJsonValue> = {},
-  ) {
+    agentContext?: PanelAgentActionContext,
+  ): Promise<"executed" | "cancelled" | "skipped"> {
     const panel = options.panel();
     const slot = options.slot();
     const member = options.member();
-    if (!panel || !slot || running.value) return;
+    if (!panel || !slot || running.value) return "skipped";
 
     const stateValues = panel.instance.state.values.value;
     const targetInfo = resolveOperationTarget(panel, slot, member, descriptor, stateValues);
@@ -261,9 +281,11 @@ export function useOperationRunner(options: {
     receipt.value = null;
     try {
       const boundInput = resolveBoundOperationParams(slot, member, operationName);
+      const allowedFields = resolveOperationInputFields(panel, slot, operationName, descriptor);
+      const filteredProvided = filterAllowedOperationInput(providedInput, allowedFields);
       const effectiveInput: Record<string, RuntimeJsonValue> = isActionValuesEnvelope(descriptor.inputSchema)
-        ? wrapActionOperationInput(descriptor.inputSchema, boundInput, providedInput)
-        : { ...providedInput, ...boundInput };
+        ? wrapActionOperationInput(descriptor.inputSchema, boundInput, filteredProvided)
+        : { ...filteredProvided, ...boundInput };
 
       if (descriptor.effect === "read") {
         const { target: owned } = descriptor;
@@ -277,23 +299,27 @@ export function useOperationRunner(options: {
             )
           : effectiveInput;
         read.value = await panel.instance.readOperation(operationId, { target: targetInfo.target, input });
-        return;
+        return "executed";
       }
 
       const declaredDraftSlot = panel.manifest.members[slot.slot]?.operationDrafts?.[operationName]?.slot;
       if (declaredDraftSlot) {
         if (descriptor.kind === "form.save" && declaredDraftSlot === slot.slot) {
-          await panel.instance.forms.submit(slot.slot);
+          await panel.instance.forms.submit(
+            slot.slot,
+            agentContext ? { operationId, descriptor, agentContext } : undefined,
+          );
         } else {
           const binding = slot.projection.operations?.[operationName];
           await panel.instance.forms.submit(declaredDraftSlot, {
             operationId,
             descriptor,
             ...(binding ? { binding } : {}),
-            ...(Object.keys(effectiveInput).length ? { extraInput: effectiveInput } : {}),
+            ...(member ? { memberInputs: member.inputs.value } : {}),
+            ...(agentContext ? { agentContext } : {}),
           });
         }
-        return;
+        return "executed";
       }
 
       const applyWriteAnswer = (
@@ -335,7 +361,7 @@ export function useOperationRunner(options: {
         answer = await panel.instance.writeOperation(
           operationId,
           first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: effectiveInput } },
-          { onConfirmed },
+          { onConfirmed, ...(agentContext ? { agentContext } : {}) },
         );
       } catch (reason) {
         if (reason instanceof PanelOperationDeferred) {
@@ -404,10 +430,13 @@ export function useOperationRunner(options: {
         }
         throw reason;
       }
+      if (answer.decision === "cancel") return "cancelled";
       applyWriteAnswer(answer);
+      return "executed";
     } catch (reason) {
       if (reason instanceof PanelConfirmationDeferred) throw reason;
       failure.value = reason instanceof Error ? reason : new Error(String(reason));
+      return "executed";
     } finally {
       runningOperation.value = null;
       dispatchingOperation.value = null;
