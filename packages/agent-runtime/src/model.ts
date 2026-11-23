@@ -77,6 +77,8 @@ export interface ModelLease {
 
 /** The resolved shape of one entry: its type decides whether it has a context length or dimensions. */
 export type ResolvedOf<M extends ModelEntry> = M extends ModelEntryEmbedding ? ResolvedEmbeddingModel : ResolvedChatModel;
+/** The resolved shape of one model kind, for a caller that names it. */
+export type ResolvedKind<K extends "chat" | "embedding"> = K extends "embedding" ? ResolvedEmbeddingModel : ResolvedChatModel;
 
 /** A stored model and the connection it calls through, flattened into what the gateway is given. */
 export function resolvedModel<M extends ModelEntry>(name: string, connectionName: string,

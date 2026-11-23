@@ -7,7 +7,7 @@ import { openSealedModelKey, sealModelKey } from "@ontomato/contracts/model-key-
 import { runtimeModelTestRequestSchema, runtimeModelDiscoveryRequestSchema } from "@ontomato/contracts/runtime-model-test";
 import { RuntimeStore } from "./store";
 import { RuntimeError } from "./errors";
-import { resolvedModel, type ResolvedChatModel, type ResolvedEmbeddingModel, type ResolvedModel } from "./model";
+import { resolvedModel, type ResolvedKind, type ResolvedModel } from "./model";
 import { emptyModelSettings, migrateLegacyModelSettings, importLegacyEmbedding, unavailableReferencePrefix } from "./model-migration";
 import { runtimeLogger } from "./logging";
 
@@ -82,15 +82,14 @@ export class RuntimeModelSettings {
       return this.keys(data, maskModelKey);
     });
   }
-  async resolve(domain: string, name: string | null | undefined, kind: "embedding"): Promise<ResolvedEmbeddingModel>;
-  async resolve(domain: string, name?: string | null, kind?: "chat"): Promise<ResolvedChatModel>;
-  async resolve(domain: string, name?: string | null, kind: "chat" | "embedding" = "chat"): Promise<ResolvedModel> {
+  async resolve<K extends "chat" | "embedding" = "chat">(domain: string, name?: string | null,
+    kind: K = "chat" as K): Promise<ResolvedKind<K>> {
     const data = await this.read(domain);
     const chosen = name ?? (kind === "chat" ? data.defaultModel : data.embeddingModel);
     const model = chosen === null ? undefined : data.models[chosen];
     if (!model || model.type !== kind)
       throw new RuntimeError(422, "MODEL_NOT_CONFIGURED", `The selected ${kind} model is not configured`);
-    return resolvedModel(chosen!, model.connection, data.connections[model.connection]!, model) as never;
+    return resolvedModel(chosen!, model.connection, data.connections[model.connection]!, model) as ResolvedKind<K>;
   }
   async testDraft(domain: string, body: unknown): Promise<{ config: ResolvedModel; prompt: string }> {
     const { connectionName, connection, model, prompt } = runtimeModelTestRequestSchema.parse(body);

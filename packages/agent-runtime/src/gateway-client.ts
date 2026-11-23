@@ -38,12 +38,12 @@ export class ModelGatewayClient {
   async embeddings(lease: ModelLease, model: string, texts: string[], dimensions: number,
     signal: AbortSignal, code = "MODEL_EMBEDDING_FAILED"): Promise<RuntimeEmbeddingsResponse> {
     const body = await this.reply(await this.call(lease, "/v1/embeddings", { model, input: texts }, "", signal), code) as {
-      data?: { index?: number; embedding?: number[] }[];
+      data?: { index: number; embedding: number[] }[];
     };
-    const rows = [...(body.data ?? [])].sort((a, b) => a.index! - b.index!);
+    const rows = [...(body.data ?? [])].sort((a, b) => a.index - b.index);
     if (rows.length !== texts.length || rows.some((row, index) => row.index !== index))
       throw new RuntimeError(502, code, "Embedding response does not match the input batch");
-    if (rows.some(row => row.embedding?.length !== dimensions))
+    if (rows.some(row => row.embedding.length !== dimensions))
       throw new RuntimeError(502, code, "Embedding dimensions do not match the configuration");
     return runtimeEmbeddingsResponseSchema.parse({ modelId: model, dimensions, vectors: rows.map(row => row.embedding) });
   }

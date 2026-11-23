@@ -128,7 +128,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     try {
       const result = config.type === "embedding"
         ? { type: "embedding" as const, dimensions: (await runtime.gateway.embeddings(lease, config.name, [prompt],
-          config.dimensions!, controller.signal, "MODEL_TEST_FAILED")).dimensions }
+          config.dimensions, controller.signal, "MODEL_TEST_FAILED")).dimensions }
         : await runtime.gateway.chat(lease, config.name, prompt, ctx.correlationId, controller.signal);
       if (!controller.signal.aborted) res.json(result);
     } finally {
@@ -155,7 +155,7 @@ export function createRuntimeHttp(runtime: AgentRuntime) {
     res.on("close", () => controller.abort());
     const lease = await runtime.gateway.lease({ [config.name]: litellmEntry(config) });
     try {
-      res.json(await runtime.gateway.embeddings(lease, config.name, texts, config.dimensions!, controller.signal));
+      res.json(await runtime.gateway.embeddings(lease, config.name, texts, config.dimensions, controller.signal));
     } finally {
       await runtime.gateway.release(lease);
     }

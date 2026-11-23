@@ -29,7 +29,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from leases import LeaseStore, Model
+from leases import Lease, LeaseStore, Model
 
 litellm.drop_params = True
 litellm.suppress_debug_info = True
@@ -48,7 +48,6 @@ class GatewayError(Exception):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
         self.status = status
-        self.message = message
 
 
 def error_body(error: BaseException) -> dict:
@@ -78,8 +77,8 @@ def sse(data: str) -> bytes:
     return f"data: {data}\n\n".encode()
 
 
-def authorized(request: Request) -> Model:
-    """The lease's entry for the model this request names."""
+def lease_of(request: Request) -> Lease:
+    """The lease this request's bearer token belongs to; expired or foreign tokens reach nothing."""
     header = request.headers.get("authorization") or ""
     if not header.startswith("Bearer "):
         raise GatewayError(401, "A model lease token is required")
@@ -89,7 +88,7 @@ def authorized(request: Request) -> Model:
     return lease
 
 
-def leased_model(lease, body: dict) -> Model:
+def leased_model(lease: Lease, body: dict) -> Model:
     name = body.get("model")
     model = lease.models.get(name) if isinstance(name, str) else None
     if model is None:
@@ -117,7 +116,8 @@ def embedding_params(model: Model, body: dict) -> dict:
     return params
 
 
-async def first_chunk(iterator: AsyncIterator) -> object | None:
+async def first_frame(iterator: AsyncIterator) -> object | None:
+    """The first frame, pulled before a response starts so that an upstream failure can still be a status."""
     try:
         return await iterator.__anext__()
     except StopAsyncIteration:
@@ -129,15 +129,9 @@ def event_frame(event: dict) -> bytes:
     return f"event: {name}\n".encode() + sse(json.dumps(event))
 
 
-async def close(iterator: object) -> None:
-    closer = getattr(iterator, "aclose", None)
-    if closer is not None:
-        await closer()
-
-
 async def chat(request: Request) -> Response:
     body = await request.json()
-    model = leased_model(authorized(request), body)
+    model = leased_model(lease_of(request), body)
     stream = bool(body.get("stream"))
     params = call_params(model, body, stream)
     if not stream:
@@ -147,7 +141,7 @@ async def chat(request: Request) -> Response:
             return failure(error)
     try:
         iterator = await litellm.acompletion(**params)
-        first = await first_chunk(iterator)
+        first = await first_frame(iterator)
     except Exception as error:  # noqa: BLE001 - before the first frame a status is still possible
         return failure(error)
 
@@ -161,7 +155,7 @@ async def chat(request: Request) -> Response:
             log.warning("chat stream broke: %s", error)
             yield sse(payload(error_body(error)))
         finally:
-            await close(iterator)
+            await iterator.aclose()
         yield b"data: [DONE]\n\n"
 
     return StreamingResponse(frames(), media_type="text/event-stream")
@@ -169,7 +163,7 @@ async def chat(request: Request) -> Response:
 
 async def responses(request: Request) -> Response:
     body = await request.json()
-    model = leased_model(authorized(request), body)
+    model = leased_model(lease_of(request), body)
     stream = bool(body.get("stream"))
     params = call_params(model, body, stream)
     if not stream:
@@ -179,7 +173,7 @@ async def responses(request: Request) -> Response:
             return failure(error)
     try:
         iterator = await litellm.aresponses(**params)
-        first = await first_chunk(iterator)
+        first = await first_frame(iterator)
     except Exception as error:  # noqa: BLE001
         return failure(error)
 
@@ -193,14 +187,14 @@ async def responses(request: Request) -> Response:
             log.warning("responses stream broke: %s", error)
             yield event_frame({"type": "error", **error_body(error)})
         finally:
-            await close(iterator)
+            await iterator.aclose()
 
     return StreamingResponse(frames(), media_type="text/event-stream")
 
 
 async def embeddings(request: Request) -> Response:
     body = await request.json()
-    model = leased_model(authorized(request), body)
+    model = leased_model(lease_of(request), body)
     try:
         response = await litellm.aembedding(**embedding_params(model, body))
     except Exception as error:  # noqa: BLE001

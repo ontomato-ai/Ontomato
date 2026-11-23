@@ -30,6 +30,7 @@ export type ModelType = z.output<typeof modelTypeSchema>;
 export const DEFAULT_CHAT_CONTEXT_WINDOW = 262144;
 /** What a model waits for its upstream when its owner configures no timeout. */
 export const DEFAULT_MODEL_TIMEOUT_SECONDS = 300;
+/** How often a model is retried when its owner configures nothing: LiteLLM's own default count. */
 export const DEFAULT_MODEL_MAX_RETRIES = 2;
 
 /** Anthropic serves no embeddings API; every other provider prefix here does. */

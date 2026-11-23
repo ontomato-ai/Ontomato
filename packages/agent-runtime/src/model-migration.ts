@@ -1,7 +1,8 @@
 import { z } from "zod";
 import {
   DEFAULT_CHAT_CONTEXT_WINDOW, DEFAULT_MODEL_MAX_RETRIES, DEFAULT_MODEL_TIMEOUT_SECONDS,
-  modelSettingsConfigurationSchema, type ModelEntry, type ModelProvider, type ModelSettingsConfiguration,
+  modelSettingsConfigurationSchema, type ModelConnectionWrite, type ModelEntry, type ModelProvider,
+  type ModelSettingsConfiguration,
 } from "@ontomato/contracts/model-settings";
 import type { LegacyEmbeddingImport, ModelMigrationMap } from "@ontomato/contracts/model-migration";
 
@@ -35,8 +36,8 @@ const legacyProviderSchema = z.object({
 }).passthrough();
 /** The oldest shape: one flat list of models, each with its address and keys, from pi's own settings file. */
 const legacyModelSchema = z.object({
-  name: z.string().min(1), modelName: z.string().min(1), baseUrl: z.string(),
-  apiKeys: z.array(z.string()).min(1), timeout: z.string().nullish(), maxRetries: z.number().int().nonnegative().nullish(),
+  name: z.string().min(1), modelName: z.string().min(1), baseUrl: z.string().url(),
+  apiKeys: z.array(z.string()), timeout: z.string().nullish(), maxRetries: z.number().int().nonnegative().nullish(),
   contextWindow: z.number().int().positive().nullish(), maxTokens: z.number().int().positive().nullish(),
   temperature: z.number().nullish(), topP: z.number().nullish(),
   organizationId: z.string().nullish(), projectId: z.string().nullish(),
@@ -74,21 +75,22 @@ function publicName(models: Record<string, ModelEntry>, preferred: string, conne
   throw new Error(`Two models of connection ${connection} share the name ${preferred}`);
 }
 
+/** What a migrated connection is built from: an earlier release always stored the address its models called. */
 interface ConnectionSource {
   provider: ModelProvider;
-  apiBase?: string;
+  apiBase: string;
   apiKey: string;
   extraHeaders?: Record<string, string>;
 }
 
 /** Reuse a connection with the same upstream, or take a free name derived from its host. */
 function connectionFor(settings: ModelSettingsConfiguration, source: ConnectionSource): string {
-  const equal = (connection: ConnectionSource) => connection.provider === source.provider
+  const equal = (connection: ModelConnectionWrite) => connection.provider === source.provider
     && connection.apiBase === source.apiBase && connection.apiKey === source.apiKey
     && JSON.stringify(normalizedHeaders(connection.extraHeaders)) === JSON.stringify(normalizedHeaders(source.extraHeaders));
   const found = Object.entries(settings.connections).find(([, connection]) => equal(connection));
   if (found) return found[0];
-  const base = new URL(source.apiBase ?? "https://gateway").hostname.replace(/[^a-zA-Z0-9.-]/g, "-") || "gateway";
+  const base = new URL(source.apiBase).hostname.replace(/[^a-zA-Z0-9.-]/g, "-");
   let name = base;
   for (let n = 2; settings.connections[name]; n++) name = `${base}-${n}`;
   settings.connections[name] = source;
@@ -134,8 +136,7 @@ function migrateProviders(raw: z.output<typeof legacyProvidersSchema>, open: (ke
       mapping.references[`${id}/${model.id}`] = name;
       settings.models[name] = model.type === "chat"
         ? chatEntry(model, id, timeoutSeconds, maxRetries)
-        : { connection: id, model: model.id, type: "embedding", dimensions: model.dimensions!,
-          ...(model.maxTokens == null ? {} : { maxOutputTokens: model.maxTokens }), timeoutSeconds, maxRetries };
+        : { connection: id, model: model.id, type: "embedding", dimensions: model.dimensions!, timeoutSeconds, maxRetries };
     }
   }
   return { settings, mapping, discardedKeys: 0 };
