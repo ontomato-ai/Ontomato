@@ -169,6 +169,20 @@ export const projectionOperationBindingSchema = z.object({
 }).strict();
 export type ProjectionOperationBinding = z.infer<typeof projectionOperationBindingSchema>;
 
+/** Choose the declared customer form save before checking which operations the owner admits. */
+export function declaredCustomerFormSaveName(
+  operations: Readonly<Record<string, ProjectionOperationBinding>> | undefined,
+  creating: boolean,
+): string | undefined {
+  const declared = Object.entries(operations ?? {});
+  if (declared.some(([, binding]) => binding.operation.kind === "PlatformOperation")) return undefined;
+  const actions = declared.filter(([, binding]) => binding.operation.kind === "Action");
+  const matchesTarget = (binding: ProjectionOperationBinding) => creating === (binding.target === undefined);
+  if (actions.length === 1) return actions.find(([, binding]) => matchesTarget(binding))?.[0];
+  const names = creating ? ["create", "save"] : ["save"];
+  return names.find(expected => actions.some(([name, binding]) => name === expected && matchesTarget(binding)));
+}
+
 /** Whether a projection operation binding references row-level data (`{ row }` or `{ rowField }`). */
 export function projectionOperationIsRowScoped(binding: Pick<ProjectionOperationBinding, "target" | "params">): boolean {
   if (binding.target && ("row" in binding.target || "rowField" in binding.target)) return true;

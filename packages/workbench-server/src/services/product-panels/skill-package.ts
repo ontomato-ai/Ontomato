@@ -10,7 +10,7 @@ import {
 import { draftTarget, PAGE_DRAFT_QUERY_KEYS, type PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
-import { directReadDeclaration, projectionOperationIsRowScoped, projectionReadReference } from "@ontomato/contracts/panel-projection";
+import { declaredCustomerFormSaveName, directReadDeclaration, projectionOperationIsRowScoped, projectionReadReference } from "@ontomato/contracts/panel-projection";
 import {
   builtinProductPanelInputSchema, builtinProductProjectionInputSchema, productPanelInputSchema, productProjectionInputSchema,
   type BuiltinProductPanelInput, type BuiltinProductProjectionInput, type PanelSkillSource,
@@ -205,24 +205,22 @@ type OperationDescription = BoundProjectionOperation & {
 
 function customerFormSaveModes(
   projection: ProjectionDefinition,
-  boundOps: readonly BoundProjectionOperation[],
   actions: ReadonlyMap<string, ActionCatalogEntry> | undefined,
 ): Map<string, CustomerFormBinding> {
   const forms = new Map<string, CustomerFormBinding>();
-  if (!actions || projection.componentId !== "@ontomato/sdk:ObjectForm" ||
-      boundOps.some(bound => bound.owner?.handler.kind === "form.save")) return forms;
+  if (!actions || projection.componentId !== "@ontomato/sdk:ObjectForm") return forms;
   for (const [datum, mode] of [["form", "edit"], ["createForm", "create"]] as const) {
     const read = projection.data[datum];
     if (read?.read !== datum) continue;
     const type = projectionReadReference(projection, read.source);
     if (type?.kind !== "ObjectType") continue;
-    const candidates = boundOps.filter(({ binding }) => {
-      if (binding.operation.kind !== "Action") return false;
-      const action = actions.get(binding.operation.id)?.declaration;
-      return action?.effect === "write" && (action.target.source === "none") === (mode === "create");
-    });
-    const save = candidates.length === 1 ? candidates[0] : candidates.find(({ name }) => name === "save");
-    if (save) forms.set(save.name, { objectType: type.id, mode });
+    const creating = mode === "create";
+    const name = declaredCustomerFormSaveName(projection.operations, creating);
+    if (!name) continue;
+    const action = actions.get(projection.operations![name]!.operation.id)?.declaration;
+    if (action?.effect === "write" && (action.target.source === "none") === creating) {
+      forms.set(name, { objectType: type.id, mode });
+    }
   }
   return forms;
 }
@@ -248,7 +246,7 @@ function describePanel(
       return [key, { ...read, result: readDeclaration.result }];
     }));
     const boundOps = boundProjectionOperations(projection);
-    const customerForms = customerFormSaveModes(projection, boundOps, actions);
+    const customerForms = customerFormSaveModes(projection, actions);
     return [{
       text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
       reads: Object.entries(data).map(([dataName, { read, result }]) => ({ member, dataName, read, result })),
