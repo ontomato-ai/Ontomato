@@ -2,9 +2,8 @@ import { watch, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import type { PanelDeepLinkStateValue, PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
+import { normalizeExternalPanelState, panelOperationSchema, type PanelDeepLinkStateValue, type PanelObjectIdentity, type PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
-import { panelOperationSchema } from "@ontomato/contracts/panel-manifest";
 import { receivePanelDraft, type PanelDraftSource } from "./draft";
 import { PanelDraftUnusable, unreadableDraft } from "./draft-refusal";
 import { pageDraftLinkOf, type PanelInstance } from "./instance";
@@ -51,6 +50,8 @@ export interface PanelRunOptions {
   projectionChanged(id: string, revision?: number): void;
   /** Reads again what the instance shows of one object, or of every object (null). */
   refreshObject(target: PanelObjectIdentity | null): void;
+  /** Signals whether a held address with changed deep-link state is waiting for the instance to reactivate. */
+  onAddressPending?(pending: boolean): void;
   reports: PanelRunReports;
 }
 
@@ -79,22 +80,27 @@ export function runPanel(options: PanelRunOptions): PanelRun {
       instance.rollbackDraft)
       .catch((reason: unknown) => reports.draftRefused(reason instanceof PanelDraftUnusable ? reason : unreadableDraft(link.path, reason)));
   }
-  async function followAddress(next: string) {
+  function addressStatePatch(next: string): Record<string, PanelFieldValue> | null {
     const hasState = new URL(next, "http://page.invalid").searchParams.has("state");
     const hasDraft = pageDraftLinkOf(next) !== null;
     // A draft link without an explicit `state` parameter opens over the page as it is rather than wiping deep-link
     // selections (which would unmount conditional `v-if` forms before the draft is even read).
-    if (hasState || !hasDraft) {
-      const desired = panelAddressState(next);
-      const patch: Record<string, PanelFieldValue> = {};
-      for (const [name, field] of Object.entries(instance.manifest.state)) {
-        if (!field.deepLink) continue;
-        const value = checkPanelValue(instance.manifest, name, desired[name] ?? field.default ?? null);
-        if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) patch[name] = value;
-      }
-      instance.state.setState(patch);
+    if (!hasState && hasDraft) return null;
+    const normalized = normalizeExternalPanelState(instance.manifest, panelAddressState(next));
+    const patch: Record<string, PanelFieldValue> = {};
+    for (const [name, field] of Object.entries(instance.manifest.state)) {
+      if (!field.deepLink) continue;
+      const desired = Object.hasOwn(normalized, name) ? normalized[name]! : (field.default ?? null);
+      const value = checkPanelValue(instance.manifest, name, desired);
+      if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) patch[name] = value;
     }
+    return patch;
+  }
+  async function followAddress(next: string) {
+    const patch = addressStatePatch(next);
+    if (patch !== null) instance.state.setState(patch);
     address.value = next;
+    options.onAddressPending?.(false);
     await followDraft();
   }
   const followAddressNow = (next: string) => void followAddress(next).catch(reports.failed);
@@ -120,6 +126,7 @@ export function runPanel(options: PanelRunOptions): PanelRun {
   const heldObjects = new Map<string, PanelObjectIdentity>();
   const resume = () => {
     if (heldAddress !== null) followAddressNow(heldAddress);
+    else options.onAddressPending?.(false);
     if (!isDirty()) refreshProjections();
     if (heldAll) options.refreshObject(null);
     else for (const target of heldObjects.values()) options.refreshObject(target);
@@ -140,7 +147,11 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     },
     address(next) {
       if (active) followAddressNow(next);
-      else heldAddress = next;
+      else {
+        heldAddress = next;
+        const patch = addressStatePatch(next);
+        options.onAddressPending?.(patch !== null && Object.keys(patch).length > 0);
+      }
     },
     projectionsChanged(revisions) {
       for (const revision of revisions) {

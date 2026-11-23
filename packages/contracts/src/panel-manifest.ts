@@ -378,6 +378,46 @@ export function matchesDirectPanelValue(type: DirectPanelPortType, value: unknow
   }
 }
 
+/**
+ * Normalizes a single externally supplied (URL / deep-link) state value against a declared field type:
+ * - For a single fixed-type `kind: "object"` field, a non-empty string shorthand is promoted to
+ *   `{ className: type.objectType, primaryKey: value }`.
+ * - Any value that does not match the declared field type is rejected so callers can safely ignore it
+ *   instead of crashing the panel.
+ */
+export function normalizeExternalPanelValue(
+  type: DirectPanelPortType,
+  value: unknown,
+): { ok: true; value: PanelDeepLinkStateValue } | { ok: false } {
+  if (value === null) return { ok: true, value: null };
+  const candidate = type.kind === "object" && typeof value === "string"
+    ? (value.trim().length > 0 ? { className: type.objectType, primaryKey: value } : undefined)
+    : value;
+  if (candidate === undefined) return { ok: false };
+  const parsed = panelDeepLinkStateValueSchema.safeParse(candidate);
+  if (!parsed.success || !matchesDirectPanelValue(type, parsed.data)) return { ok: false };
+  return { ok: true, value: parsed.data };
+}
+
+/**
+ * Normalizes externally supplied (URL / deep-link) panel state against a manifest:
+ * keeps only `deepLink` fields, promotes single-type object string shorthands, and drops invalid values
+ * so malformed query parameters fall back to defaults instead of poisoning or crashing the panel.
+ */
+export function normalizeExternalPanelState(
+  manifest: Pick<PanelManifest, "state">,
+  raw: Readonly<Record<string, unknown>>,
+): Record<string, PanelDeepLinkStateValue> {
+  const result: Record<string, PanelDeepLinkStateValue> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    const field = manifest.state[name];
+    if (!field?.deepLink) continue;
+    const normalized = normalizeExternalPanelValue(field.type, value);
+    if (normalized.ok) result[name] = normalized.value;
+  }
+  return result;
+}
+
 /** A connection is valid when every value of its source type can go into the exposed target field. */
 export function panelPortAccepts(target: DirectPanelPortType, source: DirectPanelPortType): boolean {
   if (target.kind === "json") return true;

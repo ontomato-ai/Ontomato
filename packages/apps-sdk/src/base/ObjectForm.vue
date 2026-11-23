@@ -428,6 +428,8 @@ function load(next: PanelFormTarget | null) {
     showRefusal(refused.reason);
     return;
   }
+  description.value = opened.value = ownerShown.value = ownerOpened.value = null;
+  values.value = {};
   loading.value = true;
   void forms.describe({ target: next, changedField: null }).then(
     (answer) => { if (reading === latestRead && held?.target !== nextKey) adopt(answer); },
@@ -1129,6 +1131,9 @@ async function write(): Promise<unknown> {
  * no permission, or the reason it could not be read.
  */
 const shown = computed<DataStateResult<PanelFormDescription>>(() => {
+  if (state.value !== null && panel.instance.addressPending?.value) {
+    return { status: "loading" };
+  }
   if (failure.value) {
     const { reason, retry } = failure.value;
     return reason instanceof MemberDataUnavailable && reason.state.status !== "error"
