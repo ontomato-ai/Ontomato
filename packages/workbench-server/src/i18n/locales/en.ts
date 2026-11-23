@@ -126,6 +126,7 @@ export const en = {
   "panels.confirmation.deleteAgentImpact": "This deletes the selected agent definition.",
   "panels.agentDefinition.save": "Save agent",
   "panels.agentDefinition.delete": "Delete agent",
+  "panels.agentDefinition.presetCannotDelete": "Built-in agents come with the product and cannot be deleted",
   "panels.agentDefinition.deleted": "Agent “{name}” deleted",
   "panels.confirmation.deleteMetricViewImpact": "This deletes the selected metric, together with its bindings ({bindings} in total).",
   "panels.confirmation.deleteFunctionImpact": "This deletes the selected function; the owner refuses one referenced by a metric, an action or a write task.",

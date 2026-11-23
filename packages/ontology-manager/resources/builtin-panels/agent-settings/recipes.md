@@ -18,5 +18,6 @@ unsaved), and either leave saving to the reader or call `page_action` on the for
 
 ## Deleting
 
-`remove.delete` removes the selected agent; the platform asks the reader to confirm the impact first. After a
-delete the panel falls back to the first agent in the list.
+`remove.delete` asks the reader to confirm the impact when the definition owner allows deletion. If the
+operation is unavailable, the button shows the owner’s reason. After a delete the panel falls back to the first
+agent in the list.

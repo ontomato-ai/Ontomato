@@ -1,4 +1,5 @@
 import type { DefaultAgent } from "@ontomato/contracts/default-agent";
+import { isPresetAgentKind } from "./preset-definitions";
 import { assistantName } from "./labels";
 import { assistantStore, type AgentRow } from "./store";
 
@@ -19,9 +20,9 @@ export async function listDefaultAgentOptions(domainId: string, locale?: string)
     const choice = defaultAgentAvailability(definition);
     if ("reason" in choice || choice.agent.kind === "regular") return [];
     const { agent } = choice;
-    const value: DefaultAgent = agent.kind === agent.id
-      ? { kind: "id", id: agent.id }
-      : { kind: "preset", agentKind: agent.kind };
+    const value: DefaultAgent = isPresetAgentKind(agent.kind)
+      ? { kind: "preset", agentKind: agent.kind }
+      : { kind: "id", id: agent.id };
     return [{ value, label: assistantName(agent, locale) }];
   });
 }

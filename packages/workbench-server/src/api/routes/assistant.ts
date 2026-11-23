@@ -22,6 +22,7 @@ import {
 } from "../../services/assistant/definitions";
 import { Router, type Request, type RequestHandler, type Response } from "express";
 import { platformService } from "../middleware/platform-service";
+import { initializeDomainPresetAgents } from "../../services/assistant/preset-initialization";
 import { agentHostCreateSessionSchema } from "@ontomato/contracts/agent-host";
 import { z } from "zod";
 import {
@@ -100,6 +101,12 @@ router.get("/agent-skills", agentAdmin, wrap(async (req, res) => {
   const c = context(req);
   res.json(await assistantSkillCatalog(c.owner.domainId, c.credentials));
 }));
+export const assistantInternalRouter = Router();
+assistantInternalRouter.post("/domains/:domainId/initialize-presets", platformService, wrap(async (req, res) => {
+  await initializeDomainPresetAgents(z.string().trim().min(1).parse(req.params.domainId));
+  res.sendStatus(204);
+}));
+
 /** The ontology service names a reply whose checks changed; the reply's own host signals its run. */
 export const assistantQualityRouter = Router();
 assistantQualityRouter.post("/runs/:runId/quality-changed", platformService, wrap(async (req, res) => {
@@ -171,7 +178,8 @@ router.delete(
   "/agent-definitions/:agentId",
   agentAdmin,
   wrap(async (req, res) => {
-    await deleteAgentDefinition(id(req, "agentId"), context(req).owner);
+    const { owner, credentials } = context(req);
+    await deleteAgentDefinition(id(req, "agentId"), owner, credentials.locale);
     res.sendStatus(204);
   }),
 );

@@ -26,7 +26,10 @@ installWorkbenchIdentity({ ...ossIdentity,
 const { initializeConnection, closeConnection } = await import("../../../infrastructure/connection");
 const { syncDefaultPrompts } = await import("../../../core/prompts/loader");
 const { createWorkbenchApp } = await import("../../../http/create-app");
+const { initializeDomainPresetAgents } = await import("../../assistant/preset-initialization");
 syncDefaultPrompts(); await initializeConnection();
+await initializeDomainPresetAgents("a");
+await initializeDomainPresetAgents("b");
 const { initializeWorkbenchLogging, getWorkbenchLogStore, closeWorkbenchLogging } = await import("../../../infrastructure/service-logs");
 initializeWorkbenchLogging();
 const logStore = getWorkbenchLogStore();
