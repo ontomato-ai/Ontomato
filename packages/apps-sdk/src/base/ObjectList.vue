@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Comment, Fragment, Text, computed, nextTick, onBeforeUnmount, ref, shallowRef, useSlots, watch, type Slot, type VNode } from "vue";
+import { Comment, Fragment, Text, computed, getCurrentInstance, nextTick, onBeforeUnmount, ref, shallowRef, useSlots, watch, type Slot, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
@@ -414,6 +414,15 @@ const canSearch = computed(
 );
 const canCheck = Boolean(slotOutputState(panel.manifest, member.key, "checked"));
 const canSelect = Boolean(slotOutputState(panel.manifest, member.key, "selected"));
+const hasSelectedBinding = Boolean(canSelect || placement.inputs?.selected);
+const vnodeProps = getCurrentInstance()?.vnode.props as Record<string, unknown> | null | undefined;
+const hasChooseListener = Boolean(
+  vnodeProps && (typeof vnodeProps.onChoose === "function" || Array.isArray(vnodeProps.onChoose)),
+);
+const hasUpdateSelectedListener = Boolean(
+  vnodeProps && (typeof vnodeProps["onUpdate:selected"] === "function" || Array.isArray(vnodeProps["onUpdate:selected"])),
+);
+const rowSelectable = hasSelectedBinding || hasChooseListener || hasUpdateSelectedListener;
 const usesCursorPages = computed(() => pageMode === "cursor" && props.pagination === "pages");
 const activePageSize = ref(props.pageSize > 0 ? props.pageSize : 20);
 watch(() => props.pageSize, (next) => {
@@ -897,6 +906,7 @@ function rowIdentityKey(row: PlatformObjectRecord): string {
 }
 
 const chosenRef = computed<ObjectListSelection | null>(() => {
+  if (!hasSelectedBinding) return null;
   const raw = selectedParam.value.value as PanelFieldValue;
   return stateChildObject(raw) ?? stateObject(raw);
 });
@@ -1160,10 +1170,12 @@ function columnEmpty(column: ObjectListColumn): string {
 function setSelected(next: ObjectListSelection | null) {
   if (placement.outputs?.selected) {
     void panel.instance.output(member.key, "selected", next as RuntimeJsonValue);
-  } else {
+  } else if (hasSelectedBinding) {
     selectedParam.set(next as RuntimeJsonValue);
   }
-  emit("update:selected", next);
+  if (hasSelectedBinding || hasUpdateSelectedListener) {
+    emit("update:selected", next);
+  }
 }
 
 function setChecked(next: readonly ObjectListRef[]) {
@@ -1181,7 +1193,7 @@ function applyFallback(listed: readonly PlatformObjectRecord[]) {
   const filterChanged = pendingFilterFallback;
   pendingFilterFallback = false;
 
-  if (!props.fallbackToFirst || panel.instance.draft.value !== null) return;
+  if (!hasSelectedBinding || !props.fallbackToFirst || panel.instance.draft.value !== null) return;
 
   // (a) First showing with no selection yet: pick the first row when non-empty.
   if (isInitialLoad) {
@@ -1623,14 +1635,24 @@ onBeforeUnmount(() => {
 
 const activeRowLabel = ref<string | null>(null);
 
+// When external or agent state changes `selected`, discard any stale human-click label so `activeLabel` stays in sync.
+watch(chosenIdentity, () => {
+  activeRowLabel.value = null;
+});
+
 function choose(row: PlatformObjectRecord) {
-  activeRowLabel.value = row.label || row.primaryKey;
+  if (!rowSelectable) return;
   const identity = rowIdentityKey(row);
   const next = props.toggleable && chosenIdentity.value === identity
     ? null
     : rowSelectionValue(row);
-  setSelected(next);
-  emit("choose", next);
+  if (hasSelectedBinding || hasUpdateSelectedListener) {
+    setSelected(next);
+  }
+  if (hasChooseListener) {
+    activeRowLabel.value = next ? (row.label || row.primaryKey) : null;
+    emit("choose", next);
+  }
 }
 
 function focusRowByIdentity(identity: string, mode: "table" | "cards" | "list") {
@@ -2098,7 +2120,7 @@ useMemberOutput("filteredCount", () => {
 });
 useMemberOutput("checkedCount", () => checkedRefs.value.length);
 useMemberOutput("selectedLabel", () => selectedRowLabel.value);
-useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.value);
+useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.value);
 </script>
 
 <template>
@@ -2246,12 +2268,12 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
               <template v-else>
                 <tr
                   :ref="(el) => setRowElement(entry.key, el)"
-                  tabindex="0"
+                  :tabindex="rowSelectable ? 0 : undefined"
                   data-row-item="true"
-                  :aria-selected="entry.key === chosenIdentity"
-                  :class="{ chosen: entry.key === chosenIdentity }"
-                  @click="choose(entry.row)"
-                  @keydown="onRowKeydown(entry.row, $event)"
+                  :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
+                  :class="{ chosen: rowSelectable && entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
+                  @click="rowSelectable ? choose(entry.row) : undefined"
+                  @keydown="rowSelectable ? onRowKeydown(entry.row, $event) : undefined"
                 >
                   <td v-if="hasRowDetailSlot" class="sdk-object-list-expand-col" @click.stop>
                     <button
@@ -2516,13 +2538,13 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
           <article
             v-else
             :ref="(el) => setRowElement(entry.key, el)"
-            role="option"
-            tabindex="0"
+            :role="rowSelectable ? 'option' : undefined"
+            :tabindex="rowSelectable ? 0 : undefined"
             class="sdk-object-list-card"
-            :aria-selected="entry.key === chosenIdentity"
-            :class="{ chosen: entry.key === chosenIdentity }"
-            @click="choose(entry.row)"
-            @keydown="onCardKeydown(entry.row, $event)"
+            :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
+            :class="{ chosen: rowSelectable && entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
+            @click="rowSelectable ? choose(entry.row) : undefined"
+            @keydown="rowSelectable ? onCardKeydown(entry.row, $event) : undefined"
           >
             <list-row-slot-host
               v-if="slots.card"
@@ -2813,7 +2835,7 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
             v-else
             :ref="(el) => setRowElement(entry.key, el)"
             class="sdk-object-list-row"
-            :class="{ chosen: entry.key === chosenIdentity }"
+            :class="{ chosen: rowSelectable && entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
           >
             <div class="sdk-object-list-row-main">
               <button
@@ -2834,20 +2856,22 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
                 :checked="checkedIdentityKeys.has(entry.key)"
                 @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
               />
-              <button
-                type="button"
-                role="option"
+              <component
+                :is="rowSelectable ? 'button' : 'div'"
+                :type="rowSelectable ? 'button' : undefined"
+                :role="rowSelectable ? 'option' : undefined"
                 class="sdk-object-list-item-btn"
                 :data-row-density="listHasTwoLines ? 'two-line' : 'single'"
-                :aria-selected="entry.key === chosenIdentity"
+                :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
                 :class="{
-                  chosen: entry.key === chosenIdentity,
+                  chosen: rowSelectable && entry.key === chosenIdentity,
+                  'is-non-selectable': !rowSelectable,
                   'sdk-object-list-item-two-line': listHasTwoLines,
                   'has-leading': Boolean($slots['item-leading']),
                   'has-chevron': showListChevron,
                 }"
-                @click="choose(entry.row)"
-                @keydown="onListItemKeydown(entry.row, $event)"
+                @click="rowSelectable ? choose(entry.row) : undefined"
+                @keydown="rowSelectable ? onListItemKeydown(entry.row, $event) : undefined"
               >
                 <span v-if="$slots['item-leading']" class="sdk-object-list-item-leading" aria-hidden="true">
                   <slot name="item-leading"></slot>
@@ -2899,7 +2923,7 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
                   </span>
                 </span>
                 <span v-if="showListChevron" class="sdk-object-list-item-chevron" aria-hidden="true">›</span>
-              </button>
+              </component>
               <div v-if="hasActionColumn" class="sdk-object-list-row-inline-actions" @click.stop>
                 <list-row-slot-host
                   v-if="hasActionsSlot"
@@ -3369,6 +3393,12 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
   cursor: pointer;
   transition: background-color var(--transition-fast);
 }
+.sdk-object-list-table tbody tr.is-non-selectable {
+  cursor: default;
+}
+.sdk-object-list-table tbody tr.is-non-selectable:hover {
+  background: transparent;
+}
 .sdk-object-list-table tbody tr:hover {
   background: var(--ui-fill-tertiary);
 }
@@ -3580,6 +3610,10 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
 }
 .sdk-object-list-item-btn.sdk-object-list-item-two-line {
   min-height: var(--list-row-two-line-height, 60px);
+}
+.sdk-object-list-item-btn.is-non-selectable,
+.sdk-object-list-card.is-non-selectable {
+  cursor: default;
 }
 .sdk-object-list-item-btn.chosen {
   font-weight: var(--font-medium);

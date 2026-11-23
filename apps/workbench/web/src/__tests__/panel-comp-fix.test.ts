@@ -406,15 +406,24 @@ describe("official component generality fixes (Items 1-4)", () => {
     expect(instance.outputs.usedPanelsList?.selectedLabel).toBe("Graph Panel");
     expect(container.querySelector(".sdk-object-list-item-btn.chosen")?.textContent).toContain("Graph Panel");
 
-    // Clicking second item updates inspectedPanel directly with ProductPanel ref.
+    // Clicking first item (human click on Panel A), then agent switches inspectedPanel to Panel B:
+    // BOTH left highlight and right-pane label (`selectedLabel` and `activeLabel`) switch cleanly to Panel B!
     const buttons = container.querySelectorAll<HTMLButtonElement>(".sdk-object-list-item-btn");
-    buttons[1]!.click();
+    buttons[0]!.click();
     await vi.waitFor(() => {
-      expect(instance.state.values.value.inspectedPanel).toEqual({
-        className: PRODUCT_PANEL,
-        primaryKey: "panel-a2",
-      });
+      expect(instance.outputs.usedPanelsList?.selectedLabel).toBe("Graph Panel");
+      expect(instance.outputs.usedPanelsList?.activeLabel).toBe("Graph Panel");
     });
+
+    // Agent externally updates `inspectedPanel` to Panel B (no human click).
+    instance.state.set("inspectedPanel", { className: PRODUCT_PANEL, primaryKey: "panel-a2" });
+    await vi.waitFor(() => {
+      expect(instance.outputs.usedPanelsList?.selectedLabel).toBe("Detail Panel");
+      expect(instance.outputs.usedPanelsList?.activeLabel).toBe("Detail Panel");
+    });
+    expect(buttons[0]!.classList.contains("chosen")).toBe(false);
+    expect(buttons[1]!.classList.contains("chosen")).toBe(true);
+    expect(buttons[1]!.getAttribute("aria-selected")).toBe("true");
 
     // Switching parent Application clears inspectedPanel and triggers fallbackToFirst for the new parent's rows.
     instance.state.setState({
@@ -428,5 +437,77 @@ describe("official component generality fixes (Items 1-4)", () => {
       });
     });
     expect(instance.outputs.usedPanelsList?.selectedLabel).toBe("Analytics Panel");
+    expect(instance.outputs.usedPanelsList?.activeLabel).toBe("Analytics Panel");
+  });
+
+  it("Supplement 2: disables private row selection when neither state.selected nor @choose is wired while keeping inline row actions and reference links clickable", async () => {
+    const rowActionsFired: unknown[] = [];
+    const navigated: unknown[] = [];
+
+    const readonlyTableProjection: DirectProjection = {
+      ...meta,
+      id: "entries-table",
+      name: "Entries",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: {
+        layout: "table",
+        columns: [
+          { key: "label", labelKey: "col.name" },
+          { key: "panel", labelKey: "col.panel", kind: "reference" },
+        ],
+        rowActions: {
+          items: [{ kind: "local", id: "edit", labelKey: "act.edit" }],
+        },
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: RELATIONSHIP } }, read: "list", params: {} } },
+    };
+    const manifest: DirectPanelManifest = {
+      state: {},
+      members: { entries: { target: { projectionId: "entries-table" } } },
+    };
+
+    const { instance, container } = mountTestPanel({
+      manifest,
+      projections: { "entries-table": readonlyTableProjection },
+      members: ["entries"],
+      messages: { en: { "col.name": "Name", "col.panel": "Panel", "act.edit": "Edit" } },
+      memberListeners: {
+        entries: {
+          onRowAction: (payload: unknown) => rowActionsFired.push(payload),
+          onNavigate: (refVal: unknown) => navigated.push(refVal),
+        },
+      },
+      answer: () =>
+        ready([
+          {
+            primaryKey: "entry-1",
+            label: "Home",
+            fields: {
+              panel: { kind: "reference", className: PRODUCT_PANEL, primaryKey: "p-1", label: "Home Panel" },
+            },
+          },
+        ]),
+    });
+
+    await vi.waitFor(() => expect(container.querySelectorAll("tbody tr")).toHaveLength(1));
+    const tr = container.querySelector<HTMLTableRowElement>("tbody tr")!;
+    expect(tr.classList.contains("is-non-selectable")).toBe(true);
+    expect(tr.getAttribute("tabindex")).toBeNull();
+    expect(tr.getAttribute("aria-selected")).toBeNull();
+
+    // Clicking the table row must NOT highlight it or write private selected state.
+    tr.click();
+    expect(tr.classList.contains("chosen")).toBe(false);
+    expect(instance.outputs.entries?.selectedLabel ?? null).toBeNull();
+    expect(instance.ownParams("entries").selected).toBeUndefined();
+
+    // Reference links and inline row action buttons inside the non-selectable row still work normally.
+    container.querySelector<HTMLButtonElement>(".sdk-object-ref-link")!.click();
+    expect(navigated).toEqual([{ className: PRODUCT_PANEL, primaryKey: "p-1", label: "Home Panel" }]);
+
+    container.querySelector<HTMLButtonElement>(".sdk-object-list-row-actions button")!.click();
+    expect(rowActionsFired).toEqual([{ id: "edit", ref: { className: RELATIONSHIP, primaryKey: "entry-1" }, index: 0 }]);
   });
 });
