@@ -393,7 +393,25 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
         t: (key: string) => key,
         resources: async () => {},
         expandPageComposer: async () => {},
-        notify: () => { throw new Error("This test tells the reader nothing"); }, readPanelData: async () => { throw new Error("This test reads no member data through the platform"); }, navigate: async () => { throw new Error("This test opens no address"); },
+        notify: () => { throw new Error("This test tells the reader nothing"); },
+        readPanelData: async (request) => {
+          if (request.operations) {
+            return ready({
+              save: {
+                kind: "form.save",
+                handlerRef: `${AGENT_DEFINITION}.save`,
+                label: "Save",
+                effect: "write",
+                target: { source: "input", input: "agent" },
+                inputSchema: {},
+                resultSchema: {},
+                batch: false,
+              },
+            });
+          }
+          throw new Error("This test reads no member data through the platform");
+        },
+        navigate: async () => { throw new Error("This test opens no address"); },
         // A frame panel's own frame is not an application's frame: no current entry, no menu.
         currentEntry: computed(() => null), entryMenu: computed(() => null),
       });
