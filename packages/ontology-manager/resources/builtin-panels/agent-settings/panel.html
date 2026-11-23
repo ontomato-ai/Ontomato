@@ -33,7 +33,7 @@
         <h3>{{ t('agents.title') }}</h3>
         <sdk-button type="primary" size="small" :disabled="mode === 'create'" @click="startCreate">{{ t('agents.new') }}</sdk-button>
       </div>
-      <projection slot="list"></projection>
+      <projection slot="list" @update:listed="onListed"></projection>
     </template>
     <template v-if="listVisible">
       <p v-if="mode === 'list'" class="agent-settings-empty">{{ t('agents.choose') }}</p>
@@ -46,7 +46,7 @@
             <projection v-if="selectedReady" slot="remove"></projection>
           </div>
         </div>
-        <section-group v-if="mode === 'create' || selectedReady" :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
+        <section-group v-if="formMounted" :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
           <projection slot="form">
             <template #field-modelSelection.modelId><projection slot="model"></projection></template>
             <template #field-skills><projection slot="skills"></projection></template>
