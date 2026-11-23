@@ -23,7 +23,6 @@ import { localeAutonyms } from "./locale-names";
 import type { PlatformShownPage } from "./PlatformLayout.vue";
 import { appDeclarations } from "./partition";
 import { catalogPartition, type NativeLayout } from "./native-layouts";
-import { entryCount } from "./entry-counts";
 import type { PlatformBrand } from "@ontomato/platform-shell";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import { panelEntryApplication, useApplicationCatalog } from "./catalog";
@@ -93,13 +92,7 @@ const activeMenuApps = computed(() => {
 /** Whether the shown application draws its own frame in its area (its page writes it). */
 const appFramed = provideApplicationFrame();
 const readAppCounts = (appId: string) => activeMenuApps.value.has(appId);
-const activeEntryCount: typeof entryCount = (appId, use) => {
-  if (!readAppCounts(appId)) return null;
-  // When the active route is framed (or awaiting admission for its declared frame), that frame owns its menu counts.
-  if (appFramed.value && panelEntryApplication(route.path) === appId) return null;
-  return entryCount(appId, use);
-};
-const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers, activeEntryCount));
+const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers));
 
 const declarations = computed<PlatformAppDeclaration[]>(() =>
   appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key), readAppCounts),

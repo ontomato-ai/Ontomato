@@ -5,6 +5,9 @@ import { definePanel } from "@ontomato/contracts/panel-manifest";
 import { parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
 import { provideApplicationFrame } from "@ontomato/platform-shell";
 import PanelApplicationRoute from "../../../../../packages/platform-web/src/pages/PanelApplicationRoute.vue";
+import platformFrameSource from "../../../../../packages/platform-shell/resources/builtin-panels/platform-frame/panel.json";
+import platformFrameHtml from "../../../../../packages/platform-shell/resources/builtin-panels/platform-frame/panel.html?raw";
+import platformFrameModule from "../../../../../packages/platform-shell/resources/builtin-panels/platform-frame/panel.mjs?raw";
 import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer, panelRecord, panelSnapshot, panelUse, projections, type Sent } from "./panel-frame";
 
 /*
@@ -118,5 +121,124 @@ it("holds the entry's page, header and content, in the frame; shares the frame's
     expect(frameRoot.querySelector(".panel-entry-unit .term")?.textContent).toBe("B");
   } finally {
     mounted.unmount();
+  }
+});
+
+it("shipped platform-frame renders grouped app menu for multi-entry apps, hides it for single-entry apps, and skips framing beside a conversation", async () => {
+  const platformFrame = {
+    ...panelRecord("builtin-product-platform-frame", "Platform application frame", definePanel(platformFrameSource.manifest as never)),
+    content: {
+      html: platformFrameHtml,
+      module: platformFrameModule,
+      messages: platformFrameSource.content.messages,
+    },
+    visibility: "platform" as const,
+    domainId: null,
+    ownerId: null,
+    editable: false as const,
+  };
+
+  const multiApp = "app-multi";
+  const singleApp = "app-single";
+  const multiUses = [
+    { ...panelUse("use-overview", "multi-overview", content.id, `/applications/${multiApp}/overview`), names: { en: "Overview" }, groupKey: "main" },
+    { ...panelUse("use-reports", "multi-reports", content.id, `/applications/${multiApp}/reports`), names: { en: "Reports" }, groupKey: "main" },
+  ];
+  const singleUses = [
+    { ...panelUse("use-only", "single-only", content.id, `/applications/${singleApp}/only`), names: { en: "Only page" } },
+  ];
+
+  const multiResponder = async (request: Sent) => {
+    if (request.path === `/api/product-panels/${platformFrame.id}/snapshot`) {
+      const { pageSkillContext: _none, ...snapshot } = await (await panelSnapshot(platformFrame, projections, request)).json();
+      return Response.json(snapshot);
+    }
+    if (request.path === `/api/data-query/platform/applications/${multiApp}/panel-uses`) {
+      return Response.json({
+        data: {
+          applicationId: multiApp,
+          names: { en: "Academy portal" },
+          groups: [{ key: "main", names: { en: "Workspace" }, sort: 0 }],
+          entry: { path: `/applications/${multiApp}`, renderer: "panels" },
+          panelUses: multiUses,
+          framePanelId: platformFrame.id,
+        },
+      });
+    }
+    if (request.path === `/api/data-query/platform/applications/${singleApp}/panel-uses`) {
+      return Response.json({
+        data: {
+          applicationId: singleApp,
+          names: { en: "Single view" },
+          groups: [],
+          entry: { path: `/applications/${singleApp}`, renderer: "panels" },
+          panelUses: singleUses,
+          framePanelId: platformFrame.id,
+        },
+      });
+    }
+    for (const panel of [content, platformFrame]) {
+      if (request.path === `/api/product-panels/${panel.id}`) return panelAnswer(panel, request);
+      if (request.path === `/api/product-panels/${panel.id}/snapshot`) return panelSnapshot(panel, projections, request);
+    }
+    return nothingAt(request);
+  };
+
+  installPlatform(multiResponder);
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{
+      path: "/applications/:applicationId/:panelPath(.*)?",
+      component: PanelApplicationRoute,
+      props: (route) => ({ applicationId: String(route.params.applicationId) }),
+    }],
+  });
+
+  // 1. Multi-entry domain app renders AppMenu with localized application title, group heading, and single active entry.
+  await router.push(`/applications/${multiApp}/overview`);
+  const multiMount = mountPlatformPage(() => h(defineComponent({
+    setup() {
+      provideApplicationFrame();
+      return () => h(RouterView);
+    },
+  })), router);
+  try {
+    await vi.waitFor(() => expect(multiMount.element.querySelector(".platform-app-menu .app-menu-title")?.textContent?.trim()).toBe("Academy portal"));
+    expect(multiMount.element.querySelector(".platform-app-menu .group-heading")?.textContent?.trim()).toBe("Workspace");
+    const activeRows = multiMount.element.querySelectorAll('.platform-app-menu .page-row[aria-current="page"]');
+    expect(activeRows).toHaveLength(1);
+    expect(activeRows[0]?.textContent).toContain("Overview");
+  } finally {
+    multiMount.app.unmount();
+  }
+
+  // 2. Single-entry domain app hides the sidebar menu while still rendering content inside platform-frame.
+  await router.push(`/applications/${singleApp}/only`);
+  const singleMount = mountPlatformPage(() => h(defineComponent({
+    setup() {
+      provideApplicationFrame();
+      return () => h(RouterView);
+    },
+  })), router);
+  try {
+    await vi.waitFor(() => expect(singleMount.element.querySelector(".platform-frame-shell")).not.toBeNull());
+    await vi.waitFor(() => expect(singleMount.element.querySelector(".panel-entry-unit .sdk-page-header-title")?.textContent?.trim()).toBe("Term"));
+    expect(singleMount.element.querySelector(".platform-app-menu")).toBeNull();
+  } finally {
+    singleMount.app.unmount();
+  }
+
+  // 3. Beside a conversation (`navigate` prop), no frame panel is mounted at all.
+  const besideMount = mountPlatformPage(() => h(PanelApplicationRoute, {
+    applicationId: multiApp,
+    address: `/applications/${multiApp}/overview`,
+    navigate: vi.fn(),
+  }), router);
+  try {
+    await vi.waitFor(() => expect(besideMount.element.querySelector(".sdk-page-header-title")?.textContent?.trim()).toBe("Term"));
+    expect(besideMount.element.querySelector(".platform-frame-shell")).toBeNull();
+    expect(besideMount.element.querySelector(".platform-app-menu")).toBeNull();
+  } finally {
+    besideMount.app.unmount();
   }
 });

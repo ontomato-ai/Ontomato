@@ -16,6 +16,7 @@
     "mcp-service"
   ],
   "scheduleAdapter": null,
+  "framePanelId": "builtin-product-platform-frame",
   "allowStandalone": false,
   "declaration": {
     "names": {

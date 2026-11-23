@@ -323,7 +323,7 @@ const applicationSave: PanelWriteServerOperation = {
 
       const id = target.primaryKey;
       if (submittedFields?.length === 0) return { primaryKey: id, data: { id } };
-      const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "access", "groupKey", "inputs", "defaultAgent", "count"]);
+      const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "access", "groupKey", "inputs", "defaultAgent"]);
       const isSingleEntry = !("panelUses" in values) && !("icon" in values) && (
         submittedFields === undefined
           ? ("pageKey" in values && "panelId" in values)
