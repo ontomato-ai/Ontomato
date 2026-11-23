@@ -62,7 +62,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-async function mount(component: unknown, props: Record<string, unknown>, slots: Record<string, () => unknown> = {}) {
+async function mount(component: unknown, props: Record<string, unknown>, slots: Record<string, (...args: never[]) => unknown> = {}) {
   const root = document.createElement("div");
   document.body.appendChild(root);
   app = createApp({ render: () => h(component as never, props, slots) });
@@ -391,6 +391,64 @@ describe("the menu of an application whose pages are its own menu", () => {
       ariaLabel: "Pages",
     });
     expect(siblingRoot.querySelectorAll(".page-row.active")).toHaveLength(0);
+  });
+
+  it("renders #item-trailing slot on AppPanelPages and AppMenu and formats mobile options via itemTrailingText", async () => {
+    const groups = [
+      {
+        key: "facts",
+        label: "Facts",
+        items: [
+          { id: "/ontology/playground", label: "Ontology graph" },
+          { id: "/ontology/objects", label: "Object types", count: 99 },
+          { id: "/ontology/knowledge", label: "Business knowledge" },
+        ],
+      },
+    ];
+    const foot = { id: "/settings/models", label: "Models" };
+    const root = await mount(
+      AppMenu,
+      {
+        title: "Ontology manager",
+        groups,
+        foot,
+        itemTrailingText: {
+          "/ontology/playground": "Beta",
+          "/ontology/objects": "(18)",
+          "/ontology/knowledge": null,
+          "/settings/models": "v2",
+        },
+        activeId: "/ontology/objects",
+        ariaLabel: "Pages",
+      },
+      {
+        "item-trailing": ({ item }: { item: { id: string; label: string } }) =>
+          item.id === "/ontology/objects"
+            ? h("span", { class: "custom-trailing", "data-id": item.id }, "18")
+            : item.id === "/settings/models"
+              ? h("span", { class: "custom-foot-trailing" }, "v2")
+              : null,
+      },
+    );
+
+    // #item-trailing replaces legacy .page-count when supplied and receives { item }.
+    expect(root.querySelectorAll(".page-count")).toHaveLength(0);
+    const objectsRow = [...root.querySelectorAll(".page-row")].find((row) => row.textContent?.includes("Object types"));
+    expect(objectsRow?.querySelector(".custom-trailing")?.textContent).toBe("18");
+    expect(objectsRow?.querySelector(".custom-trailing")?.getAttribute("data-id")).toBe("/ontology/objects");
+    const playgroundRow = [...root.querySelectorAll(".page-row")].find((row) => row.textContent?.includes("Ontology graph"));
+    expect(playgroundRow?.querySelector(".custom-trailing")).toBeNull();
+    const footRow = root.querySelector(".page-foot .page-row");
+    expect(footRow?.querySelector(".custom-foot-trailing")?.textContent).toBe("v2");
+
+    // Mobile <select> uses itemTrailingText verbatim without count-specific formatting.
+    const optionTexts = [...root.querySelectorAll(".mobile-page-select option")].map((opt) => opt.textContent?.trim());
+    expect(optionTexts).toEqual([
+      "Ontology graph Beta",
+      "Object types (18)",
+      "Business knowledge",
+      "Models v2",
+    ]);
   });
 });
 

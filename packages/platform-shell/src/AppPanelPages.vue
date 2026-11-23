@@ -13,6 +13,10 @@ withDefaults(
   { foot: null },
 );
 const emit = defineEmits<{ selectPage: [id: string] }>();
+defineSlots<{
+  /** Optional trailing content rendered at the end of a navigation row. */
+  "item-trailing"?: (props: { item: PlatformPanelPage }) => unknown;
+}>();
 </script>
 
 <template>
@@ -40,7 +44,10 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
         >
           <component v-if="page.icon" :is="resolveIcon(page.icon)" class="page-icon" :size="16" aria-hidden="true" />
           <span class="page-label">{{ page.label }}</span>
-          <span v-if="page.count !== null && page.count !== undefined" class="page-count">{{ page.count }}</span>
+          <template v-if="$slots['item-trailing']">
+            <slot name="item-trailing" :item="page" />
+          </template>
+          <span v-else-if="page.count !== null && page.count !== undefined" class="page-count">{{ page.count }}</span>
         </button>
       </template>
     </section>
@@ -55,6 +62,9 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
       >
         <component v-if="foot.icon" :is="resolveIcon(foot.icon)" class="page-icon" :size="16" aria-hidden="true" />
         <span class="page-label">{{ foot.label }}</span>
+        <template v-if="$slots['item-trailing']">
+          <slot name="item-trailing" :item="foot" />
+        </template>
       </button>
     </div>
   </div>
@@ -146,6 +156,9 @@ const emit = defineEmits<{ selectPage: [id: string] }>();
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.page-row > :not(.page-label) {
+  flex-shrink: 0;
 }
 .page-count {
   flex-shrink: 0;

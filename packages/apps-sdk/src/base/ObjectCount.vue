@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import type { PanelRecordQuery } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { usePanelContext } from "../panel/context";
-import { useMember, useMemberData } from "../panel/member";
+import { useMember, useMemberData, useMemberOutput } from "../panel/member";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { readConfigString, readConfigStringMap, resolveLocalizedText } from "./localized-text";
 import type { ObjectCountItem } from "./object-count-types";
@@ -28,6 +28,7 @@ interface NormalizedCountItem {
  * `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum. For complete unpaged lists (`panelRecordList`),
  * displays the list length; for paged/query reads (`panelRecordQuery` / `panelOntologyObjects`), displays strictly the
  * owner-returned `total` (showing `—` when the owner omits `total`, never falling back to the current page's row count).
+ * Publishes `total` as a read-only member output (`number | null`).
  */
 const props = withDefaults(
   defineProps<{
@@ -39,12 +40,24 @@ const props = withDefaults(
     labels?: Readonly<Record<string, string>>;
     /** Optional item definitions rendered inline separated by a middot. */
     items?: readonly ObjectCountItem[];
+    /**
+     * Visual presentation: `"default"` renders the inline count strip with labels and status placeholders (`…` / `—`),
+     * while `"badge"` renders only a compact tabular numeral and omits the node whenever no finite count is available.
+     */
+    appearance?: "default" | "badge";
+    /**
+     * Omit rendering any DOM node while the count is unavailable (loading, awaiting, forbidden, error, or omitted by
+     * the owner). Defaults to `true` when `appearance` is `"badge"` and `false` for `"default"`.
+     */
+    omitWhenUnavailable?: boolean;
   }>(),
   {
     label: undefined,
     labelKey: undefined,
     labels: undefined,
     items: undefined,
+    appearance: undefined,
+    omitWhenUnavailable: undefined,
   },
 );
 
@@ -65,6 +78,18 @@ const datumState = useMemberData(datumName);
 const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => {
   const cfg = member.projection.config;
   return cfg && typeof cfg === "object" && !Array.isArray(cfg) ? (cfg as Record<string, unknown>) : undefined;
+});
+
+const resolvedAppearance = computed<"default" | "badge">(() => {
+  const configured = props.appearance ?? readConfigString(rawConfig.value, "appearance");
+  return configured === "badge" ? "badge" : "default";
+});
+
+const resolvedOmitWhenUnavailable = computed<boolean>(() => {
+  if (typeof props.omitWhenUnavailable === "boolean") return props.omitWhenUnavailable;
+  const raw = rawConfig.value?.omitWhenUnavailable ?? rawConfig.value?.["omit-when-unavailable"];
+  if (typeof raw === "boolean") return raw;
+  return resolvedAppearance.value === "badge";
 });
 
 function normalizeItem(raw: unknown): NormalizedCountItem | null {
@@ -140,8 +165,20 @@ const parsedData = computed<ParsedCountData>(() => {
   return { kind: "ready", total: hasTotal ? query.total! : null };
 });
 
-const renderedItems = computed(() => {
+useMemberOutput("total", () => parsedData.value.total);
+
+const visible = computed(() => !resolvedOmitWhenUnavailable.value || parsedData.value.total !== null);
+
+const displayValue = computed(() => {
   const data = parsedData.value;
+  if (data.kind === "loading") return "…";
+  if (data.kind === "empty") return "0";
+  if (data.kind !== "ready" || data.total === null) return "—";
+  return String(data.total);
+});
+
+const renderedItems = computed(() => {
+  const display = displayValue.value;
   return configuredItems.value.map((item) => {
     const label = resolveLocalizedText({
       key: item.labelKey,
@@ -152,11 +189,6 @@ const renderedItems = computed(() => {
       t,
       te,
     });
-    let display: string;
-    if (data.kind === "loading") display = "…";
-    else if (data.kind === "empty") display = "0";
-    else if (data.kind !== "ready" || data.total === null) display = "—";
-    else display = String(data.total);
     return { label, display };
   });
 });
@@ -170,10 +202,26 @@ const accessibleLabel = computed<string | undefined>(() => {
   }
   return summary || undefined;
 });
+
+const badgeAccessibleLabel = computed<string | undefined>(() => {
+  const hasConfiguredLabel = renderedItems.value.some((item) => Boolean(item.label));
+  if (hasConfiguredLabel || parsedData.value.notice) return accessibleLabel.value;
+  return undefined;
+});
 </script>
 
 <template>
   <span
+    v-if="visible && resolvedAppearance === 'badge'"
+    class="sdk-object-count sdk-object-count-badge"
+    data-appearance="badge"
+    :data-state="parsedData.kind"
+    :title="parsedData.notice"
+    :aria-busy="parsedData.kind === 'loading' ? 'true' : undefined"
+    :aria-label="badgeAccessibleLabel"
+  >{{ displayValue }}</span>
+  <span
+    v-else-if="visible"
     class="sdk-object-count"
     :data-state="parsedData.kind"
     :title="parsedData.notice"
@@ -222,5 +270,14 @@ const accessibleLabel = computed<string | undefined>(() => {
 .sdk-object-count-sep {
   color: var(--el-text-color-placeholder);
   user-select: none;
+}
+.sdk-object-count-badge {
+  align-items: center;
+  color: var(--el-text-color-secondary);
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  font-weight: inherit;
+  gap: 0;
+  line-height: var(--leading-xs);
 }
 </style>
