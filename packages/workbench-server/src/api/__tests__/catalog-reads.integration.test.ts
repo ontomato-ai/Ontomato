@@ -22,6 +22,7 @@ import { HttpError } from "../../utils/errors";
 import { installContentLayout } from "../../content/layout";
 import { config } from "../../config/application";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "../../services/product-panels/catalog-reads";
+import { readCurrentProjection } from "../../services/product-panels/current";
 
 const state = vi.hoisted(() => ({
   pool: undefined as pg.Pool | undefined,
@@ -345,7 +346,14 @@ it("dispatches application reads from current PostgreSQL records and preserves t
 
 it("updates only the submitted projection configuration field in PostgreSQL", async () => {
   const adapter = createProductProjectionReadAdapter(owner, viewer);
-  const before = await adapter.record("catalogue-data");
+  const before = await readCurrentProjection(owner, viewer, "catalogue-data");
+  const beforeRecord = await adapter.record("catalogue-data");
+  expect(beforeRecord).toMatchObject({
+    primaryKey: before.id,
+    className: PRODUCT_PROJECTION,
+    label: before.name,
+    outputs: { canEdit: true, revision: before.revision },
+  });
   const actor = { owner, credentials: viewer };
   const unusedRequest = async () => { throw new Error("The Node owner should write through its own store"); };
   const host = { initiator: actor, executor: actor, request: unusedRequest, requestWorkbench: unusedRequest };
@@ -358,10 +366,14 @@ it("updates only the submitted projection configuration field in PostgreSQL", as
     values: { config: { drawing: { color: "orange", width: 1 } } },
     submittedFields: ["/config/drawing/color"], revision: before.revision,
   }, "projection-save")).resolves.toMatchObject({ kind: "success" });
-  expect(await adapter.record(before.id)).toMatchObject({
+  expect(await readCurrentProjection(owner, viewer, before.id)).toMatchObject({
     name: before.name, data: before.data, componentId: before.componentId,
     config: { drawing: { color: "orange", width: 400 } },
   });
+  expect(await adapter.configRows(before.id)).toContainEqual(expect.objectContaining({
+    primaryKey: "drawing",
+    fields: { value: JSON.stringify({ color: "orange", width: 400 }, null, 2) },
+  }));
 });
 
 it.each(["identity", "entries"] as const)("submits only the changed application %s field without losing owner values", async section => {
