@@ -182,7 +182,8 @@ watch(() => props.artifact.id, () => {
   margin: 0;
   padding: var(--spacing-xs) var(--spacing-md);
   color: var(--el-color-warning-dark-2, var(--el-text-color-primary));
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 .lineage {
   border-top: 1px solid var(--el-border-color-lighter);

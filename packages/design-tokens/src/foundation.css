@@ -33,6 +33,10 @@
   --leading-title: 26px;
   --text-title-lg: 22px;
   --leading-title-lg: 30px;
+  --text-report-title: 22px;
+  --leading-report-title: 30px;
+  --text-report-section: 18px;
+  --leading-report-section: 26px;
   --text-2xl: 24px; /* not a DESIGN role; kept for existing headings */
   --text-3xl: 28px; /* display: welcome and empty states only */
   --leading-3xl: 36px;
