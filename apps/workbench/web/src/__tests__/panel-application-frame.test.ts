@@ -242,3 +242,57 @@ it("shipped platform-frame renders grouped app menu for multi-entry apps, hides 
     besideMount.app.unmount();
   }
 });
+
+it("supplies the frame's declared deepLink defaults on first unframed (beside-conversation) open and honors URL overrides", async () => {
+  installPlatform(answer);
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/chat", component: { template: "<div />" } },
+      {
+        path: "/applications/:applicationId/:panelPath(.*)?",
+        component: PanelApplicationRoute,
+        props: (route) => ({ applicationId: String(route.params.applicationId) }),
+      },
+    ],
+  });
+  await router.push("/chat");
+
+  // 1. First open beside a conversation with a clean URL omitting `frame.term`: receives frame default `"A"`.
+  const defaultMount = mountPlatformPage(() => h(PanelApplicationRoute, {
+    applicationId: app,
+    address: at("spring"),
+    navigate: vi.fn(),
+  }), router);
+  try {
+    await vi.waitFor(() => expect(defaultMount.element.querySelector(".term")?.textContent).toBe("A"));
+    expect(defaultMount.element.querySelector(".panel-application-frame")).toBeNull();
+  } finally {
+    defaultMount.app.unmount();
+  }
+
+  // 2. Explicit `frame.term=B` in the URL overrides the frame default beside a conversation.
+  const overrideMount = mountPlatformPage(() => h(PanelApplicationRoute, {
+    applicationId: app,
+    address: `${at("spring")}?frame.term=B`,
+    navigate: vi.fn(),
+  }), router);
+  try {
+    await vi.waitFor(() => expect(overrideMount.element.querySelector(".term")?.textContent).toBe("B"));
+  } finally {
+    overrideMount.app.unmount();
+  }
+
+  // 3. Explicit empty `frame.term=` clears the frame default beside a conversation instead of snapping back to `"A"`.
+  const clearedMount = mountPlatformPage(() => h(PanelApplicationRoute, {
+    applicationId: app,
+    address: `${at("spring")}?frame.term=`,
+    navigate: vi.fn(),
+  }), router);
+  try {
+    await vi.waitFor(() => expect(clearedMount.element.querySelector(".sdk-page-header-title")?.textContent?.trim()).toBe("Term"));
+    expect(clearedMount.element.querySelector(".term")?.textContent).toBe("");
+  } finally {
+    clearedMount.app.unmount();
+  }
+});

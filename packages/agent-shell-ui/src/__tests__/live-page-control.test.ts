@@ -246,4 +246,35 @@ describe("live agent page control (requirement-64995244)", () => {
     expect(line).toBe('State: {"filter":"relations","search":"order"}');
     expect(writtenText(`What is shown here?\n\n${line}`, prompts)).toBe("What is shown here?");
   });
+
+  it("defers state patches when no page controller is mounted yet instead of writing non-deepLink state into the URL", async () => {
+    const { display, serialized } = setup();
+    // Open the page first without registering a page controller yet (e.g. while the panel component is mounting).
+    await display.present(frame({ kind: "page", address: "/actions" }));
+    const receipt = await display.present(frame({
+      kind: "page",
+      address: "/actions",
+      state: { tab: "entries", creating: true },
+    }));
+    expect(receipt).toMatchObject({ status: "opened", reason: "target_selected" });
+    // Neither the display address nor serialized URL contains raw/non-deepLink state (`creating=true`).
+    expect(display.page.value?.address).toBe("/actions");
+    expect(serialized.every((entry) => !entry.page?.address.includes("creating"))).toBe(true);
+
+    // Once the panel mounts and registers its controller, the buffered state is applied immediately and the panel
+    // itself writes only its deepLink fields (`tab=entries`) back into the address.
+    const applied: Readonly<Record<string, RuntimeJsonValue>>[] = [];
+    const unregister = display.registerPageController("/actions", {
+      applyState(patch) {
+        applied.push(patch);
+        if (typeof patch.tab === "string") {
+          display.address({ kind: "state", address: `/actions?tab=${patch.tab}` });
+        }
+      },
+    });
+    expect(applied).toEqual([{ tab: "entries", creating: true }]);
+    expect(display.page.value?.address).toBe("/actions?tab=entries");
+    expect(display.page.value?.address).not.toContain("creating");
+    unregister();
+  });
 });

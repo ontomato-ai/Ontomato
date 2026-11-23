@@ -729,6 +729,39 @@ export async function resolveApplicationEntry(query: ApplicationEntryResolutionQ
   return applicationEntryResolutionSchema.parse(answer.data ?? answer);
 }
 
+/**
+ * Returns the cached frame panel manifest synchronously if the frame host has already loaded it.
+ */
+export function cachedApplicationFrameManifest(
+  applicationId: string,
+  framePanelId: string,
+): Pick<PanelManifest, "state"> | null {
+  return getCachedPanel(framePanelCacheKey(applicationId, framePanelId))?.manifest ?? null;
+}
+
+/**
+ * Reads an application's frame panel manifest for an entry opened without mounting the frame (beside a conversation),
+ * so declared `deepLink: true` defaults on the frame still populate `frameState` even when omitted from the URL.
+ */
+export async function readApplicationFrameManifest(
+  applicationId: string,
+  use: ApplicationPanelUse,
+  framePanelId: string,
+): Promise<Pick<PanelManifest, "state"> | null> {
+  const cacheKey = framePanelCacheKey(applicationId, framePanelId);
+  const cached = getCachedPanel(cacheKey);
+  if (cached) return cached.manifest;
+  try {
+    const scope = currentDefinitionCacheScope();
+    const query = new URLSearchParams({ applicationId, useId: use.id, source: "frame" });
+    const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${query}`));
+    setCachedPanel(cacheKey, answer.panel, scope);
+    return answer.panel.manifest;
+  } catch {
+    return null;
+  }
+}
+
 class PanelStreamContractError extends Error {}
 
 const targetKey = (target: ProductDefinitionTarget) => `${target.kind}:${target.id}`;

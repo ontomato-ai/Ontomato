@@ -572,6 +572,12 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       pendingDirectAddress = null;
       mount.address(nextAddress.url, nextAddress.options);
     }
+    if (pendingLiveState !== null) {
+      const lateLive = pendingLiveState;
+      pendingLiveState = null;
+      const lateValidated = validatePublicStatePatch(next.panel, lateLive);
+      mount.setState?.(lateValidated);
+    }
   }
 
   /**
