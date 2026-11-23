@@ -41,7 +41,17 @@ import type { SkillResolveRequest } from "../skills/panel-reads";
 import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { requireChartReadRegistration } from "./chart-sources";
-import { listSdkComponents, readProjectionComponent, readSdkComponent } from "./component-catalogue";
+import {
+  listSdkComponents,
+  readProjectionComponent,
+  readSdkComponent,
+  readSdkComponentConfigRows,
+  readSdkComponentDataRows,
+  readSdkComponentInputRows,
+  readSdkComponentOperationRows,
+  readSdkComponentOutputRows,
+  readSdkComponentRecord,
+} from "./component-catalogue";
 import { requireRegisteredPanelRoot, resolvePanelMemberPath } from "./member-path";
 
 type ReadInputs = ProductPanelReadRequest["inputs"];
@@ -231,6 +241,12 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [SDK_COMPONENT]: {
       catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
       definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer.locale),
+      record: selection => readSdkComponentRecord(owner, selection.primaryKey!, viewer.locale),
+      dataRows: selection => readSdkComponentDataRows(owner, selection.primaryKey!, viewer.locale),
+      configRows: selection => readSdkComponentConfigRows(owner, selection.primaryKey!, viewer.locale),
+      inputRows: selection => readSdkComponentInputRows(owner, selection.primaryKey!, viewer.locale),
+      outputRows: selection => readSdkComponentOutputRows(owner, selection.primaryKey!, viewer.locale),
+      operationRows: selection => readSdkComponentOperationRows(owner, selection.primaryKey!, viewer.locale),
     },
     [USER]: {
       options: async (_selection, params) => (await options()).users.options({

@@ -416,6 +416,12 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       catalogue: { source: "type", parameterMode: "fixed", params: { search: "keyword" }, result: "panelRecordList" },
       definition: { source: "object", parameterMode: "fixed", params: {}, result: "sdkComponentDefinition" },
+      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      dataRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      configRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      inputRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      outputRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      operationRows: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
     },
   },
   [PRODUCT_PROJECTION]: {

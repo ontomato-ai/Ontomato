@@ -328,7 +328,9 @@ describe("platform-ontology composite query", () => {
     expect(panel?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PANEL}.save`);
 
     const sdkComponent = byId.get(SDK_COMPONENT);
-    expect(Object.keys(sdkComponent?.reads ?? {}).sort()).toEqual(["catalogue", "definition"]);
+    expect(Object.keys(sdkComponent?.reads ?? {}).sort()).toEqual([
+      "catalogue", "configRows", "dataRows", "definition", "inputRows", "operationRows", "outputRows", "record",
+    ]);
     expect(sdkComponent?.operations).toBeUndefined();
 
     const role = byId.get(ROLE);

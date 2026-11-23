@@ -36,49 +36,282 @@
         "description": "当前 SDK 发行声明的组件，按名称和用途搜索。",
         "id": "builtin-product-257c4795-da58-46dd-8cc2-5145e1735b1f"
       },
-      "detail": {
-        "component": "PanelData",
+      "header": {
+        "component": "ObjectHeader",
+        "type": "platform:SDKComponent",
         "target": "selected",
         "data": {
-          "definition": "definition"
+          "record": "record"
         },
-        "name": "组件声明",
-        "description": "选中组件在发行里声明的含义、数据、配置、输入、输出和操作签名。",
-        "id": "builtin-product-4a5c84eb-637c-4b0b-93f5-2f37f4f672bf"
+        "config": {
+          "subtitleField": "package",
+          "statusField": "role"
+        },
+        "name": "组件标题",
+        "description": "选中组件的名称、所属包与角色。",
+        "id": "builtin-product-262fe906-356d-452b-a7ba-d856115e0cca"
+      },
+      "summary": {
+        "component": "ObjectSummary",
+        "type": "platform:SDKComponent",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "componentId",
+            "package",
+            "module",
+            "exportName",
+            "role",
+            "bindsElement",
+            "meaning",
+            "effects"
+          ],
+          "copyableFields": [
+            "componentId"
+          ]
+        },
+        "name": "组件概览",
+        "description": "选中组件的标识、所属包、模块、导出名、角色、适用对象类型、含义与副作用。",
+        "id": "builtin-product-ac2947c3-7fa8-4586-9701-0eaeb6a84e9e"
+      },
+      "dataTable": {
+        "component": "ObjectList",
+        "type": "platform:SDKComponent",
+        "target": "selected",
+        "data": {
+          "rows": "dataRows"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "emptyText": "components.data.uiOnly",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "components.table.datum",
+              "minWidth": 110
+            },
+            {
+              "key": "results",
+              "labelKey": "components.table.results",
+              "kind": "tags",
+              "minWidth": 180
+            },
+            {
+              "key": "required",
+              "labelKey": "components.table.required",
+              "kind": "tag",
+              "width": 88
+            },
+            {
+              "key": "runtimeParams",
+              "labelKey": "components.table.runtime",
+              "kind": "tags",
+              "minWidth": 160
+            }
+          ]
+        },
+        "name": "数据和类型",
+        "description": "组件声明的数据名、接受的读取结果、是否必需与运行时读取参数。",
+        "id": "builtin-product-6237af4a-67bc-40d2-bab4-d9a974cca035"
+      },
+      "configTable": {
+        "component": "ObjectList",
+        "type": "platform:SDKComponent",
+        "target": "selected",
+        "data": {
+          "rows": "configRows"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "emptyText": "components.config.none",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "components.table.name",
+              "minWidth": 130
+            },
+            {
+              "key": "type",
+              "labelKey": "components.table.type",
+              "minWidth": 140,
+              "wrap": true
+            },
+            {
+              "key": "required",
+              "labelKey": "components.table.required",
+              "kind": "tag",
+              "width": 88
+            },
+            {
+              "key": "defaultValue",
+              "labelKey": "components.table.default",
+              "minWidth": 100
+            },
+            {
+              "key": "description",
+              "labelKey": "components.table.description",
+              "minWidth": 200,
+              "wrap": true
+            }
+          ]
+        },
+        "name": "配置项和默认值",
+        "description": "组件声明的配置项、类型、是否必需、默认值与说明。",
+        "id": "builtin-product-114ea506-cb9e-4e04-a88a-122c2d678f84"
+      },
+      "inputTable": {
+        "component": "ObjectList",
+        "type": "platform:SDKComponent",
+        "target": "selected",
+        "data": {
+          "rows": "inputRows"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "emptyText": "components.input.none",
+          "columns": [
+            {
+              "key": "kind",
+              "labelKey": "components.table.kind",
+              "kind": "tag",
+              "width": 88
+            },
+            {
+              "key": "label",
+              "labelKey": "components.table.name",
+              "minWidth": 120
+            },
+            {
+              "key": "type",
+              "labelKey": "components.table.type",
+              "minWidth": 160,
+              "wrap": true
+            },
+            {
+              "key": "description",
+              "labelKey": "components.table.description",
+              "minWidth": 180,
+              "wrap": true
+            }
+          ]
+        },
+        "name": "输入与插槽",
+        "description": "组件声明的取值输入，以及页面可以填入内容的插槽。",
+        "id": "builtin-product-0666509b-10a7-42a3-ab3f-9d05aa1e0309"
+      },
+      "outputTable": {
+        "component": "ObjectList",
+        "type": "platform:SDKComponent",
+        "target": "selected",
+        "data": {
+          "rows": "outputRows"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "emptyText": "components.output.none",
+          "columns": [
+            {
+              "key": "kind",
+              "labelKey": "components.table.kind",
+              "kind": "tag",
+              "width": 108
+            },
+            {
+              "key": "label",
+              "labelKey": "components.table.name",
+              "minWidth": 120
+            },
+            {
+              "key": "type",
+              "labelKey": "components.table.type",
+              "minWidth": 160,
+              "wrap": true
+            },
+            {
+              "key": "description",
+              "labelKey": "components.table.description",
+              "minWidth": 180,
+              "wrap": true
+            }
+          ]
+        },
+        "name": "输出与事件",
+        "description": "组件交给页面的输出值、只读输出以及发出的事件。",
+        "id": "builtin-product-01521091-419d-4cdd-9a89-a6f6903da10c"
+      },
+      "operationTable": {
+        "component": "ObjectList",
+        "type": "platform:SDKComponent",
+        "target": "selected",
+        "data": {
+          "rows": "operationRows"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "showFooter": false,
+          "fallbackToFirst": false,
+          "emptyText": "components.operations.none",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "components.table.name",
+              "minWidth": 140
+            },
+            {
+              "key": "signature",
+              "labelKey": "components.table.signature",
+              "minWidth": 200,
+              "wrap": true
+            }
+          ]
+        },
+        "name": "操作",
+        "description": "组件自己声明的操作签名。",
+        "id": "builtin-product-ebcf9b46-f684-4962-a454-1c0b21faf807"
       }
     }
   },
   "content": {
     "messages": {
       "zh-CN": {
-        "components.meta.package": "所属包",
-        "components.meta.export": "导出名",
-        "components.meta.role": "角色",
-        "components.meta.binds": "适用的对象类型（实际绑定通过投影的读法或操作声明）",
-        "components.role.presentation": "展示组件",
-        "components.role.control": "控件",
+        "panel.name": "基础组件",
+        "panel.description": "查看当前 SDK 声明的基础组件目录与端口签名",
+        "action.refresh": "刷新",
         "components.viewClass": "查看所属类",
-        "components.section.meaning": "含义",
-        "components.effectsLine": "副作用：{text}",
+        "components.section.overview": "概览与含义",
         "components.section.data": "数据和类型",
         "components.section.dataHint": "组件声明的数据：每个数据名要哪种读取结果、是否必需、它自己在运行时会给出哪些读取参数。",
         "components.data.uiOnly": "这个组件不读本体数据，只能当界面用。",
-        "components.data.wildcard": "任意名称",
         "components.section.config": "配置项和默认值",
         "components.section.configHint": "组件声明的配置项，超出默认值的由使用它的投影给出。",
         "components.config.none": "这个组件不声明配置项。",
         "components.section.input": "输入",
         "components.section.inputHint": "组件声明的取值输入，以及页面可以填入内容的插槽。",
-        "components.input.declared": "组件声明的取值输入。",
-        "components.slot.declared": "页面填入内容的插槽。",
         "components.input.none": "这个组件不声明输入，输入由使用它的投影声明。",
         "components.section.output": "输出",
-        "components.section.outputHint": "组件交给页面的值（可连到页面的状态），以及它发出的事件。",
-        "components.output.declared": "可以连到页面状态的输出值。",
+        "components.section.outputHint": "组件交给页面的输出值（可连到页面状态或只读输出），以及它发出的事件。",
         "components.output.none": "这个组件不声明输出。",
         "components.section.operations": "操作",
         "components.section.operationsHint": "组件自己声明的操作签名；不显示某个投影实际绑定了哪个业务操作。",
         "components.operations.none": "当前发行没有组件声明操作。页面能执行的操作由投影声明，例如 OperationButton 运行它所在投影声明的操作。",
+        "components.table.kind": "分类",
         "components.table.name": "名称",
         "components.table.datum": "数据",
         "components.table.results": "读取结果",
@@ -88,55 +321,30 @@
         "components.table.default": "默认值",
         "components.table.description": "说明",
         "components.table.signature": "签名",
-        "components.yes": "是",
-        "components.no": "否",
-        "components.loading": "正在读取组件声明…",
-        "components.forbidden": "你没有读取这个组件的权限。",
-        "components.selectPrompt": "从左侧选择一个组件，查看它在当前发行里声明的各栏。",
-        "components.port.binding": "使用它的投影所绑定的对象类型",
-        "components.port.object": "{type} 的对象",
-        "components.port.scalar": "标量 {type}",
-        "components.port.union": "对象联合 {parts}",
-        "components.port.childObject": "子对象 {parent} / {collection}",
-        "components.port.list": "列表 <{items}>",
-        "components.port.placement": "放置位置",
-        "components.port.json": "JSON",
-        "components.tag.input": "输入",
-        "components.tag.slot": "插槽",
-        "components.tag.output": "输出",
-        "components.tag.event": "事件",
-        "components.meta.module": "模块",
-        "panel.name": "基础组件"
+        "components.selectPrompt": "从左侧选择一个组件，查看它在当前发行里声明的各栏。"
       },
       "en": {
-        "components.meta.package": "Package",
-        "components.meta.export": "Export",
-        "components.meta.role": "Role",
-        "components.meta.binds": "Applicable object types (bind through a projection's declared reads or operations)",
-        "components.role.presentation": "presentation",
-        "components.role.control": "control",
+        "panel.name": "Base components",
+        "panel.description": "Browse the current SDK release's base components and their declared ports and signatures.",
+        "action.refresh": "Refresh",
         "components.viewClass": "View its class",
-        "components.section.meaning": "Meaning",
-        "components.effectsLine": "Effects: {text}",
+        "components.section.overview": "Overview and meaning",
         "components.section.data": "Data and types",
         "components.section.dataHint": "The data each datum names: which read results it accepts, whether every placement must supply it, and the read parameters the component supplies at run time.",
         "components.data.uiOnly": "This component reads no ontology data; it is the interface only.",
-        "components.data.wildcard": "any name",
         "components.section.config": "Configuration and defaults",
         "components.section.configHint": "The configuration the component declares; a projection that uses it supplies the values beyond these defaults.",
         "components.config.none": "This component declares no configuration.",
         "components.section.input": "Inputs",
         "components.section.inputHint": "The typed inputs the component declares, and the slots a page fills with content.",
-        "components.input.declared": "A typed input the component declares.",
-        "components.slot.declared": "A slot the page fills with content.",
         "components.input.none": "This component declares no inputs; the projection that uses it declares them.",
         "components.section.output": "Outputs",
-        "components.section.outputHint": "The values the component hands the page, bindable to its state, and the events it emits.",
-        "components.output.declared": "An output value bindable to page state.",
+        "components.section.outputHint": "The values the component hands the page (state outputs and read-only outputs), and the events it emits.",
         "components.output.none": "This component declares no outputs.",
         "components.section.operations": "Operations",
         "components.section.operationsHint": "The operation signatures the component itself declares; which business operation a projection binds is not shown.",
         "components.operations.none": "No component of the current release declares an operation. A page runs the operations its projections declare, such as OperationButton running the one its projection names.",
+        "components.table.kind": "Kind",
         "components.table.name": "Name",
         "components.table.datum": "Datum",
         "components.table.results": "Read results",
@@ -146,28 +354,40 @@
         "components.table.default": "Default",
         "components.table.description": "Description",
         "components.table.signature": "Signature",
-        "components.yes": "Yes",
-        "components.no": "No",
-        "components.loading": "Reading the component's declaration…",
-        "components.forbidden": "You cannot read this component.",
-        "components.selectPrompt": "Choose a component on the left to read what the current release declares for it.",
-        "components.port.binding": "the object type of the projection that uses it",
-        "components.port.object": "an object of {type}",
-        "components.port.scalar": "a {type} scalar",
-        "components.port.union": "an object union of {parts}",
-        "components.port.childObject": "a child object of {parent} / {collection}",
-        "components.port.list": "a list of <{items}>",
-        "components.port.placement": "a placement",
-        "components.port.json": "JSON",
-        "components.tag.input": "input",
-        "components.tag.slot": "slot",
-        "components.tag.output": "output",
-        "components.tag.event": "event",
-        "components.meta.module": "Module",
-        "panel.name": "Base components"
+        "components.selectPrompt": "Choose a component on the left to read what the current release declares for it."
       },
       "zh-TW": {
-        "panel.name": "基礎組件"
+        "panel.name": "基礎組件",
+        "panel.description": "檢視目前 SDK 宣告的基礎組件目錄與埠簽章",
+        "action.refresh": "重新整理",
+        "components.viewClass": "檢視所屬類",
+        "components.section.overview": "概覽與含義",
+        "components.section.data": "資料與類型",
+        "components.section.dataHint": "組件宣告的資料：每個資料名接受的讀取結果、是否必需，以及執行時提供的讀取參數。",
+        "components.data.uiOnly": "這個組件不讀取本體資料，僅作為介面使用。",
+        "components.section.config": "設定項與預設值",
+        "components.section.configHint": "組件宣告的設定項，超出預設值的部分由使用它的投影提供。",
+        "components.config.none": "這個組件未宣告設定項。",
+        "components.section.input": "輸入",
+        "components.section.inputHint": "組件宣告的取值輸入，以及頁面可以填入內容的插槽。",
+        "components.input.none": "這個組件未宣告輸入，輸入由使用它的投影宣告。",
+        "components.section.output": "輸出",
+        "components.section.outputHint": "組件交給頁面的輸出值（可連到頁面狀態或唯讀輸出），以及它發出的事件。",
+        "components.output.none": "這個組件未宣告輸出。",
+        "components.section.operations": "操作",
+        "components.section.operationsHint": "組件自己宣告的操作簽章；不顯示某個投影實際綁定的業務操作。",
+        "components.operations.none": "目前發行沒有組件宣告操作。頁面能執行的操作由投影宣告，例如 OperationButton 執行其所在投影宣告的操作。",
+        "components.table.kind": "分類",
+        "components.table.name": "名稱",
+        "components.table.datum": "資料",
+        "components.table.results": "讀取結果",
+        "components.table.required": "必需",
+        "components.table.runtime": "組件自帶的讀取參數",
+        "components.table.type": "類型",
+        "components.table.default": "預設值",
+        "components.table.description": "說明",
+        "components.table.signature": "簽章",
+        "components.selectPrompt": "從左側選擇一個組件，檢視它在目前發行裡宣告的各欄。"
       }
     }
   }
