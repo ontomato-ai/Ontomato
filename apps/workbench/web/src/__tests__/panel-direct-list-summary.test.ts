@@ -78,6 +78,7 @@ function mountDirect(
     initial?: Record<string, unknown>;
     messages?: Record<string, Record<string, string>>;
     members?: readonly string[];
+    listeners?: Record<string, Record<string, (...args: unknown[]) => void>>;
   } = {},
 ) {
   const manifest = options.manifest ?? baseManifest;
@@ -101,7 +102,7 @@ function mountDirect(
   const element = document.createElement("div");
   document.body.appendChild(element);
   const app = createApp({
-    setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, { instance, member, key: member }))),
+    setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, { instance, member, key: member, ...(options.listeners?.[member] ?? {}) }))),
   }).use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
   app.mount(element);
   cleanup = () => {
@@ -407,4 +408,67 @@ it("renders ObjectList dot status style and ObjectSummary article layout with ce
   missingRecord = true;
   instance.state.set("selectedTask", task("t-missing"));
   await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-empty")?.textContent).toContain("Entry does not exist"));
+});
+
+it("hides the select-all check bar when empty and emits choose only on explicit user click", async () => {
+  const checkedManifest: DirectPanelManifest = {
+    state: {
+      selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: true },
+      checkedTasks: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } }, personal: false, deepLink: false, external: false, default: [] },
+    },
+    members: {
+      tasks: {
+        target: { projectionId: "schedules-tasks" },
+        inputs: { selected: { state: "selectedTask" }, checked: { state: "checkedTasks" } },
+        outputs: { selected: { state: "selectedTask" }, checked: { state: "checkedTasks" } },
+      },
+    },
+    commands: {},
+  };
+  const checkedProjections: Record<string, DirectProjection> = {
+    ...baseProjections,
+    "schedules-tasks": {
+      ...baseProjections["schedules-tasks"]!,
+      inputs: { selected: { kind: "object", objectType: SCHEDULED_TASK }, checked: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK }, checked: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+      config: { fallbackToFirst: true },
+    },
+  };
+  let rows: typeof taskRows = [];
+  const chosenEvents: unknown[] = [];
+  const { instance, element } = mountDirect(
+    () => ready(rows),
+    {
+      manifest: checkedManifest,
+      projections: checkedProjections,
+      listeners: { tasks: { onChoose: (value: unknown) => chosenEvents.push(value) } },
+    },
+  );
+
+  // Empty list with nothing checked omits the select-all check bar completely.
+  await vi.waitFor(() => expect(element.querySelector("[data-state='empty']")).not.toBeNull());
+  expect(element.querySelector(".sdk-object-list-check-row")).toBeNull();
+
+  // On a non-empty initial load, fallbackToFirst selects row 1 without firing explicit `choose`.
+  cleanup?.();
+  cleanup = null;
+  document.body.innerHTML = "";
+  rows = taskRows;
+  const loaded = mountDirect(
+    () => ready(rows),
+    {
+      manifest: checkedManifest,
+      projections: checkedProjections,
+      listeners: { tasks: { onChoose: (value: unknown) => chosenEvents.push(value) } },
+    },
+  );
+  await vi.waitFor(() => expect(loaded.element.querySelectorAll(".sdk-object-list-row")).toHaveLength(2));
+  expect(loaded.element.querySelector(".sdk-object-list-check-row")).not.toBeNull();
+  expect(loaded.instance.state.values.value.selectedTask).toEqual(task("t-1"));
+  expect(chosenEvents).toEqual([]);
+
+  // Explicit click emits `choose` with the selected object reference.
+  (loaded.element.querySelectorAll(".sdk-object-list-item-btn")[1] as HTMLButtonElement).click();
+  await nextTick();
+  expect(chosenEvents).toEqual([task("t-2")]);
 });

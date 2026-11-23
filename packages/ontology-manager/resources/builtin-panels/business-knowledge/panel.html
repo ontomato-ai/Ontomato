@@ -133,7 +133,7 @@
     </div>
     <div class="bk-body">
       <div class="bk-list">
-        <projection slot="list" class="bk-list-member" @update:selected="onUserSelect">
+        <projection slot="list" class="bk-list-member" @choose="onUserSelect">
           <template #batch-actions>
             <projection v-if="checkedHasPending" slot="approveAll"></projection>
             <projection slot="deleteAll"></projection>

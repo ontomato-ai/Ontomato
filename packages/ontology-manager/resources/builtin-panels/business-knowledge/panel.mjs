@@ -117,6 +117,14 @@ await mountPanel({
       if (value && mode.value === "view") returnTarget.value = value;
     });
 
+    const activeDraft = computed(() => {
+      const candidate = instance.draft;
+      if (candidate && typeof candidate === "object" && "value" in candidate) {
+        return candidate.value ?? null;
+      }
+      return candidate ?? null;
+    });
+
     let revertingMode = false;
     watch(
       mode,
@@ -126,7 +134,7 @@ await mountPanel({
           return;
         }
         if (next === "create") {
-          if (prev === "edit" && !(instance.draft?.value ?? instance.draft)) {
+          if (prev === "edit" && !activeDraft.value) {
             if (!(await confirmLeave())) {
               revertingMode = true;
               instance.state.set("mode", "edit");
@@ -221,7 +229,7 @@ await mountPanel({
     }
 
     watch(
-      () => instance.draft?.value ?? instance.draft,
+      activeDraft,
       (draft) => {
         if (!draft) return;
         detailOpen.value = true;

@@ -50,6 +50,13 @@ const props = withDefaults(
     type?: "primary" | "danger" | "default";
     /** Draws a soft tinted bordered button (for example the detail titlebar's danger delete button). */
     plain?: boolean;
+    /** Draws a quiet borderless text button (for example inline batch actions beside a danger text button). */
+    text?: boolean;
+    /**
+     * Appends the checked item count to batch operation labels (default `true`). Set `false` inside a container that
+     * already displays the selected count beside the batch actions.
+     */
+    showBatchCount?: boolean;
     /** Optional leading icon on the button (`trash` for destructive removal, `check` for approval). */
     icon?: "trash" | "check";
     /** Button size: `default` or compact `small` (for example in inline batch-action toolbars). */
@@ -61,7 +68,7 @@ const props = withDefaults(
      */
     placement?: "inline" | "header";
   }>(),
-  { type: "default", plain: false, icon: undefined, size: "default", placement: "inline" },
+  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, size: "default", placement: "inline" },
 );
 
 const emit = defineEmits<{
@@ -124,7 +131,9 @@ const targetInfo = computed(() =>
  * The button shows only once its description is read, so the owner's name, in the reader's language, is there. A batch
  * button also says how many objects it acts on, so it never reads as the single one beside it.
  */
-const label = computed(() => formatOperationLabel(descriptor.value!, targetInfo.value, t));
+const label = computed(() =>
+  props.showBatchCount ? formatOperationLabel(descriptor.value!, targetInfo.value, t) : descriptor.value!.label,
+);
 
 const targetKey = computed(() => (
   rowOperation
@@ -182,7 +191,7 @@ watch(usesHeaderPlacement, (inHeader, _previous, onCleanup) => {
       :type="type"
       :size="size"
       :plain="plain"
-      :text="type === 'danger' && !plain"
+      :text="text || (type === 'danger' && !plain)"
       :loading="dispatching"
       :disabled="!ready"
       @click="onTriggerClick"
