@@ -197,7 +197,7 @@ it("reads a reference's choices and held values, and a type's create form, as a 
   expect(describe).toHaveBeenCalledWith({ target: { kind: "draft" }, values: { name: "Analyst" }, changedField: "/name" });
 });
 
-it("clears stale ready data, declared read outputs, and admitted operations immediately on target switch while keeping same-target refreshes ready", async () => {
+it("clears stale ready data and declared read outputs immediately on target switch while keeping same-target refreshes ready", async () => {
   const headerProjection: DirectProjection = {
     ...record,
     id: "type-header",
@@ -365,7 +365,6 @@ it("clears stale ready data, declared read outputs, and admitted operations imme
   instance.state.set("selectedType", USER);
 
   expect(headerRecord.value.status).toBe("loading");
-  expect(headerOps.value.status).toBe("loading");
   expect(objectsData.value.status).toBe("loading");
 
   await vi.waitFor(() => {

@@ -90,38 +90,23 @@ export async function readMemberOperations(read: PanelReadPort, projection: Dire
 /**
  * A member's admitted operations, kept current: read again when the inputs they are admitted for change (the object an
  * action acts on, the form's edited object) and when `reread` is called. An answer for earlier inputs is dropped once
- * later ones were asked for; re-reading the same inputs keeps the current answer until the new one arrives, while
- * switching inputs clears the previous target's ready state immediately.
+ * later ones were asked for; one already shown stays until its new answer arrives.
  */
 export function watchMemberOperations(
   read: PanelReadPort, projection: DirectProjection, memberPath: () => PublisherPath, inputs: () => MemberInputs, active: () => boolean = () => true,
 ): { state: ComputedRef<MemberOperationsState>; reread(): void } {
-  const hasOperations = Boolean(projection.operations && Object.keys(projection.operations).length > 0);
-  const state = shallowRef<MemberOperationsState>(hasOperations ? { status: "loading" } : { status: "ready", value: {} });
-  const loadedInputsKey = shallowRef<string | undefined>(undefined);
+  const state = shallowRef<MemberOperationsState>({ status: "loading" });
   let sequence = 0;
   let lastInputsKey: string | undefined;
   const keyOf = () => JSON.stringify(operationInputs(projection, inputs()));
   const reread = () => {
     if (!active()) return;
-    const nextKey = keyOf();
-    if (hasOperations && lastInputsKey !== undefined && nextKey !== lastInputsKey) {
-      state.value = { status: "loading" };
-    }
-    lastInputsKey = nextKey;
+    lastInputsKey = keyOf();
     const reading = ++sequence;
     // A read that fails is the member's to show, as a datum's is: its buttons say why there is nothing to press.
     void readMemberOperations(read, projection, memberPath(), inputs()).then(
-      (result) => {
-        if (reading !== sequence) return;
-        loadedInputsKey.value = nextKey;
-        state.value = result;
-      },
-      (reason: unknown) => {
-        if (reading !== sequence) return;
-        loadedInputsKey.value = nextKey;
-        state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) };
-      },
+      (result) => { if (reading === sequence) state.value = result; },
+      (reason: unknown) => { if (reading === sequence) state.value = { status: "error", message: reason instanceof Error ? reason.message : String(reason) }; },
     );
   };
   watch(keyOf, (key) => {
@@ -129,11 +114,5 @@ export function watchMemberOperations(
     if (key === lastInputsKey) return;
     reread();
   }, { immediate: true });
-  return {
-    state: computed<MemberOperationsState>(() =>
-      hasOperations && state.value.status === "ready" && keyOf() !== loadedInputsKey.value
-        ? { status: "loading" }
-        : state.value),
-    reread,
-  };
+  return { state: computed(() => state.value), reread };
 }
