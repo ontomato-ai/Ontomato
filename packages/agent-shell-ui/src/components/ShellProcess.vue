@@ -120,7 +120,7 @@ function stepComponent(step: ProcessStepView) {
   flex-shrink: 0;
   transition: transform var(--transition-fast, 150ms);
 }
-.open .chevron {
+.process-summary[aria-expanded="true"] > .chevron {
   transform: rotate(90deg);
 }
 .steps {

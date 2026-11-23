@@ -104,7 +104,7 @@ function reason(error: AgentTaskError) {
   flex-shrink: 0;
   transition: transform var(--transition-fast, 150ms);
 }
-.open .chevron {
+.task-summary[aria-expanded="true"] > .chevron {
   transform: rotate(90deg);
 }
 .task-body {

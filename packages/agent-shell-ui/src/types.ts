@@ -284,6 +284,7 @@ export interface ShellLabels {
   lineageOutputs: string;
   /** A dataset holds only the first `limit` rows of its result. */
   truncatedRows: (limit: number) => string;
+  datasetUncheckedConditions?: (conditions: string[]) => string;
   /** A dataset's column filter: its button's accessible name from the column's name, the value search, keep all, empty. */
   filterColumn: (column: string) => string;
   filterSearch: string;

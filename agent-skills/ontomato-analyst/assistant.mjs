@@ -46,7 +46,7 @@ const headers = {
 const ontology = (cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/u, "");
 const callback = process.env.ONTOMATO_RETRIEVAL_CALLBACK_URL;
 
-async function request(url, body, extra = {}) {
+async function request(url, body, extra = {}, signal) {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : "POST",
     headers: {
@@ -56,6 +56,7 @@ async function request(url, body, extra = {}) {
     },
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: "error",
+    signal,
   });
   if (response.status === 204) return null;
   const result = await response.json();
@@ -87,7 +88,13 @@ function option(args, name) {
 }
 
 async function recallMetrics(question) {
-  return request(`${ontology}/ontology/query/metrics/recall`, { question });
+  const signal = AbortSignal.timeout(3000);
+  try {
+    return await request(`${ontology}/ontology/query/metrics/recall`, { question }, {}, signal);
+  } catch (error) {
+    if (signal.aborted) throw Object.assign(new Error("Published metric recall timed out"), { code: "RECALL_TIMEOUT" });
+    throw error;
+  }
 }
 
 async function runMetric(selector, question) {
@@ -133,23 +140,39 @@ async function startRetrieval(args) {
   const queryIntent = intentFile ? readJson(intentFile) : undefined;
   const question = args.join(" ");
   if (!question.trim()) throw new Error("start-retrieval requires the complete question");
-  const retrieverRef = JSON.parse(fs.readFileSync(path.join(dir, "retriever-ref.json"), "utf8"));
-  let intentSupported = false;
-  if (queryIntent) {
-    const directory = await sendAgentCommand({ op: "list" }, { cfg, headers });
-    intentSupported = (directory.agents ?? []).some(item =>
-      item.ref?.providerId === retrieverRef.providerId && item.ref?.agentId === retrieverRef.agentId &&
-      item.contextSchema?.properties?.queryIntent?.type === "object");
+  if (intentFile) {
+    if (!queryIntent || queryIntent.schema !== "ontomato.query-intent.v1" ||
+        Object.keys(queryIntent).some(key => !["schema", "conditions", "outputs"].includes(key)))
+      throw new Error("Intent file must contain only schema, conditions and outputs; pass the question as the command argument");
+    if (!Array.isArray(queryIntent.conditions) || queryIntent.conditions.some(condition =>
+        typeof condition?.quote !== "string" || !condition.quote.trim() || !question.includes(condition.quote)))
+      throw new Error("Each intent condition quote must be copied verbatim from the complete question");
   }
+  const descriptor = JSON.parse(fs.readFileSync(path.join(dir, "retriever-ref.json"), "utf8"));
+  const retrieverRef = descriptor.ref ?? descriptor;
+  const acceptsIntent = entry => entry.contextSchema?.properties?.queryIntent?.type === "object";
+  let intentStatus;
+  const start = async () => {
+    if (queryIntent && descriptor.ref) {
+      if (!acceptsIntent(descriptor)) intentStatus = "unsupported_by_retriever";
+    } else if (queryIntent) {
+      const directory = await sendAgentCommand({ op: "list" }, { cfg, headers, signal: AbortSignal.timeout(2000) }).catch(() => null);
+      if (!Array.isArray(directory?.agents)) intentStatus = "capability_check_unavailable";
+      else if (!directory.agents.some(item =>
+        item?.ref?.providerId === retrieverRef.providerId && item.ref?.agentId === retrieverRef.agentId &&
+        acceptsIntent(item))) intentStatus = "unsupported_by_retriever";
+    }
+    return sendAgentCommand({ op: "start", agent: retrieverRef, message: question,
+      ...(queryIntent && !intentStatus ? { context: { queryIntent } } : {}) }, { cfg, headers });
+  };
   const [retrieverResult, recallResult] = await Promise.allSettled([
-    sendAgentCommand({ op: "start", agent: retrieverRef, message: question,
-      ...(queryIntent && intentSupported ? { context: { queryIntent } } : {}) }, { cfg, headers }),
+    start(),
     recallMetrics(question),
   ]);
   console.log(JSON.stringify({
     retriever: retrieverResult.status === "fulfilled" ? retrieverResult.value : errorValue(retrieverResult.reason),
     recall: recallResult.status === "fulfilled" ? recallResult.value : errorValue(recallResult.reason),
-    ...(queryIntent && !intentSupported ? { queryIntentStatus: "unsupported_by_retriever", queryIntentApplied: false } : {}),
+    ...(intentStatus ? { queryIntentStatus: intentStatus, queryIntentApplied: false } : {}),
   }));
   if (retrieverResult.status === "rejected" || recallResult.status === "rejected") process.exitCode = 1;
 }

@@ -33,20 +33,24 @@ When the user asks about definitions themselves:
    included. Keep related outputs (a total and a list or breakdown of the same population) in
    one delegation, with a shared scope and identity. The retriever can deliver multiple datasets.
 2. Run `start-retrieval "<complete question>"` once with the complete question. Preserve every user
-   condition in that question. The optional intent extension described below requires the retriever
-   to advertise support; never add queryIntent to other request bodies or tool arguments.
-   If testing that extension, extract the required filters and requested outputs once.
+   condition in that question. For explicit filters such as a date range or object status, extract
+   the required filters and requested outputs once and pass `--intent @work/query-intent.json`.
+   The script uses the capability supplied with the retriever reference. Keep grain, deduplication identity and denominator in the
+   complete question and output descriptions when they are requirements, rather than encoding
+   them as filter predicates. Never add queryIntent to other request bodies or tool arguments.
    Save `work/query-intent.json` with `schema: "ontomato.query-intent.v1"`, `conditions` and `outputs`.
    Each condition has a unique `id`, an exact `quote` from the complete question and `mapping`:
    null when unknown, otherwise `{className,field,operator,value}` using already verified schema.
    Operators are `=`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `like`. Never guess a mapping or omit an
    explicit condition to get a faster answer. `outputs` lists the requested tables in plain text.
    Use an empty conditions array for an actually unfiltered question, not an invented filter.
-    The optional `--intent @work/query-intent.json` flag checks the retriever's advertised capability
-    before sending the extension. `queryIntentApplied: false` means no contract check was applied.
-    The command starts the
-   retriever and recalls published metrics concurrently, returning `retriever` (`taskId`,
-   `sessionRef`, `status`) and `recall` (`items`).
+   The intent file has exactly three top-level fields: `schema`, `conditions`, `outputs`. Do not
+   add `question`; pass it only as the command argument. If the script rejects the file before
+   dispatch, correct the file and invoke the command again.
+   `queryIntentApplied: false` means the retriever received the full question without the extension.
+   Do not restart an admitted task in that case. The command starts the retriever and recalls published metrics concurrently.
+   Metric recall has a short time limit. The command returns `retriever` (`taskId`, `sessionRef`, `status`) and
+   `recall` (`items` or a branch error).
 3. If one candidate's meaning, grain, time range and parameters answer the question, run it:
    `run-metric <id> --revision <revision> --question "<complete question>"`, adding
    `--binding <preset id>` to use its preset unchanged or `--params @values.json` with every value
@@ -57,8 +61,9 @@ When the user asks about definitions themselves:
 4. If no candidate covers the complete question, or if `recall` returned an error while `retriever` has a `taskId`, end
    this turn. Do not read, poll or sleep to wait: the retriever's result arrives as a notification
    and wakes you. Never use shell `sleep`, a wait loop, or task event streaming to hold the turn
-   open. An acknowledgement can be your final message for this turn. If a result arrives while
-   you are still working, handle it then.
+   open. Let the task status carry routine progress. If you add an acknowledgement, keep it to one
+   line and avoid a second progress message. If a result arrives while you are still working,
+   handle it then.
    Do not start a second retrieval for any output already requested from that task.
 5. On the result notification, take the files with native `agent`, `op: "read"`, `files: true` (add
    `view: "messages"` when you need its full answer). Cite the returned `downloaded[].path`;
@@ -92,10 +97,21 @@ as a clearly labelled partial result, not as the answer to the original filtered
 
 ## The answer
 
-Give the conclusion, its scope and the limits that matter. Cite every dataset the conclusion relies
+Lead with the answer at the requested level of detail: a single number with its unit and time
+range, a short comparison for grouped results, or the delivered row count and completeness for
+a list. Give the scope and the limits that matter alongside the answer. Cite every dataset the conclusion relies
 on as a Markdown link or image to its path in your workspace, `[title](outputs/...dataset.json)`,
 even for a single value; cite only those. A delivered dataset you did not use stays uncited. Make a
 chart, report or presentation only when the user asks for one.
+
+When unknown values are included in a percentage's denominator, report the recorded numerator,
+denominator and unknown count together in the first sentence. Describe the percentage as a share
+based on recorded values rather than an estimate of the true prevalence.
+
+A coverage-only table with `scope_count` and `known_count` does not contain a matching count.
+When the requested condition was not applied and `known_count` is zero, lead with “Unable to
+determine the requested count.” Say how many records lack the required value. Never write “0
+people met the condition,” even with a caveat, unless the condition was actually evaluated.
 
 Judge delivered data by its scope, assumptions and self-check. Null, false, zero and partial results
 keep their meaning; preserve truncation and coverage limits. Use the delivered files and original

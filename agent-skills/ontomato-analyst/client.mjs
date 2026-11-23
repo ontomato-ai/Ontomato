@@ -35,7 +35,7 @@ async function readJsonResponse(response) {
   }
   return result;
 }
-async function json(url, headers, body) {
+async function json(url, headers, body, signal) {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : "POST",
     headers: {
@@ -46,6 +46,7 @@ async function json(url, headers, body) {
     },
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: "error",
+    signal,
   });
   return readJsonResponse(response);
 }
@@ -343,7 +344,7 @@ async function followAgentTask(ontology,headers,taskId,files) {
   } finally { await reader.cancel(); }
 }
 /** Send one AgentChannelCommand through the platform run channel or the standalone ontology endpoint. */
-export async function sendAgentCommand(command, { cfg = {}, headers = {} } = {}) {
+export async function sendAgentCommand(command, { cfg = {}, headers = {}, signal } = {}) {
   if (process.env.ONTOMATO_SKILL_SCENARIO === "platform") {
     const url = process.env.ONTOMATO_AGENT_COMMAND_URL;
     const callback = process.env.ONTOMATO_AGENT_CALLBACK;
@@ -360,11 +361,12 @@ export async function sendAgentCommand(command, { cfg = {}, headers = {} } = {})
       },
       body: JSON.stringify(command),
       redirect: "error",
+      signal,
     });
     return readJsonResponse(response);
   }
   const ontology = (cfg.ontologyUrl || `${cfg.envUrl}/api/data-query`).replace(/\/$/u, "");
-  return json(`${ontology}/platform/agent-channel/commands`, await agentHeaders(cfg, headers), command);
+  return json(`${ontology}/platform/agent-channel/commands`, await agentHeaders(cfg, headers), command, signal);
 }
 /** CLI transport for agent-channel commands in platform worker runs and standalone skill packages. */
 export async function agentChannelCommand(cfg,argv,headers={}) {
