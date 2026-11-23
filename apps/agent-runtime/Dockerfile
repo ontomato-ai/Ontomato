@@ -3,6 +3,12 @@ ARG NODE_RUNTIME_IMAGE=docker.io/library/node:24.21.0-bookworm-slim@sha256:d6aa7
 ARG NODE_BUILDER_IMAGE=docker.io/library/node:24.21.0@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
 ARG PYTHON_RUNTIME_IMAGE=docker.io/library/python:3.10-slim-bookworm@sha256:2559be987fd64d61badbdafd303ea58a9ccab36d6c3c08bce219e762177d2eca
 FROM ${NODE_RUNTIME_IMAGE} AS node-runtime
+FROM ${NODE_BUILDER_IMAGE} AS sandbox-builder
+COPY sandbox-policy/build-nsjail.sh sandbox-policy/sources.lock /sandbox-policy/
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bison flex libprotobuf-dev protobuf-compiler libnl-route-3-dev pkg-config \
+ && /bin/sh /sandbox-policy/build-nsjail.sh
+
 FROM ${NODE_RUNTIME_IMAGE} AS dependencies
 RUN npm install -g pnpm@9.15.9
 ENV npm_config_store_dir=/pnpm/store
@@ -57,13 +63,22 @@ ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
 # Install from the optional Debian mirror, restore the base sources afterwards,
 # and retry once from those original sources if the mirror install fails.
 RUN --mount=type=bind,source=tools/apt-install.sh,target=/tmp/apt-install.sh \
-    /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" fonts-wqy-microhei fonts-dejavu-core \
+    /bin/sh /tmp/apt-install.sh "${DEBIAN_MIRROR}" "${DEBIAN_SECURITY_MIRROR}" fonts-wqy-microhei fonts-dejavu-core socat=1.7.4.4-2 iproute2=6.1.0-3 \
  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production AGENT_RUNTIME_HOST=0.0.0.0 AGENT_RUNTIME_ROOT=/data
 COPY --from=dependencies /opt/runtime/node_modules /opt/runtime/node_modules
 COPY --from=payload /stage/ /app/
 COPY --from=python-runtime /runtime-notices.txt /app/licenses/THIRD_PARTY_NOTICES.txt
 COPY requirements-py310.txt /app/licenses/python-requirements.txt
+COPY --from=sandbox-builder /output/nsjail /usr/local/sbin/nsjail
+COPY --from=sandbox-builder /output/licenses/ /app/licenses/
+COPY sandbox-policy/sources.lock /app/licenses/sandbox-sources.lock
+COPY sandbox-policy/seccomp.json sandbox-policy/apparmor sandbox-policy/selinux.cil \
+     sandbox-policy/engine.py sandbox-policy/preflight.mjs sandbox-policy/probe.py /usr/local/lib/ontomato-sandbox/
+RUN sha256sum /usr/local/sbin/nsjail /usr/bin/socat /usr/sbin/ip > /app/licenses/sandbox-binaries.sha256 \
+ && dpkg-query -W socat iproute2 > /app/licenses/sandbox-debian-packages.txt \
+ && cp /usr/share/doc/socat/copyright /app/licenses/socat.txt \
+ && cp /usr/share/doc/iproute2/copyright /app/licenses/iproute2.txt
 COPY tools/workbench/runtime-layout.mjs /tmp/runtime-layout.mjs
 RUN node -e 'import("/tmp/runtime-layout.mjs").then(m => m.checkNoBrokenSymlinks("/app"))' && rm /tmp/runtime-layout.mjs && mkdir /data
 LABEL org.opencontainers.image.source="https://github.com/ontomato-ai/Ontomato"

@@ -175,6 +175,8 @@ jobs:
           } >> .env
           python3 prepare-env.py .env
           echo "COMPOSE_FILE=docker-compose.yml:docker-compose.ghcr.yml" >> .env
+          docker compose pull
+          python3 prepare-env.py .env --sandbox-preflight
           docker compose up -d --wait --wait-timeout 300
           for path in / /ontology-manager/ /api/data-query/health; do
             curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors \
