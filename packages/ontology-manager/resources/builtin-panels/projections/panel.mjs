@@ -91,6 +91,14 @@ const ProjectionsCataloguePanel = {
     const usedByCount = computed(() => (typeof usedByCountOutput.value === "number" ? usedByCountOutput.value : 0));
     const hiddenUsedByCount = computed(() => (typeof hiddenUsedByCountOutput.value === "number" ? hiddenUsedByCountOutput.value : 0));
 
+    // Clear stale create mode when a projection is selected without altering detailMode.
+    watch(selectedKey, (nextKey, prevKey) => {
+      if (nextKey === prevKey) return;
+      if (nextKey && creating.value) {
+        instance.state.set("creating", null);
+      }
+    });
+
     // Fall back to overview tab if the selected projection does not grant permission editing.
     watch([selectedKey, recordReady, canGrant, tabModel], ([key, ready, grantable, activeTab]) => {
       if (key && ready && !grantable && activeTab === "grants") {

@@ -27,7 +27,7 @@
 
 - 编辑：选中一条可编辑投影后将 `detailMode` 设为 `"edit"` 打开表单；保存只提交读者改过的字段（JSON Pointer），没提交的字段属主保持原样。提交时携带表单读到的 `revision`，并发修改会被属主拒绝。
 - 新建：清空 `selected` 并将 `creating` 设为 `true` 打开同一个表单，属主返回创建表单；标识由属主生成或沿用表单中填入的 `id`。
-- 协助填写：用 `present` 切换到对应投影的编辑态（`selected` + `detailMode: "edit"`）或新建态（`creating: true`），再用 `fill_form` 直接填入实时表单；需要保存时调用 `page_action({ operation: "form.save" })`（默认经读者确认后提交）。
+- 协助填写：用 `present` 切换到对应投影的编辑态（`selected` + `detailMode: "edit"`）或新建态（`selected: null` + `creating: true`，像点「新建」按钮一样同时清掉当前选择，避免表单保留旧目标），再用 `fill_form` 直接填入实时表单；需要保存时调用 `page_action({ operation: "form.save" })`（默认经读者确认后提交）。
 
 ## 属主登记的操作
 

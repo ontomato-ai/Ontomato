@@ -29,8 +29,8 @@
 ## 人与智能体怎么填写表单
 
 - 编辑与新建都使用 `ObjectForm`（`form`）及 `platform:ProductPanel.save`。
-- 编辑时先用 `present` 选中目标面板并切入 `detailMode = "edit"`，再用 `fill_form` 直接填入需要改动的字段。
-- 新建时先用 `present` 置 `creating = true`，再用 `fill_form` 至少填入 `name`、`content.html`、`content.module` 和 `manifest`。
+- 编辑时先用 `present` 一次设置选中目标并切入编辑态（`selected` 指向目标面板 + `detailMode: "edit"`，与人先选面板再点「编辑」到达同一处），再用 `fill_form` 直接填入需要改动的字段。
+- 新建时先用 `present` 同时清掉当前选择并开启新建态（`selected: null` + `creating: true`，与点「新建」按钮一致，避免保留页面上已选旧面板），再用 `fill_form` 至少填入 `name`、`content.html`、`content.module` 和 `manifest`。
 - 需要保存时调用 `page_action({ operation: "form.save" })`（默认经读者在对话中确认后才提交）；未保存前不会产生写入。
 
 ## 人与智能体怎么执行操作
