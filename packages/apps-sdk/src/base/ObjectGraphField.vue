@@ -12,7 +12,7 @@ import FormFieldFrame from "./FormFieldFrame.vue";
 
 /**
  * The graph as a form field's choice (an agent's data scope): choosing a node adds it to or removes it from the list of
- * node keys the field its member's formField port names holds; the nodes one drawn edge away from a chosen one are
+ * node keys held by the enclosing `ObjectForm` field slot; the nodes one drawn edge away from a chosen one are
  * marked, and one action adds them all. What the field means — that an empty list is the default scope, say — is its
  * owner's, in its help; who may read what the nodes stand for is decided where the data is read, never on this graph.
  */

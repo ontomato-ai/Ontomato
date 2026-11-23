@@ -55,7 +55,7 @@ async function readBuiltinProducts(root: string) {
         readFile(path.join(directory, "registration.json"), "utf8"),
         readFile(path.join(directory, "panel.json"), "utf8"),
         readFile(path.join(directory, "panel.html"), "utf8"),
-        readFile(path.join(directory, "panel.mjs"), "utf8"),
+        optionalText(path.join(directory, "panel.mjs")),
         optionalText(path.join(directory, "recipes.md")),
       ]);
       const { panels: [identity] } = workspaceIdentity.parse(JSON.parse(registration));
@@ -66,7 +66,7 @@ async function readBuiltinProducts(root: string) {
         theme: productPanelInputSchema.shape.theme,
       }).strict().parse(JSON.parse(descriptor));
       const { state, members, ...declaration } = manifest;
-      await panelModuleImports(module);
+      if (module !== undefined) await panelModuleImports(module);
       const placements = Object.fromEntries(Object.entries(members).map(([member, definition]) => {
         if (!("component" in definition)) return [member, definition];
         const id = builtinProductIdSchema.parse(definition.id);
@@ -81,7 +81,7 @@ async function readBuiltinProducts(root: string) {
       if (panels.has(id)) throw new Error(`Duplicate platform panel '${id}'`);
       panels.set(id, builtinProductPanelInputSchema.parse({
         ...input, ...metadata, visibility: "platform", manifest: { ...declaration, state, members: placements },
-        content: { ...content, html, module, ...(recipes === undefined ? {} : { recipes }) },
+        content: { ...content, html, ...(module === undefined ? {} : { module }), ...(recipes === undefined ? {} : { recipes }) },
       }));
     } catch (cause) {
       throw new Error(`Cannot register platform panel directory '${relative}': ${cause instanceof Error ? cause.message : String(cause)}`, { cause });

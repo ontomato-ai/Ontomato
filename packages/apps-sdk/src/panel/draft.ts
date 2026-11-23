@@ -24,7 +24,7 @@ export interface PanelDraftSource {
 }
 
 /**
- * What one form holds, as the projections that edit one of its fields read and write it (`formField`): the owner's
+ * What one form holds, as the projections placed in its `#field-*` Vue slots read and write it: the owner's
  * fields, the values, the field errors and changed marks by path, and whether the form is busy. Every one of them is the
  * form's own; a field projection never keeps a copy.
  */
@@ -205,8 +205,8 @@ export class PanelFormAdapters {
     void this.#declines.value;
     const held = this.#held.value;
     if (held === null || !held.current()) return null;
-    // A draft addressed to an embedded row (`itemKey`) waits for a `listRowDetail` form to mount for that row instead
-    // of reporting unclaimed as soon as top-level forms (or another expanded row) decline it.
+    // A draft addressed to an embedded row (`itemKey`) waits for a row-detail form inside `#row-detail` to mount for
+    // that row instead of reporting unclaimed as soon as top-level forms (or another expanded row) decline it.
     if (held.draft.target.itemKey !== undefined && hasRowDetail) return null;
     const candidates = new Set([...formSlots, ...this.#bySlot.keys()]);
     return [...candidates].every((slot) => held.declined.has(slot))

@@ -162,7 +162,7 @@ export interface DirectPanelRun {
   };
   /**
    * Current application frame state for content panels rendered inside a framed application (or beside a conversation
-   * with a `frame` segment in the address). Forwarded in `rowContext.frameState` for row-scoped operations.
+   * with a `frame` segment in the address).
    */
   frameState?: () => Readonly<Record<string, RuntimeJsonValue>> | undefined;
   /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */

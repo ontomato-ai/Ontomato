@@ -1,5 +1,8 @@
 import * as Vue from "vue";
-import { panelModuleImports, panelModuleSpecifiers, type PanelModuleSpecifier } from "@ontomato/contracts/panel-module";
+import {
+  componentModuleImports, panelModuleImports, panelModuleSpecifiers,
+  type ComponentOfficialSpecifier, type PanelModuleSpecifier,
+} from "@ontomato/contracts/panel-module";
 import type { CompilerOptions } from "@vue/compiler-dom";
 
 /*
@@ -69,7 +72,38 @@ export async function evaluatePanelModule(source: string, modules: PanelModules)
 }
 
 
-/** A panel module mounts into its run and has no result for the caller. */
-export async function runPanelModule(source: string, modules: PanelModules): Promise<void> {
-  await evaluatePanelModule(source, modules);
+/** Evaluates an author-registered component module with lazy loaders for all official SDK specifiers. */
+export async function evaluateComponentModule(
+  source: string,
+  loaders: Readonly<Record<ComponentOfficialSpecifier, () => Promise<Readonly<Record<string, unknown>>> | Readonly<Record<string, unknown>>>>,
+): Promise<Record<string, unknown>> {
+  const imports = await componentModuleImports(source, { allowRelative: false });
+  const run = `component-${++instances}`;
+  const needed = [...new Set(imports.map(entry => entry.specifier as ComponentOfficialSpecifier))];
+  const addresses = new Map<string, string>();
+  const keys: string[] = [];
+  try {
+    for (const specifier of needed) {
+      const namespace = await loaders[specifier]();
+      const key = `${run}:${specifier}`;
+      keys.push(key);
+      evaluating.set(key, namespace);
+      addresses.set(specifier, namespaceModule(key, namespace));
+    }
+    let rewritten = "", last = 0;
+    for (const entry of imports) {
+      const address = addresses.get(entry.specifier)!;
+      rewritten += source.slice(last, entry.start) + (entry.dynamic ? JSON.stringify(address) : address);
+      last = entry.end;
+    }
+    rewritten += source.slice(last);
+    return await import(/* @vite-ignore */ `data:text/javascript;charset=utf-8,${encodeURIComponent(rewritten)}#${run}`);
+  } finally {
+    for (const key of keys) evaluating.delete(key);
+  }
+}
+
+/** A panel module mounts into its run and returns any exports (supporting both `mountPanel` and `export default`). */
+export async function runPanelModule(source: string, modules: PanelModules): Promise<Record<string, unknown>> {
+  return await evaluatePanelModule(source, modules);
 }

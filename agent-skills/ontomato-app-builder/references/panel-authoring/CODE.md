@@ -161,7 +161,8 @@ Follow these three steps in order before writing any custom rendering code:
    and coloring, page size — check `sdk read docs/components.md` and add a `config` option.
 3. **Write a focused component only as a last resort.** When default rendering and `config` still leave a specific gap
    — a single table column, an expandable row detail area, or a single form field — write a small component for that
-   slot and declare it as a `listColumn`, `listRowDetail`, or `formField` member (see
+   slot (such as `#cell-<key>`, `#actions`, `#row-detail`, `#card`, or `#field-<dotPath>`) and declare any
+   author-registered domain component in `manifest.components` (see
    [Custom list columns, row detail and per-row operations](#custom-list-columns-row-detail-and-per-row-operations)).
    Do not wrap an entire page in a custom component or re-implement list selection, field validation, or write
    confirmation.
@@ -214,7 +215,7 @@ is an `ObjectListColumn`:
 
 | Property | Type | Required | Default / behavior |
 | --- | --- | --- | --- |
-| `key` | `string` | Yes | Owner field key (or `"label"` for the record's primary label). Also the column identifier matched by a `listColumn` member's `column` field. |
+| `key` | `string` | Yes | Owner field key (or `"label"` for the record's primary label). Also the column identifier matched by a `#cell-<key>` Vue slot. |
 | `labelKey` | `string` | No | Flat key in `content.messages` for the column header. Omit to use the owner's `fieldLabels[key]`. |
 | `kind` | `"text" \| "tag" \| "tags" \| "reference" \| "time"` | No | Defaults to `"text"`. `"tag"` draws a status badge colored by the owner's `tones`; `"tags"` draws the field's tag list; `"reference"` draws a clickable link emitting `navigate`; `"time"` formats an ISO timestamp in the reader's locale and time zone (full string in title). |
 | `subtitleKey` | `string` | No | Second field key rendered as a subtle line beneath the primary cell value. |
@@ -262,100 +263,16 @@ See `sdk read docs/components.md` for its full configuration.
 
 ## Custom list columns, row detail and per-row operations
 
-When one column of an `ObjectList` needs custom rendering (such as an icon key beside a localized name) or a column
-must run an operation on an **unselected** row (such as revoking one grant row while another row or application is
-selected), attach a dedicated member to the list with `listColumn` instead of replacing the whole table.
+Use `ObjectList`'s built-in `config.rowActions` for per-row operation buttons and local buttons (dialog/navigation),
+and use standard Vue slots (`#cell-<key>`, `#cell`, `#actions`, `#row-detail`, `#card`, `#empty`) to customize any
+piece of a list without replacing the whole table.
 
-### 1. Write and register a small domain component
+### 1. Built-in row action column (`config.rowActions`) and row operations
 
-Put `component.json`, `component.html`, and optional `component.mjs` in a directory (for example `./app-icon-name-cell/`).
-
-- **Inputs boundary.** Declare every row field the cell needs under `declaration.inputs`. The platform resolves
-  those inputs from the row's declared bindings and passes **only** those declared inputs to the component (via its
-  declared `props` or `useMember().inputs`) — never undeclared fields of the row.
-- **No independent data or outputs on `listColumn`.** Omit `data` and `outputs` for a column cell; the host
-  `ObjectList` owns the read, selection, keyboard navigation, and row container.
-- **SDK UI only.** Use `<sdk-*>` tags and `--sdk-*` tokens in `component.html`. In `component.mjs`, `export default`
-  a Vue component options object and import only `vue` and `@ontomato/sdk/panel` (`useMember`, `useMemberData`,
-  `useMemberOperations`, `useMemberParam`, `useMemberRead`).
-
-`app-icon-name-cell/component.json`:
-
-```json
-{
-  "name": "Application icon and localized name cell",
-  "visibility": "domain",
-  "declaration": {
-    "role": "presentation",
-    "meaning": "Displays an application's icon key badge beside its localized display name inside a list column.",
-    "inputs": {
-      "icon": { "kind": "scalar", "type": "string" },
-      "names": { "kind": "json" },
-      "fallbackLabel": { "kind": "scalar", "type": "string" }
-    },
-    "ports": { "props": [], "events": [], "slots": [] }
-  }
-}
-```
-
-`app-icon-name-cell/component.html`:
-
-```html
-<span class="app-icon-name-cell" style="display:inline-flex;align-items:center;gap:var(--spacing-xs);">
-  <sdk-tag v-if="icon" size="small" effect="plain">{{ icon }}</sdk-tag>
-  <span style="color:var(--sdk-text-color-primary);font-weight:500;">{{ displayName }}</span>
-</span>
-```
-
-`app-icon-name-cell/component.mjs`:
-
-```js
-import { computed } from "vue";
-
-export default {
-  // The host passes only the inputs declared in component.json and bound by the panel member.
-  props: {
-    icon: { type: String, default: "" },
-    names: { type: Object, default: null },
-    fallbackLabel: { type: String, default: "" },
-  },
-  setup(props) {
-    const displayName = computed(() => {
-      const map = props.names && typeof props.names === "object" ? props.names : null;
-      const locale = typeof document !== "undefined" ? document.documentElement.lang : "";
-      if (map) {
-        if (locale && typeof map[locale] === "string" && map[locale].trim()) return map[locale];
-        if (typeof map.en === "string" && map.en.trim()) return map.en;
-        const first = Object.values(map).find(value => typeof value === "string" && value.trim());
-        if (first) return first;
-      }
-      return props.fallbackLabel || "";
-    });
-    return { displayName };
-  },
-};
-```
-
-Register the component in the current domain using the exact `ontomato.mjs` commands:
-
-```sh
-# 1. Create the domain component — writes declaration.componentId ("domain-component:<uuid>") into component.json
-node "$SKILL/ontomato.mjs" component register ./app-icon-name-cell
-
-# 2. List visible domain components or inspect one component's declaration, source and revision
-node "$SKILL/ontomato.mjs" component list
-node "$SKILL/ontomato.mjs" component read domain-component:<uuid>
-
-# 3. Update an existing domain component using its current revision
-node "$SKILL/ontomato.mjs" component register ./app-icon-name-cell --revision 1
-```
-
-### 2. Mount the column cell and a per-row operation in `panel.json`
-
-Use the returned `domain-component:<uuid>` ID in a `listColumn` member, and use official `OperationButton` in another
-`listColumn` member for a per-row write operation. Host-mounted members (`listColumn`, `listRowDetail`, `formField`)
-are rendered by their host `ObjectList` / `ObjectForm` — **do not** place `<projection slot="appNameCell">` or
-`<projection slot="revokeGrant">` in `panel.html`.
+Declare row operations directly on the `ObjectList` member under `operations` (each binding specifies `operation`,
+`target`: `{ "row": true }` / `{ "rowField": "..." }` / `{ "input": "..." }` / `{ "literal": ... }`, and optional
+`params` taking `{ "rowField": "..." }`, `{ "row": "primaryKey" | "label" }`, `{ "input": "..." }`, or
+`{ "literal": ... }`). Configure `config.rowActions` to display them inline and overflow extras into a "More" menu:
 
 ```json
 {
@@ -366,6 +283,9 @@ are rendered by their host `ObjectList` / `ObjectForm` — **do not** place `<pr
         "deepLink": true
       }
     },
+    "components": {
+      "app-icon-name-cell": "domain-component:11111111-1111-4111-8111-111111111111"
+    },
     "members": {
       "apps": {
         "component": "ObjectList",
@@ -374,95 +294,63 @@ are rendered by their host `ObjectList` / `ObjectForm` — **do not** place `<pr
         "state": { "selected": "selected" },
         "config": {
           "columns": [
-            { "key": "name", "labelKey": "col.app" },
-            { "key": "status", "labelKey": "col.status", "kind": "tag" }
-          ]
+            { "key": "name", "labelKey": "col.app", "width": "240px" },
+            { "key": "status", "labelKey": "col.status", "kind": "tag", "width": 120 }
+          ],
+          "rowActions": {
+            "maxVisible": 2,
+            "items": [
+              { "kind": "local", "id": "edit", "labelKey": "action.edit" },
+              { "kind": "operation", "operation": "disable", "when": { "field": "status", "equals": "active" } }
+            ]
+          }
+        },
+        "operations": {
+          "disable": { "operation": "applications.disable", "target": { "row": true } }
         }
       },
-      "appNameCell": {
-        "component": "domain-component:11111111-1111-4111-8111-111111111111",
-        "listColumn": { "slot": "apps", "column": "name" },
-        "inputs": {
-          "icon": { "itemField": "icon" },
-          "names": { "itemField": "names" },
-          "fallbackLabel": { "item": "label" }
-        }
-      },
-      "grants": {
-        "component": "ObjectList",
+      "rowDetail": {
+        "component": "ObjectSummary",
         "type": "platform:Application",
-        "target": "selected",
-        "data": { "rows": "grants" },
-        "config": {
-          "columns": [
-            { "key": "principalId", "labelKey": "col.principal" },
-            { "key": "verb", "labelKey": "col.verb", "kind": "tag" },
-            { "key": "actions", "labelKey": "col.actions" }
-          ]
-        }
-      },
-      "revokeGrant": {
-        "component": "OperationButton",
-        "listColumn": { "slot": "grants", "column": "actions" },
-        "type": "platform:Application",
-        "target": "selected",
-        "operation": "applications.grant",
-        "operationParams": {
-          "principalKind": { "itemField": "principalKind" },
-          "principalId": { "itemField": "principalId" },
-          "verb": { "itemField": "verb" },
-          "remove": { "literal": true }
-        }
-      }
-    },
-    "commands": {}
-  },
-  "content": {
-    "messages": {
-      "en": {
-        "panel.name": "Applications",
-        "col.app": "Application",
-        "col.status": "Status",
-        "col.principal": "Principal",
-        "col.verb": "Permission",
-        "col.actions": "Actions"
+        "data": { "record": "record" }
       }
     }
   }
 }
 ```
 
-How per-row execution stays safe and works on **unselected** rows:
+Per-row availability for declared operations is returned in one batch alongside the list read (eliminating N+1
+requests), and entry/parent fixed parameters are still injected by the server.
 
-- Clicking **Revoke** on row B while row A is selected resolves `target` (here the outer `platform:Application` from
-  `selected`) and `operationParams` (`principalKind`, `principalId`, `verb` from row B, plus `remove: true`) on the
-  platform side without changing panel selection.
-- When an operation targets the row itself rather than an outer parent object, omit `target` and pass
-  `"inputs": { "target": { "item": true } }` (plus any `{ "item": "primaryKey" }`, `{ "itemField": "..." }`,
-  `{ "state": "..." }`, or `{ "literal": ... }` entries in `operationParams`).
-- The confirmation dialog, execution, and generated page skill all read this same declaration, so the assistant can
-  also target an unselected row by name and confirm the exact row.
+### 2. Custom cells, actions, and expandable row details via Vue slots
 
-### 3. Expandable row detail (`listRowDetail`)
+Author-registered components placed inside Vue slots (`manifest.components`) only draw the props passed to them and
+do not need to be registered as projections. Components that read their own data (such as a form or summary inside
+`#row-detail`) remain projections and receive the current row via `:inputs`:
 
-When clicking a row should expand an inline detail section beneath it (for example, listing tools inside an MCP
-service or child items under a record), declare one `listRowDetail` member pointing at the host `ObjectList`. Unlike
-`listColumn`, a `listRowDetail` member **may** declare its own `data` read bound to the row's identity via
-`{ "item": true }`:
-
-```json
-"rowDetail": {
-  "component": "ObjectSummary",
-  "listRowDetail": { "slot": "apps" },
-  "type": "platform:Application",
-  "inputs": { "target": { "item": true } },
-  "data": { "record": "record" }
-}
+```html
+<projection slot="apps" @row-action="onRowAction">
+  <template #cell-name="{ row }">
+    <app-icon-name-cell
+      :icon="row.fields.icon"
+      :names="row.fields.names"
+      :fallback-label="row.label"
+    ></app-icon-name-cell>
+  </template>
+  <template #row-detail="{ ref }">
+    <projection slot="rowDetail" :inputs="{ target: ref }"></projection>
+  </template>
+</projection>
 ```
 
-Check and register the panel workspace once the domain component is registered:
+For `ObjectForm`, place field-level pickers or custom inputs inside `#field-<dotPath>` (for example `#field-skills`,
+`#field-modelSelection.modelId`, or `#field-items.*.skillId` for array rows). `ReferencePicker` and `ObjectGraph`
+connect automatically to the enclosing form field.
+
+Register a domain component and check/register the panel workspace:
 
 ```sh
+node "$SKILL/ontomato.mjs" component register ./app-icon-name-cell
 node "$SKILL/ontomato.mjs" panel check ./apps-panel
 node "$SKILL/ontomato.mjs" panel register ./apps-panel
 ```

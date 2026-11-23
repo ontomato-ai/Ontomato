@@ -63,32 +63,24 @@ export const themeElevationTokens = {
   modal: "--elevation-modal",
 } as const;
 
-const hex = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/iu;
-const rgb = /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/iu;
-const rgba = /^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d+(?:\.\d+)?|\.\d+)\s*\)$/iu;
-const length = /^(?:0|(?:\d+(?:\.\d+)?|\.\d+)(?:px|rem|em|ch|ex|lh|rlh|vw|vh|vi|vb|vmin|vmax|cm|mm|in|pt|pc|q|%))$/iu;
-
-function literalColor(value: string): boolean {
-  if (hex.test(value) || value.toLowerCase() === "transparent") return true;
-  const components = rgb.exec(value) ?? rgba.exec(value);
-  return components !== null && components.slice(1, 4).every(channel => Number(channel) <= 255)
-    && (components[4] === undefined || Number(components[4]) <= 1);
-}
+const cssCustomPropertyName = /^--[A-Za-z0-9_-]+$/u;
+const unsafeCssValue = /[;{}]|<\/style/iu;
 
 export function isThemeOverrideToken(name: string): name is keyof typeof themeOverrideTokens {
   return Object.hasOwn(themeOverrideTokens, name);
 }
 
-/** An explanation for a rejected override. Only literal values cross the declaration boundary. */
+/**
+ * An explanation for a rejected theme override: accepts any public CSS custom property (except third-party `--el-*`
+ * variables) and any valid CSS value expression (including `hsl()`, `oklch()`, `color-mix()`, `var()`, `calc()`).
+ */
 export function themeOverrideProblem(name: string, value: string): string | undefined {
-  if (!isThemeOverrideToken(name)) return `Unknown theme variable '${name}'`;
-  const kind = themeOverrideTokens[name];
-  const literal = value.trim();
-  switch (kind) {
-    case "color": return literalColor(literal) ? undefined : "Expected a literal hex or RGB color";
-    case "length": return length.test(literal) ? undefined : "Expected a nonnegative literal length";
-    case "elevation": return Object.hasOwn(themeElevationTokens, literal) ? undefined : "Expected an elevation of flat, panel, overlay or modal";
-  }
+  if (!cssCustomPropertyName.test(name)) return `Invalid theme variable name '${name}'; expected a CSS custom property starting with '--'`;
+  if (name.startsWith("--el-")) return `Third-party variable '${name}' is not allowed; use a '--sdk-*' or custom token instead`;
+  const trimmed = value.trim();
+  if (!trimmed) return "Expected a non-empty CSS value";
+  if (unsafeCssValue.test(trimmed)) return "CSS value cannot contain ';', '{', '}', or '</style'";
+  return undefined;
 }
 
 /** Validate both modes against the current design-token catalogue. */

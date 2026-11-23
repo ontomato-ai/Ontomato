@@ -1,11 +1,10 @@
-import type { DeepReadonly } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { chartProjectionTemplateSchema, DashboardMetricOutput } from "@ontomato/contracts/dashboard";
 import {
   panelFormTargetSchema,
   type PanelFormTarget,
   type PanelObjectIdentity,
-  type PanelStateValue,
+  type PanelObjectRef,
 } from "@ontomato/contracts/panel-manifest";
 import {
   panelFormSaveInputSchema,
@@ -222,7 +221,7 @@ export interface PlatformObjectOptions {
 /** Per-type or per-relation-kind read outcome reported by a graph source; never collapsed into an empty graph. */
 export type PlatformGraphStatus = "ok" | "refused" | "failed" | "unavailable";
 
-type PanelObjectValue = Extract<PanelStateValue, { className: string }>;
+type PanelObjectValue = PanelObjectRef;
 
 /** One node in a graph projection (instance mode). */
 export interface PlatformGraphNode {
@@ -438,6 +437,6 @@ export function adapterPart<Part extends "list" | "query" | "read" | "forms" | "
 }
 
 /** The primary key a projection's input value names, or null when nothing is selected. */
-export function selectedKey(value: DeepReadonly<PanelFieldValue> | undefined): string | null {
+export function selectedKey(value: PanelFieldValue | undefined): string | null {
   return stateObject(value)?.primaryKey ?? stateChildObject(value)?.primaryKey ?? null;
 }

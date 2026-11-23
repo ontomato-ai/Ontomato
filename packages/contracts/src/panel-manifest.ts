@@ -9,6 +9,7 @@ import {
   type PanelObjectRef,
 } from "./panel-object-ref";
 import { PRODUCT_PANEL, PRODUCT_PROJECTION, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
+import { domainComponentIdSchema } from "./domain-component-runtime";
 
 export {
   panelMemberItemKeySchema,
@@ -45,7 +46,7 @@ const undeclaredCollection = { path: ["collection"], message: "Undeclared child 
 export const panelChildCollectionQuerySchema = z.object({
   parent: panelObjectIdentitySchema,
   collection: key,
-}).strict().refine(({ parent, collection }) => platformHasChildCollection(parent.objectType, collection), undeclaredCollection);
+}).strict().refine(({ parent, collection }) => !parent.objectType.startsWith("platform:") || platformHasChildCollection(parent.objectType, collection), undeclaredCollection);
 export type PanelChildCollectionQuery = z.infer<typeof panelChildCollectionQuerySchema>;
 
 /** A flat reference into the current panel's content.messages. */
@@ -53,25 +54,18 @@ export const panelMessageKeySchema = z.string().min(1);
 
 const ontologyTypeId = z.string().min(1).max(200);
 const ontologyObjectTypeSchema = z.object({ kind: z.literal("object"), objectType: ontologyTypeId }).strict();
-export const panelListTypeSchema = z.object({ kind: z.literal("list"), items: ontologyObjectTypeSchema }).strict();
 const ontologyScalarTypeSchema = z.object({
   kind: z.literal("scalar"), type: z.enum(["string", "number", "boolean", "date"]),
 }).strict();
 
-const childObjectType = z.object({
+export const ontologyChildObjectTypeSchema = z.object({
   kind: z.literal("child-object"), parentType: ontologyTypeId, collection: key,
 }).strict();
-
-const declaredChildCollection = ({ parentType, collection }: z.infer<typeof childObjectType>) =>
-  platformHasChildCollection(parentType, collection);
-
-export const ontologyChildObjectTypeSchema = childObjectType.refine(declaredChildCollection, undeclaredCollection);
 export type OntologyChildObjectType = z.infer<typeof ontologyChildObjectTypeSchema>;
 
 const explicitObjectUnionTypeSchema = z.object({
   kind: z.literal("object-union"),
-  objectTypes: z.array(ontologyTypeId.refine((id) => Object.hasOwn(platformObjectTypes, id), "Undeclared platform object type"))
-    .nonempty(),
+  objectTypes: z.array(ontologyTypeId).nonempty(),
 }).strict();
 
 const layeredObjectUnionTypeSchema = z.object({
@@ -86,6 +80,13 @@ export const ontologyObjectUnionTypeSchema = z.union([
   layeredObjectUnionTypeSchema.merge(explicitObjectUnionTypeSchema),
 ]);
 export type OntologyObjectUnionType = z.infer<typeof ontologyObjectUnionTypeSchema>;
+
+export const panelListItemTypeSchema = z.union([
+  ontologyObjectTypeSchema,
+  ontologyObjectUnionTypeSchema,
+  ontologyScalarTypeSchema,
+]);
+export const panelListTypeSchema = z.object({ kind: z.literal("list"), items: panelListItemTypeSchema }).strict();
 
 /** Resolve layer selectors against the current type declarations, keeping the selector in the stored manifest. */
 export function objectUnionTypes(field: OntologyObjectUnionType): readonly string[] {
@@ -115,25 +116,13 @@ export function matchesObjectType(field: OntologyObjectUnionType | z.infer<typeo
 }
 
 /** Values that can cross the address and deep-link state boundary. */
-export const panelDeepLinkStateValueSchema = z.union([
-  panelObjectRefSchema,
-  panelChildObjectIdentitySchema,
-  z.string(),
-  z.number().finite(),
-  z.boolean(),
-  z.null(),
-]);
+export const panelDeepLinkStateValueSchema = runtimeJsonValueSchema;
 export type PanelDeepLinkStateValue = z.infer<typeof panelDeepLinkStateValueSchema>;
 
 /** Checked identities belong to the instance. The declared field supplies the object type of every member. */
 export const panelObjectCollectionValueSchema = z.array(panelObjectRefSchema);
-/** The reader's coordinates, stored by node key. Null clears a saved layout. */
-export const panelNodePositionsValueSchema = z.record(z.string().min(1), z.object({
-  x: z.number().finite(), y: z.number().finite(),
-}).strict()).nullable();
-export type PanelNodePositionsValue = z.infer<typeof panelNodePositionsValueSchema>;
 
-export const panelStateValueSchema = z.union([panelDeepLinkStateValueSchema, panelObjectCollectionValueSchema, panelNodePositionsValueSchema]);
+export const panelStateValueSchema = runtimeJsonValueSchema;
 export type PanelStateValue = z.infer<typeof panelStateValueSchema>;
 
 /**
@@ -143,32 +132,14 @@ export type PanelStateValue = z.infer<typeof panelStateValueSchema>;
 export const panelStateRefSchema = z.object({ state: key }).strict();
 export type PanelStateRef = z.infer<typeof panelStateRefSchema>;
 
-/** A projection reads and edits one owner-declared field of a form in this same panel instance. */
-export const panelFormFieldRefSchema = z.object({
+const panelReadOperationFormFieldRefSchema = z.object({
   slot: key,
-  /** JSON Pointer to a field, or to the owner-declared object-array when itemPath is set. */
   path: formFieldErrorSchema.shape.field,
-  /** JSON Pointer within each row. Resolve it against the row's current index for edits, refreshes and errors. */
-  itemPath: formFieldErrorSchema.shape.field.optional(),
 }).strict();
-export type PanelFormFieldRef = z.infer<typeof panelFormFieldRefSchema>;
-
-/** A projection rendered inside one column of an ObjectList member in this same panel instance. */
-export const panelListColumnRefSchema = z.object({
-  slot: key,
-  column: key,
-}).strict();
-export type PanelListColumnRef = z.infer<typeof panelListColumnRefSchema>;
-
-/** A projection rendered inside the expandable row detail area of an ObjectList member in this same panel instance. */
-export const panelListRowDetailRefSchema = z.object({
-  slot: key,
-}).strict();
-export type PanelListRowDetailRef = z.infer<typeof panelListRowDetailRefSchema>;
 
 const panelOperationInputRefSchema = z.union([
   panelStateRefSchema,
-  z.object({ formField: panelFormFieldRefSchema.pick({ slot: true, path: true }) }).strict(),
+  z.object({ formField: panelReadOperationFormFieldRefSchema }).strict(),
 ]);
 
 /** Values supplied by the placing panel to a read operation. */
@@ -258,28 +229,6 @@ export const panelOperationCallSchema = z
 export type PanelOperationCall = z.infer<typeof panelOperationCallSchema>;
 
 /**
- * Read-only host list context supplied when invoking a row-scoped operation (`memberPath` carrying `itemKey`).
- *
- * Controlled value precedence (highest to lowest):
- * 1. `entry.inputs` (`literal` and `frameState`, verified by the server from the application entry)
- * 2. `rowContext.state` (non-controlled state fields of the placement panel owning the host list and column/detail member)
- * 3. `manifest.state` default values
- *
- * `rowContext.state` must never override entry-controlled values (`literal` or `frameState`).
- * When nested, `state` and `runtimeParams` are scoped to the actual placement panel owning the host list
- * and column/detail member.
- */
-export const panelOperationRowContextSchema = z.object({
-  /** Subset of manifest.state for the placement panel owning the host list and column/detail member. */
-  state: z.record(key, runtimeJsonValueSchema).optional(),
-  /** Frame manifest.state values when entry.inputs binds frameState (never substitutable by rowContext.state). */
-  frameState: z.record(key, runtimeJsonValueSchema).optional(),
-  /** Host list datum runtimeParams (e.g. search/cursor/size/page) used to locate the row. */
-  runtimeParams: z.record(key, runtimeJsonValueSchema).optional(),
-}).strict();
-export type PanelOperationRowContext = z.infer<typeof panelOperationRowContextSchema>;
-
-/**
  * The ID of an operation a projection publishes: the slot it sits in and the operation's own name, so two instances of
  * one panel and two panels using one projection describe the same operation the same way.
  */
@@ -350,15 +299,10 @@ export type PanelMemberTarget = z.infer<typeof panelMemberTargetSchema>;
 
 const literalValue = z.object({ literal: runtimeJsonValueSchema }).strict();
 const itemValue = z.object({ item: z.literal(true) }).strict();
-const rowItemScalarValue = z.object({ item: z.enum(["primaryKey", "label"]) }).strict();
-const rowItemFieldValue = z.object({ itemField: key }).strict();
 const commandInputSchema = z.union([literalValue, panelStateRefSchema, itemValue]);
 export const panelMemberInputSchema = z.union([
   literalValue,
   panelStateRefSchema,
-  itemValue,
-  rowItemScalarValue,
-  rowItemFieldValue,
 ]);
 export type PanelMemberInput = z.infer<typeof panelMemberInputSchema>;
 const placementPorts = {
@@ -390,10 +334,11 @@ export const panelPlacementTypeSchema = z.object({
   kind: z.literal("placement"), candidates: panelPlacementCandidatesSchema,
 }).strict();
 
-export const panelNodePositionsTypeSchema = z.object({ kind: z.literal("node-positions") }).strict();
+/** Generic structured JSON state (e.g. graph coordinates, date ranges, or personal UI layout preferences). */
+export const panelJsonTypeSchema = z.object({ kind: z.literal("json") }).strict();
 
 export const directPanelPortTypeSchema = z.union([
-  ontologyParameterTypeSchema, panelPlacementTypeSchema, panelNodePositionsTypeSchema,
+  ontologyParameterTypeSchema, panelPlacementTypeSchema, panelJsonTypeSchema,
 ]);
 export type DirectPanelPortType = z.infer<typeof directPanelPortTypeSchema>;
 
@@ -417,8 +362,8 @@ export function matchesDirectPanelValue(type: DirectPanelPortType, value: unknow
     }
     case "list":
       return Array.isArray(value) && value.every(item => item !== null && matchesDirectPanelValue(type.items, item));
-    case "node-positions":
-      return panelNodePositionsValueSchema.safeParse(value).success;
+    case "json":
+      return runtimeJsonValueSchema.safeParse(value).success;
     case "placement": {
       const placement = panelPlacementSchema.safeParse(value);
       if (!placement.success) return false;
@@ -435,6 +380,8 @@ export function matchesDirectPanelValue(type: DirectPanelPortType, value: unknow
 
 /** A connection is valid when every value of its source type can go into the exposed target field. */
 export function panelPortAccepts(target: DirectPanelPortType, source: DirectPanelPortType): boolean {
+  if (target.kind === "json") return true;
+  if (source.kind === "json") return false;
   if (target.kind === "object" || target.kind === "object-union") {
     if (source.kind === "object") return matchesObjectType(target, source.objectType);
     return source.kind === "object-union" && objectUnionTypes(source).every(type => matchesObjectType(target, type));
@@ -443,7 +390,6 @@ export function panelPortAccepts(target: DirectPanelPortType, source: DirectPane
   if (target.kind === "child-object")
     return source.kind === "child-object" && target.parentType === source.parentType && target.collection === source.collection;
   if (target.kind === "list") return source.kind === "list" && panelPortAccepts(target.items, source.items);
-  if (target.kind === "node-positions") return source.kind === "node-positions";
   if (source.kind !== "placement") return false;
   const allowed = target.candidates;
   const offered = source.candidates;
@@ -459,14 +405,7 @@ export const panelStateFieldSchema = z.object({
   external: z.boolean().default(false),
   default: runtimeJsonValueSchema.optional(),
 }).strict().superRefine((field, ctx) => {
-  if (field.type.kind === "list" && field.deepLink)
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["deepLink"], message: "Object lists are instance state" });
-  if (field.type.kind === "node-positions") {
-    if (!field.personal) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["personal"], message: "Node positions must be personal state" });
-    if (field.deepLink) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["deepLink"], message: "Node positions cannot be carried in an address" });
-  }
-  if (field.default !== undefined && (!matchesDirectPanelValue(field.type, field.default)
-    || field.default !== null && ["object", "object-union", "child-object"].includes(field.type.kind))) {
+  if (field.default !== undefined && !matchesDirectPanelValue(field.type, field.default)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["default"], message: "Invalid default value for the declared state type" });
   }
 });
@@ -479,33 +418,23 @@ export type DirectPanelStateField = PanelStateField;
 export const panelMemberSchema = z.object({
   target: panelMemberTargetSchema,
   ...placementPorts,
-  formField: panelFormFieldRefSchema.optional(),
-  listColumn: panelListColumnRefSchema.optional(),
-  listRowDetail: panelListRowDetailRefSchema.optional(),
   readOperationInputs: z.record(key, panelReadOperationInputsSchema).optional(),
 }).strict();
 export type PanelMember = z.infer<typeof panelMemberSchema>;
 
-/**
- * Whether a panel member is mounted by its host component (`ObjectForm` field, `ObjectList` column, or
- * `ObjectList` row detail) and therefore exempt from placing `<Projection slot="...">` in `panel.html`.
- */
-export function isHostMountedPanelMember(
-  member: Pick<PanelMember, "formField" | "listColumn" | "listRowDetail">,
-): boolean {
-  return member.formField !== undefined || member.listColumn !== undefined || member.listRowDetail !== undefined;
+/** Member keys placed in `panel.html`. */
+export function panelTemplatePlacedMemberKeys(manifest: Pick<PanelManifest, "members">): string[] {
+  return Object.keys(manifest.members);
 }
 
-/** Member keys that belong directly in `panel.html` rather than being mounted by a host form or list member. */
-export function panelTemplatePlacedMemberKeys(manifest: Pick<PanelManifest, "members">): string[] {
-  return Object.entries(manifest.members)
-    .filter(([, member]) => !isHostMountedPanelMember(member))
-    .map(([memberKey]) => memberKey);
-}
+/** Author-registered components used directly in the panel's template/slots without being projections. */
+export const panelDeclaredComponentsSchema = z.record(key, domainComponentIdSchema);
+export type PanelDeclaredComponents = z.infer<typeof panelDeclaredComponentsSchema>;
 
 export const panelManifestSchema = z.object({
   state: panelStateSchema,
   members: z.record(key, panelMemberSchema),
+  components: panelDeclaredComponentsSchema.optional(),
 }).strict().superRefine(({ state, members }, ctx) => {
   function issue(path: string[], message: string) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
@@ -513,8 +442,6 @@ export const panelManifestSchema = z.object({
   function requireName(scope: Record<string, unknown>, name: string, path: string[]) {
     if (!Object.hasOwn(scope, name)) issue(path, `Undeclared reference '${name}'`);
   }
-  const seenListColumns = new Map<string, string>();
-  const seenListRowDetails = new Map<string, string>();
   for (const [member, declaration] of Object.entries(members)) {
     const path = ["members", member];
     if ("fromState" in declaration.target) {
@@ -537,68 +464,11 @@ export const panelManifestSchema = z.object({
     if ("fromPlatform" in declaration.target && Object.keys(declaration.inputs ?? {}).length > 0) {
       issue([...path, "inputs"], "The application entry supplies the inputs for this member");
     }
-    const isListAttached = declaration.listColumn !== undefined || declaration.listRowDetail !== undefined;
     for (const [name, input] of Object.entries(declaration.inputs ?? {})) {
       if ("state" in input) requireName(state, input.state, [...path, "inputs", name, "state"]);
-      if ((("item" in input && input.item !== true) || "itemField" in input) && !isListAttached) {
-        issue(
-          [...path, "inputs", name],
-          "Row scalar and field inputs ({item: 'primaryKey'|'label'} and {itemField}) are only allowed on listColumn or listRowDetail members",
-        );
-      }
     }
     for (const [name, output] of Object.entries(declaration.outputs ?? {}))
       requireName(state, output.state, [...path, "outputs", name, "state"]);
-    const attachments = [
-      declaration.formField !== undefined ? "formField" : null,
-      declaration.listColumn !== undefined ? "listColumn" : null,
-      declaration.listRowDetail !== undefined ? "listRowDetail" : null,
-    ].filter((kind): kind is "formField" | "listColumn" | "listRowDetail" => kind !== null);
-    if (attachments.length > 1) {
-      for (const attachment of attachments.slice(1)) {
-        issue([...path, attachment], "A member may declare at most one of formField, listColumn, or listRowDetail");
-      }
-    }
-    if (declaration.formField) {
-      const { slot } = declaration.formField;
-      if (slot === member) issue([...path, "formField", "slot"], "A field port must reference another member");
-      else requireName(members, slot, [...path, "formField", "slot"]);
-    }
-    if (declaration.listColumn) {
-      const { slot, column } = declaration.listColumn;
-      if (slot === member) issue([...path, "listColumn", "slot"], "A list column member must reference another member");
-      else if (!Object.hasOwn(members, slot)) requireName(members, slot, [...path, "listColumn", "slot"]);
-      else if (!("projectionId" in members[slot].target))
-        issue([...path, "listColumn", "slot"], "A list column host must be a fixed projection member");
-      if (!("projectionId" in declaration.target))
-        issue([...path, "target"], "A list column member must target a fixed projection");
-      if (Object.keys(declaration.outputs ?? {}).length > 0)
-        issue([...path, "outputs"], "A list column member cannot declare outputs");
-      const columnKey = `${slot}\u0000${column}`;
-      const existing = seenListColumns.get(columnKey);
-      if (existing !== undefined) {
-        issue([...path, "listColumn"], `List '${slot}' column '${column}' already has a column member '${existing}'`);
-      } else {
-        seenListColumns.set(columnKey, member);
-      }
-    }
-    if (declaration.listRowDetail) {
-      const { slot } = declaration.listRowDetail;
-      if (slot === member) issue([...path, "listRowDetail", "slot"], "A list row detail member must reference another member");
-      else if (!Object.hasOwn(members, slot)) requireName(members, slot, [...path, "listRowDetail", "slot"]);
-      else if (!("projectionId" in members[slot].target))
-        issue([...path, "listRowDetail", "slot"], "A list row detail host must be a fixed projection member");
-      if (!("projectionId" in declaration.target))
-        issue([...path, "target"], "A list row detail member must target a fixed projection");
-      if (Object.keys(declaration.outputs ?? {}).length > 0)
-        issue([...path, "outputs"], "A list row detail member cannot declare outputs");
-      const existing = seenListRowDetails.get(slot);
-      if (existing !== undefined) {
-        issue([...path, "listRowDetail"], `List '${slot}' already has a row detail member '${existing}'`);
-      } else {
-        seenListRowDetails.set(slot, member);
-      }
-    }
     for (const [operation, { draft, parameters, bindingId }] of Object.entries(declaration.readOperationInputs ?? {})) {
       if (draft) requireName(members, draft.slot, [...path, "readOperationInputs", operation, "draft", "slot"]);
       const refs = "fields" in parameters

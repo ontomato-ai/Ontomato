@@ -192,18 +192,10 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
     panels.set(panelId, panel);
     for (const { target } of Object.values(panel.manifest.members)) {
       if ("panelId" in target) pending.add(target.panelId);
-      if ("projectionId" in target) projections.add(target.projectionId);
-    }
-  }
-  const loadedProjections = new Map(await Promise.all([...projections].map(async id =>
-    [id, await loadCurrentProduct(domainId, "projection", id)] as const)));
-  for (const [panelId, panel] of panels) {
-    for (const [memberKey, member] of Object.entries(panel.manifest.members)) {
-      if (!member.listColumn || !("projectionId" in member.target)) continue;
-      const definition = loadedProjections.get(member.target.projectionId)?.definition;
-      const data = definition && typeof definition === "object" && "data" in definition ? definition.data : undefined;
-      if (data && typeof data === "object" && Object.keys(data).length > 0) {
-        throw new HttpError(400, `Panel '${panelId}', member '${memberKey}' – listColumn members cannot declare independent data reads`, "LIST_COLUMN_DATA_FORBIDDEN");
+      else if ("projectionId" in target) projections.add(target.projectionId);
+      else if ("candidates" in target) {
+        if ("panelIds" in target.candidates) for (const id of target.candidates.panelIds) pending.add(id);
+        if ("projectionIds" in target.candidates) for (const id of target.candidates.projectionIds) projections.add(id);
       }
     }
   }

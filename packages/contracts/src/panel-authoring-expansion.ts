@@ -4,12 +4,13 @@ import { dashboardCardPrimaryKey } from "./dashboard";
 import type { PanelAuthoringMember } from "./panel-authoring";
 import { panelConversationEntrySchema } from "./panel-conversation-entry";
 import {
-  isHostMountedPanelMember, matchesDirectPanelValue, matchesObjectType, panelPortAccepts,
+  matchesDirectPanelValue, matchesObjectType, panelPortAccepts,
   type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelStateRef,
 } from "./panel-manifest";
 import {
   directProjectionInputAccepts, missingRequiredReadParameters, panelLocalOperationNameSchema, panelReadInputMatches, panelReadParameterId, panelReadParameterSchemas,
   projectionOperationTargetMatches, type DirectProjectionData, type DirectProjectionPorts, type ProjectionOperationBinding,
+  type ProjectionOperationParam,
 } from "./panel-projection";
 import { DASHBOARD_CARD, platformOntologyLayers } from "./platform-object-types";
 import { chartProjectionSchema } from "./product-panels";
@@ -40,25 +41,21 @@ export function expandPanelAuthoringMember(
   },
 ): {
   projection: DirectProjectionPorts;
-  placement: Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs" | "formField" | "listColumn" | "listRowDetail">;
+  placement: Pick<PanelMember, "inputs" | "outputs" | "readOperationInputs">;
 } {
   const fail = (field: string, message: string): never => {
     throw new Error(`Member '${key}', field '${field}': ${message}`);
   };
   if (member.sourceCard !== undefined)
     return fail("sourceCard", "Resolve the source card through the chart owner before binding this member");
-  const isHostAttached = isHostMountedPanelMember(member);
-  const isListAttached = member.listColumn !== undefined || member.listRowDetail !== undefined;
-  if (member.inputs !== undefined && !isListAttached)
-    return fail("inputs", "inputs is only allowed on listColumn or listRowDetail members");
-  if (member.listColumn !== undefined && Object.keys(member.data ?? {}).length > 0)
-    return fail("data", "A listColumn member cannot declare independent data reads");
   const matching = components.filter(component =>
     qualifiedId(component) === member.component || component.componentId === member.component);
   if (!matching.length) return fail("component", `SDK component '${member.component}' does not exist`);
   if (matching.length !== 1) return fail("component", `'${member.component}' is ambiguous. Use the full component ID`);
   const component = matching[0];
-  if (component.data === undefined && (!isHostAttached || Object.keys(member.data ?? {}).length > 0))
+  if (component.data === undefined && Object.keys(member.data ?? {}).length > 0)
+    return fail("component", "This component does not declare projection data");
+  if (component.data === undefined && member.operation === undefined && !(member.operations && Object.keys(member.operations).length))
     return fail("component", "This component does not declare projection data");
   const componentData = component.data ?? {};
   const componentId = qualifiedId(component);
@@ -72,7 +69,9 @@ export function expandPanelAuthoringMember(
 
   const stateType = (name: string, field: string): DirectPanelPortType =>
     Object.hasOwn(state, name) ? state[name].type : fail(field, `State '${name}' is not declared`);
-  const targetStatePort = member.target === undefined ? undefined : stateType(member.target, "target");
+  const targetIsFromSlot = typeof member.target === "object" && member.target !== null && "fromSlot" in member.target;
+  const targetStateName = typeof member.target === "string" ? member.target : undefined;
+  const targetStatePort = targetStateName === undefined ? undefined : stateType(targetStateName, "target");
   const targetType = targetStatePort === undefined ? undefined
     : targetStatePort.kind === "object-union" ? undefined
       : objectTypeOf(targetStatePort) ?? fail("target", "Expected object state of one type, an object-union, or a list of one type");
@@ -85,20 +84,24 @@ export function expandPanelAuthoringMember(
   let typeId = member.type ?? targetType;
   if (typeId !== undefined && !Object.hasOwn(objectTypes, typeId))
     return fail("type", `Type '${typeId}' is absent from the author type table`);
-  const ownerOperation = (() => {
-    if (member.operation === undefined) return undefined;
-    const candidates = typeId === undefined ? Object.entries(objectTypes) : [[typeId, objectTypes[typeId]]] as const;
+
+  function lookupOwnerOperation(operationId: string, preferredType: string | undefined, fieldPath: string) {
+    if (preferredType !== undefined && !Object.hasOwn(objectTypes, preferredType))
+      fail(fieldPath, `Type '${preferredType}' is absent from the author type table`);
+    const candidates = preferredType === undefined ? Object.entries(objectTypes) : [[preferredType, objectTypes[preferredType]]] as const;
     const matches = candidates.flatMap(([type, entry]) =>
-      (entry.operations ?? []).filter(operation => operation.id === member.operation).map(operation => ({ type, operation })));
-    if (matches.length > 1) return fail("operation", `'${member.operation}' is ambiguous. Declare its owner type`);
+      (entry.operations ?? []).filter(operation => operation.id === operationId).map(operation => ({ type, operation })));
+    if (matches.length > 1) return fail(fieldPath, `'${operationId}' is ambiguous. Declare its owner type`);
     if (!matches.length) {
-      const unavailable = unavailableActions?.find(action => action.id === member.operation &&
-        (typeId === undefined || action.objectType === undefined || action.objectType === typeId));
-      return fail("operation", `'${member.operation}' is unavailable${unavailable ? `: ${unavailable.reason}` :
-        typeId === undefined ? "" : ` on type '${typeId}'`}`);
+      const unavailable = unavailableActions?.find(action => action.id === operationId &&
+        (preferredType === undefined || action.objectType === undefined || action.objectType === preferredType));
+      return fail(fieldPath, `'${operationId}' is unavailable${unavailable ? `: ${unavailable.reason}` :
+        preferredType === undefined ? "" : ` on type '${preferredType}'`}`);
     }
-    return matches[0];
-  })();
+    return matches[0]!;
+  }
+
+  const ownerOperation = member.operation === undefined ? undefined : lookupOwnerOperation(member.operation, typeId, "operation");
   const readsDraft = ownerOperation?.operation.effect === "read" && ownerOperation.operation.target.source === "draft";
   if (!readsDraft) {
     for (const field of ["draft", "parameters", "bindingId"] as const) {
@@ -133,13 +136,16 @@ export function expandPanelAuthoringMember(
 
   function bindMemberInput(
     name: string,
-    source: PanelMemberInput,
+    source: PanelMemberInput | { fromSlot: true },
     path: string,
     expected?: DirectProjectionPorts["inputs"][string],
     preferredObjectType?: string,
   ) {
-    if ((("item" in source && source.item !== true) || "itemField" in source) && !isListAttached) {
-      fail(path, "Row scalar and field inputs ({item: 'primaryKey'|'label'} and {itemField}) are only allowed on listColumn or listRowDetail members");
+    if ("fromSlot" in source) {
+      if (!inputTypes.has(name)) {
+        inputTypes.set(name, expected ?? (preferredObjectType ? { kind: "object", objectType: preferredObjectType } : { kind: "json" }));
+      }
+      return { input: name };
     }
     const existing = inputBindings.get(name);
     if (existing && !sameBinding(existing, source)) {
@@ -154,44 +160,22 @@ export function expandPanelAuthoringMember(
       inputBindings.set(name, source);
       return { input: name };
     }
-    if ("literal" in source) {
-      if (expected && expected.kind !== "json" && !matchesDirectPanelValue(expected, source.literal)) {
-        fail(path, `Literal value does not match input '${name}'`);
-      }
-      if (!inputTypes.has(name)) {
-        inputTypes.set(name, expected ?? { kind: "json" });
-      }
-      inputBindings.set(name, source);
-      return { input: name };
-    }
-    if ("item" in source && source.item === true) {
-      if (expected && expected.kind !== "object" && expected.kind !== "object-union" && expected.kind !== "json") {
-        fail(path, `Row object input '{item: true}' is incompatible with input '${name}'`);
-      }
-      const objectPort: DirectProjectionPorts["inputs"][string] = expected
-        ?? (preferredObjectType ? { kind: "object", objectType: preferredObjectType } : ontologyNode);
-      if (!inputTypes.has(name)) {
-        inputTypes.set(name, objectPort);
-      }
-      inputBindings.set(name, source);
-      return { input: name };
-    }
-    if ("item" in source) {
-      const stringPort: DirectPanelPortType = { kind: "scalar", type: "string" };
-      if (expected && !directProjectionInputAccepts(expected, stringPort)) {
-        fail(path, `Row scalar input '{item: "${source.item}"}' is incompatible with input '${name}'`);
-      }
-      if (!inputTypes.has(name)) {
-        inputTypes.set(name, expected ?? stringPort);
-      }
-      inputBindings.set(name, source);
-      return { input: name };
+    if (expected && expected.kind !== "json" && !matchesDirectPanelValue(expected, source.literal)) {
+      fail(path, `Literal value does not match input '${name}'`);
     }
     if (!inputTypes.has(name)) {
       inputTypes.set(name, expected ?? { kind: "json" });
     }
     inputBindings.set(name, source);
     return { input: name };
+  }
+
+  function parameterPortType(parameterId: ReturnType<typeof panelReadParameterId>): DirectPanelPortType {
+    if (!parameterId) return { kind: "json" };
+    if (panelReadInputMatches(parameterId, { kind: "scalar", type: "string" })) return { kind: "scalar", type: "string" };
+    if (panelReadInputMatches(parameterId, { kind: "scalar", type: "number" })) return { kind: "scalar", type: "number" };
+    if (panelReadInputMatches(parameterId, { kind: "scalar", type: "boolean" })) return { kind: "scalar", type: "boolean" };
+    return { kind: "json" };
   }
 
   const dataTypes = new Map<string, string>();
@@ -213,9 +197,12 @@ export function expandPanelAuthoringMember(
     let source: DirectProjectionData["source"];
     if (declaration.source === "type") {
       source = { type: { kind: readType.startsWith("platform:") ? "PlatformObjectType" : "ObjectType", id: readType } };
-    } else if (member.target !== undefined) {
-      source = { object: bindInput(targetPort, member.target, "target") };
-      if (stateType(member.target, "target").kind !== "object") fail("target", `Read '${read}' needs a single object`);
+    } else if (targetIsFromSlot) {
+      inputTypes.set(targetPort, { kind: "object", objectType: readType });
+      source = { object: { input: targetPort } };
+    } else if (targetStateName !== undefined) {
+      source = { object: bindInput(targetPort, targetStateName, "target") };
+      if (stateType(targetStateName, "target").kind !== "object") fail("target", `Read '${read}' needs a single object`);
       if (targetType !== readType)
         fail(`${path}.type`, `'${readType}' does not match target state type '${targetType}'`);
     } else if (member.inputs && Object.hasOwn(member.inputs, targetPort)) {
@@ -246,6 +233,10 @@ export function expandPanelAuthoringMember(
         const parsed = panelReadParameterSchemas[parameterId].safeParse(supplied.literal);
         if (!parsed.success) fail(paramPath, parsed.error.issues[0]!.message);
         return [param, supplied] as const;
+      }
+      if ("fromSlot" in supplied) {
+        inputTypes.set(param, parameterPortType(parameterId));
+        return [param, { input: param }] as const;
       }
       if (!panelReadInputMatches(parameterId, stateType(supplied.state, paramPath)))
         fail(paramPath, `State '${supplied.state}' has an incompatible type for '${parameterId}'`);
@@ -296,7 +287,6 @@ export function expandPanelAuthoringMember(
       bindInput(port, fieldName, path);
     }
     if (output) {
-      if (isListAttached) fail(path, "A listColumn or listRowDetail member cannot declare outputs");
       const usesOntologyNodes = componentId === "@ontomato/sdk:ObjectList" && readsOntologyObjects && objectTypeOf(output) === "@binding";
       if (usesOntologyNodes && output.kind === "list")
         fail(path, "The objects read exposes several types, but list state requires one object type");
@@ -310,35 +300,39 @@ export function expandPanelAuthoringMember(
   }
 
   const config = { ...member.config };
-  let operations: DirectProjectionPorts["operations"];
+  const operationEntries: Record<string, ProjectionOperationBinding> = {};
   let readOperationInputs: PanelMember["readOperationInputs"];
+
+  function expandOperationParams(
+    rawParams: Record<string, NonNullable<ShortMember["operationParams"]>[string]> | undefined,
+    prefix: string,
+  ): Record<string, ProjectionOperationParam> | undefined {
+    const entries = Object.entries(rawParams ?? {}).map(([param, source]): readonly [string, ProjectionOperationParam] => {
+      const paramPath = `${prefix}.${param}`;
+      if ("literal" in source || "row" in source || "rowField" in source) return [param, source];
+      if ("input" in source) {
+        if (!inputTypes.has(source.input)) fail(paramPath, `Input '${source.input}' is not declared on this member`);
+        return [param, source];
+      }
+      return [param, bindMemberInput(param, source, paramPath, undefined, bindingType)];
+    });
+    return entries.length ? Object.fromEntries(entries) : undefined;
+  }
+
   if (ownerOperation) {
     const { type: ownerType, operation } = ownerOperation;
     let target: ProjectionOperationBinding["target"];
     if (operation.target.source !== "none") {
-      if (member.target !== undefined) {
-        target = bindInput(targetPort, member.target, "target");
+      if (targetIsFromSlot) {
+        inputTypes.set(targetPort, { kind: "object", objectType: ownerType });
+        target = { input: targetPort };
+      } else if (targetStateName !== undefined) {
+        target = bindInput(targetPort, targetStateName, "target");
       } else if (member.inputs && Object.hasOwn(member.inputs, targetPort)) {
         target = { input: targetPort };
-      } else if (member.inputs) {
-        const rowObjectInputs = Object.entries(member.inputs)
-          .filter(([, value]) => "item" in value && value.item === true)
-          .map(([name]) => name);
-        if (rowObjectInputs.length === 1) {
-          target = { input: rowObjectInputs[0]! };
-        }
       }
     }
-    const opParamsEntries = Object.entries(member.operationParams ?? {}).map(([param, source]) => {
-      const paramPath = `operationParams.${param}`;
-      if ("literal" in source) return [param, source] as const;
-      if ("input" in source) {
-        if (!inputTypes.has(source.input)) fail(paramPath, `Input '${source.input}' is not declared on this member`);
-        return [param, source] as const;
-      }
-      return [param, bindMemberInput(param, source, paramPath, undefined, bindingType)] as const;
-    });
-    const opParams = opParamsEntries.length ? Object.fromEntries(opParamsEntries) : undefined;
+    const opParams = expandOperationParams(member.operationParams, "operationParams");
     const binding: ProjectionOperationBinding = {
       operation: { kind: ownerType.startsWith("platform:") ? "PlatformOperation" : "Action", id: operation.id },
       ...(target && { target }),
@@ -349,7 +343,7 @@ export function expandPanelAuthoringMember(
     const localName = panelLocalOperationNameSchema.safeParse(operation.id.split(".").at(-1));
     if (!localName.success) return fail("operation", `'${operation.id}' has no usable local operation name`);
     const name = localName.data;
-    operations = { [name]: binding };
+    operationEntries[name] = binding;
     if (readsDraft) {
       const slot = member.draft ?? fail("draft", `Operation '${operation.id}' requires the key of the form member whose draft it reads`);
       readOperationInputs = { [name]: {
@@ -365,6 +359,50 @@ export function expandPanelAuthoringMember(
     }
   }
 
+  for (const [localName, spec] of Object.entries(member.operations ?? {})) {
+    const opPath = `operations.${localName}`;
+    const parsedName = panelLocalOperationNameSchema.safeParse(localName);
+    if (!parsedName.success) fail(opPath, parsedName.error.issues[0]!.message);
+    if (Object.hasOwn(operationEntries, localName)) fail(opPath, `Duplicate operation name '${localName}'`);
+    const normalized = typeof spec === "string" ? { operation: spec } : spec;
+    const { type: ownerType, operation } = lookupOwnerOperation(normalized.operation, normalized.type ?? bindingType, opPath);
+    const opTargetPort = operation.target.source === "input" ? operation.target.input : "target";
+    let target: ProjectionOperationBinding["target"];
+    if (operation.target.source !== "none") {
+      if (normalized.target === "row") {
+        target = { row: true };
+      } else if (typeof normalized.target === "string") {
+        target = bindInput(opTargetPort, normalized.target, `${opPath}.target`);
+      } else if (normalized.target !== undefined) {
+        if ("row" in normalized.target || "rowField" in normalized.target || "literal" in normalized.target) {
+          target = normalized.target;
+        } else {
+          target = bindInput(opTargetPort, normalized.target.state, `${opPath}.target`);
+        }
+      } else if (componentId === "@ontomato/sdk:ObjectList") {
+        target = { row: true };
+      } else if (targetIsFromSlot) {
+        inputTypes.set(opTargetPort, { kind: "object", objectType: ownerType });
+        target = { input: opTargetPort };
+      } else if (targetStateName !== undefined) {
+        target = bindInput(opTargetPort, targetStateName, `${opPath}.target`);
+      } else if (member.inputs && Object.hasOwn(member.inputs, opTargetPort)) {
+        target = { input: opTargetPort };
+      }
+    }
+    const opParams = expandOperationParams(normalized.params, `${opPath}.params`);
+    const binding: ProjectionOperationBinding = {
+      operation: { kind: ownerType.startsWith("platform:") ? "PlatformOperation" : "Action", id: operation.id },
+      ...(target && { target }),
+      ...(opParams && { params: opParams }),
+    };
+    if (!projectionOperationTargetMatches({ inputs: Object.fromEntries(inputTypes) }, binding, operation, ownerType))
+      fail(`${opPath}.target`, `Operation '${operation.id}' requires a compatible target of type '${ownerType}'`);
+    operationEntries[localName] = binding;
+  }
+
+  const operations = Object.keys(operationEntries).length ? operationEntries : undefined;
+
   return {
     projection: {
       componentId, inputs: Object.fromEntries(inputTypes), outputs: Object.fromEntries(outputTypes),
@@ -374,9 +412,6 @@ export function expandPanelAuthoringMember(
       ...(inputBindings.size && { inputs: Object.fromEntries(inputBindings) }),
       ...(outputBindings.size && { outputs: Object.fromEntries(outputBindings) }),
       ...(readOperationInputs && { readOperationInputs }),
-      ...(member.formField && { formField: member.formField }),
-      ...(member.listColumn && { listColumn: member.listColumn }),
-      ...(member.listRowDetail && { listRowDetail: member.listRowDetail }),
     },
   };
 }

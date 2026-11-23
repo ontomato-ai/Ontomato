@@ -15,10 +15,34 @@ const ownerType = panelObjectRefSchema.shape.className;
 const authoringParameterSchema = z.union([
   panelStateRefSchema,
   z.object({ literal: runtimeJsonValueSchema }).strict(),
+  z.object({ fromSlot: z.literal(true) }).strict(),
+]);
+const authoringOperationTargetSchema = z.union([
+  z.literal("row"),
+  stateKey,
+  z.object({ row: z.literal(true) }).strict(),
+  z.object({ rowField: readName }).strict(),
+  panelStateRefSchema,
+  z.object({ literal: panelObjectRefSchema }).strict(),
 ]);
 const authoringOperationParamSchema = z.union([
   panelMemberInputSchema,
   z.object({ input: stateKey }).strict(),
+  z.object({ row: z.enum(["primaryKey", "label"]) }).strict(),
+  z.object({ rowField: readName }).strict(),
+]);
+const authoringOperationEntrySchema = z.union([
+  panelOperationDeclarationSchema.shape.id,
+  z.object({
+    operation: panelOperationDeclarationSchema.shape.id,
+    type: ownerType.optional(),
+    target: authoringOperationTargetSchema.optional(),
+    params: z.record(readName, authoringOperationParamSchema).optional(),
+  }).strict(),
+]);
+const authoringInputBindingSchema = z.union([
+  panelMemberInputSchema,
+  z.object({ fromSlot: z.literal(true) }).strict(),
 ]);
 
 const authoringDataSchema = z.union([
@@ -26,7 +50,7 @@ const authoringDataSchema = z.union([
   z.object({
     read: readName.describe("Read name from the owner's entry in the type table."),
     type: ownerType.optional().describe("Owner type for this datum. Omit to use the member's type or its target state's object type."),
-    params: z.record(readName, authoringParameterSchema).optional().describe("Map owner read parameter names to {state: fieldName} or {literal: value}."),
+    params: z.record(readName, authoringParameterSchema).optional().describe("Map owner read parameter names to {state: fieldName}, {literal: value}, or {fromSlot: true}."),
   }).strict(),
 ]);
 
@@ -40,11 +64,15 @@ const inlineMemberSchema = z.object({
     z.string().regex(/^[^@\s/:]+$/u, "Expected an SDK component name"),
     directProjectionPortsSchema.shape.componentId,
   ]).describe("Component name from the released SDK catalogue. Use its package-qualified ID if the name is ambiguous."),
-  type: ownerType.optional().describe("Default owner type ID from the type table for this member's reads and operation."),
-  target: stateKey.optional().describe("Panel state field holding the object for an object read or the object or object list targeted by an operation."),
-  data: z.record(readName, authoringDataSchema).optional().describe("Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: fieldName} or {literal: value}."),
-  operation: panelOperationDeclarationSchema.shape.id.optional().describe("Operation ID from the owner's entry in the type table."),
-  operationParams: z.record(readName, authoringOperationParamSchema).optional().describe("Bind operation input parameters to {literal: value}, {state: fieldName}, {input: portName}, or row bindings ({item: true}, {item: 'primaryKey' | 'label'}, {itemField: fieldKey})."),
+  type: ownerType.optional().describe("Default owner type ID from the type table for this member's reads and operations."),
+  target: z.union([
+    stateKey,
+    z.object({ fromSlot: z.literal(true) }).strict(),
+  ]).optional().describe("Panel state field holding the target object (or object list), or {fromSlot: true} when supplied by an enclosing Vue slot via <Projection :inputs=\"{ target: ref }\">."),
+  data: z.record(readName, authoringDataSchema).optional().describe("Map the component's datum names to owner reads. Use a read name or {read, type?, params?}. Each params value is {state: fieldName}, {literal: value}, or {fromSlot: true}."),
+  operation: panelOperationDeclarationSchema.shape.id.optional().describe("Single operation ID from the owner's entry in the type table."),
+  operationParams: z.record(readName, authoringOperationParamSchema).optional().describe("Bind input parameters for `operation` to {literal: value}, {state: fieldName}, {input: portName}, {row: 'primaryKey' | 'label'}, or {rowField: fieldKey}."),
+  operations: z.record(readName, authoringOperationEntrySchema).optional().describe("Map local operation names to owner operations (e.g. row actions on ObjectList or multiple actions on ObjectHeader). Each value is an operation ID or {operation, type?, target?, params?} where target may be 'row', {row: true}, {rowField: key}, a state field name, {state: fieldName}, or {literal: ref}."),
   draft: panelReadOperationInputsSchema.shape.draft.unwrap().shape.slot.optional()
     .describe("Form member key in this panel. Required when the declared read operation takes a draft."),
   parameters: panelReadOperationInputsSchema.shape.parameters.optional()
@@ -52,10 +80,7 @@ const inlineMemberSchema = z.object({
   bindingId: panelReadOperationInputsSchema.shape.bindingId
     .describe("Optional binding ID for a draft read operation, from {state: fieldName} or {formField: {slot, path}}."),
   state: z.record(stateKey, stateKey).optional().describe("Map typed component port names or owner read parameter names to panel state fields."),
-  inputs: z.record(stateKey, panelMemberInputSchema).optional().describe("Row and port inputs for a listColumn or listRowDetail member: {item: true}, {item: 'primaryKey' | 'label'}, {itemField: fieldKey}, {state: fieldName}, or {literal: value}."),
-  formField: panelMemberSchema.shape.formField.describe("Connect this member to an ObjectForm field. Use {slot: formMember, path: ownerFieldPointer}, with itemPath for a field inside each array row."),
-  listColumn: panelMemberSchema.shape.listColumn.describe("Connect this member to a column of an ObjectList member in the same panel. Use {slot: listMember, column: columnKey}."),
-  listRowDetail: panelMemberSchema.shape.listRowDetail.describe("Connect this member to the expandable row detail area of an ObjectList member in the same panel. Use {slot: listMember}."),
+  inputs: z.record(stateKey, authoringInputBindingSchema).optional().describe("Explicit projection input bindings: {state: fieldName}, {literal: value}, or {fromSlot: true} when supplied by an enclosing Vue slot."),
   config: runtimeJsonObjectSchema.optional().describe("Component configuration from the released SDK catalogue."),
   agent: z.union([z.literal("page-default"), defaultAgentSchema]).optional().describe('Required for ConversationEntry. Use "page-default", {kind:"id", id}, or {kind:"preset", agentKind}.'),
   prefill: panelConversationEntryFields.shape.prefill.describe("ConversationEntry text placed in the page composer without sending it."),
@@ -67,7 +92,7 @@ const inlineMemberSchema = z.object({
   const issue = (field: string[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: field, message });
   if (isOfficialComponent(member.component, "MetricChart")) {
     if (member.sourceCard === undefined) issue(["sourceCard"], "MetricChart needs a source card");
-    for (const field of ["id", "type", "target", "data", "operation", "operationParams", "draft", "parameters", "bindingId", "inputs", "config", "formField", "listColumn", "listRowDetail", "agent", "prefill", "prefillKey", "name", "description"] as const) {
+    for (const field of ["id", "type", "target", "data", "operation", "operationParams", "operations", "draft", "parameters", "bindingId", "inputs", "config", "agent", "prefill", "prefillKey", "name", "description"] as const) {
       if (member[field] !== undefined) issue([field], "MetricChart takes its projection definition from the source card");
     }
     return;
@@ -77,7 +102,7 @@ const inlineMemberSchema = z.object({
   if (isOfficialComponent(member.component, "ConversationEntry")) {
     if (member.agent === undefined) issue(["agent"], "ConversationEntry needs an agent target");
     if (member.prefill !== undefined && member.prefillKey !== undefined) issue(["prefillKey"], "Write the opening sentence out or name its message key, not both");
-    for (const field of ["type", "target", "data", "operation", "operationParams", "draft", "parameters", "bindingId", "state", "inputs", "formField", "listColumn", "listRowDetail"] as const) {
+    for (const field of ["type", "target", "data", "operation", "operationParams", "operations", "draft", "parameters", "bindingId", "state", "inputs"] as const) {
       if (member[field] !== undefined) issue([field], "ConversationEntry uses only its declared agent and optional prefill");
     }
     return;
@@ -86,41 +111,15 @@ const inlineMemberSchema = z.object({
     if (member[field] !== undefined) issue([field], "This field is only for ConversationEntry");
   }
 
-  const attachments = [
-    member.formField !== undefined ? "formField" : null,
-    member.listColumn !== undefined ? "listColumn" : null,
-    member.listRowDetail !== undefined ? "listRowDetail" : null,
-  ].filter((kind): kind is "formField" | "listColumn" | "listRowDetail" => kind !== null);
-  if (attachments.length > 1) {
-    for (const attachment of attachments.slice(1)) {
-      issue([attachment], "A member may declare at most one of formField, listColumn, or listRowDetail");
-    }
-  }
-
-  const isListAttached = member.listColumn !== undefined || member.listRowDetail !== undefined;
-  const isHostAttached = attachments.length > 0;
   const data = Object.entries(member.data ?? {});
-  if (member.listColumn !== undefined && data.length > 0) {
-    issue(["data"], "A listColumn member cannot declare independent data reads");
-  }
-  if (!data.length && member.operation === undefined && !isHostAttached) {
+  const hasOperations = member.operation !== undefined || (member.operations !== undefined && Object.keys(member.operations).length > 0);
+  if (!data.length && !hasOperations) {
     issue(["data"], "Declare a named read or an operation");
   }
   if (member.operationParams !== undefined && member.operation === undefined) {
     issue(["operationParams"], "operationParams requires an operation");
   }
-  if (member.inputs !== undefined && !isListAttached) {
-    issue(["inputs"], "inputs is only allowed on listColumn or listRowDetail members");
-  }
-  for (const [name, param] of Object.entries(member.operationParams ?? {})) {
-    if ((("item" in param && param.item !== true) || "itemField" in param) && !isListAttached) {
-      issue(
-        ["operationParams", name],
-        "Row scalar and field operation parameters are only allowed on listColumn or listRowDetail members",
-      );
-    }
-  }
-  if (member.type === undefined && member.target === undefined) {
+  if (member.type === undefined && (member.target === undefined || typeof member.target !== "string")) {
     for (const [name, datum] of data) {
       if (typeof datum === "string" || datum.type === undefined) {
         issue(["data", name], "A datum needs an owner type or a member target state field");

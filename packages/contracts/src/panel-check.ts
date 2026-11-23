@@ -8,13 +8,12 @@ export {
 export { panelAuthoringManifestSchema, panelAuthoringMemberSchema } from "./panel-authoring";
 export { bindPanelAuthoringChart, expandPanelAuthoringMember } from "./panel-authoring-expansion";
 export {
-  isHostMountedPanelMember, panelListColumnRefSchema, panelListRowDetailRefSchema, panelManifestSchema,
-  panelMemberItemKeySchema, panelOperationRowContextSchema, panelPortAccepts, panelTemplatePlacedMemberKeys,
+  panelDeclaredComponentsSchema, panelManifestSchema, panelMemberItemKeySchema,
+  panelPortAccepts, panelTemplatePlacedMemberKeys,
 } from "./panel-manifest";
 export {
   checkAuthoringScript, checkAuthoringStyles, checkAuthoringTemplate, checkAuthoringTheme,
   componentModuleImports, componentOfficialSpecifiers, isComponentOfficialSpecifier, panelModuleImports,
-  REJECT_VIEWPORT_UNITS,
 } from "./panel-module";
 export {
   SDK_PLATFORM_THEME_TOKENS, SDK_RENAMED_EXPORTS, SDK_THEME_TOKEN_ALIASES, SDK_THEME_TOKENS,

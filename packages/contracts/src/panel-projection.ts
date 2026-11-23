@@ -20,6 +20,8 @@ import { customerOntologyReads, customerRelationReads, platformObjectTypes, type
 export const panelFormValuesSchema = runtimeJsonObjectSchema;
 export type PanelFormValues = z.infer<typeof panelFormValuesSchema>;
 
+const columnWidthSchema = z.union([z.number().positive(), z.string().min(1)]).optional();
+
 /** Columns in an ObjectList projection's display. Omit labelKey for a field named by its owner. */
 export const panelObjectListColumnSchema = z.object({
   key: z.string().min(1),
@@ -34,8 +36,64 @@ export const panelObjectListColumnSchema = z.object({
   iconKey: z.string().min(1).optional(),
   emptyKey: panelMessageKeySchema.optional(),
   wrap: z.boolean().optional().describe("Allow text in this column to wrap onto multiple lines. Defaults to false."),
+  width: columnWidthSchema.describe("Optional fixed column width in pixels (number) or CSS length string (for example '160px' or '20%')."),
+  minWidth: columnWidthSchema.describe("Optional minimum column width in pixels (number) or CSS length string."),
+  align: z.enum(["left", "center", "right"]).optional().describe("Optional text alignment for header and cells in this column."),
 }).strict();
 export type PanelObjectListColumn = z.infer<typeof panelObjectListColumnSchema>;
+
+/** Per-row visibility or disabled condition evaluated against a row record's fields. */
+export const panelObjectListRowActionConditionSchema = z.object({
+  field: z.string().min(1),
+  equals: runtimeJsonValueSchema.optional(),
+  notEquals: runtimeJsonValueSchema.optional(),
+  in: z.array(runtimeJsonValueSchema).min(1).optional(),
+  notIn: z.array(runtimeJsonValueSchema).min(1).optional(),
+  truthy: z.boolean().optional(),
+}).strict();
+export type PanelObjectListRowActionCondition = z.infer<typeof panelObjectListRowActionConditionSchema>;
+
+const rowActionWhenSchema = z.union([
+  panelObjectListRowActionConditionSchema,
+  z.array(panelObjectListRowActionConditionSchema).min(1),
+]).optional();
+
+const rowActionBaseFields = {
+  labelKey: panelMessageKeySchema.optional(),
+  label: z.string().min(1).optional(),
+  danger: z.boolean().optional(),
+  primary: z.boolean().optional(),
+  when: rowActionWhenSchema,
+  disabledWhen: rowActionWhenSchema,
+};
+
+export const panelObjectListRowActionItemSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("operation"),
+    operation: z.string().min(1),
+    ...rowActionBaseFields,
+  }).strict(),
+  z.object({
+    kind: z.literal("local"),
+    id: z.string().min(1),
+    to: z.string().min(1).optional(),
+    ...rowActionBaseFields,
+  }).strict(),
+]);
+export type PanelObjectListRowActionItem = z.infer<typeof panelObjectListRowActionItemSchema>;
+
+/** Built-in action column configuration for ObjectList. */
+export const panelObjectListRowActionsSchema = z.object({
+  labelKey: panelMessageKeySchema.optional(),
+  label: z.string().min(1).optional(),
+  width: columnWidthSchema,
+  minWidth: columnWidthSchema,
+  align: z.enum(["left", "center", "right"]).optional(),
+  maxVisible: z.number().int().min(0).optional(),
+  fixed: z.union([z.literal("right"), z.literal(false)]).optional(),
+  items: z.array(panelObjectListRowActionItemSchema),
+}).strict();
+export type PanelObjectListRowActions = z.infer<typeof panelObjectListRowActionsSchema>;
 
 const fieldPath = formFieldErrorSchema.shape.field;
 const objectType = z.string().min(1);
@@ -61,23 +119,36 @@ export const directProjectionDataSchema = z.object({
 }).strict();
 export type DirectProjectionData = z.infer<typeof directProjectionDataSchema>;
 
-export const directProjectionInputTypeSchema = z.union([
-  directPanelPortTypeSchema,
-  z.object({ kind: z.literal("json") }).strict(),
-]);
+export const directProjectionInputTypeSchema = directPanelPortTypeSchema;
 
 export const projectionOperationTargetSchema = z.union([
   inputRef,
   z.object({ literal: panelObjectRefSchema }).strict(),
+  z.object({ row: z.literal(true) }).strict(),
+  z.object({ rowField: readKey }).strict(),
 ]);
+export const projectionOperationParamSchema = z.union([
+  z.object({ literal: runtimeJsonValueSchema }).strict(),
+  inputRef,
+  z.object({ row: z.enum(["primaryKey", "label"]) }).strict(),
+  z.object({ rowField: readKey }).strict(),
+]);
+export type ProjectionOperationParam = z.infer<typeof projectionOperationParamSchema>;
+
 export const panelLocalOperationNameSchema = readKey.refine(name => !name.includes("."), "Operation names cannot contain a dot");
 export const projectionOperationBindingSchema = z.object({
   operation: operationRef,
   target: projectionOperationTargetSchema.optional(),
-  /** Author-bound operation input parameters resolved from projection inputs or fixed literals. */
-  params: z.record(readKey, directProjectionParamSchema).optional(),
+  /** Author-bound operation input parameters resolved from projection inputs, row values, or fixed literals. */
+  params: z.record(readKey, projectionOperationParamSchema).optional(),
 }).strict();
 export type ProjectionOperationBinding = z.infer<typeof projectionOperationBindingSchema>;
+
+/** Whether a projection operation binding references row-level data (`{ row }` or `{ rowField }`). */
+export function projectionOperationIsRowScoped(binding: Pick<ProjectionOperationBinding, "target" | "params">): boolean {
+  if (binding.target && ("row" in binding.target || "rowField" in binding.target)) return true;
+  return Object.values(binding.params ?? {}).some(param => "row" in param || "rowField" in param);
+}
 
 export const directProjectionPortsSchema = z.object({
   componentId: componentIdSchema,
@@ -135,11 +206,10 @@ export const panelReadParameterSchemas = {
 type ReadInput = DirectProjectionPorts["inputs"][string];
 
 export function directProjectionInputAccepts(target: ReadInput, source: DirectPanelPortType): boolean {
-  return target.kind === "json" ? source.kind !== "node-positions" : panelPortAccepts(target, source);
+  return target.kind === "json" ? true : panelPortAccepts(target, source);
 }
 
 export function panelReadInputMatches(parameter: PanelReadParameterId, input: ReadInput | undefined): boolean {
-  if (input?.kind === "node-positions") return false;
   switch (parameter) {
     case "changedField":
     case "keyword":
@@ -423,6 +493,18 @@ export interface PanelRecordItemKeyOptions {
   readonly heterogeneous?: boolean;
   /** Fallback object type used when constructing `{ className, primaryKey }` for a record without `className`. */
   readonly fallbackClassName?: string;
+}
+
+/**
+ * Canonical row key for batch row-operation availability maps (`rowOperations`), shared by server list reads and
+ * `ObjectList.vue`: uses `${className}:${primaryKey}` when a className is known, else `primaryKey`.
+ */
+export function panelRowOperationKey(
+  record: Pick<PanelRecord, "primaryKey" | "className">,
+  fallbackClassName?: string,
+): string {
+  const className = record.className ?? fallbackClassName;
+  return className ? `${className}:${record.primaryKey}` : record.primaryKey;
 }
 
 /**
@@ -1004,6 +1086,7 @@ export function projectionOperationTargetMatches(
   if (!target) return declaration.target.source === "draft";
   if (objectType === undefined) return false;
   if ("literal" in target) return target.literal.className === objectType;
+  if ("row" in target || "rowField" in target) return declaration.target.source === "input";
   return panelOperationTargetPort(projection.inputs[target.input], objectType, declaration.batch) !== undefined;
 }
 

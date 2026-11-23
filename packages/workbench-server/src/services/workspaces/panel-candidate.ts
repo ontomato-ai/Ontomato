@@ -8,6 +8,7 @@ import { assertAppBuilderAccess } from "../app-builder/access";
 import { WorkspaceBuildTests } from "../app-builder/build-tests";
 import type { AssistantOwner } from "../assistant/store";
 import { readCurrentPanelRecord, readCurrentProjectionRecord } from "../product-panels/current";
+import { readPanelDomainComponents } from "../product-panels/component-catalogue";
 import { resolvePanelMemberPath } from "../product-panels/member-path";
 
 const descriptorSchema = z.object({
@@ -53,19 +54,21 @@ export async function readPanelCandidate(
     if ("projectionId" in target) projectionIds.add(target.projectionId);
     if ("panelId" in target) panelIds.add(target.panelId);
   }
-  const loadedProjections = new Map(await Promise.all([...projectionIds].map(async id =>
-    [id, await readCurrentProjectionRecord(owner, credentials, id)] as const)));
-  await Promise.all([...panelIds].map(id => readCurrentPanelRecord(owner, credentials, id)));
-  for (const [key, member] of Object.entries(panel.manifest.members)) {
-    if (member.listColumn && "projectionId" in member.target) {
-      const projection = loadedProjections.get(member.target.projectionId);
-      if (projection && Object.keys(projection.data).length > 0) {
-        throw new HttpError(422, `Member '${key}': listColumn members cannot declare independent data reads`, "LIST_COLUMN_DATA_FORBIDDEN");
-      }
-    }
-  }
-  const test = await tests.current();
-  return { kind: "candidate", workspace, panel, previewContext: { kind: "build-test", test } };
+  await Promise.all([
+    ...[...projectionIds].map(id => readCurrentProjectionRecord(owner, credentials, id)),
+    ...[...panelIds].map(id => readCurrentPanelRecord(owner, credentials, id)),
+  ]);
+  const [test, domainComponents] = await Promise.all([
+    tests.current(),
+    readPanelDomainComponents(owner.domainId, panel.manifest.components, { authorId: owner.userId }),
+  ]);
+  return {
+    kind: "candidate",
+    workspace,
+    panel,
+    ...(domainComponents && { domainComponents }),
+    previewContext: { kind: "build-test", test },
+  };
 }
 
 export async function resolvePanelCandidateMember(
@@ -76,9 +79,6 @@ export async function resolvePanelCandidateMember(
   const placement = await resolvePanelMemberPath(owner, credentials, panel, memberPath);
   if (placement.kind !== "projection")
     throw new HttpError(403, "The member path does not select a projection", "PANEL_MEMBER_FORBIDDEN");
-  if ("listColumn" in placement.member && placement.member.listColumn !== undefined && Object.keys(placement.projection.data).length > 0) {
-    throw new HttpError(422, "listColumn members cannot declare independent data reads", "LIST_COLUMN_DATA_FORBIDDEN");
-  }
   const previewContext: CandidatePanelSource["previewContext"] = { kind: "build-test", test: await tests.current() };
   return { ...placement, previewContext };
 }

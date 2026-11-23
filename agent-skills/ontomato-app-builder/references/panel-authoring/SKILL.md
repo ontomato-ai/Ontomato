@@ -17,12 +17,12 @@ description: Build and register an Ontomato panel from its owner's reads and ope
    - Second, once the data matches, start from the official component's default rendering, then check its `config`
      for common adjustments (see [default and configured list and summary examples](CODE.md#configure-an-official-list-or-summary)).
    - Third, write a dedicated small component only as a last resort when default and `config` still leave a gap —
-     a single list column (`listColumn`), expandable row detail (`listRowDetail`), or form field (`formField`). Keep
+     a single list column (`#cell-<key>`), expandable row detail (`#row-detail`), or form field (`#field-<dotPath>`). Keep
      [component vs. panel responsibility](CODE.md#component-vs-panel-responsibility) clear: panels coordinate layout,
      state, visibility and navigation, and never render business fields (not via `PanelData` / `usePanelData` loops
      and not via inline `defineComponent` in `panel.mjs`).
    For a domain-registered small component, follow the
-   [end-to-end `listColumn` and per-row operation example](CODE.md#custom-list-columns-row-detail-and-per-row-operations).
+   [end-to-end Vue slots, `rowActions`, and per-row operation example](CODE.md#custom-list-columns-row-detail-and-per-row-operations).
    For operator-installed third-party packages, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
    Use the [panel descriptor and member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel)
    to declare projections, and use `target.projectionId` for an existing projection.

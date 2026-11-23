@@ -21,16 +21,22 @@
       <projection v-if="mode === 'edit'" slot="summary"></projection>
       <section-group :title="mode === 'create' ? t('agents.creating') : t('agents.definition')">
         <projection slot="definition">
-          <template #after-fields>
+          <template #field-modelSelection.modelId>
             <section-group :title="t('agents.model')" :description="t('agents.modelHint')">
               <projection slot="model"></projection>
             </section-group>
+          </template>
+          <template #field-skills>
             <section-group :title="t('agents.skills')" :description="t('agents.skillsHint')">
               <projection slot="skills"></projection>
             </section-group>
+          </template>
+          <template #field-executionUserId>
             <section-group :title="t('agents.executor')" :description="t('agents.executorHint')">
               <projection slot="executor"></projection>
             </section-group>
+          </template>
+          <template #field-classNames>
             <section-group :title="t('agents.scope')" :description="t('agents.scopeHint')">
               <projection slot="scope"></projection>
             </section-group>

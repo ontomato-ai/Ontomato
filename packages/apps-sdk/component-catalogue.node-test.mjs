@@ -252,8 +252,16 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
     assert.equal(declared.get("MetricChart").config, undefined, "a component with no configuration declares none");
 
+    // Official components declare read-only outputs separately from writable public state.
+    assert.deepEqual(Object.keys(declared.get("ObjectList").readOnlyOutputs ?? {}).sort(), [
+      "activeLabel", "checkedCount", "filteredCount", "selectedLabel", "total",
+    ]);
+    assert.deepEqual(Object.keys(declared.get("ObjectForm").readOnlyOutputs ?? {}).sort(), ["dirty", "draft", "label"]);
+    assert.deepEqual(Object.keys(declared.get("ObjectSummary").readOnlyOutputs ?? {}), ["label"]);
+    assert.deepEqual(Object.keys(declared.get("ObjectHeader").readOnlyOutputs ?? {}), ["label"]);
+
     // SDK UI primitives, directives, and theme tokens are published under Ontomato SDK names with zero third-party leaks.
-    assert.equal(catalogue.uiPrimitives.length, 106);
+    assert.equal(catalogue.uiPrimitives.length, 108);
     const sdkButton = catalogue.uiPrimitives.find((item) => item.tag === "sdk-button");
     assert.equal(sdkButton?.exportName, "SdkButton");
     assert.equal(sdkButton?.module, "@ontomato/sdk/ui");

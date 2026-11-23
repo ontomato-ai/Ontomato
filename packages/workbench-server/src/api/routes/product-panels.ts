@@ -45,7 +45,7 @@ import { HttpError } from "../../utils/errors";
 import { tForLocale } from "../../i18n";
 import type { AuthenticatedRequest } from "../../utils/request-identity";
 import { readProductPanelData } from "../../services/product-panels/data-reads";
-import { validateProjectionComponent } from "../../services/product-panels/component-catalogue";
+import { readPanelDomainComponents, validateProjectionComponent } from "../../services/product-panels/component-catalogue";
 import { readNestedPanel, requireRegisteredPanelRoot } from "../../services/product-panels/member-path";
 import { productDefinitionStreamRequestSchema, type ProductDefinitionStreamFrame } from "@ontomato/contracts/product-subscriptions";
 import { authorizeDefinitionStream, requirePanelDefinitions, snapshotPanelDefinitions } from "../../services/product-panels/definition-stream";
@@ -188,16 +188,25 @@ productPanelsRouter.get("/:id", wrap(async (req, res) => {
   const bundleProjections = includeProjections === "1";
   if ("source" in query) {
     const { panel } = await requireFrameForRead(query, c, id);
-    const projections = bundleProjections ? await readBundledPanelProjections(c, panel) : undefined;
-    res.json({ panel, ...(projections && { projections }) });
+    const [projections, domainComponents] = await Promise.all([
+      bundleProjections ? readBundledPanelProjections(c, panel) : Promise.resolve(undefined),
+      panel.manifest?.components ? readPanelDomainComponents(panel.domainId, panel.manifest.components) : Promise.resolve(undefined),
+    ]);
+    res.json({ panel, ...(projections && { projections }), ...(domainComponents && { domainComponents }) });
     return;
   }
   const panel = await readCurrentPanelRecord(c.owner, c.credentials, id, !("applicationId" in query));
-  const [pageSkillContext, projections] = await Promise.all([
+  const [pageSkillContext, projections, domainComponents] = await Promise.all([
     "applicationId" in query ? pageSkillContextFor(query, c, panel) : Promise.resolve(undefined),
     bundleProjections ? readBundledPanelProjections(c, panel) : Promise.resolve(undefined),
+    panel.manifest?.components ? readPanelDomainComponents(panel.domainId, panel.manifest.components) : Promise.resolve(undefined),
   ]);
-  res.json({ panel, ...(pageSkillContext && { pageSkillContext }), ...(projections && { projections }) });
+  res.json({
+    panel,
+    ...(pageSkillContext && { pageSkillContext }),
+    ...(projections && { projections }),
+    ...(domainComponents && { domainComponents }),
+  });
 }));
 productPanelsRouter.put("/:id", wrap(async (req, res) => {
   const c = context(req), { id } = domainProductIdParamsSchema.parse(req.params);

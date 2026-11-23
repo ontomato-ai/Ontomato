@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   type DomainComponentInput, type registerDomainComponentRequestSchema, type updateDomainComponentRequestSchema,
 } from "@ontomato/contracts/domain-components";
-import { panelModuleImports, readModuleFacts } from "@ontomato/contracts/panel-module";
+import { componentModuleImports, readModuleFacts } from "@ontomato/contracts/panel-module";
 import { DOMAIN_COMPONENT_PREFIX } from "@ontomato/contracts/product-record-id";
 import type { PoolClient } from "pg";
 import type { z } from "zod";
@@ -42,7 +42,7 @@ export async function readDomainComponent(owner: ProductOwner, credentials: Assi
 async function checkSource({ source }: DomainComponentInput) {
   if (source.module === undefined) return;
   try {
-    await panelModuleImports(source.module);
+    await componentModuleImports(source.module, { allowRelative: false });
     const { exports } = await readModuleFacts(source.module);
     if (!exports.some(entry => "name" in entry && entry.name === "default")) throw new Error("The module must export a Vue component as default");
   } catch (cause) {
@@ -87,9 +87,14 @@ async function currentForChange(client: PoolClient, owner: ProductOwner, credent
 }
 
 async function visibleUsage(
-  { rows, users }: Awaited<ReturnType<typeof findComponentUsers>>, credentials: AssistantCredentials,
+  { rows, users, directPanels }: Awaited<ReturnType<typeof findComponentUsers>>, credentials: AssistantCredentials,
 ) {
-  const panels = new Map(rows.flatMap(row => [...users.get(productReferenceKey(row))?.entries() ?? []]));
+  const panels = new Map<string, { domainId: string | null; id: string }>(
+    rows.flatMap(row => [...users.get(productReferenceKey(row))?.entries() ?? []]),
+  );
+  for (const panel of directPanels) {
+    panels.set(productReferenceKey(panel), panel);
+  }
   const visible = new Set(await grantedProductIds("use", credentials));
   const visibleProjections = rows.filter(row => visible.has(row.id)).map(({ id }) => ({ id }));
   const visiblePanels = [...panels.values()].filter(panel => panel.domainId === null || visible.has(panel.id)).map(({ id }) => ({ id }));
@@ -140,7 +145,7 @@ export async function deleteDomainComponent(owner: ProductOwner, credentials: As
   return transaction(async client => {
     await currentForChange(client, owner, credentials, id, revision);
     const usage = await findComponentUsers([id], client, owner.domainId);
-    if (usage.rows.length)
+    if (usage.rows.length || usage.directPanels.length)
       throw new HttpError(409, "Component is in use", "COMPONENT_IN_USE", await visibleUsage(usage, credentials));
     await unregisterProductResource(owner.domainId, id);
     await client.query(`DELETE FROM ${t("domain_components")} WHERE domain_id=$1 AND id=$2`, [owner.domainId, id]);

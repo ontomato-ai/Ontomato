@@ -41,6 +41,8 @@ export const componentDeclarationBase = <Data extends z.ZodTypeAny, Input extend
   inputs: z.record(name, input).optional(),
   /** State bindings use typed outputs. Event-only signals are listed in ports.events. */
   outputs: z.record(name, output).optional(),
+  /** Read-only outputs exposed to the panel without requiring writable public state (read via usePanelOutput / outputs). */
+  readOnlyOutputs: z.record(name, output).optional(),
   ports: z.object({
     props: componentConfigSchema,
     events: z.array(componentPortSchema),

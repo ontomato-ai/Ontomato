@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { projectionElement } from "../panel/projection-element";
-import { computed, onBeforeUnmount, onMounted, provide, ref, shallowRef, watch } from "vue";
+import { Comment, computed, onBeforeUnmount, onMounted, provide, ref, shallowRef, useSlots, watch, type VNode } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
@@ -19,7 +19,7 @@ import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { useMember } from "../panel/member";
+import { useMember, useMemberOutput } from "../panel/member";
 import {
   editedInput,
   evaluateMemberFormDraft,
@@ -30,7 +30,7 @@ import {
   type FormSource,
   type HeldMemberDraft,
 } from "../panel/member-forms";
-import { fieldControlKey, fieldControlsOf, formControlsKey } from "./form-controls";
+import { formControlsKey } from "./form-controls";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldPlace from "./FormFieldPlace.vue";
 import { activeFieldAt, changedFieldPaths, fieldShowing, preserveInactiveVariantValues } from "./form-placement";
@@ -91,9 +91,41 @@ const emit = defineEmits<{
   /** The reader cancelled creating a new object. */
   cancel: [];
 }>();
+interface FormFieldSlotScope {
+  readonly field: PanelFormField;
+  readonly path: string;
+  readonly arrayPath?: string;
+  readonly itemPath?: string;
+  readonly index?: number;
+  readonly value: RuntimeJsonValue | undefined;
+  readonly error: string | undefined;
+  readonly changed: boolean;
+  readonly disabled: boolean;
+  readonly set: (value: RuntimeJsonValue) => void;
+  readonly remove: () => void;
+}
+
 defineSlots<{
-  /** Projections that edit this form's fields, drawn with the current owner values before Save and Discard. */
-  "after-fields"(): unknown;
+  /** Extra content rendered after all owner fields and before the action bar. */
+  "after-fields"?(): unknown;
+  /** Custom renderer for a specific field by dot-path (`#field-skills`, `#field-modelSelection.modelId`, `#field-items.*.skillId`) or JSON Pointer. */
+  [key: `field-${string}`]: ((props: FormFieldSlotScope) => unknown) | undefined;
+  /** Catch-all custom field renderer; returning empty content falls back to the default control. */
+  field?(props: FormFieldSlotScope): unknown;
+  /** Catch-all custom renderer for array item fields; returning empty content falls back to `#field` or the default control. */
+  "row-field"?(props: FormFieldSlotScope): unknown;
+  /** Custom action bar controls replacing the default Save/Discard/Create/Cancel buttons. */
+  actions?(props: {
+    saving: boolean;
+    asking: boolean;
+    dirty: boolean;
+    canSettle: boolean;
+    isCreate: boolean;
+    changedCount: number;
+    save: () => Promise<void>;
+    discard: () => Promise<boolean>;
+    cancel: () => Promise<void>;
+  }): unknown;
 }>();
 const { t } = useI18n();
 const slot = useProjectionSlot();
@@ -563,10 +595,19 @@ const sharedReadOnlyReasons = computed<ReadonlySet<string>>(() => {
 const topLevelPaths = computed(() => new Set(fields.value.map((field) => field.path)));
 const hasDefaults = computed(() => fields.value.some((field) => field.control.kind !== "hidden" && field.defaultValue !== undefined));
 
+const slots = useSlots();
+
+function hasRenderedNodes(nodes: VNode[]): boolean {
+  return nodes.some((node) => node.type !== Comment);
+}
+
+const formErrors = computed(() => ({ ...errors.value, ...activeInvalid.value }));
+
 provide(formControlsKey, {
+  formSlot: slot.slot,
   values,
   prunedValues,
-  errors: computed(() => ({ ...errors.value, ...activeInvalid.value })),
+  errors: formErrors,
   changed,
   busy: saving,
   layout: computed(() => props.layout),
@@ -578,13 +619,53 @@ provide(formControlsKey, {
   remove,
   reorder,
   invalid: markInvalid,
-  fieldControl(path, itemPath) {
-    const declared = Object.values(panel.manifest.members).some(({ formField }) =>
-      formField?.slot === slot.slot && formField.path === path && formField.itemPath === itemPath);
-    if (!declared) return undefined;
-    return fieldControlsOf(panel.instance).get(fieldControlKey(slot.slot, path, itemPath)) ?? null;
+  resolveFieldSlot(field, absolutePath, arrayPath, index) {
+    const pointerToDot = (pointer: string) => pointer.replace(/^\/+/u, "").replaceAll("/", ".");
+    const dotName = arrayPath !== undefined
+      ? `field-${pointerToDot(arrayPath)}.*.${pointerToDot(field.path)}`
+      : `field-${pointerToDot(absolutePath)}`;
+    const rawName = arrayPath !== undefined
+      ? `field-${arrayPath}/*${field.path}`
+      : `field-${absolutePath}`;
+    const exactSlot = slots[dotName] ?? slots[rawName];
+    const fallbackSlot = arrayPath !== undefined ? (slots["row-field"] ?? slots.field) : slots.field;
+    const chosen = exactSlot ?? fallbackSlot;
+    if (!chosen) return undefined;
+    const slotProps = {
+      field,
+      path: absolutePath,
+      ...(arrayPath !== undefined ? { arrayPath, itemPath: field.path, index } : {}),
+      value: valueAt(values.value, absolutePath),
+      error: formErrors.value[absolutePath],
+      changed: changed.value.has(absolutePath),
+      disabled: field.readOnly || saving.value,
+      set: (value: RuntimeJsonValue) => set(absolutePath, value),
+      remove: () => remove(absolutePath),
+    };
+    if (!exactSlot) {
+      const rendered = chosen(slotProps);
+      if (!hasRenderedNodes(rendered)) return undefined;
+    }
+    return { slot: chosen, props: slotProps };
   },
 });
+
+const formObjectLabel = computed<string | null>(() => {
+  if (key.value) {
+    const known = panel.instance.objectName(objectType, key.value);
+    if (known) return known;
+  }
+  const current = values.value;
+  for (const candidate of ["displayName", "name", "title", "label"]) {
+    const raw = current[candidate];
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+  }
+  return key.value ?? null;
+});
+
+useMemberOutput("label", () => (description.value ? formObjectLabel.value : null));
+useMemberOutput("dirty", () => dirty.value);
+useMemberOutput("draft", () => (description.value ? prunedValues.value : null));
 
 function consumePendingDraft() {
   const pending = member.formDraft?.takePending();
@@ -880,18 +961,31 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
           <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
         </div>
       </div>
-      <div v-if="showActionBar" class="sdk-owner-form-actions">
-        <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">
-          {{ t("platform.formChangedCount", { count: changedCount }, changedCount) }}
-        </span>
-        <template v-if="isCreate">
-          <el-button text :disabled="saving" @click="cancelCreate">{{ t("platform.cancel") }}</el-button>
-          <el-button type="primary" :disabled="asking" :loading="saving" @click="saveFromForm">{{ t("platform.create") }}</el-button>
-        </template>
-        <template v-else>
-          <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
-          <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
-        </template>
+      <div v-if="$slots.actions || showActionBar" class="sdk-owner-form-actions">
+        <slot
+          name="actions"
+          :saving="saving"
+          :asking="asking"
+          :dirty="dirty"
+          :can-settle="canSettle"
+          :is-create="isCreate"
+          :changed-count="changedCount"
+          :save="saveFromForm"
+          :discard="confirmDiscard"
+          :cancel="cancelCreate"
+        >
+          <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">
+            {{ t("platform.formChangedCount", { count: changedCount }, changedCount) }}
+          </span>
+          <template v-if="isCreate">
+            <el-button text :disabled="saving" @click="cancelCreate">{{ t("platform.cancel") }}</el-button>
+            <el-button type="primary" :disabled="asking" :loading="saving" @click="saveFromForm">{{ t("platform.create") }}</el-button>
+          </template>
+          <template v-else>
+            <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
+            <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
+          </template>
+        </slot>
       </div>
     </el-form>
     </data-state>

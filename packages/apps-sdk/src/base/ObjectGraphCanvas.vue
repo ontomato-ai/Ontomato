@@ -506,6 +506,29 @@ async function download() {
               <path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11" />
             </svg>
           </button>
+          <slot
+            name="toolbar"
+            :zoom="zoom.value.value"
+            :zoom-in="() => canvas?.zoomBy(ZOOM_STEP)"
+            :zoom-out="() => canvas?.zoomBy(1 / ZOOM_STEP)"
+            :fit-view="fit"
+            :relayout="relayout"
+            :export-png="download"
+            :selected-nodes="selectedNodes"
+            :selected-edges="selectedEdges"
+            :node-count="resolved.nodes.length"
+            :edge-count="resolved.links.length"
+          ></slot>
+        </div>
+        <div v-if="$slots.overlay" class="sdk-object-graph-canvas-overlay" data-graph-overlay>
+          <slot
+            name="overlay"
+            :selected-node="selectedNode.value.value"
+            :selected-edge="selectedEdge.value.value"
+            :path-result="pathResult"
+            :node-count="resolved.nodes.length"
+            :edge-count="resolved.links.length"
+          ></slot>
         </div>
         <div v-if="canvasHint" class="sdk-object-graph-canvas-op-hint" data-graph-op-hint>
           <span aria-hidden="true"></span>

@@ -37,16 +37,15 @@ const EMPTY_TARGET_INFO: OperationTargetInfo = {
 export function resolveOperationTarget(
   panel: PanelContext | null,
   slot: ProjectionSlot | null,
-  member: PanelMemberContext | null,
+  _member: PanelMemberContext | null,
   descriptor: PanelOwnerOperationDescriptor | null,
   stateValues: Readonly<Record<string, PanelFieldValue>>,
 ): OperationTargetInfo {
   if (!panel || !slot || !descriptor) return EMPTY_TARGET_INFO;
-  const rowOperation = member?.rowOperation ?? null;
   const targetState = descriptor.target.source === "input"
     ? slotInputState(panel.manifest, slot.slot, descriptor.target.input)
     : null;
-  const batch = !rowOperation && targetState !== null && panel.manifest.state[targetState]?.type.kind === "list";
+  const batch = targetState !== null && panel.manifest.state[targetState]?.type.kind === "list";
   const checkedState = batch ? targetState : null;
   const checkedObjects = checkedState === null ? [] : stateObjects(stateValues[checkedState]);
   const checkedTargets = checkedObjects.map(({ className, primaryKey }) => ({
@@ -54,7 +53,7 @@ export function resolveOperationTarget(
     objectType: className,
     primaryKey,
   }));
-  const selected = rowOperation || targetState === null || batch ? null : stateObject(stateValues[targetState]);
+  const selected = targetState === null || batch ? null : stateObject(stateValues[targetState]);
   const target: PanelOperationCall["target"] = selected
     ? { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey }
     : null;
@@ -65,11 +64,9 @@ export function resolveOperationTarget(
 export function isOperationReady(
   descriptor: PanelOwnerOperationDescriptor | null,
   targetInfo: OperationTargetInfo,
-  hasRowOperation: boolean,
   running: boolean,
 ): boolean {
   if (!descriptor || running || descriptor.unavailable) return false;
-  if (hasRowOperation) return true;
   if (targetInfo.checkedState !== null) return targetInfo.checkedTargets.length > 0;
   return descriptor.target.source !== "input" || targetInfo.target !== null;
 }
@@ -222,7 +219,6 @@ export function useOperationRunner(options: {
 
     const stateValues = panel.instance.state.values.value;
     const targetInfo = resolveOperationTarget(panel, slot, member, descriptor, stateValues);
-    const rowOperation = member?.rowOperation ?? null;
     const operationId = panel.instance.operationIdOf(slot.slot, operationName);
 
     runningOperation.value = operationName;
@@ -232,9 +228,6 @@ export function useOperationRunner(options: {
     receipt.value = null;
     try {
       if (descriptor.effect === "read") {
-        if (rowOperation) {
-          throw new Error(`Row operation '${operationName}' must be a write operation`);
-        }
         const { target: owned } = descriptor;
         const hasDeclaredReadInputs = panel.manifest.members[slot.slot]?.readOperationInputs?.[operationName] !== undefined;
         const input = owned.source === "draft" || hasDeclaredReadInputs
@@ -252,16 +245,12 @@ export function useOperationRunner(options: {
       const onConfirmed = () => {
         dispatchingOperation.value = operationName;
       };
-      const answer = rowOperation
-        ? await rowOperation.run(operationName, providedInput, { onConfirmed })
-        : await (() => {
-            const [first, ...rest] = targetInfo.checkedTargets.map((object) => ({ target: object, input: providedInput }));
-            return panel.instance.writeOperation(
-              operationId,
-              first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: providedInput } },
-              { onConfirmed },
-            );
-          })();
+      const [first, ...rest] = targetInfo.checkedTargets.map((object) => ({ target: object, input: providedInput }));
+      const answer = await panel.instance.writeOperation(
+        operationId,
+        first ? { calls: [first, ...rest] } : { call: { target: targetInfo.target, input: providedInput } },
+        { onConfirmed },
+      );
       if (answer.decision === "cancel") return;
       named.value = answer.named;
       if (

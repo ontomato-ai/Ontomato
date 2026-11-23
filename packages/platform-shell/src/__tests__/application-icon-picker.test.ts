@@ -4,18 +4,15 @@ import { applicationIconKeys, domainApplicationIconKeys } from "@ontomato/contra
 import ApplicationIconPicker from "../ApplicationIconPicker.vue";
 
 /*
- * A domain application's icon is picked from the icons the contract leaves to domain applications (big main's ruling,
- * 2026-11-21): the built-in applications' own icons are not offered, so a domain application's rail row never looks like
- * one of theirs. One that already carries such an icon still shows it.
+ * All icons in the application icon catalogue are available to domain applications without reserving platform icons.
  */
 
-it("offers only the domain applications' icons, and still shows a built-in one an application already carries", () => {
+it("offers all catalogue icons and displays the current icon in the heading", () => {
   const wrapper = mount(ApplicationIconPicker, { props: { modelValue: "ontology", heading: true } });
   const offered = wrapper.findAll(".icon-options button").map((button) => button.attributes("aria-label"));
+  expect(offered).toEqual([...applicationIconKeys]);
   expect(offered).toEqual([...domainApplicationIconKeys]);
-  const reserved = applicationIconKeys.filter((key) => !domainApplicationIconKeys.includes(key as never));
-  expect(reserved).toContain("ontology");
-  expect(offered.some((label) => reserved.includes(label as never))).toBe(false);
+  expect(offered).toContain("ontology");
   // The application's current icon is drawn above the library, whichever it is.
   expect(wrapper.find(".icon-heading svg").exists()).toBe(true);
 });
