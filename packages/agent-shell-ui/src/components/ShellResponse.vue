@@ -137,7 +137,7 @@ async function submit(value: ShellFeedbackValue) {
 </script>
 
 <template>
-  <div class="response">
+  <div class="response" :class="{ 'collapsed-handoff': item.handoff && !open && !timingActive }">
     <section v-if="status || hasProcess" class="process-region" :class="{ open }">
       <div class="process-line">
         <button

@@ -1,565 +1,425 @@
-import { computed, ref, watch } from "vue";
-import { mountPanel, panelAddress, usePanelContext, usePanelData, usePanelOperation } from "@ontomato/sdk/panel";
+import { computed, watch } from "vue";
+import {
+  mountPanel,
+  panelAddress,
+  usePanelBack,
+  usePanelContext,
+  usePanelOutput,
+} from "@ontomato/sdk/panel";
 
-/*
- * The panel directory. Every read and write is the panel owner's (`platform:ProductPanel`, `platform:User`,
- * `platform:ProductProjection`); this module only keeps the page's own view state — the keyword, the scope, the order,
- * the cursor of the page shown, which tab is open, and what the last write answered — and shapes what the declarations
- * already return.
- */
-
-const PAGE_SIZE = 20;
 const PANEL_TYPE = "platform:ProductPanel";
-
-const formatTimestamp = (value) => new Date(value).toLocaleString(document.documentElement.lang, {
-  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-}).replace(/^(\d{4})\/(\d{2})\/(\d{2}) /, "$1-$2-$3 ");
-
-/** What one write answered, however the host wrapped it. */
-function outcomeOf(result) {
-  if (!result || typeof result !== "object") return { kind: "unknown" };
-  if (result.decision === "cancel") return { kind: "cancel", message: "" };
-  const response = result.response;
-  if (!response) return { kind: "unknown" };
-  if (response.kind === "not-dispatched") return { kind: "refused", message: response.message };
-  const outcome = response.outcome;
-  if (!outcome) return { kind: "dispatched" };
-  if (outcome.kind === "success") return { kind: "success", data: outcome.data ?? {}, message: outcome.message ?? "" };
-  if (outcome.kind === "batch") {
-    const failed = (outcome.items ?? []).find(item => item.outcome.kind !== "success");
-    return failed ? { kind: failed.outcome.kind, message: failed.outcome.message ?? "", data: {} } : { kind: "success", data: {}, message: "" };
-  }
-  return { kind: outcome.kind, message: outcome.message ?? "", data: {} };
-}
-
-function bindingText(bindings) {
-  return Object.entries(bindings ?? {})
-    .map(([name, value]) => {
-      if (!value || typeof value !== "object") return `${name}: ${String(value)}`;
-      if ("state" in value) return `${name}: state ${value.state}`;
-      if ("literal" in value) return `${name}: ${JSON.stringify(value.literal)}`;
-      if ("item" in value) return `${name}: row`;
-      return name;
-    })
-    .join(" · ") || "—";
-}
+const PROJECTION_TYPE = "platform:ProductProjection";
+const APPLICATION_TYPE = "platform:Application";
+const OBJECT_TYPE = "platform:ObjectType";
 
 const PanelsDirectory = {
   setup() {
-    const { instance, navigate, t } = usePanelContext();
+    const { instance, navigate, notify, t } = usePanelContext();
     const state = instance.state;
+    const values = state.values;
 
-    const selected = computed(() => state.values.value.selected ?? null);
-    const search = computed(() => (typeof state.values.value.search === "string" ? state.values.value.search : ""));
-    const scope = computed(() => (typeof state.values.value.scope === "string" && state.values.value.scope ? state.values.value.scope : "all"));
-    const sort = computed(() => (typeof state.values.value.sort === "string" && state.values.value.sort ? state.values.value.sort : "updated"));
+    const selected = computed(() => values.value.selected ?? null);
+    const selectedKey = computed(() => selected.value?.primaryKey ?? "");
+    const creating = computed(() => values.value.creating === true);
+    const detailMode = computed(() => (values.value.detailMode === "edit" ? "edit" : "view"));
+    const isFormMode = computed(() => creating.value || (Boolean(selectedKey.value) && detailMode.value === "edit"));
+    const showDetail = computed(() => Boolean(selectedKey.value) || creating.value);
 
-    const creating = computed(() => state.values.value.creating === true);
-    const detailMode = computed({
-      get: () => (typeof state.values.value.detailMode === "string" && state.values.value.detailMode ? state.values.value.detailMode : "view"),
-      set: (value) => state.set("detailMode", value || "view"),
+    const scopeModel = computed({
+      get: () => (typeof values.value.scope === "string" && values.value.scope ? values.value.scope : "all"),
+      set: (next) => state.set("scope", next || "all"),
     });
-    const mode = computed({
-      get: () => creating.value ? "create" : detailMode.value,
-      set(next) {
-        const create = next === "create";
-        detailMode.value = create ? "view" : next;
-        if (creating.value !== create) state.set("creating", create ? true : null);
+    const sortModel = computed({
+      get: () => (typeof values.value.sort === "string" && values.value.sort ? values.value.sort : "updated"),
+      set: (next) => state.set("sort", next || "updated"),
+    });
+    const templateFilterModel = computed({
+      get: () => {
+        if (values.value.templateFilter === true) return "template";
+        if (values.value.templateFilter === false) return "ordinary";
+        return "all";
+      },
+      set: (next) => {
+        if (next === "template") state.set("templateFilter", true);
+        else if (next === "ordinary") state.set("templateFilter", false);
+        else state.set("templateFilter", null);
       },
     });
-    const showDetail = computed(() => selected.value !== null || mode.value !== "view");
-    const tab = computed({
-      get: () => (typeof state.values.value.tab === "string" && state.values.value.tab ? state.values.value.tab : "overview"),
-      set: (value) => state.set("tab", value || "overview"),
-    });
-    const busy = ref(false);
-    const failure = ref("");
-    const message = ref("");
-    const receipt = ref("");
-    const templateFilter = computed({
-      get: () => (typeof state.values.value.templateFilter === "string" && state.values.value.templateFilter ? state.values.value.templateFilter : "all"),
-      set: (value) => state.set("templateFilter", value || "all"),
-    });
-    const searchText = ref(search.value);
-    const hasFilters = computed(() => Boolean(searchText.value.trim()) || scope.value !== "all" || templateFilter.value !== "all");
-    const deleteArmed = ref(false);
 
-    // Paging: cursors the owner returned, one per page visited.
-    const history = ref([null]);
-    const cursorIndex = ref(0);
-    const pageSize = ref(PAGE_SIZE);
-    const page = computed(() => cursorIndex.value + 1);
+    const scopeOptions = computed(() => [
+      { value: "all", label: t("scope.all") },
+      { value: "mine", label: t("scope.mine") },
+      { value: "shared", label: t("scope.shared") },
+    ]);
 
-    const rowsState = usePanelData("listRows", "rows", () => ({
-      search: searchText.value,
-      cursor: history.value[cursorIndex.value] ?? null,
-      size: pageSize.value,
-      ...(templateFilter.value === "template" ? { template: true }
-        : templateFilter.value === "ordinary" ? { template: false } : {}),
-    }));
-    const rows = computed(() => (rowsState.value.status === "ready" ? rowsState.value.value.items ?? [] : []));
-    const unavailableRows = computed(() => rowsState.value.status === "ready"
-      ? rowsState.value.value.unavailableItems ?? [] : []);
-    const unavailableSelection = computed(() => unavailableRows.value.find(row => row.id === selected.value?.primaryKey));
-    const recordState = usePanelData("detail", "record");
-    const usedByState = usePanelData("detail", "usedBy");
-    const membersState = usePanelData("detail", "members");
-    const projectionState = usePanelData("projectionRecord", "record");
-    const grantsState = usePanelData("grants", "grants");
-    const record = computed(() => (recordState.value.status === "ready" ? recordState.value.value : null));
-    const projectionRecord = computed(() => (projectionState.value.status === "ready" ? projectionState.value.value : null));
-    const ownerIds = computed(() => [...new Set([
-      ...rows.value.map(row => row.ownerId), record.value?.ownerId, projectionRecord.value?.ownerId,
-    ].filter(Boolean))]);
-    const ownersState = usePanelData("owners", "options", () => ({ values: ownerIds.value }));
-
-    const copyOp = usePanelOperation("copyOp", "copy");
-    const deleteOp = usePanelOperation("deleteOp", "delete");
-    const grantOp = usePanelOperation("grantOp", "grant");
-    const revokeOp = usePanelOperation("revokeOp", "revoke");
-    const shareOp = usePanelOperation("shareOp", "share");
-
-    const nextCursor = computed(() => (rowsState.value.status === "ready" ? rowsState.value.value.nextCursor ?? null : null));
-    const loading = computed(() => rowsState.value.status === "loading");
-    const rowsError = computed(() => (rowsState.value.status === "error" ? rowsState.value.message : ""));
-    const visibleRows = computed(() => rows.value);
-
-    const ownerLabels = computed(() => {
-      const options = ownersState.value.status === "ready" ? ownersState.value.value.options ?? [] : [];
-      return Object.fromEntries(options.map(option => [option.primaryKey, option.label]));
-    });
-    function ownerName(id) {
-      return ownerLabels.value[id] ?? "—";
-    }
-
-    const usedBy = computed(() => (usedByState.value.status === "ready" ? usedByState.value.value : null));
-    const members = computed(() => (membersState.value.status === "ready" ? membersState.value.value ?? {} : {}));
-    const applicationEntries = computed(() => usedBy.value?.applicationEntries ?? []);
-    const usingPanels = computed(() => usedBy.value?.panels ?? []);
-    const classNames = computed(() => usedBy.value?.classNames ?? []);
-    const hiddenCount = computed(() => usedBy.value?.hiddenCount ?? 0);
-
-    const grantRows = computed(() => {
-      const value = grantsState.value.status === "ready" ? grantsState.value.value : null;
-      const recorded = Array.isArray(value) ? value : value?.grants ?? [];
-      return recorded.map(grant => ({
-        kind: grant.principalKind ?? "principal",
-        principalId: grant.principalId ?? "",
-        verb: grant.verb ?? "use",
-        removable: (grant.principalKind ?? "") !== "domain",
-      }));
-    });
-    const grantsShared = computed(() => {
-      const value = grantsState.value.status === "ready" ? grantsState.value.value : null;
-      if (value && typeof value === "object" && typeof value.shared === "boolean") return value.shared;
-      return grantRows.value.some(grant => grant.kind === "domain");
-    });
-    const grantsError = computed(() => (grantsState.value.status === "error" ? grantsState.value.message : ""));
-    function grantKindLabel(kind) {
-      return kind === "role" ? t("grants.role") : kind === "domain" ? t("grants.domainMembers") : t("grants.principal");
-    }
-    function verbLabel(verb) {
-      return verb === "edit" ? t("grants.edit") : t("grants.use");
-    }
-
-    const tabs = [
-      { key: "overview", label: "tab.overview" },
-      { key: "source", label: "tab.source" },
-      { key: "members", label: "tab.members" },
-      { key: "usage", label: "tab.usage" },
-      { key: "grants", label: "tab.grants" },
-      { key: "preview", label: "tab.preview" },
-    ];
-
-    function visibilityLabel(visibility) {
-      return t(`visibility.${visibility}`);
-    }
-    const messagesText = computed(() => {
-      const messages = record.value?.content?.messages ?? {};
-      return Object.keys(messages).length ? JSON.stringify(messages, null, 2) : t("source.none");
+    const tabModel = computed({
+      get: () => (typeof values.value.tab === "string" && values.value.tab ? values.value.tab : "overview"),
+      set: (next) => state.set("tab", next || "overview"),
     });
 
-    const memberRows = computed(() => Object.entries(members.value).map(([key, member]) => {
-      const target = member?.target ?? {};
-      const projectionId = "projectionId" in target ? target.projectionId : null;
-      const panelId = "panelId" in target ? target.panelId : null;
-      const candidates = "candidates" in target ? target.candidates : null;
-      const label = projectionId ? "members.projection" : panelId ? "members.panel"
-        : "fromState" in target ? "members.candidate" : "members.entry";
-      const reference = projectionId ?? panelId
-        ?? (candidates && "panelIds" in candidates ? candidates.panelIds.join(", ")
-          : candidates && "rule" in candidates ? `${target.fromState}: ${candidates.rule}` : `${target.fromState ?? ""}`)
-        ?? "—";
-      return {
-        key,
-        targetLabel: label,
-        projectionId,
-        panelId,
-        reference,
-        inputs: bindingText(member?.inputs),
-        outputs: bindingText(member?.outputs),
-      };
-    }));
+    // Read-only projection outputs published by the selected panel header.
+    const recordStatus = usePanelOutput("headerTitle", "status");
+    const recordLabelOutput = usePanelOutput("headerTitle", "label");
+    const recordErrorOutput = usePanelOutput("headerTitle", "errorMessage");
+    const canEditOutput = usePanelOutput("headerTitle", "canEdit");
+    const canGrantOutput = usePanelOutput("headerTitle", "canGrant");
+    const canDeleteOutput = usePanelOutput("headerTitle", "canDelete");
+    const isTemplateOutput = usePanelOutput("headerTitle", "isTemplate");
+    const domainSharedOutput = usePanelOutput("headerTitle", "domainShared");
+    const revisionOutput = usePanelOutput("headerTitle", "revision");
+    const hiddenUsedByCountOutput = usePanelOutput("headerTitle", "hiddenUsedByCount");
 
-    const projectionId = ref("");
-    function inspectProjection(id) {
-      projectionId.value = id;
-      state.set("memberProjection", { className: "platform:ProductProjection", primaryKey: id });
-    }
+    const recordReady = computed(() => recordStatus.value === "ready");
+    const recordLabel = computed(() => (typeof recordLabelOutput.value === "string" && recordLabelOutput.value ? recordLabelOutput.value : selectedKey.value));
+    const canEdit = computed(() => canEditOutput.value === true);
+    const canGrant = computed(() => canGrantOutput.value === true);
+    const canDelete = computed(() => canDeleteOutput.value === true);
+    const isTemplate = computed(() => isTemplateOutput.value === true);
+    const domainShared = computed(() => domainSharedOutput.value === true);
+    const hiddenUsedByCount = computed(() => (typeof hiddenUsedByCountOutput.value === "number" ? hiddenUsedByCountOutput.value : 0));
 
-    function openMember(row) {
-      const primaryKey = row.projectionId ?? row.panelId;
-      openAddress(panelAddress(`/ontology/${row.projectionId ? "projections" : "panels"}`, { selected: primaryKey }));
-    }
+    const recordErrorText = computed(() => {
+      const message = typeof recordErrorOutput.value === "string" ? recordErrorOutput.value : "";
+      return message || t("detail.missing");
+    });
 
-    const memberKind = ref("projection");
-    const memberSearch = ref("");
-    const memberKey = ref("");
-    const memberChoiceId = ref("");
-    const memberChoices = ref([]);
-    const memberSearchStatus = ref("idle");
-    const memberError = ref("");
-    const memberForm = computed(() => instance.forms.handle("form"));
-    const memberField = computed(() => memberForm.value?.fields.value.find(field => field.path === "/manifest/members"));
-    const canPickMembers = computed(() => memberField.value && !memberField.value.readOnly && !memberForm.value.busy.value);
-    const sourceManifest = computed(() => JSON.stringify(record.value?.manifest, null, 2));
-    const sourceTheme = computed(() => record.value?.theme ? JSON.stringify(record.value.theme, null, 2) : t("source.none"));
+    // Keep selectedRevision synced for bound OperationButton deletion checks.
+    watch(
+      () => (recordReady.value && typeof revisionOutput.value === "number" ? revisionOutput.value : null),
+      (revision) => {
+        if ((values.value.selectedRevision ?? null) !== revision) {
+          state.set("selectedRevision", revision);
+        }
+      },
+      { immediate: true },
+    );
 
-    let memberSearchVersion = 0;
-    watch([mode, memberKind, memberSearch], () => {
-      memberSearchVersion += 1;
-      memberChoiceId.value = "";
-      memberChoices.value = [];
-      memberError.value = "";
-      memberSearchStatus.value = "idle";
-    }, { flush: "sync" });
-
-    async function findMembers() {
-      const version = ++memberSearchVersion;
-      memberSearchStatus.value = "loading";
-      memberError.value = "";
-      memberChoiceId.value = "";
-      const slot = memberKind.value === "panel" ? "memberPanelChoices" : "memberProjectionChoices";
-      const member = await instance.memberContext(slot);
-      const result = await member.data.read("rows", { search: memberSearch.value.trim() || null, size: PAGE_SIZE });
-      if (version !== memberSearchVersion) return;
-      memberSearchStatus.value = result.status;
-      if (result.status === "error") memberError.value = result.message;
-      if (result.status === "ready")
-        memberChoices.value = result.value.items.filter(row => slot !== "memberPanelChoices" || row.id !== selected.value?.primaryKey);
-    }
-
-    function addPickedMember() {
-      const key = memberKey.value.trim();
-      const current = memberForm.value.values.value.manifest?.members ?? {};
-      if (Object.hasOwn(current, key)) {
-        memberError.value = t("members.keyExists");
-        return;
+    // Leave the Grants tab when switching to a panel the reader cannot grant.
+    watch([recordReady, canGrant, tabModel], ([ready, grantable, activeTab]) => {
+      if (ready && !grantable && activeTab === "grants") {
+        state.set("tab", "overview");
       }
-      const id = memberChoiceId.value;
-      const target = memberKind.value === "panel" ? { panelId: id } : { projectionId: id };
-      memberForm.value.set("/manifest/members", { ...current, [key]: { target } });
-      memberKey.value = "";
-      memberChoiceId.value = "";
-      memberError.value = "";
+    });
+
+    // Reset per-panel view state when switching selection.
+    watch(selectedKey, (nextKey, prevKey) => {
+      if (nextKey === prevKey) return;
+      if (creating.value && !nextKey) return;
+      state.setState({
+        creating: null,
+        detailMode: "view",
+        sourceFile: null,
+        copyDialog: null,
+        grantDialog: null,
+      });
+    });
+
+    // Copy / Save as template / Create from template dialog state.
+    const copyMode = computed(() => {
+      const raw = values.value.copyMode;
+      return raw === "saveAsTemplate" || raw === "fromTemplate" ? raw : "copy";
+    });
+    const copyDialogOpen = computed({
+      get: () => values.value.copyDialog === true,
+      set: (open) => {
+        if (!open) {
+          state.setState({ copyDialog: null, copyId: null, copyName: null, copyTemplate: null });
+        } else {
+          state.set("copyDialog", true);
+        }
+      },
+    });
+    const copyIdModel = computed({
+      get: () => (typeof values.value.copyId === "string" ? values.value.copyId : ""),
+      set: (next) => state.set("copyId", next),
+    });
+    const copyNameModel = computed({
+      get: () => (typeof values.value.copyName === "string" ? values.value.copyName : ""),
+      set: (next) => state.set("copyName", next),
+    });
+    const canSubmitCopy = computed(() => Boolean(copyIdModel.value.trim()) && Boolean(copyNameModel.value.trim()));
+    const copyDialogTitle = computed(() => (
+      copyMode.value === "saveAsTemplate"
+        ? t("copy.saveAsTemplateTitle")
+        : copyMode.value === "fromTemplate"
+          ? t("copy.fromTemplateTitle")
+          : t("copy.title")
+    ));
+    const copyDialogNote = computed(() => (
+      copyMode.value === "saveAsTemplate"
+        ? t("copy.templateNote")
+        : copyMode.value === "fromTemplate"
+          ? t("copy.fromTemplateNote")
+          : t("copy.note")
+    ));
+    const copyActionLabelKey = computed(() => (
+      copyMode.value === "saveAsTemplate"
+        ? "action.saveAsTemplate"
+        : copyMode.value === "fromTemplate"
+          ? "action.fromTemplate"
+          : "action.copy"
+    ));
+
+    function openCopyDialog(mode) {
+      const baseId = selectedKey.value;
+      const baseName = recordLabel.value;
+      const suggestedId = mode === "fromTemplate" ? `${baseId}-new` : `${baseId}-copy`;
+      const suggestedName = mode === "saveAsTemplate"
+        ? t("copy.defaultTemplateName", { name: baseName })
+        : mode === "fromTemplate"
+          ? t("copy.defaultDerivedName", { name: baseName })
+          : t("copy.defaultName", { name: baseName });
+      const templateValue = mode === "saveAsTemplate" ? true : mode === "fromTemplate" ? false : null;
+      state.setState({
+        copyMode: mode,
+        copyId: suggestedId,
+        copyName: suggestedName,
+        copyTemplate: templateValue,
+        copyDialog: true,
+      });
     }
 
-    function changePageSize(event) {
-      resetPaging();
-      pageSize.value = Number(event.target.value);
+    function onCopyDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      const createdId = typeof outcome.data?.id === "string" && outcome.data.id
+        ? outcome.data.id
+        : copyIdModel.value.trim();
+      state.setState({
+        copyDialog: null,
+        copyId: null,
+        copyName: null,
+        copyTemplate: null,
+        detailMode: "view",
+        tab: "overview",
+        sourceFile: null,
+        ...(createdId ? { selected: { className: PANEL_TYPE, primaryKey: createdId } } : {}),
+      });
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("notify.copied", { id: createdId }) });
     }
 
-    function resetPaging() {
-      history.value = [null];
-      cursorIndex.value = 0;
+    // Grant dialog state (matches application-detail pattern).
+    const grantDialogOpen = computed({
+      get: () => values.value.grantDialog === true,
+      set: (open) => state.set("grantDialog", open ? true : null),
+    });
+    const grantPrincipalKindModel = computed({
+      get: () => (values.value.grantPrincipalKind === "role" ? "role" : "principal"),
+      set: (next) => {
+        state.setState({
+          grantPrincipalKind: next === "role" ? "role" : "principal",
+          grantUser: null,
+          grantRole: null,
+          grantPrincipalId: null,
+        });
+      },
+    });
+    const grantVerbModel = computed({
+      get: () => (values.value.grantVerb === "edit" ? "edit" : "use"),
+      set: (next) => state.set("grantVerb", next === "edit" ? "edit" : "use"),
+    });
+    const grantPrincipalId = computed(() => (typeof values.value.grantPrincipalId === "string" ? values.value.grantPrincipalId : ""));
+    const grantKindOptions = computed(() => [
+      { value: "principal", label: t("grants.principal") },
+      { value: "role", label: t("grants.role") },
+    ]);
+
+    watch(
+      () => ({
+        kind: grantPrincipalKindModel.value,
+        userId: values.value.grantUser?.primaryKey ?? null,
+        roleId: values.value.grantRole?.primaryKey ?? null,
+      }),
+      ({ kind, userId, roleId }) => {
+        const nextId = kind === "role" ? roleId : userId;
+        if ((values.value.grantPrincipalId ?? null) !== nextId) {
+          state.set("grantPrincipalId", nextId);
+        }
+      },
+      { immediate: true },
+    );
+
+    function openGrantDialog() {
+      state.setState({
+        grantPrincipalKind: "principal",
+        grantUser: null,
+        grantRole: null,
+        grantPrincipalId: null,
+        grantVerb: "use",
+        grantDialog: true,
+      });
     }
-    function reload() {
-      resetPaging();
+
+    function onGrantAdded(outcome) {
+      if (outcome?.kind !== "success") return;
+      state.setState({
+        grantDialog: null,
+        grantUser: null,
+        grantRole: null,
+        grantPrincipalId: null,
+      });
       instance.refreshObjects();
     }
-    function nextPage() {
-      if (!nextCursor.value) return;
-      const next = history.value.slice(0, cursorIndex.value + 1);
-      next.push(nextCursor.value);
-      history.value = next;
-      cursorIndex.value = next.length - 1;
-    }
-    function previousPage() {
-      if (cursorIndex.value > 0) cursorIndex.value -= 1;
+
+    function onShareDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      const skipped = Array.isArray(outcome.data?.skippedProjectionIds) ? outcome.data.skippedProjectionIds : [];
+      if (skipped.length) {
+        notify({ kind: "warning", text: t("grants.skipped", { ids: skipped.join(", ") }) });
+      } else {
+        notify({ kind: "success", text: t("grants.updated") });
+      }
+      instance.refreshObjects();
     }
 
-    let timer;
-    function onSearchInput(event) {
-      const text = event.target?.value ?? "";
-      searchText.value = text;
-      globalThis.clearTimeout(timer);
-      timer = globalThis.setTimeout(() => {
-        state.set("search", text);
-        resetPaging();
-      }, 300);
-    }
-    function onScope(event) {
-      state.set("scope", event.target?.value ?? "all");
-      resetPaging();
-    }
-    function onSort(event) {
-      state.set("sort", event.target?.value ?? "updated");
-      resetPaging();
-    }
-    function onTemplateFilter(event) {
-      templateFilter.value = event.target?.value ?? "all";
-      resetPaging();
+    function onDeleteDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      const deleted = Array.isArray(outcome.data?.deletedProjectionIds) ? outcome.data.deletedProjectionIds : [];
+      const retained = Array.isArray(outcome.data?.retainedProjectionIdsWithoutEdit) ? outcome.data.retainedProjectionIdsWithoutEdit : [];
+      let text = t("notify.deleted");
+      if (deleted.length) text = t("notify.deletedWithProjections", { deleted: deleted.join(", ") });
+      else if (retained.length) text = t("notify.deletedWithRetained", { retained: retained.join(", ") });
+      notify({ kind: "success", text });
+      state.setState({
+        selected: null,
+        detailMode: "view",
+        tab: "overview",
+        sourceFile: null,
+        selectedRevision: null,
+      });
+      instance.refreshObjects();
     }
 
-    function clearNotices() {
-      failure.value = "";
-      message.value = "";
-      receipt.value = "";
-      deleteArmed.value = false;
+    function startCreate() {
+      state.setState({
+        selected: null,
+        creating: true,
+        detailMode: "view",
+        tab: "overview",
+        sourceFile: null,
+      });
     }
-    function pick(row) {
-      clearNotices();
-      mode.value = "view";
-      state.set("selected", { className: PANEL_TYPE, primaryKey: row.id });
-    }
-    function pickById(id) {
-      clearNotices();
-      mode.value = "view";
-      state.set("selected", { className: PANEL_TYPE, primaryKey: id });
-    }
+
     function startEdit() {
-      clearNotices();
-      mode.value = "edit";
-    }
-    function cancelMode() {
-      mode.value = "view";
-      clearNotices();
-    }
-    function startCopy() {
-      clearNotices();
-      draftId.value = record.value ? `${record.value.id}-copy` : "";
-      draftName.value = record.value ? `${record.value.name} 副本` : "";
-      mode.value = "copy";
-    }
-    function startSaveAsTemplate() {
-      startCopy();
-      mode.value = "saveAsTemplate";
-    }
-    const templateSource = computed(() => record.value);
-    function startFromTemplate() {
-      clearNotices();
-      draftId.value = record.value ? `${record.value.id}-new` : "";
-      draftName.value = record.value ? `${record.value.name} 派生` : "";
-      mode.value = "fromTemplate";
+      if (!selectedKey.value) return;
+      state.setState({ creating: null, detailMode: "edit" });
     }
 
-    const draftId = ref("");
-    const draftName = ref("");
-
-    async function copyPanel(asTemplate) {
-      if (!record.value) return;
-      busy.value = true;
-      clearNotices();
-      try {
-        const outcome = outcomeOf(await copyOp.run({ id: draftId.value.trim(), name: draftName.value.trim() }));
-        if (outcome.kind !== "success") {
-          failure.value = outcome.message || String(outcome.kind);
-          return;
-        }
-        const created = outcome.data.id ?? draftId.value.trim();
-        if (asTemplate) {
-          const marked = outcomeOf(await instance.writeOperation("form.save", {
-            call: {
-              target: { kind: "object", objectType: PANEL_TYPE, primaryKey: created },
-              input: { values: { id: created, template: true }, revision: 1, submittedFields: ["/template"] },
-            },
-          }));
-          if (marked.kind !== "success") failure.value = marked.message || String(marked.kind);
-        }
-        mode.value = "view";
-        reload();
-        pickById(created);
-        message.value = `${t("grants.granted")} ${created}`;
-      } catch (reason) {
-        failure.value = reason instanceof Error ? reason.message : String(reason);
-      } finally {
-        busy.value = false;
-      }
+    function cancelForm() {
+      state.setState({ creating: null, detailMode: "view" });
     }
 
-    async function createFromTemplate() {
-      const source = templateSource.value;
-      if (!source) return;
-      busy.value = true;
-      clearNotices();
-      try {
-        const values = {
-          id: draftId.value.trim(),
-          name: draftName.value.trim(),
-          description: source.description ?? "",
-          visibility: "private",
-          template: false,
-          content: source.content,
-          manifest: source.manifest,
-          ...(source.theme ? { theme: source.theme } : {}),
-        };
-        const outcome = outcomeOf(await instance.writeOperation("form.save", {
-          call: { target: { kind: "draft" }, input: { values } },
-        }));
-        if (outcome.kind !== "success") {
-          failure.value = outcome.message || String(outcome.kind);
-          return;
-        }
-        const created = outcome.data.id ?? values.id;
-        mode.value = "view";
-        reload();
-        pickById(created);
-        message.value = `${t("grants.granted")} ${created}`;
-      } catch (reason) {
-        failure.value = reason instanceof Error ? reason.message : String(reason);
-      } finally {
-        busy.value = false;
-      }
-    }
-
-    function usageText() {
-      const entries = applicationEntries.value.map(entry => entry.applicationName || entry.path);
-      const panels = usingPanels.value.map(panel => panel.name);
-      const classes = classNames.value;
-      return [...entries, ...panels, ...classes].join(", ");
-    }
-
-    async function remove() {
-      const current = record.value ?? unavailableSelection.value;
-      if (!current?.revision) return;
-      if (!deleteArmed.value) {
-        deleteArmed.value = true;
-        failure.value = "";
-        message.value = `${t("delete.confirm")} ${usageText() ? t("delete.usage", { users: usageText() }) : ""}`;
-        return;
-      }
-      deleteArmed.value = false;
-      busy.value = true;
-      clearNotices();
-      try {
-        const outcome = outcomeOf(await deleteOp.run({ revision: current.revision }));
-        if (outcome.kind === "success") {
-          const deleted = (outcome.data.deletedProjectionIds ?? []).join(", ") || t("delete.none");
-          const retained = (outcome.data.retainedProjectionIdsWithoutEdit ?? []).join(", ");
-          state.set("selected", null);
-          reload();
-          message.value = t("delete.done", { deleted }) + (retained ? ` · ${t("delete.retained", { ids: retained })}` : "");
-        } else {
-          const users = usageText();
-          failure.value = `${outcome.message || String(outcome.kind)}${users ? ` · ${t("delete.usage", { users })}` : ""}`;
-        }
-      } catch (reason) {
-        failure.value = reason instanceof Error ? reason.message : String(reason);
-      } finally {
-        busy.value = false;
-      }
-    }
-
-    const grantKind = ref("role");
-    const grantId = ref("");
-    const grantVerb = ref("use");
-
-    async function changeGrant(removeGrant) {
-      if (!record.value) return;
-      busy.value = true;
-      clearNotices();
-      try {
-        const handle = removeGrant ? revokeOp : grantOp;
-        const outcome = outcomeOf(await handle.run({
-          principalKind: grantKind.value, principalId: grantId.value.trim(), verb: grantVerb.value,
-        }));
-        receipt.value = JSON.stringify(outcome, null, 2);
-        if (outcome.kind !== "success") failure.value = outcome.message || String(outcome.kind);
-        else instance.refreshObjects();
-      } catch (reason) {
-        failure.value = reason instanceof Error ? reason.message : String(reason);
-      } finally {
-        busy.value = false;
-      }
-    }
-
-    function revokeGrant(grant) {
-      grantKind.value = grant.kind === "role" ? "role" : "principal";
-      grantId.value = grant.principalId;
-      grantVerb.value = grant.verb;
-      return changeGrant(true);
-    }
-
-    async function share(shared) {
-      if (!record.value) return;
-      busy.value = true;
-      clearNotices();
-      try {
-        const outcome = outcomeOf(await shareOp.run({ shared }));
-        const skipped = outcome.data.skippedProjectionIds ?? [];
-        receipt.value = JSON.stringify(outcome, null, 2);
-        if (outcome.kind !== "success") failure.value = outcome.message || String(outcome.kind);
-        else if (skipped.length) message.value = t("grants.skipped", { ids: skipped.join(", ") });
-        else message.value = t("grants.granted");
-        if (outcome.kind === "success") instance.refreshObjects();
-      } catch (reason) {
-        failure.value = reason instanceof Error ? reason.message : String(reason);
-      } finally {
-        busy.value = false;
-      }
+    function closeDetail() {
+      state.setState({
+        selected: null,
+        creating: null,
+        detailMode: "view",
+        tab: "overview",
+        sourceFile: null,
+      });
     }
 
     function onSaved(saved) {
-      const reference = saved && saved.primaryKey ? { className: saved.className || PANEL_TYPE, primaryKey: saved.primaryKey } : null;
-      mode.value = "view";
-      tab.value = "overview";
-      reload();
-      if (reference) state.set("selected", reference);
-      message.value = `${t("grants.granted")} ${reference ? reference.primaryKey : ""}`.trim();
-    }
-    function onDiscarded() {
-      mode.value = "view";
-      clearNotices();
-    }
-
-    function openAddress(address) {
-      void navigate(address).catch(() => undefined);
+      const reference = saved?.primaryKey
+        ? { className: saved.className || PANEL_TYPE, primaryKey: saved.primaryKey }
+        : selected.value;
+      state.setState({
+        creating: null,
+        detailMode: "view",
+        tab: "overview",
+        sourceFile: null,
+        ...(reference ? { selected: reference } : {}),
+      });
+      instance.refreshObjects();
+      notify({ kind: "success", text: t("notify.saved") });
     }
 
-    watch(creating, active => {
-      if (!active) return;
-      detailMode.value = "view";
-      tab.value = "overview";
-      clearNotices();
-    }, { immediate: true });
-    // What the reader chose decides the page; the notices belong to the last write, so they stay.
-    watch(selected, () => {
-      if (mode.value === "create") return;
-      mode.value = "view";
-      projectionId.value = "";
-      deleteArmed.value = false;
+    // Wire Escape / browser Back while editing or creating so unsaved changes pass through the host guard.
+    usePanelBack({
+      active: isFormMode,
+      onBack: cancelForm,
     });
+
+    async function openAddress(address) {
+      if (!address) return;
+      try {
+        await navigate(address);
+      } catch (reason) {
+        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
+      }
+    }
+
+    function onNavigateReference(reference) {
+      if (!reference?.primaryKey) return;
+      if (reference.className === PANEL_TYPE) {
+        state.setState({
+          selected: { className: PANEL_TYPE, primaryKey: reference.primaryKey },
+          creating: null,
+          detailMode: "view",
+          tab: "overview",
+          sourceFile: null,
+        });
+      } else if (reference.className === PROJECTION_TYPE) {
+        void openAddress(panelAddress("/ontology/projections", { selected: reference.primaryKey }));
+      } else if (reference.className === APPLICATION_TYPE) {
+        void openAddress(panelAddress("/ontology/applications/detail", { selected: reference.primaryKey }));
+      } else if (reference.className === OBJECT_TYPE) {
+        void openAddress(panelAddress("/ontology/objects", { selected: reference.primaryKey }));
+      }
+    }
+
+    function onUsedByRowAction({ id, ref }) {
+      if (id === "openEntry" && ref?.primaryKey) {
+        void openAddress(ref.primaryKey);
+      }
+    }
 
     return {
       t,
-      selected, search: searchText, searchText, scope, sort,
-      mode, showDetail, hasFilters, tab, tabs, busy, failure, message, receipt,
-      rows, visibleRows, unavailableRows, loading, rowsError, page, pageSize, changePageSize, nextCursor,
-      templateFilter, onTemplateFilter,
-      grantRows, grantsShared, grantsError, grantKindLabel, verbLabel, revokeGrant,
-      ownerName, visibilityLabel, formatTimestamp, messagesText,
-      memberRows, projectionId, projectionRecord, inspectProjection, openMember, sourceManifest, sourceTheme,
-      memberKind, memberSearch, memberKey, memberChoiceId, memberChoices, memberError, memberSearchStatus,
-      canPickMembers, findMembers, addPickedMember,
-      record, recordState, unavailableSelection,
-      applicationEntries, usingPanels, classNames, hiddenCount,
-      onSearchInput, onScope, onSort,
-      nextPage, previousPage,
-      onSaved, onDiscarded,
-      pick, pickById, startEdit, cancelMode, startCopy, startSaveAsTemplate, startFromTemplate,
-      draftId, draftName, copyPanel, createFromTemplate, templateSource,
-      remove, grantKind, grantId, grantVerb, changeGrant, share, openAddress,
-      startCreate: () => instance.state.setState({ selected: null, creating: true }),
+      selectedKey,
+      creating,
+      isFormMode,
+      showDetail,
+      scopeModel,
+      scopeOptions,
+      sortModel,
+      templateFilterModel,
+      tabModel,
+      recordStatus,
+      recordReady,
+      recordErrorText,
+      canEdit,
+      canGrant,
+      canDelete,
+      isTemplate,
+      domainShared,
+      hiddenUsedByCount,
+      copyDialogOpen,
+      copyIdModel,
+      copyNameModel,
+      canSubmitCopy,
+      copyDialogTitle,
+      copyDialogNote,
+      copyActionLabelKey,
+      grantDialogOpen,
+      grantPrincipalKindModel,
+      grantVerbModel,
+      grantPrincipalId,
+      grantKindOptions,
+      openCopyDialog,
+      onCopyDone,
+      openGrantDialog,
+      onGrantAdded,
+      onShareDone,
+      onDeleteDone,
+      startCreate,
+      startEdit,
+      cancelForm,
+      closeDetail,
+      onSaved,
+      openAddress,
+      onNavigateReference,
+      onUsedByRowAction,
       refresh: () => instance.refreshObjects(),
     };
   },

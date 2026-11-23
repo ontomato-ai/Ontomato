@@ -361,8 +361,15 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     },
     [PRODUCT_PANEL]: {
       ...catalogueReads(panelCatalogue),
+      usedByRows: selection => panelCatalogue.usedByRows(selection.primaryKey!),
+      grantRows: selection => panelCatalogue.grantRows(selection.primaryKey!),
       members: selection => panelCatalogue.members(selection.primaryKey!),
       memberRows: selection => panelCatalogue.memberRows(selection.primaryKey!),
+      sourceFiles: selection => panelCatalogue.sourceFiles(selection.primaryKey!),
+      sourceFile: (selection, params) => panelCatalogue.sourceFile(
+        selection.primaryKey!,
+        panelReadParameterSchemas.skillFilePath.parse(params.path),
+      ),
     },
     [APPLICATION]: {
       query: (_selection, params) => applications.query(params),
