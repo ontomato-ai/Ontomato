@@ -322,12 +322,14 @@ it("serves the ontology model's catalog reads to a panel viewer through the owne
     primaryKey: "contains", label: "Contains", subtitle: "Warehouse → item",
     fields: {
       fromclass: "warehouse", toclass: "item",
+      fromclassLabel: "Warehouse", toclassLabel: "item",
       fromObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "warehouse", label: "Warehouse" },
       toObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "item", label: "item" },
       desc: "Contains", fromField: "code", toField: "warehouse_code",
     },
     fieldLabels: {
       fromclass: "Source object", toclass: "Target object", fromObject: "Source object", toObject: "Target object",
+      fromclassLabel: "Source object", toclassLabel: "Target object",
       desc: "Description", fromField: "Source field", toField: "Target field",
     },
   }]);
