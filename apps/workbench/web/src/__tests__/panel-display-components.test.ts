@@ -585,7 +585,7 @@ describe("MetricCard", () => {
     expect(cards[1]!.getAttribute("data-tone")).toBe("success");
   });
 
-  it("counts and sums across panelRecordList and panelOntologyObjects in one read, and handles forbidden state", async () => {
+  it("counts complete panelRecordList, omits total when panelRecordQuery omits total, and handles forbidden state", async () => {
     const listProjection: DirectProjection = {
       ...meta,
       id: "ontology-stats",
@@ -595,10 +595,7 @@ describe("MetricCard", () => {
       outputs: {},
       config: {
         variant: "inline",
-        items: [
-          { label: "Object types" },
-          { label: "Properties", sumField: "attributes" },
-        ],
+        label: "Object types",
       },
       data: { rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} } },
     };
@@ -613,8 +610,30 @@ describe("MetricCard", () => {
     });
     expect(reads).toHaveLength(1);
     expect(container.querySelector(".sdk-metric-card-group")?.classList.contains("is-inline")).toBe(true);
-    const values = [...container.querySelectorAll(".sdk-metric-card-value")].map((el) => el.textContent?.trim());
-    expect(values).toEqual(["2", "5"]);
+    expect(container.querySelector(".sdk-metric-card-value")?.textContent?.trim()).toBe("2");
+
+    const queryNoTotalProjection: DirectProjection = {
+      ...meta,
+      id: "query-no-total",
+      name: "Query without total",
+      componentId: "@ontomato/sdk:MetricCard",
+      inputs: {},
+      outputs: {},
+      config: { label: "Items" },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: METRIC_VIEW } }, read: "query", params: {} } },
+    };
+    const { container: noTotalContainer } = mountProjection(queryNoTotalProjection, () =>
+      ready({
+        rows: [
+          { primaryKey: "Person", label: "Person", fields: {} },
+          { primaryKey: "Order", label: "Order", fields: {} },
+        ],
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(noTotalContainer.querySelector(".sdk-metric-card-group")?.getAttribute("data-state")).toBe("ready");
+    });
+    expect(noTotalContainer.querySelector(".sdk-metric-card-value")?.textContent?.trim()).toBe("—");
 
     const forbiddenProjection: DirectProjection = {
       ...meta,

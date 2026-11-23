@@ -183,6 +183,7 @@ export function expandPanelAuthoringMember(
   }
 
   const dataTypes = new Map<string, string>();
+  const dataRowTypes = new Map<string, string>();
   let readsOntologyObjects = false;
   const data: DirectProjectionPorts["data"] = Object.fromEntries(Object.entries(member.data ?? {}).map(([name, shorthand]) => {
     const path = `data.${name}`;
@@ -194,6 +195,7 @@ export function expandPanelAuthoringMember(
     const declaration = reads && Object.hasOwn(reads, read) ? reads[read]
       : fail(`${path}.read`, `'${read}' is not registered on type '${readType}'`);
     dataTypes.set(name, readType);
+    dataRowTypes.set(name, declaration.rowType ?? readType);
     readsOntologyObjects ||= declaration.result === "panelOntologyObjects";
     const datum = appsSdkComponentDatum(componentData, name) ?? fail(path, "The component does not declare this datum");
     if (!datum.results.includes(declaration.result))
@@ -255,12 +257,14 @@ export function expandPanelAuthoringMember(
 
   const owners = new Set(dataTypes.values());
   const bindingType = typeId ?? (owners.size === 1 ? [...owners][0] : undefined);
+  const rowOwners = new Set(dataRowTypes.values());
+  const rowBindingType = rowOwners.size === 1 ? [...rowOwners][0] : bindingType;
 
   function concreteObjectType(objectType: string, path: string): string {
-    if (objectType === "@binding") return bindingType ?? fail(path, "This port needs a declared object type");
+    if (objectType === "@binding") return rowBindingType ?? fail(path, "This port needs a declared object type");
     if (objectType.startsWith("@data:")) {
       const datum = objectType.slice("@data:".length);
-      return dataTypes.get(datum) ?? fail(path, `This port requires data '${datum}'`);
+      return dataRowTypes.get(datum) ?? fail(path, `This port requires data '${datum}'`);
     }
     return objectType;
   }

@@ -260,9 +260,7 @@ const pathBannerText = computed(() => {
       path: pathTrail.value,
     });
   }
-  return resolved.value.edgesNotice
-    ? t("platform.graphPathNotFoundVisible", { from: result.from.label, to: result.to.label })
-    : t("platform.graphPathNotFound", { from: result.from.label, to: result.to.label });
+  return t("platform.graphPathNotFoundVisible", { from: result.from.label, to: result.to.label });
 });
 
 const searchHighlightItems = computed(() => {
@@ -338,6 +336,7 @@ useMemberOutput("status", () =>
 );
 useMemberOutput("error", () => resolved.value.error ?? null);
 useMemberOutput("pathStatus", () => pathResult.value.status);
+useMemberOutput("pathMessage", () => pathBannerText.value || null);
 useMemberOutput("pathHops", () =>
   pathResult.value.status === "found" || pathResult.value.status === "same-node"
     ? pathResult.value.hops

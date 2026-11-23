@@ -13,9 +13,7 @@ type CountViewKind = "loading" | "empty" | "ready" | "forbidden" | "error" | "aw
 
 interface ParsedCountData {
   readonly kind: CountViewKind;
-  readonly rows: readonly PlatformObjectRecord[];
-  readonly total: number;
-  readonly hasTotal: boolean;
+  readonly total: number | null;
   readonly notice?: string;
 }
 
@@ -23,14 +21,13 @@ interface NormalizedCountItem {
   readonly label?: string;
   readonly labelKey?: string;
   readonly labels?: Readonly<Record<string, string>>;
-  readonly sumField?: string;
 }
 
 /**
- * Compact inline metric strip counting records (or summing a numeric/array field across records) from the member's
- * `rows` (`panelRecordList` / `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum. Supports either a
- * single metric (`label` / `labelKey` / `labels` + optional `sumField`) or multiple metrics from the same read via
- * `items` (for example counting object types and summing their attributes in one request).
+ * Compact inline metric strip displaying the owner's record count from the member's `rows` (`panelRecordList` /
+ * `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum. For complete unpaged lists (`panelRecordList`),
+ * displays the list length; for paged/query reads (`panelRecordQuery` / `panelOntologyObjects`), displays strictly the
+ * owner-returned `total` (showing `—` when the owner omits `total`, never falling back to the current page's row count).
  */
 const props = withDefaults(
   defineProps<{
@@ -40,22 +37,13 @@ const props = withDefaults(
     labelKey?: string;
     /** Locale-keyed unit labels (e.g. `{ en: "Object types", de: "Objekttypen" }`) in single-metric mode. */
     labels?: Readonly<Record<string, string>>;
-    /**
-     * Optional field key on each record to sum instead of counting rows in single-metric mode. Supports finite
-     * numbers, numeric strings, arrays (counted by length), and `{ kind: "json", value: [...] }` field wrappers.
-     */
-    sumField?: string;
-    /**
-     * Multiple metric definitions evaluated against the same datum read, rendered inline separated by a middot
-     * (e.g. `18 Object types · 193 Properties`) to avoid duplicate reads of the same collection.
-     */
+    /** Optional item definitions rendered inline separated by a middot. */
     items?: readonly ObjectCountItem[];
   }>(),
   {
     label: undefined,
     labelKey: undefined,
     labels: undefined,
-    sumField: undefined,
     items: undefined,
   },
 );
@@ -86,7 +74,6 @@ function normalizeItem(raw: unknown): NormalizedCountItem | null {
     label: readConfigString(record, "label"),
     labelKey: readConfigString(record, "labelKey", "label-key"),
     labels: readConfigStringMap(record, "labels"),
-    sumField: readConfigString(record, "sumField", "sum-field"),
   };
 }
 
@@ -101,58 +88,24 @@ const configuredItems = computed<readonly NormalizedCountItem[]>(() => {
       label: props.label ?? readConfigString(rawConfig.value, "label"),
       labelKey: props.labelKey ?? readConfigString(rawConfig.value, "labelKey", "label-key"),
       labels: props.labels ?? readConfigStringMap(rawConfig.value, "labels"),
-      sumField: props.sumField ?? readConfigString(rawConfig.value, "sumField", "sum-field"),
     },
   ];
 });
 
-function numericContribution(raw: unknown): number {
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : 0;
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed) return 0;
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  if (Array.isArray(raw)) return raw.length;
-  if (raw && typeof raw === "object" && "kind" in raw && (raw as { kind?: unknown }).kind === "json") {
-    const inner = (raw as { value?: unknown }).value;
-    if (Array.isArray(inner)) return inner.length;
-    if (typeof inner === "number") return Number.isFinite(inner) ? inner : 0;
-    if (typeof inner === "string") {
-      const trimmed = inner.trim();
-      if (!trimmed) return 0;
-      const parsed = Number(trimmed);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-  }
-  return 0;
-}
-
-function sumFieldAcrossRows(rows: readonly PlatformObjectRecord[], fieldKey: string): number {
-  let total = 0;
-  for (const row of rows) {
-    total += numericContribution(row?.fields?.[fieldKey]);
-  }
-  return total;
-}
-
 const parsedData = computed<ParsedCountData>(() => {
   const state = datumState.value;
-  if (state.status === "loading") return { kind: "loading", rows: [], total: 0, hasTotal: false };
-  if (state.status === "empty") return { kind: "empty", rows: [], total: 0, hasTotal: true };
+  if (state.status === "loading") return { kind: "loading", total: null };
+  if (state.status === "empty") return { kind: "empty", total: 0 };
   if (state.status === "forbidden") {
-    return { kind: "forbidden", rows: [], total: 0, hasTotal: false, notice: t("platform.dataForbidden") };
+    return { kind: "forbidden", total: null, notice: t("platform.dataForbidden") };
   }
   if (state.status === "awaiting") {
-    return { kind: "awaiting", rows: [], total: 0, hasTotal: false, notice: t("platform.dataAwaiting") };
+    return { kind: "awaiting", total: null, notice: t("platform.dataAwaiting") };
   }
   if (state.status === "error") {
     return {
       kind: "error",
-      rows: [],
-      total: 0,
-      hasTotal: false,
+      total: null,
       notice: state.message || t("platform.dataUnreachable"),
     };
   }
@@ -163,42 +116,28 @@ const parsedData = computed<ParsedCountData>(() => {
     if (response.status === "refused") {
       return {
         kind: "forbidden",
-        rows: [],
-        total: 0,
-        hasTotal: false,
+        total: null,
         notice: response.reason || t("platform.graphStatusRefused"),
       };
     }
     if (response.status !== "ok") {
       return {
         kind: "error",
-        rows: [],
-        total: 0,
-        hasTotal: false,
+        total: null,
         notice: response.reason || (response.status === "unavailable" ? t("platform.graphStatusUnavailable") : t("platform.dataUnreachable")),
       };
     }
-    const rows: PlatformObjectRecord[] = response.items.map((item) => {
-      const fields: PlatformObjectRecord["fields"] = item.detail !== undefined ? { detail: item.detail } : {};
-      return {
-        primaryKey: item.node.primaryKey,
-        className: item.node.className,
-        label: item.label,
-        ...(item.detail !== undefined ? { subtitle: item.detail } : {}),
-        fields,
-      };
-    });
-    return { kind: "ready", rows, total: response.total, hasTotal: true };
+    const hasTotal = typeof response.total === "number" && Number.isFinite(response.total);
+    return { kind: "ready", total: hasTotal ? response.total : null };
   }
 
   if (Array.isArray(value)) {
     const rows = value as unknown as readonly PlatformObjectRecord[];
-    return { kind: "ready", rows, total: rows.length, hasTotal: false };
+    return { kind: "ready", total: rows.length };
   }
   const query = value as unknown as PanelRecordQuery;
-  const rows = Array.isArray(query?.rows) ? (query.rows as unknown as readonly PlatformObjectRecord[]) : [];
   const hasTotal = typeof query?.total === "number" && Number.isFinite(query.total);
-  return { kind: "ready", rows, total: hasTotal ? query.total! : rows.length, hasTotal };
+  return { kind: "ready", total: hasTotal ? query.total! : null };
 });
 
 const renderedItems = computed(() => {
@@ -216,9 +155,8 @@ const renderedItems = computed(() => {
     let display: string;
     if (data.kind === "loading") display = "…";
     else if (data.kind === "empty") display = "0";
-    else if (data.kind !== "ready") display = "—";
-    else if (item.sumField) display = String(sumFieldAcrossRows(data.rows, item.sumField));
-    else display = String(data.hasTotal ? data.total : data.rows.length);
+    else if (data.kind !== "ready" || data.total === null) display = "—";
+    else display = String(data.total);
     return { label, display };
   });
 });

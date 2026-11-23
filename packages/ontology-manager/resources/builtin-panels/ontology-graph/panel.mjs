@@ -24,6 +24,7 @@ await mountPanel({
     const graphStatus = usePanelOutput("graph", "status");
     const graphError = usePanelOutput("graph", "error");
     const graphPathStatus = usePanelOutput("graph", "pathStatus");
+    const graphPathMessage = usePanelOutput("graph", "pathMessage");
     const graphPathHops = usePanelOutput("graph", "pathHops");
 
     const objectListStatus = usePanelOutput("objectList", "status");
@@ -221,7 +222,7 @@ await mountPanel({
       if (status === "found" || status === "same-node") {
         showToast("success", `已找到 ${graphPathHops.value ?? 0} 跳路径`);
       } else if (status === "not-found") {
-        showToast("warning", "未找到可达路径");
+        showToast("warning", String(graphPathMessage.value || "在当前可见范围内未找到可达路径"));
       }
     }
 

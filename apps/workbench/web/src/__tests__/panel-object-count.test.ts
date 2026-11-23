@@ -158,85 +158,34 @@ it("prefers query total over page rows length when sumField is omitted", async (
   });
 });
 
-it("sums numeric, string, array, and json-wrapped fields across rows and supports multi-item single read", async () => {
+it("shows an unknown dash for panelRecordQuery when the owner omits total (never falls back to loaded rows)", async () => {
   const projection: DirectProjection = {
     ...meta,
-    id: "ontology-summary-counts",
-    name: "Ontology summary counts",
+    id: "task-query-no-total",
+    name: "Task count unknown total",
     componentId: "@ontomato/sdk:ObjectCount",
     inputs: {},
     outputs: {},
-    config: {
-      items: [
-        { labelKey: "stats.objectTypes" },
-        { labelKey: "stats.properties", sumField: "properties" },
-        { label: "Weights", sumField: "weight" },
-      ],
-    },
-    data: { rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} } },
+    config: { label: "Tasks" },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: FEEDBACK_RECORD } }, read: "query", params: {} } },
   };
   const { container, reads } = mountCount(
     projection,
     () =>
-      ready([
-        {
-          primaryKey: "Person",
-          label: "Person",
-          fields: {
-            properties: { kind: "json", value: [{ key: "id" }, { key: "name" }, { key: "email" }] },
-            weight: 10,
-          },
-        },
-        {
-          primaryKey: "Order",
-          label: "Order",
-          fields: {
-            properties: ["id", "total"],
-            weight: "25",
-          },
-        },
-        {
-          primaryKey: "Asset",
-          label: "Asset",
-          fields: {
-            properties: { kind: "json", value: 4 },
-            weight: { kind: "json", value: "5" },
-          },
-        },
-        {
-          primaryKey: "Empty",
-          label: "Empty",
-          fields: {
-            properties: { kind: "json", value: null },
-            weight: "not-a-number",
-          },
-        },
-      ]),
-    {
-      messages: {
-        en: {
-          "stats.objectTypes": "Object types",
-          "stats.properties": "Properties",
-        },
-      },
-    },
+      ready({
+        rows: [
+          { primaryKey: "f-1", label: "One", fields: { weight: 10 } },
+          { primaryKey: "f-2", label: "Two", fields: { weight: 20 } },
+        ],
+      }),
   );
 
   await vi.waitFor(() => {
     const el = container.querySelector(".sdk-object-count");
     expect(el?.getAttribute("data-state")).toBe("ready");
-    const items = [...container.querySelectorAll(".sdk-object-count-item")].map((node) => ({
-      value: node.querySelector(".sdk-object-count-value")?.textContent?.trim(),
-      label: node.querySelector(".sdk-object-count-label")?.textContent?.trim(),
-    }));
-    expect(items).toEqual([
-      { value: "4", label: "Object types" },
-      { value: "9", label: "Properties" },
-      { value: "40", label: "Weights" },
-    ]);
-    expect(container.querySelectorAll(".sdk-object-count-sep")).toHaveLength(2);
+    expect(el?.querySelector(".sdk-object-count-value")?.textContent?.trim()).toBe("—");
+    expect(el?.querySelector(".sdk-object-count-label")?.textContent?.trim()).toBe("Tasks");
   });
-  // All three metrics come from the single datum read without issuing duplicate requests.
   expect(reads).toHaveLength(1);
 });
 

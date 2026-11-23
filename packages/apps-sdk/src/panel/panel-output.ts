@@ -3,9 +3,10 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import { usePanelContext } from "./context";
 
 /**
- * Read one read-only output published by a projection member (e.g. `ObjectList`'s `total`, `filteredCount`,
- * `checkedCount`, `selectedLabel`, `activeLabel`; `ObjectSummary`/`ObjectHeader`/`ObjectForm`'s `label`; `ObjectForm`'s
- * `dirty` and `draft`). Read-only outputs stay separate from the panel's writable public `manifest.state`.
+ * Read one read-only output published by a projection member (e.g. `ObjectList`'s `total`, `loadedCount`,
+ * `filteredCount`, `checkedCount`, `selectedLabel`, `activeLabel`; `ObjectSummary`/`ObjectHeader`/`ObjectForm`'s
+ * `label`; `ObjectForm`'s `dirty` and `draft`; or named typed scalar outputs declared by the bound read's owner).
+ * Read-only outputs stay separate from the panel's writable public `manifest.state`.
  */
 export function usePanelOutput<T extends RuntimeJsonValue = RuntimeJsonValue>(
   member: string,

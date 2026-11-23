@@ -425,32 +425,6 @@ export function parseTemplateTokens(template: string): readonly TemplateToken[] 
   return tokens;
 }
 
-/** Numeric contribution of one record field value when summing across rows (`MetricCard` / `ObjectCount`). */
-export function numericFieldContribution(raw: unknown): number {
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : 0;
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed) return 0;
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  if (Array.isArray(raw)) return raw.length;
-  if (raw && typeof raw === "object" && "kind" in raw && (raw as { kind?: unknown }).kind === "json" && "value" in raw) {
-    return numericFieldContribution((raw as { value?: unknown }).value);
-  }
-  return 0;
-}
-
-/** Sums a field's numeric/array-length values across a collection of platform records. */
-export function sumRecordField(rows: readonly PlatformObjectRecord[], field: string): number {
-  let total = 0;
-  for (const row of rows) {
-    const value = row.fields?.[field] ?? row.tags?.[field];
-    total += numericFieldContribution(value);
-  }
-  return total;
-}
-
 /**
  * Selects the first declared datum among `candidates` on an optional `PanelMemberContext` and wraps it with
  * `readerDataState`. Returns `null` when the component is rendered standalone outside a projection member or when none

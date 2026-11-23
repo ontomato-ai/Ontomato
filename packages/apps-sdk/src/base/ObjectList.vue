@@ -9,6 +9,7 @@ import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@o
 import {
   authoredReadParameterSource,
   directReadDeclaration,
+  directReadRowType,
   panelRecordItemKey,
   panelRecordObjectRef,
   panelRowOperationKey,
@@ -141,7 +142,7 @@ const RESERVED_MEMBER_INPUTS = new Set([
 
 interface ParsedListData {
   readonly rows: readonly PlatformObjectRecord[];
-  readonly total: number;
+  readonly total: number | null;
   readonly hasTotal: boolean;
   readonly nextCursor?: string;
   /** What the owner says of a partial answer, in the reader's language, shown beside the rows. */
@@ -254,12 +255,6 @@ const props = withDefaults(
      * drawers or navigation), overflowing items beyond `maxVisible` (default 2) into a "More" dropdown menu.
      */
     rowActions?: ObjectListRowActionsConfig;
-    /**
-     * Optional primary key of the currently active row when no `selected` state is wired on the member (for example,
-     * a related-object list whose rows belong to a different object type than the bound parent). Highlights the matching
-     * row and resolves `selectedLabel` / `activeLabel` outputs.
-     */
-    selectedKey?: string | null;
   }>(),
   {
     layout: "auto",
@@ -286,7 +281,6 @@ const props = withDefaults(
     groupEmptyLabel: undefined,
     localFilters: undefined,
     rowActions: undefined,
-    selectedKey: undefined,
   },
 );
 
@@ -307,18 +301,27 @@ const emit = defineEmits<{
   /** Emitted when the reader clicks Clear filters from the narrowed empty state. */
   "clear-filters": [];
   /** Emitted when the reader clicks a local button (`kind: "local"`) in the built-in row action column. */
-  "row-action": [payload: { id: string; row: PlatformObjectRecord; ref: ObjectListRef; index: number }];
+  "row-action": [payload: { id: string; ref: ObjectListRef; index: number }];
   /** Emitted after a declared row operation dispatches and the owner answers. */
-  "operation-done": [operation: string, outcome: OperationOutcome, row: PlatformObjectRecord];
+  "operation-done": [operation: string, outcome: OperationOutcome, ref: ObjectListRef];
 }>();
 
-interface RowSlotScope {
-  readonly row: PlatformObjectRecord;
+type RowRefSlotScope = {
   readonly ref: ObjectListSelection;
   readonly index: number;
+};
+
+type RowActionsSlotScope = RowRefSlotScope & {
   readonly operations: Readonly<Record<string, ListRowSlotOperation>>;
   readonly runOperation: (operationName: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>) => Promise<void>;
-}
+};
+
+type CellSlotScope = RowActionsSlotScope & {
+  readonly column: ObjectListColumn;
+  readonly value: unknown;
+  readonly displayText: string;
+  readonly tone: string;
+};
 
 defineSlots<{
   /** Auxiliary filter controls placed beside search in the top toolbar. */
@@ -331,19 +334,19 @@ defineSlots<{
   "create-row"?(): unknown;
   /** Custom empty state rendered when no rows match or the list is empty. */
   empty?(props: { narrowed: boolean; clearFilters: () => void }): unknown;
-  /** Custom cell renderer for any column; overrides default rendering when it produces content. */
-  cell?(props: RowSlotScope & { column: ObjectListColumn; value: unknown }): unknown;
+  /** Custom cell renderer for any column; receives only this cell's value, display text, tone, and row reference. */
+  cell?(props: CellSlotScope): unknown;
   /** Custom cell renderer for a specific column key (`#cell-<columnKey>`). */
-  [key: `cell-${string}`]: ((props: RowSlotScope & { column: ObjectListColumn; value: unknown }) => unknown) | undefined;
-  /** Custom row actions content; falls back to the built-in `rowActions` column when empty. */
-  actions?(props: RowSlotScope): unknown;
-  /** Expanded detail region rendered inline below a row when toggled open. */
-  "row-detail"?(props: RowSlotScope & { collapse: () => void }): unknown;
-  /** Custom leading badge or icon rendered before each compact list item's title and subtitle. */
-  "item-leading"?(props: RowSlotScope): unknown;
+  [key: `cell-${string}`]: ((props: CellSlotScope) => unknown) | undefined;
+  /** Custom row actions content; receives row reference and declared row operations. */
+  actions?(props: RowActionsSlotScope): unknown;
+  /** Expanded detail region rendered inline below a row; receives typed row reference to drive child projections. */
+  "row-detail"?(props: RowRefSlotScope & { collapse: () => void }): unknown;
+  /** Decorative leading badge or icon rendered before each compact list item's title and subtitle. */
+  "item-leading"?(): unknown;
   /** Custom card renderer in `"cards"` layout; falls back to the default card when empty. */
   card?(
-    props: RowSlotScope & {
+    props: RowActionsSlotScope & {
       selected: boolean;
       checked: boolean;
       toggleCheck: (next?: boolean) => void;
@@ -369,6 +372,7 @@ if (!datum) {
 
 const placement = panel.manifest.members[member.key]!;
 const declaration = directReadDeclaration(member.projection, datum);
+const rowObjectType = directReadRowType(member.projection, datum) ?? objectType;
 const signatureParams = declaration?.parameterMode === "fixed" ? declaration.params : {};
 const requiredParamNames = new Set(declaration?.parameterMode === "fixed" ? (declaration.requiredParams ?? []) : []);
 
@@ -425,9 +429,14 @@ const pageParam = pageMode === "page" ? useMemberParam(paramNameOf("page")) : nu
 const selectedParam = useMemberParam("selected");
 const checkedParam = useMemberParam("checked");
 
-const datumMappedInputNames = new Set(
-  Object.values(datum.params).flatMap((mapped) => ("input" in mapped ? [mapped.input] : [])),
-);
+const datumMappedInputNames = new Set([
+  ...("object" in datum.source && "input" in datum.source.object ? [datum.source.object.input] : []),
+  ...Object.values(datum.params).flatMap((mapped) => ("input" in mapped ? [mapped.input] : [])),
+  ...Object.values(member.projection.operations ?? {}).flatMap((op) => [
+    ...(op.target && "input" in op.target ? [op.target.input] : []),
+    ...Object.values(op.params ?? {}).flatMap((param) => ("input" in param ? [param.input] : [])),
+  ]),
+]);
 const localFilterParamEntries = pageMode === "none"
   ? Object.keys(placement.inputs ?? {})
       .filter((key) =>
@@ -455,7 +464,7 @@ interface CursorBatch {
 const cursorBatches = ref<readonly CursorBatch[]>([]);
 const loadingMore = ref(false);
 let pendingAppendCursor: string | null = null;
-const lastKnownTotal = ref(0);
+const lastKnownTotal = ref<number | null>(null);
 const lastKnownHasTotal = ref(false);
 
 // Seed runtime pagination parameters before useMemberData starts its immediate watch, avoiding a double initial read.
@@ -620,7 +629,7 @@ function rowExpandAriaLabel(row: PlatformObjectRecord): string {
 }
 
 const activeType = computed<string | null>(() => {
-  if (datumName !== "objects") return objectType;
+  if (datumName !== "objects") return rowObjectType;
   const value = currentParams.value.type;
   return typeof value === "string" && value ? value : null;
 });
@@ -641,6 +650,26 @@ if (datumName === "objects") {
       if (searchParam && !isAuthoredParam("search") && searchParam.value.value !== null) {
         searchParam.set(null);
       }
+      resetPaging();
+    },
+    { flush: "sync" },
+  );
+}
+if ("object" in datum.source) {
+  const parentSource = datum.source.object;
+  const parentSourceKey = computed(() =>
+    "literal" in parentSource
+      ? JSON.stringify(parentSource.literal)
+      : JSON.stringify(member.inputs.value[parentSource.input] ?? null),
+  );
+  watch(
+    parentSourceKey,
+    (next, prev) => {
+      if (next === prev) return;
+      initialLoadDone = false;
+      pendingFilterFallback = false;
+      activeRowLabel.value = null;
+      expandedKey.value = null;
       resetPaging();
     },
     { flush: "sync" },
@@ -677,9 +706,15 @@ if (pageMode === "page") {
 
 const datumState = useMemberData(datumName);
 
+const isCompleteList = computed<boolean>(() => {
+  if (datumName !== "rows" || pageMode !== "none" || hasServerSearch) return false;
+  if (declaration) return declaration.result === "panelRecordList";
+  return datumState.value.status === "ready" ? Array.isArray(datumState.value.value) : true;
+});
+
 const parsedData = computed<ParsedListData>(() => {
   if (datumState.value.status !== "ready") {
-    return { rows: [], total: 0, hasTotal: false, diagnostics: [], status: "ok" };
+    return { rows: [], total: null, hasTotal: false, diagnostics: [], status: "ok" };
   }
   const value = datumState.value.value;
   if (datumName === "objects") {
@@ -687,7 +722,7 @@ const parsedData = computed<ParsedListData>(() => {
     if (response.status !== "ok") {
       return {
         rows: [],
-        total: 0,
+        total: null,
         hasTotal: false,
         diagnostics: [],
         status: response.status,
@@ -704,19 +739,20 @@ const parsedData = computed<ParsedListData>(() => {
         fields,
       };
     });
-    return { rows: items, total: response.total, hasTotal: true, diagnostics: [], status: "ok" };
+    const hasTotal = typeof response.total === "number" && Number.isFinite(response.total);
+    return { rows: items, total: hasTotal ? response.total : null, hasTotal, diagnostics: [], status: "ok" };
   }
   if (Array.isArray(value)) {
     const items = value as unknown as readonly PlatformObjectRecord[];
-    return { rows: items, total: items.length, hasTotal: hasServerSearch || pageMode !== "none", diagnostics: [], status: "ok" };
+    return { rows: items, total: items.length, hasTotal: true, diagnostics: [], status: "ok" };
   }
   const queryResult = value as unknown as PanelRecordQuery;
   const items = queryResult.rows as unknown as readonly PlatformObjectRecord[];
-  const hasTotal = queryResult.total !== undefined
-    || ((hasServerSearch || pageMode !== "none") && currentPage.value === 1 && queryResult.nextCursor === undefined);
+  // Strictly adopt the owner-returned total for query reads; never substitute loaded row counts when total is absent.
+  const hasTotal = typeof queryResult.total === "number" && Number.isFinite(queryResult.total);
   return {
     rows: items,
-    total: queryResult.total ?? items.length,
+    total: hasTotal ? queryResult.total! : null,
     hasTotal,
     nextCursor: queryResult.nextCursor,
     diagnostics: queryResult.diagnostics ?? [],
@@ -812,7 +848,7 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => {
   if (!hasActiveLocalFilter.value) return rawRows.value;
   const query = normalizedLocalQuery.value;
   const filters = activeLocalFieldFilters.value;
-  const fallbackClassName = activeType.value ?? objectType;
+  const fallbackClassName = activeType.value ?? rowObjectType;
   return rawRows.value.filter((row) => {
     if (query !== "" && !matchesLocalSearch(row, query, locale.value, t, props.searchFields)) return false;
     for (const [fieldKey, expected] of filters) {
@@ -822,9 +858,12 @@ const rows = computed<readonly PlatformObjectRecord[]>(() => {
   });
 });
 
-const total = computed(() => (hasActiveLocalFilter.value ? rows.value.length : parsedData.value.total));
+const total = computed<number | null>(() => (hasActiveLocalFilter.value ? rows.value.length : parsedData.value.total));
 const effectiveHasTotal = computed(
-  () => parsedData.value.hasTotal || (pageMode === "none" && (canSearch.value || hasActiveLocalFilter.value)),
+  () =>
+    isCompleteList.value
+      ? (canSearch.value || hasActiveLocalFilter.value)
+      : parsedData.value.hasTotal,
 );
 const nextCursor = computed(() => parsedData.value.nextCursor);
 const queryStatus = computed(() => parsedData.value.status);
@@ -832,11 +871,11 @@ const diagnostics = computed(() => parsedData.value.diagnostics);
 const queryReason = computed(() => parsedData.value.reason);
 
 function rowSelectionValue(row: PlatformObjectRecord): ObjectListRef {
-  return panelRecordObjectRef(row, activeType.value ?? objectType);
+  return panelRecordObjectRef(row, activeType.value ?? rowObjectType);
 }
 
 function rowItemKey(row: PlatformObjectRecord) {
-  return panelRecordItemKey(row, { fallbackClassName: activeType.value ?? objectType });
+  return panelRecordItemKey(row, { fallbackClassName: activeType.value ?? rowObjectType });
 }
 
 function rowClassName(row: PlatformObjectRecord): string {
@@ -861,15 +900,7 @@ const chosenRef = computed<ObjectListSelection | null>(() => {
   const raw = selectedParam.value.value as PanelFieldValue;
   return stateChildObject(raw) ?? stateObject(raw);
 });
-const chosenIdentity = computed<string | null>(() => {
-  const fromState = selectionIdentity(chosenRef.value);
-  if (fromState !== null) return fromState;
-  if (props.selectedKey) {
-    const match = rawRows.value.find((row) => row.primaryKey === props.selectedKey);
-    if (match) return rowIdentityKey(match);
-  }
-  return null;
-});
+const chosenIdentity = computed<string | null>(() => selectionIdentity(chosenRef.value));
 
 const checkedRefs = computed<readonly ObjectListRef[]>(() =>
   stateObjects(checkedParam.value.value as PanelFieldValue),
@@ -940,7 +971,7 @@ function cellTitle(row: PlatformObjectRecord, column: ObjectListColumn): string 
   }
   return columnFit.value.get(column.key) === "sdk-object-list-col-shrink" ? columnText(row, column) : undefined;
 }
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / effectivePageSize.value)));
+const totalPages = computed(() => Math.max(1, Math.ceil((total.value ?? 0) / effectivePageSize.value)));
 
 type PaginationItem = number | "ellipsis";
 
@@ -966,8 +997,8 @@ const footerReady = computed(
     || (loadingMore.value && rows.value.length > 0),
 );
 const footerHasTotal = computed(() => (loadingMore.value ? lastKnownHasTotal.value : effectiveHasTotal.value));
-const footerTotal = computed(() => (loadingMore.value ? lastKnownTotal.value : total.value));
-const showFooterTotal = computed(() => footerReady.value && footerHasTotal.value);
+const footerTotal = computed<number | null>(() => (loadingMore.value ? lastKnownTotal.value : total.value));
+const showFooterTotal = computed(() => footerReady.value && footerHasTotal.value && footerTotal.value !== null);
 
 const showPageSizeSelect = computed(
   () =>
@@ -981,7 +1012,7 @@ const showPageControls = computed(
   () =>
     pageMode === "page"
     && footerReady.value
-    && ((footerHasTotal.value && footerTotal.value > effectivePageSize.value) || currentPage.value > 1),
+    && ((footerHasTotal.value && (footerTotal.value ?? 0) > effectivePageSize.value) || currentPage.value > 1),
 );
 
 const showCursorPageControls = computed(
@@ -1348,7 +1379,7 @@ const groups = computed<readonly ObjectListGroup[]>(() =>
     ? buildObjectListGroups(
         rows.value,
         props.groupBy!.trim(),
-        activeType.value ?? objectType,
+        activeType.value ?? rowObjectType,
         locale.value,
         t,
         resolvedGroupEmptyLabel.value,
@@ -1819,7 +1850,7 @@ const mergedRowOperations = computed<PanelRowOperationsMap>(() => {
 });
 
 function rowOperationsFor(row: PlatformObjectRecord): Readonly<Record<string, ListRowSlotOperation>> {
-  const fallbackClassName = activeType.value ?? objectType;
+  const fallbackClassName = activeType.value ?? rowObjectType;
   const rowKey = panelRowOperationKey(row, fallbackClassName);
   const batchForRow = mergedRowOperations.value[rowKey];
   const admitted = admittedOpMap.value;
@@ -1922,7 +1953,7 @@ async function executeRowOperation(
   if (rowOpRunning.value) return;
   const binding = member.projection.operations?.[operationName];
   if (!binding) return;
-  const fallbackClassName = activeType.value ?? objectType;
+  const fallbackClassName = activeType.value ?? rowObjectType;
   const target = resolveRowOperationTarget(binding, row, fallbackClassName, member.inputs.value);
   if (target === undefined) return;
   const operationId = panel.instance.operationIdOf(slot.slot, operationName);
@@ -1945,7 +1976,7 @@ async function executeRowOperation(
     const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
     if (answered?.kind === "success") panel.notify({ kind: "success", text: saidRowOp(answered) });
     else rowOpReceipt.value = answer.response;
-    if (answered) emit("operation-done", operationName, answered, row);
+    if (answered) emit("operation-done", operationName, answered, rowSelectionValue(row));
   } catch (reason) {
     rowOpFailure.value = reason instanceof Error ? reason : new Error(String(reason));
   } finally {
@@ -2003,21 +2034,37 @@ function triggerRowAction(row: PlatformObjectRecord, index: number, item: Resolv
   if (item.kind === "local" && item.id) {
     const ref = rowSelectionValue(row);
     if (item.to) {
-      const address = resolveRowActionAddress(item.to, row, activeType.value ?? objectType);
+      const address = resolveRowActionAddress(item.to, row, activeType.value ?? rowObjectType);
       void panel.navigate(address);
     }
-    emit("row-action", { id: item.id, row, ref, index });
+    emit("row-action", { id: item.id, ref, index });
   }
 }
 
-function rowSlotProps(row: PlatformObjectRecord, index: number) {
+function rowRefSlotProps(row: PlatformObjectRecord, index: number): RowRefSlotScope {
   return {
-    row,
+    ref: rowSelectionValue(row),
+    index,
+  };
+}
+
+function rowActionsSlotProps(row: PlatformObjectRecord, index: number): RowActionsSlotScope {
+  return {
     ref: rowSelectionValue(row),
     index,
     operations: rowOperationsFor(row),
     runOperation: (operationName: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>) =>
       runRowOperation(row, operationName, extraInput),
+  };
+}
+
+function cellSlotProps(row: PlatformObjectRecord, index: number, column: ObjectListColumn): CellSlotScope {
+  return {
+    ...rowActionsSlotProps(row, index),
+    column,
+    value: rawRecordField(row, column.key),
+    displayText: fieldValue(row, column.key),
+    tone: columnTone(row, column),
   };
 }
 
@@ -2031,17 +2078,27 @@ const selectedRowLabel = computed<string | null>(() => {
 });
 
 useMemberOutput("status", () => datumState.value.status);
-useMemberOutput("total", () => (datumState.value.status === "ready" ? parsedData.value.total : datumState.value.status === "empty" ? 0 : null));
-useMemberOutput("filteredCount", () => (datumState.value.status === "ready" ? rows.value.length : datumState.value.status === "empty" ? 0 : null));
+useMemberOutput("total", () => {
+  if (datumState.value.status === "ready" && parsedData.value.status === "ok") {
+    return parsedData.value.hasTotal ? parsedData.value.total : null;
+  }
+  if (datumState.value.status === "empty" && isCompleteList.value) return 0;
+  return null;
+});
+useMemberOutput("loadedCount", () => {
+  if (datumState.value.status === "ready" && parsedData.value.status === "ok") return rawRows.value.length;
+  if (datumState.value.status === "empty") return 0;
+  return null;
+});
+useMemberOutput("filteredCount", () => {
+  if (!isCompleteList.value) return null;
+  if (datumState.value.status === "ready" && parsedData.value.status === "ok") return rows.value.length;
+  if (datumState.value.status === "empty") return 0;
+  return null;
+});
 useMemberOutput("checkedCount", () => checkedRefs.value.length);
 useMemberOutput("selectedLabel", () => selectedRowLabel.value);
 useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.value);
-useMemberOutput("firstItem", () => {
-  const first = rows.value[0];
-  if (!first) return null;
-  const ref = rowSelectionValue(first);
-  return { className: ref.className, primaryKey: ref.primaryKey, label: first.label || first.primaryKey };
-});
 </script>
 
 <template>
@@ -2225,13 +2282,12 @@ useMemberOutput("firstItem", () => {
                     <list-row-slot-host
                       v-if="columnCellSlot(column.key)"
                       :list-slot="member.key"
-                      :row="entry.row"
                       :row-ref="rowSelectionValue(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
                       :render-slot="columnCellSlot(column.key)!"
-                      :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), column, value: rawRecordField(entry.row, column.key) }"
+                      :slot-props="cellSlotProps(entry.row, entry.rowIndex, column)"
                       :fallback-to-default="true"
                     >
                       <button
@@ -2366,13 +2422,12 @@ useMemberOutput("firstItem", () => {
                     <list-row-slot-host
                       v-if="hasActionsSlot"
                       :list-slot="member.key"
-                      :row="entry.row"
                       :row-ref="rowSelectionValue(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
                       :render-slot="slots.actions!"
-                      :slot-props="rowSlotProps(entry.row, entry.rowIndex)"
+                      :slot-props="rowActionsSlotProps(entry.row, entry.rowIndex)"
                       :fallback-to-default="Boolean(rowActions && rowActions.items.length > 0)"
                     >
                       <ObjectListRowActions
@@ -2406,14 +2461,13 @@ useMemberOutput("firstItem", () => {
                   <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell sdk-object-list-detail-host">
                     <list-row-slot-host
                       :list-slot="member.key"
-                      :row="entry.row"
                       :row-ref="rowSelectionValue(entry.row)"
                       :item-key="rowItemKey(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
                       :render-slot="slots['row-detail']!"
-                      :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
+                      :slot-props="{ ...rowRefSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
                     />
                   </td>
                 </tr>
@@ -2473,14 +2527,13 @@ useMemberOutput("firstItem", () => {
             <list-row-slot-host
               v-if="slots.card"
               :list-slot="member.key"
-              :row="entry.row"
               :row-ref="rowSelectionValue(entry.row)"
               :index="entry.rowIndex"
               :operations="rowOperationsFor(entry.row)"
               :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
               :render-slot="slots.card!"
               :slot-props="{
-                ...rowSlotProps(entry.row, entry.rowIndex),
+                ...rowActionsSlotProps(entry.row, entry.rowIndex),
                 selected: entry.key === chosenIdentity,
                 checked: checkedIdentityKeys.has(entry.key),
                 toggleCheck: (next?: boolean) => toggleChecked(entry.row, next ?? !checkedIdentityKeys.has(entry.key)),
@@ -2580,13 +2633,12 @@ useMemberOutput("firstItem", () => {
                     <list-row-slot-host
                       v-if="columnCellSlot(column.key)"
                       :list-slot="member.key"
-                      :row="entry.row"
                       :row-ref="rowSelectionValue(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
                       :render-slot="columnCellSlot(column.key)!"
-                      :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), column, value: rawRecordField(entry.row, column.key) }"
+                      :slot-props="cellSlotProps(entry.row, entry.rowIndex, column)"
                       :fallback-to-default="true"
                     >
                       <template v-for="(part, index) in cellSegments(entry.row, column.key, columnEmpty(column))" :key="index">
@@ -2670,13 +2722,12 @@ useMemberOutput("firstItem", () => {
                 <list-row-slot-host
                   v-if="hasActionsSlot"
                   :list-slot="member.key"
-                  :row="entry.row"
                   :row-ref="rowSelectionValue(entry.row)"
                   :index="entry.rowIndex"
                   :operations="rowOperationsFor(entry.row)"
                   :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
                   :render-slot="slots.actions!"
-                  :slot-props="rowSlotProps(entry.row, entry.rowIndex)"
+                  :slot-props="rowActionsSlotProps(entry.row, entry.rowIndex)"
                   :fallback-to-default="Boolean(rowActions && rowActions.items.length > 0)"
                 >
                   <ObjectListRowActions
@@ -2705,14 +2756,13 @@ useMemberOutput("firstItem", () => {
             >
               <list-row-slot-host
                 :list-slot="member.key"
-                :row="entry.row"
                 :row-ref="rowSelectionValue(entry.row)"
                 :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"
                 :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
                 :render-slot="slots['row-detail']!"
-                :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
+                :slot-props="{ ...rowRefSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
               />
             </div>
           </article>
@@ -2800,7 +2850,7 @@ useMemberOutput("firstItem", () => {
                 @keydown="onListItemKeydown(entry.row, $event)"
               >
                 <span v-if="$slots['item-leading']" class="sdk-object-list-item-leading" aria-hidden="true">
-                  <slot name="item-leading" v-bind="rowSlotProps(entry.row, entry.rowIndex)"></slot>
+                  <slot name="item-leading"></slot>
                 </span>
                 <span class="sdk-object-list-item-content">
                   <span class="sdk-object-list-item-head" :class="{ 'sdk-object-list-item-head-dot': statusStyle === 'dot' }">
@@ -2854,13 +2904,12 @@ useMemberOutput("firstItem", () => {
                 <list-row-slot-host
                   v-if="hasActionsSlot"
                   :list-slot="member.key"
-                  :row="entry.row"
                   :row-ref="rowSelectionValue(entry.row)"
                   :index="entry.rowIndex"
                   :operations="rowOperationsFor(entry.row)"
                   :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
                   :render-slot="slots.actions!"
-                  :slot-props="rowSlotProps(entry.row, entry.rowIndex)"
+                  :slot-props="rowActionsSlotProps(entry.row, entry.rowIndex)"
                   :fallback-to-default="Boolean(rowActions && rowActions.items.length > 0)"
                 >
                   <ObjectListRowActions
@@ -2889,14 +2938,13 @@ useMemberOutput("firstItem", () => {
             >
               <list-row-slot-host
                 :list-slot="member.key"
-                :row="entry.row"
                 :row-ref="rowSelectionValue(entry.row)"
                 :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"
                 :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
                 :render-slot="slots['row-detail']!"
-                :slot-props="{ ...rowSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
+                :slot-props="{ ...rowRefSlotProps(entry.row, entry.rowIndex), collapse: () => { expandedKey = null; } }"
               />
             </div>
           </li>

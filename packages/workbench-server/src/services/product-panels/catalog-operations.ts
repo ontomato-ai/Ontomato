@@ -367,6 +367,7 @@ function applicationAction<Input extends Record<string, unknown>>(
   name: "delete" | "grant" | "share" | "addEntry" | "updateEntry" | "deleteEntry",
   inputSchema: z.ZodType<Input>,
   run: (actor: PanelOperationHost["executor"], id: string, input: Input) => Promise<void>,
+  extra?: Pick<PanelWriteServerOperation, "unavailable">,
 ): PanelWriteServerOperation {
   const handlerRef = `applications.${name}`;
   return {
@@ -381,6 +382,7 @@ function applicationAction<Input extends Record<string, unknown>>(
     targetSchema: applicationTarget,
     inputSchema,
     resultSchema: noData,
+    ...(extra?.unavailable && { unavailable: extra.unavailable }),
     async targetLabel(host, { primaryKey }) {
       const record = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
       return localizedApplicationText(record.names, host.locale ?? "en") ?? record.id;
@@ -415,7 +417,24 @@ async function editEntries(
 
 const applicationOperations: readonly PanelWriteServerOperation[] = [
   applicationSave,
-  applicationAction("delete", noData, async ({ credentials }, id) => applicationCatalogueClient(credentials).remove(id)),
+  applicationAction(
+    "delete",
+    noData,
+    async ({ credentials }, id) => applicationCatalogueClient(credentials).remove(id),
+    {
+      async unavailable(host, { primaryKey }) {
+        try {
+          const detail = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
+          if (!detail.canMaintain) {
+            return { reason: tForLocale(host.locale ?? host.initiator.credentials.locale, "panels.productCatalog.application.readOnly") };
+          }
+          return undefined;
+        } catch {
+          return undefined;
+        }
+      },
+    },
+  ),
   applicationAction("grant", changeProductGrantRequestSchema, async ({ credentials }, id, input) => changeProductGrant(id, input, credentials)),
   applicationAction("share", changeProductDomainGrantRequestSchema, async ({ credentials }, id, { shared }) => {
     await changeProductDomainGrant(id, shared, credentials);

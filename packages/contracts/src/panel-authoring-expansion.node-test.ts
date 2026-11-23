@@ -577,3 +577,86 @@ test("customer ObjectType expands standard form/createForm, cross-member operati
   });
   assert.deepEqual(selfCardExpanded.projection.outputs.navigate, { kind: "object", objectType: "Student" });
 });
+
+test("cross-type collection reads declare rowType so ObjectList state.selected binds to the row object type", () => {
+  const applicationType = "platform:Application";
+  const panelType = "platform:ProductPanel";
+  const listComponent = {
+    componentId: "ObjectList",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectList",
+    role: "control" as const,
+    meaning: "Object list",
+    ports: { props: [], events: [], slots: [] },
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"] as ("panelRecordList" | "panelRecordQuery")[], required: false },
+    },
+    outputs: {
+      selected: { kind: "object" as const, objectType: "@binding" },
+      checked: { kind: "list" as const, items: { kind: "object" as const, objectType: "@binding" } },
+      listed: { kind: "list" as const, items: { kind: "object" as const, objectType: "@binding" } },
+    },
+  };
+  const appState = panelManifestSchema.parse({
+    state: {
+      selected: { type: { kind: "object", objectType: applicationType }, deepLink: true },
+      inspectedPanel: { type: { kind: "object", objectType: panelType }, deepLink: true },
+      checkedPanels: { type: { kind: "list", items: { kind: "object", objectType: panelType } } },
+    },
+    members: {},
+  }).state;
+  const appTable = {
+    objectTypes: {
+      [applicationType]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[applicationType].reads }),
+      [panelType]: platformTypeTableEntrySchema.parse({ reads: platformObjectTypes[panelType].reads }),
+    },
+  };
+  // Verify the owner read declares both rowType (Item 4) and typed scalar outputs (Item 2).
+  assert.equal(appTable.objectTypes[applicationType].reads?.usedPanels?.rowType, panelType);
+  assert.deepEqual(appTable.objectTypes[applicationType].reads?.record?.outputs, {
+    canMaintain: { kind: "scalar", type: "boolean" },
+    canEditEntries: { kind: "scalar", type: "boolean" },
+    canGrant: { kind: "scalar", type: "boolean" },
+    domainShared: { kind: "scalar", type: "boolean" },
+    openPath: { kind: "scalar", type: "string" },
+  });
+
+  const usedPanelsMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectList",
+    type: applicationType,
+    target: "selected",
+    data: { rows: "usedPanels" },
+    state: { selected: "inspectedPanel", checked: "checkedPanels" },
+  });
+  assert("component" in usedPanelsMember);
+  const expanded = expandPanelAuthoringMember("usedPanelsList", usedPanelsMember, {
+    state: appState,
+    components: [listComponent],
+    typeTable: appTable,
+  });
+  assert.deepEqual(expanded.projection.inputs.target, { kind: "object", objectType: applicationType });
+  assert.deepEqual(expanded.projection.outputs.selected, { kind: "object", objectType: panelType });
+  assert.deepEqual(expanded.projection.outputs.checked, { kind: "list", items: { kind: "object", objectType: panelType } });
+  assert.deepEqual(expanded.placement.outputs, {
+    selected: { state: "inspectedPanel" },
+    checked: { state: "checkedPanels" },
+  });
+
+  // Binding selected to the parent Application state must be rejected when rowType is ProductPanel.
+  const wrongSelection = panelAuthoringMemberSchema.parse({
+    component: "ObjectList",
+    type: applicationType,
+    target: "selected",
+    data: { rows: "usedPanels" },
+    state: { selected: "selected" },
+  });
+  assert("component" in wrongSelection);
+  assert.throws(
+    () => expandPanelAuthoringMember("usedPanelsList", wrongSelection, {
+      state: appState,
+      components: [listComponent],
+      typeTable: appTable,
+    }),
+    /State 'selected' cannot receive component output 'selected'/,
+  );
+});

@@ -1,0 +1,432 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createApp, defineComponent, h, ref } from "vue";
+import { createI18n } from "vue-i18n";
+import ElementPlus from "element-plus";
+import publicEn from "@ontomato/workbench-ui/locales/en";
+import type { DirectPanelManifest } from "@ontomato/contracts/panel-manifest";
+import type { DirectProjection } from "@ontomato/contracts/product-panels";
+import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
+import { APPLICATION, PRODUCT_PANEL, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { createDirectPanelInstance, type DirectPanelInstance, type PanelMemberReadRequest } from "../../../../../packages/apps-sdk/src/panel/direct";
+import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
+import { useListRowSlot } from "../../../../../packages/apps-sdk/src/panel/slot-context";
+import type { PanelFieldValue } from "../../../../../packages/apps-sdk/src/panel/state";
+import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
+import { noOperations } from "./panel-frame";
+
+/*
+ * Regression tests for the four official SDK component generality fixes:
+ * 1. Scoped counts (`total` strictly owner-reported, `loadedCount`, `filteredCount` only for complete lists).
+ * 2. Removed `ObjectHeader.outputFields`/`fields`; owner-declared named typed read outputs published on any member
+ *    reading that datum, plus `OperationButton.hideWhenUnavailable`.
+ * 3. No raw `row` record in `ObjectList` slots (`#item-leading`, `#cell-*`, `#actions`, `#row-detail`), `row-action`
+ *    events, or public `useListRowSlot()`.
+ * 4. Cross-type `rowType` selection on `ObjectList` (e.g. `platform:Application.usedPanels` -> `platform:ProductPanel`)
+ *    with native `state.selected` + `fallbackToFirst` across parent switches and zero `selectedKey`/`firstItem`.
+ */
+
+const meta = {
+  domainId: "d",
+  ownerId: "o",
+  revision: 1,
+  createdAt: "",
+  updatedAt: "",
+  editable: false,
+  visibility: "domain" as const,
+  description: "",
+};
+
+const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
+
+let cleanup: (() => void) | null = null;
+
+afterEach(() => {
+  cleanup?.();
+  cleanup = null;
+  document.body.innerHTML = "";
+});
+
+function mountTestPanel(options: {
+  manifest: DirectPanelManifest;
+  projections: Record<string, DirectProjection>;
+  members: string[];
+  initial?: Record<string, PanelFieldValue>;
+  messages?: Record<string, Record<string, string>>;
+  memberSlots?: (instance: DirectPanelInstance) => Record<string, Record<string, (props: Record<string, unknown>) => unknown>>;
+  memberListeners?: Record<string, Record<string, (...args: unknown[]) => void>>;
+  answer: (request: PanelMemberReadRequest) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>;
+}) {
+  const localeRef = ref("en");
+  const instance = createDirectPanelInstance(options.manifest, {
+    pageKey: "comp-fix-test",
+    url: () => "/comp-fix",
+    label: () => "CompFix",
+    initial: options.initial,
+    recordDraftCreated: async () => {},
+    text: createPanelText(options.messages ?? {}, localeRef, "en"),
+    ...noOperations,
+    readProjection: async (id) => options.projections[id]!,
+    read: async (request) => options.answer(request),
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const i18n = createI18n({
+    legacy: false,
+    locale: "en",
+    fallbackLocale: "en",
+    messages: { en: publicEn },
+  });
+  const slotsByMember = options.memberSlots?.(instance) ?? {};
+  const app = createApp({
+    render: () =>
+      h(
+        "div",
+        options.members.map((member) => {
+          const listeners = options.memberListeners?.[member] ?? {};
+          return h(PanelMember, { instance, member, ...listeners }, slotsByMember[member]);
+        }),
+      ),
+  });
+  app.use(i18n).use(ElementPlus).mount(container);
+  cleanup = () => {
+    app.unmount();
+    container.remove();
+  };
+  return { instance, container };
+}
+
+describe("official component generality fixes (Items 1-4)", () => {
+  it("Item 1: distinguishes owner total, loadedCount, and complete-list filteredCount without faking query totals", async () => {
+    const pagedQueryProjection: DirectProjection = {
+      ...meta,
+      id: "apps-paged",
+      name: "Paged Apps",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: { columns: [{ key: "label", labelKey: "col.name" }] },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: APPLICATION } }, read: "query", params: {} } },
+    };
+    const completeListProjection: DirectProjection = {
+      ...meta,
+      id: "rels-list",
+      name: "Relations",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { search: { kind: "scalar", type: "string" } },
+      outputs: {},
+      config: { searchable: false, columns: [{ key: "label", labelKey: "col.name" }] },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: RELATIONSHIP } }, read: "list", params: {} } },
+    };
+    const manifest: DirectPanelManifest = {
+      state: { search: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false } },
+      members: {
+        paged: { target: { projectionId: "apps-paged" } },
+        complete: { target: { projectionId: "rels-list" }, inputs: { search: { state: "search" } } },
+      },
+    };
+
+    const { instance, container } = mountTestPanel({
+      manifest,
+      projections: { "apps-paged": pagedQueryProjection, "rels-list": completeListProjection },
+      members: ["paged", "complete"],
+      messages: { en: { "col.name": "Name" } },
+      answer(request) {
+        if (request.memberPath.at(-1)?.member === "paged") {
+          // Owner omits total: must NEVER substitute rows.length (2) as total or filteredCount.
+          return ready({
+            rows: [
+              { primaryKey: "a-1", label: "CRM", fields: {} },
+              { primaryKey: "a-2", label: "ERP", fields: {} },
+            ],
+            nextCursor: "page-2",
+          });
+        }
+        return ready([
+          { primaryKey: "r-1", label: "Owns", fields: {} },
+          { primaryKey: "r-2", label: "DependsOn", fields: {} },
+          { primaryKey: "r-3", label: "Contains", fields: {} },
+        ]);
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(instance.outputs.paged?.loadedCount).toBe(2);
+      expect(instance.outputs.complete?.filteredCount).toBe(3);
+    });
+    expect(instance.outputs.paged?.total ?? null).toBeNull();
+    expect(instance.outputs.paged?.filteredCount ?? null).toBeNull();
+    expect(instance.outputs.paged?.firstItem).toBeUndefined();
+    expect(container.querySelector(".sdk-object-list-page-total")).toBeNull();
+
+    // Complete list reports total=3, loadedCount=3, filteredCount=1 after local search.
+    expect(instance.outputs.complete?.total).toBe(3);
+    expect(instance.outputs.complete?.loadedCount).toBe(3);
+    instance.state.set("search", "Owns");
+    await vi.waitFor(() => expect(instance.outputs.complete?.filteredCount).toBe(1));
+    expect(instance.outputs.complete?.total).toBe(3);
+    expect(instance.outputs.complete?.loadedCount).toBe(3);
+  });
+
+  it("Item 2: removes ObjectHeader fields bag, publishes owner-declared typed read outputs on any member, and hides unavailable OperationButton", async () => {
+    const headerProjection: DirectProjection = {
+      ...meta,
+      id: "app-header",
+      name: "App Header",
+      componentId: "@ontomato/sdk:ObjectHeader",
+      inputs: { target: { kind: "object", objectType: APPLICATION } },
+      outputs: {},
+      config: { subtitle: "", outputFields: ["secretField"] },
+      data: { record: { source: { object: { input: "target" } }, read: "record", params: {} } },
+    };
+    const summaryProjection: DirectProjection = {
+      ...meta,
+      id: "app-summary",
+      name: "App Summary",
+      componentId: "@ontomato/sdk:ObjectSummary",
+      inputs: { target: { kind: "object", objectType: APPLICATION } },
+      outputs: {},
+      config: { fields: ["id"] },
+      data: { record: { source: { object: { input: "target" } }, read: "record", params: {} } },
+    };
+    const deleteBtnProjection: DirectProjection = {
+      ...meta,
+      id: "app-delete",
+      name: "Delete App",
+      componentId: "@ontomato/sdk:OperationButton",
+      inputs: { target: { kind: "object", objectType: APPLICATION } },
+      outputs: {},
+      config: { operation: "delete", hideWhenUnavailable: true, type: "danger" },
+      data: {},
+      operations: { delete: { operation: { kind: "PlatformOperation", id: "applications.delete" }, target: { input: "target" } } },
+    };
+    const manifest: DirectPanelManifest = {
+      state: { selected: { type: { kind: "object", objectType: APPLICATION }, personal: false, deepLink: true, external: false } },
+      members: {
+        header: { target: { projectionId: "app-header" }, inputs: { target: { state: "selected" } } },
+        summary: { target: { projectionId: "app-summary" }, inputs: { target: { state: "selected" } } },
+        deleteApp: { target: { projectionId: "app-delete" }, inputs: { target: { state: "selected" } } },
+      },
+    };
+
+    const { instance, container } = mountTestPanel({
+      manifest,
+      projections: { "app-header": headerProjection, "app-summary": summaryProjection, "app-delete": deleteBtnProjection },
+      members: ["header", "summary", "deleteApp"],
+      initial: { selected: { className: APPLICATION, primaryKey: "app-1" } },
+      answer(request) {
+        if (request.operations) {
+          return ready({
+            delete: {
+              kind: "action",
+              handlerRef: "applications.delete",
+              label: "Delete",
+              effect: "write",
+              target: { source: "input", input: "application" },
+              inputSchema: {},
+              resultSchema: {},
+              batch: false,
+              unavailable: { reason: "Read-only" },
+            },
+          });
+        }
+        return ready({
+          primaryKey: "app-1",
+          className: APPLICATION,
+          label: "Ontology",
+          fields: { id: "app-1", secretField: "should-not-leak" },
+          outputs: {
+            canMaintain: false,
+            canEditEntries: false,
+            canGrant: true,
+            domainShared: true,
+            openPath: "/ontology/graph",
+            undeclaredBackdoor: "must-be-ignored",
+          },
+        });
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(instance.outputs.header?.canGrant).toBe(true);
+      expect(instance.outputs.summary?.openPath).toBe("/ontology/graph");
+    });
+    // ObjectHeader no longer exposes `fields` bag even if legacy `outputFields` is present in config.
+    expect(instance.outputs.header?.fields).toBeUndefined();
+    // Undeclared keys in record.outputs are never published.
+    expect(instance.outputs.header?.undeclaredBackdoor).toBeUndefined();
+    // Declared typed outputs are published identically on ObjectSummary (no ObjectHeader required).
+    expect(instance.outputs.summary?.canMaintain).toBe(false);
+    expect(instance.outputs.summary?.domainShared).toBe(true);
+    // OperationButton with hideWhenUnavailable hides itself when owner reports unavailable.
+    expect(container.querySelector(".sdk-operation-button")).toBeNull();
+  });
+
+  it("Item 3: keeps raw row out of ObjectList slots, row-action events, and useListRowSlot()", async () => {
+    let observedLeadingArgs: unknown[] | null = null;
+    let observedActionsScope: Record<string, unknown> | null = null;
+    let observedSlotContextKeys: string[] = [];
+    const rowActionPayloads: Record<string, unknown>[] = [];
+
+    const ContextProbe = defineComponent({
+      setup() {
+        const ctx = useListRowSlot();
+        observedSlotContextKeys = ctx ? Object.keys(ctx) : [];
+        return () => h("span", { class: "probe-ref" }, ctx?.ref.value.primaryKey ?? "");
+      },
+    });
+
+    const listProjection: DirectProjection = {
+      ...meta,
+      id: "compact-rels",
+      name: "Relations",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {},
+      outputs: {},
+      config: {
+        layout: "list",
+        rowActions: {
+          items: [{ kind: "local", id: "inspect", labelKey: "act.inspect" }],
+        },
+      },
+      data: { rows: { source: { type: { kind: "PlatformObjectType", id: RELATIONSHIP } }, read: "list", params: {} } },
+    };
+    const manifest: DirectPanelManifest = {
+      state: {},
+      members: { list: { target: { projectionId: "compact-rels" } } },
+    };
+
+    const { container } = mountTestPanel({
+      manifest,
+      projections: { "compact-rels": listProjection },
+      members: ["list"],
+      messages: { en: { "act.inspect": "Inspect" } },
+      memberListeners: {
+        list: {
+          onRowAction: (payload: unknown) => rowActionPayloads.push(payload as Record<string, unknown>),
+        },
+      },
+      memberSlots: () => ({
+        list: {
+          "item-leading": (...args: unknown[]) => {
+            observedLeadingArgs = args;
+            return h("span", { class: "lead-dot" }, "•");
+          },
+          actions: (scope: Record<string, unknown>) => {
+            observedActionsScope = scope;
+            return [h(ContextProbe)];
+          },
+        },
+      }),
+      answer: () => ready([{ primaryKey: "rel-1", label: "HasPart", fields: { secret: "hidden" } }]),
+    });
+
+    await vi.waitFor(() => expect(container.querySelector(".probe-ref")?.textContent).toBe("rel-1"));
+    // #item-leading receives no business row payload.
+    expect(observedLeadingArgs).toEqual([{}]);
+    // #actions receives ref/index/operations/runOperation without raw row.
+    expect(observedActionsScope).not.toBeNull();
+    expect("row" in observedActionsScope!).toBe(false);
+    expect(observedActionsScope!.ref).toEqual({ className: RELATIONSHIP, primaryKey: "rel-1" });
+    // Public useListRowSlot() exposes no `row` property.
+    expect(observedSlotContextKeys).not.toContain("row");
+    expect(observedSlotContextKeys).toContain("ref");
+
+    // Verify local row-action event emits strictly { id, ref, index } without row.
+    cleanup?.();
+    const { container: c2 } = mountTestPanel({
+      manifest,
+      projections: { "compact-rels": listProjection },
+      members: ["list"],
+      messages: { en: { "act.inspect": "Inspect" } },
+      memberListeners: {
+        list: {
+          onRowAction: (payload: unknown) => rowActionPayloads.push(payload as Record<string, unknown>),
+        },
+      },
+      answer: () => ready([{ primaryKey: "rel-1", label: "HasPart", fields: { secret: "hidden" } }]),
+    });
+    await vi.waitFor(() => expect(c2.querySelector(".sdk-object-list-row-actions button")).not.toBeNull());
+    c2.querySelector<HTMLButtonElement>(".sdk-object-list-row-actions button")!.click();
+    expect(rowActionPayloads).toEqual([
+      { id: "inspect", ref: { className: RELATIONSHIP, primaryKey: "rel-1" }, index: 0 },
+    ]);
+    expect("row" in rowActionPayloads[0]!).toBe(false);
+  });
+
+  it("Item 4: binds cross-type ObjectList selection to ProductPanel via read rowType with fallbackToFirst across parent switches", async () => {
+    const usedPanelsProjection: DirectProjection = {
+      ...meta,
+      id: "used-panels",
+      name: "Used Panels",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: { target: { kind: "object", objectType: APPLICATION } },
+      outputs: { selected: { kind: "object", objectType: PRODUCT_PANEL } },
+      config: { layout: "list", fallbackToFirst: true },
+      data: { rows: { source: { object: { input: "target" } }, read: "usedPanels", params: {} } },
+    };
+    const manifest: DirectPanelManifest = {
+      state: {
+        selected: { type: { kind: "object", objectType: APPLICATION }, personal: false, deepLink: true, external: false },
+        inspectedPanel: { type: { kind: "object", objectType: PRODUCT_PANEL }, personal: false, deepLink: true, external: false },
+      },
+      members: {
+        usedPanelsList: {
+          target: { projectionId: "used-panels" },
+          inputs: { target: { state: "selected" } },
+          outputs: { selected: { state: "inspectedPanel" } },
+        },
+      },
+    };
+
+    const { instance, container } = mountTestPanel({
+      manifest,
+      projections: { "used-panels": usedPanelsProjection },
+      members: ["usedPanelsList"],
+      initial: { selected: { className: APPLICATION, primaryKey: "app-a" } },
+      answer(request) {
+        const appId = (request.inputs.target as { primaryKey: string }).primaryKey;
+        if (appId === "app-a") {
+          // Intentionally omit `className` on row records to prove ObjectList resolves it from read `rowType`.
+          return ready([
+            { primaryKey: "panel-a1", label: "Graph Panel", fields: {} },
+            { primaryKey: "panel-a2", label: "Detail Panel", fields: {} },
+          ]);
+        }
+        return ready([{ primaryKey: "panel-b1", label: "Analytics Panel", fields: {} }]);
+      },
+    });
+
+    // fallbackToFirst automatically writes full { className: "platform:ProductPanel", primaryKey } ref!
+    await vi.waitFor(() => {
+      expect(instance.state.values.value.inspectedPanel).toEqual({
+        className: PRODUCT_PANEL,
+        primaryKey: "panel-a1",
+      });
+    });
+    expect(instance.outputs.usedPanelsList?.selectedLabel).toBe("Graph Panel");
+    expect(container.querySelector(".sdk-object-list-item-btn.chosen")?.textContent).toContain("Graph Panel");
+
+    // Clicking second item updates inspectedPanel directly with ProductPanel ref.
+    const buttons = container.querySelectorAll<HTMLButtonElement>(".sdk-object-list-item-btn");
+    buttons[1]!.click();
+    await vi.waitFor(() => {
+      expect(instance.state.values.value.inspectedPanel).toEqual({
+        className: PRODUCT_PANEL,
+        primaryKey: "panel-a2",
+      });
+    });
+
+    // Switching parent Application clears inspectedPanel and triggers fallbackToFirst for the new parent's rows.
+    instance.state.setState({
+      selected: { className: APPLICATION, primaryKey: "app-b" },
+      inspectedPanel: null,
+    });
+    await vi.waitFor(() => {
+      expect(instance.state.values.value.inspectedPanel).toEqual({
+        className: PRODUCT_PANEL,
+        primaryKey: "panel-b1",
+      });
+    });
+    expect(instance.outputs.usedPanelsList?.selectedLabel).toBe("Analytics Panel");
+  });
+});

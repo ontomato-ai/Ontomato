@@ -2,7 +2,6 @@
 import { computed, inject, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
-import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
@@ -78,13 +77,10 @@ const props = withDefaults(
     maxVisibleOperations?: number;
     /** Optional fallback title shown quietly while the bound record is loading, forbidden, or missing (suppresses the inline DataState box). */
     fallbackTitle?: string;
-    /** Optional list of record field names to publish as read-only panel outputs (`usePanelOutput`) for layout/visibility wiring. */
-    outputFields?: readonly string[];
   }>(),
   {
     maxVisibleOperations: 2,
     fallbackTitle: undefined,
-    outputFields: undefined,
   },
 );
 
@@ -262,26 +258,6 @@ if (member.value) {
   useMemberOutput("label", () => resolvedTitle.value || null);
   useMemberOutput("status", () => recordData.value?.status ?? (record.value ? "ready" : null));
   useMemberOutput("errorMessage", () => (recordData.value?.status === "error" ? recordData.value.message : null));
-  useMemberOutput("fields", () => {
-    const keys = props.outputFields;
-    const current = record.value;
-    if (!keys?.length || !current) return null;
-    const out: Record<string, RuntimeJsonValue> = {};
-    for (const fieldKey of keys) {
-      if (!fieldKey) continue;
-      const raw = rawRecordField(current, fieldKey);
-      if (raw === undefined || raw === null) {
-        out[fieldKey] = null;
-      } else if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
-        out[fieldKey] = raw;
-      } else if (typeof raw === "object" && "kind" in raw && raw.kind === "reference") {
-        out[fieldKey] = { className: raw.className, primaryKey: raw.primaryKey, ...(raw.label ? { label: raw.label } : {}) };
-      } else {
-        out[fieldKey] = displayFieldText(raw, locale.value, t);
-      }
-    }
-    return out;
-  });
 }
 
 function handleMoreCommand(command: string | number | Record<string, unknown>) {

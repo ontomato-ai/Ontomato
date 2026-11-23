@@ -201,7 +201,7 @@
             <path d="M6 5h5v5" />
           </svg>
         </sdk-button>
-        <projection v-if="canMaintain" slot="deleteApp" @done="onDeleteDone"></projection>
+        <projection slot="deleteApp" @done="onDeleteDone"></projection>
       </template>
     </page-header>
 
@@ -297,7 +297,7 @@
         <div class="apps-assets-grid">
           <section class="apps-card">
             <h2 class="apps-card-title">{{ t('assets.usedPanels', { count: usedPanelsTotal }) }}</h2>
-            <projection slot="usedPanelsList" :selected-key="inspectedPanelId" @choose="onChooseUsedPanel"></projection>
+            <projection slot="usedPanelsList"></projection>
           </section>
 
           <section class="apps-card">
@@ -329,7 +329,7 @@
         <div class="apps-share-bar">
           <div class="apps-share-left">
             <strong class="apps-card-title">{{ t('grants.shareTitle') }}</strong>
-            <span class="apps-muted">{{ domainShared ? t('grants.sharedDesc') : t('grants.privateDesc') }}</span>
+            <span class="apps-muted"><projection slot="shareStatusDesc"></projection></span>
           </div>
           <div class="apps-share-actions">
             <projection v-if="domainShared" slot="shareDisable" @done="onShareDone"></projection>

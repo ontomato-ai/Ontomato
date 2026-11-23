@@ -11,7 +11,6 @@ import {
   asTone,
   extractMetricCell,
   formatTypedNumber,
-  sumRecordField,
   unwrapJsonField,
   useOptionalMemberDatum,
   useProjectionConfig,
@@ -41,8 +40,6 @@ const props = withDefaults(
     value?: string | number | null;
     /** Column key on a bound metric `result` (defaults to the first column) or field key on a bound `record`. */
     field?: string;
-    /** Optional field key to sum across `rows` or `objects` instead of counting records. */
-    sumField?: string;
     /** Zero-based row index when reading from a bound metric `result` (`metricOutput`) table. Defaults to `0`. */
     rowIndex?: number;
     /** Fallback unit suffix shown beside the numeral (for example `"%"`, `"ms"`). */
@@ -76,7 +73,6 @@ const props = withDefaults(
     labels: undefined,
     value: undefined,
     field: undefined,
-    sumField: undefined,
     rowIndex: 0,
     unit: undefined,
     unitKey: undefined,
@@ -126,7 +122,6 @@ function normalizeItem(raw: unknown): MetricCardItem | null {
     labels: readConfigStringMap(rec, "labels"),
     value: typeof rec.value === "string" || typeof rec.value === "number" || rec.value === null ? rec.value : undefined,
     field: readConfigString(rec, "field"),
-    sumField: readConfigString(rec, "sumField", "sum-field"),
     rowIndex: typeof rec.rowIndex === "number" ? rec.rowIndex : undefined,
     unit: readConfigString(rec, "unit"),
     unitKey: readConfigString(rec, "unitKey", "unit-key"),
@@ -154,7 +149,6 @@ const configuredItems = computed<readonly MetricCardItem[]>(() => {
       labels: props.labels ?? readConfigStringMap(rawConfig.value, "labels"),
       value: props.value,
       field: props.field ?? readConfigString(rawConfig.value, "field"),
-      sumField: props.sumField ?? readConfigString(rawConfig.value, "sumField", "sum-field"),
       rowIndex: props.rowIndex,
       unit: props.unit ?? readConfigString(rawConfig.value, "unit"),
       unitKey: props.unitKey ?? readConfigString(rawConfig.value, "unitKey", "unit-key"),
@@ -216,26 +210,16 @@ const parsedSource = computed<ParsedSource>(() => {
           : translate("platform.dataUnreachable")),
       };
     }
-    const rows: PlatformObjectRecord[] = response.items.map((item) => {
-      const fields: PlatformObjectRecord["fields"] = item.detail !== undefined ? { detail: item.detail } : {};
-      return {
-        primaryKey: item.node.primaryKey,
-        className: item.node.className,
-        label: item.label,
-        ...(item.detail !== undefined ? { subtitle: item.detail } : {}),
-        fields,
-      };
-    });
-    return { state: "ready", rows, total: response.total, hasTotal: true };
+    const hasTotal = typeof response.total === "number" && Number.isFinite(response.total);
+    return { state: "ready", total: hasTotal ? response.total : undefined, hasTotal };
   }
   if (Array.isArray(value)) {
     const rows = value as unknown as readonly PlatformObjectRecord[];
-    return { state: "ready", rows, total: rows.length, hasTotal: false };
+    return { state: "ready", total: rows.length, hasTotal: true };
   }
   const query = value as unknown as PanelRecordQuery;
-  const rows = Array.isArray(query?.rows) ? (query.rows as unknown as readonly PlatformObjectRecord[]) : [];
   const hasTotal = typeof query?.total === "number" && Number.isFinite(query.total);
-  return { state: "ready", rows, total: hasTotal ? query.total! : rows.length, hasTotal };
+  return { state: "ready", total: hasTotal ? query.total! : undefined, hasTotal };
 });
 
 function formatMetricDisplay(raw: unknown, format?: TypedNumberFormat): string {
@@ -321,11 +305,9 @@ const renderedItems = computed<readonly RenderedMetricItem[]>(() => {
       if (!item.tone && src.record.tones?.[key]) tone = asTone(src.record.tones[key]) ?? "default";
       display = formatMetricDisplay(raw, item.numberFormat);
     } else {
-      const rows = src.rows ?? [];
-      const numeric = item.sumField
-        ? sumRecordField(rows, item.sumField)
-        : (src.hasTotal ? (src.total ?? rows.length) : rows.length);
-      display = formatTypedNumber(numeric, locale.value, item.numberFormat);
+      display = src.hasTotal && src.total !== undefined
+        ? formatTypedNumber(src.total, locale.value, item.numberFormat)
+        : props.emptyText;
     }
 
     return { label, display, unit, description, tone };

@@ -372,15 +372,20 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       messages: { en: { "col.app": "Application", "col.status": "Status" } },
       memberSlots: (inst) => ({
         apps: {
-          "cell-label": (slotProps) =>
-            h("span", { class: "custom-app-cell" }, `Custom:${(slotProps.row as { label: string }).label}`),
-          "row-detail": (slotProps) => [
-            h(PanelMember, {
-              instance: inst,
-              member: "detail",
-              inputs: { app: slotProps.ref as { className: string; primaryKey: string } },
-            }),
-          ],
+          "cell-label": (slotProps) => {
+            expect("row" in slotProps).toBe(false);
+            return h("span", { class: "custom-app-cell" }, `Custom:${String(slotProps.displayText)}`);
+          },
+          "row-detail": (slotProps) => {
+            expect("row" in slotProps).toBe(false);
+            return [
+              h(PanelMember, {
+                instance: inst,
+                member: "detail",
+                inputs: { app: slotProps.ref as { className: string; primaryKey: string } },
+              }),
+            ];
+          },
         },
       }),
       answer(request) {

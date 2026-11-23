@@ -2,7 +2,6 @@
 import { Comment, Fragment, Text, computed, defineComponent, provide, type PropType, type Slot, type VNode } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
-import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { listRowSlotKey, type ListRowSlotOperation } from "../panel/slot-context";
 import type { PanelObjectRef } from "../panel/state";
 
@@ -19,15 +18,14 @@ function hasRenderableVNodes(vnodes: readonly VNode[]): boolean {
 
 /**
  * Provides `listRowSlotKey` around row-scoped Vue slots (`#cell-<key>`, `#cell`, `#actions`, `#row-detail`, `#card`)
- * rendered inside `ObjectList` so author slot components and nested `<Projection>`s can access the current row,
- * its object reference, and declared row operations without hand-assembling targets.
+ * rendered inside `ObjectList` so author slot components and nested `<Projection>`s can access the row's typed object
+ * reference and declared row operations without exposing the raw row record.
  */
 export default defineComponent({
   name: "ListRowSlotHost",
   inheritAttrs: false,
   props: {
     listSlot: { type: String, required: true },
-    row: { type: Object as PropType<PlatformObjectRecord>, required: true },
     rowRef: { type: Object as PropType<PanelObjectRef>, required: true },
     itemKey: { type: [String, Object] as PropType<PanelMemberItemKey>, default: undefined },
     index: { type: Number, required: true },
@@ -48,7 +46,6 @@ export default defineComponent({
   setup(props, { slots }) {
     provide(listRowSlotKey, {
       listSlot: props.listSlot,
-      row: computed(() => props.row),
       ref: computed(() => props.rowRef),
       itemKey: computed(() => props.itemKey ?? props.rowRef),
       index: computed(() => props.index),

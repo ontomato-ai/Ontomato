@@ -61,22 +61,25 @@ const ApplicationDetailPanel = {
     });
     const grantPrincipalId = computed(() => values.value.grantPrincipalId ?? "");
 
-    // Read-only projection outputs only (zero usePanelData calls).
+    // Read-only projection outputs only (zero usePanelData calls, zero outputFields/fields bag).
     const recordStatus = usePanelOutput("headerTitle", "status");
     const recordError = usePanelOutput("headerTitle", "errorMessage");
-    const headerFields = usePanelOutput("headerTitle", "fields");
+    const canMaintainOutput = usePanelOutput("headerTitle", "canMaintain");
+    const canEditEntriesOutput = usePanelOutput("headerTitle", "canEditEntries");
+    const canGrantOutput = usePanelOutput("headerTitle", "canGrant");
+    const openPathOutput = usePanelOutput("headerTitle", "openPath");
+    const domainSharedOutput = usePanelOutput("headerTitle", "domainShared");
 
     const entryTotalOutput = usePanelOutput("entriesList", "total");
     const usedPanelsTotalOutput = usePanelOutput("usedPanelsList", "total");
-    const usedPanelsFirstOutput = usePanelOutput("usedPanelsList", "firstItem");
     const usedPanelsSelectedLabel = usePanelOutput("usedPanelsList", "activeLabel");
 
     const recordReady = computed(() => recordStatus.value === "ready");
-    const canMaintain = computed(() => headerFields.value?.canMaintain === true);
-    const canEditEntries = computed(() => headerFields.value?.canEditEntries === true);
-    const canGrant = computed(() => headerFields.value?.canGrant === true);
-    const openPath = computed(() => (typeof headerFields.value?.openPath === "string" ? headerFields.value.openPath : ""));
-    const domainShared = computed(() => headerFields.value?.domainShared === true);
+    const canMaintain = computed(() => canMaintainOutput.value === true);
+    const canEditEntries = computed(() => canEditEntriesOutput.value === true);
+    const canGrant = computed(() => canGrantOutput.value === true);
+    const openPath = computed(() => (typeof openPathOutput.value === "string" ? openPathOutput.value : ""));
+    const domainShared = computed(() => domainSharedOutput.value === true);
 
     const entryTotal = computed(() => (typeof entryTotalOutput.value === "number" ? entryTotalOutput.value : 0));
     const usedPanelsTotal = computed(() => (typeof usedPanelsTotalOutput.value === "number" ? usedPanelsTotalOutput.value : 0));
@@ -134,19 +137,6 @@ const ApplicationDetailPanel = {
       ([ready, allowed]) => {
         if (ready && !allowed && tabModel.value === "grants") {
           tabModel.value = "identity";
-        }
-      },
-      { immediate: true },
-    );
-
-    // Auto-select the first referenced panel when the Panels & Projections tab loads.
-    watch(
-      [tabModel, usedPanelsFirstOutput],
-      ([tab, first]) => {
-        if (tab !== "assets" || inspectedPanelId.value || !first || typeof first !== "object") return;
-        const primaryKey = typeof first.primaryKey === "string" ? first.primaryKey : "";
-        if (primaryKey) {
-          instance.state.set("inspectedPanel", { className: PANEL, primaryKey });
         }
       },
       { immediate: true },
@@ -224,11 +214,6 @@ const ApplicationDetailPanel = {
       if (id === "edit" && ref?.primaryKey) {
         instance.state.setState({ entriesView: "list", editingEntryId: ref.primaryKey });
       }
-    }
-
-    function onChooseUsedPanel(ref) {
-      if (!ref?.primaryKey) return;
-      instance.state.set("inspectedPanel", { className: PANEL, primaryKey: ref.primaryKey });
     }
 
     async function onDeleteDone(outcome) {
@@ -336,7 +321,6 @@ const ApplicationDetailPanel = {
       openAddEntry,
       toggleEntriesView,
       onEntryRowAction,
-      onChooseUsedPanel,
       onDeleteDone,
       onShareDone,
       openGrantDialog,

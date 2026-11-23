@@ -3,7 +3,6 @@ import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values"
 import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
-import type { PlatformObjectRecord } from "./platform-objects";
 import type { PanelObjectRef } from "./state";
 
 /**
@@ -36,12 +35,11 @@ export interface ListRowSlotOperation {
 
 /**
  * Context provided by `ObjectList` inside row-scoped Vue slots (`#cell-<key>`, `#cell`, `#actions`, `#row-detail`, `#card`).
- * Both author-registered slot components and nested `<Projection>`s placed inside these slots can read the current row,
- * its object reference, and invoke declared row operations without hand-assembling targets.
+ * Both author-registered slot components and nested `<Projection>`s placed inside these slots can read the current row's
+ * typed object reference and invoke declared row operations without receiving the raw row record.
  */
 export interface ListRowSlotContext {
   readonly listSlot: string;
-  readonly row: ComputedRef<PlatformObjectRecord>;
   readonly ref: ComputedRef<PanelObjectRef>;
   readonly itemKey: ComputedRef<PanelMemberItemKey>;
   readonly index: ComputedRef<number>;

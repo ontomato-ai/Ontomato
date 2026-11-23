@@ -13,8 +13,6 @@ export interface MetricCardItem {
   readonly value?: string | number | null;
   /** Column key on a bound metric `result` (defaults to the first column) or field key on a bound `record`. */
   readonly field?: string;
-  /** Field key to sum across `rows` or `objects` instead of counting records. */
-  readonly sumField?: string;
   /** Zero-based row index when reading from a bound metric `result` table. Defaults to `0`. */
   readonly rowIndex?: number;
   /** Fallback unit suffix shown beside the numeral (for example `"%"`, `"ms"`). */

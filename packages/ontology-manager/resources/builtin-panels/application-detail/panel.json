@@ -86,14 +86,7 @@
           "record": "record"
         },
         "config": {
-          "subtitle": "",
-          "outputFields": [
-            "canMaintain",
-            "canEditEntries",
-            "canGrant",
-            "openPath",
-            "domainShared"
-          ]
+          "subtitle": ""
         },
         "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a08"
       },
@@ -316,6 +309,9 @@
         "data": {
           "rows": "usedPanels"
         },
+        "state": {
+          "selected": "inspectedPanel"
+        },
         "config": {
           "layout": "list",
           "searchable": false,
@@ -523,6 +519,27 @@
         },
         "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a13"
       },
+      "shareStatusDesc": {
+        "component": "TypedValue",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "domainShared",
+          "kind": "text",
+          "valueMap": {
+            "true": {
+              "labelKey": "grants.sharedDesc"
+            },
+            "false": {
+              "labelKey": "grants.privateDesc"
+            }
+          }
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a14"
+      },
       "deleteApp": {
         "component": "OperationButton",
         "type": "platform:Application",
@@ -531,7 +548,8 @@
         "config": {
           "type": "danger",
           "plain": true,
-          "icon": "trash"
+          "icon": "trash",
+          "hideWhenUnavailable": true
         },
         "id": "builtin-product-6391d99c-9f5a-4f5e-8958-efc070e8c5f2"
       }

@@ -321,6 +321,17 @@ export function directReadDeclaration(projection: DirectProjectionPorts, data: D
   return declaration?.source === sourceKind ? declaration : undefined;
 }
 
+/**
+ * Resolve the object type of each row returned by a collection read: prefers the read declaration's explicit `rowType`
+ * (for cross-type child collections such as `platform:Application.usedPanels` -> `platform:ProductPanel`), falling back
+ * to the read's owner object type.
+ */
+export function directReadRowType(projection: DirectProjectionPorts, data: DirectProjectionData): string | undefined {
+  const declaration = directReadDeclaration(projection, data);
+  if (declaration?.rowType) return declaration.rowType;
+  return projectionReadReference(projection, data.source)?.id;
+}
+
 /** The named key is known either to the fixed signature or to the resolved owner object. */
 export function panelReadParameterId(declaration: PlatformReadDeclaration, name: string): PanelReadParameterId | undefined {
   return declaration.parameterMode === "owner" ? declaration.parameter : declaration.params[name];
@@ -490,6 +501,11 @@ export const panelRecordSchema = z.object({
   /** Display field keys (including label and subtitle). Omit this property when nothing matched. */
   highlights: z.record(z.array(panelTextHighlightRangeSchema).min(1))
     .refine(fields => Object.keys(fields).length > 0, "Omit highlights when there are no matches").optional(),
+  /**
+   * Owner-declared scalar read-only outputs for this record (for example permission conclusions or navigation paths).
+   * The runtime publishes only keys explicitly declared in the read's `outputs` contract.
+   */
+  outputs: z.record(panelRecordFieldScalarSchema).optional(),
 }).strict();
 export type PanelRecord = z.infer<typeof panelRecordSchema>;
 export const panelRecordListSchema = z.array(panelRecordSchema);

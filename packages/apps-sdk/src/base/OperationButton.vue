@@ -68,8 +68,10 @@ const props = withDefaults(
     size?: "small" | "default";
     /** Optional external disabled override (for example while a bound state input is empty). */
     disabled?: boolean;
+    /** When true, hides the button instead of rendering a disabled state or notice when the owner marks this operation unavailable or unadmitted. */
+    hideWhenUnavailable?: boolean;
   }>(),
-  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false },
+  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, labelKey: undefined, size: "default", disabled: false, hideWhenUnavailable: false },
 );
 
 const emit = defineEmits<{
@@ -162,6 +164,17 @@ watch(targetKey, () => {
   reset();
 });
 
+const hiddenByAvailability = computed(() => {
+  if (!props.hideWhenUnavailable) return false;
+  if (operations.value.status === "loading" || operations.value.status === "forbidden" || operations.value.status === "empty") {
+    return true;
+  }
+  if (operations.value.status === "ready") {
+    return !descriptor.value || Boolean(descriptor.value.unavailable);
+  }
+  return false;
+});
+
 const ready = computed(() =>
   !props.disabled && isOperationReady(descriptor.value, targetInfo.value, running.value),
 );
@@ -173,7 +186,7 @@ function onTriggerClick() {
 </script>
 
 <template>
-  <div class="sdk-operation-button">
+  <div v-if="!hiddenByAvailability" class="sdk-operation-button">
     <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
     <!-- A removal is drawn quiet unless `plain` requests a tinted bordered button; the owner still decides and confirms it. -->
     <el-button

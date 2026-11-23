@@ -6,9 +6,4 @@ export interface ObjectCountItem {
   readonly labelKey?: string;
   /** Locale-keyed unit labels (e.g. `{ en: "Object types", de: "Objekttypen" }`) used when `labelKey` is omitted. */
   readonly labels?: Readonly<Record<string, string>>;
-  /**
-   * Optional field key on each record to sum instead of counting rows. Supports numbers, numeric strings, arrays
-   * (summed by length), and `{ kind: "json", value: ... }` field wrappers (array length or finite number).
-   */
-  readonly sumField?: string;
 }

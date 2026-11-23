@@ -76,17 +76,20 @@
           "rows": "list"
         },
         "config": {
-          "items": [
-            {
-              "label": "对象类型"
-            },
-            {
-              "label": "属性",
-              "sumField": "attributeCount"
-            }
-          ]
+          "label": "对象类型"
         },
         "id": "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2a"
+      },
+      "attributeStats": {
+        "component": "ObjectCount",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": "list"
+        },
+        "config": {
+          "label": "属性"
+        },
+        "id": "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2b"
       },
       "relationStats": {
         "component": "ObjectCount",

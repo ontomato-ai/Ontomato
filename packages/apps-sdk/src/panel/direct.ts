@@ -193,7 +193,7 @@ export interface DirectPanelInstance extends PanelInstance {
    */
   memberContext(member: string): Promise<PanelMemberContext>;
   /** The data of one member, whose inputs are `inputs` as the member's placement fills them now. */
-  memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs, ownParams?: () => MemberInputs): MemberData;
+  memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs, ownParams?: () => MemberInputs, scoped?: boolean): MemberData;
   /** The operations one member can do now, as the owner admits them for its inputs; kept current while it is drawn. */
   memberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs): ComputedRef<MemberOperationsState>;
   /** An operation's reported changes: the shown data they concern are read again. */
@@ -661,13 +661,13 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           param,
           scoped: true,
           ...(rowItemKey !== undefined ? { rowItemKey } : {}),
-          data: directInstance.memberData(member, projection, () => inputs.value, () => ownParamsRef.value),
+          data: directInstance.memberData(member, projection, () => inputs.value, () => ownParamsRef.value, true),
         };
         return memberContext;
       })!;
       return { context, dispose: () => scope.stop() };
     },
-    memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs, ownParams?: () => MemberInputs): MemberData {
+    memberData(member: string, projection: DirectProjection, inputs: () => MemberInputs, ownParams?: () => MemberInputs, scoped = false): MemberData {
       const own = ownParams ?? (() => instance.ownParams(member));
       const placement = direct.members[member]!;
       const answer = (name: string, values: MemberInputs, ownRun: MemberInputs = own()) =>
@@ -679,6 +679,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           let sequence = 0;
           const entryData = projection.data[name]!;
           const declaration = directReadDeclaration(projection, entryData);
+          const declaredReadOutputs = !scoped && declaration?.outputs ? Object.entries(declaration.outputs) : [];
           const isMetricOutput = declaration?.result === "metricOutput";
           const isObjectDatum = "object" in entryData.source;
           const objectTargetKeyOf = () => (isObjectDatum ? JSON.stringify(sourceObject(entryData, inputs()) ?? null) : null);
@@ -736,8 +737,35 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           };
           shown.add(entry);
           watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), reread, { immediate: true });
-          onScopeDispose(() => shown.delete(entry));
-          return computed<MemberDataState>(() => (addressPending.value && isObjectDatum ? { status: "loading" } : state.value));
+          const effectiveState = computed<MemberDataState>(() => (addressPending.value && isObjectDatum ? { status: "loading" } : state.value));
+          if (declaredReadOutputs.length > 0) {
+            // Publish only named, typed scalar outputs explicitly declared by the read's owner.
+            watch(
+              effectiveState,
+              (current) => {
+                const rawOutputs = current.status === "ready" && current.value && typeof current.value === "object" && !Array.isArray(current.value)
+                  ? (current.value as { outputs?: unknown }).outputs
+                  : undefined;
+                const map = rawOutputs && typeof rawOutputs === "object" && !Array.isArray(rawOutputs)
+                  ? (rawOutputs as Record<string, unknown>)
+                  : undefined;
+                for (const [outputName, outputType] of declaredReadOutputs) {
+                  const raw = map && Object.hasOwn(map, outputName) ? map[outputName] : undefined;
+                  const valid =
+                    (outputType.type === "boolean" && typeof raw === "boolean")
+                    || (outputType.type === "string" && typeof raw === "string")
+                    || (outputType.type === "number" && typeof raw === "number" && Number.isFinite(raw));
+                  instance.setMemberOutput(member, outputName, valid ? (raw as RuntimeJsonValue) : null);
+                }
+              },
+              { immediate: true },
+            );
+          }
+          onScopeDispose(() => {
+            shown.delete(entry);
+            for (const [outputName] of declaredReadOutputs) instance.setMemberOutput(member, outputName, null);
+          });
+          return effectiveState;
         },
         read: (name, params, overrides = {}) => {
           const { inputs: run, own: ownRun } = runValues(projection, name, params);

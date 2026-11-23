@@ -30,7 +30,7 @@ export {
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "./product-panels";
 export {
-  directReadDeclaration, matchPanelRecordItemKey, missingRequiredReadParameters, objectListDatumName,
+  directReadDeclaration, directReadRowType, matchPanelRecordItemKey, missingRequiredReadParameters, objectListDatumName,
   panelOperationTargetPort, panelReadParameterSchemas, panelRecordItemKey, projectionOperationTargetMatches,
 } from "./panel-projection";
 export { panelReadResultSchemas } from "./panel-operations";

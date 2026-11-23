@@ -8,8 +8,18 @@ const readParameterIdSchema = z.custom<PanelReadParameterId>(
   value => typeof value === "string" && Object.hasOwn(panelReadParameterSchemas, value),
   "Expected a registered panel read parameter ID",
 );
+export const panelReadOutputTypeSchema = z.object({
+  kind: z.literal("scalar"),
+  type: z.enum(["boolean", "string", "number"]),
+}).strict();
+
 function typeReadDeclarationSchema<ResultId extends string>(result: z.ZodType<ResultId>) {
-  const readDeclaration = { source: z.enum(["type", "object"]), result };
+  const readDeclaration = {
+    source: z.enum(["type", "object"]),
+    result,
+    rowType: runtimeKeySchema.optional(),
+    outputs: z.record(runtimeKeySchema, panelReadOutputTypeSchema).optional(),
+  };
   return z.discriminatedUnion("parameterMode", [
     z.object({
       ...readDeclaration,

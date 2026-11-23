@@ -142,6 +142,15 @@ export function toApplicationPanelRecord(
       fieldLabels.themeSummary = word("themeOverrides");
     }
   }
+  const outputs: PanelRecord["outputs"] = "entry" in row
+    ? {
+        canMaintain: row.canMaintain,
+        canEditEntries: row.canEditEntries,
+        canGrant: row.canGrant,
+        ...(extra?.domainShared !== undefined && { domainShared: extra.domainShared }),
+        openPath: row.entry.home ?? row.entry.path,
+      }
+    : undefined;
   return {
     primaryKey: row.id,
     className: APPLICATION,
@@ -150,6 +159,7 @@ export function toApplicationPanelRecord(
     fields,
     fieldLabels,
     tones: { source: row.source === "builtin" ? "info" : "default", maintenance: row.canMaintain ? "success" : "info" },
+    ...(outputs !== undefined && { outputs }),
   };
 }
 

@@ -54,9 +54,24 @@ type PanelReadSignature =
   | { parameterMode: "fixed"; params: Readonly<Record<string, PanelReadParameterId>>; requiredParams?: readonly string[] }
   | { parameterMode: "owner"; parameter: PanelReadParameterId };
 
+export type PanelReadOutputType = {
+  readonly kind: "scalar";
+  readonly type: "boolean" | "string" | "number";
+};
+
 export type PlatformReadDeclaration = PanelReadSignature & {
   source: "type" | "object";
   result: PanelReadResultId;
+  /**
+   * Object type of each row returned by a collection read when rows belong to a different ontology type than the
+   * read's owner (for example `platform:Application.usedPanels` returns `platform:ProductPanel` rows).
+   */
+  rowType?: string;
+  /**
+   * Named, typed scalar read-only outputs explicitly published by the owner of this read (for example permission
+   * conclusions or navigation targets). Panels may consume only these owner-declared outputs, never arbitrary fields.
+   */
+  outputs?: Readonly<Record<string, PanelReadOutputType>>;
 };
 
 export interface PlatformObjectTypeDeclaration {
@@ -343,11 +358,11 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       createForm: {
         source: "type", parameterMode: "fixed", params: { ...definitionFormParams, parentId: "keyword" }, result: "panelFormDescription",
       },
-      members: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      members: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: ORG_MEMBERSHIP },
       memberCandidates: { source: "object", parameterMode: "fixed", params: { keyword: "keyword" }, result: "panelOptionList" },
-      positions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
-      grants: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
-      inheritedGrants: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      positions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: ORG_POSITION },
+      grants: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: ORG_GRANT },
+      inheritedGrants: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: ORG_GRANT },
     },
     operations: [`${ORG_UNIT}.save`, DELETE_ORG_UNIT, ADD_ORG_UNIT_MEMBER],
   },
@@ -412,10 +427,20 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         params: { search: "keyword", scope: "applicationScope", sort: "applicationSort", cursor: "cursor", size: "size" },
         result: "panelRecordQuery",
       },
-      record: { ...catalogueRecord, result: "panelRecord" },
+      record: {
+        ...catalogueRecord,
+        result: "panelRecord",
+        outputs: {
+          canMaintain: { kind: "scalar", type: "boolean" },
+          canEditEntries: { kind: "scalar", type: "boolean" },
+          canGrant: { kind: "scalar", type: "boolean" },
+          domainShared: { kind: "scalar", type: "boolean" },
+          openPath: { kind: "scalar", type: "string" },
+        },
+      },
       entries: { ...catalogueRecord, result: "applicationEntries" },
       entryRows: { ...catalogueRecord, result: "panelRecordList" },
-      usedPanels: { ...catalogueRecord, result: "panelRecordList" },
+      usedPanels: { ...catalogueRecord, result: "panelRecordList", rowType: PRODUCT_PANEL },
       grants: { ...catalogueRecord, result: "productCatalogueGrants" },
       grantRows: { ...catalogueRecord, result: "panelRecordList" },
       form: {
