@@ -1,3 +1,4 @@
+import { nextTick } from "vue";
 import { ElMessage } from "element-plus";
 import type { Router } from "vue-router";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -26,6 +27,9 @@ export function panelNavigator(router: Router, beside?: (address: string) => voi
       ElMessage.error(reason.message);
       throw reason;
     }
+    // Flush any same-tick deep-link state watcher (`router.replace`) before pushing the destination route,
+    // otherwise a leaving panel that clears state right before `navigate()` would abort its own navigation.
+    await nextTick();
     if (beside) beside(address);
     else await router.push(address);
   };
