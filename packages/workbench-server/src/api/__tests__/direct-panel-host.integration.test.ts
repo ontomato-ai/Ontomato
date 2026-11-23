@@ -264,7 +264,7 @@ it("reports the allowed icons when the domain application registration preflight
     const { error } = await response.json();
     expect(error.code).toBe("INVALID_REQUEST");
     expect(error.message).toContain("field 'icon'");
-    expect(error.message).toContain(`Icon '${icon}'`);
+    expect(error.message).toContain(`icon '${icon}'`);
     expect(error.message).toContain(`Choose one of ${domainApplicationIconKeys.join(", ")}`);
   }
   expect((await validate({ ...request, icon: domainApplicationIconKeys[0] })).status).toBe(204);

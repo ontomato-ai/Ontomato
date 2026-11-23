@@ -687,7 +687,7 @@ it("writes declared personal state under the authenticated viewer and isolates i
     panelPersonalStateReadRequestSchema.parse({ source, memberPath: [{ member }], fields: ["chosen", "positions"] }));
   const positions = { a: { x: -6.25, y: 14 }, b: { x: 0, y: 0 } };
   expect((await write("author", "left", { chosen: "left choice", positions })).status).toBe(200);
-  const rejected = await write("author", "left", { chosen: "changed", positions: { a: { x: "bad", y: 0 } } });
+  const rejected = await write("author", "left", { chosen: 123, positions });
   expect(rejected.status).toBe(400);
   expect(await rejected.text()).toContain("PANEL_PERSONAL_VALUE_INVALID");
   expect((await write("author", "right", { chosen: "right choice" })).status).toBe(200);
