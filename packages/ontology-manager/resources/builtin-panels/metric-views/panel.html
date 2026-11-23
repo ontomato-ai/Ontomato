@@ -3,7 +3,9 @@
   batch-status OperationButton when rows are checked) switching to a full-width detail view (back button, official
   ObjectHeader, test dialog, owner delete OperationButton, and owner definition ObjectForm).
 
-  The definition form stays mounted (toggled with v-show) for live editing and assistant remote control.
+  The catalog stays mounted (toggled with v-show) so search, paging, and checked rows persist when returning from detail,
+  while the detail view and its definition form mount only while editing or creating (v-if="detailVisible") so hidden
+  form actions stay unavailable until opened.
 -->
 <style>
   [v-cloak] { display: none; }
@@ -94,7 +96,7 @@
         </projection>
       </div>
 
-      <div class="mv-detail" v-show="detailVisible">
+      <div class="mv-detail" v-if="detailVisible">
         <header class="mv-detail-head">
           <sdk-button text @click="backToCatalog">← {{ t("metricViews.back") }}</sdk-button>
           <span class="mv-divider" aria-hidden="true"></span>
@@ -111,9 +113,6 @@
 
         <projection slot="definition" @saved="onSaved" @discarded="onDiscarded"></projection>
       </div>
-
-      <projection slot="trial"></projection>
-      <projection slot="trialJson"></projection>
 
       <sdk-dialog v-model="testOpen" :title="t('metricViews.testTitle')" width="min(920px, 94vw)">
         <div class="mv-test-body">

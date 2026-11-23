@@ -136,6 +136,17 @@ interface SavedCall {
   values: Record<string, unknown>;
 }
 
+interface DispatchedActionCall {
+  operationId: string;
+  targetPrimaryKey: string | null;
+}
+
+const AGENT_RUN = {
+  sessionId: "session-bk-test",
+  runId: "run-bk-test",
+  toolCallId: "tool-bk-test",
+} as const;
+
 const formFields: PanelFormDescription["fields"] = [
   {
     path: "/knowledgeTitle",
@@ -216,6 +227,7 @@ function mountKnowledgeRoute(options: {
     ],
   ]);
   const savedCalls: SavedCall[] = [];
+  const dispatchedActions: DispatchedActionCall[] = [];
   const formTargetReads: Array<{ dataName: string; targetPrimaryKey: string | null }> = [];
   let controller: DisplayPageController | null = null;
   let intentCounter = 0;
@@ -281,6 +293,47 @@ function mountKnowledgeRoute(options: {
             },
           });
         }
+        if (member === "approve") {
+          const ref = (body.inputs.knowledge ?? body.inputs.target) as { primaryKey?: string } | undefined;
+          const record = ref?.primaryKey ? records.get(ref.primaryKey) : undefined;
+          if (!record) return Response.json({ status: "ready", value: {} });
+          return Response.json({
+            status: "ready",
+            value: {
+              approve: {
+                kind: "action",
+                handlerRef: APPROVE_KNOWLEDGE,
+                label: "Approve",
+                effect: "write",
+                target: { source: "input", input: "knowledge" },
+                inputSchema: {},
+                resultSchema: {},
+                batch: true,
+                ...(record.status !== "0" ? { unavailable: { reason: "Already approved" } } : {}),
+              },
+            },
+          });
+        }
+        if (member === "remove") {
+          const ref = (body.inputs.knowledge ?? body.inputs.target) as { primaryKey?: string } | undefined;
+          const record = ref?.primaryKey ? records.get(ref.primaryKey) : undefined;
+          if (!record) return Response.json({ status: "ready", value: {} });
+          return Response.json({
+            status: "ready",
+            value: {
+              delete: {
+                kind: "action",
+                handlerRef: DELETE_KNOWLEDGE,
+                label: "Delete",
+                effect: "write",
+                target: { source: "input", input: "knowledge" },
+                inputSchema: {},
+                resultSchema: {},
+                batch: true,
+              },
+            },
+          });
+        }
         return Response.json({ status: "ready", value: {} });
       }
       if (member === "tabs") {
@@ -332,30 +385,72 @@ function mountKnowledgeRoute(options: {
       intentCounter += 1;
       const intentId = `22222222-2222-4222-8222-22222222222${intentCounter}`;
       preparedIntents.set(intentId, { operationId, call });
+      const label = operationId === "approve.approve" ? "Approve" : operationId === "remove.delete" ? "Delete" : "Save";
       return Response.json({
         intentId,
         operationId,
-        label: "Save",
+        label,
         confirmation: { kind: "none" },
+        autoMode: true,
       });
     }
     const intentRead = /^\/api\/panel-operation-intents\/([^/?]+)$/.exec(path);
     if (intentRead && request.method === "GET") {
       const entry = preparedIntents.get(intentRead[1]!);
+      const operationId = entry?.operationId ?? "form.save";
+      const label = operationId === "approve.approve" ? "Approve" : operationId === "remove.delete" ? "Delete" : "Save";
       return Response.json({
         intentId: intentRead[1],
-        operationId: entry?.operationId ?? "form.save",
-        label: "Save",
+        operationId,
+        label,
         confirmation: { kind: "none" },
+        autoMode: true,
       });
     }
     const intentDispatch = /^\/api\/panel-operations\/intents\/([^/]+)\/dispatch$/.exec(path);
     if (intentDispatch && request.method === "POST") {
       const entry = preparedIntents.get(intentDispatch[1]!)!;
       const target = entry.call.target as { primaryKey?: string } | undefined;
+      const targetPrimaryKey = target?.primaryKey ?? null;
+      dispatchedActions.push({ operationId: entry.operationId, targetPrimaryKey });
+      if (entry.operationId === "approve.approve") {
+        if (targetPrimaryKey) {
+          const existing = records.get(targetPrimaryKey);
+          if (existing) records.set(targetPrimaryKey, { ...existing, status: "1" });
+        }
+        return Response.json({
+          kind: "dispatched",
+          intentId: intentDispatch[1],
+          outcome: {
+            kind: "success",
+            message: "Approved",
+            data: {},
+            affected: {
+              objects: targetPrimaryKey ? [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: targetPrimaryKey }] : [],
+              objectTypes: [BUSINESS_KNOWLEDGE],
+            },
+          },
+        });
+      }
+      if (entry.operationId === "remove.delete") {
+        if (targetPrimaryKey) records.delete(targetPrimaryKey);
+        return Response.json({
+          kind: "dispatched",
+          intentId: intentDispatch[1],
+          outcome: {
+            kind: "success",
+            message: "Deleted",
+            data: {},
+            affected: {
+              objects: targetPrimaryKey ? [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: targetPrimaryKey }] : [],
+              removed: targetPrimaryKey ? [{ objectType: BUSINESS_KNOWLEDGE, primaryKey: targetPrimaryKey }] : [],
+              objectTypes: [BUSINESS_KNOWLEDGE],
+            },
+          },
+        });
+      }
       const input = entry.call.input as PanelFormSaveInput | undefined;
       const values = (input?.values ?? {}) as Record<string, unknown>;
-      const targetPrimaryKey = target?.primaryKey ?? null;
       savedCalls.push({ targetPrimaryKey, values: { ...values } });
       const savedKey = targetPrimaryKey ?? `bk-new-${savedCalls.length}`;
       const existing = records.get(savedKey);
@@ -388,6 +483,7 @@ function mountKnowledgeRoute(options: {
     sent,
     records,
     savedCalls,
+    dispatchedActions,
     formTargetReads,
     confirmLeaveUnsaved,
     getController: () => controller,
@@ -750,6 +846,222 @@ describe("business-knowledge builtin panel formTarget synchronization", () => {
     } finally {
       releaseList();
       directCreate.app.unmount();
+    }
+  });
+});
+
+describe("business-knowledge builtin panel unmounts hidden form and actions", () => {
+  it("unmounts form and form.save in view mode (initial, after cancel, after save), and unmounts approve/remove in edit mode", { timeout: 20000 }, async () => {
+    const route = mountKnowledgeRoute({ initialState: { selected: knowledgeRef(ENTRY_B) } });
+    const { app, element } = await route.open();
+    try {
+      // Initial view mode on pending ENTRY_B: detail actions are mounted, form is unmounted.
+      await vi.waitFor(() => {
+        expect(route.getController()).not.toBeNull();
+        expect(element.querySelector(".bk-detail-actions")).not.toBeNull();
+        expect(findButton(element, "Approve")).toBeTruthy();
+        expect(findButton(element, "Edit")).toBeTruthy();
+        expect(findButton(element, "Delete")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      expect(titleInput(element)).toBeNull();
+      expect(element.querySelector(".bk-form-actions")).toBeNull();
+      await expect(
+        route.getController()!.fillForm!({ member: "form", values: { knowledgeTitle: "Blocked In View" } }),
+      ).resolves.toMatchObject({ ok: false, reason: "form_not_found" });
+      await expect(
+        route.getController()!.executeAction!({ operation: "form.save", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+
+      // Enter edit mode: form is mounted, view-mode approve/remove actions are unmounted.
+      findButton(element, "Edit")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Edit Knowledge");
+        expect(titleInput(element)?.value).toBe("Refund SLA");
+        expect(element.querySelector(".bk-form-actions")).not.toBeNull();
+      }, { timeout: 5000 });
+
+      expect(element.querySelector(".bk-detail-actions")).toBeNull();
+      expect(findButton(element, "Approve")).toBeUndefined();
+      expect(findButton(element, "Delete")).toBeUndefined();
+      await expect(
+        route.getController()!.executeAction!({ operation: "approve.approve", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+      await expect(
+        route.getController()!.executeAction!({ operation: "remove.delete", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+
+      const draftFill = await route.getController()!.fillForm!({
+        member: "form",
+        values: { knowledgeTitle: "Refund SLA Draft" },
+      });
+      expect(draftFill.ok).toBe(true);
+
+      // Cancel back to view mode: form and form.save unmount cleanly; detail actions remount.
+      findButton(element, "Cancel")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBeNull();
+        expect(element.querySelector(".bk-detail-actions")).not.toBeNull();
+        expect(findButton(element, "Approve")).toBeTruthy();
+        expect(findButton(element, "Delete")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      expect(titleInput(element)).toBeNull();
+      expect(element.querySelector(".bk-form-actions")).toBeNull();
+      await expect(
+        route.getController()!.fillForm!({ member: "form", values: { knowledgeTitle: "Blocked After Cancel" } }),
+      ).resolves.toMatchObject({ ok: false, reason: "form_not_found" });
+      await expect(
+        route.getController()!.executeAction!({ operation: "form.save", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+
+      // Re-enter edit mode, fill, and save via form.save: returns to view mode and unmounts form.
+      findButton(element, "Edit")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Edit Knowledge");
+        expect(titleInput(element)?.value).toBe("Refund SLA");
+      }, { timeout: 5000 });
+
+      await expect(
+        route.getController()!.executeAction!({ operation: "approve.approve", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+      await expect(
+        route.getController()!.executeAction!({ operation: "remove.delete", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+
+      const editFill = await route.getController()!.fillForm!({
+        member: "form",
+        values: { knowledgeTitle: "Refund SLA Updated" },
+      });
+      expect(editFill.ok).toBe(true);
+
+      const saved = await route.getController()!.executeAction!({
+        operation: "form.save",
+        agentRun: AGENT_RUN,
+      });
+      expect(saved).toMatchObject({ ok: true, kind: "executed", operation: "form.save" });
+
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBeNull();
+        expect(element.querySelector(".bk-detail-actions")).not.toBeNull();
+        expect(findButton(element, "Approve")).toBeTruthy();
+        expect(findButton(element, "Delete")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      expect(titleInput(element)).toBeNull();
+      expect(element.querySelector(".bk-form-actions")).toBeNull();
+      await expect(
+        route.getController()!.fillForm!({ member: "form", values: { knowledgeTitle: "Blocked After Save" } }),
+      ).resolves.toMatchObject({ ok: false, reason: "form_not_found" });
+      await expect(
+        route.getController()!.executeAction!({ operation: "form.save", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+
+      // View-mode approve and remove actions are mounted and executable when detail is ready.
+      const approved = await route.getController()!.executeAction!({
+        operation: "approve.approve",
+        agentRun: AGENT_RUN,
+      });
+      expect(approved).toMatchObject({ ok: true, kind: "executed", operation: "approve.approve" });
+      expect(route.records.get(ENTRY_B)?.status).toBe("1");
+
+      const removed = await route.getController()!.executeAction!({
+        operation: "remove.delete",
+        agentRun: AGENT_RUN,
+      });
+      expect(removed).toMatchObject({ ok: true, kind: "executed", operation: "remove.delete" });
+      expect(route.records.has(ENTRY_B)).toBe(false);
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("unmounts approve and remove in create mode, allows form fill/save, and unmounts form again after cancel or save", { timeout: 20000 }, async () => {
+    const route = mountKnowledgeRoute({ initialState: { selected: knowledgeRef(ENTRY_B) } });
+    const { app, element } = await route.open();
+    try {
+      await vi.waitFor(() => {
+        expect(route.getController()).not.toBeNull();
+        expect(findButton(element, "Add Knowledge")).toBeTruthy();
+        expect(findButton(element, "Approve")).toBeTruthy();
+        expect(findButton(element, "Delete")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      // Enter create mode: form mounts, view-mode approve/remove unmount.
+      findButton(element, "Add Knowledge")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Add Knowledge");
+        expect(titleInput(element)?.value).toBe("");
+        expect(element.querySelector(".bk-form-actions")).not.toBeNull();
+      }, { timeout: 5000 });
+
+      expect(element.querySelector(".bk-detail-actions")).toBeNull();
+      await expect(
+        route.getController()!.executeAction!({ operation: "approve.approve", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+      await expect(
+        route.getController()!.executeAction!({ operation: "remove.delete", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+
+      const draftCreate = await route.getController()!.fillForm!({
+        member: "form",
+        values: { knowledgeTitle: "Discarded Draft" },
+      });
+      expect(draftCreate.ok).toBe(true);
+
+      // Cancel create: form unmounts and restored ENTRY_B view actions remount.
+      findButton(element, "Cancel")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBeNull();
+        expect(route.router.currentRoute.value.query.selected).toBe(ENTRY_B);
+        expect(element.querySelector(".bk-detail-actions")).not.toBeNull();
+        expect(findButton(element, "Approve")).toBeTruthy();
+        expect(findButton(element, "Delete")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      expect(titleInput(element)).toBeNull();
+      await expect(
+        route.getController()!.fillForm!({ member: "form", values: { knowledgeTitle: "Blocked After Create Cancel" } }),
+      ).resolves.toMatchObject({ ok: false, reason: "form_not_found" });
+      await expect(
+        route.getController()!.executeAction!({ operation: "form.save", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+
+      // Re-enter create mode, fill and save via form.save: returns to view mode and unmounts form.
+      findButton(element, "Add Knowledge")!.click();
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBe("Add Knowledge");
+        expect(titleInput(element)?.value).toBe("");
+      }, { timeout: 5000 });
+
+      const createFill = await route.getController()!.fillForm!({
+        member: "form",
+        values: { knowledgeTitle: "New Policy Rule" },
+      });
+      expect(createFill.ok).toBe(true);
+
+      const created = await route.getController()!.executeAction!({
+        operation: "form.save",
+        agentRun: AGENT_RUN,
+      });
+      expect(created).toMatchObject({ ok: true, kind: "executed", operation: "form.save" });
+
+      await vi.waitFor(() => {
+        expect(formHeading(element)).toBeNull();
+        expect(element.querySelector(".bk-detail-actions")).not.toBeNull();
+        expect(findButton(element, "Approve")).toBeTruthy();
+        expect(findButton(element, "Delete")).toBeTruthy();
+      }, { timeout: 5000 });
+
+      expect(titleInput(element)).toBeNull();
+      await expect(
+        route.getController()!.fillForm!({ member: "form", values: { knowledgeTitle: "Blocked After Create Save" } }),
+      ).resolves.toMatchObject({ ok: false, reason: "form_not_found" });
+      await expect(
+        route.getController()!.executeAction!({ operation: "form.save", agentRun: AGENT_RUN }),
+      ).resolves.toMatchObject({ ok: false, reason: "action_not_found" });
+    } finally {
+      app.unmount();
     }
   });
 });
