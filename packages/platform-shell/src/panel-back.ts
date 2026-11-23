@@ -6,6 +6,11 @@
 export interface PanelBackHandlerRegistration {
   /** Whether closing this overlay/detail should push a browser history entry so browser Back invokes `onBack`. */
   readonly pushHistory?: boolean;
+  /**
+   * Optional layer-specific dirty check (for example a scoped sub-editor that only discards specific forms on close).
+   * When omitted, the host falls back to the whole panel's `isDirty()`.
+   */
+  readonly isDirty?: () => boolean;
   /** Invoked by the host on browser Back or Escape (only after the host's unified unsaved-changes guard passes). */
   readonly onBack: () => void;
 }
@@ -70,6 +75,7 @@ function routePathOf(url: string): string {
 
 interface StackEntry {
   readonly token: string | null;
+  readonly isDirty?: () => boolean;
   readonly onBack: () => void;
   pushedUrl: string;
   pushedState: Record<string, unknown>;
@@ -181,6 +187,7 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
     }
     const entry: StackEntry = {
       token,
+      ...(registration.isDirty ? { isDirty: registration.isDirty } : {}),
       onBack: registration.onBack,
       pushedUrl,
       pushedState,
@@ -226,7 +233,8 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
       return true;
     }
     if (currentHistoryToken() === entry.token) return false;
-    if (!options.isDirty()) {
+    const entryDirty = entry.isDirty ? entry.isDirty() : options.isDirty();
+    if (!entryDirty) {
       entry.poppedByHistory = true;
       removeEntry(entry);
       entry.onBack();
@@ -279,7 +287,8 @@ export function createPanelBackController(options: PanelBackControllerOptions): 
       if (entry.token !== null) clearHistoryMarker(entry.token);
       entry.onBack();
     };
-    if (!options.isDirty()) {
+    const entryDirty = entry.isDirty ? entry.isDirty() : options.isDirty();
+    if (!entryDirty) {
       invoke();
       return;
     }

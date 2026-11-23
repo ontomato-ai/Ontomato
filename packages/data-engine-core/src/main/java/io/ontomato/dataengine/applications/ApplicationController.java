@@ -39,15 +39,21 @@ public class ApplicationController {
     public record PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                     ApplicationCatalog.Declaration declaration, List<String> entryAccess,
                                     String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery,
-                                    Boolean shared) {
+                                    Boolean shared, Boolean allowStandalone) {
         public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                  ApplicationCatalog.Declaration declaration, List<String> entryAccess) {
-            this(entry, panelUses, declaration, entryAccess, null, null, null, null);
+            this(entry, panelUses, declaration, entryAccess, null, null, null, null, null);
         }
         public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
                                  ApplicationCatalog.Declaration declaration, List<String> entryAccess,
                                  String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery) {
-            this(entry, panelUses, declaration, entryAccess, framePanelId, theme, delivery, null);
+            this(entry, panelUses, declaration, entryAccess, framePanelId, theme, delivery, null, null);
+        }
+        public PanelRegistration(PanelEntry entry, List<ApplicationPanelUse> panelUses,
+                                 ApplicationCatalog.Declaration declaration, List<String> entryAccess,
+                                 String framePanelId, JsonNode theme, ApplicationCatalog.Delivery delivery,
+                                 Boolean shared) {
+            this(entry, panelUses, declaration, entryAccess, framePanelId, theme, delivery, shared, null);
         }
     }
     public record CatalogueFormTarget(String kind, String id, String objectType, String primaryKey) {}
@@ -56,7 +62,11 @@ public class ApplicationController {
             this(section, target, values, changedField, null);
         }
     }
-    public record IdentityUpdate(Map<String, String> names, Map<String, String> descriptions, String icon) {}
+    public record IdentityUpdate(Map<String, String> names, Map<String, String> descriptions, String icon, Boolean allowStandalone) {
+        public IdentityUpdate(Map<String, String> names, Map<String, String> descriptions, String icon) {
+            this(names, descriptions, icon, null);
+        }
+    }
 
     @GetMapping("/platform/applications/catalogue")
     public R<JSONObject> catalogue(@RequestParam(defaultValue = "") String search,

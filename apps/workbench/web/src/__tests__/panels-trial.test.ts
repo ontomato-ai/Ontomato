@@ -167,7 +167,20 @@ describe("a panel instance", () => {
     const adapters = new PanelFormAdapters();
     // A form whose owner performs another operation for the draft's target declines it; the next form is asked.
     const form = (performs: string, changed: readonly string[]) => ({
-      handle: { fields: shallowRef([]), values: shallowRef({}), errors: shallowRef({}), changed: shallowRef(new Set<string>()), busy: ref(false), set: () => {} },
+      handle: {
+        fields: shallowRef([]),
+        values: shallowRef({}),
+        errors: shallowRef({}),
+        changed: shallowRef(new Set<string>()),
+        busy: ref(false),
+        dirty: ref(false),
+        dirtyFields: shallowRef(new Set<string>()),
+        submitting: ref(false),
+        canSubmit: ref(false),
+        set: () => {},
+        submit: async () => ({}),
+        reset: async () => true,
+      },
       receive: async (draft: { operation: string }) => (draft.operation === performs ? new Set(changed) : null),
       // Which slot takes the draft and what it changed is this test's subject; the form's own save and showing are the
       // component's, checked where the component is mounted.
@@ -201,7 +214,20 @@ describe("a panel instance", () => {
 
   it("preserves optional itemKey on a received draft target for embedded row edits", async () => {
     const form = (performs: string) => ({
-      handle: { fields: shallowRef([]), values: shallowRef({}), errors: shallowRef({}), changed: shallowRef(new Set<string>()), busy: ref(false), set: () => {} },
+      handle: {
+        fields: shallowRef([]),
+        values: shallowRef({}),
+        errors: shallowRef({}),
+        changed: shallowRef(new Set<string>()),
+        busy: ref(false),
+        dirty: ref(false),
+        dirtyFields: shallowRef(new Set<string>()),
+        submitting: ref(false),
+        canSubmit: ref(false),
+        set: () => {},
+        submit: async () => ({}),
+        reset: async () => true,
+      },
       receive: async (draft: { operation: string }) => (draft.operation === performs ? new Set(["/label"]) : null),
       submit: async () => ({}),
       dirty: () => false,

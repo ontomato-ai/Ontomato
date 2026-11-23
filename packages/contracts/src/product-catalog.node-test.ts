@@ -380,3 +380,51 @@ test("declares grant reads for both resource classes and a panel-only template f
   const projectionQuery = platformObjectTypes[PRODUCT_PROJECTION].reads?.query;
   assert.equal(projectionQuery?.parameterMode === "fixed" && Object.hasOwn(projectionQuery.params, "template"), false);
 });
+
+test("application contracts accept optional allowStandalone toggle and route it to identity rather than entries", async () => {
+  const { allowsStandalone, applicationCatalogSchema } = await import("./platform-identity");
+  const {
+    applicationCatalogueCreateSchema, applicationCatalogueRecordSchema, applicationEntriesUpdateSchema,
+    applicationIdentityUpdateSchema,
+  } = await import("./application-catalogue");
+
+  assert.equal(allowsStandalone(undefined), true);
+  assert.equal(allowsStandalone({}), true);
+  assert.equal(allowsStandalone({ allowStandalone: true }), true);
+  assert.equal(allowsStandalone({ allowStandalone: false }), false);
+
+  const baseApp = {
+    id: "app-one", kind: "product" as const, names: { en: "One" }, descriptions: {}, icon: "pages",
+    rail: "apps" as const, category: "business" as const, sort: 1,
+    entry: { path: "/applications/app-one", renderer: "panels" }, entryAccess: ["domain-member"],
+    scheduleAdapter: null, releaseId: null,
+  };
+  assert.equal(applicationCatalogSchema.parse([baseApp])[0]?.allowStandalone, undefined);
+  assert.equal(applicationCatalogSchema.parse([{ ...baseApp, allowStandalone: false }])[0]?.allowStandalone, false);
+
+  const identity = applicationIdentityUpdateSchema.parse({ names: { en: "One" }, descriptions: {}, icon: "pages", allowStandalone: false });
+  assert.equal(identity.allowStandalone, false);
+  assert.equal(applicationIdentityUpdateSchema.parse({ names: { en: "One" }, descriptions: {}, icon: "pages" }).allowStandalone, undefined);
+
+  const createPayload = {
+    entry: { path: "/applications/app-one", renderer: "panels" as const },
+    panelUses: [],
+    declaration: { names: { en: "One" }, descriptions: {}, icon: "pages", groups: [], permissions: [] },
+    entryAccess: ["domain-member"],
+    allowStandalone: false,
+  };
+  assert.equal(applicationCatalogueCreateSchema.parse(createPayload).allowStandalone, false);
+  assert.equal(
+    applicationEntriesUpdateSchema.safeParse({
+      entry: { path: "/applications/app-one", renderer: "panels" }, panelUses: [], allowStandalone: false,
+    }).success,
+    false,
+  );
+
+  const record = applicationCatalogueRecordSchema.parse({
+    id: "app-one", names: { en: "One" }, descriptions: {}, icon: "pages", source: "domain",
+    canMaintain: true, canEditEntries: true, canGrant: true, entryCount: 0, allowStandalone: false,
+    entry: { path: "/applications/app-one", renderer: "panels" }, panelUses: [], groups: [],
+  });
+  assert.equal(record.allowStandalone, false);
+});

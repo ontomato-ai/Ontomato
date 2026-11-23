@@ -106,6 +106,25 @@ Registers a panel-local back/close layer with the enclosing host (LIFO). While `
 function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, options?: UsePanelBackOptions | undefined): PanelBackHandle
 ```
 
+### UsePanelBackOptions
+
+```ts
+interface UsePanelBackOptions {
+  /**
+   * Whether activating this back layer pushes a browser history entry so browser Back invokes `onBack`.
+   * Defaults to `true`.
+   */
+  pushHistory?: MaybeRefOrGetter<boolean>;
+  /**
+   * Form slot(s) owned by this back layer (for example `"attributeForm"` when closing an inline sub-editor while
+   * another form on the same panel stays open). When provided, only those form slots are checked for unsaved changes
+   * and discarded on confirmation, leaving other forms on the panel untouched. Pass `[]` for a purely local view layer
+   * that owns no forms. Omit to guard and discard all dirty forms in the panel.
+   */
+  forms?: MaybeRefOrGetter<string | readonly string[] | undefined>;
+}
+```
+
 ### PanelBackHandle
 
 ```ts
@@ -116,6 +135,86 @@ interface PanelBackHandle {
    * ran, `false` when cancelled or when `active` is currently `false`.
    */
   back: () => Promise<boolean>;
+}
+```
+
+### usePanelFormDraft
+
+Binds one mounted `ObjectForm` slot to `<page-header :draft="draft">`: returns `null` while the form slot is absent
+(or `when` is false), and otherwise exposes reactive `dirty`, `saving`, `canSave`, `save()`, and `discard()` wired
+straight to `instance.forms.handle(slot)`.
+
+```ts
+function usePanelFormDraft(slot: MaybeRefOrGetter<string | null | undefined>, options?: UsePanelFormDraftOptions | undefined): ComputedRef<PageHeaderDraft | null>
+```
+
+### UsePanelFormDraftOptions
+
+```ts
+interface UsePanelFormDraftOptions {
+  /**
+   * Optional reactive guard controlling whether the draft controls are shown (for example `() => detail.value.status === "ready"`).
+   * Defaults to `true` whenever the form slot is mounted.
+   */
+  when?: MaybeRefOrGetter<boolean>;
+  /**
+   * Whether clicking Discard asks the platform's confirmation dialog before restoring the owner baseline.
+   * Defaults to `true`.
+   */
+  confirmDiscard?: boolean;
+}
+```
+
+### PageHeaderDraft
+
+Save/Discard draft state displayed by `<page-header>`: without changes only a disabled Save button renders; with
+changes the unsaved notice, Discard and Save render together.
+
+```ts
+interface PageHeaderDraft {
+  /** Whether there are unsaved changes to save or discard. */
+  readonly dirty: boolean;
+  /** Whether a save operation is currently in flight. */
+  readonly saving?: boolean;
+  /** Optional explicit save-enabled override; defaults to `dirty && !saving`. */
+  readonly canSave?: boolean;
+  /** Optional handler invoked when Save is clicked (alternative to listening for `@save`). */
+  readonly save?: () => void;
+  /** Optional handler invoked when Discard is clicked (alternative to listening for `@discard`). */
+  readonly discard?: () => void;
+}
+```
+
+### PanelFormHandle
+
+What one form holds, as the projections that edit one of its fields read and write it (`formField`): the owner's
+fields, the values, the field errors and changed marks by path, and whether the form is busy. Every one of them is the
+form's own; a field projection never keeps a copy.
+
+```ts
+interface PanelFormHandle {
+  readonly fields: Readonly<Ref<readonly PanelFormField[]>>;
+  readonly values: Readonly<Ref<PanelFormValues>>;
+  readonly errors: Readonly<Ref<Readonly<Record<string, string>>>>;
+  readonly changed: Readonly<Ref<ReadonlySet<string>>>;
+  readonly busy: Readonly<Ref<boolean>>;
+  /** Whether this form currently holds unsaved edits (changed values, an active draft, or modified fields). */
+  readonly dirty: Readonly<Ref<boolean>>;
+  /** Distinct top-level field paths currently modified relative to the opened baseline. */
+  readonly dirtyFields: Readonly<Ref<ReadonlySet<string>>>;
+  /** Whether a save is currently in flight (alias of `busy`). */
+  readonly submitting: Readonly<Ref<boolean>>;
+  /** Whether the form is ready and has unsaved edits that can currently be submitted. */
+  readonly canSubmit: Readonly<Ref<boolean>>;
+  /** Sets one field's value; a field the owner marks `refreshOnChange` has the owner asked again. */
+  set(path: string, value: RuntimeJsonValue): void;
+  /** Submits the form through its owner. */
+  submit(): Promise<unknown>;
+  /**
+   * Discards unsaved edits and restores the owner baseline. Pass `{ confirm: true }` to ask the platform's
+   * confirmation dialog first; resolves `true` when discarded, `false` when cancelled.
+   */
+  reset(options?: { confirm?: boolean }): Promise<boolean>;
 }
 ```
 

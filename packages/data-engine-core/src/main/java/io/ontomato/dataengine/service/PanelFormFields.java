@@ -31,6 +31,10 @@ public final class PanelFormFields {
     return JSONObject.of("kind", "select", "options", options);
   }
 
+  public static JSONObject switchControl() {
+    return JSONObject.of("kind", "switch");
+  }
+
   public static JSONObject hidden() {
     return JSONObject.of("kind", "hidden");
   }

@@ -259,11 +259,10 @@ const isCreate = computed(() => target.value?.kind === "draft");
 /** Whether every non-hidden field in the owner's form description is read-only. */
 const allReadOnly = computed(() => drawn.value.length > 0 && drawn.value.every((field) => field.readOnly));
 /**
- * Count of distinct top-level fields modified in this draft (union of draft-marked `changed`, effective pruned diffs,
- * and active unparseable `invalid` fields, falling back to explicitly `submitted` fields), guaranteed >= 1 whenever
- * `canSettle` is true.
+ * Distinct top-level field paths modified in this draft (union of draft-marked `changed`, effective pruned diffs,
+ * and active unparseable `invalid` fields, falling back to explicitly `submitted` fields).
  */
-const changedCount = computed(() => {
+const dirtyFields = computed<ReadonlySet<string>>(() => {
   const paths = new Set<string>([...changed.value, ...effectiveChangedPaths.value]);
   for (const path of Object.keys(activeInvalid.value)) {
     const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
@@ -272,8 +271,14 @@ const changedCount = computed(() => {
   if (paths.size === 0) {
     for (const path of submitted.value) paths.add(path);
   }
-  return paths.size > 0 ? paths.size : (canSettle.value ? 1 : 0);
+  return paths;
 });
+/** Count of distinct top-level fields modified in this draft, guaranteed >= 1 whenever `canSettle` is true. */
+const changedCount = computed(() => (dirtyFields.value.size > 0 ? dirtyFields.value.size : (canSettle.value ? 1 : 0)));
+/** Whether the form is ready and currently able to submit unsaved edits. */
+const canSubmit = computed(() =>
+  !failure.value && !loading.value && description.value !== null && canSettle.value && !saving.value && !asking.value,
+);
 
 /** A draft this form took, for the target it addresses, shown once the form is on that target. */
 let held: HeldMemberDraft | null = null;
@@ -608,7 +613,24 @@ function consumePendingDraft() {
 if (member.formDraft) watch(() => member.formDraft!.pending.value, consumePendingDraft, { immediate: true });
 
 useProjectionForm({
-  handle: { fields, values, errors, changed, busy: saving, set },
+  handle: {
+    fields,
+    values,
+    errors,
+    changed,
+    busy: saving,
+    dirty: canSettle,
+    dirtyFields,
+    submitting: saving,
+    canSubmit,
+    set,
+    submit: () => panel.instance.forms.submit(slot.slot),
+    reset: async (options) => {
+      if (options?.confirm) return await confirmDiscard();
+      discard();
+      return true;
+    },
+  },
   async receive(draft) {
     const evaluated = await evaluateMemberFormDraft(member, panel.instance, forms, draft);
     if (!evaluated) return null;
@@ -647,12 +669,13 @@ function discard() {
 }
 
 /** The reader's Discard: what they have not saved is thrown away only once they say so (原页面对照《智能体设置》). */
-async function confirmDiscard() {
+async function confirmDiscard(): Promise<boolean> {
   const confirmed = await confirmDanger(t("platform.formDiscardConfirm"), t("platform.discard"), {
     confirmButtonText: t("platform.discard"),
     cancelButtonText: t("platform.keepEditing"),
   });
   if (confirmed) discard();
+  return confirmed;
 }
 
 /**

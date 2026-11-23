@@ -112,6 +112,7 @@ export function appDeclarations(
       frame: app.frame,
       href: app.href,
       open: app.open,
+      allowStandalone: app.allowStandalone,
       // The rail row opens the application's own first page. A declaration that names its entry keeps it (the agent
       // platform is entered at the conversation); otherwise the first page the account may open decides, so a row never
       // opens an address no route serves.

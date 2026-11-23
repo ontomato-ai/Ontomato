@@ -675,7 +675,7 @@ async function download() {
   border-radius: 50%;
   background: var(--el-color-success);
 }
-@container (max-width: 520px) {
+@container (max-width: 420px) {
   .sdk-object-graph-canvas-op-hint {
     display: none;
   }

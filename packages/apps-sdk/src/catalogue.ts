@@ -233,7 +233,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectSummary",
     role: "presentation",
     meaning:
-      "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags and clickable object references. Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object.",
+      "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags, clickable object references, and optional one-click copy buttons (`config.copyableFields`, resolving `#/...` hash links against the current browser origin and pathname). Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object.",
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*"],
     data: { record: { results: ["panelRecord"], required: true } },
@@ -453,6 +453,14 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     meaning:
       "One titled group of a page's content, with one line of what it is for and the platform's spacing and hairline between groups that follow one another. It binds nothing.",
+  }),
+  defineComponentMeta({
+    componentId: "PageHeader",
+    module: "@ontomato/sdk/base",
+    exportName: "PageHeader",
+    role: "presentation",
+    meaning:
+      "Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text or a projection-bound component in `#title`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
   }),
   defineComponentMeta({
     componentId: "PathTree",

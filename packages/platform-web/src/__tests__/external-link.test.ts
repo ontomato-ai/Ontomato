@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { ElMessageBox } from "element-plus";
-import { copyExternalLink, externalLinkOf, writeClipboard } from "../external-link";
+import { clearExternalLinkTab, copyExternalLink, externalLinkOf, externalLinkTab, rememberExternalLinkTab, writeClipboard } from "../external-link";
 
 /*
  * An entry's external link is its own address with the flag (big main's ruling, 2026-11-21): the state the reader is at
@@ -50,4 +50,13 @@ it("copies without the clipboard API, and shows the link when nothing copies it"
     delete (document as { execCommand?: unknown }).execCommand;
     vi.restoreAllMocks();
   }
+});
+
+it("remembers and clears external link tab state in sessionStorage", () => {
+  sessionStorage.clear();
+  expect(externalLinkTab()).toBe(false);
+  rememberExternalLinkTab();
+  expect(externalLinkTab()).toBe(true);
+  clearExternalLinkTab();
+  expect(externalLinkTab()).toBe(false);
 });
