@@ -16,7 +16,12 @@ import { workbenchI18n } from "../../../../i18n";
  * reports itself alone. Choosing a card is not a change: it writes nothing. Doubles: the dashboard API, the platform's
  * chart and the resize library.
  */
-const api = vi.hoisted(() => ({ layouts: [] as unknown[], renamed: [] as unknown[], savedParams: [] as unknown[] }));
+const api = vi.hoisted(() => ({
+  layouts: [] as unknown[],
+  renamed: [] as unknown[],
+  savedParams: [] as unknown[],
+  confirmCalls: [] as unknown[],
+}));
 const file = {
   name: "revenue.chart.json",
   content: {
@@ -60,6 +65,10 @@ vi.mock("../../api", () => ({
     api.savedParams.push(input);
     return { cardId: "c1", query: { kind: "metric", metricId: "m-1", parameters: {} }, revision: "r1" };
   },
+  prepareDashboardAgentConfirm: async (input: unknown) => {
+    api.confirmCalls.push(input);
+    return { intentId: "intent-auto-1", autoMode: true, questionId: null, label: "Save card parameters" };
+  },
   createDimension: async () => true,
   deleteDimension: async () => true,
   deleteMetric: async () => true,
@@ -94,6 +103,7 @@ afterEach(() => {
   api.layouts = [];
   api.renamed = [];
   api.savedParams = [];
+  api.confirmCalls = [];
   document.body.innerHTML = "";
 });
 
@@ -210,7 +220,14 @@ describe("what the dashboard reports as selected", () => {
       agentRun: { sessionId: "s1", runId: "r1", toolCallId: "t1" },
     });
     await flushPromises();
-    expect(saved).toEqual({ ok: true, kind: "executed", operation: "card.parameters.save" });
+    expect(saved).toEqual({ ok: true, kind: "executed", operation: "card.parameters.save", intentId: "intent-auto-1" });
+    expect(api.confirmCalls).toEqual([{
+      dashboardId: "d1",
+      operation: "card.parameters.save",
+      targetLabel: "Revenue by region",
+      impactSummary: "Fields: Year",
+      agentRun: { sessionId: "s1", runId: "r1", toolCallId: "t1" },
+    }]);
     expect(api.savedParams).toEqual([{ dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2025" } }]);
 
     const refreshed = await registered!.executeAction!({

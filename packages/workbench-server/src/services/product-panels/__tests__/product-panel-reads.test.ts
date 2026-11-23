@@ -17,10 +17,12 @@ const currentProductGrantsMock = vi.hoisted(() => vi.fn());
 const copyCurrentProductMock = vi.hoisted(() => vi.fn());
 const deleteCurrentProductMock = vi.hoisted(() => vi.fn());
 const readCurrentPanelMock = vi.hoisted(() => vi.fn());
+const readCataloguePanelMock = vi.hoisted(() => vi.fn());
 const searchProductGrantPrincipalsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../catalog", () => ({
   listCurrentProducts: listCurrentProductsMock,
+  readCataloguePanel: readCataloguePanelMock,
   currentProductUsedBy: currentProductUsedByMock,
   currentProductGrants: currentProductGrantsMock,
   copyCurrentProduct: copyCurrentProductMock,
@@ -105,6 +107,7 @@ const samplePanel = {
 beforeEach(() => {
   vi.clearAllMocks();
   readCurrentPanelMock.mockResolvedValue(samplePanel);
+  readCataloguePanelMock.mockResolvedValue({ panel: samplePanel });
   searchProductGrantPrincipalsMock.mockResolvedValue({
     options: [{ id: "user-1", name: "Alice Chen" }],
   });
@@ -209,6 +212,8 @@ describe("createProductPanelReadAdapter", () => {
         objectType: PRODUCT_PANEL,
         domainShared: true,
         hiddenUsedByCount: 2,
+        unavailable: false,
+        unavailableReason: "",
       },
       outputs: {
         canEdit: true,
@@ -219,6 +224,8 @@ describe("createProductPanelReadAdapter", () => {
         domainShared: true,
         revision: 3,
         hiddenUsedByCount: 2,
+        unavailable: false,
+        unavailableReason: "",
       },
     });
   });
@@ -384,11 +391,10 @@ describe("createProductPanelReadAdapter", () => {
       template: true,
     });
 
-    readCurrentPanelMock.mockResolvedValueOnce({ ...samplePanel, editable: false });
+    readCataloguePanelMock.mockResolvedValueOnce({ panel: { ...samplePanel, editable: false } });
     expect(await deleteOp!.unavailable?.(host as never, { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "orders-panel" }))
       .toEqual({ reason: en["panels.productCatalog.application.readOnly"] });
 
-    readCurrentPanelMock.mockResolvedValueOnce({ ...samplePanel, editable: true });
     expect(await deleteOp!.unavailable?.(host as never, { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "orders-panel" }))
       .toBeUndefined();
   });

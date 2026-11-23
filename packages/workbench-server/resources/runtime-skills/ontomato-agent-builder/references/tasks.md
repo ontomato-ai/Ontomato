@@ -32,7 +32,12 @@ An agent may hold protected skills this caller cannot see, and `get`, the page a
 
 ## Delete an agent
 
-With live page tools, open `/agents/settings/<id>` and use `page_action({ operation: "remove.delete" })`. Outside the platform, `delete <id>` removes the definition.
+With live page tools, pass the intended agent ID as `state.selected.primaryKey` in `present`
+as shown in [forms](forms.md). Check the returned snapshot for the same selected primary key
+and the page instance ID. Pass both to `page_action` for `remove.delete` as `expectedTarget`
+and `expectedPageInstanceId`. If the selection is absent, the list falls back to a different
+agent, or the page instance cannot be verified, stop and tell the user. Outside the platform,
+`delete <id>` removes the definition.
 
 ## Check the result
 
