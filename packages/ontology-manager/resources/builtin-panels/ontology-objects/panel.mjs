@@ -36,7 +36,7 @@ await mountPanel({
     const selectedKey = computed(() => selected.value?.primaryKey ?? "");
     const selectedAttribute = computed(() => state.value.selectedAttribute ?? null);
     const creating = computed(() => state.value.creating === true);
-    const creatingAttribute = ref(false);
+    const creatingAttribute = computed(() => state.value.creatingAttribute === true);
 
     // Public deep-linked keyword forwarded to the catalog ObjectList.
     const search = computed({
@@ -84,9 +84,9 @@ await mountPanel({
     function openClass(target) {
       const primaryKey = typeof target === "string" ? target : target?.primaryKey;
       if (!primaryKey) return;
-      creatingAttribute.value = false;
       instance.state.setState({
         creating: false,
+        creatingAttribute: false,
         selected: { className: OBJECT_TYPE, primaryKey },
         className: primaryKey,
         selectedAttribute: null,
@@ -94,19 +94,19 @@ await mountPanel({
     }
 
     function backToCatalog() {
-      creatingAttribute.value = false;
       instance.state.setState({
         selected: null,
         className: null,
         selectedAttribute: null,
         creating: false,
+        creatingAttribute: false,
       });
     }
 
     function startCreate() {
-      creatingAttribute.value = false;
       instance.state.setState({
         creating: true,
+        creatingAttribute: false,
         selected: null,
         className: null,
         selectedAttribute: null,
@@ -116,6 +116,7 @@ await mountPanel({
     function cancelCreate() {
       instance.state.setState({
         creating: false,
+        creatingAttribute: false,
         selected: null,
         className: null,
         selectedAttribute: null,
@@ -123,18 +124,18 @@ await mountPanel({
     }
 
     function closeAttribute() {
-      creatingAttribute.value = false;
-      if (selectedAttribute.value) instance.state.set("selectedAttribute", null);
+      if (creatingAttribute.value || selectedAttribute.value) {
+        instance.state.setState({ creatingAttribute: false, selectedAttribute: null });
+      }
     }
 
     async function startCreateAttribute() {
       if (editAttributeDrawer.value && !(await attributeBack.back())) return;
-      instance.state.set("selectedAttribute", null);
-      creatingAttribute.value = true;
+      instance.state.setState({ selectedAttribute: null, creatingAttribute: true });
     }
 
     function cancelCreateAttribute() {
-      creatingAttribute.value = false;
+      instance.state.set("creatingAttribute", false);
     }
 
     // Inner back layer: closing the attribute drawer guards only `attributeForm` and leaves `objectForm` untouched.
@@ -155,6 +156,7 @@ await mountPanel({
     }
 
     // Keep `className` synchronized with `selected` for attribute and relationship list reads.
+    // Leaving detail clears `creatingAttribute`; entering detail keeps it so atomic present({ selected, creatingAttribute: true }) works.
     watch(selected, value => {
       const className = value?.primaryKey ?? null;
       const patch = {};
@@ -163,9 +165,27 @@ await mountPanel({
         patch.selectedAttribute = null;
       }
       if (value && creating.value) patch.creating = false;
+      if (!value && creatingAttribute.value) patch.creatingAttribute = false;
       if (Object.keys(patch).length) instance.state.setState(patch);
-      if (!value) creatingAttribute.value = false;
     }, { immediate: true });
+
+    // Keep create-attribute mode mutually exclusive with edit-attribute mode and valid only inside a class detail.
+    watch(creatingAttribute, value => {
+      if (!value || !creatingAttribute.value) return;
+      if (!selected.value) {
+        instance.state.set("creatingAttribute", false);
+        return;
+      }
+      if (selectedAttribute.value) {
+        instance.state.set("selectedAttribute", null);
+      }
+    }, { immediate: true });
+
+    watch(selectedAttribute, value => {
+      if (value && selectedAttribute.value && creatingAttribute.value) {
+        instance.state.set("creatingAttribute", false);
+      }
+    });
 
     // Re-read the selected object type's summary metrics and primary-key status when child attributes or relationships change.
     onBeforeUnmount(instance.onObjectChanged(object => {
@@ -188,10 +208,11 @@ await mountPanel({
     }
 
     function attributeSaved(object) {
-      const wasCreating = creatingAttribute.value;
-      creatingAttribute.value = false;
-      if (wasCreating && object?.primaryKey) {
-        instance.state.set("selectedAttribute", { className: ATTRIBUTE, primaryKey: object.primaryKey });
+      if (creatingAttribute.value) {
+        instance.state.setState({
+          creatingAttribute: false,
+          selectedAttribute: object?.primaryKey ? { className: ATTRIBUTE, primaryKey: object.primaryKey } : null,
+        });
       }
       instance.refreshObjects();
     }
