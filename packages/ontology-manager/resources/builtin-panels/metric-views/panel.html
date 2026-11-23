@@ -30,21 +30,39 @@
   }
   .mv-divider { width: 1px; height: var(--spacing-lg); background: var(--ui-divider); }
   .mv-detail-header-slot {
+    flex: 1 1 12rem;
     min-width: 0;
-    overflow: hidden;
+    overflow: visible;
   }
   .mv-detail-header-slot .sdk-object-header {
     gap: 0;
   }
   .mv-detail-header-slot .sdk-object-header-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-size: var(--text-base);
     line-height: var(--leading-base, 1.5);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .mv-detail-header-slot .fui-data-state {
+    padding: var(--spacing-xs) 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .mv-detail-header-slot .fui-data-state-empty,
+  .mv-detail-header-slot .fui-data-state-forbidden {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) 0;
+    text-align: left;
+  }
+  .mv-detail-header-slot .fui-data-state-icon {
+    width: 18px;
+    height: 18px;
   }
   .mv-detail-title {
     margin: 0;
+    flex: 1 1 12rem;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -53,8 +71,7 @@
     font-size: var(--text-base);
     font-weight: var(--font-semibold);
   }
-  .mv-spacer { flex: 1 1 auto; }
-  .mv-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
+  .mv-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); margin-inline-start: auto; }
   .mv-test-body { display: flex; flex-direction: column; gap: var(--spacing-md); }
   .mv-test-source { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
   .mv-test-select { width: 18rem; max-width: 100%; }
@@ -91,7 +108,7 @@
               <sdk-option value="PUBLISHED" :label="t('metricViews.status.PUBLISHED')"></sdk-option>
               <sdk-option value="UNUSED" :label="t('metricViews.status.UNUSED')"></sdk-option>
             </sdk-select>
-            <projection slot="publishStatus" @done="onBatchStatusDone"></projection>
+            <projection slot="publishStatus"></projection>
           </template>
         </projection>
       </div>
@@ -100,11 +117,10 @@
         <header class="mv-detail-head">
           <sdk-button text @click="backToCatalog">← {{ t("metricViews.back") }}</sdk-button>
           <span class="mv-divider" aria-hidden="true"></span>
-          <span v-if="selected" v-show="headerStatus === 'ready'" class="mv-detail-header-slot">
+          <div v-if="selected" class="mv-detail-header-slot">
             <projection slot="header"></projection>
-          </span>
-          <h2 v-if="!selected || headerStatus !== 'ready'" class="mv-detail-title">{{ detailTitle }}</h2>
-          <span class="mv-spacer"></span>
+          </div>
+          <h2 v-else class="mv-detail-title">{{ detailTitle }}</h2>
           <div class="mv-detail-actions">
             <sdk-button @click="openTest">{{ t("metricViews.test") }}</sdk-button>
             <projection v-if="selected" slot="remove" @done="onRemoveDone"></projection>

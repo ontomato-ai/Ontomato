@@ -226,7 +226,20 @@ async function waitFor(check: () => boolean, label: string | (() => string)): Pr
 function mountMetricViews(initialState: Record<string, unknown> = {}) {
   const reads: DataReadRequest[] = [];
   const opsReads: OpsReadRequest[] = [];
+  const dispatched: Array<{ operationId: string; targetPrimaryKey: string | null }> = [];
   let localConfirmSeq = 0;
+  let intentSeq = 0;
+  const preparedIntents = new Map<string, { operationId: string; targetPrimaryKey: string | null }>();
+  let headerOverride: ((key: string) => Record<string, unknown>) | null = null;
+  let deleteOutcome: Record<string, unknown> = {
+    kind: "success",
+    message: "Metric view deleted",
+    data: {},
+    affected: {
+      objects: [{ objectType: METRIC_VIEW, primaryKey: "mv-1" }],
+      objectTypes: [METRIC_VIEW],
+    },
+  };
   let controller: PageControllerHandle | null = null;
   let latestContext: PageContext | null = null;
 
@@ -249,6 +262,44 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
         intentId: `8f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d0${localConfirmSeq}`,
         questionId: `9f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d0${localConfirmSeq}`,
         label: body?.operationLabel ?? "Discard",
+      });
+    }
+    if (request.method === "POST" && path === "/api/panel-operations/intents") {
+      intentSeq += 1;
+      const body = request.body as { operationId: string; call?: { target?: { primaryKey?: string } } };
+      const intentId = `33333333-3333-4333-8333-33333333330${intentSeq}`;
+      const targetPrimaryKey = body.call?.target?.primaryKey ?? null;
+      preparedIntents.set(intentId, { operationId: body.operationId, targetPrimaryKey });
+      return Response.json({
+        intentId,
+        operationId: body.operationId,
+        label: body.operationId === "remove.delete" ? "Delete" : "Action",
+        confirmation: { kind: "none" },
+        autoMode: true,
+      });
+    }
+    const intentRead = /^\/api\/panel-operation-intents\/([^/?]+)$/.exec(path);
+    if (intentRead && request.method === "GET") {
+      const entry = preparedIntents.get(intentRead[1]!);
+      return Response.json({
+        intentId: intentRead[1],
+        operationId: entry?.operationId ?? "remove.delete",
+        label: entry?.operationId === "remove.delete" ? "Delete" : "Action",
+        confirmation: { kind: "none" },
+        autoMode: true,
+      });
+    }
+    const intentDispatch = /^\/api\/panel-operations\/intents\/([^/]+)\/dispatch$/.exec(path);
+    if (intentDispatch && request.method === "POST") {
+      const entry = preparedIntents.get(intentDispatch[1]!);
+      dispatched.push({
+        operationId: entry?.operationId ?? "",
+        targetPrimaryKey: entry?.targetPrimaryKey ?? null,
+      });
+      return Response.json({
+        kind: "dispatched",
+        intentId: intentDispatch[1],
+        outcome: deleteOutcome,
       });
     }
     if (path === `/api/product-panels/${metricViewsPanel.id}`) return panelAnswer(metricViewsPanel, request);
@@ -353,6 +404,7 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
       if (member === "header") {
         const key = readTargetKey(body);
         if (!key) return Response.json({ status: "empty" });
+        if (headerOverride) return Response.json(headerOverride(key));
         return Response.json({
           status: "ready",
           value: {
@@ -379,6 +431,14 @@ function mountMetricViews(initialState: Record<string, unknown> = {}) {
   return {
     reads,
     opsReads,
+    dispatched,
+    router,
+    setHeaderOverride(fn: ((key: string) => Record<string, unknown>) | null) {
+      headerOverride = fn;
+    },
+    setDeleteOutcome(next: Record<string, unknown>) {
+      deleteOutcome = next;
+    },
     controller: () => controller,
     context: () => latestContext,
     async open() {
@@ -590,6 +650,7 @@ describe("metric-views builtin panel detail mount lifecycle", () => {
 
       expect(mounted.element.contains(catalogEl!)).toBe(true);
       expect(catalogEl!.style.display).toBe("none");
+      expect(mounted.element.querySelector(".mv-detail-header-slot")).toBeNull();
       expect(mounted.element.querySelector(".mv-detail-title")?.textContent?.trim()).toBe("New Metric View");
 
       // Filling the draft name updates detailTitle reactively via instance.forms.handle("definition").
@@ -630,6 +691,130 @@ describe("metric-views builtin panel detail mount lifecycle", () => {
         ok: false,
         reason: "form_not_found",
       });
+    } finally {
+      mounted.app.unmount();
+    }
+  });
+
+  it("stays in detail and surfaces header error, forbidden, and empty states instead of closing, closing only on delete success", async () => {
+    const harness = mountMetricViews();
+    const mounted = await harness.open();
+    try {
+      await waitFor(
+        () =>
+          mounted.element.textContent?.includes("Revenue") === true
+          && harness.controller() !== null,
+        "initial catalog ready",
+      );
+
+      const catalogEl = mounted.element.querySelector(".mv-catalog") as HTMLElement | null;
+      expect(catalogEl).not.toBeNull();
+
+      // 1. Open existing metric mv-1 and confirm ObjectHeader renders ready with no fallback title.
+      harness.controller()!.applyState({ selected: metricRef("mv-1") });
+      await waitFor(
+        () =>
+          mounted.element.querySelector(".mv-detail-header-slot")?.textContent?.includes("Revenue") === true
+          && (mounted.element.querySelector(".mv-detail input") as HTMLInputElement | null)?.value === "Metric mv-1",
+        "selected metric detail and header ready",
+      );
+
+      const headerSlot = () => mounted.element.querySelector(".mv-detail-header-slot") as HTMLElement | null;
+      const refreshBtn = () =>
+        mounted.element.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]');
+
+      expect(headerSlot()).not.toBeNull();
+      expect(headerSlot()!.style.display).not.toBe("none");
+      expect(mounted.element.querySelector(".mv-detail-title")).toBeNull();
+      expect(harness.router.currentRoute.value.query.selected).toBeTruthy();
+
+      // 2. Header re-read returns error: stays in detail, keeps selected, displays visible error in header.
+      const readsBeforeError = harness.reads.filter((r) => r.memberPath[0]?.member === "header").length;
+      harness.setHeaderOverride(() => ({ status: "error", message: "Metric service temporarily unavailable" }));
+      refreshBtn()!.click();
+      await waitFor(
+        () =>
+          harness.reads.filter((r) => r.memberPath[0]?.member === "header").length > readsBeforeError
+          && headerSlot()?.textContent?.includes("Metric service temporarily unavailable") === true,
+        "header shows error state after re-read",
+      );
+
+      expect(mounted.element.querySelector(".mv-detail")).not.toBeNull();
+      expect(catalogEl!.style.display).toBe("none");
+      expect(headerSlot()!.style.display).not.toBe("none");
+      expect(headerSlot()!.querySelector(".fui-data-state-error")).not.toBeNull();
+      expect(mounted.element.querySelector(".mv-detail-title")).toBeNull();
+      expect(harness.router.currentRoute.value.query.selected).toBeTruthy();
+
+      // 3. Header re-read returns forbidden: stays in detail, keeps selected, displays visible forbidden reason.
+      const readsBeforeForbidden = harness.reads.filter((r) => r.memberPath[0]?.member === "header").length;
+      harness.setHeaderOverride(() => ({ status: "forbidden", reason: "No permission to inspect this metric" }));
+      refreshBtn()!.click();
+      await waitFor(
+        () =>
+          harness.reads.filter((r) => r.memberPath[0]?.member === "header").length > readsBeforeForbidden
+          && headerSlot()?.textContent?.includes("No permission to inspect this metric") === true,
+        "header shows forbidden state after re-read",
+      );
+
+      expect(mounted.element.querySelector(".mv-detail")).not.toBeNull();
+      expect(catalogEl!.style.display).toBe("none");
+      expect(headerSlot()!.style.display).not.toBe("none");
+      expect(headerSlot()!.querySelector(".fui-data-state-forbidden")).not.toBeNull();
+      expect(mounted.element.querySelector(".mv-detail-title")).toBeNull();
+      expect(harness.router.currentRoute.value.query.selected).toBeTruthy();
+
+      // 4. Header re-read returns empty: stays in detail, keeps selected, displays visible empty state.
+      const readsBeforeEmpty = harness.reads.filter((r) => r.memberPath[0]?.member === "header").length;
+      harness.setHeaderOverride(() => ({ status: "empty" }));
+      refreshBtn()!.click();
+      await waitFor(
+        () =>
+          harness.reads.filter((r) => r.memberPath[0]?.member === "header").length > readsBeforeEmpty
+          && headerSlot()?.querySelector(".fui-data-state-empty") !== null,
+        "header shows empty state after re-read",
+      );
+
+      expect(mounted.element.querySelector(".mv-detail")).not.toBeNull();
+      expect(catalogEl!.style.display).toBe("none");
+      expect(headerSlot()!.style.display).not.toBe("none");
+      expect(mounted.element.querySelector(".mv-detail-title")).toBeNull();
+      expect(harness.router.currentRoute.value.query.selected).toBeTruthy();
+
+      // 5. Failed delete outcome must NOT close detail or clear selected.
+      harness.setDeleteOutcome({ kind: "failed", message: "Metric is referenced by a dashboard" });
+      const deleteBtn = () =>
+        Array.from(mounted.element.querySelectorAll<HTMLButtonElement>(".mv-detail-actions button")).find((b) =>
+          b.textContent?.includes("Delete"),
+        );
+      await waitFor(() => Boolean(deleteBtn() && !deleteBtn()!.disabled), "delete button ready");
+      deleteBtn()!.click();
+      await waitFor(() => harness.dispatched.length === 1, "failed delete dispatched");
+
+      expect(mounted.element.querySelector(".mv-detail")).not.toBeNull();
+      expect(catalogEl!.style.display).toBe("none");
+      expect(harness.router.currentRoute.value.query.selected).toBeTruthy();
+
+      // 6. Successful delete outcome closes detail, clears selected, and returns to catalog.
+      harness.setDeleteOutcome({
+        kind: "success",
+        message: "Metric view deleted",
+        data: {},
+        affected: {
+          objects: [{ objectType: METRIC_VIEW, primaryKey: "mv-1" }],
+          objectTypes: [METRIC_VIEW],
+        },
+      });
+      await waitFor(() => Boolean(deleteBtn() && !deleteBtn()!.disabled), "delete button ready for retry");
+      deleteBtn()!.click();
+      await waitFor(
+        () =>
+          harness.dispatched.length === 2
+          && mounted.element.querySelector(".mv-detail") === null
+          && catalogEl!.style.display !== "none"
+          && !harness.router.currentRoute.value.query.selected,
+        "detail closed and selected cleared after delete success",
+      );
     } finally {
       mounted.app.unmount();
     }
