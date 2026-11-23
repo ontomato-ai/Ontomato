@@ -286,7 +286,6 @@ const panel = productPanelInputSchema.parse({
       remove: { target: { projectionId: "projection-knowledge-delete" }, inputs: { knowledge: { state: "selectedEntry" } } },
       removeAll: { target: { projectionId: "projection-knowledge-delete-checked" }, inputs: { selection: { state: "checked" } } },
     },
-    commands: {},
   },
 });
 

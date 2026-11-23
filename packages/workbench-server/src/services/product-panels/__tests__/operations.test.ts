@@ -117,7 +117,6 @@ beforeEach(()=>{
        run: { target: { projectionId: "run" }, inputs: { task: { state: "task" } } },
        form: { target: { projectionId: "form" }, inputs: { task: { state: "task" } } },
      },
-     commands: {},
    },
  });
  mocks.projection.mockImplementation(async(_o:unknown,c:unknown,id:string)=>{expect(c).toBe(credentials);return {id,name:"Run now",componentId:id,binding:id==="run"?{kind:"PlatformOperation",id:"schedules.runNow"}:{kind:"PlatformObjectType",id:"platform:ScheduledTask"},inputs:{task:{kind:"object",objectType:"platform:ScheduledTask"}}};});
@@ -358,7 +357,7 @@ it("asks by the entry's title and approves the whole entry as the executor", asy
   const entry = { knowledgeID: key, knowledgeTitle: "Order rule", knowledgeText: "Orders need a customer", knowledgeTags: ["Business"], status: 0, creatorType: 1 };
   mocks.panel.mockResolvedValue({ id: "P", manifest: {
     state: { task: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
-    members: { run: { target: { projectionId: "run" }, inputs: { knowledge: { state: "task" } } } }, commands: {},
+    members: { run: { target: { projectionId: "run" }, inputs: { knowledge: { state: "task" } } } },
   } });
   mocks.projection.mockResolvedValue({ id: "run", name: "Approve", componentId: "@ontomato/sdk:OperationButton",
     binding: { kind: "PlatformOperation", id: APPROVE_KNOWLEDGE }, inputs: { knowledge: { kind: "object", objectType: BUSINESS_KNOWLEDGE } },
@@ -849,7 +848,6 @@ it("rechecks a customer action and reads the confirmation label as the initiator
  mocks.panel.mockResolvedValue({ id: "P", manifest: {
    state: { order: { type: identity } },
    members: { run: { target: { projectionId: "approval" }, inputs: { target: { state: "order" } } } },
-   commands: {},
  } });
  mocks.projection.mockResolvedValue({ id: "approval", name: "Approve order",
    binding: { kind: "Action", id: "approve-order" }, inputs: { target: identity },

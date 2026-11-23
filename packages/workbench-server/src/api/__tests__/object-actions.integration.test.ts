@@ -57,7 +57,6 @@ const panel = {
       approve: { target: { projectionId: "approve" }, inputs: { target: { state: "order" } } },
       pinned: { target: { projectionId: "approve" }, inputs: { target: { literal: orderRef } } },
     },
-    commands: {},
   },
 };
 

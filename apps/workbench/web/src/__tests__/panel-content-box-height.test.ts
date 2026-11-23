@@ -120,7 +120,7 @@ describe("host content-box structure across full-page, beside-conversation, and 
   const appId = "app-height";
   const path = `/applications/${appId}/work`;
   const entryUse = { ...panelUse("use-work", "height-work", "panel-height-work", path), names: { en: "Work" } };
-  const entryPanel = panelRecord("panel-height-work", "Work", definePanel({ state: {}, members: {}, commands: {} }));
+  const entryPanel = panelRecord("panel-height-work", "Work", definePanel({ state: {}, members: {} }));
   entryPanel.content = {
     html: `<style>} body { color: red; }</style><div id="app"><section class="work-root">Work</section></div>`,
     module: `import { mountPanel } from "@ontomato/sdk/panel"; await mountPanel({});`,
@@ -129,7 +129,6 @@ describe("host content-box structure across full-page, beside-conversation, and 
   const framePanel = panelRecord("panel-height-frame", "Frame", definePanel({
     state: {},
     members: { content: { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } } },
-    commands: {},
   }));
   framePanel.content = {
     html: `<div id="app" class="frame-app"><nav class="frame-nav">Menu</nav><current-entry member="content"></current-entry></div>`,
@@ -278,7 +277,7 @@ describe("host content-box structure across full-page, beside-conversation, and 
       expect(slot).not.toBeNull();
       const unit = slot.querySelector<HTMLElement>(":scope > .sdk-panel-member-nested > .sdk-current-entry > .panel-entry-unit")!;
       expect(unit).not.toBeNull();
-      expect(unit.querySelector(":scope > .platform-page-header .page-title")?.textContent).toBe("Work");
+      expect(unit.querySelector(":scope > .platform-page-header")).toBeNull();
       const entryBody = unit.querySelector<HTMLElement>(":scope > .panel-entry-unit-body")!;
       expect(
         entryBody.querySelector(":scope > .panel-host.panel-host-page > .panel-host-direct > .panel-host-coded > [data-panel-bare-root] > .work-root"),

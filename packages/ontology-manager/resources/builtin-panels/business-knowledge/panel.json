@@ -58,7 +58,6 @@
         "prefillKey": "panel.governancePrefill",
         "config": {
           "labelKey": "panel.governance",
-          "placement": "header",
           "icon": "book-open"
         },
         "id": "builtin-product-6fbcf139-2ed6-46d3-919f-f06e4ed7bb58"
@@ -219,22 +218,6 @@
           }
         },
         "id": "builtin-product-caeb4407-6da9-4ce6-922c-1ab4129bd431"
-      }
-    },
-    "commands": {
-      "create": {
-        "labelKey": "panel.add",
-        "primary": true,
-        "icon": "plus",
-        "do": {
-          "set": {
-            "fields": {
-              "mode": {
-                "literal": "create"
-              }
-            }
-          }
-        }
       }
     }
   },

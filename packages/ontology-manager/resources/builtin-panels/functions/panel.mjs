@@ -42,6 +42,10 @@ await mountPanel({
       setCreating(false);
     }
 
-    return { selected, creating, saved, discard };
+    function startCreate() {
+      instance.state.setState({ selected: null, creating: true });
+    }
+
+    return { selected, creating, saved, discard, startCreate, refresh: () => instance.refreshObjects() };
   },
 });

@@ -2,10 +2,10 @@
 import { computed, inject, markRaw, ref, shallowRef, toRaw, watch, watchEffect, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, usePageHeading, useUnsavedChanges, type DirectPanelRun, type PanelDetailHeader, type PanelHostLabels, type PanelHostPort, type PanelInstanceView, type PlatformPageHeading } from "@ontomato/platform-shell";
+import { PanelHost, panelUnavailable, useApplicationFrame, useApplicationTheme, useAppTheme, useUnsavedChanges, type DirectPanelRun, type PanelHostLabels, type PanelHostPort, type PanelInstanceView } from "@ontomato/platform-shell";
 import { applicationPanelAddress, panelAddress, panelAddressState, panelUsePath, parseApplicationPanelAddress } from "@ontomato/contracts/panel-host";
-import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { applicationRootPath } from "@ontomato/contracts/platform-identity";
+import type { PanelDeepLinkStateValue } from "@ontomato/contracts/panel-manifest";
 import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationFrameContextOf, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
@@ -15,9 +15,7 @@ import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import EntryUnit from "./EntryUnit.vue";
-import { copyExternalLink } from "../external-link";
 import { entryCountsChanged } from "../entry-counts";
-import { Link } from "lucide-vue-next";
 import { expandDeclaredComposer, hostThemeMode } from "../app-host";
 import { useApplicationCatalog } from "../catalog";
 
@@ -108,8 +106,6 @@ interface KeptPage {
   context: PageContext | null;
   /** Whether it holds unsaved changes; only the shown page can, and leaving it so drops it. */
   dirty: boolean;
-  /** Full-width detail view heading published by the panel to replace the catalog header with a single detail bar. */
-  detailHeader: PanelDetailHeader | null;
   /** Which page skill a message beside it reaches, as its instance's latest read for it answered; null until one has. */
   pageSkill: PageSkillContext | null;
   /** Shown again and not yet through its checks: what it reaches is passed on only once they have confirmed it. */
@@ -291,7 +287,6 @@ watch([opened, () => resolution.value?.framePanelId], () => {
   const { path, state, query } = parseApplicationPanelAddress(opened.value);
   void router.replace(applicationPanelAddress(path, { frame: kept.state, state, query }));
 });
-const headerLabels = computed(() => ({ save: t("platform.save"), discard: t("platform.discard"), unsavedChanges: t("platform.unsavedChanges") }));
 
 /** What the panel host says to the reader, in the platform's language. */
 const labels = computed<PanelHostLabels>(() => ({
@@ -403,8 +398,6 @@ const requestedState = computed(() => panelAddressState(opened.value));
  * one is named by what its panel reports.
  */
 const pageName = computed(() => localizedApplicationText(use.value?.names, locale.value) ?? "");
-/** The line under the page's title, as a native page's header has it: the entry's description in the reader's language. */
-const pageDescription = computed(() => localizedApplicationText(use.value?.descriptions, locale.value));
 
 const shownPage = computed(() => kept.value.find((page) => page.use.id === use.value?.id) ?? null);
 
@@ -457,40 +450,6 @@ watch([() => use.value?.id, opened], ([id, next], [previousId, previous]) => {
 if (!props.navigate)
   useUnsavedChanges({ dirty: () => shownPage.value?.dirty ?? false, paths: () => use.value ? [panelUsePath(use.value.path)] : [] });
 
-/**
- * The page's title, description and way back at its own address (big main's rulings, 2026-11-21): the panel draws none
- * of them, and the description is the entry's own, under the title as on a native page. The title is
- * what a message names the page by — the entry's menu name, else its panel's own name — so the two never differ; a page
- * the application's menu does not reach (an entry with no menu name) also gets the way back to where the reader came
- * from, or to the application's root when the page was opened directly. Beside a conversation, the conversation draws both.
- */
-const heading = computed<PlatformPageHeading | null>(() => {
-  const detail = shownPage.value?.detailHeader;
-  if (detail) {
-    return {
-      title: detail.title,
-      back: detail.onBack,
-      backLabel: detail.backLabel,
-      externalLink: opened.value,
-    };
-  }
-  const title = shownPage.value?.context?.label || pageName.value;
-  if (!title) return null;
-  const description = pageDescription.value;
-  // Every entry offers its external link: its address as the reader is on it, state and all (big main's ruling, 2026-11-21).
-  return { title, ...description ? { description } : {}, ...use.value?.names ? {} : { back: goBack }, externalLink: opened.value };
-});
-/** The "more" of the header the frame holds: the same external link the platform's header offers. */
-const entryMore = computed(() => heading.value?.externalLink ? [{
-  id: "copy-external-link", label: t("platform.copyExternalLink"), icon: Link,
-  onClick: () => void copyExternalLink(heading.value!.externalLink!, { copied: t("platform.externalLinkCopied"), title: t("platform.copyExternalLink") }),
-}] : []);
-if (!props.navigate) usePageHeading(() => (framed.value ? null : heading.value));
-function goBack() {
-  if (typeof router.options.history.state.back === "string") router.back();
-  else void router.push(applicationRootPath(props.applicationId));
-}
-
 /** When a kept page shown again may ask for its objects again: the first of the two points its switch is measured at. */
 function markReopened(page: KeptPage) {
   performance.mark("ontomato:panel-page-reopened", { detail: { applicationId: props.applicationId, useId: page.use.id } });
@@ -507,7 +466,6 @@ function openPage(use: ApplicationPanelUse): KeptPage {
     reported: panelAddress(pageAddress.value, requestedState.value),
     context: null,
     dirty: false,
-    detailHeader: null,
     pageSkill: null,
     rechecking: false,
     lastShown: ++showings,
@@ -567,10 +525,6 @@ function reportDirty(page: KeptPage, dirty: boolean) {
   page.dirty = dirty;
   if (page === shownPage.value) emit("display-dirty", dirty);
 }
-
-function reportDetailHeader(page: KeptPage, detail: PanelDetailHeader | null) {
-  page.detailHeader = detail;
-}
 </script>
 
 <template>
@@ -592,7 +546,7 @@ function reportDetailHeader(page: KeptPage, detail: PanelDetailHeader | null) {
         @display-address="reportFrameAddress"
       />
       <div v-if="framePort" ref="holder" class="panel-entry-holder">
-        <EntryUnit ref="unit" :heading="heading" :labels="headerLabels" :back-label="t('common.back')" :more="entryMore" :more-label="t('common.more')">
+        <EntryUnit ref="unit">
           <PanelHost
             v-for="page in kept"
             v-show="page === shownPage"
@@ -613,7 +567,6 @@ function reportDetailHeader(page: KeptPage, detail: PanelDetailHeader | null) {
             @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
             @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
             @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
-            @detail-header="(detail: PanelDetailHeader | null) => reportDetailHeader(page, detail)"
             @context="(context: PageContext) => reportContext(page, context)"
             @reopened="markReopened(page)"
             @withdrawn="withdraw(page)"
@@ -651,7 +604,6 @@ function reportDetailHeader(page: KeptPage, detail: PanelDetailHeader | null) {
           @display-address="(input: DisplayPageAddressInput) => page === shownPage && reportAddress(input)"
           @display-loaded="(load: DisplayLoad) => page === shownPage && emit('display-loaded', load)"
           @display-dirty="(dirty: boolean) => reportDirty(page, dirty)"
-          @detail-header="(detail: PanelDetailHeader | null) => reportDetailHeader(page, detail)"
           @context="(context: PageContext) => reportContext(page, context)"
           @reopened="markReopened(page)"
           @withdrawn="withdraw(page)"

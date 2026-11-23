@@ -28,7 +28,7 @@ import { installPlatform, leaveFrame, mountPlatformPage, nothingAt, panelAnswer,
  * the panel route, and an entry opened for a reader its access does not admit.
  */
 
-const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {}, commands: {} }));
+const panel = panelRecord("builtin-components", "Base components", definePanel({ state: {}, members: {} }));
 const components: ApplicationPanelUse = {
   id: "use-components", pageKey: "ontology-components", panelId: panel.id, path: "/ontology/components",
   access: { permissionCode: "ontology-modeling" }, names: { en: "Base components" },
@@ -134,7 +134,7 @@ it("goes home when the landing picks back the very address nothing serves for th
 it("hands a draft linked at a built-in entry's original address to its panel, past the state the host adds", async () => {
   // A panel with deep-linked state, as business knowledge has (`mode`): the host adds `state` to the address it opens.
   const stated = panelRecord("builtin-components", "Base components", definePanel({
-    state: { mode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "view" } }, members: {}, commands: {},
+    state: { mode: { type: { kind: "scalar", type: "string" }, deepLink: true, default: "view" } }, members: {},
   }));
   const sent = installPlatform((request) => {
     if (request.path === "/api/data-query/platform/applications/ontology/panel-uses")
@@ -223,7 +223,7 @@ it.each([
         selected: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true },
         mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
       },
-      members: {}, commands: {},
+      members: {},
     })),
     visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
   };
@@ -301,7 +301,7 @@ it("opens another built-in application's entry from an entry, and back, without 
   const ontologyUse = ontology.panelUses!.find(entry => entry.path === "/ontology/agents")!;
   const agentsUse = agents.panelUses!.find(entry => entry.path === "/agents/settings")!;
   const panel = {
-    ...panelRecord(ontologyUse.panelId, "Agent settings", definePanel({ state: {}, members: {}, commands: {} })),
+    ...panelRecord(ontologyUse.panelId, "Agent settings", definePanel({ state: {}, members: {} })),
     visibility: "platform" as const, domainId: null, ownerId: null, editable: false as const,
   };
   installPlatform(request => {

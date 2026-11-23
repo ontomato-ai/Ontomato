@@ -33,7 +33,7 @@ function runCheck(kind, directory) {
 function writeWorkspace(directory, { html, module, theme, extraCss } = {}) {
   writeFileSync(join(directory, "panel.json"), JSON.stringify({
     ...(theme ? { theme } : {}),
-    manifest: { state: {}, members: {}, commands: {} },
+    manifest: { state: {}, members: {} },
   }, null, 2));
   writeFileSync(join(directory, "panel.html"), html ?? `<style>.box { background: var(--sdk-bg-color); }</style>\n<div id="app" v-sdk-loading="false"><sdk-button type="primary">Save</sdk-button></div>\n`);
   writeFileSync(join(directory, "panel.mjs"), module ?? `import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n`);
@@ -232,7 +232,6 @@ test("checkPanelWorkspace accepts domain-component listColumn, per-row operation
           data: { record: "record" },
         },
       },
-      commands: {},
     },
     content: {
       messages: {
@@ -382,7 +381,6 @@ test("checkPanelWorkspace reports actionable diagnostics for invalid listColumn 
       manifest: {
         state: { selected: { type: { kind: "object", objectType: "platform:BusinessKnowledge" } } },
         members: item.members,
-        commands: {},
       },
     }, null, 2));
     writeFileSync(join(dir, "panel.html"), item.html);

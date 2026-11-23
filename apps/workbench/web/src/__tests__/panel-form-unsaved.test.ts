@@ -29,7 +29,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { app: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { app: { state: "app" } } } },
-  commands: {},
 };
 const text = (path: string, label: string, advanced?: true) => ({
   path, label, required: false, readOnly: false, valueSchema: {}, control: { kind: "text" }, ...(advanced ? { advanced } : {}),
@@ -114,7 +113,6 @@ it("returns to list cleanly when confirming leave on a dirty form with createFor
   const dualManifest: DirectPanelManifest = {
     state: { app: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
     members: { form: { target: { projectionId: dualProjection.id }, inputs: { app: { state: "app" } } } },
-    commands: {},
   };
   let allowLeave = false;
   const confirmLeaveUnsaved = vi.fn(async () => allowLeave);

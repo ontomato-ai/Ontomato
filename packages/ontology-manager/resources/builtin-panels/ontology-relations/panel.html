@@ -320,7 +320,19 @@
 <div id="app">
   <section class="relations">
     <!-- Catalog view: full-width table matching original OntologyModelCatalog (relations). -->
-    <div v-if="!selectedKey" class="relations-catalog">
+    <template v-if="!selectedKey">
+      <page-header title="关系类型" description="维护对象类型之间的业务关系">
+        <template #actions>
+          <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+          </sdk-button>
+          <sdk-button type="primary" :disabled="creating" @click="startCreate">
+            <svg class="relations-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            <span>新建关系类型</span>
+          </sdk-button>
+        </template>
+      </page-header>
+      <div class="relations-catalog">
       <div class="relations-toolbar">
         <sdk-input class="relations-search" v-model="search" placeholder="筛选关系类型" aria-label="筛选关系类型" clearable>
           <template #prefix>
@@ -353,30 +365,16 @@
           <sdk-empty v-if="rows.length === 0" description="未找到关系类型"></sdk-empty>
         </template>
       </div>
-    </div>
-
-    <!-- Detail view: platform header draws the single bar (back + title + delete + save); local bar is fallback for headerless previews. -->
-    <div v-else class="relations-detail">
-      <header v-if="!hasHeaderHost" class="relations-titlebar">
-        <sdk-button text @click="backToCatalog">
-          <svg class="relations-back-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-          <span>返回关系类型</span>
-        </sdk-button>
-        <span class="relations-divider" aria-hidden="true"></span>
-        <span class="relations-title">{{ title }}</span>
-        <span class="relations-spacer"></span>
-        <div v-if="detail.status === 'ready'" class="relations-detail-actions">
-          <projection slot="remove"></projection>
-          <sdk-button type="primary" :loading="saving" :disabled="!canSave" @click="saveDetail">
-            <svg v-if="!saving" class="relations-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
-            <span>保存</span>
-          </sdk-button>
-        </div>
-      </header>
-      <!-- When the platform header hosts the Delete button, keep the remove member mounted for confirmation dialogs and error feedback. -->
-      <div v-if="hasHeaderHost && detail.status === 'ready'" class="relations-header-op-host">
-        <projection slot="remove"></projection>
       </div>
+    </template>
+
+    <!-- Detail view -->
+    <div v-else class="relations-detail">
+      <page-header back-label="返回关系类型" :title="title" :draft="detailDraft" @back="goBack">
+        <template v-if="detail.status === 'ready'" #actions>
+          <projection slot="remove"></projection>
+        </template>
+      </page-header>
       <p v-if="detail.status === 'loading'" class="relations-note" role="status">正在读取这条关系类型…</p>
       <p v-else-if="detail.status === 'forbidden'" class="relations-note relations-failure">当前账号无权读取这条关系类型。</p>
       <div v-else-if="detail.status !== 'ready'" class="relations-missing">

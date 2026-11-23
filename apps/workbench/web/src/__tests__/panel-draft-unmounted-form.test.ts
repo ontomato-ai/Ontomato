@@ -153,7 +153,6 @@ function createHarness(options: HarnessOptions) {
       list: { target: { projectionId: list.id }, outputs: { selected: { state: "selected" } } },
       form: { target: { projectionId: form.id }, inputs: { task: { state: "selected" } } },
     },
-    commands: {},
   });
   const panel = {
     ...panelRecord("panel-conditional-form", "Conditional form", manifest),
@@ -519,7 +518,6 @@ describe("draft links on panels with conditionally mounted ObjectForm", () => {
         editForm: { target: { projectionId: editForm.id }, inputs: { task: { state: "selected" } } },
         newForm: { target: { projectionId: newForm.id }, inputs: { task: { state: "selected" } } },
       },
-      commands: {},
     });
     const module = `import { computed } from "vue";
 import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";

@@ -108,27 +108,6 @@
         },
         "id": "builtin-product-42563142-b833-4d56-8b84-1715fccd9019"
       }
-    },
-    "commands": {
-      "create": {
-        "labelKey": "attr.command.create",
-        "primary": true,
-        "do": {
-          "set": {
-            "fields": {
-              "creating": {
-                "literal": true
-              },
-              "selected": {
-                "literal": null
-              },
-              "createIn": {
-                "state": "className"
-              }
-            }
-          }
-        }
-      }
     }
   },
   "content": {

@@ -499,6 +499,16 @@
   <section class="apps-page">
     <!-- Directory view: kept alive with v-show to preserve search/page/scroll state -->
     <div v-show="mode === 'list'" class="apps-catalog">
+      <page-header title="应用" description="维护应用身份、入口、资产引用与授权">
+        <template #actions>
+          <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+          </sdk-button>
+          <sdk-button type="primary" @click="openCreate">
+            <span>{{ t('action.create') }}</span>
+          </sdk-button>
+        </template>
+      </page-header>
       <projection slot="catalogue" class="apps-list-slot">
         <template #filters>
           <sdk-segmented v-model="scopeModel" :options="scopeOptions" size="default"></sdk-segmented>
@@ -517,29 +527,17 @@
 
     <!-- Create / Detail views -->
     <div v-if="mode !== 'list'" class="apps-detail">
-      <!-- Fallback header bar when mounted without an enclosing platform page header host -->
-      <header v-if="!hasHeaderHost" class="apps-fallback-bar">
-        <sdk-button text @click="handleBack">
-          &#8592; {{ t('action.back') }}
-        </sdk-button>
-        <span class="apps-bar-divider" aria-hidden="true"></span>
-        <span class="apps-bar-title">{{ detailTitle }}</span>
-        <span class="apps-bar-spacer"></span>
-        <template v-if="mode === 'create'">
-          <sdk-button @click="cancelCreate">{{ t('action.cancel') }}</sdk-button>
-          <sdk-button type="primary" :loading="savingForm" @click="submitSaveForm">{{ t('action.confirmCreate') }}</sdk-button>
+      <page-header :back-label="t('action.back')" :title="detailTitle" :draft="identityDraft" @back="handleBack">
+        <template #actions>
+          <template v-if="mode === 'create'">
+            <sdk-button :disabled="savingForm" @click="cancelCreate">{{ t('action.cancel') }}</sdk-button>
+            <sdk-button type="primary" :loading="savingForm" :disabled="savingForm" @click="submitSaveForm">{{ t('action.confirmCreate') }}</sdk-button>
+          </template>
+          <template v-else-if="app">
+            <projection v-if="app.fields.canMaintain" slot="deleteApp" @done="onDeleteDone"></projection>
+          </template>
         </template>
-        <template v-else-if="app">
-          <projection v-if="app.fields.canMaintain" slot="deleteApp" @done="onDeleteDone"></projection>
-          <sdk-button v-if="showIdentitySave && saveDirty" @click="discardSaveForm">{{ t('action.discard') }}</sdk-button>
-          <sdk-button v-if="showIdentitySave" type="primary" :disabled="!saveDirty" :loading="savingForm" @click="submitSaveForm">{{ t('action.save') }}</sdk-button>
-        </template>
-      </header>
-
-      <!-- Keep deleteApp OperationButton mounted when hosted by platform header (only for maintainable apps) -->
-      <div v-if="hasHeaderHost && mode === 'detail' && app && app.fields.canMaintain" class="apps-header-op-host">
-        <projection slot="deleteApp" @done="onDeleteDone"></projection>
-      </div>
+      </page-header>
 
       <!-- Create mode -->
       <div v-if="mode === 'create'" class="apps-detail-body">

@@ -417,7 +417,6 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
           inputs: { task: { item: true } },
         },
       },
-      commands: {},
     }));
 
     // 1. Human channel: omit call.target while selected is task-A, acting on row task-B.
@@ -578,7 +577,6 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
           inputs: { item: { item: true } },
         },
       },
-      commands: {},
     }));
 
     // Ambiguous scalar itemKey matches both classes -> 422.
@@ -735,7 +733,6 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
           inputs: { task: { state: "task" } },
         },
       },
-      commands: {},
     }));
 
     const appRef = { className: APPLICATION, primaryKey: "app-42" };
@@ -903,7 +900,6 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
           inputs: { item: { item: true } },
         },
       },
-      commands: {},
     }));
     setProduct(makePanel("FramePanel", {
       state: {
@@ -912,7 +908,6 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
       members: {
         content: { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } },
       },
-      commands: {},
     }));
     setProduct(makePanel("OuterPanel", {
       state: {
@@ -924,7 +919,6 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
           inputs: { status: { state: "outerStatus" } },
         },
       },
-      commands: {},
     }));
 
     // Case 1: entry.inputs literal controls status="pending"; attacker tries rowContext.state={status:"approved"} -> ignored!
@@ -1075,7 +1069,6 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
           inputs: { task: { item: true } },
         },
       },
-      commands: {},
     }));
 
     const baseReq: CreatePanelHumanOperationIntentRequest = {
@@ -1206,7 +1199,6 @@ describe("row-scoped operations server resolution, anti-tampering and isolation"
           inputs: { task: { item: true } },
         },
       },
-      commands: {},
     }));
 
     // listRowDetail row operation while panel has row-A selected -> impact shows row-B!

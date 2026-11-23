@@ -207,33 +207,6 @@
         "config": {},
         "id": "builtin-product-bea3ba82-f7da-4b78-99c3-3e56ec5f9c85"
       }
-    },
-    "commands": {
-      "addObjectType": {
-        "labelKey": "visualModeling.addObjectType",
-        "primary": true,
-        "do": {
-          "set": {
-            "fields": {
-              "dialog": {
-                "literal": "class"
-              }
-            }
-          }
-        }
-      },
-      "addRelation": {
-        "labelKey": "visualModeling.addRelation",
-        "do": {
-          "set": {
-            "fields": {
-              "dialog": {
-                "literal": "relation"
-              }
-            }
-          }
-        }
-      }
     }
   },
   "content": {

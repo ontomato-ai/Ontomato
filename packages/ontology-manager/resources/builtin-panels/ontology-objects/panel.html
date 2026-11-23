@@ -338,7 +338,19 @@
 <div id="app">
   <section class="ot-root">
     <!-- Catalog: full-width table of object types; clicking any row enters full-width detail view. -->
-    <div v-if="!selectedKey" class="ot-catalog">
+    <template v-if="!selectedKey">
+      <page-header :title="t('panel.name')" description="定义业务对象类型、属性与标识字段">
+        <template #actions>
+          <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+          </sdk-button>
+          <sdk-button type="primary" :disabled="creating" @click="startCreate">
+            <svg class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            <span>{{ t("ot.command.create") }}</span>
+          </sdk-button>
+        </template>
+      </page-header>
+      <div class="ot-catalog">
       <div class="ot-toolbar">
         <sdk-input v-model="search" class="ot-search" :placeholder="t('ot.search')" clearable>
           <template #prefix>
@@ -370,19 +382,13 @@
           <sdk-empty v-if="filteredRows.length === 0" :description="t('ot.empty')"></sdk-empty>
         </template>
       </div>
-    </div>
+      </div>
+    </template>
 
-    <!-- Detail view: platform header draws the single bar (back + title + configure view + delete + browse + save); local bar is fallback for headerless previews. -->
+    <!-- Detail view -->
     <div v-else class="ot-detail-view">
-      <header v-if="!hasHeaderHost" class="ot-titlebar">
-        <sdk-button text @click="backToCatalog">
-          <svg class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-          <span>{{ t("ot.back") }}</span>
-        </sdk-button>
-        <span class="ot-header-divider" aria-hidden="true"></span>
-        <span class="ot-title">{{ detailTitle }}</span>
-        <span class="ot-spacer"></span>
-        <div v-if="record" class="ot-titlebar-actions">
+      <page-header :back-label="t('ot.back')" :title="detailTitle" :draft="objectDraft" @back="backToCatalog">
+        <template v-if="record" #actions>
           <sdk-button @click="configureView">
             <svg class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
             <span>{{ t("ot.configureView") }}</span>
@@ -395,12 +401,8 @@
             <svg class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
             <span>{{ t("ot.browseData") }}</span>
           </sdk-button>
-          <sdk-button type="primary" :loading="savingObject" :disabled="!canSaveObject" @click="saveObject">
-            <svg v-if="!savingObject" class="ot-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
-            <span>{{ t("ot.saveChanges") }}</span>
-          </sdk-button>
-        </div>
-      </header>
+        </template>
+      </page-header>
 
       <p v-if="detail.status === 'loading'" class="ot-status" role="status">{{ t("ot.loading") }}</p>
       <p v-else-if="detail.status === 'forbidden'" class="ot-status ot-failure">{{ t("ot.forbidden") }}</p>

@@ -4,7 +4,7 @@ import {
   usePanelBack,
   usePanelContext,
   usePanelData,
-  usePanelDetailHeader,
+  usePanelFormDraft,
   usePanelOperation,
 } from "@ontomato/sdk/panel";
 
@@ -191,50 +191,12 @@ await mountPanel({
     );
 
     const detailTitle = computed(() => (record.value ? record.value.label : selectedKey.value));
-    const hasHeaderHost = usePanelDetailHeader(() => (
-      selectedKey.value
-        ? {
-            backLabel: t("ot.back"),
-            title: detailTitle.value,
-            onBack: () => void back.back(),
-            actions: record.value
-              ? [
-                  {
-                    id: "configureView",
-                    label: t("ot.configureView"),
-                    icon: "sliders",
-                    onClick: () => void configureView(),
-                  },
-                  {
-                    id: "delete",
-                    label: t("ot.delete"),
-                    icon: "trash",
-                    danger: true,
-                    inline: true,
-                    disabled: !deleteObjectOp.operation.value,
-                    loading: busy.value === "deleteObject",
-                    onClick: () => void removeObject(),
-                  },
-                  {
-                    id: "browseData",
-                    label: t("ot.browseData"),
-                    icon: "table",
-                    onClick: () => void browseData(),
-                  },
-                  {
-                    id: "save",
-                    label: t("ot.saveChanges"),
-                    icon: "save",
-                    primary: true,
-                    disabled: !canSaveObject.value,
-                    loading: savingObject.value,
-                    onClick: () => void saveObject(),
-                  },
-                ]
-              : [],
-          }
-        : null
-    ));
+    const objectDraft = usePanelFormDraft("objectForm", {
+      when: () => Boolean(selectedKey.value) && Boolean(record.value),
+    });
+    function startCreate() {
+      instance.state.setState({ creating: true, selected: null, selectedAttribute: null });
+    }
 
     function objectSaved(object) {
       if (!creating.value) return;
@@ -376,7 +338,9 @@ await mountPanel({
       canSaveObject,
       savingAttribute,
       canSaveAttribute,
-      hasHeaderHost,
+      objectDraft,
+      startCreate,
+      refresh: () => instance.refreshObjects(),
       deleteObjectOp,
       setPrimaryKeyOp,
       deleteAttributeOp,

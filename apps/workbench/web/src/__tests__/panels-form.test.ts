@@ -47,7 +47,6 @@ function panelFor(objectType: string) {
   return definePanel({
     state: { selectedTask: { type: { kind: "object", objectType }, deepLink: true } },
     members: { form: { target: { projectionId: "projection-schedules-form" }, inputs: { task: { state: "selectedTask" } } } },
-    commands: {},
   });
 }
 

@@ -32,9 +32,6 @@ const panel = definePanel({
     taskForm: { target: { projectionId: "projection-task-form" }, inputs: { task: { state: "selectedTask" } } },
     runTask: { target: { projectionId: "projection-run-task" }, inputs: { task: { state: "selectedTask" } } },
   },
-  commands: {
-    "task.clear": { labelKey: "tasks.clear", do: { set: { fields: { selectedTask: { literal: null } } } } },
-  },
 });
 
 /** What the host handed the frame: the panel's content and declaration, without the record's identity. */
@@ -176,15 +173,6 @@ describe("a panel's instance", () => {
     expect(panelInstance.unclaimedDraft.value).toBeNull();
     panelInstance.register({ slot: "runTask", projectionId: "projection-run-task", ports, operations: {}, takesDrafts: false });
     expect(panelInstance.unclaimedDraft.value).toEqual({ objectType: SCHEDULED_TASK, operation: "agent.update" });
-  });
-
-  it("names a state operation by the panel's own word for it, in the current language", () => {
-    const panelInstance = instance();
-    const named = () => panelInstance.operations.value.find((operation) => operation.id === "task.clear")!.label;
-    expect(named()).toBe("Clear");
-    locale.value = "zh-CN";
-    expect(named()).toBe("清除");
-    locale.value = "en";
   });
 
   it("keeps a value the panel does not offer in an address out of one", () => {

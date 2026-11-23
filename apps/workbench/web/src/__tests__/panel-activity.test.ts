@@ -18,7 +18,6 @@ const summary = projections["projection-schedules-summary"]!;
 const panel = panelRecord("panel-schedules-summary", "Task summary", definePanel({
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
   members: { summary: { target: { projectionId: summary.id }, inputs: { task: { state: "selectedTask" } } } },
-  commands: {},
 }));
 const use = panelUse("use-trial-b-summary", "panels-trial-b-summary", panel.id, "/applications/app-panels-trial-b/summary");
 const taskPath = `/api/data-query/platform/scheduled-tasks/${task.id}`;

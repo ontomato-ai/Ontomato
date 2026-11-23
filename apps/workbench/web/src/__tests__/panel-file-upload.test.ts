@@ -30,7 +30,7 @@ const importer: ProductProjection = {
   data: {},
   operations: { import: { operation: { kind: "PlatformOperation", id: IMPORT_SKILL } } },
 };
-const manifest = definePanel({ state: {}, members: { importer: { target: { projectionId: importer.id }, inputs: {} } }, commands: {} });
+const manifest = definePanel({ state: {}, members: { importer: { target: { projectionId: importer.id }, inputs: {} } } });
 const importSkill = {
   kind: "action", handlerRef: IMPORT_SKILL, label: "Import", effect: "write", target: { source: "none" }, inputSchema: {}, resultSchema: {},
   batch: false, inspectImpact: { handlerRef: `${IMPORT_SKILL}.inspect-impact` },

@@ -144,6 +144,7 @@ await mountPanel({
       browseData,
       fitView,
       fieldEntries,
+      refresh: () => instance.refreshObjects(),
     };
   },
 });

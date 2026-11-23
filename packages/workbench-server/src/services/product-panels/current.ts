@@ -180,7 +180,15 @@ export async function validateApplicationPanelReferences(request: ApplicationPan
   for (const panelId of pending) {
     const row = await findCurrentProduct(domainId, "panel", panelId);
     if (!row) throw new HttpError(400, `Panel '${panelId}' is not a current definition`, "INVALID_PANEL_REFERENCE");
-    const panel = (row.domainId === null ? builtinProductPanelInputSchema : productPanelInputSchema).parse(row.definition);
+    const definition = row.definition && typeof row.definition === "object" && !Array.isArray(row.definition)
+      && "manifest" in row.definition && row.definition.manifest && typeof row.definition.manifest === "object"
+      && !Array.isArray(row.definition.manifest) && "commands" in row.definition.manifest
+      ? (() => {
+          const { commands: _removed, ...restManifest } = row.definition.manifest as Record<string, unknown>;
+          return { ...row.definition, manifest: restManifest };
+        })()
+      : row.definition;
+    const panel = (row.domainId === null ? builtinProductPanelInputSchema : productPanelInputSchema).parse(definition);
     panels.set(panelId, panel);
     for (const { target } of Object.values(panel.manifest.members)) {
       if ("panelId" in target) pending.add(target.panelId);

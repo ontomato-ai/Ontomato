@@ -33,7 +33,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { formTarget: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: false, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { entry: { state: "formTarget" } } } },
-  commands: {},
 };
 const field = { path: "/title", label: "Title", control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false };
 const save = { kind: "form.save", handlerRef: `${FUNCTION}.save`, label: "Save", effect: "write", target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false };

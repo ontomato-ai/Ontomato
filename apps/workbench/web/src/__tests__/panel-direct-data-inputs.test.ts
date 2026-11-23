@@ -36,7 +36,6 @@ const manifest: DirectPanelManifest = {
     tasks: { target: { projectionId: "task-list" }, inputs: { value: { state: "selectedTask" } }, outputs: { selected: { state: "selectedTask" } } },
     summary: { target: { projectionId: "task-summary" }, inputs: { task: { state: "selectedTask" } } },
   },
-  commands: {},
 };
 const row = (primaryKey: string) => ({ primaryKey, label: primaryKey, fields: {} });
 

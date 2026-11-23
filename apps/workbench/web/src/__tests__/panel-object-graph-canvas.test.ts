@@ -126,7 +126,6 @@ const manifest = (projectionId: string): DirectPanelManifest => ({
       },
     },
   },
-  commands: {},
 });
 const twoClasses = [
   { primaryKey: "org", label: "Organization", fields: { layer: "fact" } },

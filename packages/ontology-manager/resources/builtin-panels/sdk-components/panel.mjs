@@ -165,6 +165,7 @@ await mountPanel({
       operationRows,
       navigateError,
       openComponentClass,
+      refresh: () => instance.refreshObjects(),
     };
   },
 });

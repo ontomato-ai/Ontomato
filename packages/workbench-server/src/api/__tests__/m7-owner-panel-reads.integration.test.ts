@@ -217,7 +217,6 @@ const panel = productPanelInputSchema.parse({
       skillList: { target: { projectionId: "proj-skill-list" } },
       skillDetail: { target: { projectionId: "proj-skill-detail" }, inputs: { skill: { state: "selectedSkill" } } },
     },
-    commands: {},
   },
 });
 

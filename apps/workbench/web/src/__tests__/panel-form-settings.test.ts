@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp, defineComponent, h, nextTick, ref, type Ref } from "vue";
+import { createApp, h, nextTick, ref } from "vue";
 import { createI18n } from "vue-i18n";
 import ElementPlus from "element-plus";
 import publicEn from "@ontomato/workbench-ui/locales/en";
@@ -11,16 +11,8 @@ import type { PanelFormDescription, PanelFormField, PanelFormValues } from "@ont
 import { FUNCTION } from "@ontomato/contracts/platform-object-types";
 import { MODEL_OPTION } from "@ontomato/contracts/panel-client-requests";
 import { randomId } from "@ontomato/contracts/random-id";
-import {
-  PanelHost,
-  PlatformPageHeader,
-  providePageActions,
-  type PanelHostLabels,
-  type PanelHostPort,
-  type PlatformPageActions,
-} from "@ontomato/platform-shell";
 import { mountDirectPanel } from "../../../../../packages/apps-sdk/src/panel/direct-mount";
-import { directRun, noOperations, panelRecord } from "./panel-frame";
+import { directRun, noOperations } from "./panel-frame";
 
 /*
  * Official ObjectForm capabilities for settings-style forms (work_item-94726183):
@@ -29,10 +21,7 @@ import { directRun, noOperations, panelRecord } from "./panel-frame";
  * 2. Field-level Reset to default for any declared `defaultValue !== undefined` (including `null` and strings),
  *    deep equality disabling, deep-cloned draft updates without auto-saving, and `refreshOnChange` reread chain.
  * 3. Non-blocking `field.warning` rendering alongside validation errors without blocking Save.
- * 4. Header draft actions (`actions: "header"`) handing Save/Discard/unsaved state through DirectPanelInstance ->
- *    DirectPanelRun -> PanelInstanceView -> PanelHost -> PlatformPageHeader, with cleanup on hide/unmount and
- *    automatic footer fallback when no header host exists.
- * 5. Read-failure Retry button (`common.retry`) for `form` and `createForm` reads.
+ * 4. Read-failure Retry button (`common.retry`) for `form` and `createForm` reads.
  */
 
 const record = {
@@ -62,20 +51,6 @@ const formSaveMeta = {
   path: "/settings/:id",
   bodySchema: {},
   draftOperation: "settings.update",
-};
-
-const hostLabels: PanelHostLabels = {
-  notStarted: "Not started",
-  failures: { fileUnavailable: "Missing {file}", scriptThrew: "Script threw", scriptRejected: "Script rejected" },
-  content: { styleOutside: "CSS outside" },
-  draft: { opening: "Opening…", close: "Close", toAgent: "To agent", toAgentText: "Draft failed: {reason}" },
-  refresh: "Refresh",
-};
-
-const headerLabels = {
-  save: publicEn.platform.save,
-  discard: publicEn.platform.discard,
-  unsavedChanges: publicEn.platform.unsavedChanges,
 };
 
 const i18n = () => createI18n({ legacy: false, locale: "en", messages: { en: publicEn } });
@@ -121,7 +96,6 @@ const modelPickerProjection: DirectProjection = {
 const formManifest: DirectPanelManifest = {
   state: { app: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: "settings-form" }, inputs: { app: { state: "app" } } } },
-  commands: {},
 };
 
 const formWithPickerManifest: DirectPanelManifest = {
@@ -130,7 +104,6 @@ const formWithPickerManifest: DirectPanelManifest = {
     form: { target: { projectionId: "settings-form" }, inputs: { app: { state: "app" } } },
     modelPicker: { target: { projectionId: "model-picker" }, formField: { slot: "form", path: "/diagModel" } },
   },
-  commands: {},
 };
 
 async function confirmDialog(buttonText: string) {
@@ -500,221 +473,14 @@ describe("ObjectForm settings parity", () => {
     mount.dispose();
   });
 
-  it("hands Save, Discard, and unsaved state to PlatformPageHeader when actions='header', cleans up on hide/unmount, and falls back to footer without a header host", async () => {
-    const projection = makeFormProjection({ layout: "rows", actions: "header" });
-    const fields: PanelFormField[] = [
-      {
-        path: "/lang",
-        label: "Backend language",
-        required: false,
-        readOnly: false,
-        defaultValue: "en",
-        valueSchema: { type: "string" },
-        control: { kind: "text", multiline: false },
-      },
-    ];
-    let currentValues: PanelFormValues = { lang: "en" };
-    let resolveSave: (() => void) | null = null;
-    let rejectNextSave: string | null = null;
-
-    const panel = panelRecord("panel-settings", "Settings", formManifest);
-    panel.content = { ...panel.content, html: '<div id="app"><projection slot="form"></projection></div>', module: "" };
-
-    const port: PanelHostPort = {
-      source: async () => ({ kind: "registered", panel, use: { id: "use-1", pageKey: "settings", panelId: panel.id, path: "/settings" } } as never),
-      pageKey: "settings",
-      use: { applicationId: "app", useId: "use-1" },
-      panel: async () => panel,
-      release: async () => { throw new Error("Direct panel does not fetch frame SDK release"); },
-      frame: () => ({ dispose: () => {}, open: () => {} }),
-      snapshot: async () => ({ panel: { id: panel.id, revision: 1 }, projections: [] }),
-      mode: { kind: "view" },
-      coded: async (_source, run, target) => {
-        const mount = mountDirectPanel({
-          manifest: formManifest,
-          run,
-          messages: {},
-          locale: ref("en"),
-          defaultLocale: "en",
-          requests: {
-            request: async (path, init) => {
-              if (path === "/panel-operations/intents") {
-                const body = JSON.parse(String(init?.body)) as { call: { input: { values: PanelFormValues } } };
-                if (!rejectNextSave) currentValues = { ...body.call.input.values };
-                return Response.json({ intentId: randomId(), operationId: "form.save", label: "Save", confirmation: { kind: "none" } });
-              }
-              return Response.json({ projection });
-            },
-          },
-          use: { applicationId: "app", useId: "use-1" },
-          expandPageComposer: noOperations.expandPageComposer,
-          navigate: noOperations.navigate,
-          nested: noOperations.nested,
-          confirmOperation: async (preparation) => {
-            if (rejectNextSave) {
-              const message = rejectNextSave;
-              rejectNextSave = null;
-              return {
-                decision: "confirm",
-                response: {
-                  kind: "dispatched",
-                  intentId: preparation.intentId,
-                  outcome: { kind: "refusal", code: "VALIDATION_FAILED", message, errors: [{ field: "/lang", code: "invalid_format", message: "Unsupported locale" }] },
-                },
-              };
-            }
-            await new Promise<void>((resolve) => { resolveSave = resolve; });
-            return {
-              decision: "confirm",
-              response: { kind: "dispatched", intentId: preparation.intentId, outcome: { kind: "success", data: {}, affected: { objects: [], objectTypes: [] } } },
-            };
-          },
-          read: async (request): Promise<ProductPanelReadResponse> => request.operations
-            ? { status: "ready", value: { save: saveDescriptor } as never }
-            : { status: "ready", value: { fields, values: { ...currentValues }, errors: [], revision: 1, save: formSaveMeta } as never },
-        });
-        const inner = createApp({ render: () => mount.member("form") });
-        inner.use(i18n()).use(ElementPlus).mount(target.element);
-        return {
-          ...mount,
-          dispose() {
-            inner.unmount();
-            mount.dispose();
-          },
-        };
-      },
-    };
-
-    const shown = ref(true);
-    const mountedPanel = ref(true);
-    let pageActions!: Readonly<Ref<PlatformPageActions | null>>;
-
-    const Host = defineComponent({
-      setup() {
-        pageActions = providePageActions();
-        return () => h("div", [
-          h(PlatformPageHeader, {
-            title: "System settings",
-            actions: pageActions.value?.actions,
-            draft: pageActions.value?.draft ?? null,
-            labels: headerLabels,
-            onSave: () => pageActions.value?.draft?.save(),
-            onDiscard: () => pageActions.value?.draft?.discard(),
-          }),
-          mountedPanel.value
-            ? h(PanelHost, {
-                port,
-                address: "/settings",
-                initial: { app: { className: FUNCTION, primaryKey: "sys-1" } },
-                labels: hostLabels,
-                language: { locale: "en", fallback: "en" },
-                shown: shown.value,
-              })
-            : null,
-        ]);
-      },
-    });
-
-    const element = document.createElement("div");
-    document.body.append(element);
-    const app = createApp(Host);
-    app.use(i18n()).use(ElementPlus).mount(element);
-
-    const headerSave = () => [...element.querySelectorAll<HTMLButtonElement>(".platform-page-header button.action.primary")]
-      .find((button) => button.textContent?.trim() === "Save") ?? null;
-    const headerDiscard = () => [...element.querySelectorAll<HTMLButtonElement>(".platform-page-header button.action.secondary")]
-      .find((button) => button.textContent?.trim() === "Discard") ?? null;
-    const headerUnsaved = () => element.querySelector(".platform-page-header .unsaved")?.textContent?.trim() ?? null;
-
-    // Form loaded clean: footer action bar is hidden; header shows disabled Save and no Discard/unsaved marker.
-    await vi.waitFor(() => expect(headerSave()).not.toBeNull());
-    expect(element.querySelector(".sdk-owner-form-actions")).toBeNull();
-    expect(headerSave()!.disabled).toBe(true);
-    expect(headerDiscard()).toBeNull();
-    expect(headerUnsaved()).toBeNull();
-
-    // Edit field: header shows unsaved marker, Discard, and enabled Save.
-    const input = element.querySelector<HTMLInputElement>('[data-field="/lang"] input')!;
-    input.value = "zh-CN";
-    input.dispatchEvent(new Event("input"));
-    await vi.waitFor(() => expect(headerSave()!.disabled).toBe(false));
-    expect(headerUnsaved()).toBe("Unsaved changes");
-    expect(headerDiscard()).not.toBeNull();
-
-    // Click header Discard -> confirms and restores initial value, clearing dirty state in header.
-    headerDiscard()!.click();
-    await confirmDialog("Discard");
-    await vi.waitFor(() => expect(headerSave()!.disabled).toBe(true));
-    expect(input.value).toBe("en");
-    expect(headerUnsaved()).toBeNull();
-    expect(headerDiscard()).toBeNull();
-
-    // Edit again and trigger a refused save: refusal summary remains visible in form even with footer hidden.
-    input.value = "bad-locale";
-    input.dispatchEvent(new Event("input"));
-    await vi.waitFor(() => expect(headerSave()!.disabled).toBe(false));
-    rejectNextSave = "Save refused";
-    headerSave()!.click();
-    await vi.waitFor(() => expect(element.querySelector(".sdk-owner-form-refusal")?.textContent?.trim()).toBe("1 field needs changing"));
-    await vi.waitFor(() => expect(element.querySelector('[data-field="/lang"] .el-form-item__error')?.textContent?.trim()).toBe("Unsupported locale"));
-
-    // Edit to valid value and click header Save: shows saving state while in flight, then settles clean.
-    input.value = "ja";
-    input.dispatchEvent(new Event("input"));
-    await nextTick();
-    headerSave()!.click();
-    await vi.waitFor(() => expect(pageActions.value?.draft?.saving).toBe(true));
-    expect(headerSave()!.disabled).toBe(true);
-    expect(headerDiscard()!.disabled).toBe(true);
-    expect(element.querySelector<HTMLButtonElement>('[data-field="/lang"] [data-field-reset]')?.disabled).toBe(true);
-    resolveSave!();
-    await vi.waitFor(() => expect(pageActions.value?.draft?.saving).toBe(false));
-    expect(headerSave()!.disabled).toBe(true);
-    expect(headerUnsaved()).toBeNull();
-    expect(currentValues).toEqual({ lang: "ja" });
-
-    // Hiding the panel clears the header draft; showing it again restores it; unmounting clears it.
-    shown.value = false;
-    await vi.waitFor(() => expect(pageActions.value).toBeNull());
-    shown.value = true;
-    await vi.waitFor(() => expect(pageActions.value?.draft).not.toBeNull());
-    mountedPanel.value = false;
-    await vi.waitFor(() => expect(pageActions.value).toBeNull());
-
-    app.unmount();
-
-    // Headerless fallback: mounting PanelHost without providePageActions() keeps the footer action bar usable.
-    const fallbackEl = document.createElement("div");
-    document.body.append(fallbackEl);
-    const fallbackApp = createApp({
-      render: () => h(PanelHost, {
-        port,
-        address: "/settings",
-        initial: { app: { className: FUNCTION, primaryKey: "sys-1" } },
-        labels: hostLabels,
-        language: { locale: "en", fallback: "en" },
-      }),
-    });
-    fallbackApp.use(i18n()).use(ElementPlus).mount(fallbackEl);
-    await vi.waitFor(() => expect(fallbackEl.querySelector<HTMLInputElement>('[data-field="/lang"] input')).not.toBeNull());
-    // Edit mode hides the footer action bar while clean, and reveals it once modified.
-    expect(fallbackEl.querySelector(".sdk-owner-form-actions")).toBeNull();
-    const fallbackInput = fallbackEl.querySelector<HTMLInputElement>('[data-field="/lang"] input')!;
-    fallbackInput.value = "fr";
-    fallbackInput.dispatchEvent(new Event("input"));
-    await vi.waitFor(() => expect(fallbackEl.querySelector(".sdk-owner-form-actions")).not.toBeNull());
-    fallbackApp.unmount();
-  });
-
   it("shows a Retry button on form and createForm read failure and recovers after clicking Retry", async () => {
     for (const mode of ["form", "createForm"] as const) {
       const createOnly = mode === "createForm";
-      const projection = makeFormProjection({ actions: "header" }, createOnly);
+      const projection = makeFormProjection({ actions: "footer" }, createOnly);
       const manifest: DirectPanelManifest = createOnly
-        ? { state: {}, members: { form: { target: { projectionId: "settings-form" } } }, commands: {} }
+        ? { state: {}, members: { form: { target: { projectionId: "settings-form" } } } }
         : formManifest;
       let attempts = 0;
-      const reportedDrafts: (unknown | null)[] = [];
       const mount = mountDirectPanel({
         manifest,
         run: directRun({
@@ -722,7 +488,6 @@ describe("ObjectForm settings parity", () => {
           url: () => "/settings",
           label: () => "Settings",
           initial: createOnly ? {} : { app: { className: FUNCTION, primaryKey: "sys-1" } },
-          headerDraft: (draft) => { reportedDrafts.push(draft); },
         }),
         messages: {},
         locale: ref("en"),
@@ -755,18 +520,14 @@ describe("ObjectForm settings parity", () => {
       const app = createApp({ render: () => mount.member("form") });
       app.use(i18n()).use(ElementPlus).mount(element);
 
-      // First read fails: shows alert + Retry button, and does not expose a broken header draft.
       await vi.waitFor(() => expect(element.querySelector('[role="alert"]')?.textContent?.trim()).toBe(`${mode} backend unavailable`));
-      expect(reportedDrafts.at(-1)).toBeNull();
       const retryButton = [...element.querySelectorAll<HTMLButtonElement>("button")]
         .find((button) => button.textContent?.trim() === publicEn.common.retry)!;
       expect(retryButton).toBeDefined();
 
-      // Clicking Retry re-reads and renders the form + publishes the header draft.
       retryButton.click();
       await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe(`Loaded via ${mode}`));
       expect(attempts).toBe(2);
-      expect(reportedDrafts.at(-1)).not.toBeNull();
 
       app.unmount();
       mount.dispose();

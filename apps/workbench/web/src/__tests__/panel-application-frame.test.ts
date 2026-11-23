@@ -23,19 +23,22 @@ const app = "app-framed";
 const at = (path: string) => `/applications/${app}/${path}`;
 const content = panelRecord("panel-framed-content", "Term", definePanel({
   state: { term: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true } },
-  members: {}, commands: {},
+  members: {},
 }));
-content.content = { ...content.content, module: `import { h } from "vue";
-import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+content.content = {
+  ...content.content,
+  html: `<div id="app"><page-header :title="t('panel.name')"></page-header><output class="term">{{ instance.state.values.value.term ?? '' }}</output></div>`,
+  module: `import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 await mountPanel({ setup() {
-  const { instance } = usePanelContext();
-  return () => h("output", { class: "term" }, String(instance.state.values.value.term ?? ""));
+  const { instance, t } = usePanelContext();
+  return { instance, t };
 } });
-` };
+`,
+  messages: { en: { "panel.name": "Term" } },
+};
 const frame = panelRecord("panel-framed-frame", "Frame", definePanel({
   state: { term: { type: { kind: "scalar", type: "string" }, deepLink: true, external: true, default: "A" } },
   members: { content: { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } } },
-  commands: {},
 }));
 frame.content = {
   ...frame.content,
@@ -92,8 +95,8 @@ it("holds the entry's page, header and content, in the frame; shares the frame's
     expect(framed.value).toBe(true);
     // The frame read its record as the entry's frame.
     expect(sent.some((request) => request.path === `/api/product-panels/${frame.id}` && request.search.includes("source=frame"))).toBe(true);
-    // The entry's page is inside the frame: the platform's header, then the content, with the frame's default term.
-    await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .page-title")?.textContent).toBe("spring"));
+    // The entry's page is inside the frame: its own <page-header>, then the content, with the frame's default term.
+    await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .sdk-page-header-title")?.textContent?.trim()).toBe("Term"));
     await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .term")?.textContent).toBe("A"));
     expect(frameRoot.querySelector(".current")?.textContent).toBe("framed-spring");
 
@@ -106,7 +109,7 @@ it("holds the entry's page, header and content, in the frame; shares the frame's
     await router.push(`${at("autumn")}?frame=${encodeURIComponent(JSON.stringify({ term: "B" }))}`);
     await vi.waitFor(() => expect(frameRoot.querySelector(".current")?.textContent).toBe("framed-autumn"));
     expect(element.querySelector(".panel-application-frame")).toBe(frameRoot);
-    await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .page-title")?.textContent).toBe("autumn"));
+    await vi.waitFor(() => expect(frameRoot.querySelector(".panel-entry-unit .sdk-page-header-title")?.textContent?.trim()).toBe("Term"));
 
     // An entry opened at its bare address — the frame's own menu, a link — keeps the frame's term, and its address says so.
     await router.push(at("spring"));
