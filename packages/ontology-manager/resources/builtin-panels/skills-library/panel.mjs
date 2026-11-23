@@ -9,7 +9,6 @@ import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel
  */
 
 const SKILL_TYPE = "platform:Skill";
-const DEFAULT_FILE = "SKILL.md";
 
 await mountPanel({
   setup() {
@@ -22,8 +21,9 @@ await mountPanel({
     const detailStatus = usePanelOutput("detail", "status");
     const detailReady = computed(() => detailStatus.value === "ready");
 
-    // Select SKILL.md synchronously on first selection or skill switch so tree and content load in parallel with detail;
-    // ObjectTree (fallbackToFirst: true) keeps SKILL.md or any deep-linked file when present and falls back otherwise.
+    // Clear filePath when selection clears or switches to another skill without an explicit filePath in the same
+    // state patch; ObjectTree then picks defaultKey ("SKILL.md") or the first file once the new package's files load.
+    // An atomic switch such as `present({ selected: B, filePath: "references/readme.md" })` keeps its explicit filePath.
     watch(
       () => selected.value?.primaryKey ?? null,
       (skillId, previousSkillId) => {
@@ -31,8 +31,13 @@ await mountPanel({
           if (filePath.value !== null) instance.state.setState({ filePath: null });
           return;
         }
-        if (!filePath.value || (previousSkillId && previousSkillId !== skillId)) {
-          if (filePath.value !== DEFAULT_FILE) instance.state.setState({ filePath: DEFAULT_FILE });
+        if (
+          previousSkillId
+          && previousSkillId !== skillId
+          && !instance.state.lastPatchedKeys.has("filePath")
+          && filePath.value !== null
+        ) {
+          instance.state.setState({ filePath: null });
         }
       },
       { immediate: true, flush: "sync" },
@@ -44,7 +49,7 @@ await mountPanel({
       if (importedId) {
         instance.state.setState({
           selected: { className: SKILL_TYPE, primaryKey: importedId },
-          filePath: DEFAULT_FILE,
+          filePath: null,
         });
       }
     }
