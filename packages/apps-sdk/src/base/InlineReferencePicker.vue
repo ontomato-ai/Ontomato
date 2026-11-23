@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
+  authoredReadParameterSource,
   directReadDeclaration,
   panelRecordObjectRef,
   type PanelOptionList,
@@ -85,9 +86,43 @@ const placeholderText = computed(() =>
 
 const isClearable = computed(() => props.clearable !== false);
 
-// ---- Rows mode (`panelRecordList` / `panelRecordQuery`): local filtering, zero requests while typing ----
+const knownOptions = shallowRef(new Map<string, InlineOption>());
+
+function rememberOptions(list: readonly InlineOption[]) {
+  if (!list.length) return;
+  const next = new Map(knownOptions.value);
+  const byType = new Map<string, { primaryKey: string; label: string }[]>();
+  for (const item of list) {
+    next.set(item.primaryKey, item);
+    if (!item.isNullChoice) {
+      let bucket = byType.get(item.className);
+      if (!bucket) {
+        bucket = [];
+        byType.set(item.className, bucket);
+      }
+      bucket.push({ primaryKey: item.primaryKey, label: item.label });
+    }
+  }
+  knownOptions.value = next;
+  for (const [className, named] of byType) panel.instance.nameObjects(className, named);
+}
+
+// ---- Rows mode (`panelRecordList` complete list -> local filter; `panelRecordQuery` paged -> owner search) ----
+const rowsDatum = member.projection.data.rows;
+const rowsDeclaration = rowsDatum ? directReadDeclaration(member.projection, rowsDatum) : undefined;
+const rowsSignatureParams = rowsDeclaration?.parameterMode === "fixed" ? rowsDeclaration.params : {};
+const isPagedRows = dataMode === "rows" && rowsDeclaration?.result === "panelRecordQuery";
+const placement = panel.manifest.members[member.key]!;
+const supportsRowsRemoteSearch =
+  isPagedRows
+  && Boolean(rowsDatum)
+  && !authoredReadParameterSource(rowsDatum!.params, "search", placement)
+  && (!rowsDeclaration || rowsDeclaration.parameterMode !== "fixed" || "search" in rowsSignatureParams);
+
+const rowsSearchParam = supportsRowsRemoteSearch ? useMemberParam("search") : null;
 const rowsData = dataMode === "rows" ? useMemberData("rows") : null;
 const localQuery = ref("");
+const lastRemoteRowsQuery = ref("");
 
 const allRowOptions = computed<readonly InlineOption[]>(() => {
   if (!rowsData || rowsData.value.status !== "ready") return [];
@@ -109,34 +144,27 @@ const allRowOptions = computed<readonly InlineOption[]>(() => {
 });
 
 if (dataMode === "rows") {
-  watch(
-    allRowOptions,
-    (items) => {
-      const byType = new Map<string, { primaryKey: string; label: string }[]>();
-      for (const item of items) {
-        let bucket = byType.get(item.className);
-        if (!bucket) {
-          bucket = [];
-          byType.set(item.className, bucket);
-        }
-        bucket.push({ primaryKey: item.primaryKey, label: item.label });
-      }
-      for (const [className, list] of byType) panel.instance.nameObjects(className, list);
-    },
-    { immediate: true },
-  );
+  watch(allRowOptions, rememberOptions, { immediate: true });
+}
+
+function searchRows(keyword = "") {
+  if (!rowsSearchParam) return;
+  const trimmed = keyword.trim();
+  lastRemoteRowsQuery.value = trimmed;
+  rowsSearchParam.set(trimmed ? trimmed : null);
 }
 
 // ---- Options mode (`panelOptionList`, optional `selected`): remote or local search + resolved unavailable items ----
 const optionsDatum = member.projection.data.options;
 const optionsDeclaration = optionsDatum ? directReadDeclaration(member.projection, optionsDatum) : undefined;
-const supportsRemoteSearch = dataMode === "options"
+const supportsOptionsRemoteSearch = dataMode === "options"
   && (!optionsDeclaration || optionsDeclaration.parameterMode !== "fixed" || "keyword" in optionsDeclaration.params);
+const supportsRemoteSearch = supportsOptionsRemoteSearch || supportsRowsRemoteSearch;
+const canFilter = dataMode === "options" || !isPagedRows || supportsRowsRemoteSearch;
 
 const readOptions = dataMode === "options" ? useMemberRead("options") : null;
 const readSelected = dataMode === "options" && hasSelected ? useMemberRead("selected") : null;
 
-const knownOptions = shallowRef(new Map<string, InlineOption>());
 const offeredOptions = shallowRef<readonly InlineOption[]>([]);
 const heldOptions = shallowRef<readonly InlineOption[]>([]);
 const searchingOptions = ref(false);
@@ -153,18 +181,6 @@ function toInlineOption(option: PlatformObjectOption): InlineOption {
     unavailableReason: option.unavailable ? localized(option.unavailable.reason) : undefined,
     isNullChoice,
   };
-}
-
-function rememberOptions(list: readonly InlineOption[]) {
-  if (!list.length) return;
-  const next = new Map(knownOptions.value);
-  const named: { primaryKey: string; label: string }[] = [];
-  for (const item of list) {
-    next.set(item.primaryKey, item);
-    if (!item.isNullChoice) named.push({ primaryKey: item.primaryKey, label: item.label });
-  }
-  knownOptions.value = next;
-  if (named.length) panel.instance.nameObjects(defaultClassName, named);
 }
 
 let searchGeneration = 0;
@@ -280,13 +296,14 @@ const isLoading = computed(() =>
 const isDisabled = computed(() => props.disabled || unavailableNotice.value !== undefined);
 
 const mergedOptions = computed<readonly InlineOption[]>(() => {
-  if (dataMode === "rows") return allRowOptions.value;
+  if (dataMode === "rows" && !isPagedRows) return allRowOptions.value;
+  const source = dataMode === "rows" ? allRowOptions.value : offeredOptions.value;
   const heldKeys = new Set(effectiveHeldOptions.value.map((option) => option.primaryKey));
-  return [...effectiveHeldOptions.value, ...offeredOptions.value.filter((option) => !heldKeys.has(option.primaryKey))];
+  return [...effectiveHeldOptions.value, ...source.filter((option) => !heldKeys.has(option.primaryKey))];
 });
 
 const shownOptions = computed<readonly InlineOption[]>(() => {
-  if (supportsRemoteSearch) return mergedOptions.value;
+  if (supportsRemoteSearch || !canFilter) return mergedOptions.value;
   const query = localQuery.value.trim().toLowerCase();
   if (!query) return mergedOptions.value;
   return mergedOptions.value.filter(
@@ -297,12 +314,23 @@ const shownOptions = computed<readonly InlineOption[]>(() => {
   );
 });
 
+function searchRemote(keyword = "") {
+  if (dataMode === "rows") searchRows(keyword);
+  else searchOptions(keyword);
+}
+
 function onLocalFilter(query: string) {
   localQuery.value = query;
 }
 
 function onVisibleChange(visible: boolean) {
-  if (!visible) localQuery.value = "";
+  if (!visible) {
+    localQuery.value = "";
+    if (supportsRowsRemoteSearch && lastRemoteRowsQuery.value) {
+      lastRemoteRowsQuery.value = "";
+      rowsSearchParam?.set(null);
+    }
+  }
 }
 
 function writeSelected(next: PanelObjectRef | null) {
@@ -343,10 +371,10 @@ function onSelect(value: string | undefined) {
       :clearable="isClearable"
       :disabled="isDisabled"
       :loading="isLoading"
-      filterable
+      :filterable="canFilter"
       :remote="supportsRemoteSearch"
-      :remote-method="supportsRemoteSearch ? searchOptions : undefined"
-      :filter-method="supportsRemoteSearch ? undefined : onLocalFilter"
+      :remote-method="supportsRemoteSearch ? searchRemote : undefined"
+      :filter-method="!supportsRemoteSearch && canFilter ? onLocalFilter : undefined"
       :aria-label="placeholderText || undefined"
       fit-input-width
       class="sdk-inline-reference-picker-select"

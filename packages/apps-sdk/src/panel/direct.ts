@@ -419,7 +419,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     isMetricOutput: boolean;
     sourceObjectTypes: () => readonly string[] | undefined;
     reread(): void;
-    markInactive(): void;
   }>();
   /** Every member's operations read now, read again when refreshed or when an affected type matches. */
   const operationReads = new Set<{
@@ -687,39 +686,42 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       return {
         use(name) {
           const state = shallowRef<MemberDataState>({ status: "loading" });
+          const loadedTargetKey = shallowRef<string | null>(null);
           let sequence = 0;
           const entryData = projection.data[name]!;
           const declaration = directReadDeclaration(projection, entryData);
           const declaredReadOutputs = !scoped && declaration?.outputs ? Object.entries(declaration.outputs) : [];
           const isMetricOutput = declaration?.result === "metricOutput";
           const isObjectDatum = "object" in entryData.source;
-          const objectTargetKeyOf = () => (isObjectDatum ? JSON.stringify(sourceObject(entryData, inputs()) ?? null) : null);
-          let targetKeyWhileInactive: string | null = null;
-          let wasInactive = false;
+          const requiredParams = declaration?.parameterMode === "fixed" ? declaration.requiredParams ?? [] : [];
+          const hasTarget = isObjectDatum || requiredParams.length > 0;
+          const datumTargetKeyOf = (): string | null => {
+            if (!hasTarget) return null;
+            const object = isObjectDatum ? (sourceObject(entryData, inputs()) ?? null) : null;
+            if (requiredParams.length === 0) return JSON.stringify(object);
+            const values = paramValues(projection, entryData, placement, inputs(), own());
+            return JSON.stringify([object, requiredParams.map((param) => values[param] ?? null)]);
+          };
+          let lastTargetKey: string | null = null;
           let metricSourceObjectTypes: readonly string[] | undefined;
           const reread = () => {
-            // Unseen, the instance reads nothing; remember the target it last showed so returning to a different
-            // object clears the stale record immediately instead of flashing it while the new read is in flight.
-            if (!active) {
-              if (!wasInactive) {
-                wasInactive = true;
-                targetKeyWhileInactive = objectTargetKeyOf();
-              }
-              return;
-            }
-            if (wasInactive) {
-              wasInactive = false;
-              const nextTargetKey = objectTargetKeyOf();
-              if (isObjectDatum && nextTargetKey !== targetKeyWhileInactive) {
-                state.value = { status: "loading" };
-              }
-              targetKeyWhileInactive = null;
-            }
+            // Unseen, the instance reads nothing; `lastTargetKey` stays on the last target read while active so
+            // returning to a different target clears the stale record immediately.
+            if (!active) return;
             const reading = ++sequence;
-            // A datum already shown stays on screen until its new answer arrives: rereading replaces what it shows, never
-            // the component drawing it. Only a first read (or one after an empty, refused, failed, or deactivated-switch
-            // answer) shows loading.
-            if (state.value.status !== "ready") state.value = { status: "loading" };
+            const nextTargetKey = datumTargetKeyOf();
+            const targetChanged = hasTarget && nextTargetKey !== lastTargetKey;
+            lastTargetKey = nextTargetKey;
+            // Re-reading the same target keeps the shown record on screen until the new answer arrives. Switching to
+            // a different target (or clearing it) drops the previous target's ready state immediately so neither the
+            // view nor derived outputs treat the earlier target's data as ready for the new target.
+            if (targetChanged) {
+              state.value = awaitsInputs(projection, entryData, placement, inputs(), own())
+                ? { status: "awaiting" }
+                : { status: "loading" };
+            } else if (state.value.status !== "ready") {
+              state.value = { status: "loading" };
+            }
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
             void answer(name, inputs()).then((result) => {
               if (reading !== sequence) return;
@@ -729,6 +731,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
                   metricSourceObjectTypes = rawTypes;
                 }
               }
+              loadedTargetKey.value = nextTargetKey;
               // A failure is read again on request, as a refresh reads it.
               state.value = result.status === "error" ? { ...result, retry: () => { state.value = { status: "loading" }; reread(); } } : result;
             });
@@ -739,16 +742,18 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
             isMetricOutput,
             sourceObjectTypes: () => metricSourceObjectTypes,
             reread,
-            markInactive: () => {
-              if (!wasInactive) {
-                wasInactive = true;
-                targetKeyWhileInactive = objectTargetKeyOf();
-              }
-            },
           };
           shown.add(entry);
           watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), reread, { immediate: true });
-          const effectiveState = computed<MemberDataState>(() => (addressPending.value && isObjectDatum ? { status: "loading" } : state.value));
+          const effectiveState = computed<MemberDataState>(() => {
+            if (addressPending.value && hasTarget) return { status: "loading" };
+            if (hasTarget && state.value.status === "ready" && datumTargetKeyOf() !== loadedTargetKey.value) {
+              return awaitsInputs(projection, entryData, placement, inputs(), own())
+                ? { status: "awaiting" }
+                : { status: "loading" };
+            }
+            return state.value;
+          });
           if (declaredReadOutputs.length > 0) {
             // Publish only named, typed scalar outputs explicitly declared by the read's owner.
             watch(
@@ -834,9 +839,6 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     },
     setActive(next: boolean) {
       active = next;
-      if (!next) {
-        for (const entry of shown) entry.markInactive();
-      }
       for (const mount of nestedMounts) mount.activate(next);
     },
     projectionChanged(id: string, revision?: number) {

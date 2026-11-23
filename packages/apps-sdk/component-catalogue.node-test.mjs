@@ -218,6 +218,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(declared.get("ReferencePicker").data.options.required, false);
     assert.equal(declared.get("ReferencePicker").data.selected.required, false);
     assert.equal(declared.get("ReferencePicker").data.rows.required, false);
+    assert.deepEqual(declared.get("ReferencePicker").data.rows.runtimeParams, ["search"]);
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
     const ontologyNode = { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] };
     assert.deepEqual(declared.get("ObjectRefCard").outputs, { navigate: ontologyNode });
@@ -356,6 +357,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(componentsDoc, /`<sdk-button>`/);
     assert.match(componentsDoc, /`v-sdk-loading`/);
     assert.match(componentsDoc, /`--sdk-color-primary`/);
+    const relationsDoc = componentsDoc.split(/^## /mu).find((section) => section.startsWith("ObjectRelations\n"));
+    assert.match(
+      relationsDoc,
+      /Inputs:\n\n- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n[\s\S]*?Hands over \(bindable to the panel's state\):\n\n- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType\n/u,
+      "docs/components.md must print both layers and objectTypes for object-union ports",
+    );
     assert.match(
       componentsDoc,
       /## ObjectList[\s\S]*?Configuration types:\n\n```ts\n[\s\S]*?type ObjectListColumn = \{[\s\S]*?key: string;[\s\S]*?labelKey\?:[\s\S]*?subtitleKey\?:[\s\S]*?emptyKey\?:[\s\S]*?wrap\?:/u,
