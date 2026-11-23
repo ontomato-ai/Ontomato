@@ -236,7 +236,10 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   /** Whether going to `next` leaves the shown page instance while it holds unsaved changes. */
   function dropsUnsaved(next: DisplayTarget | null): boolean {
     const current = page.value;
-    if (!current || (next?.kind === "page" && next.instance === current.instance)) return false;
+    if (!current) return false;
+    if (next?.kind === "page" && next.instance === current.instance) {
+      return Boolean(controllers.get(current.instance)?.blocksNavigation?.({ address: next.address }));
+    }
     return unsaved.value || host.leave.leaves(next?.kind === "page" ? next.address : null);
   }
 
