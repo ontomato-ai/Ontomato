@@ -249,7 +249,7 @@ async function open(request: HarnessOpenRequest): Promise<HarnessSession> {
   request.signal.addEventListener("abort", abort, { once: true });
   let session: PiSession | undefined;
   const transport = new PiTransport(
-    process, (process as HarnessProcess & { readonly channel: import("node:stream").Duplex }).channel,
+    process, process.channel,
     frame => session?.onRpc(frame),
     frame => {
       if (!session) throw new Error("PI bridge request before open");
