@@ -1,106 +1,111 @@
 ---
 name: ontomato-panel-authoring
-description: Build and register an Ontomato panel from its owner's reads and operations.
+description: Build and register an Ontomato panel from declared read functions, operations, and official SDK components.
 ---
 
 # Author an Ontomato panel
 
-1. **Discover the owner's contract before writing code.** Run `node "$SKILL/ontomato.mjs" panel type <type-id>`
-   for the owner's reads, operations and result shapes. Use `--read <name>` for one read's signature,
-   required parameters and `resultSchema`. Use these commands as the authoring reference for owner APIs.
-2. Compare the original page's visible behavior with the owner's reads, forms and actions. Keep business rules
-   and permissions with their owner. Use the platform's write confirmation. Follow the
-   [three-step component lookup](CODE.md#choose-an-official-component-before-writing-one):
-   - First, match the owner's read (`panel type <type-id> --read <name>`) against an official component's data port
-     (`node "$SKILL/ontomato.mjs" sdk read docs/components.md`). If the shapes do not match, that gap belongs on the
-     owner or shared record contract — do not draw business fields in the panel to work around it.
-   - Second, once the data matches, start from the official component's default rendering, then check its `config`
-     for common adjustments (see [default and configured list and summary examples](CODE.md#configure-an-official-list-or-summary)).
-   - Third, write a dedicated small component only as a last resort when default and `config` still leave a gap —
-     a single list column (`listColumn`), expandable row detail (`listRowDetail`), or form field (`formField`). Keep
-     [component vs. panel responsibility](CODE.md#component-vs-panel-responsibility) clear: panels coordinate layout,
-     state, visibility and navigation, and never render business fields (not via `PanelData` / `usePanelData` loops
-     and not via inline `defineComponent` in `panel.mjs`).
-   For a domain-registered small component, follow the
-   [end-to-end `listColumn` and per-row operation example](CODE.md#custom-list-columns-row-detail-and-per-row-operations).
-   For operator-installed third-party packages, [look up the installed package](../../GUIDE.md#use-an-installed-component-package).
-   Use the [panel descriptor and member field reference](FIELDS.md) and [registration mapping](../../GUIDE.md#write-projections-inside-the-panel)
-   to declare projections, and use `target.projectionId` for an existing projection.
-   For graphs, see [graph wiring and selection](CODE.md#connect-a-graph-and-its-relations).
-3. Write the template and interactions in Vue. Use [the SDK's `<sdk-*>` interface controls, `v-sdk-*` directives, `--sdk-*` theme tokens and `notify()`](CODE.md#panel-controls-and-platform-behavior),
-   follow the [direct runtime](CODE.md#write-a-vue-panel), and declare the
-   [state that travels in an address](CODE.md#open-a-panel-at-a-specific-state).
-4. Check and register the workspace, then open the registered entry. Use the page's input box
-   for the [assistant check](#check-the-assistant-from-the-page). If the result looks wrong, follow
-   [the browser and CLI checks](CODE.md#when-a-panel-looks-wrong).
-
-See [what the assistant receives](CODE.md#what-the-assistant-receives) for page context and `recipes.md`.
-
-Use `ConversationEntry` when a page needs a button that opens the composer with a specific agent and an optional
-opening line. The reader still sends the message. Use the page's existing composer for general questions.
-For the opening line of a built-in panel's `ConversationEntry`, use `prefillKey` with a flat key in
-`content.messages` and provide the line in every declared language, as verified by `panel check`.
+1. **Discover available reads and operations before writing code.** Run
+   `node "$SKILL/scripts/ontomato.mjs" panel type <type-id>` (and `--read <name>` for one read's parameters and `resultSchema`).
+   - **Customer ontology classes** (for example `Student`): projections only bind read and write functions — bind the
+     platform's generic read functions parameterized by class (list objects of a class / get one object by ID, listed
+     under `panel type <class>`), MetricViews for filtered/calculated reads, and Actions for writes. Until generic
+     display components bind MetricView results, calculated displays use `MetricChart` (registered from a dashboard card).
+   - **Platform types** (`platform:*`): bind their built-in platform reads and management operations.
+2. **Respect the four boundaries:**
+   - **Hierarchy**: platform sidebar → application menu / frame (use the platform's default application menu; do not
+     hand-author custom frame panels yet) → current entry panel → nested panels and components.
+   - **Display belongs to universal components**: follow the
+     [three-step component lookup](CODE.md#choose-an-official-component-before-writing-one) — check official component
+     defaults first (`sdk read docs/components.md`), then `config`, and write a formal component only as a last resort.
+     (Table action columns and standard Vue slots for custom cells/fields/row details are provided in the next SDK
+     update; do not use legacy `listColumn`/`listRowDetail`/`formField` wiring or hand-roll tables with `PanelData`.)
+   - **Logic belongs to the capability layer**: calculations, derived labels, and business rules belong in MetricViews
+     (reads), Actions (writes), or platform-owned reads — not in panels or components.
+   - **Panels only lay out and wire**: panels coordinate layout, typed public state, visibility, navigation, and
+     projection outputs (titles, counts, selections, draft state). Panels do not read business record fields directly
+     or compute business values; unsaved form drafts do not count as ontology data; there are no panel-private components.
+3. **Pick a matching [page template](../templates/README.md)** (prefer
+   [two-entry-catalog-detail](../templates/two-entry-catalog-detail/README.md) for multi-column catalogs with full-width
+   detail, or [catalog-detail-dialog](../templates/catalog-detail-dialog/README.md) / `panel scaffold` for a single-panel
+   starter). Write layout in normal HTML, CSS (`@container`), and Vue — no layout components. Place the pure
+   presentational `<page-header>` at the top when the page needs a header, wire edit Save/Discard through
+   `usePanelFormDraft("form")`, and use `<sdk-*>` UI primitives, `v-sdk-*` directives, `--sdk-*` theme tokens, and
+   `usePanelContext().notify()`. Never write `el-*` tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
+4. **Check, register, and verify.** Run `panel check` and `panel register`, then open the registered entry. After any
+   update via `panel register` or `component register`, hard-reload open browser tabs so the new revision loads. Use
+   the page's input box for the [assistant check](#check-the-assistant-from-the-page), and check
+   [troubleshooting](CODE.md#when-a-panel-looks-wrong) if anything looks off.
 
 ```sh
-node "$SKILL/ontomato.mjs" panel check "$WORKSPACE"
-node "$SKILL/ontomato.mjs" panel register "$WORKSPACE"
+node "$SKILL/scripts/ontomato.mjs" panel check "$WORKSPACE"
+node "$SKILL/scripts/ontomato.mjs" panel register "$WORKSPACE"
 ```
 
-For a development handoff, give the registered entry's site-relative path, for example
-`/applications/app-my-management-page/manage`. Reserve the `standalone=1` marker for
-external sharing. Get that link from **More → Copy external link** in the page header.
+## Registration files (`panel.json` vs. `registration.json`)
 
-To ship a tested trial at the original platform address, follow [Replace a built-in page](../../GUIDE.md#replace-a-built-in-page).
+Keep the panel definition separate from registration metadata:
 
-For a trial application, use a fresh ID starting with `app-` and a path under `/applications/<application-id>/`. In `registration.json`, provide
-one panel item with `id`, `mode` and `input` containing its name, description and visibility. Create omits
-`revision`. Application creation supplies `entry`, `declaration`, `entryAccess` and `panelUses`. Each use
-supplies its domain-unique `pageKey`, `panelId`, `path` and `access`. See [entry settings and page
-skills](CODE.md#register-and-open) for the icon, default agent and recipes.
+- **`panel.json`**: `{ manifest: { state, members }, content?: { messages }, theme?, template? }` — the panel's own
+  declaration and optional multi-locale message table.
+- **`registration.json`**: the registration envelope naming the panel (`id`, `mode: "create" | "update"`, `revision` on
+  update only, `input: { name, description, visibility }`) and optionally the application (`id` starting with `app-`,
+  `entry`, `declaration`, `entryAccess`, `allowStandalone`, `panelUses`).
 
-For a temporary domain application, the application item can have this shape. Choose your own IDs and use the
-actual panel ID.
+Each entry in `panelUses` declares a domain-unique `pageKey`, `panelId`, `path` (`/applications/<app-id>/...`), and
+`access` (`{ "kind": "domain-member" }` or `{ "permissionCode": "..." }`). Include `names` to show the entry in the
+application menu; **omit `names`** for a detail entry reached only by navigation or deep link.
+
+Example application item in `registration.json` (two entries: menu catalog + hidden detail):
 
 ```json
 {
   "id": "app-my-management-page",
   "mode": "create",
   "input": {
-    "entry": {"path": "/applications/app-my-management-page", "renderer": "panels"},
-    "declaration": {"names": {"en": "Management page"}, "descriptions": {"en": "Management example"}, "icon": "app-window", "groups": [], "permissions": []},
+    "entry": { "path": "/applications/app-my-management-page", "renderer": "panels" },
+    "declaration": {
+      "names": { "en": "Management", "zh-CN": "管理应用" },
+      "descriptions": { "en": "Management example", "zh-CN": "管理应用示例" },
+      "icon": "app-window",
+      "groups": [],
+      "permissions": []
+    },
     "entryAccess": ["domain-member"],
-    "panelUses": [{"id": "my-use", "pageKey": "app-my-management-page-manage", "panelId": "my-panel", "path": "/applications/app-my-management-page/manage", "access": {"kind": "domain-member"}}]
+    "allowStandalone": true,
+    "panelUses": [
+      {
+        "id": "catalog-use",
+        "pageKey": "app-my-management-page-catalog",
+        "panelId": "my-catalog-panel",
+        "path": "/applications/app-my-management-page/catalog",
+        "access": { "kind": "domain-member" },
+        "names": { "en": "Catalog", "zh-CN": "目录" }
+      },
+      {
+        "id": "detail-use",
+        "pageKey": "app-my-management-page-detail",
+        "panelId": "my-detail-panel",
+        "path": "/applications/app-my-management-page/detail",
+        "access": { "kind": "domain-member" }
+      }
+    ]
   }
 }
 ```
 
+For a development handoff, give the registered entry's site-relative path (for example
+`/applications/app-my-management-page/catalog`). Reserve `standalone=1` for external sharing; enable it with
+`"allowStandalone": true` and copy the external link from the sidebar application menu or application properties.
+
 ## Check the assistant from the page
 
-Open the registered application entry in the browser and select a known test record. Choose a candidate from
-the page input box's picker and send the prompts there. Replace the bracketed text with fields and operations
-the page declares.
+Open the registered entry in the browser, select a test record, pick an assistant in the page composer, and check:
 
-1. **Read.** “What page and record are selected? Read the current [field] on this record.” Compare the selected
-   identity and the field value with the page.
+1. **Read.** “What page and record are selected? Read the current [field] on this record.”
 2. **Draft.** “Draft a change to [field] on this record. Give me a site-relative draft link and leave it for me to save.”
-   Open the link and inspect the proposed change. Save as the reader, then verify the value.
-3. **Execute.** “Run [declared operation] on this test record, with confirmation when required.” Use the
-   confirmation in the conversation and verify the outcome on the page.
+   Open the link, inspect the prefilled change, save as the reader, and verify.
+3. **Execute.** “Run [declared operation] on this test record, with confirmation when required.”
 
-For a read-only page, verify the read and any declared read operations. Mark draft and write checks as not
-applicable. Candidate availability and page skill behavior are verified through the input box and its results.
-
-Use the [Vue authoring guide](CODE.md) for panel sources, owner operations, forms and draft links.
-
-### Registering a component in the current domain
-
-Authors register single small components in the current domain (distinct from deployment-installed packages, which are installed only by deployment maintainers and have no author upload API). Keep `component.json` (`name`, `visibility`, and `declaration`), `component.html` (Vue template using `<sdk-*>` tags and `--sdk-*` tokens), and an optional `component.mjs` (`export default { ... }`, importing only `vue` and `@ontomato/sdk/panel`) in one directory.
-
-```sh
-node "$SKILL/ontomato.mjs" component register <directory>
-node "$SKILL/ontomato.mjs" component list
-node "$SKILL/ontomato.mjs" component read <component-id>
-node "$SKILL/ontomato.mjs" component register <directory> --revision <number>
-```
-
-First registration assigns `domain-component:<uuid>` and writes it into `component.json` (`declaration.componentId`). Use that full ID in an inline member's `component` (or a projection's `componentId`), then run `panel check <panel-directory>`. Deliver the same source files and register them in another domain with the saved ID. See the [complete copy-pasteable example in `CODE.md`](CODE.md#custom-list-columns-row-detail-and-per-row-operations).
+For read-only pages, verify reads only. See [CODE.md](CODE.md) for Vue authoring details, `<page-header>`, forms,
+drafts, graphs, and troubleshooting, and [FIELDS.md](FIELDS.md) / [RUNTIME.md](RUNTIME.md) for generated contracts.

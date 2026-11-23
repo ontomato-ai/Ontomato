@@ -1,11 +1,11 @@
 <style>
   [v-cloak] { display: none; }
-  .skills { display: flex; flex-direction: column; gap: var(--spacing-sm); min-height: 0; min-width: 0; container-type: inline-size; }
+  .skills { display: flex; flex-direction: column; gap: var(--spacing-sm); min-height: 0; min-width: 0; padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px); container-type: inline-size; }
   .skills-bar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: var(--spacing-sm); }
   .skills-data { display: none; }
   .skills-body {
     display: grid;
-    grid-template-columns: clamp(19rem, 32%, 24rem) minmax(0, 1fr);
+    grid-template-columns: clamp(15rem, 30%, 22rem) minmax(0, 1fr);
     height: max(24rem, calc(100vh - 15rem));
     min-height: 0;
     overflow: hidden;
@@ -77,7 +77,7 @@
   }
   .package {
     display: grid;
-    grid-template-columns: clamp(12rem, 26%, 15rem) minmax(0, 1fr);
+    grid-template-columns: clamp(9.5rem, 26%, 14rem) minmax(0, 1fr);
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -95,17 +95,24 @@
     padding: var(--spacing-md) var(--spacing-lg);
     overflow: auto;
   }
-  @container (max-width: 56rem) {
+  @container (max-width: 45rem) {
     .skills-body { grid-template-columns: minmax(0, 1fr); height: auto; overflow: visible; }
     .skills-list { max-height: 22rem; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
     .skills-detail { min-height: 24rem; }
   }
-  @container (max-width: 40rem) {
+  @container (max-width: 36rem) {
     .package { grid-template-columns: minmax(0, 1fr); }
     .package-tree { max-height: 12rem; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
   }
 </style>
 <div id="app" v-cloak>
+  <page-header title="技能" description="管理智能体可用的技能包与文件">
+    <template #actions>
+      <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+      </sdk-button>
+    </template>
+  </page-header>
   <section class="skills">
     <div class="skills-bar">
       <projection slot="import" @uploaded="onImported"></projection>
@@ -123,8 +130,8 @@
         <p v-else-if="record.status === 'forbidden'" class="skills-hint">{{ t("panel.recordForbidden") }}</p>
         <p v-else-if="record.status === 'error'" class="skills-hint" role="alert">{{ record.message }}</p>
         <p v-else-if="record.status !== 'ready'" class="skills-hint" role="status">{{ t("panel.loading") }}</p>
-        <template v-else>
-          <div class="detail-head">
+        <template v-if="selected">
+          <div v-show="record.status === 'ready'" class="detail-head">
             <div class="detail-meta">
               <div class="detail-title">
                 <h2 class="detail-name" :title="skill.name">{{ skill.name }}</h2>
@@ -137,7 +144,7 @@
               <projection slot="remove" @done="onDeleted"></projection>
             </div>
           </div>
-          <div class="package">
+          <div v-show="record.status === 'ready'" class="package">
             <div class="package-tree">
               <projection slot="tree"></projection>
             </div>

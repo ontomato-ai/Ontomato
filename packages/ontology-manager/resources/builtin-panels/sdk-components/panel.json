@@ -46,8 +46,7 @@
         "description": "选中组件在发行里声明的含义、数据、配置、输入、输出和操作签名。",
         "id": "builtin-product-4a5c84eb-637c-4b0b-93f5-2f37f4f672bf"
       }
-    },
-    "commands": {}
+    }
   },
   "content": {
     "messages": {

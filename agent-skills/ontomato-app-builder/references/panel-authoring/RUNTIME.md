@@ -1,14 +1,9 @@
 <!-- Generated from SDK declarations and panel contracts by pnpm --filter @ontomato/contracts generate:panel-runtime-reference. -->
 # Panel runtime reference
 
-## Imports and application icons
+## Imports
 
 Direct panel modules can import `vue`, `@ontomato/sdk/panel`.
-
-For a domain application, choose `declaration.icon` from `node "$SKILL/ontomato.mjs" sdk icons`.
-The built-in icons identify the platform's own entries.
-To show an application by its icon key, draw `<component :is="appIcon(key)" :size="16" />` with `appIcon` from
-`@ontomato/sdk/panel`: it is the platform's own icon for the key, and an unknown key draws the platform's fallback.
 
 ## Vue setup
 
@@ -60,8 +55,15 @@ interface PanelInstance {
   // A computed context, read only at its top: a deep read-only type of it recurses through the member paths' JSON values
   // (a nested panel's selection) without end.
   readonly pageContext: ComputedRef<PageContext>;
+  /** The form adapters its projections registered, for the draft its address names. */
+  readonly forms: PanelFormAdapters;
   /** Set once a form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
   readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
+  /**
+   * Anything this panel shows may have changed: every datum it shows is read again, as the page header's refresh reads
+   * it, and every component that reads its own data is told so. The page's own code calls it to keep what it shows
+   * current (polling while a run goes on); an operation's reported changes need no call.
+   */
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
 }
@@ -86,6 +88,171 @@ interface PanelStateStore {
   /** The fields an address or an open request may carry, with the values they hold now. */
   deepLinkable(): Record<string, PanelDeepLinkStateValue>;
 }
+```
+
+### usePanelFormDraft
+
+Binds one mounted `ObjectForm` slot to `<page-header :draft="draft">`: returns `null` while the form slot is absent
+(or `when` is false), and otherwise exposes reactive `dirty`, `saving`, `canSave`, `save()`, and `discard()` wired
+straight to `instance.forms.handle(slot)`.
+
+```ts
+function usePanelFormDraft(slot: MaybeRefOrGetter<string | null | undefined>, options?: UsePanelFormDraftOptions | undefined): ComputedRef<PageHeaderDraft | null>
+```
+
+### UsePanelFormDraftOptions
+
+```ts
+interface UsePanelFormDraftOptions {
+  /**
+   * Optional reactive guard controlling whether the draft controls are shown (for example `() => detail.value.status === "ready"`).
+   * Defaults to `true` whenever the form slot is mounted.
+   */
+  when?: MaybeRefOrGetter<boolean>;
+  /**
+   * Whether clicking Discard asks the platform's confirmation dialog before restoring the owner baseline.
+   * Defaults to `true`.
+   */
+  confirmDiscard?: boolean;
+}
+```
+
+### PageHeaderDraft
+
+Save/Discard draft state displayed by `<page-header>`: without changes only a disabled Save button renders; with
+changes the unsaved notice, Discard and Save render together.
+
+```ts
+interface PageHeaderDraft {
+  /** Whether there are unsaved changes to save or discard. */
+  readonly dirty: boolean;
+  /** Whether a save operation is currently in flight. */
+  readonly saving?: boolean;
+  /** Optional explicit save-enabled override; defaults to `dirty && !saving`. */
+  readonly canSave?: boolean;
+  /** Optional handler invoked when Save is clicked (alternative to listening for `@save`). */
+  readonly save?: () => void;
+  /** Optional handler invoked when Discard is clicked (alternative to listening for `@discard`). */
+  readonly discard?: () => void;
+}
+```
+
+### AppMenuGroup
+
+A group of entries in an application menu column; omit `label` for an untitled section.
+
+```ts
+interface AppMenuGroup {
+  /** Stable group key. */
+  key: string;
+  /** Optional section heading shown above the group's entries. */
+  label?: string;
+  /** Entries in display order. */
+  items: readonly AppMenuItem[];
+}
+```
+
+### AppMenuItem
+
+One entry in an application menu column.
+
+```ts
+interface AppMenuItem {
+  /** Stable identifier of the entry (typically its route path). */
+  id: string;
+  /** Localized display label shown on the row. */
+  label: string;
+  /** Optional icon key from the platform's curated icon set or a Vue icon component. */
+  icon?: AppMenuIcon;
+  /** Optional directory count shown right-aligned; null or undefined hides the badge. */
+  count?: number | null;
+  /** When set, renders the row disabled with this tooltip hint instead of clickable. */
+  unavailableHint?: string;
+}
+```
+
+### PanelFormHandle
+
+What one form holds, as the projections that edit one of its fields read and write it (`formField`): the owner's
+fields, the values, the field errors and changed marks by path, and whether the form is busy. Every one of them is the
+form's own; a field projection never keeps a copy.
+
+```ts
+interface PanelFormHandle {
+  readonly fields: Readonly<Ref<readonly PanelFormField[]>>;
+  readonly values: Readonly<Ref<PanelFormValues>>;
+  readonly errors: Readonly<Ref<Readonly<Record<string, string>>>>;
+  readonly changed: Readonly<Ref<ReadonlySet<string>>>;
+  readonly busy: Readonly<Ref<boolean>>;
+  /** Whether this form currently holds unsaved edits (changed values, an active draft, or modified fields). */
+  readonly dirty: Readonly<Ref<boolean>>;
+  /** Distinct top-level field paths currently modified relative to the opened baseline. */
+  readonly dirtyFields: Readonly<Ref<ReadonlySet<string>>>;
+  /** Whether a save is currently in flight (alias of `busy`). */
+  readonly submitting: Readonly<Ref<boolean>>;
+  /** Whether the form is ready and has unsaved edits that can currently be submitted. */
+  readonly canSubmit: Readonly<Ref<boolean>>;
+  /** Sets one field's value; a field the owner marks `refreshOnChange` has the owner asked again. */
+  set(path: string, value: RuntimeJsonValue): void;
+  /** Submits the form through its owner. */
+  submit(): Promise<unknown>;
+  /**
+   * Discards unsaved edits and restores the owner baseline. Pass `{ confirm: true }` to ask the platform's
+   * confirmation dialog first; resolves `true` when discarded, `false` when cancelled.
+   */
+  reset(options?: { confirm?: boolean }): Promise<boolean>;
+}
+```
+
+### usePanelBack
+
+Registers a panel-local back/close layer with the enclosing host (LIFO). While `active` is truthy:
+- Browser Back (when `pushHistory` is true, the default) runs `onBack` after the host's unified unsaved-changes guard.
+- Pressing Escape (when no modal dialog, drawer, dropdown, or popover is open) runs `onBack` after the same guard.
+- Calling the returned `back()` runs the same guard and then `onBack`, keeping UI back buttons and browser Back in sync.
+
+```ts
+function usePanelBack(active: MaybeRefOrGetter<boolean>, onBack: () => void, options?: UsePanelBackOptions | undefined): PanelBackHandle
+```
+
+### UsePanelBackOptions
+
+```ts
+interface UsePanelBackOptions {
+  /**
+   * Whether activating this back layer pushes a browser history entry so browser Back invokes `onBack`.
+   * Defaults to `true`.
+   */
+  pushHistory?: MaybeRefOrGetter<boolean>;
+  /**
+   * Form slot(s) owned by this back layer (for example `"attributeForm"` when closing an inline sub-editor while
+   * another form on the same panel stays open). When provided, only those form slots are checked for unsaved changes
+   * and discarded on confirmation, leaving other forms on the panel untouched. Pass `[]` for a purely local view layer
+   * that owns no forms. Omit to guard and discard all dirty forms in the panel.
+   */
+  forms?: MaybeRefOrGetter<string | readonly string[] | undefined>;
+}
+```
+
+### PanelBackHandle
+
+```ts
+interface PanelBackHandle {
+  /**
+   * Runs the same guarded back step as Escape or browser Back (for example from a "Back to list" button): asks the
+   * host's unified unsaved-changes confirmation first and calls `onBack` only if allowed. Resolves `true` when `onBack`
+   * ran, `false` when cancelled or when `active` is currently `false`.
+   */
+  back: () => Promise<boolean>;
+}
+```
+
+### savePanelFile
+
+Saves one file for the reader, under its own name, and says what was saved.
+
+```ts
+function savePanelFile(file: { mime: "image/png" | "text/csv" | "application/zip"; bytes: ArrayBuffer | Uint8Array<ArrayBuffer> | Blob; suggestedName: string; }): { kind: "file"; name: string; mime: "image/png" | "text/csv" | "application/zip"; }
 ```
 
 ## Reads and operations
@@ -125,7 +292,7 @@ The result type is `type MemberDataState =
 | `ready` | `value` |
 | `empty` |  |
 | `error` | `message` |
-| `forbidden` |  |
+| `forbidden` | `reason` |
 | `loading` |  |
 
 A datum in `error` also carries `retry()`, which reads it again: offer it beside the message. When the platform never
@@ -174,20 +341,54 @@ updating the editor or announcing a successful write.
   show success. On `refusal` or `failure`, keep the edits and show the owner's message and any named field errors.
 - A null or `unknown` outcome leaves the result unconfirmed. A batch receipt reports one outcome per item.
 
-## Header commands and navigation
+## Page header and navigation
 
-Declare each page-header command under `manifest.commands` with a localized `labelKey` and a `do` action; at most one
-is `primary: true`, the header's main button. `manifest.commands` is required; use `commands: {}` when the panel has no
-header commands. A command's values are literals or state fields. A `do.set` field must be a `deepLink: true` state
-field, so the changed address reproduces the page. Handle component-driven interactions (a selection, an output) in Vue.
-`do.open` with `mode: "entry"` describes a `platform:ApplicationPanelUse` reference and optional destination state inputs.
-In the current direct runtime, an open command reports that the SDK opens no entry or member from a command.
+Place the official presentational `<page-header>` component at the top of a panel's content when the page needs a
+header, and omit it for headerless pages. Pass `title` (or a `#title` slot with a projection-bound component such as
+`<projection>` / `ObjectSummary`), optional `description`, optional `back-label` + `@back` wired to `usePanelBack`
+or `navigate`, right-side controls in `#actions` (such as ordinary `<sdk-button>`, `<OperationButton>`, inline counts,
+or search inputs), and optional `:draft` from `usePanelFormDraft` for Save/Discard/unsaved feedback. Buttons in
+`<page-header>` change declared panel state or call declared owner operations, so skills continue to produce valid
+deep-link addresses and `/operate` calls.
+
 For a browser button or component output that should navigate, call `usePanelContext().navigate` with the registered path
 from `panel uses <application-id>` and, when needed, the destination's deep-linkable state.
 
-The generated page skill's Panel commands section gives the assistant the address or operation for each command.
-`do.set` opens the current entry with the changed deep-linkable fields in `state`. `do.invoke` calls the listed
-owner operation. `do.open` follows the indicated destination address. Use a declared operation ID for `/operate`.
+On `ObjectForm`, set `config.actions` to `"footer"` (default, non-overlapping document-flow bar), `"create-only"`
+(Cancel/Create bar only in create mode when edit Save/Discard lives in `<page-header>` via `usePanelFormDraft`), or
+`"none"` (omit the bar in both modes). To split one form's fields across multiple cards (1 or 2 columns), tabs, or
+wizard steps while sharing one form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and agent
+drafts, set `config.presentation` (`"cards" | "tabs" | "steps"`) with `config.groups` (or owner `sections`), or place
+`<object-form-fields :fields="..." />` / `<object-form-fields rest />` slices inside `ObjectForm`'s `#default` slot.
+`ObjectForm` automatically shows word counters for schema `maxLength` fields and
+disables cascading select fields whose owner declares `disabledWhenEmpty`.
+
+## General display components and MetricView `result` binding
+
+Use the five official general display components (available both as projection components and as `<kebab-case>` tags
+in panel templates / slots) instead of formatting business fields in panel HTML:
+
+- `<typed-value>` (`TypedValue`): formats one typed field value (text, number, date/datetime/relative-time, boolean,
+  status tag, tags, clickable object reference, localized map, list, code/JSON) from `data.record`, `data.result`
+  (`metricOutput` scalar/first-row or named column), or a direct `value` prop.
+- `<record-template>` (`RecordTemplate`): fills already-provided values from `data.record` or one row of
+  `data.result` (`metricOutput`) into a fixed `{fieldKey}` sentence template (`template`, `templateKey`, or
+  locale-keyed `templates`, with per-field `fieldFormats`). Strictly presentation-only: no expressions, calculation,
+  or conditional sentence branching.
+- `<info-banner>` (`InfoBanner`): standardized `info`/`success`/`warning`/`danger` callout banner supporting static/
+  localized copy, slots, or already-provided `data.record` / `data.result` fields and fixed templates.
+- `<object-ref-card>` (`ObjectRefCard`): clickable object reference card (icon/monogram, caption, localized name,
+  monospace identifier, optional badge) from `data.record` (via `field` or the record itself), `data.result`, or a
+  direct `reference` prop — ideal for composing relationship `Source → Target` blocks.
+- `<metric-card>` (`MetricCard`): single or multi-KPI statistic cards (`card`, `compact`, or `inline` variants) bound
+  directly to `data.result` (`metricOutput`), `data.record`, `data.rows`, `data.objects`, or standalone `value`/`items`.
+
+Every entry (full page or beside a conversation) receives a content box with no host page header, host padding, or
+outer card frame. Style panels with normal HTML, CSS, and Vue (prefer container-relative sizing and CSS `@container`
+rather than `window.innerWidth` or viewport units so the layout stays comfortable when hosted beside a conversation),
+and use `<sdk-dialog>` / `<sdk-drawer>` for overlays. When a single panel hosts an editable in-panel sub-view (rather
+than navigating to a separate detail entry), wire `usePanelBack` so browser Back, Escape, and in-page back buttons
+share the host's unified unsaved-changes guard.
 
 ## Draft links and instance state
 
@@ -197,17 +398,17 @@ starts with one slash and contains no `http://`, `https://`, or `//host` prefix.
 Use the producing session and run IDs. Give `draftPath` only the run-relative artifact path
 `outputs/drafts/<name>.page-draft.json`. Encode that value once.
 
-For the agent directory, the reply is `[Open the draft](/applications/app-example-vue-agent-directory/manage?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json)`.
+For the catalog-detail template, the reply is `[Open the draft](/applications/app-template-catalog-detail/manage?draftSessionId=SESSION_ID&draftRunId=RUN_ID&draftPath=outputs%2Fdrafts%2Fedit.page-draft.json)`.
 
 A raw `draftPath` of `/outputs/drafts/edit.page-draft.json` starts with a slash and is invalid.
 The encoded query value `draftPath=%2Foutputs%2Fdrafts%2Fedit.page-draft.json` still starts with that slash after decoding.
 
-The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and offers it to the mounted forms.
-The target identifies the object type and, for an edit, the owner's object ID. A form of that type matches
-`save.draftOperation` and gives the owner's form read the proposed field values to check. If the owner accepts
-changed fields, the SDK fills the form and sets `instance.draft`.
-Keep the form projection mounted with `v-show` so it can receive the draft before the editor is visible.
-Watch `instance.draft` to reveal the editor. It is null while waiting or when the draft changes nothing.
+The SDK reads the artifact, verifies it was written for the entry's `pageKey`, and evaluates it against the panel's
+declared form members (even before the form mounts). The target identifies the object type and, for an edit, the
+owner's object ID (plus optional `itemKey` for a row-attached form). A form of that type matches `save.draftOperation`
+and gives the owner's form read the proposed field values to check. If the owner accepts changed fields, the SDK sets
+`instance.draft` and fills the form once mounted. Watch `instance.draft` to open the target detail view or create
+dialog. It is null while waiting or when the draft changes nothing.
 Use [`draftTarget(draft)`](CODE.md#save-a-form-or-hand-off-a-draft) to get the accepted draft's effective create or update target.
 The reader saves or discards the proposed change in the form.
 
@@ -255,3 +456,18 @@ The value has `className` and `primaryKey`. Linking the graph and relation list 
 
 - State field type `{ kind: "child-object"; parentType: string; collection: string }`.
 - A value in that field `{ parent: { objectType: string; primaryKey: string }; primaryKey: string }`.
+
+### Object reference shapes quick reference
+
+| Where | Shape |
+| --- | --- |
+| Panel state, `?state=`, `@saved` event | `{ className, primaryKey }` |
+| Assistant `/operate` `call.target` | `{ kind: "object", objectType, primaryKey }` |
+| `page-draft.json` / `instance.draft` / `draftTarget` | `{ objectType, id }` (omit `id` for create) |
+| `instance.pageContext.value.selection` item | `{ id, label, ... }` |
+
+## Application icons
+
+Choose an application's `declaration.icon` from `node "$SKILL/scripts/ontomato.mjs" sdk icons`.
+To render an application icon by key in a catalog panel, draw `<component :is="appIcon(key)" :size="16" />` with
+`appIcon` from `@ontomato/sdk/panel`.

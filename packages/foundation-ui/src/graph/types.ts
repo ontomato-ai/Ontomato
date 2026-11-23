@@ -16,12 +16,12 @@
 
 /**
  * How a node or an edge stands out, as the caller decides it: `default` is plain, `accent` is marked for the reader's
- * attention without being selected (such as search matches or nodes adjacent to a chosen one), `path` marks a found
- * directed path distinctly from search matches, and `muted` is faded back so the rest stands out (what lies outside a
- * search hit, a path or a chosen node's relations; G6 canvas). Selection is not a tone: it is the `selected` IDs, drawn
- * on top of the tone.
+ * attention without being selected (such as search matches), `neighbor` marks elements directly adjacent to a chosen
+ * node or edge on a read-only graph, `path` marks a found directed path distinctly from search matches, and `muted` is
+ * faded back so the rest stands out (what lies outside a search hit, a path or a chosen node's relations; G6 canvas).
+ * Selection is not a tone: it is the `selected` IDs, drawn on top of the tone.
  */
-export type GraphCanvasTone = "default" | "accent" | "path" | "muted";
+export type GraphCanvasTone = "default" | "accent" | "neighbor" | "path" | "muted";
 
 export interface GraphCanvasNode {
   /** The node's stable identity: what `selected` holds and the events name. */

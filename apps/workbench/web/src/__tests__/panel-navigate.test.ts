@@ -24,18 +24,26 @@ import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
 
 await mountPanel({
   setup() {
-    const { navigate } = usePanelContext();
+    const { instance, navigate } = usePanelContext();
     const refused = ref("");
     const go = (address) => navigate(address).catch((reason) => { refused.value = reason.message; });
+    const clearAndGo = (address) => {
+      instance.state.set("creating", false);
+      void go(address);
+    };
     return () => h("div", [
       h("button", { class: "go-nowhere", onClick: () => go("/nowhere/at-all") }),
       h("button", { class: "go-home", onClick: () => go("/home") }),
+      h("button", { class: "clear-and-go-home", onClick: () => clearAndGo("/home") }),
       h("output", refused.value),
     ]);
   },
 });
 `;
-const panel = panelRecord("panel-navigate", "Navigate", definePanel({ state: {}, members: {}, commands: {} }));
+const panel = panelRecord("panel-navigate", "Navigate", definePanel({
+  state: { creating: { type: { kind: "scalar", type: "boolean" }, deepLink: true } },
+  members: {},
+}));
 panel.content.module = NAVIGATE;
 const use = panelUse("use-navigate", "navigate", panel.id, `/applications/${application}/navigate`);
 
@@ -77,6 +85,28 @@ it("opens a page the platform has, and says which address it cannot open without
     expect(router.currentRoute.value.path).toBe(use.path);
 
     element.querySelector<HTMLButtonElement>(".panel-host-coded .go-home")!.click();
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/home"));
+  } finally {
+    app.unmount();
+  }
+});
+
+it("still navigates when the panel updates deep-linkable state in the same tick right before navigate()", async () => {
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: "/applications/:applicationId/:panelPath(.*)?", component: PanelApplicationRoute, props: route => ({ applicationId: String(route.params.applicationId) }) },
+    { path: "/home", component: { render: () => h("p", { class: "home" }, "Home") } },
+    { ...platformRoutes.unknown, redirect: "/home" },
+  ] });
+  installPlatform(answer, router);
+  await router.push(use.path);
+  const { app, element } = mountPlatformPage(() => h(RouterView), router);
+  try {
+    const button = await vi.waitFor(() => {
+      const found = element.querySelector<HTMLButtonElement>(".panel-host-coded .clear-and-go-home");
+      if (!found) throw new Error("The panel is not drawn yet");
+      return found;
+    });
+    button.click();
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/home"));
   } finally {
     app.unmount();

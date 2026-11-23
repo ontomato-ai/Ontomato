@@ -37,7 +37,7 @@ afterEach(() => {
 it("opens the page's composer with the member's declared agent and sentence, once, sending nothing", async () => {
   const expanded: PanelConversationEntry[] = [];
   const instance = createDirectPanelInstance(definePanel({
-    state: {}, members: { governance: { target: { projectionId: projection.id } } }, commands: {},
+    state: {}, members: { governance: { target: { projectionId: projection.id } } },
   }), {
     pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: {},
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
@@ -71,7 +71,7 @@ it("opens the composer with the opening sentence its key names, in the reader's 
   async function opened(locale: string, words: Record<string, Record<string, string>> = messages) {
     const expanded: PanelConversationEntry[] = [];
     const instance = createDirectPanelInstance(definePanel({
-      state: {}, members: { governance: { target: { projectionId: keyed.id } } }, commands: {},
+      state: {}, members: { governance: { target: { projectionId: keyed.id } } },
     }), {
       pageKey: "actions", url: () => "/actions", label: () => "Actions", initial: {},
       text: createPanelText(words, ref(locale), "en"), ...noOperations, recordDraftCreated: async () => {},

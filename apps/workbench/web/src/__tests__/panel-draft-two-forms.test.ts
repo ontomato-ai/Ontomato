@@ -48,7 +48,6 @@ function mountForms(forms: readonly FormMember[], initial: Record<string, unknow
   const manifest: DirectPanelManifest = {
     state: Object.fromEntries(forms.map((form) => [form.state, { type: { kind: "object", objectType: form.type }, personal: false, deepLink: true, external: false }])),
     members: Object.fromEntries(forms.map((form) => [form.member, { target: { projectionId: `${form.member}-form` }, inputs: { [form.input]: { state: form.state } } }])),
-    commands: {},
   };
   const mount = mountDirectPanel({
     manifest,

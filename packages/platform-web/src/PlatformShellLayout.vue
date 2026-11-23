@@ -3,9 +3,9 @@ import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import {readHomeState,HOME_PREFERENCES_CHANGED} from './features/home/api';
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { ElMessageBox } from "element-plus";
 import {
   agentModelLabelsKey,
+  confirmDanger,
   platformApplicationNameKey,
   pilotPageKey,
   platformPageAccessKey,
@@ -34,6 +34,7 @@ import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
 import { agentBuilderShortcut } from "./application-shortcuts";
+import { applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
 import { workspaceObjectHostKey } from "@ontomato/contracts/workspace-objects";
 import { createWorkspaceObjectHost } from "./workspace-objects";
 
@@ -73,10 +74,33 @@ watch(() => host.navigation.value, () => { void catalog.refresh(); }, { deep: tr
 watch(() => route.path === platformRoutes.home.path, (home) => { if (home) void catalog.refresh(); });
 /** The rail's placeholders stand in for a list it does not have yet; a later read keeps the rows it shows. */
 const railLoading = computed(() => catalog.loading.value && catalog.applications.value.length === 0);
-const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers, entryCount));
+/** Applications whose own menu column can be visible at the current route; only their counts are read. */
+const activeMenuApps = computed(() => {
+  const active = new Set<string>();
+  if (typeof route.query.navigationContext === "string" && route.query.navigationContext) {
+    active.add(route.query.navigationContext);
+  }
+  for (const app of catalog.applications.value) {
+    const prefix = isPanelApplication(app) || app.kind === "hosted" || app.kind === "connected"
+      ? applicationRootPath(app.id)
+      : app.kind === "product" ? `/products/${app.id}` : app.entry.path;
+    if (route.path === prefix || route.path.startsWith(`${prefix}/`)) active.add(app.id);
+  }
+  return active;
+});
+/** Whether the shown application draws its own frame in its area (its page writes it). */
+const appFramed = provideApplicationFrame();
+const readAppCounts = (appId: string) => activeMenuApps.value.has(appId);
+const activeEntryCount: typeof entryCount = (appId, use) => {
+  if (!readAppCounts(appId)) return null;
+  // When the active route is framed (or awaiting admission for its declared frame), that frame owns its menu counts.
+  if (appFramed.value && panelEntryApplication(route.path) === appId) return null;
+  return entryCount(appId, use);
+};
+const partition = computed(() => catalogPartition(catalog.applications.value, host.preferences.locale.value, props.renderers, activeEntryCount));
 
 const declarations = computed<PlatformAppDeclaration[]>(() =>
-  appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key)),
+  appDeclarations(host.navigation.value, host.access, partition.value, (key) => t(key), readAppCounts),
 );
 const agentBuilder = computed(() => agentBuilderShortcut(declarations.value, panelEntryApplication(platformRoutes.agents.path) === "agents", t("platform.agentBuilder")));
 const railDeclarations = computed(() => agentBuilder.value ? [...declarations.value, agentBuilder.value] : declarations.value);
@@ -95,9 +119,10 @@ const shownPage = computed<PlatformShownPage | null>(() => {
   if (heading.value) {
     return {
       title: heading.value.title,
-      description: heading.value.description ?? (page?.descriptionKey ? t(page.descriptionKey) : null),
+      description: heading.value.backLabel ? null : (heading.value.description ?? (page?.descriptionKey ? t(page.descriptionKey) : null)),
       named: true,
       back: heading.value.back,
+      backLabel: heading.value.backLabel,
       externalLink: heading.value.externalLink,
     };
   }
@@ -136,6 +161,7 @@ const labels = computed(() => ({
   theme: { light: t("platform.themeLight"), dark: t("platform.themeDark") },
   signOut: t("platform.signOut"),
   opensInNewTab: t("platform.openInNewTab"),
+  openStandalone: t("platform.openStandalone"),
   pages: t("platform.pages"),
   save: t("platform.save"),
   discard: t("platform.discard"),
@@ -173,8 +199,6 @@ const localeNames = computed(() =>
 const pageActions = providePageActions();
 /** What the shown entry's application assigns in its area, written by the application's page. */
 const appTheme = provideApplicationTheme();
-/** Whether the shown application draws its own frame in its area (its page writes it). */
-const appFramed = provideApplicationFrame();
 
 /**
  * The pages the platform's assembly can mount beside a conversation: the conversation application asks for one by
@@ -191,14 +215,10 @@ providePlatformPageCounter(router);
  * document is closed or reloaded. The drafts stay the pages'; this frame only asks.
  */
 const unsaved = provideUnsavedChanges(() =>
-  ElMessageBox.confirm(t("admin.leaveUnsavedConfirm"), t("admin.unsavedChanges"), {
-    type: "warning",
+  confirmDanger(t("admin.leaveUnsavedConfirm"), t("admin.unsavedChanges"), {
     confirmButtonText: t("admin.leaveWithoutSaving"),
     cancelButtonText: t("common.cancel"),
-  }).then(
-    () => true,
-    () => false,
-  ),
+  }),
 );
 const removeLeaveCheck = router.beforeEach((to) => unsaved.allows(to.path));
 function warnBeforeUnload(event: BeforeUnloadEvent) {

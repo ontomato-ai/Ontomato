@@ -24,7 +24,7 @@ const projection = () => registerProductProjectionRequestSchema.parse({ name: "T
 const panel = () => registerProductPanelRequestSchema.parse({ name: "Tasks", description: "", visibility: "domain", revision: 0,
   content: { html: "<main></main>", module: "throw new Error('Node must never execute this module')", recipes: "Choose a test task." },
   manifest: { state: { selectedTask: { type: { kind: "object", objectType: "platform:ScheduledTask" } } },
-    members: { summary: { target: { projectionId: "x" }, inputs: { task: { state: "selectedTask" } } } }, commands: {} } });
+    members: { summary: { target: { projectionId: "x" }, inputs: { task: { state: "selectedTask" } } } } } });
 async function seedProjection() {
   return saveCurrentProjection(owner, credentials, "x", projection());
 }
@@ -118,7 +118,7 @@ it("rejects a frame state input without a frame and preserves typed literal wiri
   const { revision, ...input } = panel();
   const type = { kind: "scalar", type: "string" } as const;
   const field = { type, personal: false, deepLink: true, external: true };
-  const definition = { ...input, manifest: { state: { term: field }, members: {}, commands: {} } };
+  const definition = { ...input, manifest: { state: { term: field }, members: {} } };
   await saveCurrentPanel(owner, credentials, "content", definition, revision);
   const validates = (ref: { literal: string } | { frameState: string }, framePanelId?: string) =>
     validateApplicationPanelReferences({

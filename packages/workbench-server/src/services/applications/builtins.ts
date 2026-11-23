@@ -4,17 +4,8 @@ export const workbenchApplications: BuiltinApplication[] = [
   {
     id: "application-gallery", kind: "native", rail: "top", category: "business", sort: 2,
     entry: {path:"/applications",renderer:"application-gallery",home:"/applications"},
-    entryAccess:["domain-member"],scheduleAdapter:null,
+    entryAccess:["domain-member"],scheduleAdapter:null,allowStandalone:false,
     declaration:{names:{en:"Application gallery","zh-CN":"应用广场"},descriptions:{en:"Discover applications and pin shortcuts to your personal workspace","zh-CN":"发现应用，并将常用入口固定到个人工作台"},icon:"gallery",groups:[],permissions:[]},
-  },
-  {
-    id: "personal-workspace", kind: "native", rail: "top", category: "business", sort: 5,
-    entry: { path: "/workspace", renderer: "personal-workspace", home: "/workspace" },
-    entryAccess: ["domain-member"], scheduleAdapter: null,
-    declaration: {
-      names: { en: "Personal workspace", "zh-CN": "个人工作台" }, descriptions: {},
-      icon: "dashboards", groups: [], permissions: [],
-    },
   },
   {
     "id": "home",
@@ -31,6 +22,7 @@ export const workbenchApplications: BuiltinApplication[] = [
       "domain-member"
     ],
     "scheduleAdapter": null,
+    "allowStandalone": false,
     "declaration": {
       "names": {
         "en": "Personal workspace",
@@ -178,6 +170,7 @@ export const workbenchApplications: BuiltinApplication[] = [
       "user-feedback"
     ],
     "scheduleAdapter": "workbench:operations",
+    "allowStandalone": false,
     "declaration": {
       "names": {
         "en": "Operations diagnosis",
@@ -228,6 +221,7 @@ export const workbenchApplications: BuiltinApplication[] = [
       "app-builder"
     ],
     "scheduleAdapter": null,
+    "allowStandalone": false,
     "declaration": {
       "names": {
         "en": "App builder",

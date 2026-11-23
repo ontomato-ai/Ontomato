@@ -32,7 +32,7 @@ const base = { domainId: "d", ownerId: "o", revision: 1, createdAt: "", updatedA
 const panel: ProductPanel = {
   ...base, id: use.panelId, name: "Knowledge",
   content: { html: '<div id="app"></div>', module: PLACE_EVERY_MEMBER },
-  manifest: { state: {}, members: { governance: { target: { projectionId: "knowledge-governance" } } }, commands: {} },
+  manifest: { state: {}, members: { governance: { target: { projectionId: "knowledge-governance" } } } },
 };
 const projections: Record<string, DirectProjection> = {
   "knowledge-governance": {

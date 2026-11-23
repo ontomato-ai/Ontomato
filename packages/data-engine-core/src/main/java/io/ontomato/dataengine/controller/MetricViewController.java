@@ -113,7 +113,7 @@ public class MetricViewController {
 	 * The metric a save writes. A request that names its submittedFields changes only those: the saved metric, or a new
 	 * one's defaults, with each submitted field taken from the request. Without them, the request is the whole metric.
 	 */
-	private JSONObject submittedValues(JSONObject param, String domainId) {
+	private JSONObject submittedValues(JSONObject param, String domainId, String lang) {
 		List<String> submitted = param.getList("submittedFields", String.class);
 		param.remove("submittedFields");
 		if (submitted == null) return param;
@@ -123,7 +123,7 @@ public class MetricViewController {
 			saved = MetricViewForm.defaults();
 		} else {
 			MetricView stored = metricViewService.queryById(id, domainId);
-			if (stored == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+			if (stored == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
 			saved = PanelFormFields.asset(stored);
 		}
 		JSONObject values = PanelFormFields.withSubmitted(saved, param, submitted);
@@ -138,7 +138,7 @@ public class MetricViewController {
 		try {
 			User user = SystemUtils.getCurUser();
 			if (param.containsKey("type")) throw new OwnerRefusal("METRIC_VIEW_TYPE_RETIRED", "MetricView type is retired; edit parameter bindings on a dynamic metric");
-			JSONObject values = submittedValues(param, user.getDomainId());
+			JSONObject values = submittedValues(param, user.getDomainId(), lang);
             var acceptedFunction = Function.fromAsset(values);
             MetricView metricView = values.to(MetricView.class);
             metricView.setFunction(acceptedFunction);
@@ -192,7 +192,7 @@ public class MetricViewController {
 				return JSONObject.of("success", true, "data", JSONObject.of("reason", reason));
 			}
 			MetricView metricView = metricViewService.queryById(id, user.getDomainId());
-            if (metricView == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+            if (metricView == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
 			ret.put("success", true);
 			ret.put("data", withDisplay(metricView, subjectNames(user.getDomainId()), lang));
 		} catch (OwnerRefusal e) {
@@ -214,8 +214,13 @@ public class MetricViewController {
 		try {
 			User user = SystemUtils.getCurUser();
 			String status = param.getString("status");
+			String origin = param.getString("origin");
 			String className = param.getString("className");
 			List<MetricView> metricViews = metricViewService.queryList(status, null, className, user.getDomainId());
+			if (origin != null && !origin.isBlank()) {
+				String expectedOrigin = origin.trim();
+				metricViews = metricViews.stream().filter(metric -> expectedOrigin.equals(metric.getOrigin())).toList();
+			}
 			ret.put("success", true);
 			ret.put("data", withDisplay(metricViews, user.getDomainId(), lang));
 		} catch (Exception e) {

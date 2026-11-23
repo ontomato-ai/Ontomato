@@ -45,14 +45,12 @@ const panelP = definePanel({
     tasks: { target: { projectionId: "projection-x" } },
     taskForm: { target: { projectionId: "projection-task-form" }, inputs: { task: { state: "selectedTask" } } },
   },
-  commands: {},
 });
 
 /** Panel Q: the same projection X and nothing of P. */
 const panelQ = definePanel({
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
   members: { summary: { target: { projectionId: "projection-x" }, inputs: { task: { state: "selectedTask" } } } },
-  commands: {},
 });
 
 function record(id: string, name: string, manifest: ProductPanel["manifest"]): ProductPanel {
@@ -94,7 +92,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
   const listeners = new Set<(revisions: readonly ProductDefinitionRevision[]) => void>();
   /** Each started instance of a panel with a module, by use: what the host gave it, and what it was told since. */
   const coded = new Map<string, {
-    run: DirectPanelRun; projectionsChanged: { id: string; revision: number }[][]; addresses: string[]; invoked: string[];
+    run: DirectPanelRun; projectionsChanged: { id: string; revision?: number }[][]; addresses: string[]; invoked: string[];
   }>();
   const frames = new Map<Window, unknown[]>();
   const sent = new WeakMap<Window, unknown[]>();
@@ -111,7 +109,7 @@ function platform(input: { applicationId?: string; panels: Map<string, ProductPa
         // The panel runs in the platform's document, started here.
         coded: async (_source, run) => {
           if (stand.codedFailure) throw stand.codedFailure;
-          const started = { run, projectionsChanged: [] as { id: string; revision: number }[][], addresses: [] as string[], invoked: [] as string[] };
+          const started = { run, projectionsChanged: [] as { id: string; revision?: number }[][], addresses: [] as string[], invoked: [] as string[] };
           coded.set(use.id, started);
           // The instance runs: it reports its state at the address it was given.
           run.state(run.initial, run.url());
@@ -232,7 +230,7 @@ describe("the panel host", () => {
     const panels = new Map([
       ["panel-p", record("panel-p", "Scheduled tasks", panelP)],
       ["panel-q", record("panel-q", "Task summary", panelQ)],
-      ["panel-r", record("panel-r", "Application only", definePanel({ state: {}, members: { form: { target: { projectionId: "projection-other" } } }, commands: {} }))],
+      ["panel-r", record("panel-r", "Application only", definePanel({ state: {}, members: { form: { target: { projectionId: "projection-other" } } } }))],
     ]);
     const port = platform({
       panels,

@@ -91,7 +91,6 @@ const projection: ProductProjection = {
 const manifest = definePanel({
   state: { selected: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
   members: { definition: { target: { projectionId: projection.id }, inputs: { agent: { state: "selected" } } } },
-  commands: {},
 });
 const panel = panelRecord("panel-form-controls", "Form controls", manifest);
 const use = panelUse("use-form-controls", "form-controls", panel.id, "/ontology/agents");
@@ -330,4 +329,15 @@ it("edits a list of strings as the owner's array", async () => {
   await nextTick();
   await context.instance.invoke("definition.save");
   expect(submitted(sent)[0]!.tags).toEqual(["billing"]);
+});
+
+it("discards unsaved edits programmatically via instance.forms.discard(slot)", async () => {
+  const { context } = await open();
+  type("/name", "Temporary edit");
+  await nextTick();
+  expect(context.instance.dirty()).toBe(true);
+  context.instance.forms.discard("definition");
+  await nextTick();
+  expect(context.instance.dirty()).toBe(false);
+  expect(context.instance.forms.handle("definition")!.values.value.name).toBe("Ship order");
 });

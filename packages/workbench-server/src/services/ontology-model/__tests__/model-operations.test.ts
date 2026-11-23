@@ -582,14 +582,19 @@ describe("ontology model server operations", () => {
     const { host } = owner(path =>
       path.includes("/object-type/deletion-impact") && path.includes("className=Device")
         ? { status: 200, body: impact }
-        : { status: 404, body: { error: { code: "OBJECT_TYPE_NOT_FOUND", message: "Class not found" } } },
+        : path.includes("/object-type?") && path.includes("className=Device")
+          ? { status: 200, body: { className: "Device", showName: "Device display", classDesc: "", attributeCount: 2, businessKeyCount: 0, relationshipCount: 1, primaryKey: { status: "ok", name: "id" } } }
+          : { status: 404, body: { error: { code: "OBJECT_TYPE_NOT_FOUND", message: "Class not found" } } },
     );
 
     const inspected = await deleteObjectType.inspectImpact!.inspect(host, [{ target: objectTarget, input: {} }]);
     expect(inspected).toEqual({
       summary: "This deletes the selected object type, together with the relationships that touch it (1 in total).",
-      objects: [{ target: { objectType: RELATIONSHIP, primaryKey: "owns" }, label: "owns the site" }],
-      total: 1,
+      objects: [
+        { target: { objectType: OBJECT_TYPE, primaryKey: "Device" }, label: "Device display" },
+        { target: { objectType: RELATIONSHIP, primaryKey: "owns" }, label: "owns the site" },
+      ],
+      total: 2,
     });
     await expect(
       deleteObjectType.inspectImpact!.inspect(host, [{ target: { kind: "object", objectType: OBJECT_TYPE, primaryKey: "Gone" }, input: {} }]),

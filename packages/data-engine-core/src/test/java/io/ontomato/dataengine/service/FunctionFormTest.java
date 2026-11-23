@@ -52,7 +52,40 @@ class FunctionFormTest {
     OwnerRefusal refusal = assertThrows(OwnerRefusal.class, () -> form(objectTarget("missing")));
 
     assertEquals("FUNCTION_NOT_FOUND", refusal.code());
-    assertEquals("Function not found", refusal.getMessage());
+    assertEquals("Function.notFound", refusal.getMessage());
+  }
+
+  @Test
+  void aProductFunctionShowsItsReadOnlyOperationAndSourceArtifactInsteadOfQueryFields() {
+    Function product = new Function();
+    product.setId("f-product");
+    product.setDomainId("domain-a");
+    product.setName("Published skill");
+    product.setDescription("Published product operation");
+    product.setOperation(Function.OPERATION_PRODUCT);
+    product.setSourceArtifact(JSONObject.of("artifactId", "art-1", "version", 2));
+    when(functionDao.queryById("f-product")).thenReturn(product);
+
+    JSONObject form = form(objectTarget("f-product"));
+
+    JSONObject operation = field(form, "/operation");
+    assertTrue(operation.getBooleanValue("readOnly"));
+    assertEquals(List.of(Function.OPERATION_READ, Function.OPERATION_WRITE, Function.OPERATION_PRODUCT),
+        operation.getJSONObject("valueSchema").getList("enum", String.class));
+    assertTrue(operation.getJSONObject("control").getJSONArray("options").stream()
+        .map(JSONObject.class::cast)
+        .anyMatch(opt -> Function.OPERATION_PRODUCT.equals(opt.getString("value"))
+            && "PanelForm.operation.product".equals(opt.getString("label"))));
+
+    JSONObject artifact = field(form, "/sourceArtifact");
+    assertEquals("PanelForm.sourceArtifact", artifact.getString("label"));
+    assertEquals("code", artifact.getJSONObject("control").getString("kind"));
+    assertEquals("json", artifact.getJSONObject("control").getString("language"));
+    assertTrue(artifact.getBooleanValue("readOnly"));
+
+    assertNull(optionalField(form, "/queryPackage"));
+    assertNull(optionalField(form, "/returnDef/columnLabels"));
+    assertNull(optionalField(form, "/logic"));
   }
 
   @Test

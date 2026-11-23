@@ -1,0 +1,23 @@
+<style>
+  .catalog-page { display: flex; flex-direction: column; min-width: 0; min-height: 100%; }
+  .catalog-view { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-lg) var(--page-gutter) var(--page-content-gap); }
+  .create-dialog-body .sdk-owner-form, .create-dialog-body .sdk-owner-form-inner { height: auto; }
+  .create-dialog-body .sdk-owner-form-body { overflow: visible; }
+</style>
+<div id="app">
+  <section class="catalog-page">
+    <page-header :title="t('panel.name')">
+      <template #actions>
+        <sdk-button type="primary" :disabled="creating" @click="startCreate">{{ t("command.new") }}</sdk-button>
+      </template>
+    </page-header>
+    <div class="catalog-view">
+      <projection slot="list" @choose="openDetail"></projection>
+    </div>
+    <sdk-dialog v-model="createDialog" :title="t('dialog.createTitle')" width="540px" append-to-body destroy-on-close>
+      <div class="create-dialog-body">
+        <projection slot="createForm" v-if="createDialog" @saved="onCreated" @discarded="cancelCreate" @cancel="cancelCreate"></projection>
+      </div>
+    </sdk-dialog>
+  </section>
+</div>

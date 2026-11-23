@@ -3,7 +3,11 @@ import {config} from '../../config/application';
 import {environment} from '../../config/environment';
 import {HttpError} from '../../utils/errors';
 import type {AssistantCredentials} from '../../platform/agent-runtime/runtime';
-import {productGrantsResponseSchema,type ChangeProductGrantRequest} from '@ontomato/contracts/product-governance';
+import {
+  productGrantPrincipalsResponseSchema,
+  productGrantsResponseSchema,
+  type ChangeProductGrantRequest,
+} from '@ontomato/contracts/product-governance';
 
 export interface ProductOwner { domainId: string; userId: string }
 
@@ -50,6 +54,20 @@ export async function productGrantIdsForOwner(owner:ProductOwner,verb:'use'|'edi
 export async function readProductGrantRecords(id:string,credentials:AssistantCredentials){
   const response=await backendPost('product-grant-records',config.dataQuery.baseUrl+'/product-governance/grants',{id},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});
   return productGrantsResponseSchema.parse(JSON.parse(response.text));
+}
+export async function searchProductGrantPrincipals(
+  kind: "principal" | "role",
+  keyword: string | undefined,
+  limit: number,
+  credentials: AssistantCredentials,
+) {
+  const response = await backendPost(
+    "product-grant-principals",
+    config.dataQuery.baseUrl + "/product-governance/principals",
+    { kind, ...(keyword ? { keyword } : {}), limit },
+    { headers: buildBackendHeaders(credentials.token, undefined, credentials.locale, credentials.apiKey), retries: 1 },
+  );
+  return productGrantPrincipalsResponseSchema.parse(JSON.parse(response.text));
 }
 export async function changeProductGrant(id:string,grant:ChangeProductGrantRequest,credentials:AssistantCredentials){
   const response=await backendPost('product-grant-mutation',config.dataQuery.baseUrl+'/product-governance/grant',{id,...grant},{headers:buildBackendHeaders(credentials.token,undefined,credentials.locale,credentials.apiKey),retries:1});

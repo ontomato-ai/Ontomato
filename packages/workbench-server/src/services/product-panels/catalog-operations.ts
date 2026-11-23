@@ -3,9 +3,13 @@ import { z } from "zod";
 import {
   applicationCatalogueCreateSchema, applicationEntriesUpdateSchema, applicationIdentityUpdateSchema,
 } from "@ontomato/contracts/application-catalogue";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { panelFormTargetSchema, panelObjectIdentitySchema } from "@ontomato/contracts/panel-manifest";
-import { panelFormSaveInputSchema, panelFormValuesSchema, type PanelFormDescription, type PanelFormField } from "@ontomato/contracts/panel-projection";
+import {
+  panelFormObjectAllFields, panelFormSaveInputSchema, panelFormValuesSchema,
+  type PanelFormDescription, type PanelFormField,
+} from "@ontomato/contracts/panel-projection";
 import {
   changeProductDomainGrantRequestSchema, changeProductGrantRequestSchema,
   changeProductPanelDomainGrantResponseSchema, productGrantChangeResponseSchema,
@@ -64,12 +68,12 @@ const pointer = (path: readonly (string | number)[]) =>
   path.map(part => "/" + String(part).replaceAll("~", "~0").replaceAll("/", "~1")).join("");
 const segments = (path: string) => path.split("/").slice(1).map(part => part.replaceAll("~1", "/").replaceAll("~0", "~"));
 
-/** Each declared field's path as segments; an array row is "*". */
-function fieldPatterns(fields: readonly PanelFormField[], prefix: string[] = []): string[][] {
+/** Each declared field's path as segments; an array row is "*". Includes every variant branch of object controls. */
+export function fieldPatterns(fields: readonly PanelFormField[], prefix: string[] = []): string[][] {
   return fields.flatMap(field => {
     const path = [...prefix, ...segments(field.path)];
     const { control } = field;
-    if (control.kind === "object") return [path, ...fieldPatterns(control.fields, path)];
+    if (control.kind === "object") return [path, ...fieldPatterns(panelFormObjectAllFields(control), path)];
     if (control.kind === "object-array") return [path, ...fieldPatterns(control.itemFields, [...path, "*"])];
     return [path];
   });
@@ -319,6 +323,30 @@ const applicationSave: PanelWriteServerOperation = {
 
       const id = target.primaryKey;
       if (submittedFields?.length === 0) return { primaryKey: id, data: { id } };
+      const singleEntryKeys = new Set(["id", "pageKey", "panelId", "path", "access", "groupKey", "inputs", "defaultAgent", "count"]);
+      const isSingleEntry = !("panelUses" in values) && !("icon" in values) && (
+        submittedFields === undefined
+          ? ("pageKey" in values && "panelId" in values)
+          : submittedFields.some(pointer => singleEntryKeys.has(pointer.split("/", 2)[1] ?? ""))
+      );
+      if (isSingleEntry) {
+        const currentEntryId = typeof values.id === "string" && values.id.length > 0 ? values.id : "__new__";
+        const currentEntriesForm = await java.form({ section: "entries", target, changedField: null });
+        const entriesValues = applicationEntriesUpdateSchema.parse(currentEntriesForm.values);
+        const existingIndex = entriesValues.panelUses.findIndex(item => item.id === currentEntryId);
+        const baseEntry = (existingIndex >= 0
+          ? entriesValues.panelUses[existingIndex]
+          : { id: "", pageKey: "", panelId: "", path: `/applications/${id}/`, access: { kind: "domain-member" } }) as Parameters<typeof applySubmittedFields>[0];
+        const body = submittedFields === undefined
+          ? values
+          : applySubmittedFields(baseEntry, values, submittedFields);
+        const parsedEntry = formValues(applicationPanelUseSchema, body, async () =>
+          (await java.form({ section: "entry", entryId: existingIndex >= 0 ? currentEntryId : "__new__", target, changedField: null })).fields);
+        if (existingIndex >= 0) entriesValues.panelUses[existingIndex] = parsedEntry;
+        else entriesValues.panelUses.push(parsedEntry);
+        await java.saveEntries(id, entriesValues);
+        return { primaryKey: id, data: { id } };
+      }
       const entries = submittedFields === undefined ? "panelUses" in values
         : submittedFields.some(pointer => Object.hasOwn(applicationEntriesUpdateSchema.shape, pointer.split("/", 2)[1]));
       const section = entries ? "entries" : "identity";
@@ -355,7 +383,7 @@ function applicationAction<Input extends Record<string, unknown>>(
     resultSchema: noData,
     async targetLabel(host, { primaryKey }) {
       const record = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
-      return record.names[host.locale ?? "en"] ?? record.names.en;
+      return localizedApplicationText(record.names, host.locale ?? "en") ?? record.id;
     },
     async execute({ locale, executor }, target, input) {
       return write(APPLICATION, async () => {

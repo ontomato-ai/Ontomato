@@ -185,7 +185,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "Projection",
     role: "presentation",
     meaning:
-      "Stands where one projection of a panel is drawn: it reads that projection's current record by ID, draws the component the record names in this version's catalogue, and registers the ports the projection offers. A panel places it and names the slot; it never draws a projection itself.",
+      "Stands where one projection of a panel is drawn: it reads that projection's current record by ID, draws the component the record names in this version's catalogue, and registers the ports the projection offers. A panel places and sizes the member container via CSS (including `class` and `style` on `<Projection>`), and the official component fills that box or uses its default height when none is given; it never draws a projection itself.",
     effects: "Reads the projection's current definition through the platform as the reader, and again when that definition changes.",
   }),
   defineComponentMeta({
@@ -194,7 +194,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectList",
     role: "control",
     meaning:
-      "Lists the owner's records of the projection's type in a compact list, multi-column table (`columns`), or responsive card grid (`layout: 'cards'`; default `'auto'` draws a table when `columns` is given and a compact list otherwise), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). What it offers follows the read and the placement: a search box when the read takes `search`, paging when it pages (with numeric page jump buttons and total count in `page` mode when `total` is known), checkboxes when the placement binds `checked`, and the status filter when it binds `status`; each is the list's own value unless the placement binds it to the panel's state. Clicking an item or pressing Enter/Space on a focused table row or card selects it (`selected`), and arrow keys move focus between rows or cards without interfering with interactive controls inside; search matches are highlighted, typed record fields (localized text, localized booleans, JSON summaries, arrays of scalars/references) render natively, time columns support `timeFormat` (`relative`, `datetime`, `date`), and a reference field is a link the page hears as `navigate`. `listed` outputs the object references of the current result batch — the current page when the owner's read pages (`cursor` or `page`), or all matching rows when the read does not page (empty when no rows are shown) — so another member such as a graph can follow the list's hits without issuing a second read. Compact lists and cards can cap a summary's visible lines with `subtitleLines`. A successful read with zero rows shows the empty message (`emptyText` can supply its message key). Missing required inputs show the waiting state.",
+      "Lists the owner's records of the projection's type in a compact list (single-line or two-line row height), multi-column table (`columns`, fixed head and row heights, single-line ellipsis unless `wrap: true`, horizontal scroll inside the table), or responsive card grid (`layout: 'cards'`; default `'auto'` draws a table when `columns` is given and a compact list otherwise), from its `rows` datum (an owner's list or query read) or `objects` (ontology objects of a chosen type). The top toolbar stays fixed with search on the left (server search when the owner's read declares `search`; zero-request local search across `label`, `primaryKey`, `subtitle`, tags, and all typed/nested field values when the read is unpaged without server `search` and either `searchable: true` or `search` state is bound), optional `#filters` for auxiliary view-switching controls, batch actions (`#batch-actions`) when rows are checked, and `#toolbar-actions` on the right; an optional `#create-row` slot expands an inline create block at the top of the list. Unpaged reads also support zero-request local field-equality filtering via `localFilters` or non-read panel inputs, optional collapsible grouping (`groupBy` and `groupEmptyLabel`) with live filtered counts per group (omitting empty groups) across list, table, and card layouts, and automatic windowed rendering when more than 60 items are visible. Inline row details (`listRowDetail`) expand one row at a time with row-specific accessible labels and scroll into view when opened. The bottom footer stays fixed with the total count on the left whenever the owner returns `total` or local filtering is enabled, numeric page buttons on the right in `page` mode (scrolling the list back to top on page change), and a Load more button that appends the next batch in `cursor` mode. Changing search or any filter resets paging to page 1; when the selected `primaryKey` changes and is present in the current list it expands its group if collapsed and scrolls into view (including jumping the virtual window). With `fallbackToFirst`, the first row is selected only on first showing when nothing is selected (and no draft is active), or after server or local search/filters change and the previously selected item is no longer listed (clearing to null when empty); selection cleared elsewhere is never re-selected automatically. Clicking an item or pressing Enter/Space on a focused table row or card selects it (`selected`), and arrow keys move focus between rows or cards without interfering with interactive controls inside; search matches are highlighted, typed record fields render natively, time columns support `timeFormat` (`relative`, `datetime`, `date`), and a reference field is a link the page hears as `navigate`. `listed` outputs the object references of the currently matching batch (filtered results when local search or filters are active). Three empty states distinguish no data (`emptyText` and optional `emptyHint`), narrowed no-match (with a Clear filters action that resets search, server/local filters and paging), and forbidden (showing the owner's reason when supplied). Missing required inputs show the waiting state.",
     effects: "Reads the bound type's list, query or ontology objects datum as the reader; it writes only the panel's own state.",
     bindsElement: ["PlatformObjectType:*"],
     // Either list shape draws the table, and an ontology type lists its declared objects instead: no single one of these
@@ -213,15 +213,41 @@ export const components: readonly ComponentMetadata[] = [
     },
   }),
   defineComponentMeta({
+    componentId: "ObjectCount",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectCount",
+    role: "presentation",
+    meaning:
+      "Draws a compact, inline tabular-numeral metric strip summarizing records from its `rows` (`panelRecordList` or `panelRecordQuery`) or `objects` (`panelOntologyObjects`) datum, suitable for canvas headers and workbench toolbars. In single-metric mode, configure `label`, `labelKey`, or `labels` (localized label map) and an optional `sumField` (summing finite numbers, numeric strings, array lengths, or `{ kind: 'json', value: ... }` array/number wrappers across rows; when omitted, `panelRecordQuery`/`panelOntologyObjects` use `total` and `panelRecordList` uses `rows.length`). To render several metrics from the same read without duplicating requests (for example `18 Object types · 193 Properties`), pass `items` as an array of `{ label?, labelKey?, labels?, sumField? }`. Shows `…` while loading, `0` when empty, and a muted `—` with an explanatory tooltip when forbidden, awaiting inputs, or unreachable.",
+    effects: "Reads the bound type's list, query, or ontology objects datum as the reader; writes nothing.",
+    bindsElement: ["PlatformObjectType:*"],
+    // Either `rows` (list/query) or `objects` (ontology objects) supplies the counted collection; at least one is declared.
+    data: {
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+      objects: { results: ["panelOntologyObjects"], required: false },
+    },
+  }),
+  defineComponentMeta({
     componentId: "ObjectSummary",
     module: "@ontomato/sdk/base",
     exportName: "ObjectSummary",
     role: "presentation",
     meaning:
-      "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags and clickable object references. Which facts and in what order is the projection's display; what each holds is the object's own owner's.",
+      "Shows the few facts of one platform object a reader recognises it by, including owner-supplied highlight ranges, status tags, clickable object references, and optional one-click copy buttons (`config.copyableFields`, resolving `#/...` hash links against the current browser origin and pathname). Which facts and in what order is the projection's display; what each holds is the object's own owner's. Set `config.showTitle` to `false` (default `true`) to hide the `record.label` heading when an `ObjectHeader` or section heading already introduces the object.",
     effects: "Reads one object of the type the projection binds, as the reader.",
     bindsElement: ["PlatformObjectType:*"],
     data: { record: { results: ["panelRecord"], required: true } },
+  }),
+  defineComponentMeta({
+    componentId: "ObjectHeader",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectHeader",
+    role: "presentation",
+    meaning:
+      "Draws a detail header with object name (`record.label` or `title`), one-line subtitle (`subtitleField` or `subtitle`), status badge (`statusField` paired with `record.tones`, or `status` + `statusTone`), and right-side actions. When mounted as a projection member with declared `operations`, exposes up to `maxVisibleOperations` (default 2, configurable without upper cap) operations inline via `OperationButton` in declared order (styling destructive operations as plain danger buttons inline when within the visible limit) and moves remaining overflow operations into an SDK dropdown More menu (whose accessible name automatically includes the current record title) using the shared operation dispatch, parameter dialog, and confirmation path. Also works standalone with `title`/`subtitle` and `#actions` (such as create-mode headers).",
+    effects: "Reads the bound object's `record` datum when declared and runs projection operations through the platform coordinator.",
+    bindsElement: ["PlatformObjectType:*"],
+    data: { record: { results: ["panelRecord"], required: false } },
   }),
   defineComponentMeta({
     componentId: "ObjectForm",
@@ -229,7 +255,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectForm",
     role: "control",
     meaning:
-      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, and takes an agent's draft for its object. Hidden owner fields have no control. Link a reference picker (or a graph choosing a list) to its owner field through `formField`: the form draws it in that field's place, so the owner's order and sections hold; a reference without one is shown as unavailable to edit. An owner may group its fields into `sections` (each a title and a hint, in order); the form draws them one after another with a list of them beside, and keeps Save and Discard in reach at the foot of the view. It says when it holds unsaved changes and asks before Discard throws them away. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It tells the page `saved` (with the object) and `discarded`, and asks the reader before the panel moves it off unsaved changes.",
+      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults, non-blocking warnings), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, offers a retry button when a form read fails, and takes an agent's draft for its object. Hidden owner fields have no control. Fields declaring `defaultValue` (including `null`) show a Reset to default control that restores a deep copy of the default into the draft without saving immediately, disabled while already at default, read-only, or saving. Fields declaring `warning` render non-blocking warning guidance under the control without blocking Save. Set `config.layout` to `rows` (default `stacked`) for a settings-row layout (label and help left, control/error/warning middle, Reset to default right, stacking cleanly in narrow containers). Set `config.presentation` to `cards` (1 or 2 columns via `cardColumns` or group `column: 'main' | 'side' | 'full'`), `tabs`, or `steps` alongside `config.groups` (or owner `sections`), or supply a `#default` slot containing `<object-form-fields>` slices inside arbitrary panel cards, tabs, or steps — all sharing the same single form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and agent draft lifecycle. Set `config.actions` to `footer` (default), `create-only` (Cancel/Create only in create mode while edit Save/Discard lives in `<page-header>` via `usePanelFormDraft`), or `none` to omit the bar in both modes. With footer actions, an edit form hides the save bar while clean or when all non-hidden fields are read-only, and reveals it pinned at the foot once edited with a count of modified fields alongside Discard and Save; a create form keeps Cancel and Create pinned at the foot and emits `cancel` after resetting (confirming first if edited). Link a reference picker (or a graph choosing a list) to its owner field through `formField`: the form draws it in that field's place, so the owner's order and sections hold; a reference without one is shown as unavailable to edit. An owner may group its fields into `sections` (each a title and a hint, in order); the form draws them one after another with a list of them beside. It asks before Discard throws unsaved changes away. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It tells the page `saved` (with the object), `discarded`, and `cancel`, and asks the reader before the panel moves it off unsaved changes.",
     effects: "Reads the owner's form and saves through the owner's own interface; it saves through the owner's form save its projection names.",
     bindsElement: ["PlatformObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
@@ -245,7 +271,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OperationButton",
     role: "control",
     meaning:
-      "The button of one operation its projection names (`config.operation`, the projection's local name for it): it shows the owner's label and runs it on the object, or the checked objects, its target input holds. A single write done is said in the platform's message in the owner's words, naming what it acted on (the button often goes with what it deleted); a batch is reported beside the button item by item; a refusal or failure stays beside it. The page hears every outcome as the `done` event. What a write removed is let go of by the panel: a selection holding it is cleared and a checked list drops it.",
+      "The button of one operation its projection names (`config.operation`, the projection's local name for it): it shows the owner's label and runs it on the object, or the checked objects, its target input holds. When the owner declares editable `inputSchema.properties` (and the operation is neither a file upload nor a read bound to a form draft or `readOperationInputs`), clicking the button opens a parameter dialog to collect and validate those inputs before running; operations without editable parameters run directly. A single write done is said in the platform's message in the owner's words, naming what it acted on (the button often goes with what it deleted); a batch is reported beside the button item by item; a refusal or failure stays beside it. The page hears every outcome as the `done` event. What a write removed is let go of by the panel: a selection holding it is cleared and a checked list drops it.",
     effects: "Runs the named operation as the reader, as its owner admits it now.",
     bindsElement: ["PlatformOperation:*"],
     // The button reads no datum: its operation is the projection's, described by its owner as admitted now.
@@ -269,14 +295,19 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ReferencePicker",
     role: "control",
     meaning:
-      "Chooses the value of one reference field of a form in the same panel from the catalogue of the type the projection binds, writing the owner's own value (a skill's whole reference, a model's key) into that form, so the choice is saved, discarded and drafted with it. Declare the picker with `target.projectionId` and `formField: { slot, path }`, where `slot` is the form member and `path` is the owner's JSON Pointer; the form draws it in that field's place (or, with an optional `itemPath`, in each row of the array at `path`), wherever the panel mounts it. A choice the owner describes is offered with its description, and an empty value the owner names (a default followed) shows as that choice. The field controls single or multiple selection. `options` finds choices and `selected` resolves the values already in the form. A value the catalogue no longer offers stays listed, unavailable, with the owner's reason.",
-    effects: "Reads the bound type's choices as the reader; it writes only the form field its slot's field port names.",
+      "Chooses a reference from the bound type's records or option catalogue in either of two modes. In form-field mode (when the member declares `formField: { slot, path }` with optional `itemPath`), it registers into the target `ObjectForm` at that field's JSON Pointer (or each row of an array field) and writes the owner's own value (a skill's whole reference, a model's key) into the form so the choice is saved, discarded and drafted with it; `options` finds choices, `selected` resolves the values already in the form, descriptions and empty defaults are shown, and unavailable values remain listed with the owner's reason. In standalone inline mode (when `formField` is omitted), it renders a compact, filterable single-select dropdown directly at the `<Projection>` site (suited for workbench toolbars such as path start/target pickers), reading either `data.rows` (`panelRecordList` or `panelRecordQuery`, filtered locally in memory with zero extra requests) or `data.options` (`panelOptionList`, with optional `data.selected` to resolve held/unavailable values), and syncing the chosen `{ className, primaryKey }` (or `null` when cleared) through the `selected` output/member parameter; when data is forbidden or unreachable, the dropdown is disabled with a readable tooltip.",
+    effects: "Reads the bound type's options or records as the reader; writes only the target form field in form-field mode, or the panel's `selected` state in standalone inline mode.",
     bindsElement: ["PlatformObjectType:*"],
-    // The catalogue it offers, and the held values it lists beside it: both are the member's own reads.
+    // Form-field mode uses `options` + `selected`; standalone inline mode uses either `rows` (local filter) or `options` (with optional `selected`).
     data: {
-      // The reader's search and page of choices, and the values the form holds now.
-      options: { results: ["panelOptionList"], required: true, runtimeParams: ["keyword", "page"] },
-      selected: { results: ["panelOptionList"], required: true, runtimeParams: ["values"] },
+      // The reader's search and page of choices, and the values already held.
+      options: { results: ["panelOptionList"], required: false, runtimeParams: ["keyword", "page"] },
+      selected: { results: ["panelOptionList"], required: false, runtimeParams: ["values"] },
+      // Record list/query for standalone inline pickers that filter locally with zero extra requests.
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+    },
+    outputs: {
+      selected: { kind: "object", objectType: "@binding" },
     },
   }),
   defineComponentMeta({
@@ -285,7 +316,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectGraph",
     role: "control",
     meaning:
-      "Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Bound to a form field through `formField`, it chooses that field's list of node keys, drawn by the form in the field's place: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all; a line sums the choice up, a legend names the three looks, and a list offers the same choice by name. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling: a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `node-positions` state) and drawn again from there, a node never placed is placed by its relations (the most connected first, each node one relation on in the next column) and nothing is written for it, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. When `nodes` are readable and `edges` are forbidden, all readable nodes are still drawn with a non-blocking notice explaining that relations cannot be viewed; when `nodes` are forbidden the graph shows the access refusal. Each edge is drawn with its record's label; edges between the same two nodes fan out. Given `pathFrom` and `pathTo` bound to panel state, the canvas finds the shortest directed path along visible edges, highlights it distinctly from search matches (`highlightedNodes`, `highlightedEdges`), displays the path trail and hop count on the canvas, and reports what is highlighted — search matches vs a directed path with start, target, outcome and hops — into `pageContext.highlights`; when edges are partially or fully forbidden, 'no path found in the visible graph' and the hidden-relations permission notice are reported separately. What the panel highlights stands out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never smaller than names can be read at; a larger graph is panned. The canvas carries zoom in and out, fit, centring the chosen node, relayout (which lets the reader's places go) and a PNG of the view; names keep their size however far the reader zooms out, a name with no room being hidden until there is; the graph is fitted again once its container settles at a new size; and its zoom is a port (`zoom`), read and set by the page. The canvas fills the height of the box its member is placed in; give that box a height (in a flex column, `flex: 1` with `min-height: 0`), or nothing is drawn. Each node takes its category's colour of the platform palette when `nodeCategory` (a JSON Pointer into each node record's fields) and `categories` (the order of the colours) are configured; `nodeSize` and `labelSize` (screen pixels) draw the nodes and their names larger or smaller than the platform's own, and the placement leaves rows to fit them. It decides nothing about what the nodes stand for or who may read them.",
+      "Draws the records its `nodes` datum reads as a graph joined by the records its `edges` datum reads, each edge between the node keys its fields name at `edgeEnds`. Bound to a form field through `formField`, it chooses that field's list of node keys, drawn by the form in the field's place: a choice adds or removes a node, the nodes one edge away from a chosen one are marked, and one action adds them all; a line sums the choice up, a legend names the three looks, and a list offers the same choice by name. Otherwise it is the page's graph canvas on the platform's G6 canvas, shared by the ontology graph and visual modeling: a chosen node or edge is the panel's state of the type its datum reads (`selectedNode`, `selectedEdge`), a click on empty canvas lets both go, where the reader puts the nodes is kept per person (`positions`, a personal `node-positions` state) and drawn again from there, a node never placed is placed by its relations (the most connected first, each node one relation on in the next column) and nothing is written for it, and with `editable` a line drawn with Shift from one node to another hands the panel its two ends (`connectFrom`, `connectTo`) for the owner's new-edge form. When `nodes` are readable and `edges` are forbidden, all readable nodes are still drawn with a non-blocking notice explaining that relations cannot be viewed; when `nodes` are forbidden the graph shows the access refusal. Each edge is drawn with its record's label; edges between the same two nodes fan out. Given `pathFrom` and `pathTo` bound to panel state, the canvas finds the shortest directed path along visible edges, highlights it distinctly from search matches (`highlightedNodes`, `highlightedEdges`), displays the path trail and hop count on the canvas, and reports what is highlighted — search matches vs a directed path with start, target, outcome and hops — into `pageContext.highlights`; when edges are partially or fully forbidden, 'no path found in the visible graph' and the hidden-relations permission notice are reported separately. What the panel highlights stands out and the rest fades, without being chosen. The view opens on the chosen node, else the most connected, never smaller than names can be read at; a larger graph is panned. The canvas carries zoom in and out, fit, centring the chosen node, relayout (which lets the reader's places go) and a PNG of the view; names keep their size however far the reader zooms out, a name with no room being hidden until there is; the graph is fitted again once its container settles at a new size; and its zoom is a port (`zoom`), read and set by the page. The canvas fills the height of the box its member is placed in and falls back to its own default minimum height (420px) when that box has no definite height. Each node takes its category's colour of the platform palette when `nodeCategory` (a JSON Pointer into each node record's fields) and `categories` (the order of the colours) are configured; `nodeSize` and `labelSize` (screen pixels) draw the nodes and their names larger or smaller than the platform's own, and the placement leaves rows to fit them. It decides nothing about what the nodes stand for or who may read them.",
     effects: "Reads the node and edge types' lists as the reader; it writes the form field its slot's field port names, or the panel state its outputs bind, never the owner.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
@@ -318,7 +349,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "MetricChart",
     role: "presentation",
     meaning:
-      "Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. The platform supplies both, and an output with no rows is the owner's empty answer. The projection keeps no drawing, query or data of its own.",
+      "Draws one chart as its source card draws it: the card's chart file (`template`) filled with a MetricView's output (`result`) for the card's saved parameters and the values the panel binds over them. The platform supplies both, and an output with no rows is the owner's empty answer. It fills the height of the box its member is placed in and falls back to a 320px default height when that box has no definite height. The projection keeps no drawing, query or data of its own.",
     effects: "Sends no request of its own: the platform reads the source card's template and the MetricView's output, both as the reader.",
     bindsElement: ["MetricView:*"],
     // The chart file and the output it is filled with: drawn once both are read.
@@ -349,7 +380,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "OntologyGraph",
     role: "control",
     meaning:
-      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls.",
+      "Draws an interactive G6 graph from the bound resource's graph source port: type mode arranges declared object types and relation kinds by layer with per-type readable counts and access statuses; instance mode starts from a node and expands one hop of neighbors on click, preserving complete object identities, highlighting drawn query matches, keeping layer filter and viewport as internal view state, distinguishing no-neighbors, owner-refused and read-failed outcomes, and exposing fit and relayout controls. The graph fills the height of the box its member is placed in and falls back to a 420px canvas height when that box has no definite height.",
     effects: "Reads the bound graph source's schema, counts, starting node and one-hop neighbors as the reader; writes only the panel's own selection state.",
     bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
     // Expanding from a node is what the graph does; the three overview reads it shows when a placement supplies them.
@@ -405,7 +436,15 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "TwoPaneLayout",
     role: "presentation",
     meaning:
-      "Lays out two panes of one page side by side in one bordered block, the first at the platform's list width and the second taking the rest, stacking them where the panel is too narrow for both. It binds nothing.",
+      "List-detail layout in one bordered block: side-by-side (`mode: 'split'`, left pane at `--pane-list-width`) or full-width alternating (`mode: 'switch'`), automatically switching to full-width alternating when its own container width is at or below `--pane-narrow-breakpoint` (680px). Fills definite container height with independent pane scrolling, keeps `#aside` DOM alive across switches to preserve scroll position and filters, scrolls `#default` back to top when `selectionKey` changes, provides fixed `#header`, `#tabs`, and `#footer` regions plus `#empty` placeholder, and omits `selected` to preserve legacy always-visible two-pane usage. It binds nothing.",
+  }),
+  defineComponentMeta({
+    componentId: "WorkbenchLayout",
+    module: "@ontomato/sdk/base",
+    exportName: "WorkbenchLayout",
+    role: "presentation",
+    meaning:
+      "Three-pane workbench layout for graph and canvas pages: collapsible left `#aside` (`--workbench-aside-width`), full-height center canvas (`#default`), and selection-driven right detail pane (`--workbench-detail-width`) with fixed `#detail-header`, `#detail-tabs`, scrollable `#detail` (resets scroll to top on `selectionKey` change), and `#detail-footer`. Below `--workbench-narrow-breakpoint` (880px), the canvas stays full width while both side panes become mutually exclusive floating overlays (at most one open at a time). It binds nothing.",
   }),
   defineComponentMeta({
     componentId: "SectionGroup",
@@ -414,6 +453,103 @@ export const components: readonly ComponentMetadata[] = [
     role: "presentation",
     meaning:
       "One titled group of a page's content, with one line of what it is for and the platform's spacing and hairline between groups that follow one another. It binds nothing.",
+  }),
+  defineComponentMeta({
+    componentId: "PageHeader",
+    module: "@ontomato/sdk/base",
+    exportName: "PageHeader",
+    role: "presentation",
+    meaning:
+      "Pure presentational page header rendered by a panel at the top of its content: optional leading visual, explicit back link, single-line title (plain text or a projection-bound component in `#title`), optional description, flexible right-side actions/controls (`#actions` or default slot), and optional Save/Discard draft controls (`draft`). It asks nothing from the platform host and adapts to its own container width.",
+  }),
+  defineComponentMeta({
+    componentId: "AppMenu",
+    module: "@ontomato/sdk/base",
+    exportName: "AppMenu",
+    role: "control",
+    meaning:
+      "Official application navigation menu column shared by the platform shell and application frame panels. Inside an application frame panel, `<app-menu>` automatically renders the admitted entries from `usePanelContext().entryMenu`, highlights `usePanelContext().currentEntry.path`, adapts to a compact selector on narrow screens, and navigates via `usePanelContext().navigate(id)` unless a custom `@select` handler is provided. Supply `:counts` (from declared `PanelData` owner reads) and `:icons` (curated platform icon keys) to attach live directory badges and row icons, or supply explicit `:groups` and `:active-id` for custom menus.",
+    effects: "Navigates within the platform through the panel host when the reader selects a menu entry; reads no business data itself.",
+  }),
+  defineComponentMeta({
+    componentId: "TypedValue",
+    module: "@ontomato/sdk/base",
+    exportName: "TypedValue",
+    role: "presentation",
+    meaning:
+      "Displays one typed field value according to its owner-declared type — text, tabular number (`numberFormat`), localized date/datetime/relative-time, localized boolean, semantic status tag (`tone` or `record.tones`), tag list, clickable object reference (`navigate`), multi-language name, list, or code/JSON — without computing business logic. Reads from its projection's `record` (`panelRecord`) or metric `result` (`metricOutput`, scalar/first-row or named column at `rowIndex`) datum, or renders a direct `value` prop standalone or inside a slot.",
+    effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      record: { results: ["panelRecord"], required: false },
+      result: { results: ["metricOutput"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "RecordTemplate",
+    module: "@ontomato/sdk/base",
+    exportName: "RecordTemplate",
+    role: "presentation",
+    meaning:
+      "Fills already-provided values from one record (`record`) or one metric result row (`result` at `rowIndex`) into a fixed `{fieldKey}` sentence template (`template`, `templateKey`, or locale-keyed `templates`), with optional per-field `fieldFormats`. Pure display with no expressions, calculation, or conditional sentence branching — derived values and business conditions belong in a MetricView, Action, or owner read. Each placeholder renders via `TypedValue`, keeping references clickable (`navigate`), booleans/names localized, tones tinted, and numbers tabular.",
+    effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      record: { results: ["panelRecord"], required: false },
+      result: { results: ["metricOutput"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "InfoBanner",
+    module: "@ontomato/sdk/base",
+    exportName: "InfoBanner",
+    role: "presentation",
+    meaning:
+      "Standardized informational, reminder, warning, success, or danger callout banner (`tone` or `toneField`) for detail cards and guidance notices. Renders static or localized copy (`title`/`text`, `titleKey`/`textKey`, `titles`/`texts`), custom slot content (`#default`, `#actions`), or already-provided values bound from a `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field` or a fixed `{fieldKey}` `template` (no calculation or conditional branching).",
+    effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      record: { results: ["panelRecord"], required: false },
+      result: { results: ["metricOutput"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "ObjectRefCard",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectRefCard",
+    role: "presentation",
+    meaning:
+      "Displays one clickable object reference card — leading icon or monogram, optional role caption (such as Source or Target), primary localized display name, secondary monospace API name / primary key, and optional status badge — emitting `navigate` (and writing declared navigation output) on click. Reads a reference field (`field`) or the object itself from `record` (`panelRecord`) or metric `result` (`metricOutput`), or renders a direct `reference` / `record` prop standalone.",
+    effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      record: { results: ["panelRecord"], required: false },
+      result: { results: ["metricOutput"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "MetricCard",
+    module: "@ontomato/sdk/base",
+    exportName: "MetricCard",
+    role: "presentation",
+    meaning:
+      "Displays one or more statistical metric cards (label + tabular numeral + optional unit, description, and semantic tone) in `card`, `compact`, or `inline` variants for ontology headers, dashboards, and catalog summaries. Directly consumes a MetricView's `result` (`metricOutput`, extracting a scalar or named column from the first or `rowIndex` row, and surfacing truncation hints), a single `record` (`panelRecord`), `rows` (`panelRecordList` / `panelRecordQuery`), or `objects` (`panelOntologyObjects`), or standalone `value`/`items` props.",
+    effects: "Reads the bound MetricView `result`, `record`, `rows`, or `objects` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      result: { results: ["metricOutput"], required: false },
+      record: { results: ["panelRecord"], required: false },
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+      objects: { results: ["panelOntologyObjects"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "ObjectFormFields",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectFormFields",
+    role: "presentation",
+    meaning:
+      "Renders a selected subset of an enclosing `ObjectForm`'s fields (`fields`, `section`, `group`, or `rest`) inside panel-authored cards, tabs, or wizard steps while keeping one shared form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and agent draft lifecycle. It reads nothing itself and binds no ontology element.",
   }),
   defineComponentMeta({
     componentId: "PathTree",
@@ -508,8 +644,8 @@ export const components: readonly ComponentMetadata[] = [
         // What another component gives itself, and every parameter an owner's read declares in a fixed signature: the
         // page's own code may give any of them (a datum read for a class takes `className`).
         runtimeParams: [
-          "business", "by", "changedField", "className", "cursor", "defaultAppId", "keyword", "layers", "limit", "node",
-          "operation", "page", "path", "rating", "relationKinds",
+          "business", "by", "changedField", "className", "cursor", "defaultAppId", "entryId", "keyword", "layers", "limit", "node",
+          "operation", "orgId", "origin", "page", "parentId", "path", "rating", "relationKinds",
           "runId", "scope", "search", "section", "size", "sort", "source", "sourceType", "status", "template", "type", "values",
         ],
       },

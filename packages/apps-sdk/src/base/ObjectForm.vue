@@ -1,23 +1,30 @@
 <script setup lang="ts">
 import { projectionElement } from "../panel/projection-element";
-import { computed, onMounted, provide, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowReactive, shallowRef, useSlots, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElForm } from "element-plus/es/components/form/index";
-import { ElMessageBox } from "element-plus/es/components/message-box/index";
+import { confirmDanger } from "@ontomato/platform-shell";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelFormTarget } from "@ontomato/contracts/panel-manifest";
-import type { PanelFormDescription, PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
+import {
+  panelFormObjectActiveFields,
+  pruneInactivePanelFormVariants,
+  type PanelFormDescription,
+  type PanelFormField,
+  type PanelFormValues,
+} from "@ontomato/contracts/panel-projection";
 import { slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
 import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
-import { changedPaths, fieldAt, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
+import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { useMember } from "../panel/member";
 import {
   editedInput,
   evaluateMemberFormDraft,
   formTargetKey,
+  itemKeysEqual,
   memberFormSource,
   MemberDataUnavailable,
   type FormSource,
@@ -26,7 +33,15 @@ import {
 import { fieldControlKey, fieldControlsOf, formControlsKey } from "./form-controls";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
 import FormFieldPlace from "./FormFieldPlace.vue";
-import { fieldShowing } from "./form-placement";
+import { activeFieldAt, changedFieldPaths, fieldShowing, preserveInactiveVariantValues } from "./form-placement";
+import { resolveLocalizedText } from "./localized-text";
+import {
+  formFieldsContextKey,
+  type ObjectFormGroup,
+  type ObjectFormPresentation,
+  type ObjectFormResolvedGroup,
+  type ObjectFormSlotScope,
+} from "./object-form-types";
 import { useDataStateLabels } from "./data-state-labels";
 
 /**
@@ -63,18 +78,77 @@ const props = withDefaults(defineProps<{
    * every save; while the state holds nothing, the field is not fixed.
    */
   fixedFields?: Record<string, { state: string; path?: string } | { literal: RuntimeJsonValue }>;
-}>(), { fixedFields: () => ({}) });
+  /**
+   * How top-level fields are arranged: `stacked` (default) draws each field's label above its control; `rows` draws
+   * each top-level field as a settings row with its name and help on the left, its control and messages in the middle,
+   * and Reset to default on the right when the owner declares a `defaultValue`.
+   */
+  layout?: "stacked" | "rows";
+  /**
+   * Where Save, Discard and the unsaved marker live: `footer` (default) keeps them at the foot of the form;
+   * `create-only` shows Cancel/Create in create mode and lets the panel wire edit Save/Discard into its own
+   * `<page-header>` via `usePanelFormDraft`; `none` hides the form's action bar in both modes.
+   */
+  actions?: "footer" | "create-only" | "none";
+  /**
+   * Multi-container field presentation sharing one form state, dirty tracking, validation, and draft:
+   * `"default"` renders a flat list (or owner `sections` with a sidebar TOC, or `"cards"` when `groups` is configured);
+   * `"cards"` renders each group as a distinct card (optionally in two columns);
+   * `"tabs"` renders each group in a tab pane with dirty and error indicators;
+   * `"steps"` renders each group as a sequential step with Previous / Next navigation.
+   */
+  presentation?: ObjectFormPresentation;
+  /**
+   * Declarative field groups assigning top-level owner field JSON Pointers (`fields`) or owner section keys (`sections`)
+   * into cards, tabs, or wizard steps while sharing one form draft.
+   */
+  groups?: readonly ObjectFormGroup[];
+  /** Column count when `presentation` is `"cards"` (`1` or `2`; defaults to `2` when any group uses `column: "side"`). */
+  cardColumns?: 1 | 2;
+  /** Optional controlled active group key in `"tabs"` or `"steps"` presentation (`v-model:activeGroup`). */
+  activeGroup?: string;
+  /** Whether readers can jump directly to any step in `"steps"` presentation by clicking its header. Defaults to `true`. */
+  allowStepJump?: boolean;
+  /**
+   * What to do with non-hidden owner fields not listed in `groups`: `"append"` (default) adds a trailing group so no
+   * owner field is lost; `"omit"` leaves them out of declarative groups.
+   */
+  unassignedFields?: "append" | "omit";
+}>(), {
+  fixedFields: () => ({}),
+  layout: "stacked",
+  actions: "footer",
+  presentation: "default",
+  groups: undefined,
+  cardColumns: undefined,
+  activeGroup: undefined,
+  allowStepJump: true,
+  unassignedFields: "append",
+});
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created. */
   saved: [object: { className: string; primaryKey: string }];
   /** The reader discarded the changes the form held. */
   discarded: [];
+  /** The reader cancelled creating a new object. */
+  cancel: [];
+  /** Emitted when the active tab or step changes in `"tabs"` or `"steps"` presentation. */
+  "update:activeGroup": [groupKey: string];
 }>();
 defineSlots<{
+  /**
+   * Optional custom layout distributing this form's fields into panel-authored cards, tabs, or steps using
+   * `<object-form-fields>` while keeping one shared form state, dirty state, validation, and draft.
+   */
+  default?(scope: ObjectFormSlotScope): unknown;
   /** Projections that edit this form's fields, drawn with the current owner values before Save and Discard. */
-  "after-fields"(): unknown;
+  "after-fields"?(): unknown;
+  /** Optional dynamic header/footer slots for declarative groups (`#group-<key>-header`, `#group-<key>-footer`). */
+  [name: `group-${string}-header`]: (props: { group: ObjectFormResolvedGroup }) => unknown;
+  [name: `group-${string}-footer`]: (props: { group: ObjectFormResolvedGroup }) => unknown;
 }>();
-const { t } = useI18n();
+const { t, te, locale } = useI18n();
+const slots = useSlots();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
 const objectType = projectionElement(slot.projection).id;
@@ -195,17 +269,68 @@ const sectionGroups = computed(() => {
 function goToSection(key: string) {
   formElement.value!.querySelector<HTMLElement>(`[data-form-section="${CSS.escape(key)}"]`)!.scrollIntoView({ behavior: "smooth", block: "start" });
 }
-/** Changed values, or text a reader typed that is no value yet (JSON that does not parse): either is unsaved. */
-const dirty = computed(() => opened.value !== null
-  && (JSON.stringify(values.value) !== JSON.stringify(opened.value.values) || Object.keys(invalid.value).length > 0));
+/** Local edit values with inactive object-variant keys pruned, matching what a save sends to the owner. */
+const prunedValues = computed(() => pruneInactivePanelFormVariants(fields.value, values.value));
+/** Opened baseline values pruned by the same variant rules so dirty/change checks ignore inactive variant leftovers. */
+const prunedOpenedValues = computed(() => (
+  opened.value ? pruneInactivePanelFormVariants(opened.value.fields, opened.value.values) : null
+));
+/** Unparseable local text limited to currently active fields, so an inactive variant never blocks saving the active one. */
+const activeInvalid = computed<Readonly<Record<string, string>>>(() => {
+  if (!Object.keys(invalid.value).length) return {};
+  return Object.fromEntries(
+    Object.entries(invalid.value).filter(([path]) => activeFieldAt(fields.value, values.value, path) !== undefined),
+  );
+});
+/** Top-level fields whose effective (pruned) values differ from the opened baseline. */
+const effectiveChangedPaths = computed<ReadonlySet<string>>(() => (
+  prunedOpenedValues.value
+    ? changedFieldPaths(fields.value, prunedOpenedValues.value, prunedValues.value)
+    : new Set()
+));
+/** Changed effective values, or unparseable text in an active field: either is unsaved. */
+const dirty = computed(() => prunedOpenedValues.value !== null
+  && (!jsonValuesEqual(prunedValues.value, prunedOpenedValues.value) || Object.keys(activeInvalid.value).length > 0));
 /**
  * The described fields this edit submits, by path: those the reader set (whatever value they end on) and those a received
  * draft wrote. The owner keeps a field not named here as it is, so a field nobody touched is never added. Whether a
  * value ended where it began does not matter: a field set back to the value shown is still submitted, and can be saved.
  */
 const submitted = shallowRef<ReadonlySet<string>>(new Set());
+/** Whether the panel instance's active received draft belongs to this form (and this exact row when row-attached). */
+const hasActiveDraft = computed(() => {
+  const active = panel.instance.draft.value;
+  if (!active || active.slot !== slot.slot) return false;
+  if (member.rowItemKey === undefined) return active.target.itemKey === undefined;
+  return active.target.itemKey !== undefined && itemKeysEqual(member.rowItemKey, active.target.itemKey);
+});
 /** Whether the form has something to save or discard: changed values, a received draft, or fields set on purpose. */
-const canSettle = computed(() => dirty.value || panel.instance.draft.value?.slot === slot.slot || submitted.value.size > 0);
+const canSettle = computed(() => dirty.value || hasActiveDraft.value || submitted.value.size > 0);
+/** Whether the form is creating a new object (`createForm`, no existing object selected). */
+const isCreate = computed(() => target.value?.kind === "draft");
+/** Whether every non-hidden field in the owner's form description is read-only. */
+const allReadOnly = computed(() => drawn.value.length > 0 && drawn.value.every((field) => field.readOnly));
+/**
+ * Distinct top-level field paths modified in this draft (union of draft-marked `changed`, effective pruned diffs,
+ * and active unparseable `invalid` fields, falling back to explicitly `submitted` fields).
+ */
+const dirtyFields = computed<ReadonlySet<string>>(() => {
+  const paths = new Set<string>([...changed.value, ...effectiveChangedPaths.value]);
+  for (const path of Object.keys(activeInvalid.value)) {
+    const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
+    paths.add(described ? described.path : path);
+  }
+  if (paths.size === 0) {
+    for (const path of submitted.value) paths.add(path);
+  }
+  return paths;
+});
+/** Count of distinct top-level fields modified in this draft, guaranteed >= 1 whenever `canSettle` is true. */
+const changedCount = computed(() => (dirtyFields.value.size > 0 ? dirtyFields.value.size : (canSettle.value ? 1 : 0)));
+/** Whether the form is ready and currently able to submit unsaved edits. */
+const canSubmit = computed(() =>
+  !failure.value && !loading.value && description.value !== null && canSettle.value && !saving.value && !asking.value,
+);
 
 /** A draft this form took, for the target it addresses, shown once the form is on that target. */
 let held: HeldMemberDraft | null = null;
@@ -283,9 +408,13 @@ function fail(reason: unknown, retry: () => void) {
   loading.value = false;
 }
 
+let unmounted = false;
 onMounted(() => {
   mounted = true;
   load(target.value);
+});
+onBeforeUnmount(() => {
+  unmounted = true;
 });
 let pendingRefresh = false;
 /**
@@ -299,21 +428,26 @@ let movingForDraft = false;
  * discarding them is the form's own discard, and the form then shows where the panel moved.
  */
 watch(target, async (next, previous) => {
+  if (unmounted) return;
   pendingRefresh = false;
   const forDraft = movingForDraft;
   movingForDraft = false;
   if (targetKey(next) === loaded) return;
   if ((forDraft ? dirty.value : canSettle.value) && !saving.value && previous !== null && targetKey(previous) === loaded) {
-    const leave = await ElMessageBox.confirm(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
-      confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
-    }).then(() => true, () => false);
+    const leave = panel.confirmLeaveUnsaved
+      ? await panel.confirmLeaveUnsaved()
+      : await confirmDanger(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
+          confirmButtonText: t("platform.discard"),
+          cancelButtonText: t("platform.keepEditing"),
+        });
+    if (unmounted) return;
     if (!leave) {
       moveTo(previous);
       return;
     }
     discard();
   }
-  if (targetKey(target.value) !== loaded) load(target.value);
+  if (!unmounted && targetKey(target.value) !== loaded) load(target.value);
 });
 function refreshWhenClean() {
   if (!pendingRefresh || canSettle.value || saving.value) return;
@@ -329,7 +463,7 @@ function refreshWhenClean() {
 function reread() {
   const current = target.value;
   const currentKey = targetKey(current);
-  if (current === null || held?.target === currentKey) return load(current);
+  if (current === null || held?.target === currentKey || !description.value) return load(current);
   const reading = ++latestRead;
   failure.value = null;
   void forms.describe({ target: current, changedField: null }).then(
@@ -383,7 +517,7 @@ function edit(path: string, next: PanelFormValues) {
   if (described) submitted.value = new Set([...submitted.value, described.path]);
   values.value = next;
   editedAt.set(path, ++edits);
-  const field = fieldAt(fields.value, path);
+  const field = activeFieldAt(fields.value, next, path);
   if (field?.refreshOnChange) askOwner(path);
 }
 
@@ -409,14 +543,20 @@ function askOwner(changedField: string) {
   const askedAt = edits;
   const reading = latestRead;
   // The owner changes the fields for these edits; the opened reading, its revision and the discard baseline stay.
-  void forms.describe({ target: asked, values: values.value, changedField }).then((answer) => {
+  void forms.describe({
+    target: asked,
+    values: pruneInactivePanelFormVariants(fields.value, values.value),
+    changedField,
+  }).then((answer) => {
     if (reading !== latestRead) return;
+    const localDraft = values.value;
     ownerShown.value = answer;
     description.value = fixDescription(answer);
-    values.value = [...editedAt].filter(([, at]) => at > askedAt).reduce((all, [edited]) => {
-      const kept = valueAt(values.value, edited);
+    const replayed = [...editedAt].filter(([, at]) => at > askedAt).reduce((all, [edited]) => {
+      const kept = valueAt(localDraft, edited);
       return kept === undefined ? withoutValueAt(all, edited) : withValueAt(all, edited, kept);
     }, description.value.values);
+    values.value = preserveInactiveVariantValues(description.value.fields, localDraft, replayed);
     errors.value = fieldMessages(answer.errors);
   }, (reason) => {
     if (reading === latestRead) fail(reason, () => askOwner(changedField));
@@ -445,8 +585,13 @@ function reorder(path: string, order: readonly number[]) {
 }
 
 function markInvalid(path: string, message: string | null) {
-  const { [path]: _, ...rest } = invalid.value;
-  invalid.value = message === null ? rest : { ...rest, [path]: message };
+  if (message === null) {
+    invalid.value = Object.fromEntries(
+      Object.entries(invalid.value).filter(([at]) => at !== path && !at.startsWith(`${path}/`)),
+    );
+    return;
+  }
+  invalid.value = { ...invalid.value, [path]: message };
 }
 
 /**
@@ -455,23 +600,216 @@ function markInvalid(path: string, message: string | null) {
  */
 const sharedReadOnlyReasons = computed<ReadonlySet<string>>(() => {
   const counts = new Map<string, number>();
-  const visit = (fields: readonly PanelFormField[]) => {
-    for (const field of fields) {
+  const visit = (list: readonly PanelFormField[], node: RuntimeJsonValue | undefined) => {
+    const objectNode = node !== null && typeof node === "object" && !Array.isArray(node) ? node as PanelFormValues : undefined;
+    for (const field of list) {
       if (field.readOnly && field.readOnlyReason) counts.set(field.readOnlyReason, (counts.get(field.readOnlyReason) ?? 0) + 1);
-      if (field.control.kind === "object") visit(field.control.fields);
-      if (field.control.kind === "object-array") visit(field.control.itemFields);
+      const current = objectNode ? valueAt(objectNode, field.path) : undefined;
+      if (field.control.kind === "object") visit(panelFormObjectActiveFields(field.control, current), current);
+      if (field.control.kind === "object-array") visit(field.control.itemFields, Array.isArray(current) ? current[0] : undefined);
     }
   };
-  visit(fields.value);
+  visit(fields.value, values.value);
   return new Set([...counts].filter(([, count]) => count > 1).map(([reason]) => reason));
 });
 
+const allErrors = computed<Readonly<Record<string, string>>>(() => ({ ...errors.value, ...activeInvalid.value }));
+
+function errorCountForPaths(paths: ReadonlySet<string>): number {
+  let count = 0;
+  for (const errorPath of Object.keys(allErrors.value)) {
+    for (const fieldPath of paths) {
+      if (errorPath === fieldPath || errorPath.startsWith(`${fieldPath}/`)) {
+        count += 1;
+        break;
+      }
+    }
+  }
+  return count;
+}
+
+const effectivePresentation = computed<ObjectFormPresentation>(() => {
+  if (props.presentation !== "default") return props.presentation;
+  return props.groups && props.groups.length > 0 ? "cards" : "default";
+});
+
+const resolvedGroups = computed<readonly ObjectFormResolvedGroup[]>(() => {
+  const build = (
+    key: string,
+    title: string | null,
+    hint: string | null,
+    column: "main" | "side" | "full",
+    groupFields: readonly PanelFormField[],
+  ): ObjectFormResolvedGroup => {
+    const pathSet = new Set(groupFields.map((field) => field.path));
+    return {
+      key,
+      title,
+      description: hint,
+      column,
+      fields: groupFields,
+      plain: groupFields.filter((field) => field.advanced !== true),
+      advanced: groupFields.filter((field) => field.advanced === true),
+      changed: groupFields.some((field) => changed.value.has(field.path)),
+      dirty: groupFields.some((field) => dirtyFields.value.has(field.path)),
+      errorCount: errorCountForPaths(pathSet),
+    };
+  };
+
+  if (props.groups && props.groups.length > 0) {
+    const byPath = new Map(drawn.value.map((field) => [field.path, field]));
+    const assigned = new Set<string>();
+    const list: ObjectFormResolvedGroup[] = [];
+    for (const group of props.groups) {
+      const groupFields: PanelFormField[] = [];
+      for (const path of group.fields ?? []) {
+        const matched = byPath.get(path);
+        if (matched && !assigned.has(matched.path)) {
+          assigned.add(matched.path);
+          groupFields.push(matched);
+        }
+      }
+      if (group.sections && group.sections.length > 0) {
+        const sectionKeys = new Set(group.sections);
+        for (const field of drawn.value) {
+          if (field.section && sectionKeys.has(field.section) && !assigned.has(field.path)) {
+            assigned.add(field.path);
+            groupFields.push(field);
+          }
+        }
+      }
+      const title = resolveLocalizedText({
+        key: group.titleKey,
+        map: group.titles,
+        fallback: group.title,
+        locale: locale.value,
+        panelText: panel.t,
+        t,
+        te,
+      }) || null;
+      const hint = resolveLocalizedText({
+        key: group.descriptionKey,
+        map: group.descriptions,
+        fallback: group.description,
+        locale: locale.value,
+        panelText: panel.t,
+        t,
+        te,
+      }) || null;
+      list.push(build(group.key, title, hint, group.column ?? "main", groupFields));
+    }
+    if (props.unassignedFields !== "omit") {
+      const remaining = drawn.value.filter((field) => !assigned.has(field.path));
+      if (remaining.length > 0) {
+        const otherTitle = te("platform.formOtherFields") ? t("platform.formOtherFields") : "Other";
+        list.push(build("__other", otherTitle, null, "full", remaining));
+      }
+    }
+    return list;
+  }
+
+  if (sectionGroups.value) {
+    return sectionGroups.value.map((group) =>
+      build(
+        group.key || "__general",
+        group.title,
+        group.hint,
+        "main",
+        [...group.plain, ...group.advanced],
+      ),
+    );
+  }
+
+  if (effectivePresentation.value !== "default" && drawn.value.length > 0) {
+    return [build("__default", null, null, "main", drawn.value)];
+  }
+  return [];
+});
+
+const internalActiveGroup = ref<string | null>(null);
+const activeGroupKey = computed<string | null>(() => {
+  const groups = resolvedGroups.value;
+  if (!groups.length) return null;
+  if (props.activeGroup !== undefined && groups.some((group) => group.key === props.activeGroup)) {
+    return props.activeGroup;
+  }
+  if (internalActiveGroup.value !== null && groups.some((group) => group.key === internalActiveGroup.value)) {
+    return internalActiveGroup.value;
+  }
+  return groups[0]!.key;
+});
+
+function setActiveGroup(key: string) {
+  if (!resolvedGroups.value.some((group) => group.key === key)) return;
+  internalActiveGroup.value = key;
+  emit("update:activeGroup", key);
+}
+
+const activeGroupIndex = computed(() =>
+  resolvedGroups.value.findIndex((group) => group.key === activeGroupKey.value),
+);
+const activeGroupObject = computed(() =>
+  activeGroupIndex.value >= 0 ? resolvedGroups.value[activeGroupIndex.value]! : null,
+);
+
+function goPrevStep() {
+  if (activeGroupIndex.value > 0) {
+    setActiveGroup(resolvedGroups.value[activeGroupIndex.value - 1]!.key);
+  }
+}
+
+function goNextStep() {
+  if (activeGroupIndex.value >= 0 && activeGroupIndex.value < resolvedGroups.value.length - 1) {
+    setActiveGroup(resolvedGroups.value[activeGroupIndex.value + 1]!.key);
+  }
+}
+
+const hasSplitColumns = computed(() =>
+  resolvedGroups.value.some((group) => group.column === "side"),
+);
+const effectiveCardColumns = computed<1 | 2>(() => {
+  if (props.cardColumns !== undefined) return props.cardColumns;
+  return hasSplitColumns.value ? 2 : 1;
+});
+const splitMainGroups = computed(() => resolvedGroups.value.filter((group) => group.column === "main"));
+const splitSideGroups = computed(() => resolvedGroups.value.filter((group) => group.column === "side"));
+const splitFullGroups = computed(() => resolvedGroups.value.filter((group) => group.column === "full"));
+
+const fieldSliceClaims = shallowReactive(new Map<symbol, ReadonlySet<string>>());
+const claimedPaths = computed<ReadonlySet<string>>(() => {
+  const merged = new Set<string>();
+  for (const set of fieldSliceClaims.values()) {
+    for (const path of set) merged.add(path);
+  }
+  return merged;
+});
+
+provide(formFieldsContextKey, {
+  drawn,
+  groups: resolvedGroups,
+  registerClaim(token, paths) {
+    fieldSliceClaims.set(token, paths);
+  },
+  unregisterClaim(token) {
+    fieldSliceClaims.delete(token);
+  },
+  claimedPaths,
+});
+
+const topLevelPaths = computed(() => new Set(fields.value.map((field) => field.path)));
+const hasDefaults = computed(() => fields.value.some((field) => field.control.kind !== "hidden" && field.defaultValue !== undefined));
+
 provide(formControlsKey, {
   values,
-  errors: computed(() => ({ ...errors.value, ...invalid.value })),
+  prunedValues,
+  errors: allErrors,
   changed,
   busy: saving,
+  layout: computed(() => props.layout),
+  hasDefaults,
   sharedReadOnlyReasons,
+  isTopLevel: (path) => topLevelPaths.value.has(path),
+  hasInvalid: (path) => Object.keys(activeInvalid.value).some((at) => at === path || at.startsWith(`${path}/`)),
   set,
   remove,
   reorder,
@@ -510,7 +848,24 @@ function consumePendingDraft() {
 if (member.formDraft) watch(() => member.formDraft!.pending.value, consumePendingDraft, { immediate: true });
 
 useProjectionForm({
-  handle: { fields, values, errors, changed, busy: saving, set },
+  handle: {
+    fields,
+    values,
+    errors,
+    changed,
+    busy: saving,
+    dirty: canSettle,
+    dirtyFields,
+    submitting: saving,
+    canSubmit,
+    set,
+    submit: () => panel.instance.forms.submit(slot.slot),
+    reset: async (options) => {
+      if (options?.confirm) return await confirmDiscard();
+      discard();
+      return true;
+    },
+  },
   async receive(draft) {
     const evaluated = await evaluateMemberFormDraft(member, panel.instance, forms, draft);
     if (!evaluated) return null;
@@ -532,24 +887,46 @@ useProjectionForm({
   discard,
 });
 
-function discard() {
+function resetDraft(reopenWhenUnfieldedRefusal: boolean) {
   const refused = refusal.value;
-  const reopen = refused instanceof PlatformObjectRefusal &&
+  const reopen = reopenWhenUnfieldedRefusal && refused instanceof PlatformObjectRefusal &&
     Object.keys(refused.fields).length === 0 && Object.keys(refused.savedFields).length === 0;
   held = null;
   heldRefusal = null;
-  adopt(ownerOpened.value!);
-  emit("discarded");
+  if (ownerOpened.value) adopt(ownerOpened.value);
   if (reopen) load(target.value);
-  void panel.instance.settleDraft(slot.slot).catch(showRefusal);
+  if (hasActiveDraft.value) void panel.instance.settleDraft(slot.slot).catch(showRefusal);
+}
+
+function discard() {
+  resetDraft(true);
+  emit("discarded");
 }
 
 /** The reader's Discard: what they have not saved is thrown away only once they say so (原页面对照《智能体设置》). */
-async function confirmDiscard() {
-  const confirmed = await ElMessageBox.confirm(t("platform.formDiscardConfirm"), t("platform.discard"), {
-    confirmButtonText: t("platform.discard"), cancelButtonText: t("platform.keepEditing"), type: "warning",
-  }).then(() => true, () => false);
+async function confirmDiscard(): Promise<boolean> {
+  const confirmed = await confirmDanger(t("platform.formDiscardConfirm"), t("platform.discard"), {
+    confirmButtonText: t("platform.discard"),
+    cancelButtonText: t("platform.keepEditing"),
+  });
   if (confirmed) discard();
+  return confirmed;
+}
+
+/**
+ * The reader's Cancel on a create form: asks before throwing away edits when dirty, otherwise resets immediately
+ * and tells the page `cancel`.
+ */
+async function cancelCreate() {
+  if (canSettle.value) {
+    const confirmed = await confirmDanger(t("platform.formDiscardConfirm"), t("platform.cancel"), {
+      confirmButtonText: t("platform.discard"),
+      cancelButtonText: t("platform.keepEditing"),
+    });
+    if (!confirmed) return;
+  }
+  resetDraft(false);
+  emit("cancel");
 }
 
 async function saveFromForm() {
@@ -573,7 +950,7 @@ const refusalFoot = computed(() => {
   const onFields = new Set<string>();
   const said: string[] = [];
   for (const [path, message] of named) {
-    const field = fieldShowing(fields.value, path);
+    const field = fieldShowing(fields.value, values.value, path);
     if (field === null) said.push(message);
     else onFields.add(field);
   }
@@ -581,10 +958,23 @@ const refusalFoot = computed(() => {
 });
 const formElement = ref<HTMLElement | null>(null);
 /** Takes the reader to the first field, in the form's order, that the refusal's messages are on. */
-function showFirstRefused() {
-  const refused = new Set(refusalFoot.value!.fields);
-  [...formElement.value!.querySelectorAll<HTMLElement>("[data-field]")].find((item) => refused.has(item.dataset.field!))!
-    .scrollIntoView({ block: "center" });
+async function showFirstRefused() {
+  const refused = new Set(refusalFoot.value?.fields ?? []);
+  if (!refused.size) return;
+  if ((effectivePresentation.value === "tabs" || effectivePresentation.value === "steps") && resolvedGroups.value.length > 0) {
+    const targetGroup = resolvedGroups.value.find((group) =>
+      group.fields.some((field) =>
+        [...refused].some((path) => path === field.path || path.startsWith(`${field.path}/`)),
+      ),
+    );
+    if (targetGroup && targetGroup.key !== activeGroupKey.value) {
+      setActiveGroup(targetGroup.key);
+      await nextTick();
+    }
+  }
+  const targetElement = [...(formElement.value?.querySelectorAll<HTMLElement>("[data-field]") ?? [])]
+    .find((item) => refused.has(item.dataset.field!));
+  targetElement?.scrollIntoView?.({ block: "center" });
 }
 
 function showRefusal(reason: unknown) {
@@ -602,7 +992,7 @@ function takeSavedFields(receipt: PlatformObjectRefusal) {
   ownerOpened.value = baseline;
   opened.value = fixDescription(baseline);
   const savedPaths = new Set(saved.map(([path]) => path));
-  const stillChanged = changedPaths(fields.value, opened.value.values, values.value);
+  const stillChanged = effectiveChangedPaths.value;
   const keep = (path: string) => !savedPaths.has(path) || stillChanged.has(path);
   submitted.value = new Set([...submitted.value].filter(keep));
   changed.value = new Set([...changed.value].filter(keep));
@@ -620,20 +1010,23 @@ async function write(): Promise<unknown> {
   if (!into) throw new Error("This form edits one object, and none is selected");
   if (failure.value) throw failure.value.reason;
   if (loading.value || asking.value) throw new Error(t("common.loading"));
-  if (Object.keys(invalid.value).length) throw new Error(t("platform.formFixInvalid"));
+  if (Object.keys(activeInvalid.value).length) throw new Error(t("platform.formFixInvalid"));
   saving.value = true;
   refusal.value = null;
   errors.value = {};
+  const payloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
   try {
     const revision = opened.value!.revision;
     const saved = await forms.save(into, {
-      values: values.value, submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
+      values: payloadValues, submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
       ...(revision === undefined ? {} : { revision }),
     });
     submitted.value = new Set();
     held = null;
-    ownerOpened.value = { ...ownerShown.value!, values: values.value };
-    opened.value = { ...description.value!, values: values.value };
+    ownerOpened.value = { ...ownerShown.value!, values: payloadValues };
+    opened.value = { ...description.value!, values: payloadValues };
+    values.value = payloadValues;
+    invalid.value = {};
     changed.value = new Set();
     if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
     emit("saved", { className: objectType, primaryKey: saved.primaryKey });
@@ -641,7 +1034,9 @@ async function write(): Promise<unknown> {
 
     // A received draft ends with its save; a create draft first records the object it created. The save stands either
     // way: a record that fails is shown with the form, on the object the owner created.
-    await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);
+    if (hasActiveDraft.value) {
+      await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);
+    }
     return saved;
   } catch (reason) {
     if (reason instanceof PlatformObjectRefusal && targetKey(target.value) === targetKey(into)) takeSavedFields(reason);
@@ -667,61 +1062,316 @@ const shown = computed<DataStateResult<PanelFormDescription>>(() => {
 });
 const labels = useDataStateLabels();
 
+/**
+ * Bottom action bar visibility:
+ * - Always pinned in create mode (`Cancel` / `Create`).
+ * - Never shown on an all-read-only edit form with no pending changes.
+ * - On an edit form, appears only once there are changes to settle (`Discard` / `Save`).
+ */
+const showActionBar = computed(() => {
+  if (props.actions === "none") return false;
+  if (isCreate.value) return true;
+  if (props.actions === "create-only") return false;
+  if (allReadOnly.value && !canSettle.value) return false;
+  return canSettle.value;
+});
+
 /** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
+
+const prevStepLabel = computed(() => (te("platform.formPrevStep") ? t("platform.formPrevStep") : "Previous"));
+const nextStepLabel = computed(() => (te("platform.formNextStep") ? t("platform.formNextStep") : "Next"));
+
+const hasCustomLayout = computed(() => Boolean(slots.default));
+
+const slotScope = computed<ObjectFormSlotScope>(() => ({
+  groups: resolvedGroups.value,
+  activeGroup: activeGroupKey.value,
+  setActiveGroup,
+  dirty: canSettle.value,
+  canSave: canSubmit.value,
+  saving: saving.value,
+  isCreate: isCreate.value,
+  changedCount: changedCount.value,
+  dirtyFields: dirtyFields.value,
+  errors: allErrors.value,
+  groupDirty: (groupKey: string) => resolvedGroups.value.find((group) => group.key === groupKey)?.dirty ?? false,
+  groupErrorCount: (groupKey: string) => resolvedGroups.value.find((group) => group.key === groupKey)?.errorCount ?? 0,
+  fieldsDirty: (paths: readonly string[]) => paths.some((path) => dirtyFields.value.has(path) || changed.value.has(path)),
+  fieldsErrorCount: (paths: readonly string[]) => errorCountForPaths(new Set(paths)),
+  save: saveFromForm,
+  discard: confirmDiscard,
+  cancel: cancelCreate,
+}));
 </script>
 
 <template>
-  <div ref="formElement" class="sdk-owner-form">
+  <div
+    ref="formElement"
+    class="sdk-owner-form"
+    :class="[
+      { 'sdk-owner-form-rows': props.layout === 'rows' },
+      `sdk-owner-form-presentation-${effectivePresentation}`,
+    ]"
+  >
     <data-state :result="shown" :labels="labels">
     <!-- The panel frame is sandboxed without allow-forms, so the browser drops a native form submission before any
          submit handler runs: the reader's save is the button's own click. -->
-    <el-form label-position="top">
-      <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
-      <div v-if="sectionGroups" class="sdk-owner-form-sectioned">
-        <div class="sdk-owner-form-sections">
-          <section
-            v-for="group in sectionGroups"
-            :key="group.key"
-            class="sdk-owner-form-section"
-            :class="{ changed: group.changed }"
-            :data-form-section="group.key || undefined"
+    <el-form label-position="top" class="sdk-owner-form-inner">
+      <div class="sdk-owner-form-body">
+        <p v-for="reason in sharedReadOnlyReasons" :key="reason" class="sdk-owner-form-readonly" role="note">{{ reason }}</p>
+
+        <template v-if="hasCustomLayout">
+          <slot v-bind="slotScope"></slot>
+        </template>
+
+        <template v-else-if="effectivePresentation === 'cards' && resolvedGroups.length > 0">
+          <div
+            v-if="hasSplitColumns && effectiveCardColumns === 2"
+            class="sdk-owner-form-cards is-split"
           >
-            <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
-            <p v-if="group.hint" class="sdk-owner-form-section-hint">{{ group.hint }}</p>
-            <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
-            <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
-              <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
-            </form-advanced-section>
-          </section>
+            <div class="sdk-owner-form-cards-col is-main">
+              <section
+                v-for="group in splitMainGroups"
+                :key="group.key"
+                class="sdk-owner-form-card"
+                :class="{ changed: group.changed, dirty: group.dirty }"
+                :data-form-group="group.key"
+              >
+                <header v-if="group.title || group.description" class="sdk-owner-form-card-head">
+                  <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
+                  <p v-if="group.description" class="sdk-owner-form-section-hint">{{ group.description }}</p>
+                </header>
+                <slot :name="`group-${group.key}-header`" :group="group"></slot>
+                <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
+                <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
+                  <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
+                </form-advanced-section>
+                <slot :name="`group-${group.key}-footer`" :group="group"></slot>
+              </section>
+            </div>
+            <div class="sdk-owner-form-cards-col is-side">
+              <section
+                v-for="group in splitSideGroups"
+                :key="group.key"
+                class="sdk-owner-form-card"
+                :class="{ changed: group.changed, dirty: group.dirty }"
+                :data-form-group="group.key"
+              >
+                <header v-if="group.title || group.description" class="sdk-owner-form-card-head">
+                  <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
+                  <p v-if="group.description" class="sdk-owner-form-section-hint">{{ group.description }}</p>
+                </header>
+                <slot :name="`group-${group.key}-header`" :group="group"></slot>
+                <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
+                <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
+                  <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
+                </form-advanced-section>
+                <slot :name="`group-${group.key}-footer`" :group="group"></slot>
+              </section>
+            </div>
+            <section
+              v-for="group in splitFullGroups"
+              :key="group.key"
+              class="sdk-owner-form-card is-full"
+              :class="{ changed: group.changed, dirty: group.dirty }"
+              :data-form-group="group.key"
+            >
+              <header v-if="group.title || group.description" class="sdk-owner-form-card-head">
+                <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
+                <p v-if="group.description" class="sdk-owner-form-section-hint">{{ group.description }}</p>
+              </header>
+              <slot :name="`group-${group.key}-header`" :group="group"></slot>
+              <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
+              <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
+                <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
+              </form-advanced-section>
+              <slot :name="`group-${group.key}-footer`" :group="group"></slot>
+            </section>
+          </div>
+          <div
+            v-else
+            class="sdk-owner-form-cards"
+            :class="{ 'is-two-col': effectiveCardColumns === 2 }"
+          >
+            <section
+              v-for="group in resolvedGroups"
+              :key="group.key"
+              class="sdk-owner-form-card"
+              :class="{ changed: group.changed, dirty: group.dirty, 'is-full': group.column === 'full' }"
+              :data-form-group="group.key"
+            >
+              <header v-if="group.title || group.description" class="sdk-owner-form-card-head">
+                <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
+                <p v-if="group.description" class="sdk-owner-form-section-hint">{{ group.description }}</p>
+              </header>
+              <slot :name="`group-${group.key}-header`" :group="group"></slot>
+              <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
+              <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
+                <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
+              </form-advanced-section>
+              <slot :name="`group-${group.key}-footer`" :group="group"></slot>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="effectivePresentation === 'tabs' && resolvedGroups.length > 0">
+          <div class="sdk-owner-form-tabs">
+            <div class="sdk-owner-form-tablist" role="tablist" :aria-label="t('platform.formSections')">
+              <button
+                v-for="group in resolvedGroups"
+                :key="group.key"
+                type="button"
+                role="tab"
+                class="sdk-owner-form-tab"
+                :class="{ 'is-active': group.key === activeGroupKey, 'is-changed': group.changed, 'is-dirty': group.dirty, 'has-errors': group.errorCount > 0 }"
+                :aria-selected="group.key === activeGroupKey ? 'true' : 'false'"
+                :data-form-tab="group.key"
+                :data-dirty="group.dirty ? 'true' : undefined"
+                :data-errors="group.errorCount > 0 ? String(group.errorCount) : undefined"
+                @click="setActiveGroup(group.key)"
+              >
+                <span class="sdk-owner-form-tab-label">{{ group.title || group.key }}</span>
+                <span v-if="group.errorCount > 0" class="sdk-owner-form-tab-errors">{{ group.errorCount }}</span>
+                <span v-else-if="group.dirty" class="sdk-owner-form-tab-dot" aria-hidden="true"></span>
+              </button>
+            </div>
+            <section
+              v-if="activeGroupObject"
+              :key="activeGroupObject.key"
+              class="sdk-owner-form-tabpanel"
+              role="tabpanel"
+              :data-form-group="activeGroupObject.key"
+            >
+              <p v-if="activeGroupObject.description" class="sdk-owner-form-section-hint">{{ activeGroupObject.description }}</p>
+              <slot :name="`group-${activeGroupObject.key}-header`" :group="activeGroupObject"></slot>
+              <form-field-place v-for="field in activeGroupObject.plain" :key="field.path" :field="field"></form-field-place>
+              <form-advanced-section v-if="activeGroupObject.advanced.length" :paths="activeGroupObject.advanced.map((field) => field.path)">
+                <form-field-place v-for="field in activeGroupObject.advanced" :key="field.path" :field="field"></form-field-place>
+              </form-advanced-section>
+              <slot :name="`group-${activeGroupObject.key}-footer`" :group="activeGroupObject"></slot>
+            </section>
+          </div>
+        </template>
+
+        <template v-else-if="effectivePresentation === 'steps' && resolvedGroups.length > 0">
+          <div class="sdk-owner-form-steps">
+            <ol class="sdk-owner-form-stepbar" :aria-label="t('platform.formSections')">
+              <li
+                v-for="(group, index) in resolvedGroups"
+                :key="group.key"
+                class="sdk-owner-form-step-item"
+                :class="{
+                  'is-active': group.key === activeGroupKey,
+                  'is-complete': index < activeGroupIndex,
+                  'is-dirty': group.dirty,
+                  'has-errors': group.errorCount > 0,
+                }"
+              >
+                <button
+                  type="button"
+                  class="sdk-owner-form-step-btn"
+                  :disabled="!allowStepJump && index > activeGroupIndex"
+                  :aria-current="group.key === activeGroupKey ? 'step' : undefined"
+                  :data-form-step="group.key"
+                  :data-dirty="group.dirty ? 'true' : undefined"
+                  :data-errors="group.errorCount > 0 ? String(group.errorCount) : undefined"
+                  @click="setActiveGroup(group.key)"
+                >
+                  <span class="sdk-owner-form-step-index">{{ index + 1 }}</span>
+                  <span class="sdk-owner-form-step-label">{{ group.title || group.key }}</span>
+                  <span v-if="group.errorCount > 0" class="sdk-owner-form-tab-errors">{{ group.errorCount }}</span>
+                  <span v-else-if="group.dirty" class="sdk-owner-form-tab-dot" aria-hidden="true"></span>
+                </button>
+              </li>
+            </ol>
+            <section
+              v-if="activeGroupObject"
+              :key="activeGroupObject.key"
+              class="sdk-owner-form-step-panel"
+              :data-form-group="activeGroupObject.key"
+            >
+              <header v-if="activeGroupObject.title || activeGroupObject.description" class="sdk-owner-form-card-head">
+                <h3 v-if="activeGroupObject.title" class="sdk-owner-form-section-title">{{ activeGroupObject.title }}</h3>
+                <p v-if="activeGroupObject.description" class="sdk-owner-form-section-hint">{{ activeGroupObject.description }}</p>
+              </header>
+              <slot :name="`group-${activeGroupObject.key}-header`" :group="activeGroupObject"></slot>
+              <form-field-place v-for="field in activeGroupObject.plain" :key="field.path" :field="field"></form-field-place>
+              <form-advanced-section v-if="activeGroupObject.advanced.length" :paths="activeGroupObject.advanced.map((field) => field.path)">
+                <form-field-place v-for="field in activeGroupObject.advanced" :key="field.path" :field="field"></form-field-place>
+              </form-advanced-section>
+              <slot :name="`group-${activeGroupObject.key}-footer`" :group="activeGroupObject"></slot>
+            </section>
+            <div v-if="resolvedGroups.length > 1" class="sdk-owner-form-step-nav">
+              <el-button
+                :disabled="activeGroupIndex <= 0"
+                data-form-step-prev
+                @click="goPrevStep"
+              >{{ prevStepLabel }}</el-button>
+              <el-button
+                v-if="activeGroupIndex < resolvedGroups.length - 1"
+                type="primary"
+                plain
+                data-form-step-next
+                @click="goNextStep"
+              >{{ nextStepLabel }}</el-button>
+            </div>
+          </div>
+        </template>
+
+        <div v-else-if="sectionGroups" class="sdk-owner-form-sectioned">
+          <div class="sdk-owner-form-sections">
+            <section
+              v-for="group in sectionGroups"
+              :key="group.key"
+              class="sdk-owner-form-section"
+              :class="{ changed: group.changed }"
+              :data-form-section="group.key || undefined"
+            >
+              <h3 v-if="group.title" class="sdk-owner-form-section-title">{{ group.title }}</h3>
+              <p v-if="group.hint" class="sdk-owner-form-section-hint">{{ group.hint }}</p>
+              <form-field-place v-for="field in group.plain" :key="field.path" :field="field"></form-field-place>
+              <form-advanced-section v-if="group.advanced.length" :paths="group.advanced.map((field) => field.path)">
+                <form-field-place v-for="field in group.advanced" :key="field.path" :field="field"></form-field-place>
+              </form-advanced-section>
+            </section>
+          </div>
+          <!-- The form's contents: each entry brings its section into view; every section stays on the page. -->
+          <nav class="sdk-owner-form-contents" :aria-label="t('platform.formSections')">
+            <button v-for="group in sectionGroups.filter((item) => item.title)" :key="group.key" type="button" @click="goToSection(group.key)">
+              {{ group.title }}
+            </button>
+          </nav>
         </div>
-        <!-- The form's contents: each entry brings its section into view; every section stays on the page. -->
-        <nav class="sdk-owner-form-contents" :aria-label="t('platform.formSections')">
-          <button v-for="group in sectionGroups.filter((item) => item.title)" :key="group.key" type="button" @click="goToSection(group.key)">
-            {{ group.title }}
+        <template v-else>
+          <form-field-place v-for="field in plain" :key="field.path" :field="field"></form-field-place>
+          <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
+            <form-field-place v-for="field in advanced" :key="field.path" :field="field"></form-field-place>
+          </form-advanced-section>
+        </template>
+        <slot name="after-fields"></slot>
+        <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
+          {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
+        </p>
+        <div v-if="refusalFoot" class="sdk-owner-form-refusal" role="alert">
+          <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
+            {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
           </button>
-        </nav>
+          <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
+        </div>
       </div>
-      <template v-else>
-        <form-field-place v-for="field in plain" :key="field.path" :field="field"></form-field-place>
-        <form-advanced-section v-if="advanced.length" :paths="advanced.map((field) => field.path)">
-          <form-field-place v-for="field in advanced" :key="field.path" :field="field"></form-field-place>
-        </form-advanced-section>
-      </template>
-      <slot name="after-fields"></slot>
-      <p v-if="changed.size" class="sdk-owner-form-changed" role="status">
-        {{ t("platform.panelDraftChanged", { fields: changedLabels }) }}
-      </p>
-      <div v-if="refusalFoot" class="sdk-owner-form-refusal" role="alert">
-        <button v-if="refusalFoot.fields.length" type="button" class="sdk-owner-form-refusal-count" @click="showFirstRefused">
-          {{ t("platform.formFieldsNeedChanges", { n: refusalFoot.fields.length }, refusalFoot.fields.length) }}
-        </button>
-        <p v-for="message in refusalFoot.said" :key="message">{{ message }}</p>
-      </div>
-      <div class="sdk-owner-form-actions">
-        <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">{{ t("platform.unsavedChanges") }}</span>
-        <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
-        <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
+      <div v-if="showActionBar" class="sdk-owner-form-actions">
+        <span v-if="canSettle" class="sdk-owner-form-unsaved" role="status">
+          {{ t("platform.formChangedCount", { count: changedCount }, changedCount) }}
+        </span>
+        <template v-if="isCreate">
+          <el-button text :disabled="saving" @click="cancelCreate">{{ t("platform.cancel") }}</el-button>
+          <el-button type="primary" :disabled="asking" :loading="saving" @click="saveFromForm">{{ t("platform.create") }}</el-button>
+        </template>
+        <template v-else>
+          <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
+          <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
+        </template>
       </div>
     </el-form>
     </data-state>
@@ -729,11 +1379,10 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 </template>
 
 <style scoped>
-/* Save and Discard stay in reach at the foot of the view however long the form, never only at its end. */
+/* Save and Discard stay below the form's fields (never overlapping the last textarea in flow-down cards);
+   when filling a definite box, `.sdk-owner-form-body` scrolls above them so they stay in reach at the foot. */
 .sdk-owner-form-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -746,6 +1395,25 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
 /* Sections one after another at a reading width, a hairline between them; their list beside them while they scroll. */
 .sdk-owner-form {
   container: sdk-owner-form / inline-size;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.sdk-owner-form-inner {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.sdk-owner-form-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 .sdk-owner-form-sectioned {
   display: grid;
@@ -846,5 +1514,192 @@ const changedLabels = computed(() => fields.value.filter((field) => changed.valu
   margin-inline-end: auto;
   color: var(--el-color-warning);
   font-size: var(--text-sm);
+}
+
+/* Multi-card, multi-tab, and multi-step containers sharing one form draft. */
+.sdk-owner-form-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--page-content-gap, var(--spacing-lg));
+  align-items: start;
+}
+.sdk-owner-form-cards.is-two-col,
+.sdk-owner-form-cards.is-split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.sdk-owner-form-cards-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-content-gap, var(--spacing-lg));
+  min-width: 0;
+}
+.sdk-owner-form-card {
+  min-width: 0;
+  padding: var(--surface-padding, var(--spacing-lg));
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-md);
+  background: var(--el-bg-color);
+  box-sizing: border-box;
+}
+.sdk-owner-form-card.is-full {
+  grid-column: 1 / -1;
+}
+.sdk-owner-form-card.changed .sdk-owner-form-section-title {
+  color: var(--brand-link);
+}
+.sdk-owner-form-card-head {
+  margin-bottom: var(--spacing-md);
+}
+.sdk-owner-form-card-head .sdk-owner-form-section-hint {
+  margin-bottom: 0;
+}
+
+.sdk-owner-form-tabs,
+.sdk-owner-form-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  min-width: 0;
+}
+.sdk-owner-form-tablist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  border-bottom: 1px solid var(--ui-divider);
+  padding-bottom: var(--spacing-xs);
+}
+.sdk-owner-form-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-height: var(--control-height-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.sdk-owner-form-tab:hover {
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-primary);
+}
+.sdk-owner-form-tab.is-active {
+  background: var(--ui-fill-secondary, var(--ui-fill-tertiary));
+  color: var(--el-text-color-primary);
+}
+.sdk-owner-form-tab.is-changed:not(.is-active) {
+  color: var(--brand-link);
+}
+.sdk-owner-form-tab:focus-visible,
+.sdk-owner-form-step-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.sdk-owner-form-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--brand-link, var(--el-color-primary));
+}
+.sdk-owner-form-tab-errors {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger-text);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.sdk-owner-form-tabpanel,
+.sdk-owner-form-step-panel {
+  min-width: 0;
+}
+
+.sdk-owner-form-stepbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sdk-owner-form-step-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.sdk-owner-form-step-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border: 1px solid var(--ui-divider);
+  border-radius: var(--radius-sm);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.sdk-owner-form-step-btn:hover:not(:disabled) {
+  border-color: var(--ui-border);
+  color: var(--el-text-color-primary);
+}
+.sdk-owner-form-step-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.sdk-owner-form-step-item.is-active .sdk-owner-form-step-btn {
+  border-color: var(--brand-link, var(--el-color-primary));
+  background: var(--el-color-primary-light-9, var(--ui-fill-tertiary));
+  color: var(--el-text-color-primary);
+}
+.sdk-owner-form-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--ui-fill-tertiary);
+  color: var(--el-text-color-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.sdk-owner-form-step-item.is-active .sdk-owner-form-step-index {
+  background: var(--el-color-primary);
+  color: var(--on-primary, #fff);
+}
+.sdk-owner-form-step-item.is-complete .sdk-owner-form-step-index {
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success-text);
+}
+.sdk-owner-form-step-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--ui-divider);
+}
+
+@container sdk-owner-form (max-width: 720px) {
+  .sdk-owner-form-cards.is-two-col,
+  .sdk-owner-form-cards.is-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

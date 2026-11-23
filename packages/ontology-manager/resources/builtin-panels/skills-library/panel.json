@@ -98,7 +98,7 @@
           "selected": "filePath"
         },
         "config": {
-          "fallbackToFirst": false,
+          "fallbackToFirst": true,
           "label": "panel.files",
           "emptyText": "panel.filesEmpty"
         },
@@ -124,8 +124,7 @@
         },
         "id": "builtin-product-43c6d315-fab6-48cd-8c9c-fcd47ec12e15"
       }
-    },
-    "commands": {}
+    }
   },
   "content": {
     "messages": {

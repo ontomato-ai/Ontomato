@@ -36,6 +36,8 @@ const LAZY: Record<string, () => Promise<Component>> = {
 
 /** A component already fetched, by ID, so a second projection of the same one draws at once. */
 const fetched = new Map<string, Component>();
+/** In-flight loads of built-in components so concurrent rows share a single import. */
+const loading = new Map<string, Promise<Component>>();
 
 /** Each declared component's metadata, by the ID a projection record names. */
 const META = new Map(components.map((component) => [component.componentId, component]));
@@ -64,23 +66,29 @@ export function componentMeta(componentId: string): ComponentMetadata {
  * export fails here, visibly, rather than drawing something else.
  */
 export async function componentFor(componentId: string, readPackage?: ComponentPackageReader): Promise<Component> {
-  // `<package>:<component>`: a component the deployment installed from a package, drawn from the package's release.
+  // `<package>:<component>`: a component the deployment installed from a package, cached by ID + release version/digest.
   if (componentId.includes(":")) {
     if (!readPackage) throw new Error(`Component '${componentId}' is an installed package's: it is drawn only in a panel the platform runs`);
-    const known = fetched.get(componentId);
-    if (known) return known;
-    const component = await packageComponent(componentId, readPackage);
-    fetched.set(componentId, component);
-    return component;
+    return packageComponent(componentId, readPackage);
   }
   componentMeta(componentId);
   const already = fetched.get(componentId);
   if (already) return already;
-  const load = LAZY[componentId];
-  if (!load) throw new Error(`The catalogue describes '${componentId}' but this version exports no such component`);
-  const component = await load();
-  fetched.set(componentId, component);
-  return component;
+  let pending = loading.get(componentId);
+  if (!pending) {
+    const load = LAZY[componentId];
+    if (!load) throw new Error(`The catalogue describes '${componentId}' but this version exports no such component`);
+    pending = load().then((component) => {
+      fetched.set(componentId, component);
+      loading.delete(componentId);
+      return component;
+    }, (error: unknown) => {
+      loading.delete(componentId);
+      throw error;
+    });
+    loading.set(componentId, pending);
+  }
+  return pending;
 }
 
 /** The components this version draws projections with, by ID. */

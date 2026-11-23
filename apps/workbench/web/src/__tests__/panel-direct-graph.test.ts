@@ -226,7 +226,6 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
       definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
       scope: { target: { projectionId: "agent-data-scope" }, formField: { slot: "definition", path: "/classNames" } },
     },
-    commands: {},
   };
 
   const { instance, element, reads } = mountDirect(
@@ -356,7 +355,6 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
       definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
       scope: { target: { projectionId: "agent-data-scope" }, inputs: {}, formField: { slot: "definition", path: "/classNames" } },
     },
-    commands: {},
   });
 
   const instance = createPanelInstance(panel, {
@@ -443,7 +441,6 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
       definition: { target: { projectionId: "agent-form" }, inputs: {} },
       scope: { target: { projectionId: "agent-data-scope" }, inputs: {}, formField: { slot: "definition", path: "/classNames" } },
     },
-    commands: {},
   });
   const instance = createPanelInstance(panel, {
     text: (key) => key,
@@ -471,7 +468,13 @@ it("shows forbidden and error datum states on direct ObjectGraph without pretend
       errors: ref({}),
       changed: ref(new Set<string>()),
       busy: ref(false),
+      dirty: ref(false),
+      dirtyFields: ref(new Set<string>()),
+      submitting: ref(false),
+      canSubmit: ref(false),
       set: chooseScope,
+      submit: async () => ({}),
+      reset: async () => true,
     },
     receive: async () => null,
     submit: async () => ({}),
@@ -621,7 +624,6 @@ it("drives direct OntologyGraph in type and instance modes through member reads 
         },
       },
     },
-    commands: {},
   };
 
   const actionNode = { className: ACTION, primaryKey: "act-1", label: "Approve Order", layer: "capability" as const };
@@ -758,7 +760,6 @@ it("surfaces forbidden and error host read states on direct OntologyGraph withou
     members: {
       graph: { target: { projectionId: "capability-graph" }, inputs: { mode: { state: "mode" } } },
     },
-    commands: {},
   };
 
   let response: ProductPanelReadResponse = { status: "forbidden" };
@@ -804,7 +805,6 @@ it("drives direct ObjectRelations through useMemberData with complete identities
         outputs: { selected: { state: "selected" } },
       },
     },
-    commands: {},
   };
 
   const actionNode = { className: ACTION, primaryKey: "act-1", label: "Approve Order", layer: "capability" as const };
@@ -908,7 +908,6 @@ it("marks truncated customer Relationship neighbors (panelRelationNeighbors) on 
         inputs: { selected: { state: "selected" } },
       },
     },
-    commands: {},
   };
   const { element } = mountDirect(
     manifest,
@@ -1030,7 +1029,6 @@ it("draws direct OntologyGraph and ObjectRelations in a frame via frameMemberDat
         outputs: { selected: { state: "selected" } },
       },
     },
-    commands: {},
   });
 
   const instance = createPanelInstance(panel, {
@@ -1121,7 +1119,6 @@ it("keeps newly discovered layers visible when OntologyGraph expands without dec
         outputs: { selectedNode: { state: "selected" } },
       },
     },
-    commands: {},
   };
 
   const alice = { className: USER, primaryKey: "u-alice", label: "Alice", layer: "governance" };
@@ -1193,7 +1190,6 @@ it("draws only the relation kinds the panel's state holds, in type and instance 
     members: {
       graph: { target: { projectionId: "kinds-graph" }, inputs: { mode: { state: "mode" } }, outputs: { visibleRelationKinds: { state: "kinds" } } },
     },
-    commands: {},
   };
   const actionNode = { className: ACTION, primaryKey: "act-1", label: "Approve Order", layer: "capability" as const };
   const workflowNode = { className: WORKFLOW, primaryKey: "wf-1", label: "Order Pipeline", layer: "capability" as const };

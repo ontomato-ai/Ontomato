@@ -12,7 +12,9 @@ import { authoredReadParameterSource, directReadDeclaration, panelReadParameterI
 import {
   AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
-  ONTOLOGY_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, RELATIONSHIP, SDK_COMPONENT, type PlatformReadDeclaration,
+  ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
+  PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
+  type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
 import { assertPermission } from "../../identity/installed";
@@ -20,7 +22,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { BackendUnavailableError } from "../../utils/backend-client";
 import { HttpError } from "../../utils/errors";
 import { requireFormFieldNames } from "../../utils/form-field-names";
-import type { ProductOwner } from "../product-governance/grants";
+import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
 
 import { createAuditLogPanelReads } from "../admin/audit-log-panel-reads";
 import { createGeneralSettingsReads } from "../admin/general-settings-panel";
@@ -34,6 +36,7 @@ import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-re
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
 import { createOntologyModelReadAdapter } from "../ontology-model/model-reads";
 import { createScheduledTaskReadAdapter } from "../scheduling/panel-reads";
+import { createGovernanceReadAdapters } from "../governance/panel-reads";
 import type { SkillResolveRequest } from "../skills/panel-reads";
 import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
@@ -64,6 +67,7 @@ function customerReads(owner: ProductOwner, viewer: AssistantCredentials, caller
 
 function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerUserName?: string, location?: McpRequestLocation): Record<string, Record<string, ReadAdapter>> {
   const schedules = createScheduledTaskReadAdapter(viewer);
+  const governance = createGovernanceReadAdapters(viewer);
   const ontology = async () => {
     const { createPlatformOntologyReadAdapter } = await import("../platform-ontology/panel-reads");
     return createPlatformOntologyReadAdapter(owner, viewer, callerUserName);
@@ -73,6 +77,14 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const actions = async () => {
     const { createActionReadAdapter } = await import("../action/panel-reads");
     return createActionReadAdapter(owner, viewer, callerUserName);
+  };
+  const triggers = async () => {
+    const { createTriggerReadAdapter } = await import("../trigger/panel-reads");
+    return createTriggerReadAdapter(owner, viewer, callerUserName);
+  };
+  const workflows = async () => {
+    const { createWorkflowReadAdapter } = await import("../workflow/panel-reads");
+    return createWorkflowReadAdapter(owner, viewer, callerUserName);
   };
   const metrics = createMetricReadAdapter(owner, viewer, callerUserName);
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
@@ -162,6 +174,16 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       definition: async selection => (await actions()).definition(selection.primaryKey!),
       explanation: async selection => (await actions()).explanation(selection.primaryKey!),
     },
+    [TRIGGER]: {
+      list: async () => (await triggers()).list(),
+      query: async (_selection, params) => (await triggers()).query(params),
+      record: async selection => (await triggers()).record(selection.primaryKey!),
+      form: async (selection, params) => (await triggers()).form(selection.primaryKey!, formParams(params)),
+      createForm: async (_selection, params) => (await triggers()).createForm(formParams(params)),
+    },
+    [WORKFLOW]: {
+      list: async () => (await workflows()).list(),
+    },
     [METRIC_VIEW]: {
       query: (_selection, params) => metrics.query(params),
       record: selection => metrics.record(selection.primaryKey!),
@@ -213,6 +235,77 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
         page: panelReadParameterSchemas.page.optional().parse(params.page),
       }),
       resolve: async (_selection, params) => (await options()).users.resolve(params.values as readonly unknown[]),
+      query: (_selection, params) => governance.users.query(params),
+      record: selection => governance.users.record(selection.primaryKey!),
+      form: (selection, params) => governance.users.form(selection.primaryKey!, formParams(params)),
+      effectivePermissions: selection => governance.users.effectivePermissions(selection.primaryKey!),
+      lookupAccount: (_selection, params) => governance.users.lookupAccount(panelReadParameterSchemas.keyword.parse(params.keyword)),
+    },
+    [ROLE]: {
+      options: async (_selection, params) => {
+        const keyword = panelReadParameterSchemas.keyword.optional().parse(params.keyword);
+        const page = panelReadParameterSchemas.page.optional().parse(params.page);
+        const { options: items } = await searchProductGrantPrincipals("role", keyword, page?.size ?? 100, viewer);
+        return { options: items.map(({ id, name }) => ({ primaryKey: id, value: id, label: name })) };
+      },
+      resolve: async (_selection, params) => {
+        const values = panelReadParameterSchemas.optionValues.parse(params.values);
+        const { options: items } = await searchProductGrantPrincipals("role", undefined, 100, viewer);
+        const byId = new Map(items.map(item => [item.id, item.name]));
+        return {
+          options: values
+            .filter((value): value is string => typeof value === "string" && value.length > 0)
+            .map(id => ({ primaryKey: id, value: id, label: byId.get(id) ?? id })),
+        };
+      },
+      query: (_selection, params) => governance.roles.query(params),
+      record: selection => governance.roles.record(selection.primaryKey!),
+      form: (selection, params) => governance.roles.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => governance.roles.createForm(formParams(params)),
+    },
+    [PERMISSION_POLICY]: {
+      options: () => governance.policies.options(),
+      resolve: (_selection, params) => governance.policies.resolve(panelReadParameterSchemas.optionValues.parse(params.values)),
+      query: (_selection, params) => governance.policies.query(params),
+      record: selection => governance.policies.record(selection.primaryKey!),
+      form: (selection, params) => governance.policies.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => governance.policies.createForm(formParams(params)),
+      menuPermissions: selection => governance.policies.menuPermissions(selection.primaryKey!),
+      apiPermissions: (selection, params) => governance.policies.apiPermissions(
+        selection.primaryKey!, panelReadParameterSchemas.keyword.optional().parse(params.search),
+      ),
+      dataPermissions: selection => governance.policies.dataPermissions(selection.primaryKey!),
+    },
+    [ORG_UNIT]: {
+      list: () => governance.orgUnits.list(),
+      options: () => governance.orgUnits.options(),
+      resolve: (_selection, params) => governance.orgUnits.resolve(panelReadParameterSchemas.optionValues.parse(params.values)),
+      record: selection => governance.orgUnits.record(selection.primaryKey!),
+      form: (selection, params) => governance.orgUnits.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => governance.orgUnits.createForm({
+        ...formParams(params), parentId: panelReadParameterSchemas.keyword.optional().parse(params.parentId),
+      }),
+      members: selection => governance.orgUnits.members(selection.primaryKey!),
+      memberCandidates: (selection, params) => governance.orgUnits.memberCandidates(
+        selection.primaryKey!, panelReadParameterSchemas.keyword.optional().parse(params.keyword),
+      ),
+      positions: selection => governance.orgUnits.positions(selection.primaryKey!),
+      grants: selection => governance.orgUnits.grants(selection.primaryKey!),
+      inheritedGrants: selection => governance.orgUnits.inheritedGrants(selection.primaryKey!),
+    },
+    [ORG_MEMBERSHIP]: {
+      record: selection => governance.orgMemberships.record(selection.primaryKey!),
+    },
+    [ORG_POSITION]: {
+      record: selection => governance.orgPositions.record(selection.primaryKey!),
+      form: (selection, params) => governance.orgPositions.form(selection.primaryKey!, formParams(params)),
+      createForm: (_selection, params) => governance.orgPositions.createForm({
+        ...formParams(params), orgId: panelReadParameterSchemas.keyword.parse(params.orgId),
+      }),
+    },
+    [ORG_GRANT]: {
+      record: selection => governance.orgGrants.record(selection.primaryKey!),
+      form: (selection, params) => governance.orgGrants.form(selection.primaryKey!, formParams(params)),
     },
     [SKILL]: {
       async options() {
@@ -248,7 +341,9 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       entries: selection => applications.entries(selection.primaryKey!),
       grants: selection => applications.grants(selection.primaryKey!),
       form: (selection, params) => applications.form(selection.primaryKey!, {
-        ...formParams(params), section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
+        ...formParams(params),
+        section: panelReadParameterSchemas.applicationFormSection.parse(params.section),
+        entryId: panelReadParameterSchemas.applicationEntryId.optional().parse(params.entryId),
       }),
       createForm: (_selection, params) => applications.createForm(formParams(params)),
     },

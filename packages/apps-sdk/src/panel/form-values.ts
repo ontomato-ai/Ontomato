@@ -91,3 +91,22 @@ export function admitsNull(schema: Readonly<Record<string, unknown>>): boolean {
   const options = [schema.anyOf, schema.oneOf].flatMap((list) => (Array.isArray(list) ? list : []));
   return options.some((option) => option !== null && typeof option === "object" && admitsNull(option as Record<string, unknown>));
 }
+
+/** Deep equality for owner JSON values, independent of object key order. */
+export function jsonValuesEqual(left: RuntimeJsonValue | undefined, right: RuntimeJsonValue | undefined): boolean {
+  if (left === right) return true;
+  if (left === undefined || right === undefined || left === null || right === null) return false;
+  if (typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length
+      && left.every((value, index) => jsonValuesEqual(value, right[index]));
+  }
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length
+    && keys.every((key) => Object.hasOwn(right, key) && jsonValuesEqual(left[key], right[key]));
+}
+
+/** Deep clone of a JSON value so writing a field default into a draft never shares references with the owner schema. */
+export function cloneJsonValue<T extends RuntimeJsonValue>(value: T): T {
+  return value === null ? value : JSON.parse(JSON.stringify(value)) as T;
+}

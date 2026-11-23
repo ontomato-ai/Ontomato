@@ -18,6 +18,8 @@ export interface PlatformPageAction {
   primary?: boolean;
   /** A destructive action (delete). */
   danger?: boolean;
+  /** Keep a destructive action visible inline in the header bar (used by full-width detail views) instead of overflowing into More. */
+  inline?: boolean;
   disabled?: boolean;
   loading?: boolean;
   onClick(): void;
@@ -50,6 +52,11 @@ export function providePageActions(): Readonly<Ref<PlatformPageActions | null>> 
   const actions = shallowRef<PlatformPageActions | null>(null);
   provide(pageActionsKey, actions);
   return actions;
+}
+
+/** Whether an ancestor frame provides a page header that carries actions and a form draft. */
+export function hasPageActions(): boolean {
+  return inject(pageActionsKey, null) !== null;
 }
 
 /**

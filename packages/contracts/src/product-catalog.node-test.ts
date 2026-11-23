@@ -83,7 +83,7 @@ test("platform products use a reserved identity and are read-only without a doma
   const panelInput = {
     ...definition,
     content: { html: '<div id="app"></div>', module: "export default {}" },
-    manifest: { state: {}, members: {}, commands: {} },
+    manifest: { state: {}, members: {} },
   };
   const projectionInput = {
     ...definition, componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {}, data: {},
@@ -102,9 +102,10 @@ test("platform products use a reserved identity and are read-only without a doma
   assert.equal(registerProductProjectionRequestSchema.safeParse({ ...projectionInput, revision: 0 }).success, false);
 
   const summary = { ...definition, id: panelId, ownerId: null, editable: false, revision: 1, updatedAt: record.updatedAt };
-  assert.equal(productPanelListResponseSchema.safeParse({ items: [summary], nextCursor: null }).success, true);
+  assert.equal(productPanelListResponseSchema.safeParse({ items: [summary], nextCursor: null, total: 1 }).success, true);
+  assert.equal(productPanelListResponseSchema.safeParse({ items: [summary], nextCursor: null, total: -1 }).success, false);
   assert.equal(productProjectionListResponseSchema.safeParse({
-    items: [{ ...summary, id: projectionId, componentId: projectionInput.componentId }], nextCursor: null,
+    items: [{ ...summary, id: projectionId, componentId: projectionInput.componentId }], nextCursor: null, total: 1,
   }).success, true);
 
   assert.equal(builtinProductIdSchema.safeParse(BUILTIN_PRODUCT_ID_PREFIX).success, false);
@@ -169,7 +170,7 @@ test("platform panels place only packaged products and do not pin domain object 
   const taskType = "platform:ScheduledTask";
   const state = { selected: { type: { kind: "object", objectType: taskType } } };
   const member = { target: { projectionId }, inputs: { task: { state: "selected" } } };
-  const manifest = { state, members: { related: member }, commands: {} };
+  const manifest = { state, members: { related: member } };
   assert.equal(builtinProductPanelInputSchema.safeParse({ ...base, manifest }).success, true);
   for (const [changes, field] of [
     [{ target: { projectionId: "domain-projection" } }, "manifest.members.related.target.projectionId"],
@@ -255,9 +256,31 @@ test("panel entry descriptions round-trip without giving an unnamed entry a menu
   const descriptions = { en: "Review the current report", "zh-CN": "查看当前报告" };
   const use = { ...base, descriptions };
   assert.deepEqual(applicationPanelUseSchema.parse(base), base);
-  for (const invalid of [null, {}, { "zh-CN": "查看当前报告" }, { en: " " }, { en: "Report", "zh-CN": "" }, { en: null }]) {
+  assert.deepEqual(
+    applicationPanelUseSchema.parse({ ...base, names: { "zh-CN": "报告" }, descriptions: { "zh-CN": "查看当前报告" } }).names,
+    { "zh-CN": "报告" },
+  );
+  for (const invalid of [null, {}, { en: " " }, { en: "Report", "zh-CN": "" }, { en: null }]) {
     assert.equal(applicationPanelUseSchema.safeParse({ ...base, descriptions: invalid }).success, false);
   }
+  const { applicationMetadataSchema, localizedApplicationText } = await import("./application-metadata");
+  assert.equal(
+    applicationMetadataSchema.safeParse({
+      names: { "zh-CN": "中文应用" }, descriptions: {}, icon: "pages",
+      groups: [{ key: "main", names: { "zh-CN": "主分组" }, sort: 0 }],
+      permissions: [{ code: "app:zh:read", names: { "zh-CN": "查看" }, groupKey: "main", sort: 0 }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    applicationMetadataSchema.safeParse({
+      names: {}, descriptions: {}, icon: "pages", groups: [], permissions: [],
+    }).success,
+    false,
+  );
+  assert.equal(localizedApplicationText({ "zh-CN": "中文应用" }, "en"), "中文应用");
+  assert.equal(localizedApplicationText({ "zh-CN": "中文应用", en: "English App" }, "zh-CN"), "中文应用");
+  assert.equal(localizedApplicationText({ "zh-CN": "中文应用", en: "English App" }, "fr-FR"), "English App");
   const builtin = { ...use, panelId: BUILTIN_PRODUCT_ID_PREFIX + base.panelId };
   assert.deepEqual(builtinApplicationPanelUseSchema.parse(builtin), builtin);
   assert.deepEqual(registerApplicationPanelUsesRequestSchema.parse({ entry, panelUses: [use] }).panelUses, [use]);
@@ -357,4 +380,52 @@ test("declares grant reads for both resource classes and a panel-only template f
   assert.equal(panelReadParameterSchemas.productTemplate.safeParse("true").success, false);
   const projectionQuery = platformObjectTypes[PRODUCT_PROJECTION].reads?.query;
   assert.equal(projectionQuery?.parameterMode === "fixed" && Object.hasOwn(projectionQuery.params, "template"), false);
+});
+
+test("application contracts accept optional allowStandalone toggle and route it to identity rather than entries", async () => {
+  const { allowsStandalone, applicationCatalogSchema } = await import("./platform-identity");
+  const {
+    applicationCatalogueCreateSchema, applicationCatalogueRecordSchema, applicationEntriesUpdateSchema,
+    applicationIdentityUpdateSchema,
+  } = await import("./application-catalogue");
+
+  assert.equal(allowsStandalone(undefined), true);
+  assert.equal(allowsStandalone({}), true);
+  assert.equal(allowsStandalone({ allowStandalone: true }), true);
+  assert.equal(allowsStandalone({ allowStandalone: false }), false);
+
+  const baseApp = {
+    id: "app-one", kind: "product" as const, names: { en: "One" }, descriptions: {}, icon: "pages",
+    rail: "apps" as const, category: "business" as const, sort: 1,
+    entry: { path: "/applications/app-one", renderer: "panels" }, entryAccess: ["domain-member"],
+    scheduleAdapter: null, releaseId: null,
+  };
+  assert.equal(applicationCatalogSchema.parse([baseApp])[0]?.allowStandalone, undefined);
+  assert.equal(applicationCatalogSchema.parse([{ ...baseApp, allowStandalone: false }])[0]?.allowStandalone, false);
+
+  const identity = applicationIdentityUpdateSchema.parse({ names: { en: "One" }, descriptions: {}, icon: "pages", allowStandalone: false });
+  assert.equal(identity.allowStandalone, false);
+  assert.equal(applicationIdentityUpdateSchema.parse({ names: { en: "One" }, descriptions: {}, icon: "pages" }).allowStandalone, undefined);
+
+  const createPayload = {
+    entry: { path: "/applications/app-one", renderer: "panels" as const },
+    panelUses: [],
+    declaration: { names: { en: "One" }, descriptions: {}, icon: "pages", groups: [], permissions: [] },
+    entryAccess: ["domain-member"],
+    allowStandalone: false,
+  };
+  assert.equal(applicationCatalogueCreateSchema.parse(createPayload).allowStandalone, false);
+  assert.equal(
+    applicationEntriesUpdateSchema.safeParse({
+      entry: { path: "/applications/app-one", renderer: "panels" }, panelUses: [], allowStandalone: false,
+    }).success,
+    false,
+  );
+
+  const record = applicationCatalogueRecordSchema.parse({
+    id: "app-one", names: { en: "One" }, descriptions: {}, icon: "pages", source: "domain",
+    canMaintain: true, canEditEntries: true, canGrant: true, entryCount: 0, allowStandalone: false,
+    entry: { path: "/applications/app-one", renderer: "panels" }, panelUses: [], groups: [],
+  });
+  assert.equal(record.allowStandalone, false);
 });

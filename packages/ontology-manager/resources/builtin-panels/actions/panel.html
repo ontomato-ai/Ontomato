@@ -10,7 +10,7 @@
 -->
 <style>
   [v-cloak] { display: none; }
-  .ac { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
+  .ac { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px); }
   /* The page's one creation control sits at the right end of the filter row, not on a row of its own. */
   .ac-create { margin-left: auto; }
   .ac-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
@@ -115,6 +115,13 @@
   .ac-chevron { width: 1.5rem; color: var(--sdk-text-color-placeholder); text-align: right; }
 </style>
 <div id="app" v-cloak>
+  <page-header title="动作" description="维护域内动作定义、状态与代码解释">
+    <template #actions>
+      <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+      </sdk-button>
+    </template>
+  </page-header>
   <section class="ac">
     <!-- Catalog: all actions of the domain, filtered by name or description; checked ones change status together. -->
     <section class="ac-section" v-show="!detailVisible">

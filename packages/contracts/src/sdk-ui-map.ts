@@ -179,7 +179,7 @@ export const SDK_UI_COMPONENTS: readonly SdkUiComponentMapping[] = [
 /** Excluded UI primitives and imperative services that remain platform-owned. */
 export const SDK_UI_FORBIDDEN_COMPONENTS: readonly SdkUiForbiddenComponent[] = [
   { implTag: "el-config-provider", implExport: "ElConfigProvider", replacement: "Platform host manages locale and theme configuration automatically" },
-  { implTag: "el-page-header", implExport: "ElPageHeader", replacement: "Platform host manages page headers; declare panel commands under manifest.commands" },
+  { implTag: "el-page-header", implExport: "ElPageHeader", replacement: "Use the official <page-header> component (PageHeader from @ontomato/sdk/base)" },
   { implTag: "el-popper", implExport: "ElPopper", replacement: "Use <sdk-popover> or <sdk-tooltip> instead of internal floating primitives" },
   { implTag: "el-popconfirm", implExport: "ElPopconfirm", replacement: "Declare a write operation so the platform host confirms and dispatches it" },
   { implExport: "ElMessage", replacement: "usePanelContext().notify({ kind, text }) from @ontomato/sdk/panel" },
@@ -322,6 +322,14 @@ export const SDK_PLATFORM_THEME_TOKENS: readonly SdkPlatformThemeToken[] = [
   { name: "--control-height-sm", kind: "length", overridable: true },
   { name: "--control-height", kind: "length", overridable: true },
   { name: "--control-height-lg", kind: "length", overridable: true },
+  { name: "--list-row-two-line-height", kind: "length", overridable: false },
+  { name: "--pane-list-width", kind: "length", overridable: false },
+  { name: "--pane-narrow-breakpoint", kind: "length", overridable: true },
+  { name: "--workbench-aside-width", kind: "length", overridable: false },
+  { name: "--workbench-detail-width", kind: "length", overridable: false },
+  { name: "--workbench-narrow-breakpoint", kind: "length", overridable: true },
+  { name: "--detail-header-padding", kind: "length", overridable: false },
+  { name: "--detail-footer-padding", kind: "length", overridable: false },
   { name: "--elevation-flat", kind: "elevation", overridable: true },
   { name: "--elevation-panel", kind: "elevation", overridable: true },
   { name: "--elevation-overlay", kind: "elevation", overridable: true },

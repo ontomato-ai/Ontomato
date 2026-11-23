@@ -3,10 +3,15 @@ import { mount } from "@vue/test-utils";
 import { DataState, type DataStateResult } from "../index";
 
 const labels = {
-  empty: "Nothing here", noMatch: "Nothing matches", forbidden: "No permission", awaiting: "Choose one first", retry: "Read again",
+  empty: "Nothing here",
+  noMatch: "Nothing matches",
+  clearFilters: "Clear filters",
+  forbidden: "No permission",
+  awaiting: "Choose one first",
+  retry: "Read again",
 };
-const show = (result: DataStateResult<{ name: string }>) =>
-  mount(DataState, { props: { result, labels }, slots: { default: "<b>{{ params.value.name }}</b>" } });
+const show = (result: DataStateResult<{ name: string }>, extraProps?: { emptyHint?: string }) =>
+  mount(DataState, { props: { result, labels, ...extraProps }, slots: { default: "<b>{{ params.value.name }}</b>" } });
 
 describe("DataState", () => {
   it("draws the value only once it is ready, and each other state in its own words", () => {
@@ -46,5 +51,37 @@ describe("DataState", () => {
     const awaiting = show({ status: "awaiting" });
     expect(awaiting.text()).toBe("Choose one first");
     expect(awaiting.text()).not.toBe("Nothing here");
+  });
+
+  it("renders an optional emptyHint on un-narrowed empty states and omits it on narrowed no-match", () => {
+    const fromResult = show({ status: "empty", emptyHint: "Use New in the header to create one" });
+    expect(fromResult.find(".fui-data-state-message").text()).toBe("Nothing here");
+    expect(fromResult.find(".fui-data-state-hint").text()).toBe("Use New in the header to create one");
+
+    const fromProp = show({ status: "empty" }, { emptyHint: "Create a record from the header" });
+    expect(fromProp.find(".fui-data-state-hint").text()).toBe("Create a record from the header");
+
+    const narrowed = show({ status: "empty", narrowed: true }, { emptyHint: "Should not appear" });
+    expect(narrowed.find(".fui-data-state-hint").exists()).toBe(false);
+  });
+
+  it("renders a Clear filters button on narrowed empty states when clearFilters is provided", async () => {
+    const clearFilters = vi.fn();
+    const narrowed = show({ status: "empty", narrowed: true, clearFilters });
+    const button = narrowed.find(".fui-data-state-clear");
+    expect(button.exists()).toBe(true);
+    expect(button.text()).toBe("Clear filters");
+    await button.trigger("click");
+    expect(clearFilters).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the owner's forbidden reason when supplied and falls back to labels.forbidden otherwise", () => {
+    const withReason = show({ status: "forbidden", reason: "Requires ontology maintainer role" });
+    expect(withReason.find('[data-state="forbidden"]').exists()).toBe(true);
+    expect(withReason.find("svg").exists()).toBe(true);
+    expect(withReason.find(".fui-data-state-message").text()).toBe("Requires ontology maintainer role");
+
+    const fallback = show({ status: "forbidden", reason: "   " });
+    expect(fallback.find(".fui-data-state-message").text()).toBe("No permission");
   });
 });

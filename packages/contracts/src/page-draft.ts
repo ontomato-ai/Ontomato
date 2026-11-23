@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema, runtimeRelativePathSchema } from "./agent-runtime-values";
+import { panelMemberItemKeySchema, type PanelMemberItemKey } from "./panel-object-ref";
 
 /*
  * A page draft: what an agent wrote for one page to fill in and the reader to save. The envelope is the same
@@ -8,9 +9,19 @@ import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeKeySchema, runtimeRela
 /** An object's id is opaque here; the page and the object's owner check its format (an agent id is a UUID, a knowledge id is not). */
 export const pageDraftObjectIdSchema = z.string().min(1).max(200);
 
-/** The draft's object type and, when editing, the owner's opaque id. */
+/**
+ * The draft's target object:
+ * - Creating a top-level object: `{ objectType }` (without `id` or `itemKey`).
+ * - Editing a top-level object, or a child object with its own independent id: `{ objectType, id }`.
+ * - Adding an embedded row under a parent object: `{ objectType, id }` (without `itemKey`) paired with an add-row operation.
+ * - Editing an embedded row under a parent object: `{ objectType, id, itemKey }` paired with a row operation.
+ */
 export const pageDraftTargetSchema = z
-  .object({ objectType: runtimeKeySchema, id: pageDraftObjectIdSchema.optional() })
+  .object({
+    objectType: runtimeKeySchema,
+    id: pageDraftObjectIdSchema.optional(),
+    itemKey: panelMemberItemKeySchema.optional(),
+  })
   .strict();
 export type PageDraftObjectRef = z.infer<typeof pageDraftTargetSchema>;
 
@@ -37,7 +48,11 @@ export interface PageDraft<Form> {
   pageKey: string;
   /** The page's own form action, e.g. `agent.create` or `agent.update`. */
   operation: string;
-  /** A create names its object type. An edit also names the owner's opaque id. */
+  /**
+   * The target object: `{ objectType }` to create a top-level object, `{ objectType, id }` to edit an object (including
+   * a child object with its own independent id) or add an embedded row under a parent object, or
+   * `{ objectType, id, itemKey }` to edit an embedded row under a parent object.
+   */
   target: PageDraftObjectRef;
   form: Form;
   /** A create draft once saved: the object its first save created, which the draft addresses from then on. */
@@ -105,21 +120,24 @@ export async function readPageDraft<Form, Operation extends string>(
   return { operation, target: draft.target, form: draft.form as Form, created: draft.created };
 }
 
-/** The effective owner target, including the object a create draft has already created. */
+/** The effective owner target, including the object a create draft has already created and any embedded row key. */
 export type PageDraftTarget =
   | { kind: "create"; objectType: string }
-  | { kind: "update"; objectType: string; id: string };
+  | { kind: "update"; objectType: string; id: string; itemKey?: PanelMemberItemKey };
 
 /**
- * Which real object a page reads for a draft: an update draft's target, or the object a create draft's first save
- * created. A create draft saved once is from then on an update of that object, so the same link opened again compares
- * against it and, unchanged, opens it as it is; if the object is gone, the page reports it missing rather than offering
- * the create again.
+ * Which real object a page reads for a draft: an update draft's target (preserving `itemKey` when editing an embedded
+ * row), or the object a create draft's first save created. A create draft saved once is from then on an update of that
+ * object, so the same link opened again compares against it and, unchanged, opens it as it is; if the object is gone,
+ * the page reports it missing rather than offering the create again.
  */
 export function draftTarget(draft: Pick<PageDraft<unknown>, "target" | "created">): PageDraftTarget {
-  const { objectType } = draft.target;
+  const { objectType, itemKey } = draft.target;
   const id = draft.target.id ?? draft.created?.id;
-  return id === undefined ? { kind: "create", objectType } : { kind: "update", objectType, id };
+  if (id === undefined) return { kind: "create", objectType };
+  return itemKey === undefined
+    ? { kind: "update", objectType, id }
+    : { kind: "update", objectType, id, itemKey };
 }
 
 /**

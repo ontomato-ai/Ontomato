@@ -89,12 +89,14 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 
 	@Override
 	public List<RelationshipView> relationships(String className, User user, String lang) {
-		Map<String, Map<String, String>> relationships = relationships(rule(user));
+		Map<String, Object> rule = rule(user);
+		Map<String, Map<String, String>> relationships = relationships(rule);
+		Map<String, String> classShowNames = classShowNames(rule);
 		List<RelationshipView> result = new ArrayList<>();
 		for (Map.Entry<String, Map<String, String>> entry : relationships.entrySet()) {
 			Map<String, String> def = entry.getValue();
 			if (blank(className) || className.equals(def.get("fromclass")) || className.equals(def.get("toclass"))) {
-				result.add(relationshipView(entry.getKey(), def));
+				result.add(relationshipView(entry.getKey(), def, classShowNames));
 			}
 		}
 		return result;
@@ -102,11 +104,12 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 
 	@Override
 	public RelationshipView relationship(String relationship, User user, String lang) {
-		Map<String, String> def = relationships(rule(user)).get(relationship);
+		Map<String, Object> rule = rule(user);
+		Map<String, String> def = relationships(rule).get(relationship);
 		if (def == null) {
 			throw relationshipNotFound(lang);
 		}
-		return relationshipView(relationship, def);
+		return relationshipView(relationship, def, classShowNames(rule));
 	}
 
 	@Override
@@ -312,7 +315,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		write(user, rule);
 		audit(user, AuditLog.OPERATION_ADD, description(user, "AuditLog.relationship.add", body.relationship()),
 				com.alibaba.fastjson2.JSONObject.toJSONString(relationshipDef));
-		return relationshipView(body.relationship(), relationshipDef);
+		return relationshipView(body.relationship(), relationshipDef, classShowNames(rule));
 	}
 
 	@Override
@@ -326,7 +329,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		write(user, rule);
 		audit(user, AuditLog.OPERATION_UPD, description(user, "AuditLog.relationship.upd", checked.relationship()),
 				com.alibaba.fastjson2.JSONObject.toJSONString(checked.relationshipDef()));
-		return relationshipView(checked.relationship(), checked.relationshipDef());
+		return relationshipView(checked.relationship(), checked.relationshipDef(), classShowNames(rule));
 	}
 
 	@Override
@@ -378,7 +381,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				? attributeValues(key[0], key[1], text(attrDef.get("type")), text(attrDef.get("showName")),
 						text(attrDef.get("attrDesc")), enabled(attrDef.get("enable")), businessKey(attrDef),
 						primaryKey(attrDef))
-				: attributeValues("", "", "", "", "", true, false, false);
+				: attributeValues("", "", "varchar", "", "", true, false, false);
 		Map<String, Object> values = formValues(body, current);
 		if (draftToCheck(body)) {
 			values = edit ? draftAttributeUpdate(rule, key, values, user, lang) : draftAttributeCreate(rule, values, user, lang);
@@ -852,16 +855,35 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				checked.body().desc());
 	}
 
+	private static ObjectNode selectControl(List<JsonNode> options, String placeholder) {
+		ObjectNode control = object("kind", "select", "options", options);
+		if (placeholder != null && !placeholder.isBlank()) {
+			control.put("placeholder", placeholder);
+		}
+		return control;
+	}
+
 	private static ObjectNode textControl(boolean multiline) {
-		return textControl(multiline, null);
+		return textControl(multiline, null, null);
 	}
 
 	private static ObjectNode textControl(boolean multiline, Integer maxLength) {
+		return textControl(multiline, maxLength, null);
+	}
+
+	private static ObjectNode textControl(boolean multiline, Integer maxLength, String placeholder) {
 		ObjectNode control = multiline ? object("kind", "text", "multiline", true) : object("kind", "text");
 		if (maxLength != null) {
 			control.put("maxLength", maxLength);
 		}
+		if (placeholder != null && !placeholder.isBlank()) {
+			control.put("placeholder", placeholder);
+		}
 		return control;
+	}
+
+	private static ObjectNode hiddenControl() {
+		return object("kind", "hidden");
 	}
 
 	private static ObjectNode switchControl() {
@@ -945,7 +967,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 			"className", "Admin.form.className",
 			"primaryKeyName", "Admin.form.primaryKeyName",
 			"showName", "Admin.form.showName",
-			"classDesc", "Admin.form.desc");
+			"classDesc", "Admin.form.businessDesc");
 	private static final Map<String, String> ATTRIBUTE_LABEL_KEYS = Map.of(
 			"className", "Admin.form.ownerType",
 			"name", "Admin.form.name",
@@ -961,7 +983,7 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 			"fromField", "Admin.form.fromField",
 			"toclass", "Admin.form.toclass",
 			"toField", "Admin.form.toField",
-			"desc", "Admin.form.desc");
+			"desc", "Admin.form.relationDesc");
 
 	private Map<String, String> labels(Map<String, String> keys, String lang) {
 		Map<String, String> labels = new LinkedHashMap<>();
@@ -976,23 +998,27 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		String showNameLabel = label.get("showName");
 		String descLabel = label.get("classDesc");
 		List<ObjectNode> fields = new ArrayList<>();
-		ObjectNode classNameField = panelField("/className", classNameLabel, true, textControl(false),
-				stringSchema(classNameLabel), edit, null, false);
-		ObjectNode showNameField = panelField("/showName", showNameLabel, true, textControl(false, 80),
-				stringSchema(showNameLabel, 80), false, null, false);
-		ObjectNode descField = panelField("/classDesc", descLabel, false, textControl(true, 400),
-				stringSchema(descLabel, 400), false, null, false);
 		if (edit) {
 			// Match the detail view's edit order: editable display name first, read-only API name second, description last.
-			fields.add(showNameField);
-			fields.add(classNameField);
-			fields.add(descField);
+			fields.add(panelField("/showName", showNameLabel, false, textControl(false, 80),
+					stringSchema(showNameLabel, 80), false, null, false));
+			fields.add(panelField("/className", classNameLabel, false, textControl(false),
+					stringSchema(classNameLabel), true, null, false));
+			fields.add(panelField("/classDesc", descLabel, false, textControl(true, 400),
+					stringSchema(descLabel, 400), false, null, false));
 		} else {
-			fields.add(classNameField);
-			fields.add(panelField("/primaryKeyName", primaryKeyNameLabel, true, textControl(false),
-					stringSchema(primaryKeyNameLabel), false, null, false));
-			fields.add(showNameField);
-			fields.add(descField);
+			fields.add(panelField("/className", classNameLabel, true,
+					textControl(false, 80, langService.get(lang, "Admin.form.exampleClassName")),
+					stringSchema(classNameLabel, 80), false, null, false));
+			fields.add(panelField("/primaryKeyName", primaryKeyNameLabel, true,
+					textControl(false, 80, langService.get(lang, "Admin.form.examplePrimaryKey")),
+					stringSchema(primaryKeyNameLabel, 80), false, null, false));
+			fields.add(panelField("/showName", showNameLabel, true,
+					textControl(false, 80, langService.get(lang, "Admin.form.exampleShowName")),
+					stringSchema(showNameLabel, 80), false, null, false));
+			fields.add(panelField("/classDesc", descLabel, false,
+					textControl(true, null, langService.get(lang, "Admin.form.objectDescPlaceholder")),
+					stringSchema(descLabel), false, null, false));
 		}
 		return fields;
 	}
@@ -1010,49 +1036,90 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 		String primaryKeyLabel = label.get("primaryKey");
 		boolean locked = attrDef != null && primaryKey(attrDef);
 		List<ObjectNode> fields = new ArrayList<>();
-		fields.add(panelField("/className", ownerLabel, true, object("kind", "select", "options", objectTypeOptions(rule)),
-				stringSchema(ownerLabel), edit, null, false));
-		fields.add(panelField("/name", nameLabel, true, textControl(false), stringSchema(nameLabel), edit, null, false));
+		if (edit) {
+			// Inline edit keeps owner/name/type hidden (already displayed on the row above) and shows editable fields.
+			fields.add(panelField("/className", ownerLabel, true, hiddenControl(), stringSchema(ownerLabel), true, null, false));
+			fields.add(panelField("/name", nameLabel, true, hiddenControl(), stringSchema(nameLabel), true, null, false));
+			fields.add(panelField("/type", typeLabel, true, hiddenControl(), enumSchema(typeLabel, ATTRIBUTE_TYPES), true, null, false));
+			fields.add(panelField("/showName", showNameLabel, false, textControl(false, 80), stringSchema(showNameLabel, 80),
+					false, null, false));
+			fields.add(panelField("/attrDesc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
+					false, null, false));
+			fields.add(panelField("/enable", enableLabel, false, switchControl(), booleanSchema(enableLabel), locked,
+					locked ? langService.get(lang, "Admin.form.primaryKeyEnableLocked") : null, false));
+			fields.add(panelField("/businessKey", businessKeyLabel, false, switchControl(), booleanSchema(businessKeyLabel),
+					false, null, false));
+			fields.add(panelField("/primaryKey", primaryKeyLabel, false, switchControl(), booleanSchema(primaryKeyLabel),
+					true, langService.get(lang, "Admin.form.primaryKeySwitchHint"), false));
+			return fields;
+		}
+		fields.add(panelField("/className", ownerLabel, true,
+				selectControl(objectTypeOptions(rule), langService.get(lang, "Admin.form.selectOwnerType")),
+				stringSchema(ownerLabel), false, null, false));
+		fields.add(panelField("/name", nameLabel, true,
+				textControl(false, 80, langService.get(lang, "Admin.form.exampleAttrName")),
+				stringSchema(nameLabel, 80), false, null, false));
 		fields.add(panelField("/type", typeLabel, true, object("kind", "select", "options", attributeTypeOptions()),
-				enumSchema(typeLabel, ATTRIBUTE_TYPES), edit, null, false));
-		fields.add(panelField("/showName", showNameLabel, true, textControl(false), stringSchema(showNameLabel),
+				enumSchema(typeLabel, ATTRIBUTE_TYPES), false, null, false));
+		fields.add(panelField("/showName", showNameLabel, true,
+				textControl(false, 80, langService.get(lang, "Admin.form.exampleAttrShowName")),
+				stringSchema(showNameLabel, 80), false, null, false));
+		fields.add(panelField("/attrDesc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
 				false, null, false));
-		fields.add(panelField("/attrDesc", descLabel, false, textControl(true), stringSchema(descLabel),
-				false, null, false));
-		fields.add(panelField("/enable", enableLabel, true, switchControl(), booleanSchema(enableLabel), locked,
-				locked ? langService.get(lang, "Admin.form.primaryKeyEnableLocked") : null, false));
-		fields.add(panelField("/businessKey", businessKeyLabel, true, switchControl(), booleanSchema(businessKeyLabel),
+		fields.add(panelField("/enable", enableLabel, false, switchControl(), booleanSchema(enableLabel), false, null, false));
+		fields.add(panelField("/businessKey", businessKeyLabel, false, switchControl(), booleanSchema(businessKeyLabel),
 				false, null, false));
 		fields.add(panelField("/primaryKey", primaryKeyLabel, false, switchControl(), booleanSchema(primaryKeyLabel),
-				edit, edit ? langService.get(lang, "Admin.form.primaryKeySwitchHint") : null, false));
+				false, null, false));
 		return fields;
 	}
 
 	private List<ObjectNode> relationshipFields(Map<String, Object> rule, boolean edit, Map<String, Object> values,
 			User user, String lang) {
 		Map<String, String> label = labels(RELATIONSHIP_LABEL_KEYS, lang);
-		String nameLabel = label.get("relationship");
+		String nameLabel = edit ? langService.get(lang, "Admin.form.apiName") : label.get("relationship");
 		String fromClassLabel = label.get("fromclass");
 		String fromFieldLabel = label.get("fromField");
 		String toClassLabel = label.get("toclass");
 		String toFieldLabel = label.get("toField");
 		String descLabel = label.get("desc");
+		String selectFromClass = langService.get(lang, "Admin.form.selectFromclass");
+		String enterFromField = langService.get(lang, "Admin.form.enterFromField");
+		String selectToClass = langService.get(lang, "Admin.form.selectToclass");
+		String enterToField = langService.get(lang, "Admin.form.enterToField");
 		boolean joinRequired = joinFieldsRequired(user);
-		List<JsonNode> classOptions = objectTypeOptions(rule);
+		String fromClass = formString(values, "fromclass");
+		String toClass = formString(values, "toclass");
 		List<ObjectNode> fields = new ArrayList<>();
-		fields.add(panelField("/relationship", nameLabel, true, textControl(false), stringSchema(nameLabel),
-				edit, null, false));
-		fields.add(panelField("/fromclass", fromClassLabel, true, object("kind", "select", "options", classOptions),
-				stringSchema(fromClassLabel), edit, null, true));
+		if (edit) {
+			// Match the detail view's edit fields: read-only API name, description, and the two join fields (ends are shown beside the form).
+			fields.add(panelField("/relationship", nameLabel, false, textControl(false), stringSchema(nameLabel),
+					true, null, false));
+			fields.add(panelField("/desc", descLabel, false, textControl(true, 400), stringSchema(descLabel, 400),
+					false, null, false));
+			fields.add(panelField("/fromField", fromFieldLabel, joinRequired,
+					selectControl(attributeOptions(rule, fromClass), enterFromField),
+					stringSchema(fromFieldLabel), false, null, false));
+			fields.add(panelField("/toField", toFieldLabel, joinRequired,
+					selectControl(attributeOptions(rule, toClass), enterToField),
+					stringSchema(toFieldLabel), false, null, false));
+			return fields;
+		}
+		List<JsonNode> classOptions = objectTypeOptions(rule);
+		fields.add(panelField("/relationship", nameLabel, true, textControl(false, 80), stringSchema(nameLabel, 80),
+				false, null, false));
+		fields.add(panelField("/fromclass", fromClassLabel, true, selectControl(classOptions, selectFromClass),
+				stringSchema(fromClassLabel), false, null, true));
 		fields.add(panelField("/fromField", fromFieldLabel, joinRequired,
-				object("kind", "select", "options", attributeOptions(rule, formString(values, "fromclass"))),
-				stringSchema(fromFieldLabel), false, null, false));
-		fields.add(panelField("/toclass", toClassLabel, true, object("kind", "select", "options", classOptions),
-				stringSchema(toClassLabel), edit, null, true));
+				selectControl(attributeOptions(rule, fromClass), enterFromField),
+				stringSchema(fromFieldLabel), fromClass.isEmpty(), null, false));
+		fields.add(panelField("/toclass", toClassLabel, true, selectControl(classOptions, selectToClass),
+				stringSchema(toClassLabel), false, null, true));
 		fields.add(panelField("/toField", toFieldLabel, joinRequired,
-				object("kind", "select", "options", attributeOptions(rule, formString(values, "toclass"))),
-				stringSchema(toFieldLabel), false, null, false));
-		fields.add(panelField("/desc", descLabel, true, textControl(true), stringSchema(descLabel), false, null, false));
+				selectControl(attributeOptions(rule, toClass), enterToField),
+				stringSchema(toFieldLabel), toClass.isEmpty(), null, false));
+		fields.add(panelField("/desc", descLabel, true, textControl(true, 400), stringSchema(descLabel, 400),
+				false, null, false));
 		return fields;
 	}
 
@@ -1140,7 +1207,35 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				.filter(def -> className.equals(def.get("fromclass")) || className.equals(def.get("toclass")))
 				.count();
 		return new ObjectTypeView(className, text(classDef.get("showName")), text(classDef.get("classDesc")),
-				attrs.size(), businessKeys, relationshipsCount, primaryKeyView(classDef));
+				attrs.size(), businessKeys, relationshipsCount, primaryKeyView(classDef), searchableAttributes(attrs));
+	}
+
+	private List<String> searchableAttributes(List<Map<String, Object>> attrs) {
+		java.util.LinkedHashSet<String> terms = new java.util.LinkedHashSet<>();
+		for (Map<String, Object> attr : attrs) {
+			String showName = trim(text(attr.get("showName")));
+			String name = trim(text(attr.get("name")));
+			if (!showName.isEmpty()) {
+				terms.add(showName);
+			}
+			if (!name.isEmpty()) {
+				terms.add(name);
+			}
+		}
+		return List.copyOf(terms);
+	}
+
+	private Map<String, String> classShowNames(Map<String, Object> rule) {
+		Map<String, String> names = new LinkedHashMap<>();
+		for (Map<String, Object> classDef : classDefs(rule)) {
+			String className = text(classDef.get("className"));
+			if (className.isEmpty()) {
+				continue;
+			}
+			String showName = trim(text(classDef.get("showName")));
+			names.put(className, showName.isEmpty() ? className : showName);
+		}
+		return names;
 	}
 
 	private Map<String, Object> primaryKeyView(Map<String, Object> classDef) {
@@ -1164,17 +1259,24 @@ public class OntologyModelServiceImpl implements OntologyModelService {
 				businessKey(attr), primaryKey(attr));
 	}
 
-	private RelationshipView relationshipView(String relationship, Map<String, String> def) {
-		return new RelationshipView(relationship, text(def.get("fromclass")), text(def.get("toclass")),
-				text(def.get("desc")), text(def.get("fromField")), text(def.get("toField")));
+	private RelationshipView relationshipView(String relationship, Map<String, String> def,
+			Map<String, String> classShowNames) {
+		String fromclass = text(def.get("fromclass"));
+		String toclass = text(def.get("toclass"));
+		String fromShowName = classShowNames.getOrDefault(fromclass, fromclass);
+		String toShowName = classShowNames.getOrDefault(toclass, toclass);
+		return new RelationshipView(relationship, fromclass, toclass,
+				text(def.get("desc")), text(def.get("fromField")), text(def.get("toField")),
+				fromShowName, toShowName);
 	}
 
 	private List<RelationshipView> cascadingRelationships(Map<String, Object> rule, String className) {
+		Map<String, String> classShowNames = classShowNames(rule);
 		List<RelationshipView> result = new ArrayList<>();
 		for (Map.Entry<String, Map<String, String>> entry : relationships(rule).entrySet()) {
 			Map<String, String> def = entry.getValue();
 			if (className.equals(def.get("fromclass")) || className.equals(def.get("toclass"))) {
-				result.add(relationshipView(entry.getKey(), def));
+				result.add(relationshipView(entry.getKey(), def, classShowNames));
 			}
 		}
 		return result;

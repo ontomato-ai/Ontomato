@@ -291,7 +291,7 @@ public class FunctionServiceImpl implements FunctionService {
         throw new IllegalArgumentException("target.primaryKey: expected a function id");
       function = functionDao.queryById(primaryKey);
       if (function == null || !domainId.equals(function.getDomainId()))
-        throw new OwnerRefusal("FUNCTION_NOT_FOUND", "Function not found");
+        throw new OwnerRefusal("FUNCTION_NOT_FOUND", langService.get(lang, "Function.notFound"));
       existing = true;
     } else if ("draft".equals(kind)) {
       function = FunctionForm.defaultValues().to(Function.class);

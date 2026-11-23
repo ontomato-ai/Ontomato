@@ -18,11 +18,13 @@ import { builderModelOperations } from "../app-builder/panel-model";
 import { diagnosisModelOperations } from "../ops-diagnosis/panel-model";
 import { feedbackExportOperation } from "../admin/feedback-panel-reads";
 import { m6ServerOperations } from "../action/panel-operations";
+import { triggerServerOperations } from "../trigger/panel-operations";
 import { agentDefinitionOperations } from "../assistant/definition-operations";
 import { m7ServerOperations } from "../business-knowledge/panel-operations";
 import { m5ServerOperations } from "../metric-function/panel-operations";
 import { ontologyModelServerOperations } from "../ontology-model/model-operations";
 import { scheduledTaskServerOperations } from "../scheduling/panel-operations";
+import { governanceServerOperations } from "../governance/panel-operations";
 import { skillExportOperation, skillServerOperations } from "../skills/panel-operations";
 import { productCatalogServerOperations } from "./catalog-operations";
 import { HttpError } from "../../utils/errors";
@@ -146,12 +148,14 @@ const registrations: readonly PanelServerOperation[] = [
   ...diagnosisModelOperations,
   ...m5ServerOperations,
   ...m6ServerOperations,
+  ...triggerServerOperations,
   ...m7ServerOperations,
   ...skillServerOperations,
   feedbackExportOperation,
   skillExportOperation,
   ...ontologyModelServerOperations,
   ...productCatalogServerOperations,
+  ...governanceServerOperations,
 ];
 const jsonSchema = (schema: z.ZodTypeAny) => cachedZodToJsonSchema(schema, { effectStrategy: "input" });
 const runtimeJsonSchema = (schema: z.ZodTypeAny) => cachedZodToRuntimeJsonSchema(schema, { effectStrategy: "input" });

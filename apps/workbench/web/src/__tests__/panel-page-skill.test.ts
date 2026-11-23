@@ -88,8 +88,8 @@ it("reads the shown page's panel, and beside it the page skill with its use rela
   const { app: page, router, sent, skills } = await openApplication(tasks.path);
   try {
     await vi.waitFor(() => expect(skills).toEqual([member(tasks, { permissionCode: "analysis-agent", pageKey: tasks.pageKey })]));
-    // The record is the panel's alone; the page it is shown for asks for its skill on its own.
-    expect(panelReads(sent, p.id)[0]!.search).toBe("");
+    // The record is the panel's alone (with bundled fixed projections); the page it is shown for asks for its skill on its own.
+    expect(Object.fromEntries(new URLSearchParams(panelReads(sent, p.id)[0]!.search))).toEqual({ includeProjections: "1" });
     expect(Object.fromEntries(new URLSearchParams(skillReads(sent, p.id)[0]!.search))).toEqual({
       applicationId: app, useId: tasks.id, pageKey: tasks.pageKey, permissionCode: "analysis-agent",
     });

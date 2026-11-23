@@ -48,7 +48,6 @@ const baseManifest: DirectPanelManifest = {
     tasks: { target: { projectionId: "schedules-tasks" }, outputs: { selected: { state: "selectedTask" } } },
     summary: { target: { projectionId: "schedules-summary" }, inputs: { task: { state: "selectedTask" } } },
   },
-  commands: {},
 };
 
 type Read = PanelMemberReadRequest;
@@ -78,6 +77,7 @@ function mountDirect(
     initial?: Record<string, unknown>;
     messages?: Record<string, Record<string, string>>;
     members?: readonly string[];
+    listeners?: Record<string, Record<string, (...args: unknown[]) => void>>;
   } = {},
 ) {
   const manifest = options.manifest ?? baseManifest;
@@ -101,7 +101,7 @@ function mountDirect(
   const element = document.createElement("div");
   document.body.appendChild(element);
   const app = createApp({
-    setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, { instance, member, key: member }))),
+    setup: () => () => h("div", memberKeys.map((member) => h(PanelMember, { instance, member, key: member, ...(options.listeners?.[member] ?? {}) }))),
   }).use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus);
   app.mount(element);
   cleanup = () => {
@@ -256,7 +256,6 @@ it("renders a direct ObjectSummary bound to a literal object source without any 
   const literalManifest: DirectPanelManifest = {
     state: {},
     members: { pinned: { target: { projectionId: "literal-summary" } } },
-    commands: {},
   };
   const { element } = mountDirect(() => ready(taskRows[0]!), {
     manifest: literalManifest,
@@ -297,7 +296,6 @@ it("supports table columns, inferred checkboxes from outputs.checked and fallbac
         outputs: { selected: { state: "selectedTask" }, checked: { state: "checkedTasks" } },
       },
     },
-    commands: {},
   };
   const { instance, element } = mountDirect(() => ready(taskRows), {
     manifest: tableManifest,
@@ -336,4 +334,194 @@ it("shows the configured compact summary and only clamps it when asked", async (
   const plain = mountDirect((request) => (request.dataName === "rows" ? ready([row("t-1", "Runs every night")]) : { status: "empty" }), {});
   await vi.waitFor(() => expect(plain.element.querySelector(".sdk-object-list-item-sub")?.textContent?.trim()).toBe("owner line"));
   expect(plain.element.querySelector(".sdk-object-list-item-sub")?.classList.contains("sdk-object-list-item-sub-clamped")).toBe(false);
+});
+
+it("renders ObjectList dot status style and ObjectSummary article layout with centered empty/missing states", async () => {
+  const configured: Record<string, DirectProjection> = {
+    ...baseProjections,
+    "schedules-tasks": {
+      ...baseProjections["schedules-tasks"]!,
+      config: { statusField: "status", statusStyle: "dot", subtitleLines: 2 },
+    },
+    "schedules-summary": {
+      ...baseProjections["schedules-summary"]!,
+      config: {
+        layout: "article",
+        statusField: "status",
+        tagsField: "tags",
+        bodyField: "body",
+        emptyText: "panel.selectHint",
+        missingText: "panel.missing",
+      },
+    },
+  };
+  let missingRecord = false;
+  const { instance, element } = mountDirect(
+    (request) => {
+      if (request.dataName === "rows") {
+        return ready([{
+          primaryKey: "t-1",
+          label: "Refund policy",
+          subtitle: "Returns within 7 days",
+          fields: { status: "Pending", body: "Returns within 7 days" },
+          tones: { status: "warning" },
+          tags: { tags: ["Business"] },
+        }]);
+      }
+      if (missingRecord) return { status: "error", message: "Not found" };
+      return ready({
+        primaryKey: "t-1",
+        label: "Refund policy",
+        fields: { status: "Pending", body: "Returns within 7 days" },
+        tones: { status: "warning" },
+        tags: { tags: ["Business"] },
+      });
+    },
+    {
+      projections: configured,
+      messages: {
+        en: {
+          "panel.selectHint": "Select an entry on the left",
+          "panel.missing": "Entry does not exist",
+        },
+      },
+    },
+  );
+
+  // Without a selected item, article layout displays its centered emptyText.
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-list-status-dot")).not.toBeNull());
+  expect(element.querySelector(".sdk-object-list-status-dot")?.getAttribute("data-tone")).toBe("warning");
+  instance.state.set("selectedTask", null);
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-empty")?.textContent).toContain("Select an entry on the left"));
+
+  // Selecting an item draws article header + status badge + tags + full-width body.
+  instance.state.set("selectedTask", task("t-1"));
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-article-title")?.textContent).toBe("Refund policy"));
+  expect(element.querySelector(".sdk-object-summary-status-badge")?.textContent).toBe("Pending");
+  expect(element.querySelector(".sdk-object-summary-article-tags")?.textContent).toContain("Business");
+  expect(element.querySelector(".sdk-object-summary-article-body")?.textContent).toBe("Returns within 7 days");
+
+  // Missing record shows centered missingText instead of raw error alert.
+  missingRecord = true;
+  instance.state.set("selectedTask", task("t-missing"));
+  await vi.waitFor(() => expect(element.querySelector(".sdk-object-summary-empty")?.textContent).toContain("Entry does not exist"));
+});
+
+it("hides the select-all check bar when empty and emits choose only on explicit user click", async () => {
+  const checkedManifest: DirectPanelManifest = {
+    state: {
+      selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: true },
+      checkedTasks: { type: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } }, personal: false, deepLink: false, external: false, default: [] },
+    },
+    members: {
+      tasks: {
+        target: { projectionId: "schedules-tasks" },
+        inputs: { selected: { state: "selectedTask" }, checked: { state: "checkedTasks" } },
+        outputs: { selected: { state: "selectedTask" }, checked: { state: "checkedTasks" } },
+      },
+    },
+  };
+  const checkedProjections: Record<string, DirectProjection> = {
+    ...baseProjections,
+    "schedules-tasks": {
+      ...baseProjections["schedules-tasks"]!,
+      inputs: { selected: { kind: "object", objectType: SCHEDULED_TASK }, checked: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+      outputs: { selected: { kind: "object", objectType: SCHEDULED_TASK }, checked: { kind: "list", items: { kind: "object", objectType: SCHEDULED_TASK } } },
+      config: { fallbackToFirst: true },
+    },
+  };
+  let rows: typeof taskRows = [];
+  const chosenEvents: unknown[] = [];
+  const { instance, element } = mountDirect(
+    () => ready(rows),
+    {
+      manifest: checkedManifest,
+      projections: checkedProjections,
+      listeners: { tasks: { onChoose: (value: unknown) => chosenEvents.push(value) } },
+    },
+  );
+
+  // Empty list with nothing checked omits the select-all check bar completely.
+  await vi.waitFor(() => expect(element.querySelector("[data-state='empty']")).not.toBeNull());
+  expect(element.querySelector(".sdk-object-list-check-row")).toBeNull();
+
+  // On a non-empty initial load, fallbackToFirst selects row 1 without firing explicit `choose`.
+  cleanup?.();
+  cleanup = null;
+  document.body.innerHTML = "";
+  rows = taskRows;
+  const loaded = mountDirect(
+    () => ready(rows),
+    {
+      manifest: checkedManifest,
+      projections: checkedProjections,
+      listeners: { tasks: { onChoose: (value: unknown) => chosenEvents.push(value) } },
+    },
+  );
+  await vi.waitFor(() => expect(loaded.element.querySelectorAll(".sdk-object-list-row")).toHaveLength(2));
+  expect(loaded.element.querySelector(".sdk-object-list-check-row")).not.toBeNull();
+  expect(loaded.instance.state.values.value.selectedTask).toEqual(task("t-1"));
+  expect(chosenEvents).toEqual([]);
+
+  // Explicit click emits `choose` with the selected object reference.
+  (loaded.element.querySelectorAll(".sdk-object-list-item-btn")[1] as HTMLButtonElement).click();
+  await nextTick();
+  expect(chosenEvents).toEqual([task("t-2")]);
+});
+
+it("treats a filter state field at its default value as unfiltered and restores that default on clearFilters", async () => {
+  const statusManifest: DirectPanelManifest = {
+    state: {
+      status: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: true, external: false, default: "all" },
+      search: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false, default: null },
+    },
+    members: {
+      tasks: {
+        target: { projectionId: "schedules-tasks" },
+        inputs: { status: { state: "status" }, search: { state: "search" } },
+        outputs: {},
+      },
+    },
+  };
+  const statusProjections: Record<string, DirectProjection> = {
+    ...baseProjections,
+    "schedules-tasks": {
+      ...baseProjections["schedules-tasks"]!,
+      inputs: { status: { kind: "scalar", type: "string" }, search: { kind: "scalar", type: "string" } },
+      outputs: {},
+      data: {
+        rows: {
+          source: { type: { kind: "PlatformObjectType", id: "platform:BusinessKnowledge" } },
+          read: "query",
+          params: { status: { input: "status" }, search: { input: "search" } },
+        },
+      },
+      config: {
+        searchable: false,
+        emptyText: "panel.empty",
+        noMatchText: "panel.noMatch",
+      },
+    },
+  };
+  const { instance, element } = mountDirect(() => ready({ rows: [], total: 0 }), {
+    manifest: statusManifest,
+    projections: statusProjections,
+    messages: { en: { "panel.empty": "Nothing yet", "panel.noMatch": "No matching items" } },
+  });
+
+  // At default status="all" with no search, an empty result is truly empty (not narrowed).
+  await vi.waitFor(() => expect(element.querySelector("[data-state='empty']")?.textContent).toContain("Nothing yet"));
+  expect(element.querySelector("[data-state='empty'] button")).toBeNull();
+
+  // Narrowing status to "pending" shows the no-match wording and Clear filters action.
+  instance.state.set("status", "pending");
+  await vi.waitFor(() => expect(element.querySelector("[data-state='empty']")?.textContent).toContain("No matching items"));
+  const clearBtn = element.querySelector("[data-state='empty'] button") as HTMLButtonElement | null;
+  expect(clearBtn).not.toBeNull();
+
+  // Clicking Clear filters restores status to its declared default "all" rather than null.
+  clearBtn!.click();
+  await nextTick();
+  expect(instance.state.values.value.status).toBe("all");
+  await vi.waitFor(() => expect(element.querySelector("[data-state='empty']")?.textContent).toContain("Nothing yet"));
 });

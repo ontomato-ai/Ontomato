@@ -2,12 +2,13 @@ import { watch, type Ref } from "vue";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageDraftLink } from "@ontomato/contracts/page-draft";
 import { panelAddressState } from "@ontomato/contracts/panel-host";
-import type { PanelDeepLinkStateValue, PanelObjectIdentity, PanelOperation, PanelStateValue } from "@ontomato/contracts/panel-manifest";
+import type { PanelDeepLinkStateValue, PanelObjectIdentity, PanelOperation } from "@ontomato/contracts/panel-manifest";
 import type { DefinitionRevision } from "@ontomato/contracts/product-subscriptions";
 import { panelOperationSchema } from "@ontomato/contracts/panel-manifest";
 import { receivePanelDraft, type PanelDraftSource } from "./draft";
 import { PanelDraftUnusable, unreadableDraft } from "./draft-refusal";
 import { pageDraftLinkOf, type PanelInstance } from "./instance";
+import { checkPanelValue, type PanelFieldValue } from "./state";
 
 /*
  * One panel instance's run beside its host, the same in a panel's frame and in the platform's own document: what it
@@ -59,7 +60,7 @@ export interface PanelRun {
   start(): Promise<void>;
   activity(active: boolean): void;
   address(next: string): void;
-  projectionsChanged(revisions: readonly DefinitionRevision[]): void;
+  projectionsChanged(revisions: readonly (Pick<DefinitionRevision, "id"> & { revision?: number })[]): void;
   objectChanged(target: PanelObjectIdentity | null): void;
 }
 
@@ -85,10 +86,10 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     // selections (which would unmount conditional `v-if` forms before the draft is even read).
     if (hasState || !hasDraft) {
       const desired = panelAddressState(next);
-      const patch: Record<string, PanelStateValue> = {};
+      const patch: Record<string, PanelFieldValue> = {};
       for (const [name, field] of Object.entries(instance.manifest.state)) {
         if (!field.deepLink) continue;
-        const value = desired[name] ?? null;
+        const value = checkPanelValue(instance.manifest, name, desired[name] ?? field.default ?? null);
         if (JSON.stringify(instance.state.values.value[name]) !== JSON.stringify(value)) patch[name] = value;
       }
       instance.state.setState(patch);
@@ -108,7 +109,7 @@ export function runPanel(options: PanelRunOptions): PanelRun {
     reports.operations(operations.map(({ invoke: _invoke, ...operation }) => panelOperationSchema.parse(operation)));
   }, { immediate: true });
 
-  const waiting = new Map<string, DefinitionRevision>();
+  const waiting = new Map<string, { id: string; revision?: number }>();
   const refreshProjections = () => {
     for (const { id, revision } of waiting.values()) options.projectionChanged(id, revision);
     waiting.clear();
@@ -142,8 +143,13 @@ export function runPanel(options: PanelRunOptions): PanelRun {
       else heldAddress = next;
     },
     projectionsChanged(revisions) {
-      for (const revision of revisions)
-        if ((waiting.get(revision.id)?.revision ?? 0) < revision.revision) waiting.set(revision.id, revision);
+      for (const revision of revisions) {
+        const current = waiting.get(revision.id);
+        if (revision.revision === undefined || (current !== undefined && current.revision === undefined))
+          waiting.set(revision.id, { id: revision.id });
+        else if ((current?.revision ?? 0) < revision.revision)
+          waiting.set(revision.id, revision);
+      }
       if (active && !isDirty()) refreshProjections();
     },
     objectChanged(target) {

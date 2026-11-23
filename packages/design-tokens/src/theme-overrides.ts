@@ -48,6 +48,8 @@ export const themeOverrideTokens = {
   "--control-height-sm": "length",
   "--control-height": "length",
   "--control-height-lg": "length",
+  "--pane-narrow-breakpoint": "length",
+  "--workbench-narrow-breakpoint": "length",
   "--elevation-flat": "elevation",
   "--elevation-panel": "elevation",
   "--elevation-overlay": "elevation",

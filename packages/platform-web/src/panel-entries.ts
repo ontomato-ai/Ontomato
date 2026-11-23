@@ -25,6 +25,7 @@ export function servePanelEntries(router: Router): void {
       served.add(path);
       router.addRoute(platformRoutes.layout.name, {
         path,
+        meta: { ownHeader: true },
         component: () => import("./pages/PanelApplicationRoute.vue"),
         props: { applicationId: app.id },
       });

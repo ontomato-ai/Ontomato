@@ -35,6 +35,7 @@ const objectTypes = [
     businessKeyCount: 1,
     relationshipCount: 1,
     primaryKey: { status: "ok", name: "id" },
+    searchableAttributes: ["id", "Site", "site_id"],
   },
   {
     className: "Site",
@@ -44,6 +45,7 @@ const objectTypes = [
     businessKeyCount: 0,
     relationshipCount: 1,
     primaryKey: { status: "missing" },
+    searchableAttributes: [],
   },
 ];
 
@@ -71,7 +73,7 @@ const attributes = [
 ];
 
 const relationships = [
-  { relationship: "owns", fromclass: "Device", toclass: "Site", desc: "", fromField: "site_id", toField: "id" },
+  { relationship: "owns", fromclass: "Device", toclass: "Site", desc: "", fromField: "site_id", toField: "id", fromShowName: "Smart Device", toShowName: "Site" },
   { relationship: "runs", fromclass: "Site", toclass: "Device", desc: "runs on", fromField: "id", toField: "id" },
 ];
 
@@ -242,6 +244,7 @@ describe("ontology model read adapter", () => {
           businessKeyCount: "1",
           relationshipCount: "1",
           primaryKey: "ok",
+          searchableAttributes: ["id", "Site", "site_id"],
         },
         fieldLabels: { className: "API name", showName: "Display name", classDesc: "Description" },
       },
@@ -323,10 +326,21 @@ describe("ontology model read adapter", () => {
       {
         primaryKey: "owns",
         label: "owns",
-        fields: { fromclass: "Device", toclass: "Site", desc: "", fromField: "site_id", toField: "id" },
+        subtitle: "Smart Device → Site",
+        fields: {
+          fromclass: "Device",
+          toclass: "Site",
+          fromObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "Device", label: "Smart Device" },
+          toObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "Site", label: "Site" },
+          desc: "",
+          fromField: "site_id",
+          toField: "id",
+        },
         fieldLabels: {
           fromclass: "Source object",
           toclass: "Target object",
+          fromObject: "Source object",
+          toObject: "Target object",
           desc: "Description",
           fromField: "Source field",
           toField: "Target field",
@@ -335,10 +349,21 @@ describe("ontology model read adapter", () => {
       {
         primaryKey: "runs",
         label: "runs on",
-        fields: { fromclass: "Site", toclass: "Device", desc: "runs on", fromField: "id", toField: "id" },
+        subtitle: "Site → Device",
+        fields: {
+          fromclass: "Site",
+          toclass: "Device",
+          fromObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "Site", label: "Site" },
+          toObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "Device", label: "Device" },
+          desc: "runs on",
+          fromField: "id",
+          toField: "id",
+        },
         fieldLabels: {
           fromclass: "Source object",
           toclass: "Target object",
+          fromObject: "Source object",
+          toObject: "Target object",
           desc: "Description",
           fromField: "Source field",
           toField: "Target field",

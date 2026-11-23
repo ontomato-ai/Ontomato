@@ -38,14 +38,12 @@ const panel = definePanel({
     form: { target: { projectionId: "projection-schedules-form" }, inputs: { task: { state: "selectedTask" } } },
     run: { target: { projectionId: "projection-schedules-run" }, inputs: { task: { state: "selectedTask" } } },
   },
-  commands: {},
 });
 
 /** Panel Q, as its declaration file has it: the same summary projection and nothing of P. */
 const summaryPanel = definePanel({
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
   members: { summary: { target: { projectionId: "projection-schedules-summary" }, inputs: { task: { state: "selectedTask" } } } },
-  commands: {},
 });
 
 const records = new Map<string, ProductProjection>(Object.entries(projections));
@@ -167,7 +165,20 @@ describe("a panel instance", () => {
     const adapters = new PanelFormAdapters();
     // A form whose owner performs another operation for the draft's target declines it; the next form is asked.
     const form = (performs: string, changed: readonly string[]) => ({
-      handle: { fields: shallowRef([]), values: shallowRef({}), errors: shallowRef({}), changed: shallowRef(new Set<string>()), busy: ref(false), set: () => {} },
+      handle: {
+        fields: shallowRef([]),
+        values: shallowRef({}),
+        errors: shallowRef({}),
+        changed: shallowRef(new Set<string>()),
+        busy: ref(false),
+        dirty: ref(false),
+        dirtyFields: shallowRef(new Set<string>()),
+        submitting: ref(false),
+        canSubmit: ref(false),
+        set: () => {},
+        submit: async () => ({}),
+        reset: async () => true,
+      },
       receive: async (draft: { operation: string }) => (draft.operation === performs ? new Set(changed) : null),
       // Which slot takes the draft and what it changed is this test's subject; the form's own save and showing are the
       // component's, checked where the component is mounted.
@@ -197,6 +208,51 @@ describe("a panel instance", () => {
     expect(received.slot).toBe("form");
     expect([...received.changed].sort()).toEqual(["/instruction", "/operation"]);
     expect(adapters.unclaimed(["other", "form"])).toBeNull();
+  });
+
+  it("preserves optional itemKey on a received draft target for embedded row edits", async () => {
+    const form = (performs: string) => ({
+      handle: {
+        fields: shallowRef([]),
+        values: shallowRef({}),
+        errors: shallowRef({}),
+        changed: shallowRef(new Set<string>()),
+        busy: ref(false),
+        dirty: ref(false),
+        dirtyFields: shallowRef(new Set<string>()),
+        submitting: ref(false),
+        canSubmit: ref(false),
+        set: () => {},
+        submit: async () => ({}),
+        reset: async () => true,
+      },
+      receive: async (draft: { operation: string }) => (draft.operation === performs ? new Set(["/label"]) : null),
+      submit: async () => ({}),
+      dirty: () => false,
+      discard: () => {},
+    });
+
+    for (const itemKey of ["row-1", { className: SCHEDULED_TASK, primaryKey: "row-2" }] as const) {
+      const adapters = new PanelFormAdapters();
+      adapters.register("rowForm", form("row.save"));
+      const received = await new Promise<ReceivedPanelDraft<Record<string, unknown>>>((taken) =>
+        void receivePanelDraft(
+          "panels-trial-a-tasks",
+          adapters,
+          {
+            readPageDraft: async () => ({
+              pageKey: "panels-trial-a-tasks",
+              operation: "row.save",
+              target: { objectType: SCHEDULED_TASK, id: "parent-1", itemKey },
+              form: { label: "Updated row" },
+            }),
+          },
+          { sessionId: "s", runId: "r", path: "outputs/drafts/row.page-draft.json" },
+          taken,
+        ),
+      );
+      expect(received.target).toEqual({ objectType: SCHEDULED_TASK, id: "parent-1", itemKey });
+    }
   });
 });
 

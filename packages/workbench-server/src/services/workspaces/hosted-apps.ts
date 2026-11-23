@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile, rename, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { workspaceExportSchema, type WorkspaceExport } from "@ontomato/contracts/workspaces";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { getPostgresPool as db, qualifiedTable as t } from "../../infrastructure/postgres";
@@ -148,7 +149,7 @@ async function registerApplicationProduct(owner:AssistantOwner,appId:string,work
   let previous;
   try{previous=await getProduct(owner,appId);}catch(error){if(!(error instanceof HttpError)||error.status!==404)throw error;}
   const names=declaration.names as Record<string,string>|undefined;
-  await saveProduct(owner,appId,{name:names?.["zh-CN"]??names?.en??appId,description:previous?.description??"",visibility:previous?.visibility??"private",
+  await saveProduct(owner,appId,{name:localizedApplicationText(names,"zh-CN")??appId,description:previous?.description??"",visibility:previous?.visibility??"private",
     document:{kind:"application",applicationId:appId,workspaceId,...(previous?.document.kind==='application'&&previous.document.navigationId?{navigationId:previous.document.navigationId}:{}),children:assetIds.map(assetId=>({assetId,column:"main"}))}},previous?.revision??0,credentials);
 }
 export async function workspaceReleases(owner: AssistantOwner, workspaceId: string) {

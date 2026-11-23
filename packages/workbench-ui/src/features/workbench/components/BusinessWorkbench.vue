@@ -9,7 +9,7 @@ import {
   type DisplayHistory, type DisplayPage, type DisplayView, type PageContext, type PageSelection,
   type ShellBottomEntry, type ShellFeatureDeclaration, type ShellWorkbenchDeclaration,
 } from "@ontomato/agent-shell-ui";
-import { providePageActions, useLeaveConfirmation, usePageAccess, usePilotPage } from "@ontomato/platform-shell";
+import { useLeaveConfirmation, usePageAccess, usePilotPage } from "@ontomato/platform-shell";
 import "@ontomato/agent-shell-ui/style.css";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
@@ -23,7 +23,6 @@ import { dashboardSelectionFrom } from "../../dashboard";
 import DatasetActions from "./DatasetActions.vue";
 import ChartFileActions from "./ChartFileActions.vue";
 import DatasetDrilldown from "./DatasetDrilldown.vue";
-import PageCommands from "./PageCommands.vue";
 import WorkbenchAppearanceDialog from "./WorkbenchAppearanceDialog.vue";
 import {
   DASHBOARDS_PAGE_ID,
@@ -81,12 +80,6 @@ const agentId = ref<string | null>(readRememberedAgent());
  * (another board, another agent, a finding) goes to the display as the reader's navigation.
  */
 const pilot = usePilotPage()((address) => void display.navigate(address, { history: "replace" }));
-/**
- * The commands of the page shown beside the conversation (or full in it): the page hands them over as it would to the
- * platform's header, and they are drawn where the conversation draws the page's title. Provided here, they stay with
- * this page and never reach the header of the conversation's own page.
- */
-const pageActions = providePageActions();
 /** An in-app address that names a page this assembly mounts beside a conversation; a host elsewhere is never one. */
 function resolvePage(href: string): DisplayPage | null {
   const address = href.replace(/^#/, "");
@@ -465,9 +458,6 @@ function appearanceSaved(value: WorkbenchAppearance) {
         @display-skill="display.skill"
       />
       <slot v-else name="feature" :feature-id="page" />
-    </template>
-    <template #page-actions="{ view }">
-      <PageCommands v-if="pageActions?.actions?.length" :actions="pageActions.actions" :view="view" />
     </template>
     <template #dataset-selection-actions="{ artifact, title, selectedRowIndices }">
       <DatasetDrilldown :artifact="artifact" :title="title" :selected-row-indices="selectedRowIndices" />

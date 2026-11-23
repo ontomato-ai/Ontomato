@@ -34,8 +34,23 @@ export interface PanelFormHandle {
   readonly errors: Readonly<Ref<Readonly<Record<string, string>>>>;
   readonly changed: Readonly<Ref<ReadonlySet<string>>>;
   readonly busy: Readonly<Ref<boolean>>;
+  /** Whether this form currently holds unsaved edits (changed values, an active draft, or modified fields). */
+  readonly dirty: Readonly<Ref<boolean>>;
+  /** Distinct top-level field paths currently modified relative to the opened baseline. */
+  readonly dirtyFields: Readonly<Ref<ReadonlySet<string>>>;
+  /** Whether a save is currently in flight (alias of `busy`). */
+  readonly submitting: Readonly<Ref<boolean>>;
+  /** Whether the form is ready and has unsaved edits that can currently be submitted. */
+  readonly canSubmit: Readonly<Ref<boolean>>;
   /** Sets one field's value; a field the owner marks `refreshOnChange` has the owner asked again. */
   set(path: string, value: RuntimeJsonValue): void;
+  /** Submits the form through its owner. */
+  submit(): Promise<unknown>;
+  /**
+   * Discards unsaved edits and restores the owner baseline. Pass `{ confirm: true }` to ask the platform's
+   * confirmation dialog first; resolves `true` when discarded, `false` when cancelled.
+   */
+  reset(options?: { confirm?: boolean }): Promise<boolean>;
 }
 
 /**
@@ -64,7 +79,7 @@ export interface PanelFormAdapter {
 export interface ReceivedPanelDraft<Form extends object> {
   slot: string;
   operation: string;
-  /** The object the draft is for: its type, and its id once it names one (an update, or a create its save created). */
+  /** The object the draft is for: its type, its id once it names one (an update, or a create its save created), and optionally the embedded row key. */
   target: PageDraftObjectRef;
   /** The object a create draft's earlier save created; absent for an update draft and an unsaved create. */
   created?: { id: string };
@@ -74,10 +89,13 @@ export interface ReceivedPanelDraft<Form extends object> {
   link: PageDraftLink;
 }
 
-/** The object a draft addresses: a create draft saved once addresses the object it created from then on. */
+/** The object a draft addresses: a create draft saved once addresses the object it created from then on, preserving any embedded row itemKey. */
 function addressed(draft: PageDraft<Record<string, unknown>>): PageDraftObjectRef {
   const id = draft.target.id ?? draft.created?.id;
-  return id === undefined ? { objectType: draft.target.objectType } : { objectType: draft.target.objectType, id };
+  if (id === undefined) return { objectType: draft.target.objectType };
+  return draft.target.itemKey === undefined
+    ? { objectType: draft.target.objectType, id }
+    : { objectType: draft.target.objectType, id, itemKey: draft.target.itemKey };
 }
 
 /** A draft no form of a page takes: the type of the object it is for and the operation it asks for, as the reader is told. */
@@ -136,6 +154,13 @@ export class PanelFormAdapters {
     if (!slot) throw new Error("A form projection registers under the slot whose declaration names it");
     if (this.#bySlot.has(slot)) throw new Error(`Slot '${slot}' already holds a form`);
     this.#bySlot.set(slot, adapter);
+    // Row-attached forms have no top-level member receiver and mount per row under one slot name; when another row
+    // mounts after a previous row declined a held draft, re-offer the held draft to the newly mounted row form.
+    const held = this.#held.value;
+    if (held && !this.#receivers.has(slot)) {
+      held.offered.delete(slot);
+      held.declined.delete(slot);
+    }
     this.#offerNext();
     return () => this.#bySlot.delete(slot);
   }
@@ -176,10 +201,15 @@ export class PanelFormAdapters {
   }
 
   /** What a held draft is for — its object's type and its operation — once every one of these form slots declined it. */
-  unclaimed(formSlots: readonly string[]): UnclaimedDraft | null {
+  unclaimed(formSlots: readonly string[], hasRowDetail = false): UnclaimedDraft | null {
     void this.#declines.value;
     const held = this.#held.value;
-    return held !== null && held.current() && formSlots.every((slot) => held.declined.has(slot))
+    if (held === null || !held.current()) return null;
+    // A draft addressed to an embedded row (`itemKey`) waits for a `listRowDetail` form to mount for that row instead
+    // of reporting unclaimed as soon as top-level forms (or another expanded row) decline it.
+    if (held.draft.target.itemKey !== undefined && hasRowDetail) return null;
+    const candidates = new Set([...formSlots, ...this.#bySlot.keys()]);
+    return [...candidates].every((slot) => held.declined.has(slot))
       ? { objectType: held.draft.target.objectType, operation: held.draft.operation } : null;
   }
 
@@ -231,8 +261,13 @@ export class PanelFormAdapters {
       }
       if (changed === null) {
         held.offering = false;
-        held.declined.add(next);
-        this.#declines.value += 1;
+        if (mounted && this.#bySlot.get(next) !== receiver) {
+          held.offered.delete(next);
+          held.declined.delete(next);
+        } else {
+          held.declined.add(next);
+          this.#declines.value += 1;
+        }
         this.#offerNext();
         return;
       }
@@ -266,9 +301,34 @@ export class PanelFormAdapters {
     return this.#bySlot.get(slot)?.handle;
   }
 
-  /** Whether any registered form holds unsaved changes of the reader's. */
-  dirty(): boolean {
-    return [...this.#bySlot.values()].some((adapter) => adapter.dirty());
+  /**
+   * Whether registered forms hold unsaved changes: checks every registered form when `slots` is omitted, or only the
+   * named form slot(s) when provided.
+   */
+  dirty(slots?: string | readonly string[]): boolean {
+    if (slots === undefined) return [...this.#bySlot.values()].some((adapter) => adapter.dirty());
+    const list = typeof slots === "string" ? [slots] : slots;
+    return list.some((slot) => Boolean(this.#bySlot.get(slot)?.dirty()));
+  }
+
+  /**
+   * Drops unsaved edits on dirty registered forms (used once leaving unsaved changes has been confirmed). When `slots`
+   * is provided, only dirty forms among those slots are discarded so sibling forms on the same panel stay intact.
+   */
+  discardAll(slots?: readonly string[]): void {
+    if (slots === undefined) {
+      for (const adapter of this.#bySlot.values()) {
+        if (adapter.dirty()) adapter.discard();
+      }
+      return;
+    }
+    const seen = new Set<string>();
+    for (const slot of slots) {
+      if (seen.has(slot)) continue;
+      seen.add(slot);
+      const adapter = this.#bySlot.get(slot);
+      if (adapter?.dirty()) adapter.discard();
+    }
   }
 
   /** Saves what the form in a slot holds now. */
@@ -276,6 +336,21 @@ export class PanelFormAdapters {
     const adapter = this.#bySlot.get(slot);
     if (!adapter) throw new Error(`Slot '${slot}' holds no form`);
     return adapter.submit();
+  }
+
+  /** Drops unsaved edits in a slot's form, restoring its owner baseline. */
+  discard(slot: string): void {
+    this.#bySlot.get(slot)?.discard();
+  }
+
+  /**
+   * Resets a slot's form to its owner baseline, optionally asking the platform's discard confirmation first when
+   * `options.confirm` is `true`. Resolves `false` when the slot has no mounted form or the reader cancels.
+   */
+  reset(slot: string, options?: { confirm?: boolean }): Promise<boolean> {
+    const adapter = this.#bySlot.get(slot);
+    if (!adapter) return Promise.resolve(false);
+    return adapter.handle.reset(options);
   }
 }
 

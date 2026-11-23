@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {localizedApplicationText} from '@ontomato/contracts/application-metadata';
 import {productAssetInputSchema,productAssetSchema,productDefaultTexts,type ProductAsset} from '@ontomato/contracts/product-assets';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
 import {transaction} from '../../infrastructure/postgres-transaction';
@@ -66,11 +67,11 @@ export async function synchronizePlatformAssets(owner:ProductOwner,credentials:A
    if(app.entry.renderer==='panels')continue;
    const already=await client.query(`SELECT 1 FROM ${t('product_assets')} WHERE domain_id=$1 AND (id=$2 OR document->>'applicationId'=$2) LIMIT 1`,[owner.domainId,app.id]);if(already.rows.length)continue;
    const suffix=createHash('sha256').update(app.id).digest('hex').slice(0,24),pageId='platform-page-'+suffix,id='platform-application-'+suffix;
-   const name=app.names?.[credentials.locale??'']??app.names?.['zh-CN']??app.names?.en??app.id;
+   const name=localizedApplicationText(app.names,credentials.locale??'zh-CN')??app.id;
    const children=app.id==='agents'?agents.map(agent=>({assetId:'default-agent-profile-'+agent.id,column:'main'})):[];
    if(children.length)await insert(pageId,name+' · 页面',productDefaultTexts.platformPageDescription,{kind:'page',children});
    await client.query(`INSERT INTO ${t('product_native_application_bindings')}(domain_id,asset_id,application_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,[owner.domainId,id,app.id]);
-    await insert(id,name,app.descriptions?.[credentials.locale??'']??app.descriptions?.['zh-CN']??app.descriptions?.en??'',{kind:'application',applicationId:app.id,children:children.length?[{assetId:pageId,column:'main'}]:[]});
+    await insert(id,name,localizedApplicationText(app.descriptions,credentials.locale??'zh-CN')??'',{kind:'application',applicationId:app.id,children:children.length?[{assetId:pageId,column:'main'}]:[]});
   }
  });
   await synchronizeProductOntology(owner);

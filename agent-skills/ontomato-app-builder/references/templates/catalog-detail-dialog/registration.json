@@ -1,0 +1,53 @@
+{
+  "panels": [
+    {
+      "id": "app-template-catalog-detail",
+      "mode": "create",
+      "input": {
+        "name": "Agent Definition",
+        "description": "",
+        "visibility": "domain"
+      }
+    }
+  ],
+  "applications": [
+    {
+      "id": "app-template-catalog-detail",
+      "mode": "create",
+      "input": {
+        "entry": {
+          "path": "/applications/app-template-catalog-detail",
+          "renderer": "panels"
+        },
+        "entryAccess": [
+          "domain-member"
+        ],
+        "declaration": {
+          "names": {
+            "en": "Agent Definition"
+          },
+          "descriptions": {
+            "en": "Manage Agent Definition"
+          },
+          "icon": "app-window",
+          "groups": [],
+          "permissions": []
+        },
+        "panelUses": [
+          {
+            "id": "app-template-catalog-detail-use",
+            "pageKey": "app-template-catalog-detail",
+            "panelId": "app-template-catalog-detail",
+            "path": "/applications/app-template-catalog-detail/manage",
+            "access": {
+              "kind": "domain-member"
+            },
+            "names": {
+              "en": "Agent Definition"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

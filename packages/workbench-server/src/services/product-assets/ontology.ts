@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {localizedApplicationText} from '@ontomato/contracts/application-metadata';
 import {productDefaultTexts,type ProductAsset} from '@ontomato/contracts/product-assets';
 import {productGraph,productGraphSchema} from '@ontomato/contracts/product-graph';
 import {getPostgresPool,qualifiedTable as t} from '../../infrastructure/postgres';
@@ -102,7 +103,7 @@ async function resolveGraphNames(owner:ProductOwner,graph:ReturnType<typeof prod
       }
       else if(node.kind==='application'){
         const result=JSON.parse((await backendGet('product-graph-application',config.dataQuery.baseUrl+'/platform/applications/'+encodeURIComponent(raw),{headers,retries:1})).text);
-        const names=result.data?.names;name=names?.[credentials.locale??'']||names?.['zh-CN']||names?.en;
+        const names=result.data?.names;name=localizedApplicationText(names,credentials.locale??'zh-CN');
       }
       node.name=name||({role:productDefaultTexts.graphRoleUnavailable,principal:productDefaultTexts.graphPrincipalUnavailable,AgentDefinition:productDefaultTexts.graphNameUnavailable,metric:productDefaultTexts.graphMetricUnavailable,action:productDefaultTexts.graphActionUnavailable,definition:productDefaultTexts.graphDefinitionUnavailable,'object-type':productDefaultTexts.graphObjectTypeUnavailable,application:productDefaultTexts.graphApplicationUnavailable} as Record<string,string>)[node.kind]||productDefaultTexts.graphNameUnavailable;
     }catch{node.name=productDefaultTexts.graphNameUnavailable;}

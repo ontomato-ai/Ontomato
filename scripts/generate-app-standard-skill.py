@@ -24,6 +24,7 @@ def render_standard(text):
     body = re.sub(r"细则见\[第一版\][^\n]*\n", "\n", body)
     body = re.sub(r"\[([^\]]+)\]\((?!https?://)[^)]+\)", r"\1", body)
     body = re.sub(r"\[([^\]]+)\]\(https?://infohub\.eloyzh\.de/[^)]+\)", r"\1", body)
+    body = re.sub(r"\[([^\]]+)\]\(https?://git\.uino\.com/[^)]+\)", r"\1", body)
     return TITLE + body.rstrip() + "\n"
 
 

@@ -17,6 +17,12 @@ public class OwnerFieldRefusal extends OwnerRefusal {
     this.errors = List.of(FormFields.error(field, fieldCode, getMessage()));
   }
 
+  /** Multiple form field errors refused together in one save. */
+  public OwnerFieldRefusal(String code, List<ObjectNode> errors, String message) {
+    super(code, text(code, message));
+    this.errors = List.copyOf(errors);
+  }
+
   /** A field error always says why; a validator without a message leaves the refusal's code. */
   private static String text(String code, String message) {
     return message == null || message.isBlank() ? code : message;

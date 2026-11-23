@@ -32,9 +32,13 @@ async function withChannelServer(handler, body) {
   }
 }
 
-for (const name of ["ontomato-analyst", "ontomato-app-builder", "ontomato-ontomap-builder"]) {
-  const cli = path.join(repoRoot, "agent-skills", name, "ontomato.mjs");
-  const client = await import(`../agent-skills/${name}/client.mjs`);
+for (const [name, scriptDir] of [
+  ["ontomato-analyst", "."],
+  ["ontomato-app-builder", "scripts"],
+  ["ontomato-ontomap-builder", "."],
+]) {
+  const cli = path.join(repoRoot, "agent-skills", name, scriptDir, "ontomato.mjs");
+  const client = await import(`../agent-skills/${name}/${scriptDir === "." ? "" : `${scriptDir}/`}client.mjs`);
 
   test(`${name}: platform CLI routes agent commands to the current run channel without login or workspace`, async () => {
     const taskId = randomUUID(), runId = randomUUID(), sessionId = randomUUID();

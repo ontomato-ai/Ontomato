@@ -163,7 +163,7 @@ class MetricViewFormTest {
     OwnerRefusal refusal = assertThrows(OwnerRefusal.class, () -> form(objectTarget("missing")));
 
     assertEquals("METRIC_VIEW_NOT_FOUND", refusal.code());
-    assertEquals("MetricView not found", refusal.getMessage());
+    assertEquals("MetricView.notFound", refusal.getMessage());
   }
 
   @Test

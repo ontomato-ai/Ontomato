@@ -178,14 +178,12 @@ export const manifestP = definePanel({
     form: slot("projection-schedules-form", "task"),
     run: slot("projection-schedules-run", "task"),
   },
-  commands: {},
 });
 
 /** Panel Q's declaration (`q/declaration.mjs`): the summary and nothing of P. */
 export const manifestQ = definePanel({
   state: selectedTask,
   members: { summary: slot("projection-schedules-summary", "task") },
-  commands: {},
 });
 
 /** The old workspace sample version used by tests that still exercise that input. */
@@ -277,7 +275,7 @@ export const memberRefOf = (panelId: string) => ({
 export function pageSkillContextFor(panel: Pick<ProductPanel, "id">, request: Sent) {
   const query = new URLSearchParams(request.search);
   const applicationId = query.get("applicationId");
-  if (!applicationId) return undefined;
+  if (!applicationId || query.get("source") === "frame") return undefined;
   const pageKey = query.get("pageKey")!;
   const permissionCode = query.get("permissionCode");
   const locator = permissionCode ? { permissionCode, pageKey } : { access: "domain-member", pageKey };
@@ -559,7 +557,7 @@ export function draftScenario(operation = `${SCHEDULED_TASK}.save`) {
   const panel = panelRecord(
     "panel-schedules-form",
     "Task form (trial)",
-    definePanel({ state: selectedTask, members: { form: slot(formProjection.id, "task") }, commands: {} }),
+    definePanel({ state: selectedTask, members: { form: slot(formProjection.id, "task") } }),
   );
   const use = panelUse("use-trial-a-form", "panels-trial-a-form", panel.id, "/applications/app-panels-trial-a/form");
   // The operations application's form for the task, with a second case set to choose from.

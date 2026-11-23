@@ -41,11 +41,27 @@ const EDITION = join(HERE, "../../apps/workbench/web/src/sdk-edition.ts");
 /** Every directly rendered component's data names, and the read results each may hold. */
 const DECLARED_DATA = {
   ObjectList: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
+  ObjectCount: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
+  ObjectHeader: { record: ["panelRecord"] },
+  TypedValue: { record: ["panelRecord"], result: ["metricOutput"] },
+  RecordTemplate: { record: ["panelRecord"], result: ["metricOutput"] },
+  InfoBanner: { record: ["panelRecord"], result: ["metricOutput"] },
+  ObjectRefCard: { record: ["panelRecord"], result: ["metricOutput"] },
+  MetricCard: {
+    result: ["metricOutput"],
+    record: ["panelRecord"],
+    rows: ["panelRecordList", "panelRecordQuery"],
+    objects: ["panelOntologyObjects"],
+  },
   ObjectForm: { form: ["panelFormDescription"], createForm: ["panelFormDescription"] },
   OperationButton: {},
   FileUploadControl: {},
-  ReferencePicker: { options: ["panelOptionList"], selected: ["panelOptionList"] },
+  ReferencePicker: {
+    options: ["panelOptionList"],
+    selected: ["panelOptionList"],
+    rows: ["panelRecordList", "panelRecordQuery"],
+  },
   ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
   OntologyGraph: { schema: ["panelGraphSchema"], counts: ["panelGraphCounts"], start: ["panelGraphStart"], neighbors: ["panelGraphNeighbors"] },
   ObjectRelations: { neighbors: ["panelGraphNeighbors", "panelRelationNeighbors"] },
@@ -117,7 +133,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       json("panel/registration.json", { panels: [{ id: "example", mode: "create",
         input: { name: "Badge", description: "", visibility: "domain" } }] });
       const objectType = "platform:ScheduledTask";
-      json("panel/panel.json", { manifest: { state: {}, commands: {},
+      json("panel/panel.json", { manifest: { state: {},
         members: { badge: { component: badge.componentId, type: objectType,
           data: { rows: "list" }, config: { caption: "Ready" } } } } });
       write("panel/panel.html", '<div id="app"><projection slot="badge"></projection></div>');
@@ -126,7 +142,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         [objectType]: { reads: { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } },
           operations: [] },
       }, resultSchemas: { panelRecordList: { type: "array" } } });
-      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
+      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
       const checked = exec([cli, "panel", "check", "panel", "--sdk-dir", sdk, "--component-package", author, "--type-table", "types.json"]);
       assert.deepEqual(JSON.parse(checked), { status: "valid", version, unchecked: [] });
     });
@@ -138,8 +154,8 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       const editor = { component: "ObjectForm", type: "platform:MetricView", data: { createForm: "createForm" } };
       const trial = { component: "OperationButton", operation: "metricViews.test" };
       const descriptor = join(workspace, "panel.json");
-      const document = { manifest: { state: {}, commands: {}, members: { metricEditor: editor, preview: trial } } };
-      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
+      const document = { manifest: { state: {}, members: { metricEditor: editor, preview: trial } } };
+      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
       const check = () => execFileSync(process.execPath, [
         cli, "panel", "check", workspace, "--builtin", "--sdk-dir", join(out, version),
       ], { encoding: "utf8", stdio: "pipe" });
@@ -194,6 +210,13 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       listed: { kind: "list", items: { kind: "object", objectType: "@binding" } },
       search: { kind: "scalar", type: "string" },
     });
+    assert.equal(declared.get("ObjectCount").outputs, undefined, "ObjectCount is presentation-only");
+    assert.deepEqual(declared.get("ReferencePicker").outputs, {
+      selected: { kind: "object", objectType: "@binding" },
+    });
+    assert.equal(declared.get("ReferencePicker").data.options.required, false);
+    assert.equal(declared.get("ReferencePicker").data.selected.required, false);
+    assert.equal(declared.get("ReferencePicker").data.rows.required, false);
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
     // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
     const ontologyNode = { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] };
@@ -210,10 +233,42 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const listLayout = declared.get("ObjectList").config.find(prop => prop.name === "layout");
     assert.equal(listLayout?.required, false);
     assert.match(listLayout?.type ?? "", /cards/);
+    const formLayout = declared.get("ObjectForm").config.find(prop => prop.name === "layout");
+    assert.equal(formLayout?.required, false);
+    assert.match(formLayout?.type ?? "", /rows/);
+    const formActions = declared.get("ObjectForm").config.find(prop => prop.name === "actions");
+    assert.equal(formActions?.required, false);
+    assert.match(formActions?.type ?? "", /create-only/);
+    assert.doesNotMatch(formActions?.type ?? "", /header/);
+    const opLabel = declared.get("OperationButton").config.find(prop => prop.name === "label");
+    assert.equal(opLabel?.required, false);
+    assert.match(opLabel?.type ?? "", /string/);
+    assert.equal(declared.get("OperationButton").config.find(prop => prop.name === "placement"), undefined);
     const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitle-lines");
     assert.equal(subtitleLines?.required, false);
     assert.match(subtitleLines?.type ?? "", /number/);
     assert.match(subtitleLines?.description ?? "", /visible lines in a compact summary/);
+    const countItems = declared.get("ObjectCount").config.find(prop => prop.name === "items");
+    assert.equal(countItems?.required, false);
+    assert.match(countItems?.type ?? "", /ObjectCountItem/);
+    const metricCardItems = declared.get("MetricCard").config.find(prop => prop.name === "items");
+    assert.equal(metricCardItems?.required, false);
+    assert.match(metricCardItems?.type ?? "", /MetricCardItem/);
+    const formPresentation = declared.get("ObjectForm").config.find(prop => prop.name === "presentation");
+    assert.equal(formPresentation?.required, false);
+    assert.match(formPresentation?.type ?? "", /ObjectFormPresentation/);
+    const formGroups = declared.get("ObjectForm").config.find(prop => prop.name === "groups");
+    assert.equal(formGroups?.required, false);
+    assert.match(formGroups?.type ?? "", /ObjectFormGroup/);
+    assert.ok(declared.has("ObjectFormFields"), "ObjectFormFields is published in the catalogue");
+    const pickerPlaceholder = declared.get("ReferencePicker").config.find(prop => prop.name === "placeholder");
+    assert.equal(pickerPlaceholder?.required, false);
+    assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "clearable")?.required, false);
+    const summaryShowTitle = declared.get("ObjectSummary").config.find(prop => prop.name === "show-title");
+    assert.equal(summaryShowTitle?.required, false);
+    assert.match(summaryShowTitle?.type ?? "", /boolean/);
+    assert.equal(summaryShowTitle?.default, "true");
+    assert.match(summaryShowTitle?.description ?? "", /record\.label/);
     assert.deepEqual(declared.get("ObjectSummary").config, declared.get("ObjectSummary").ports.props);
     assert.equal(declared.get("MetricChart").config, undefined, "a component with no configuration declares none");
 

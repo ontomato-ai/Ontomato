@@ -40,6 +40,7 @@ class MetricViewSetStatusTest {
   private final FunctionDao functionDao = mock(FunctionDao.class);
   private final AdminService adminService = mock(AdminService.class);
   private final IdentityService identityService = mock(IdentityService.class);
+  private final LangService langService = mock(LangService.class);
   private final Map<String, MetricView> metrics = new LinkedHashMap<>();
 
   @BeforeEach
@@ -51,8 +52,10 @@ class MetricViewSetStatusTest {
     ReflectionTestUtils.setField(service, "functionDao", functionDao);
     ReflectionTestUtils.setField(service, "adminService", adminService);
     ReflectionTestUtils.setField(service, "identityService", identityService);
+    ReflectionTestUtils.setField(service, "langService", langService);
     ReflectionTestUtils.setField(service, "subjectValues",
         new SubjectValueResolver(mock(SubjectAttributeLookup.class)));
+    when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
     when(adminService.getJSONRule(anyString())).thenReturn(Map.of("classDef", List.of(
         JSONObject.of("className", "/Employee", "attrs", List.of(JSONObject.of("name", "salary"))))));
     when(identityService.getCurrentUserId()).thenReturn("reviewer");
@@ -125,7 +128,7 @@ class MetricViewSetStatusTest {
     assertEquals("METRIC_VIEW_WORKFLOW_PENDING", results.get(0).refusal().code());
     assertEquals("Edit the workflow to change its pending query", results.get(0).refusal().getMessage());
     assertEquals("METRIC_VIEW_NOT_FOUND", results.get(1).refusal().code());
-    assertEquals("MetricView not found", results.get(1).refusal().getMessage());
+    assertEquals("MetricView.notFound", results.get(1).refusal().getMessage());
   }
 
   @Test

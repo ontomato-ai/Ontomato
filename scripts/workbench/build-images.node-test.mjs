@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
-import { checkBuiltinPanelSource } from "../../agent-skills/ontomato-app-builder/panel-check.mjs";
+import { checkBuiltinPanelSource } from "../../agent-skills/ontomato-app-builder/scripts/panel-check.mjs";
 import { buildStamp, sampleSources } from "../build-support.mjs";
 import { buildWorkbenchImage, isFormalSdkRelease } from "./build-images.mjs";
 import { assembleAppStage, stageDirectory } from "./stage-app.mjs";
@@ -519,14 +519,9 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
   writeFileSync(join(panelFolder, "registration.json"), JSON.stringify(registration));
   const panelFile = join(panelFolder, "panel.json");
   const entryType = "platform:ApplicationPanelUse";
-  const openEntry = entry => ({ labelKey: "open", do: { open: { mode: "entry", entry } } });
   const manifest = {
     state: { selectedEntry: { type: { kind: "object", objectType: entryType } } },
     members: {},
-    commands: {
-      openCatalogue: openEntry({ literal: { className: entryType, primaryKey: "catalogue" } }),
-      openSelected: openEntry({ state: "selectedEntry" }),
-    },
   };
   writeFileSync(panelFile, JSON.stringify({ manifest }));
   writeFileSync(join(panelFolder, "panel.html"), '<div id="app"></div>');
@@ -575,12 +570,6 @@ test("the panel bundle contains the panels referenced by the built-in entry decl
       panelUses: [{ id: "teams", path: "/agents/teams", panelId: "builtin-product-teams" }],
     } }],
   }), /Built-in application agents, entry teams \(\/agents\/teams\), panel builtin-product-teams: panel is missing from the release/u);
-
-  manifest.commands.openCatalogue = openEntry({ literal: { className: entryType, primaryKey: "unshipped-entry" } });
-  writeFileSync(panelFile, JSON.stringify({ manifest }));
-  await assert.rejects(stageBuiltinPanels(options), {
-    message: `${panelFile}: manifest.commands.openCatalogue.do.open.entry: entry 'unshipped-entry' is missing from the release`,
-  });
 });
 
 test("every shipped builtin panel and application entry passes stageBuiltinPanels with real checks", (t) => {
@@ -595,7 +584,7 @@ test("every shipped builtin panel and application entry passes stageBuiltinPanel
     import { installContentLayout } from ${JSON.stringify(pathToFileURL(join(repoRoot, "packages/workbench-server/src/content/layout.ts")).href)};
     import { ossContentLayout } from ${JSON.stringify(pathToFileURL(join(repoRoot, "apps/workbench/src/content.ts")).href)};
     import { workbenchApplications } from ${JSON.stringify(pathToFileURL(join(repoRoot, "packages/workbench-server/src/services/applications/builtins.ts")).href)};
-    import { checkBuiltinPanelSource } from ${JSON.stringify(pathToFileURL(join(repoRoot, "agent-skills/ontomato-app-builder/panel-check.mjs")).href)};
+    import { checkBuiltinPanelSource } from ${JSON.stringify(pathToFileURL(join(repoRoot, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")).href)};
     import { javaBuiltinApplications, stageBuiltinPanels } from ${JSON.stringify(pathToFileURL(join(repoRoot, "scripts/workbench/builtin-panels.mjs")).href)};
 
     const root = ${JSON.stringify(repoRoot)};

@@ -39,6 +39,14 @@ const shown = computed(() => {
     code === control.value.primaryLocale || required.value.has(code) || Object.hasOwn(texts.value, code)
     || added.value.includes(code) || errorOf(code) !== undefined);
 });
+const primaryShown = computed(() =>
+  shown.value.filter((code) =>
+    code === control.value.primaryLocale || required.value.has(code) || added.value.includes(code) || errorOf(code) !== undefined),
+);
+const secondaryShown = computed(() =>
+  shown.value.filter((code) => !primaryShown.value.includes(code)),
+);
+const collapseSecondary = computed(() => secondaryShown.value.length > 1);
 const addable = computed(() => control.value.locales.filter((locale) => !shown.value.includes(locale.code)));
 
 function write(code: string, text: string) {
@@ -61,7 +69,7 @@ function remove(code: string) {
 
 <template>
   <div class="sdk-form-locales">
-    <div v-for="code in shown" :key="code" class="sdk-form-locale" :data-locale="code">
+    <div v-for="code in (collapseSecondary ? primaryShown : shown)" :key="code" class="sdk-form-locale" :data-locale="code">
       <span class="sdk-form-locale-label">{{ labelOf(code) }}<span v-if="required.has(code)" class="sdk-form-locale-required" aria-hidden="true"> *</span></span>
       <div class="sdk-form-locale-value">
         <el-input
@@ -82,6 +90,32 @@ function remove(code: string) {
         @click="remove(code)"
       >{{ t("platform.formRemove") }}</el-button>
     </div>
+    <details v-if="collapseSecondary" class="sdk-form-locale-others">
+      <summary>{{ t("platform.formOtherLanguages", { count: secondaryShown.length }) }}</summary>
+      <div class="sdk-form-locale-others-list">
+        <div v-for="code in secondaryShown" :key="code" class="sdk-form-locale" :data-locale="code">
+          <span class="sdk-form-locale-label">{{ labelOf(code) }}</span>
+          <div class="sdk-form-locale-value">
+            <el-input
+              :model-value="texts[code] ?? ''"
+              :type="control.multiline ? 'textarea' : 'text'"
+              :autosize="control.multiline ? { minRows: 2 } : undefined"
+              :maxlength="control.maxLength"
+              :disabled="disabled"
+              :aria-label="`${field.label} (${labelOf(code)})`"
+              @update:model-value="write(code, String($event))"
+            ></el-input>
+            <p v-if="errorOf(code)" role="alert" class="sdk-form-locale-error">{{ errorOf(code) }}</p>
+          </div>
+          <el-button
+            v-if="!disabled && !required.has(code)"
+            text
+            class="sdk-form-locale-remove"
+            @click="remove(code)"
+          >{{ t("platform.formRemove") }}</el-button>
+        </div>
+      </div>
+    </details>
     <el-select
       v-if="!disabled && addable.length"
       class="sdk-form-locale-add"
@@ -132,5 +166,20 @@ function remove(code: string) {
 .sdk-form-locale-add {
   width: 12rem;
   max-width: 100%;
+}
+.sdk-form-locale-others {
+  padding-top: var(--spacing-xs);
+}
+.sdk-form-locale-others summary {
+  color: var(--brand-link);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  user-select: none;
+}
+.sdk-form-locale-others-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
 }
 </style>

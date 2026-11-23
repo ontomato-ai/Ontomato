@@ -122,7 +122,6 @@ test("capability-map panel input, candidate files, and locale messages validate 
     );
     const enKeys = Object.keys(messages.en).sort();
     const zhKeys = Object.keys(messages["zh-CN"]).sort();
-    const commandLabelKeys = Object.values(parsedPanel.manifest.commands).map((command) => command.labelKey);
     const configLabelKeys = projections.flatMap(({ input: p }) => {
       const optionKeys = Array.isArray(p.config.options)
         ? p.config.options.map((opt) => opt?.labelKey)
@@ -139,7 +138,7 @@ test("capability-map panel input, candidate files, and locale messages validate 
       candidateMembers: Object.keys(candidate.panel.manifest.members).sort(),
       allMembersReferenceDeclaredProjections: referencedIds.every((id) => id !== null && projectionIds.has(id)),
       localesMatch: JSON.stringify(enKeys) === JSON.stringify(zhKeys),
-      allLabelKeysTranslated: [...commandLabelKeys, ...configLabelKeys].every(
+      allLabelKeysTranslated: configLabelKeys.every(
         (key) => Boolean(messages.en[key]) && Boolean(messages["zh-CN"][key]),
       ),
       selectedAcceptsOntologyType: matchesDirectPanelValue(parsedPanel.manifest.state.selected.type, {

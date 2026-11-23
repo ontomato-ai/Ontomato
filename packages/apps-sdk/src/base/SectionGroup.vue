@@ -35,6 +35,8 @@ const heading = useId();
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
+  min-width: 0;
+  min-height: 0;
 }
 .sdk-section-group + .sdk-section-group {
   border-block-start: 1px solid var(--ui-divider);

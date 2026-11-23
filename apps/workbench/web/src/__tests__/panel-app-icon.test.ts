@@ -12,7 +12,7 @@ import { noOperations, directRun } from "./panel-frame";
  * navigation draws, an unknown key the platform's fallback — never the key as text and never a copy of the platform's map.
  */
 
-const manifest: DirectPanelManifest = { state: {}, members: {}, commands: {} };
+const manifest: DirectPanelManifest = { state: {}, members: {} };
 
 afterEach(() => {
   document.body.innerHTML = "";

@@ -280,7 +280,7 @@ export const applicationPanelUseSchema = z.object({
   names: applicationMetadataSchema.shape.names.optional(),
   /** Optional page heading text, independent of whether the entry is in the menu. */
   descriptions: z.record(z.string().refine(text => text.trim().length > 0, "Expected a nonblank description"))
-    .refine(text => Object.hasOwn(text, "en"), "An English description is required").optional(),
+    .refine(text => Object.keys(text).length > 0, "At least one localized description is required").optional(),
   inputs: applicationPanelInputsSchema.optional(),
   /**
    * A menu count from the named data read on a member of this entry's content panel.
@@ -408,6 +408,17 @@ export const productPanelReadQuerySchema = z.union([
 export const productPanelSnapshotQuerySchema = productPanelReadQuerySchema;
 export type ProductPanelReadQuery = z.infer<typeof productPanelReadQuerySchema>;
 
+const includeProjectionsQuery = { includeProjections: z.literal("1").optional() };
+const [menuPanelReadQuery, domainMemberPanelReadQuery] = productPanelPageSkillContextQuerySchema.options;
+/** Panel record GET accepts the standard read query plus optional `includeProjections=1` bundling of fixed members. */
+export const productPanelGetQuerySchema = z.union([
+  z.object(includeProjectionsQuery).strict(),
+  menuPanelReadQuery.extend(includeProjectionsQuery).strict(),
+  domainMemberPanelReadQuery.extend(includeProjectionsQuery).strict(),
+  applicationFrameReadQuerySchema.extend(includeProjectionsQuery).strict(),
+]);
+export type ProductPanelGetQuery = z.infer<typeof productPanelGetQuerySchema>;
+
 /** The source card owner creates chart projections; ordinary updates may only edit chart metadata. */
 export const registerProductProjectionRequestSchema = z.union([
   ordinaryProjectionDefinition.extend({ revision: z.number().int().nonnegative() }).superRefine(validateDirectProjection),
@@ -424,6 +435,7 @@ export type ProductProjectionResponse = z.infer<typeof productProjectionResponse
 export const productProjectionRenderResponseSchema = productProjectionResponseSchema.extend({
   domainComponent: domainComponentRuntimeSchema.optional(),
 });
+export type ProductProjectionRenderResponse = z.infer<typeof productProjectionRenderResponseSchema>;
 
 /**
  * Source registration accepts only the card identity. The owner authorizes the source and derives the binding,
@@ -458,9 +470,28 @@ export const registerProductPanelRequestSchema = productPanelInputSchema.extend(
 });
 export type RegisterProductPanelRequest = z.infer<typeof registerProductPanelRequestSchema>;
 
+/**
+ * One fixed projection member bundled into a panel record read (`?includeProjections=1`): either the authorized render
+ * payload, or a per-member 403/404 isolation state so one unavailable member does not fail the whole panel read.
+ */
+export const bundledPanelProjectionSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ready"),
+    projection: currentProjectionRecordSchema,
+    domainComponent: domainComponentRuntimeSchema.optional(),
+  }).strict(),
+  z.object({
+    status: z.literal("unavailable"),
+    httpStatus: z.union([z.literal(403), z.literal(404)]),
+    message: z.string(),
+  }).strict(),
+]);
+export type BundledPanelProjection = z.infer<typeof bundledPanelProjectionSchema>;
+
 export const productPanelResponseSchema = z.object({
   panel: currentPanelRecordSchema,
   pageSkillContext: pageSkillContextSchema.optional(),
+  projections: z.record(id, bundledPanelProjectionSchema).optional(),
 }).strict();
 export type ProductPanelResponse = z.infer<typeof productPanelResponseSchema>;
 
@@ -493,6 +524,8 @@ export type ProductProjectionSummary = z.infer<typeof productProjectionSummarySc
 
 const productCataloguePageSchema = z.object({
   nextCursor: productCatalogCursorSchema.nullable(),
+  /** Total visible items matching the query filters, ignoring pagination cursor and page limit. */
+  total: z.number().int().nonnegative().optional(),
 }).strict();
 export const productPanelListResponseSchema = productCataloguePageSchema.extend({
   items: z.array(productPanelSummarySchema),
@@ -567,6 +600,10 @@ export const registerApplicationPanelUsesRequestSchema = z.object({
   /** Required when creating an application; omitted updates retain existing metadata and entry access. */
   declaration: applicationMetadataSchema.optional(),
   entryAccess: z.array(id).min(1).optional(),
+  /** Optional initial domain sharing intent when creating an application. */
+  shared: z.boolean().optional(),
+  /** Whether the application allows standalone open (`standalone=1`) and exposes an external link; defaults to true. */
+  allowStandalone: z.boolean().optional(),
   ...applicationEntrySettings,
 }).strict();
 export type RegisterApplicationPanelUsesRequest = z.infer<typeof registerApplicationPanelUsesRequestSchema>;
@@ -583,6 +620,7 @@ export type ApplicationPanelUsesResponse = z.infer<typeof applicationPanelUsesRe
 export const applicationPanelUsesManagementSchema = applicationPanelUsesResponseSchema.extend({
   declaration: applicationMetadataSchema,
   entryAccess: z.array(id).min(1),
+  allowStandalone: z.boolean().optional(),
   ...applicationEntrySettings,
 });
 export type ApplicationPanelUsesManagement = z.infer<typeof applicationPanelUsesManagementSchema>;

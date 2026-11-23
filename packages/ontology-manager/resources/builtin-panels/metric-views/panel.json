@@ -139,24 +139,6 @@
         "description": "用正在编辑的定义试跑，返回原始 JSON 结果及截断提示。",
         "id": "builtin-product-7832c137-74da-4234-9789-7873351308d0"
       }
-    },
-    "commands": {
-      "newMetric": {
-        "labelKey": "metricViews.new",
-        "primary": true,
-        "do": {
-          "set": {
-            "fields": {
-              "selected": {
-                "literal": null
-              },
-              "creating": {
-                "literal": true
-              }
-            }
-          }
-        }
-      }
     }
   },
   "content": {

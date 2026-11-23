@@ -4,10 +4,9 @@ import { computed, readonly, shallowReactive, shallowRef, type ComputedRef, type
 import type { PageContext, PageHighlight } from "@ontomato/contracts/page-context";
 import {
   panelOpenRequestSchema, panelOperationId, type PanelDeepLinkStateValue, type PanelManifest, type PanelMemberPath, type PanelOperationCall,
-  type PanelStateValue,
+  type PanelOperationRowContext, type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { createPanelCommands } from "./commands";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import {
   childObjectNameKey, createPanelState, objectNameKey, panelSelection, stateObject, stateObjects, type PanelInitialState, type PanelObjectRef,
@@ -24,6 +23,7 @@ import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/a
 import type { PanelHumanOperationPreparation } from "@ontomato/contracts/panel-agent";
 import type { PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescriptor, PanelReadCall, PanelWriteInvocation } from "./human-operations";
+import { isListAttachedPanelMember } from "./row-member";
 
 /*
  * One panel instance's runtime (overall design 3.4): its state, the projections it registered, the operations it offers,
@@ -65,6 +65,14 @@ export interface PanelInstanceOptions {
 
 /** A path that names at least one member: a nested publisher's, as the platform finds its operations by. */
 export type PublisherPath = [PanelMemberPath[number], ...PanelMemberPath];
+
+/** Explicit overrides for write operations (`memberPath` carrying `itemKey`, host `rowContext`, and lifecycle hooks). */
+export interface PanelWriteOperationOptions {
+  memberPath?: PanelMemberPath;
+  rowContext?: PanelOperationRowContext;
+  /** Called right after confirmation passes (or immediately when no confirmation is required), before dispatch begins. */
+  onConfirmed?: () => void;
+}
 
 /** What a panel placed in one of an instance's members publishes into it: its operations, its unsaved changes. */
 export interface NestedPublisher {
@@ -130,13 +138,22 @@ export interface PanelInstance {
    * port, not from here. A cancelled confirmation writes nothing. With the answer come the targets the owner named
    * when it prepared the write (each by its own label, as the confirmation shows them), for a receipt to name them too.
    */
-  writeOperation(operationId: string, invocation: PanelWriteInvocation): Promise<PanelWriteResult>;
+  writeOperation(
+    operationId: string,
+    invocation: PanelWriteInvocation,
+    writeOptions?: PanelWriteOperationOptions,
+  ): Promise<PanelWriteResult>;
   objectChanged(object: PanelObjectIdentity): void;
   /**
    * Lets go of objects a write removed: a state holding one is cleared, a list state drops it, so nothing keeps choosing
    * or reading what is no longer there.
    */
   letGo(removed: readonly PanelObjectIdentity[]): void;
+  /**
+   * Anything this panel shows may have changed: every datum it shows is read again, as the page header's refresh reads
+   * it, and every component that reads its own data is told so. The page's own code calls it to keep what it shows
+   * current (polling while a run goes on); an operation's reported changes need no call.
+   */
   refreshObjects(): void;
   onObjectChanged(listener: (object: PanelObjectIdentity | null) => void): () => void;
   /** Reads a projection record by ID, as the reader. */
@@ -209,21 +226,24 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   function operationPath(operationId: string): PanelMemberPath | undefined {
     return operations.value.find((operation) => operation.id === operationId)?.memberPath;
   }
-  async function writeOperation(operationId: string, invocation: PanelWriteInvocation) {
+  async function writeOperation(
+    operationId: string,
+    invocation: PanelWriteInvocation,
+    writeOptions?: PanelWriteOperationOptions,
+  ) {
     // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
     // write does, and is read again from there; the receipt itself rereads nothing.
-    const preparation = await options.operations.prepare(operationId, invocation, operationPath(operationId));
-    return { ...await options.confirmOperation(preparation), named: namedTargets(preparation.confirmation) };
+    const path = writeOptions?.memberPath ?? operationPath(operationId);
+    const preparation = writeOptions?.rowContext !== undefined
+      ? await options.operations.prepare(operationId, invocation, path, writeOptions.rowContext)
+      : await options.operations.prepare(operationId, invocation, path);
+    const confirmed = writeOptions?.onConfirmed
+      ? await options.confirmOperation(preparation, { onConfirmed: writeOptions.onConfirmed })
+      : await options.confirmOperation(preparation);
+    return { ...confirmed, named: namedTargets(preparation.confirmation) };
   }
-  const commands = createPanelCommands(manifest, {
-    state,
-    invokeMember: (member, operation, input) => invoke(operationIdOf(member, operation), input),
-    // Another member placed in a mode and an application entry are a later stage's; this release opens neither.
-    open: (request) => Promise.reject(new Error(`This SDK release opens no ${request.mode === "entry" ? "application entry" : "member"} from a command`)),
-    text: options.text,
-  });
   const operations = computed<PanelOperationBinding[]>(() => [
-    ...panelOperations(manifest, registrations.value, state, forms, commands, writeOperation,
+    ...panelOperations(manifest, registrations.value, state, forms, writeOperation,
       (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
       (member, name) => ({ id: operationIdOf(member, name), memberPath: publisherPath(member) })),
     // A placed panel's operations are published under their own full paths and run by that panel.
@@ -241,7 +261,11 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     if (!found) throw new Error(`The panel offers no operation '${id}'`);
     return found.invoke(input);
   }
-  const forms = new PanelFormAdapters(options.reportDraftError, Object.keys(manifest.members));
+  const topLevelMemberKeys = Object.entries(manifest.members)
+    .filter(([, member]) => !isListAttachedPanelMember(member))
+    .map(([memberKey]) => memberKey);
+  const hasRowDetailMembers = Object.values(manifest.members).some((member) => member.listRowDetail !== undefined);
+  const forms = new PanelFormAdapters(options.reportDraftError, topLevelMemberKeys);
   const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const names = shallowReactive(new Map<string, string>());
   const highlights = shallowReactive(new Map<string, Readonly<Ref<PageHighlight | null>>>());
@@ -291,9 +315,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     unclaimedDraft: computed(() => {
       const registered = registrations.value;
-      if (!Object.keys(manifest.members).every((member) => registered.some((registration) => registration.slot === member))) return null;
+      if (!topLevelMemberKeys.every((member) => registered.some((registration) => registration.slot === member))) return null;
       const formSlots = registered.filter((registration) => registration.takesDrafts).map((registration) => registration.slot);
-      return forms.unclaimed(formSlots);
+      return forms.unclaimed(formSlots, hasRowDetailMembers);
     }),
     projections: readonly(registrations),
     register(registration) {

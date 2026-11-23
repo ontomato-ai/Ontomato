@@ -1,4 +1,5 @@
 <script setup lang="ts" generic="T">
+import { computed } from "vue";
 import { ElButton } from "element-plus/es/components/button/index";
 import { ElSkeleton } from "element-plus/es/components/skeleton/index";
 import type { DataStateLabels, DataStateResult } from "./types";
@@ -8,16 +9,29 @@ import type { DataStateLabels, DataStateResult } from "./types";
  * through the default slot once it is ready, and otherwise loading, the owner's empty answer, the reason it could not be
  * read, no permission, or that a selection is needed first. An empty answer is never shown for a read not made. It is a
  * small quiet icon and one line, never a large illustration; a read the reader narrowed that found nothing says that
- * nothing matches (a magnifier), apart from one with nothing in it at all (an empty tray).
+ * nothing matches (a magnifier) and offers to clear filters when supplied, apart from one with nothing in it at all (an
+ * empty tray, with an optional hint), or an access refusal (a lock, showing the owner's reason when supplied).
  */
-defineProps<{
+const props = defineProps<{
   result: DataStateResult<T>;
   labels: DataStateLabels;
+  /** Optional secondary hint shown beneath the empty message when `result` is un-narrowed `empty`. */
+  emptyHint?: string;
 }>();
 defineSlots<{
   /** The datum's value, once the owner answered with one. */
   default(props: { value: T }): unknown;
 }>();
+
+const emptyHintText = computed(() => {
+  if (props.result.status !== "empty" || props.result.narrowed) return "";
+  return (props.result.emptyHint ?? props.emptyHint ?? props.labels.emptyHint ?? "").trim();
+});
+
+const forbiddenText = computed(() => {
+  if (props.result.status !== "forbidden") return "";
+  return props.result.reason?.trim() || props.labels.forbidden;
+});
 </script>
 
 <template>
@@ -43,8 +57,28 @@ defineSlots<{
       <template v-if="result.narrowed"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4M8.5 8.5l5 5M13.5 8.5l-5 5"></path></template>
       <template v-else><path d="M3 13h5l1.5 3h5L16 13h5"></path><path d="M5.5 5.5 3 13v5a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-5l-2.5-7.5a1 1 0 0 0-.95-.7H6.45a1 1 0 0 0-.95.7Z"></path></template>
     </svg>
-    <p>{{ result.narrowed ? labels.noMatch : labels.empty }}</p>
+    <p class="fui-data-state-message">{{ result.narrowed ? labels.noMatch : labels.empty }}</p>
+    <p v-if="emptyHintText" class="fui-data-state-hint">{{ emptyHintText }}</p>
+    <el-button
+      v-if="result.narrowed && result.clearFilters"
+      class="fui-data-state-clear"
+      text
+      type="primary"
+      size="small"
+      @click="result.clearFilters()"
+    >
+      {{ labels.clearFilters ?? "Clear filters" }}
+    </el-button>
   </div>
+  <div
+    v-else-if="result.status === 'forbidden'"
+    class="fui-data-state fui-data-state-forbidden"
+    data-state="forbidden"
+    role="status"
+  ><svg
+    class="fui-data-state-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+  ><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg><p class="fui-data-state-message">{{ forbiddenText }}</p></div>
   <p v-else class="fui-data-state" :data-state="result.status" role="status">{{ labels[result.status] }}</p>
 </template>
 
@@ -65,7 +99,8 @@ defineSlots<{
 .fui-data-state-error p {
   margin: 0;
 }
-.fui-data-state-empty {
+.fui-data-state-empty,
+.fui-data-state-forbidden {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -73,8 +108,13 @@ defineSlots<{
   padding: var(--spacing-xl, 24px) var(--spacing-md, 12px);
   text-align: center;
 }
-.fui-data-state-empty p {
+.fui-data-state-empty p,
+.fui-data-state-forbidden p {
   margin: 0;
+}
+.fui-data-state-hint {
+  color: var(--el-text-color-placeholder);
+  font-size: var(--text-xs, 12px);
 }
 /* Low weight: the icon says "nothing here" without drawing the eye. */
 .fui-data-state-icon {

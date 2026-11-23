@@ -21,6 +21,11 @@ export interface PlatformApp {
    * new tab itself. Either `href` or `open`, like the platform navigation's links.
    */
   open?: () => void;
+  /**
+   * External link URL (`?standalone=1`) for opening this application directly in a standalone tab from the expanded
+   * rail; absent when standalone open is disabled or for external-link applications.
+   */
+  standaloneHref?: string;
   /** Declared but not built yet; shown disabled with this hint rather than hidden. */
   unavailableHint?: string;
 }
@@ -68,6 +73,33 @@ export interface PlatformPanelGroup {
   pages: readonly PlatformPanelPage[];
 }
 
+/** Icon shown beside an application menu row: a curated platform icon key or a Vue component. */
+export type AppMenuIcon = PlatformIcon;
+
+/** One entry in an application menu column. */
+export interface AppMenuItem {
+  /** Stable identifier of the entry (typically its route path). */
+  id: string;
+  /** Localized display label shown on the row. */
+  label: string;
+  /** Optional icon key from the platform's curated icon set or a Vue icon component. */
+  icon?: AppMenuIcon;
+  /** Optional directory count shown right-aligned; null or undefined hides the badge. */
+  count?: number | null;
+  /** When set, renders the row disabled with this tooltip hint instead of clickable. */
+  unavailableHint?: string;
+}
+
+/** A group of entries in an application menu column; omit `label` for an untitled section. */
+export interface AppMenuGroup {
+  /** Stable group key. */
+  key: string;
+  /** Optional section heading shown above the group's entries. */
+  label?: string;
+  /** Entries in display order. */
+  items: readonly AppMenuItem[];
+}
+
 /** Fixed text the shell draws; the host supplies it from its own i18n. */
 /**
  * The edition's brand: its name, and its mark as an image when it has one, with a version for the dark theme when the
@@ -108,6 +140,8 @@ export interface PlatformShellLabels {
   signOut: string;
   /** Accessible name of the mark on rows that open in a new tab; without it the mark is decorative. */
   opensInNewTab?: string;
+  /** Accessible name and tooltip of the expanded-rail button that opens an application in a standalone tab. */
+  openStandalone?: string;
   /** The application panel's navigation landmark. */
   pages: string;
   /** The page header's own actions: shown only for a page that hands over a draft. */

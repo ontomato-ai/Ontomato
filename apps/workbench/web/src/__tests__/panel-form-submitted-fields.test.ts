@@ -79,7 +79,6 @@ const manifest = definePanel({
     definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
     skills: { target: { projectionId: "agent-skills" }, inputs: {}, formField: { slot: "definition", path: "/skills" } },
   },
-  commands: {},
 });
 const panel = panelRecord("panel-submitted", "Agents", manifest);
 const use = panelUse("use-submitted", "submitted", panel.id, "/ontology/agents");

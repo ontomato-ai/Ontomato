@@ -33,7 +33,6 @@ const removeAll: ProductProjection = {
 const manifest = definePanel({
   state: { checked: { type: { kind: "list", items: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } } },
   members: { removeAll: { target: { projectionId: removeAll.id }, inputs: { selection: { state: "checked" } } } },
-  commands: {},
 });
 const deleteKnowledge = {
   kind: "action", handlerRef: DELETE_KNOWLEDGE, label: "Delete", effect: "write", target: { source: "input", input: "selection" },

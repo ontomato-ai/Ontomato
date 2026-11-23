@@ -26,11 +26,4 @@ export default {
     executor: { target: { projectionId: "agent-executor-choice" }, formField: field("/executionUserId") },
     scope: { target: { projectionId: "agent-data-scope" }, formField: field("/classNames") },
   },
-  // Creating an agent is a change of this instance's own state; the form's owner then supplies the new agent's defaults.
-  commands: {
-    newAgent: {
-      labelKey: "agents.creating",
-      do: { set: { fields: { selectedAgent: { literal: null }, mode: { literal: "create" } } } },
-    },
-  },
 };

@@ -39,6 +39,7 @@ public class ApplicationCatalogUpgrade implements InitializingBean {
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS panel_uses jsonb NOT NULL DEFAULT '[]'::jsonb;
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS declaration_permissions jsonb NOT NULL DEFAULT '[]'::jsonb;
             ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS panel_settings jsonb NOT NULL DEFAULT '{}'::jsonb;
+            ALTER TABLE sys_application ADD COLUMN IF NOT EXISTS allow_standalone boolean NOT NULL DEFAULT true;
             """);
         db.execute("""
             UPDATE sys_application AS app SET panel_uses = (

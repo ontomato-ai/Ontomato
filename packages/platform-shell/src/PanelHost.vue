@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { productPanelDisplayName } from "@ontomato/contracts/product-panels";
 import { usePanelInstance, type PanelHostLabels, type PanelHostPort } from "./panel-host";
-import { RefreshCw, X as CloseIcon } from "lucide-vue-next";
+import { X as CloseIcon } from "lucide-vue-next";
 import { ElAlert, ElButton } from "element-plus";
-import { usePageActions, type PlatformPageAction } from "./page-actions";
+import { confirmDanger } from "./confirm-danger";
+import { createPanelBackController } from "./panel-back";
+import { useOptionalLeaveConfirmation } from "./unsaved-changes";
 
 /**
  * One panel instance, shown full screen, beside a conversation or inside another application, or as an author's candidate
@@ -48,6 +50,8 @@ const props = withDefaults(defineProps<{
   wired?: readonly string[];
   /** When this is an application's frame: the entry it shows, its menu and where that entry's page goes. */
   currentEntry?: import("./panel-host").DirectPanelRun["currentEntry"];
+  /** Current application frame state when this content panel runs under a frame panel. */
+  frameState?: Readonly<Record<string, unknown>>;
   /**
    * Hands why the linked draft could not be used back to the agent, as the sentence for the page's composer. Absent where
    * the page has no composer (an author's preview): the notice then offers only leaving the draft.
@@ -58,7 +62,23 @@ const props = withDefaults(defineProps<{
    * draft (its address, state and forms). Absent, the instance's address only drops the draft's link.
    */
   leaveDraft?: () => void;
-}>(), { shown: true, wired: () => [], currentEntry: undefined, draftToAgent: undefined, leaveDraft: undefined });
+  /**
+   * Whether panel-local back handlers with `pushHistory: true` may push browser history entries. True at full page and
+   * candidate preview; false beside a conversation or for a custom application frame panel.
+   */
+  historyBack?: boolean;
+  /** Optional override for confirming unsaved-change leave outside an enclosing platform shell. */
+  confirmLeave?: () => Promise<boolean>;
+}>(), {
+  shown: true,
+  wired: () => [],
+  currentEntry: undefined,
+  frameState: undefined,
+  draftToAgent: undefined,
+  leaveDraft: undefined,
+  historyBack: true,
+  confirmLeave: undefined,
+});
 const emit = defineEmits<{
   /** What a message from this instance carries now. */
   context: [context: import("@ontomato/contracts/page-context").PageContext];
@@ -71,6 +91,47 @@ const emit = defineEmits<{
   /** Shown again, the page is no longer its application's: its use relation was withdrawn or bound elsewhere. */
   withdrawn: [];
 }>();
+
+const shellLeave = useOptionalLeaveConfirmation();
+let localLeaveConfirmed = false;
+let localLeavePending: Promise<boolean> | null = null;
+let localLeaveToken = 0;
+
+function confirmLeaveUnsaved(): Promise<boolean> {
+  if (!view.dirty.value) return Promise.resolve(true);
+  if (!props.confirmLeave && shellLeave) return shellLeave.confirm();
+  if (localLeaveConfirmed) return Promise.resolve(true);
+  if (localLeavePending) return localLeavePending;
+  const ask = props.confirmLeave ?? (() => confirmDanger("Leave without saving?", "Unsaved changes"));
+  localLeavePending = ask().then(
+    (ok) => {
+      localLeavePending = null;
+      if (ok) {
+        localLeaveConfirmed = true;
+        const token = ++localLeaveToken;
+        void nextTick()
+          .then(() => nextTick())
+          .then(() => {
+            if (localLeaveToken === token) localLeaveConfirmed = false;
+          });
+      }
+      return ok;
+    },
+    () => {
+      localLeavePending = null;
+      return false;
+    },
+  );
+  return localLeavePending;
+}
+
+const backController = createPanelBackController({
+  active: () => props.shown,
+  allowHistory: () => props.historyBack,
+  isDirty: () => view.dirty.value,
+  confirmLeaveUnsaved,
+});
+onBeforeUnmount(() => backController.dispose());
 
 const view = usePanelInstance(props.port, {
   labels: props.labels,
@@ -85,7 +146,11 @@ const view = usePanelInstance(props.port, {
   reopened: () => emit("reopened"),
   withdrawn: () => emit("withdrawn"),
   currentEntry: props.currentEntry,
+  frameState: () => props.frameState as Readonly<Record<string, import("@ontomato/contracts/agent-runtime-values").RuntimeJsonValue>> | undefined,
+  registerBackHandler: backController.register,
+  confirmLeaveUnsaved,
 });
+watch(() => [props.address, props.initial, view.address.value], () => backController.syncHistorySnapshot(), { flush: "post" });
 const frame = ref<HTMLIFrameElement | null>(null);
 /** Where the panel goes in the page: the element its own component is mounted in, placed once. */
 /** The reader closes the notice: the page goes on as it does without the draft. */
@@ -118,9 +183,6 @@ watch(view.address, (address) => emit("display-address", { kind: "state", addres
 watch(view.displayLoad, (load) => emit("display-loaded", load));
 watch(view.dirty, (dirty) => emit("display-dirty", dirty), { flush: "sync", immediate: true });
 
-// The instance's operations reach the header like any page's: one description, one handler, for a person and an agent.
-// A click reaches the frame, which runs it with the person's own credential; the state the operation targets decides
-// whether it can run at all.
 const operations = computed(() =>
   view.operations.value.map((operation) => ({
     ...operation,
@@ -128,37 +190,8 @@ const operations = computed(() =>
     invoke: (input?: Readonly<Record<string, unknown>>) => view.invoke(operation.id, input),
   })),
 );
-/**
- * The page's commands, drawn where its title is (big main's ruling, 2026-11-21): the host's refresh — the panel's shown
- * data read again, the reader's unsaved edits kept — when the panel has members that read anything, then the panel's
- * declared commands in their order, the one it marks primary as the main action. A member's operations (a row's delete,
- * a form's save) stay where the panel draws them; a placed panel's commands are its own page's, not this one's.
- */
-const commands = computed<PlatformPageAction[]>(() => {
-  const shown = view.source.value;
-  if (!shown) return [];
-  const refresh: PlatformPageAction[] = Object.keys(shown.panel.manifest.members).length
-    ? [{ id: "refresh", label: props.labels.refresh, icon: RefreshCw, iconOnly: true, onClick: () => view.refresh(null) }]
-    : [];
-  // A command setting a field this entry gives the panel would be undone at once: the entry's value stands.
-  const setsWired = (id: string) => {
-    const action = shown.panel.manifest.commands[id]?.do;
-    return Boolean(action && "set" in action && Object.keys(action.set.fields).some((field) => props.wired.includes(field)));
-  };
-  const shortcuts = view.operations.value
-    .filter((operation) => operation.kind === "state" && !operation.memberPath && !setsWired(operation.id))
-    .map((operation): PlatformPageAction => ({
-      id: operation.id,
-      label: operation.label,
-      // The one command the panel marks primary is the page's main action; an operation's ID here is its command's key.
-      primary: shown.panel.manifest.commands[operation.id]?.primary === true,
-      onClick: () => void view.invoke(operation.id),
-    }));
-  return [...refresh, ...shortcuts];
-});
-usePageActions(() => (props.shown && view.source.value ? { actions: commands.value } : null));
 
-defineExpose({ ...view, operations, commands });
+defineExpose({ ...view, operations });
 </script>
 
 <template>
@@ -181,6 +214,15 @@ defineExpose({ ...view, operations, commands });
     <p v-if="!view.error.value && view.draftOpening.value && view.admitted.value" role="status" class="panel-host-draft-opening">
       {{ labels.draft.opening }}
     </p>
+    <!-- A host notice stands above the content box so the box height adjusts around it and never scrolls the notice. -->
+    <p
+      v-if="!view.error.value && view.direct.value && view.notice.value"
+      v-show="view.admitted.value && !view.draftOpening.value"
+      role="status"
+      class="panel-host-notice"
+    >
+      {{ view.notice.value }}
+    </p>
     <!-- Drawn while Java's answer is coming, so its members read at once; shown only once that answer names the page. -->
     <div
       v-if="!view.error.value && view.direct.value"
@@ -188,7 +230,6 @@ defineExpose({ ...view, operations, commands });
       class="panel-host-direct"
       :data-panel-instance="view.instance"
     >
-      <p v-if="view.notice.value" role="status" class="panel-host-notice">{{ view.notice.value }}</p>
       <div :ref="placeCoded" class="panel-host-coded" />
     </div>
     <iframe
@@ -207,24 +248,30 @@ defineExpose({ ...view, operations, commands });
   display: flex;
   flex: 1;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
   min-width: 0;
 }
 .panel-host-title {
-  padding: 4px 12px;
+  flex-shrink: 0;
+  padding: 4px var(--spacing-md, 12px);
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .panel-host-error {
-  padding: 12px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: var(--spacing-md, 12px);
   color: var(--el-color-danger);
 }
 .panel-host-notice {
-  margin: 0 0 var(--spacing-sm, 8px);
+  flex-shrink: 0;
+  margin: var(--spacing-sm, 8px) var(--spacing-md, 12px) 0;
   color: var(--el-color-warning);
   font-size: 12px;
 }
 .panel-host-draft-opening {
+  flex-shrink: 0;
   margin: 0;
   padding: var(--spacing-md, 12px);
   color: var(--el-text-color-secondary);
@@ -276,9 +323,32 @@ defineExpose({ ...view, operations, commands });
   width: 100%;
 }
 .panel-host-direct {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: auto;
-  padding: var(--spacing-md, 12px);
+  box-sizing: border-box;
+}
+/* Transparent to layout so the mounted `#app` element sits directly inside the definite-height content box. */
+.panel-host-coded {
+  display: contents;
+}
+</style>
+
+<style>
+/*
+ * A bare `#app` mount wrapper (carrying neither class nor style) is transparent to layout so the panel's own root
+ * element sits directly inside the definite-height content box. Direct flex items of `.panel-host-direct` default to
+ * `flex-shrink: 0` at zero specificity so flow-down panels never collapse and fill panels (`height: 100%` or `flex: 1`)
+ * take over cleanly without inheriting a forced flex direction or height from the host.
+ */
+:where(.panel-host-direct > .panel-host-coded > [data-panel-bare-root]) {
+  display: contents;
+}
+:where(.panel-host-direct > .panel-host-coded > *),
+:where(.panel-host-direct > .panel-host-coded > [data-panel-bare-root] > *) {
+  flex-shrink: 0;
 }
 </style>

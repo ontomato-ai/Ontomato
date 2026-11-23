@@ -187,11 +187,14 @@ function onKeydown(event: KeyboardEvent, currentIndex: number) {
 /* A segmented choice on a quiet neutral track; the chosen segment is a stronger neutral fill (DESIGN.md). */
 .sdk-segmented-control {
   align-items: center;
+  align-self: flex-start;
   background: var(--ui-fill-tertiary);
   border-radius: var(--radius-md);
+  box-sizing: border-box;
   display: inline-flex;
   gap: calc(var(--spacing-xs) / 2);
-  padding: calc(var(--spacing-xs) / 2);
+  min-height: var(--control-height);
+  padding: 3px;
 }
 .sdk-segmented-option {
   align-items: center;

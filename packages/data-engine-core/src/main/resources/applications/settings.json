@@ -16,6 +16,7 @@
     "mcp-service"
   ],
   "scheduleAdapter": null,
+  "allowStandalone": false,
   "declaration": {
     "names": {
       "en": "System settings",

@@ -1,4 +1,4 @@
-import { inject, onBeforeUnmount, provide, type InjectionKey } from "vue";
+import { inject, nextTick, onBeforeUnmount, provide, type InjectionKey } from "vue";
 
 /**
  * Leaving a draft with unsaved changes asks first (DESIGN.md "Page architecture"). Each page keeps its own draft; what
@@ -44,28 +44,51 @@ const unsavedChangesKey: InjectionKey<UnsavedChangesRegistry> = Symbol("platform
  */
 export function provideUnsavedChanges(ask: () => Promise<boolean>): UnsavedChangesCheck {
   const entries = new Set<UnsavedChanges>();
-  /** The reader has just confirmed leaving: the navigation that follows goes without a second question. */
+  /** The reader has just confirmed leaving: follow-up checks in the same leave turn pass without a second question. */
   let confirmed = false;
+  let pending: Promise<boolean> | null = null;
+  let confirmToken = 0;
   const dirty = () => [...entries].filter((entry) => entry.dirty());
   const leaves = (path: string) => dirty().some((entry) => !entry.paths().includes(path));
+  function confirm(): Promise<boolean> {
+    if (confirmed) return Promise.resolve(true);
+    if (pending) return pending;
+    pending = ask().then(
+      (ok) => {
+        pending = null;
+        if (ok) {
+          confirmed = true;
+          const token = ++confirmToken;
+          // Keep the confirmation valid across synchronous + reactive + router microtasks of this leave turn, then
+          // reset automatically so later edits on the same page are never silently skipped.
+          void nextTick()
+            .then(() => nextTick())
+            .then(() => {
+              if (confirmToken === token) confirmed = false;
+            });
+        }
+        return ok;
+      },
+      () => {
+        pending = null;
+        return false;
+      },
+    );
+    return pending;
+  }
   provide(unsavedChangesKey, {
     add(entry) {
       entries.add(entry);
       return () => entries.delete(entry);
     },
     leaves,
-    async confirm() {
-      confirmed = await ask();
-      return confirmed;
-    },
+    confirm,
   });
   return {
     async allows(path) {
-      if (confirmed) {
-        confirmed = false;
-        return true;
-      }
-      return !leaves(path) || ask();
+      if (!leaves(path)) return true;
+      if (confirmed) return true;
+      return confirm();
     },
     dirty: () => dirty().length > 0,
   };
@@ -79,7 +102,12 @@ export function useUnsavedChanges(entry: UnsavedChanges) {
   onBeforeUnmount(remove);
 }
 
+/** The frame's question when one is provided by an enclosing shell; null outside a shell. */
+export function useOptionalLeaveConfirmation(): LeaveConfirmation | null {
+  return inject(unsavedChangesKey, null);
+}
+
 /** The frame's question for an application that changes what it shows ahead of the address; outside a frame, none. */
 export function useLeaveConfirmation(): LeaveConfirmation {
-  return inject(unsavedChangesKey, null) ?? { leaves: () => false, confirm: async () => true };
+  return useOptionalLeaveConfirmation() ?? { leaves: () => false, confirm: async () => true };
 }

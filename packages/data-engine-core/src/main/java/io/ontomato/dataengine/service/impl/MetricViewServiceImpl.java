@@ -227,7 +227,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       metricViewDao.lock(metric.getId(), domain);
       previous = queryById(metric.getId(), domain);
       if (previous == null && (kind != WriteKind.IMPORT || metricViewDao.exists(metric.getId())))
-        throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+        throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
       if (previous != null && MetricView.ORIGIN_SYSTEM.equals(previous.getOrigin()))
         throw new OwnerRefusal("METRIC_VIEW_SYSTEM", "Cannot modify a system MetricView");
     }
@@ -397,7 +397,7 @@ public class MetricViewServiceImpl implements MetricViewService {
   @Override
   public void delete(String id, String domainId, String lang) {
     MetricView metric = queryById(id, domainId);
-    if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+    if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
     OwnerRefusal refusal = systemDeletionRefusal(metric, lang);
     if (refusal != null) throw refusal;
     metricViewDao.delete(id, domainId);
@@ -406,7 +406,7 @@ public class MetricViewServiceImpl implements MetricViewService {
   @Override
   public String systemDeletionRefusal(String id, String domainId, String lang) {
     MetricView metric = queryById(id, domainId);
-    if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+    if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
     OwnerRefusal refusal = systemDeletionRefusal(metric, lang);
     return refusal == null ? null : refusal.getMessage();
   }
@@ -491,7 +491,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       if (primaryKey == null || primaryKey.isBlank())
         throw new IllegalArgumentException("target.primaryKey: expected a metric id");
       metric = queryById(primaryKey, domainId);
-      if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+      if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
       existing = true;
     } else if ("draft".equals(kind)) {
       metric = MetricViewForm.defaults().to(MetricView.class);
@@ -534,7 +534,7 @@ public class MetricViewServiceImpl implements MetricViewService {
       try {
         MetricView saved = new TransactionTemplate(transactionManager).execute(transaction -> {
           MetricView metric = queryById(id, domainId);
-          if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+          if (metric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
           metric.setStatus(status);
           return persist(metric, WriteKind.SAVE, lang);
         });
@@ -596,7 +596,7 @@ public class MetricViewServiceImpl implements MetricViewService {
     @Override
     public MetricViewContent test(MetricView metricView,String lang,User user,UserDataPermission permission,int timeoutMinutes,ExecutionTarget target) throws Exception {
         metricView = validateDraftDomain(metricView, user.getDomainId(),
-            metricView.getId() == null ? null : queryById(metricView.getId(), user.getDomainId()));
+            metricView.getId() == null ? null : queryById(metricView.getId(), user.getDomainId()), lang);
         if (metricView.isWorkflowPending()) {
             var result = executePending(metricView, null, new JSONObject(), lang, user, permission, target);
             return generateContent((JSONArray)result[0], (PythonExecuteResult)result[1], metricView.getName(), metricView, lang);
@@ -697,13 +697,13 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     MetricView stored = null;
     if (metric.getId() != null) {
       stored = queryById(metric.getId(), user.getDomainId());
-      if (stored == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+      if (stored == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
       if (!executable(stored, user))
         throw new OwnerRefusal("METRIC_VIEW_NOT_EXECUTABLE", "Executable read metric not found");
     } else if (!executable(metric, user)) {
       throw new OwnerRefusal("METRIC_VIEW_NOT_EXECUTABLE", "Executable read metric not found");
     }
-    metric = validateDraftDomain(metric, user.getDomainId(), stored);
+    metric = validateDraftDomain(metric, user.getDomainId(), stored, lang);
     if (metric.isWorkflowPending()) return executePending(metric, bindingId, param, lang, user, permission, target);
     QueryPackage.prepareReadFunction(metric.getFunction(),
         (List<Map<String, Object>>) adminService.getJSONRule(user.getDomainId()).get("classDef"));
@@ -720,9 +720,9 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     return new Object[]{result.rows(), result.execution()};
   }
 
-  private MetricView validateDraftDomain(MetricView metric, String domain, MetricView storedMetric) {
+  private MetricView validateDraftDomain(MetricView metric, String domain, MetricView storedMetric, String lang) {
     if (metric.getId() != null) {
-      if (storedMetric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+      if (storedMetric == null) throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
       if (storedMetric.isWorkflowPending()) return storedMetric;
       Set<String> ids = new HashSet<>();
       for (var binding : storedMetric.getBindings()) ids.add(binding.getId());
@@ -732,7 +732,7 @@ private MetricViewContent generateContent(JSONArray rows, PythonExecuteResult ex
     }
     if (metric.isWorkflowPending()) throw new IllegalArgumentException("Published workflow metric required");
     if (metric.getDomainId() != null && !domain.equals(metric.getDomainId()))
-      throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", "MetricView not found");
+      throw new OwnerRefusal("METRIC_VIEW_NOT_FOUND", langService.get(lang, "MetricView.notFound"));
     Function function = Objects.requireNonNull(metric.getFunction(), "Function is required");
     if (!Function.OPERATION_READ.equals(function.getOperation()))
       throw new OwnerRefusal("METRIC_VIEW_FUNCTION_INVALID", "MetricView requires a read Function");

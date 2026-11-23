@@ -19,6 +19,9 @@ import { fieldAt, valueAt } from "./form-values";
 import { projectionElement } from "./projection-element";
 import type { PanelReadPort } from "./direct";
 import type { PanelText } from "./text";
+import type { AppMenuGroup, PanelBackHandlerRegistration } from "@ontomato/platform-shell";
+
+export type { PanelBackHandlerRegistration };
 
 /*
  * The panel context the SDK provides to a panel's own module (overall design 3.3, 3.4): the panel's declaration, the
@@ -60,6 +63,8 @@ export interface PanelContext {
    */
   readonly currentEntry: ComputedRef<CurrentApplicationEntry | null>;
   readonly entryMenu: ComputedRef<ApplicationEntryMenu | null>;
+  /** Optional host-supplied menu groups for hybrid built-in applications mixing panel entries and native pages. */
+  readonly hostMenu?: ComputedRef<readonly AppMenuGroup[] | null>;
   /** The projection record a slot's declaration names, read now from its owner. */
   projection(id: string): Promise<ProductProjection>;
   /** Runs one operation of this instance here, with the reader's own credential and the call it is given. */
@@ -104,6 +109,16 @@ export interface PanelContext {
    * owner's answer out. In a frame it goes over the frame's request path; the host fills in which panel it is.
    */
   readPanelData: PanelReadPort;
+  /**
+   * Registers a panel-local back/close step (LIFO) with the host so browser Back (when `pushHistory: true`) and Escape
+   * (when no dialog/drawer/dropdown is open) run `onBack` after the host's unified unsaved-changes guard passes.
+   */
+  registerBackHandler?: (registration: PanelBackHandlerRegistration) => () => void;
+  /**
+   * Unified host confirmation for leaving unsaved edits (danger confirm button, Cancel focused by default). Resolves
+   * `true` immediately when the panel has no unsaved changes or the reader confirms leaving; asks at most once per turn.
+   */
+  confirmLeaveUnsaved?: () => Promise<boolean>;
 }
 
 /**

@@ -28,7 +28,7 @@ async function workspace(t, messages) {
   const directory = await mkdtemp(join(tmpdir(), "ontomato-entry-key-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(join(directory, "panel.json"), JSON.stringify({
-    manifest: { state: {}, members: { create: { target: { projectionId: entryProjection.id } } }, commands: {} },
+    manifest: { state: {}, members: { create: { target: { projectionId: entryProjection.id } } } },
     content: { messages },
   }));
   await writeFile(join(directory, "panel.html"), '<div id="app"><projection slot="create"></projection></div>');
@@ -40,7 +40,7 @@ async function workspace(t, messages) {
 async function check(directory, prefillKey = entryProjection.conversationEntry.prefillKey) {
   const program = `
     import * as checks from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/panel-check.ts")).href)};
-    import { checkPanelWorkspace } from ${JSON.stringify(pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/panel-check.mjs")).href)};
+    import { checkPanelWorkspace } from ${JSON.stringify(pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")).href)};
     const catalogue = { version: ${JSON.stringify(version)}, components: [{ componentId: "ConversationEntry", data: {} }] };
     const projection = ${JSON.stringify({
       ...entryProjection, conversationEntry: { ...entryProjection.conversationEntry, prefillKey },
@@ -71,7 +71,7 @@ test("a reused projection's opening-sentence key must be in each language the pl
 async function checkBuiltin(directory) {
   const program = `
     import * as checks from ${JSON.stringify(pathToFileURL(join(ROOT, "packages/contracts/src/panel-check.ts")).href)};
-    import { checkBuiltinPanelSource } from ${JSON.stringify(pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/panel-check.mjs")).href)};
+    import { checkBuiltinPanelSource } from ${JSON.stringify(pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")).href)};
     console.log(JSON.stringify(await checkBuiltinPanelSource(${JSON.stringify(directory)}, checks)));`;
   return run(process.execPath, ["--import", "./packages/contracts/node_modules/tsx/dist/loader.mjs", "--input-type=module", "-e", program], { cwd: ROOT });
 }
@@ -82,7 +82,7 @@ async function builtin(messages) {
     panels: [{ id: "builtin-product-entry-key-panel", mode: "create", input: { name: "Actions", description: "", visibility: "domain" } }],
   }));
   await writeFile(join(directory, "panel.json"), JSON.stringify({
-    manifest: { state: {}, commands: {}, members: {
+    manifest: { state: {}, members: {
       create: { id: "builtin-product-entry-key-entry", component: "ConversationEntry", agent: "page-default", prefillKey: "actions.newPrefill" },
     } },
     content: { messages },

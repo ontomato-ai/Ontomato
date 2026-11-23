@@ -33,7 +33,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { task: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { task: { state: "task" } } } },
-  commands: {},
 };
 const field = (path: string, label: string, control: Record<string, unknown>) =>
   ({ path, label, control, valueSchema: {}, required: true, readOnly: false });

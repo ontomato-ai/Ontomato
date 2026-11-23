@@ -10,7 +10,7 @@ for (const [command, option] of [
   for (const value of ["abc", "Infinity", ""]) {
     test(`${command[0]} rejects ${JSON.stringify(value)} before HTTP (retired operations stay unavailable)`, () => {
       const result = spawnSync(process.execPath, [
-        "agent-skills/ontomato-app-builder/ontomato.mjs", ...command, option, value,
+        "agent-skills/ontomato-app-builder/scripts/ontomato.mjs", ...command, option, value,
       ], {
         encoding: "utf8",
         env: { ...process.env, ONTOMATO_URL: "http://127.0.0.1:1", ONTOMATO_API_KEY: "test-only" },
@@ -29,7 +29,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { analystCommand } from "../agent-skills/ontomato-analyst/client.mjs";
-import { panelRegistrationClient } from "../agent-skills/ontomato-app-builder/panel-registration.mjs";
+import { panelRegistrationClient } from "../agent-skills/ontomato-app-builder/scripts/panel-registration.mjs";
 
 test("deletes a panel by ID without loading its obsolete definition", async () => {
   const received = [];
@@ -72,7 +72,7 @@ test("skill Action execution preserves complete explicit parameters and owner er
       : { success: false, message: "Missing parameter: optional" }));
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-  const run = parameters => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/ontomato.mjs", "action", "execute", "test", JSON.stringify(parameters)], {
+  const run = parameters => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/scripts/ontomato.mjs", "action", "execute", "test", JSON.stringify(parameters)], {
     env: { ...process.env, ONTOMATO_URL: `http://127.0.0.1:${server.address().port}`, ONTOMATO_API_KEY: "test-only", ONTOMATO_WORKSPACE_ID:"11111111-1111-4111-8111-111111111111" },
   });
   try {
@@ -91,7 +91,7 @@ for(const command of ["status","stop"]) {
     });
     await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
     try {
-      const result=await promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/ontomato.mjs","test",command],{
+      const result=await promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/scripts/ontomato.mjs","test",command],{
         env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only",ONTOMATO_WORKSPACE_ID:"11111111-1111-4111-8111-111111111111"},
       });
       assert.deepEqual(JSON.parse(result.stdout),{workspaceId:"11111111-1111-4111-8111-111111111111",contextId:null,status:"NONE"});
@@ -110,7 +110,7 @@ test("agent dispatch carries build-test context and preserves the entry-point re
   });
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
   try {
-    await assert.rejects(promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/ontomato.mjs","agent","list"],{
+    await assert.rejects(promisify(execFile)(process.execPath,["agent-skills/ontomato-app-builder/scripts/ontomato.mjs","agent","list"],{
       env:{...process.env,ONTOMATO_URL:`http://127.0.0.1:${server.address().port}`,ONTOMATO_API_KEY:"test-only",ONTOMATO_WORKSPACE_ID:"11111111-1111-4111-8111-111111111111"},
     }),error=>error.stderr.includes("Agent commands are unavailable in build tests"));
     assert.equal(paths.length,2);assert.ok(paths[1].endsWith("/platform/agent-channel/commands"));
@@ -127,7 +127,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       module: 'import {mountPanel} from "@ontomato/sdk/panel"; await mountPanel({});',
       messages: { en: { "settings.title": "Settings for {name}" } },
     },
-    manifest: { members: {}, state: {}, commands: {} },
+    manifest: { members: {}, state: {} },
   };
   const source = {
     kind: "candidate", workspace: { id: workspaceId, ref }, panel,
@@ -381,7 +381,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const directory = await mkdtemp(join(tmpdir(), "ontomato-panel-check-"));
-  const run = (...args) => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/ontomato.mjs", ...args], {
+  const run = (...args) => promisify(execFile)(process.execPath, ["agent-skills/ontomato-app-builder/scripts/ontomato.mjs", ...args], {
     env: { ...process.env, ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base + "/owner",
       ONTOMATO_API_KEY: "author-key", ONTOMATO_WORKSPACE_ID: workspaceId },
   });
@@ -442,7 +442,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     })), error => error.stderr.includes("409 Revision conflict"));
     assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url]) => url), [panelPath]);
 
-    const manifest = { members: { tasks: { target: { projectionId: "tasks" } } }, state: {}, commands: {} };
+    const manifest = { members: { tasks: { target: { projectionId: "tasks" } } }, state: {} };
     await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
     const layout = join(directory, "panel.html");
     const tasksTemplate = '<div id="app"><projection slot="tasks"></projection></div>';
@@ -567,10 +567,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
     requests.length = 0;
     const draft = join(directory, "manager");
-    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-example-agent-management", "--operation", "platform:AgentDefinition.save");
-    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/app-example-agent-management/manage");
+    const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-template-catalog-detail", "--operation", "platform:AgentDefinition.save");
+    assert.equal(JSON.parse(scaffold.stdout).entry, "/applications/app-template-catalog-detail/manage");
     for (const name of ["panel.html", "panel.mjs", "panel.json", "registration.json"]) {
-      const sample = await readFile(join("agent-skills/ontomato-app-builder/examples/agent-management", name), "utf8");
+      const sample = await readFile(join("agent-skills/ontomato-app-builder/references/templates/catalog-detail-dialog", name), "utf8");
       assert.equal(await readFile(join(draft, name), "utf8"), sample);
     }
     assert.deepEqual(requests.map(([method, url]) => [method, url]), [
@@ -590,7 +590,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(reviewManifest.members.tabs.data.counts, { read: "counts", params: { by: { literal: "status" } } });
     assert.equal(reviewManifest.members.tabs.state.value, "status");
     assert.equal(reviewManifest.members.detail.state.search, "search");
-    assert.deepEqual(reviewManifest.members.action1, { component: "OperationButton", operation: "reviews.approve", target: "selected" });
+    assert.deepEqual(reviewManifest.members.action1, {
+      component: "OperationButton", operation: "reviews.approve", target: "selected",
+    });
     assert.deepEqual(reviewManifest.members.batch2, { component: "OperationButton", operation: "reviews.approve", target: "checked" });
     const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
     assert(reviewLayout.indexOf('slot="batch2"') < reviewLayout.indexOf('slot="list"'));
@@ -740,7 +742,6 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const chartPanel = JSON.stringify({ manifest: {
       state: { window: { type: { kind: "scalar", type: "string" } } },
       members: { chart: { component: "MetricChart", sourceCard: chartSource, state: { range: "window" } } },
-      commands: {},
     } });
     await writeFile(descriptor, chartPanel);
     await writeFile(layout, '<div id="app"><projection slot="chart"></projection></div>');
@@ -813,7 +814,7 @@ test("App Builder Action generation tests and adopts the actual definition befor
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
     const result = await promisify(execFile)(process.execPath, [
-      "agent-skills/ontomato-app-builder/ontomato.mjs", "action", "generate", "--save", "--sample",
+      "agent-skills/ontomato-app-builder/scripts/ontomato.mjs", "action", "generate", "--save", "--sample",
       JSON.stringify(sample), JSON.stringify(definition),
     ], {
       env: { ...process.env, ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_RUN_ID: runId,
@@ -858,7 +859,7 @@ test("standalone MetricView authoring closes its window when a bound query packa
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
     await assert.rejects(promisify(execFile)(process.execPath, [
-      "agent-skills/ontomato-app-builder/ontomato.mjs", "metric-view", "generate", "--save",
+      "agent-skills/ontomato-app-builder/scripts/ontomato.mjs", "metric-view", "generate", "--save",
       "--workspace", "workspace", JSON.stringify(definition),
     ], { env: { ...process.env, ONTOMATO_SKILL_SCENARIO: "external", ONTOMATO_RUN_ID: "",
       ONTOMATO_AUTHORING_URL: "", ONTOMATO_EXECUTION_CALLBACK: "", ONTOMATO_WORKBENCH_URL: base,

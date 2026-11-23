@@ -1,3 +1,4 @@
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import { displayLoadSchema, PANEL_LOAD_ERROR_CODES, type DisplayLoad } from "@ontomato/contracts/agent-presentation";
 import type { PanelDefinitionSnapshot, ProductDefinitionRevision, ProductDefinitionTarget } from "@ontomato/contracts/product-subscriptions";
 import { inject, onScopeDispose, shallowRef, watch, type InjectionKey, type Ref, type ShallowRef } from "vue";
@@ -22,6 +23,7 @@ import type { PanelOperationAffected } from "@ontomato/contracts/panel-operation
 import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
 import type { PanelDefinitionContent, ProductPanel } from "@ontomato/contracts/product-panels";
+import type { PanelBackHandlerRegistration } from "./panel-back";
 
 /** An instance's deep-linkable state as the host carries it: what the host message hands the frame. */
 export type PanelHostState = PanelHostMessage["state"];
@@ -76,6 +78,11 @@ export interface PanelHostPort<Source extends HostedPanelSource = HostedPanelSou
    */
   coded(source: Source, run: DirectPanelRun, target: CodedPanelTarget): Promise<DirectPanelMount>;
   snapshot(panelId: string): Promise<PanelDefinitionSnapshot>;
+  /**
+   * Whether the latest `source()` call already verified access and reconciled revisions against a server snapshot
+   * before returning, so initial `load()` does not issue a duplicate snapshot immediately after mounting.
+   */
+  sourceReconciled?(): boolean;
   /**
    * Whether the use relation this host opens is still the application's, bound to the same panel: what a kept page is
    * checked against when it is shown again. A candidate has no relation to check.
@@ -150,9 +157,23 @@ export interface DirectPanelRun {
     readonly entry: Readonly<Ref<CurrentApplicationEntry>>;
     /** The resolution's menu (its groups and the reader's visible entries), the same answer that admitted the entry. */
     readonly menu: Readonly<Ref<ApplicationEntryMenu>>;
+    /**
+     * Optional host-supplied menu groups for hybrid built-in applications that still mix panel entries and native pages
+     * inside one menu; absent for pure panel applications, which read `menu` directly.
+     */
+    readonly hostMenu?: Readonly<Ref<readonly import("./types").AppMenuGroup[] | null>>;
     /** Puts the content instance the host admitted and runs into `element`; never a new one. */
     place(element: HTMLElement): { dispose(): void };
   };
+  /**
+   * Current application frame state for content panels rendered inside a framed application (or beside a conversation
+   * with a `frame` segment in the address). Forwarded in `rowContext.frameState` for row-scoped operations.
+   */
+  frameState?: () => Readonly<Record<string, RuntimeJsonValue>> | undefined;
+  /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
+  registerBackHandler?: (registration: PanelBackHandlerRegistration) => () => void;
+  /** Unified host confirmation for leaving unsaved edits (danger confirm button, Cancel focused by default). */
+  confirmLeaveUnsaved?: () => Promise<boolean>;
 }
 
 /** A started panel instance, as its host drives it. */
@@ -161,8 +182,8 @@ export interface DirectPanelMount {
   address(url: string): void;
   /** Objects it may show changed: it reads again what it shows of them. */
   refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected): void;
-  /** Projections it places have newer definitions: it reads them again. */
-  projectionsChanged(projections: readonly { id: string; revision: number }[]): void;
+  /** Projections it places have newer definitions or changed access: it reads them again. */
+  projectionsChanged(projections: readonly { id: string; revision?: number }[]): void;
   /** Whether its reads may run: not while its page is out of the reader's view. */
   activate(active: boolean): void;
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
@@ -283,6 +304,9 @@ export function codedPanelTarget(html: string): CodedPanelTarget & { css: string
   const { template, rootAttributes, css } = splitCodedPanelHtml(html);
   const element = globalThis.document.createElement("div");
   for (const [name, value] of Object.entries(rootAttributes)) element.setAttribute(name, value);
+  // A bare `#app` mount wrapper (neither class nor inline style) is transparent to layout so the panel's own root
+  // sits directly inside the definite-height content box.
+  if (!("class" in rootAttributes) && !("style" in rootAttributes)) element.dataset.panelBareRoot = "";
   return { element, template, css };
 }
 
@@ -311,6 +335,12 @@ export interface PanelInstanceOptions {
   withdrawn?: () => void;
   /** For an application's frame panel: the entry shown in it, the menu and where the entry's page goes. */
   currentEntry?: DirectPanelRun["currentEntry"];
+  /** Current application frame state for content panels inside a framed application entry. */
+  frameState?: DirectPanelRun["frameState"];
+  /** Registers a panel-local back/close step (LIFO) with the host's history and Escape coordinator. */
+  registerBackHandler?: DirectPanelRun["registerBackHandler"];
+  /** Unified host confirmation for leaving unsaved edits. */
+  confirmLeaveUnsaved?: DirectPanelRun["confirmLeaveUnsaved"];
 }
 
 /** What a failure is called in the panel's error place: its own message, or what it was, verbatim. */
@@ -361,12 +391,15 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** Whether the instance runs: its frame reported its first state, or its direct instance started. */
   let frameReady = false;
   let frameAddress = "";
+  let pendingDirectAddress: string | null = null;
   let registration: PanelFrameRegistration | undefined;
   /** Whether the frame may ask the platform for anything: not while its page is kept out of view, nor until it is checked. */
   let bridgeOpen = true;
   let active = true;
   let author: ReturnType<Extract<PanelDefinitionMode, { kind: "author" }>["definitions"]["observe"]> | undefined;
   const pending = new Map<string, ProductDefinitionRevision>();
+  /** Fixed projections reported `forbidden` by the latest snapshot: forced re-read so revoked grants show immediately. */
+  const pendingForbiddenProjections = new Set<string>();
   /** A candidate read again whose definition differs from the one shown; it waits like a changed record does. */
   let pendingCandidate: HostedPanelSource | null = null;
   let pendingObjectRefresh = false;
@@ -409,8 +442,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       admitted.value = true;
       if (port.mode.kind === "author") follow(read);
       // A viewer's panel is reconciled with a short read; the frame does not wait for it.
-      else if (read.kind === "registered")
-        void port.snapshot(read.panel.id).then(snapshot => { if (active) return advance([{ kind: "panel", ...snapshot.panel }]); })
+      else if (read.kind === "registered" && !port.sourceReconciled?.())
+        void port.snapshot(read.panel.id).then(snapshot => { if (active) return reconcileSnapshot(snapshot); })
           .catch(failure => { if (active) reportPanelUnavailable(failure); });
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
@@ -482,6 +515,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     mount.activate(bridgeOpen);
     direct.value = { element, mount };
+    if (pendingDirectAddress !== null) {
+      const nextAddress = pendingDirectAddress;
+      pendingDirectAddress = null;
+      mount.address(nextAddress);
+    }
   }
 
   /**
@@ -499,6 +537,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     state.value = requested;
     address.value = requestedAddress;
     frameAddress = requestedAddress;
+    pendingDirectAddress = null;
     frameReady = false;
     displayLoad.value = loading;
     return true;
@@ -536,6 +575,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       draftOpened: () => (draftOpening.value = false),
       failed: reason => reportFrameFailure({ code: PANEL_LOAD_ERROR_CODES.scriptThrew, message: failureText(reason) }),
       ...(options.currentEntry ? { currentEntry: options.currentEntry } : {}),
+      ...(options.frameState ? { frameState: options.frameState } : {}),
+      ...(options.registerBackHandler ? { registerBackHandler: options.registerBackHandler } : {}),
+      ...(options.confirmLeaveUnsaved ? { confirmLeaveUnsaved: options.confirmLeaveUnsaved } : {}),
     };
   }
 
@@ -582,7 +624,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   /** The instance holds unsaved changes, or no longer does: a definition change waits for them. */
   function reportDirty(now: boolean) {
     dirty.value = now;
-    if (!now && (pending.size || pendingCandidate)) void applyPending();
+    if (!now && (pending.size || pendingForbiddenProjections.size || pendingCandidate)) void applyPending();
   }
 
   function snapshotRevisions(snapshot: PanelDefinitionSnapshot): ProductDefinitionRevision[] {
@@ -590,6 +632,20 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       { kind: "panel", ...snapshot.panel },
       ...snapshot.projections.map(projection => ({ kind: "projection" as const, ...projection })),
     ];
+  }
+
+  function reconcileSnapshot(snapshot: PanelDefinitionSnapshot) {
+    const shown = source.value;
+    if (shown && snapshot.members) {
+      for (const member of snapshot.members) {
+        if (member.status !== "forbidden" || member.memberPath.length !== 1) continue;
+        const declaration = shown.panel.manifest.members[member.memberPath[0]!.member];
+        if (declaration && "projectionId" in declaration.target) {
+          pendingForbiddenProjections.add(declaration.target.projectionId);
+        }
+      }
+    }
+    return advance(snapshotRevisions(snapshot));
   }
 
   /** A registered panel and its projections; a candidate has no panel record, only the registered projections it names. */
@@ -630,17 +686,30 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
           const next = { ...shown, panel: record } as HostedPanelSource;
           await adopt(next);
           author?.replace(targetsOf(next));
-          return;
+          if (!active || !frameReady || dirty.value || source.value !== next) return;
         }
       }
-      const projectionIds = new Set(projectionIdsOf(shown));
-      const projections = [...pending.values()]
-        .filter(revision => revision.kind === "projection" && projectionIds.has(revision.id))
-        .map(({ id, revision }) => ({ id, revision }));
+      const current = source.value;
+      if (!current) return;
+      const projectionIds = new Set(projectionIdsOf(current));
+      const directProjections = new Map<string, { id: string; revision?: number }>();
+      for (const revision of pending.values()) {
+        if (revision.kind === "projection" && projectionIds.has(revision.id)) {
+          directProjections.set(revision.id, { id: revision.id, revision: revision.revision });
+        }
+      }
+      for (const id of pendingForbiddenProjections) {
+        if (projectionIds.has(id)) directProjections.set(id, { id });
+      }
       pending.clear();
+      pendingForbiddenProjections.clear();
+      const projections = [...directProjections.values()];
       if (!projections.length) return;
       if (direct.value) direct.value.mount.projectionsChanged(projections);
-      else post({ kind: "projections-changed", projections });
+      else {
+        const frameProjections = projections.filter((p): p is { id: string; revision: number } => p.revision !== undefined);
+        if (frameProjections.length) post({ kind: "projections-changed", projections: frameProjections });
+      }
     }).catch(failure => { if (active) reportPanelUnavailable(failure); });
     return applying;
   }
@@ -649,7 +718,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   async function restore(shown: Extract<HostedPanelSource, { kind: "registered" }>) {
     try {
       const snapshot = await port.snapshot(shown.panel.id);
-      if (active) await advance(snapshotRevisions(snapshot));
+      if (active) await reconcileSnapshot(snapshot);
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
     }
@@ -727,7 +796,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       options.reopened?.();
       follow(shown);
       refresh(null);
-      if (snapshot) await advance(snapshotRevisions(snapshot));
+      if (snapshot) await reconcileSnapshot(snapshot);
     } catch (failure) {
       if (active) reportPanelUnavailable(failure);
     }
@@ -800,7 +869,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     frameAddress = next;
     address.value = next;
     if (direct.value) direct.value.mount.address(next);
-    else post({ kind: "address", address: next });
+    else if (document.value) post({ kind: "address", address: next });
+    else pendingDirectAddress = next;
   }
 
   function reportFrameFailure(failure: NonNullable<DisplayLoad["error"]>) {

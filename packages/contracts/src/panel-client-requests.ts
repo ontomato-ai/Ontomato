@@ -5,8 +5,8 @@ import { platformSchedulesPath } from "./platform-schedules";
 import {
   DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION,
   METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
-  USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
-  RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
+  TRIGGER, WORKFLOW, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
+  RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
   IMPORT_SKILL, EXPORT_SKILL, EXPORT_FEEDBACK, DELETE_METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_METRIC_VIEW,
   TEST_EXECUTE_METRIC_VIEW, DELETE_FUNCTION,
 } from "./platform-object-types";
@@ -14,8 +14,8 @@ import {
 export {
   DELETE_AGENT, ACTION, AGENT_DEFINITION, ATTRIBUTE, FUNCTION, MCP_SERVICE_OPTION,
   METRIC_VIEW, MODEL_OPTION, OBJECT_TYPE, RELATIONSHIP, SCHEDULED_TASK, SKILL,
-  USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
-  RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
+  TRIGGER, WORKFLOW, USER, BUSINESS_KNOWLEDGE, FEEDBACK_RECORD, ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE,
+  RUN_NOW, SET_ACTION_STATUS, DELETE_ACTION, SET_TRIGGER_STATUS, DELETE_TRIGGER, APPROVE_KNOWLEDGE, DELETE_KNOWLEDGE, DELETE_SKILL,
   IMPORT_SKILL, EXPORT_SKILL, EXPORT_FEEDBACK, DELETE_METRIC_VIEW, SET_METRIC_VIEW_STATUS, TEST_METRIC_VIEW,
   TEST_EXECUTE_METRIC_VIEW, DELETE_FUNCTION,
 } from "./platform-object-types";
@@ -172,6 +172,12 @@ const actionDefinitionReads = [
   { ...dataQueryPost("/action/definitionForm"), instructions: formReadInstructions },
 ] as const satisfies readonly PanelClientRead[];
 
+const triggerDefinitionReads = [
+  dataQueryPost("/trigger/queryList"),
+  dataQueryPost("/trigger/queryById"),
+  { ...dataQueryPost("/trigger/form"), instructions: formReadInstructions },
+] as const satisfies readonly PanelClientRead[];
+
 const knowledgeReads = [
   { method: "POST", service: "/data-query", path: /^\/admin\/getBussinessKnowledge$/, template: "/admin/getBussinessKnowledge" },
   {
@@ -255,6 +261,8 @@ const readRequests: Readonly<Record<string, readonly PanelClientRead[]>> = {
   [objectBinding(METRIC_VIEW)]: metricViewDefinitionReads,
   [objectBinding(FUNCTION)]: functionDefinitionReads,
   [objectBinding(ACTION)]: actionDefinitionReads,
+  [objectBinding(TRIGGER)]: triggerDefinitionReads,
+  [objectBinding(WORKFLOW)]: [dataQueryPost("/workflow/query")],
   [objectBinding(ONTOLOGY_TYPE)]: platformOntologyReads,
   [objectBinding(ONTOLOGY_RELATION_KIND)]: platformOntologyReads,
 };
@@ -309,6 +317,7 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [objectBinding(METRIC_VIEW)]: [...metricViewDefinitionReads, dataQueryPost("/metricView/save")],
   [objectBinding(FUNCTION)]: [...functionDefinitionReads, dataQueryPost("/function/save")],
   [objectBinding(ACTION)]: [...actionDefinitionReads, dataQueryPost("/action/save")],
+  [objectBinding(TRIGGER)]: [...triggerDefinitionReads, dataQueryPost("/trigger/save")],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_METRIC_VIEW })]: [dataQueryPost("/metricView/delete"), panelOperationImpactRequest],
   [bindingKey({ kind: "PlatformOperation", id: SET_METRIC_VIEW_STATUS })]: [dataQueryPost("/metricView/setStatus")],
   [bindingKey({ kind: "PlatformOperation", id: TEST_METRIC_VIEW })]: [panelReadOperationRequest],
@@ -316,6 +325,8 @@ export const clientRequests: Readonly<Record<string, readonly ClientRequest[]>> 
   [bindingKey({ kind: "PlatformOperation", id: DELETE_FUNCTION })]: [dataQueryPost("/function/delete"), panelOperationImpactRequest],
   [bindingKey({ kind: "PlatformOperation", id: SET_ACTION_STATUS })]: [dataQueryPost("/action/setStatus")],
   [bindingKey({ kind: "PlatformOperation", id: DELETE_ACTION })]: [dataQueryPost("/action/delete"), panelOperationImpactRequest],
+  [bindingKey({ kind: "PlatformOperation", id: SET_TRIGGER_STATUS })]: [dataQueryPost("/trigger/status")],
+  [bindingKey({ kind: "PlatformOperation", id: DELETE_TRIGGER })]: [dataQueryPost("/trigger/delete"), panelOperationImpactRequest],
   [objectBinding(BUSINESS_KNOWLEDGE)]: [
     ...knowledgeReads,
     { method: "POST", service: "/data-query", path: /^\/admin\/addBussinessKnowledge$/ },

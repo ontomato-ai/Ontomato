@@ -28,7 +28,6 @@ const manifest: DirectPanelManifest = {
     themed: { target: { projectionId: summary.id }, theme: { light: { "--sdk-color-primary": "#0a7d4f" }, dark: { "--sdk-color-primary": "#5fd39b" } } },
     plain: { target: { projectionId: summary.id } },
   },
-  commands: {},
 };
 
 afterEach(() => {

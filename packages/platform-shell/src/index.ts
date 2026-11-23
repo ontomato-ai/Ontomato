@@ -5,6 +5,7 @@ import "./page.css";
 export { default as PlatformShell } from "./PlatformShell.vue";
 export { default as PlatformRail } from "./PlatformRail.vue";
 export { default as PlatformAccountMenu } from "./PlatformAccountMenu.vue";
+export { default as AppMenu } from "./AppMenu.vue";
 export { default as AppPanelPages } from "./AppPanelPages.vue";
 export { default as PanelHost } from "./PanelHost.vue";
 export { default as PlatformPageHeader } from "./PlatformPageHeader.vue";
@@ -16,6 +17,7 @@ export {default as ApplicationIconPicker} from './ApplicationIconPicker.vue';
 export { platformPath, platformRoutes } from "./routes";
 export { openApplicationKey } from './application-opening';
 export {
+  hasPageActions,
   providePageActions,
   usePageActions,
   type PlatformPageAction,
@@ -63,15 +65,28 @@ export {
   type PanelInstanceView,
 } from "./panel-host";
 export { adoptPanelStyle, scopedPanelStyle } from "./panel-content";
+export { confirmDanger } from "./confirm-danger";
+export {
+  createPanelBackController,
+  hasOpenOverlay,
+  installPanelBackPopStateListener,
+  type PanelBackController,
+  type PanelBackControllerOptions,
+  type PanelBackHandlerRegistration,
+} from "./panel-back";
 export {
   provideUnsavedChanges,
   useLeaveConfirmation,
+  useOptionalLeaveConfirmation,
   useUnsavedChanges,
   type LeaveConfirmation,
   type UnsavedChanges,
   type UnsavedChangesCheck,
 } from "./unsaved-changes";
 export type {
+  AppMenuGroup,
+  AppMenuIcon,
+  AppMenuItem,
   PlatformAccount,
   PlatformApp,
   PlatformBrand,

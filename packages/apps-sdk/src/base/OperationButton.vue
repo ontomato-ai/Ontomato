@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
-import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
-import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
-import { slotInputState, usePanelContext, useProjectionSlot } from "../panel/context";
-import { readOperationInput } from "../panel/read-operation-input";
-import OperationResult from "./OperationResult.vue";
+import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
-import { useMemberOperations } from "../panel/member";
-import { stateObject, stateObjects } from "../panel/state";
-import type { PanelWriteResult } from "../panel/instance";
+import { usePanelContext, useProjectionSlot } from "../panel/context";
+import { useMember, useMemberOperations } from "../panel/member";
 import { useDataStateLabels } from "./data-state-labels";
+import { readConfigString } from "./localized-text";
+import {
+  formatOperationLabel,
+  isOperationReady,
+  resolveOperationInputFields,
+  resolveOperationTarget,
+  useOperationRunner,
+  type OperationOutcome,
+} from "./operation-dispatch";
+import OperationInputDialog from "./OperationInputDialog.vue";
+import OperationResult from "./OperationResult.vue";
 
 /**
  * The button of one operation a projection names, run as the reader the way an agent's call runs: the platform's
@@ -41,155 +46,184 @@ const props = withDefaults(
     operation: string;
     /**
      * How the button looks: `primary` for the page's main action, `danger` for one that removes (drawn as a quiet text
-     * button in the danger colour); it changes nothing else.
+     * button in the danger colour unless `plain` is set); it changes nothing else.
      */
     type?: "primary" | "danger" | "default";
+    /** Draws a soft tinted bordered button (for example the detail titlebar's danger delete button). */
+    plain?: boolean;
+    /** Draws a quiet borderless text button (for example inline batch actions beside a danger text button). */
+    text?: boolean;
+    /**
+     * Appends the checked item count to batch operation labels (default `true`). Set `false` inside a container that
+     * already displays the selected count beside the batch actions.
+     */
+    showBatchCount?: boolean;
+    /** Optional leading icon on the button (`trash` for destructive removal, `check` for approval). */
+    icon?: "trash" | "check";
+    /** Optional custom surface label for the button; defaults to the owner's formal operation label (confirmation dialogs and agent operation catalogs always keep the owner's formal label). */
+    label?: string;
+    /** Button size: `default` or compact `small` (for example in inline batch-action toolbars). */
+    size?: "small" | "default";
   }>(),
-  { type: "default" },
+  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, size: "default" },
 );
 
 const emit = defineEmits<{
   /** A write was dispatched and its owner answered: the outcome, for the page to act on. */
-  done: [outcome: Outcome];
+  done: [outcome: OperationOutcome];
 }>();
+
 const { t } = useI18n();
 const slot = useProjectionSlot();
 const panel = usePanelContext();
-const running = ref(false);
-const failure = shallowRef<Error | null>(null);
+const member = useMember();
+const rowOperation = member.rowOperation ?? null;
+const labels = useDataStateLabels();
+
 /** The member's operations, as their owners admit them now. */
 const operations = useMemberOperations();
 if (!Object.hasOwn(slot.projection.operations ?? {}, props.operation))
   throw new Error(`The projection in member '${slot.slot}' names no operation '${props.operation}'`);
+
 /** The owner's description of this button's operation; absent while its owner does not admit it (nothing chosen yet). */
 const descriptor = computed<PanelOwnerOperationDescriptor | null>(() =>
-  operations.value.status === "ready" ? operations.value.value[props.operation] ?? null : null);
+  operations.value.status === "ready" ? operations.value.value[props.operation] ?? null : null,
+);
+
 /** What the button shows instead while there is nothing to press: the read in progress, or what it was answered. */
 const pending = computed<DataStateResult | null>(() => {
   if (operations.value.status !== "ready") return operations.value;
   return descriptor.value ? null : { status: "awaiting" };
 });
-const read = shallowRef<PanelReadOperationResult | null>(null);
-const receipt = shallowRef<PanelHumanOperationDispatchResponse | null>(null);
-/** The targets the owner named when it prepared the last write. */
-const named = shallowRef<PanelWriteResult["named"]>([]);
-const operationId = computed(() => panel.instance.operationIdOf(slot.slot, props.operation));
-/**
- * The button shows only once its description is read, so the owner's name, in the reader's language, is there. A batch
- * button also says how many objects it acts on, so it never reads as the single one beside it.
- */
-const label = computed(() => (batch.value
-  ? t("platform.operationChecked", { label: descriptor.value!.label, count: checkedObjects.value.length })
-  : descriptor.value!.label));
 
-const fail = (reason: unknown) => {
-  failure.value = reason instanceof Error ? reason : new Error(String(reason));
-};
+const {
+  running,
+  dispatching,
+  failure,
+  read,
+  receipt,
+  outcome,
+  batchItems: items,
+  batchDone: done,
+  inputDialogOpen,
+  said,
+  nameOf,
+  trigger,
+  confirmInput,
+  reset,
+} = useOperationRunner({
+  panel: () => panel,
+  slot: () => slot,
+  member: () => member,
+  t,
+  onDone: (_name, answered) => emit("done", answered),
+});
 
 const values = computed(() => panel.instance.state.values.value);
-/** The panel state of the input the owner's description names as the target: one object, or a list (a batch). */
-const targetState = computed(() => {
-  const described = descriptor.value?.target;
-  return described?.source === "input" ? slotInputState(panel.manifest, slot.slot, described.input) : null;
+const targetInfo = computed(() =>
+  resolveOperationTarget(panel, slot, member, descriptor.value, values.value),
+);
+
+const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => {
+  const cfg = member.projection.config;
+  return cfg && typeof cfg === "object" && !Array.isArray(cfg) ? (cfg as Record<string, unknown>) : undefined;
 });
-/** Whether the target is the panel's checked list: the button then runs one batch over every object in it. */
-const batch = computed(() => targetState.value !== null && panel.manifest.state[targetState.value]!.type.kind === "list");
-/** The one object it acts on, when the target is a single object. */
-const target = computed<PanelOperationCall["target"]>(() => {
-  const selected = targetState.value === null || batch.value ? null : stateObject(values.value[targetState.value]);
-  return selected && { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey };
+
+/**
+ * The button shows only once its description is read. When the panel specifies a custom `label` (prop or projection
+ * `config.label`), that concise wording is shown on the button surface while confirmation dialogs and agent catalogs
+ * continue to use the owner's formal operation name.
+ */
+const label = computed(() => {
+  const custom = (props.label ?? readConfigString(rawConfig.value, "label"))?.trim();
+  if (custom) return custom;
+  return props.showBatchCount ? formatOperationLabel(descriptor.value!, targetInfo.value, t) : descriptor.value!.label;
 });
-const checkedState = computed(() => (batch.value ? targetState.value : null));
-/** The checked objects: the list the target's panel state holds. */
-const checkedObjects = computed(() => (checkedState.value === null ? [] : stateObjects(values.value[checkedState.value])));
-const checkedTargets = computed(() =>
-  checkedObjects.value.map(({ className, primaryKey }) => ({ kind: "object" as const, objectType: className, primaryKey })));
-const targetKey = computed(() => (target.value?.kind === "object" ? `${target.value.objectType}:${target.value.primaryKey}` : null));
+
+const targetKey = computed(() => (
+  rowOperation
+    ? JSON.stringify(member.inputs.value)
+    : targetInfo.value.target?.kind === "object"
+      ? `${targetInfo.value.target.objectType}:${targetInfo.value.target.primaryKey}`
+      : null
+));
+
+const inputFields = computed(() =>
+  resolveOperationInputFields(panel, slot, props.operation, descriptor.value),
+);
+
 watch(targetKey, () => {
-  failure.value = null;
-  read.value = null;
-  receipt.value = null;
-});
-const ready = computed(() => {
-  // The owner lists it but would refuse it now: the button is off, and says why beside it.
-  if (!descriptor.value || running.value || descriptor.value.unavailable) return false;
-  if (checkedState.value !== null) return checkedTargets.value.length > 0;
-  return descriptor.value.target.source !== "input" || target.value !== null;
+  reset();
 });
 
-async function run() {
-  const described = descriptor.value!;
-  running.value = true;
-  failure.value = null;
-  read.value = null;
-  receipt.value = null;
-  try {
-    if (described.effect === "read") {
-      const { target: owned } = described;
-      const hasDeclaredInputs = panel.manifest.members[slot.slot]?.readOperationInputs?.[props.operation] !== undefined;
-      // Trial runs bind a draft or declared readOperationInputs; object-targeted exports take an empty input object.
-      const input = owned.source === "draft" || hasDeclaredInputs
-        ? readOperationInput(
-            panel.instance,
-            slot.slot,
-            props.operation,
-            owned.source === "draft" ? panel.instance.forms.handle(owned.slot)!.values.value : {},
-          )
-        : {};
-      read.value = await panel.instance.readOperation(operationId.value, { target: target.value, input });
-      return;
-    }
-    const [first, ...rest] = checkedTargets.value.map((object) => ({ target: object, input: {} }));
-    const answer = await panel.instance.writeOperation(
-      operationId.value, first ? { calls: [first, ...rest] } : { call: { target: target.value, input: {} } },
-    );
-    if (answer.decision === "cancel") return;
-    named.value = answer.named;
-    keepUnchanged(answer.response);
-    const answered = answer.response.kind === "dispatched" ? answer.response.outcome : undefined;
-    // A single write done is told where it outlasts the button; anything else stays beside it.
-    if (answered?.kind === "success") panel.notify({ kind: "success", text: said(answered) });
-    else receipt.value = answer.response;
-    if (answered) emit("done", answered);
-  } catch (reason) {
-    fail(reason);
-  } finally {
-    running.value = false;
-  }
+const ready = computed(() =>
+  isOperationReady(descriptor.value, targetInfo.value, Boolean(rowOperation), running.value),
+);
+
+function onTriggerClick() {
+  if (!descriptor.value || !ready.value) return;
+  trigger(props.operation, descriptor.value);
 }
-
-/** A batch leaves checked only the objects it did not change. */
-function keepUnchanged(response: PanelHumanOperationDispatchResponse) {
-  if (checkedState.value === null || response.kind !== "dispatched" || response.outcome?.kind !== "batch") return;
-  const changed = new Set(response.outcome.items.filter(({ outcome }) => outcome.kind === "success")
-    .map(({ target: done }) => JSON.stringify([done.objectType, done.primaryKey])));
-  panel.instance.state.set(checkedState.value, checkedObjects.value.filter(({ className, primaryKey }) =>
-    !changed.has(JSON.stringify([className, primaryKey]))));
-}
-
-const labels = useDataStateLabels();
-
-type Outcome = NonNullable<Extract<PanelHumanOperationDispatchResponse, { kind: "dispatched" }>["outcome"]>;
-type Single = Exclude<Outcome, { kind: "batch" }>;
-/** One result in words: the owner's own message where it gave one. */
-const said = (outcome: Single) =>
-  outcome.kind === "success" ? outcome.message ?? t("platform.operationDone")
-    : outcome.kind === "unknown" ? t("platform.operationUnknown", { message: outcome.message })
-      : outcome.message;
-const outcome = computed(() => (receipt.value?.kind === "dispatched" ? receipt.value.outcome : null));
-const items = computed(() => (outcome.value?.kind === "batch" ? outcome.value.items : []));
-/** A batch item by the name its owner gave it when the batch was confirmed, else by its key. */
-const nameOf = (target: PanelObjectIdentity) => named.value.find(({ target: known }) =>
-  known.objectType === target.objectType && known.primaryKey === target.primaryKey)?.label ?? target.primaryKey;
-const done = computed(() => items.value.filter((item) => item.outcome.kind === "success").length);
 </script>
 
 <template>
   <div class="sdk-operation-button">
     <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
-    <!-- A removal is drawn quiet, as the platform's header draws one: danger in its colour, not a solid block; off, it
-         is plainly off. The owner still decides what it does and confirms it. -->
-    <el-button v-else :type="type" :text="type === 'danger'" :loading="running" :disabled="!ready" @click="run">{{ label }}</el-button>
+    <!-- A removal is drawn quiet unless `plain` requests a tinted bordered button; the owner still decides and confirms it. -->
+    <el-button
+      v-else
+      :type="type"
+      :size="size"
+      :plain="plain"
+      :text="text || (type === 'danger' && !plain)"
+      :loading="dispatching"
+      :disabled="!ready"
+      @click="onTriggerClick"
+    >
+      <svg
+        v-if="icon === 'trash' && !dispatching"
+        class="sdk-operation-icon"
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M3 6h18" />
+        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+        <line x1="10" x2="10" y1="11" y2="17" />
+        <line x1="14" x2="14" y1="11" y2="17" />
+      </svg>
+      <svg
+        v-else-if="icon === 'check' && !dispatching"
+        class="sdk-operation-icon"
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M20 6 9 17l-5-5" />
+      </svg>
+      <span>{{ label }}</span>
+    </el-button>
+    <operation-input-dialog
+      v-if="inputFields.length > 0"
+      v-model="inputDialogOpen"
+      :title="descriptor?.label"
+      :fields="inputFields"
+      :busy="running"
+      @confirm="confirmInput"
+    ></operation-input-dialog>
     <p v-if="!pending && descriptor?.unavailable" class="sdk-operation-unavailable">{{ descriptor.unavailable.reason }}</p>
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <operation-result v-if="read" :result="read"></operation-result>
@@ -212,6 +246,10 @@ const done = computed(() => items.value.filter((item) => item.outcome.kind === "
 </template>
 
 <style scoped>
+.sdk-operation-icon {
+  margin-inline-end: 6px;
+  flex-shrink: 0;
+}
 .sdk-operation-unavailable {
   margin: var(--spacing-xs) 0 0;
   color: var(--el-text-color-secondary);

@@ -150,22 +150,30 @@ onBeforeUnmount(() => withdraw?.());
 
 <style scoped>
 /*
- * At the foot of the page, the platform's one composer: what a message asks about is the page above it. It stays one row
- * high until the message needs more, and stands as far above the page's bottom edge as the conversation's composer does
- * above its own — one value for both, so it takes as little of the page as it can.
+ * Floating at the foot of the page, the platform's one composer: what a message asks about is the page behind it. It
+ * stays one row high until the message needs more, and stands as far above the page's bottom edge as the conversation's
+ * composer does above its own — one value for both, taking none of the content box's height whether expanded or folded.
  */
 .page-ask {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0 0 var(--shell-composer-foot);
+  background: none;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.page-ask > :deep(.composer),
+.page-ask > :deep(.composer-unfold) {
+  pointer-events: auto;
+}
+.page-ask > :deep(.composer) {
   width: min(760px, 100%);
   margin-inline: auto;
-  padding: var(--spacing-sm) 0 var(--shell-composer-foot);
-  background: var(--el-bg-color);
 }
-/* Folded into its round button, the foot leaves the page its whole height. */
+/* Folded into its round corner button, the floating foot stays transparent and leaves the page its whole height. */
 .page-ask:has(.composer-unfold) {
-  padding: 0;
+  padding: 0 0 var(--shell-composer-foot);
   background: none;
 }
 </style>

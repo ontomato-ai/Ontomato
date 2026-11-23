@@ -7,6 +7,7 @@ import { AgentPicker, ShellComposer } from "@ontomato/agent-shell-ui";
 import { ElMessageBox } from "element-plus";
 import { readRememberedAgent } from "@ontomato/workbench-ui";
 import { homeStateSchema, type HomeState } from "@ontomato/contracts/platform-home";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import type { WorkspaceObjectReference } from "@ontomato/contracts/workspace-objects";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
@@ -303,8 +304,9 @@ function recentTitle(item: RecentWork) {
     const object = config.value.pinnedObjects.find(object => object.primaryKey === objectKey && url.pathname.endsWith(encodeURIComponent(object.className)));
     if (object) return object.title;
   }
-  return board?.name ?? (item.title !== catalog.applications.value.find(app => app.id === item.appId)?.names.en ? item.title : null)
-    ?? catalog.applications.value.find(app => app.id === item.appId)?.names[locale.value] ?? item.title;
+  const foundApp = catalog.applications.value.find(app => app.id === item.appId);
+  return board?.name ?? (item.title !== foundApp?.names.en ? item.title : null)
+    ?? localizedApplicationText(foundApp?.names, locale.value) ?? item.title;
 }
 function recentContext(item: RecentWork) {
   const url = new URL(item.path, "https://workspace.invalid");
@@ -563,7 +565,7 @@ const actions = computed(() => [
             <article v-for="app in selectedApps.slice(0,blockLimit(child.asset))" :key="app.id" class="application-resource">
               <a v-if="app.resource" class="application-card" :href="applicationHref(app.id)" @click.prevent="openApplication(app.id)">
                  <ApplicationGlyph :icon="app.resource.icon" :size="18" class="application-resource-icon" />
-                <span class="resource-body"><strong>{{ app.resource.names[locale] ?? app.resource.names.en }}</strong><span>{{ app.resource.descriptions[locale] ?? app.resource.descriptions.en ?? text.application }}</span></span>
+                <span class="resource-body"><strong>{{ localizedApplicationText(app.resource.names, locale) ?? app.resource.id }}</strong><span>{{ localizedApplicationText(app.resource.descriptions, locale) ?? text.application }}</span></span>
               </a>
               <p v-else>{{ text.unavailable }}</p>
             </article>
@@ -605,7 +607,7 @@ const actions = computed(() => [
         </el-form-item>
         <el-form-item :label="text.apps">
           <el-select v-model="draft.applicationIds" multiple filterable :disabled="catalog.loading.value || !!catalog.error.value">
-            <el-option v-for="app in apps" :key="app.id" :value="app.id" :label="app.names[locale] ?? app.names.en" />
+            <el-option v-for="app in apps" :key="app.id" :value="app.id" :label="localizedApplicationText(app.names, locale) ?? app.id" />
             <el-option v-for="id in draft.applicationIds.filter(id => !apps.some(app => app.id === id))" :key="id" :value="id" :label="text.unavailable" />
           </el-select>
         </el-form-item>

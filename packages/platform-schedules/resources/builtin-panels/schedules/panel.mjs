@@ -368,7 +368,7 @@ await mountPanel({
         if (outcome.kind !== "success") return refused(outcome);
         setMode("view");
         instance.state.setState({ selectedTask: null, runId: null });
-        notify({ kind: "success", text: t("message.deleted") });
+        notify({ kind: "success", text: outcome.message });
       });
     }
     function edit(row) {
@@ -416,6 +416,8 @@ await mountPanel({
       select, closePane, busy, toggle, runNow, askDelete, edit, command, showRecords,
       runGroups, historyRecords, runsLoading, runsFailure, nextCursor, loadingMore, loadMore, runId, expanded, toggleRun, hasDetails,
       latestRun, latestResult, openResult, saved, created, cancelForm, closeEditOnEscape,
+      startCreate: () => instance.state.set("compose", "new"),
+      refresh: () => instance.refreshObjects(),
     };
   },
 });

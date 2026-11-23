@@ -33,7 +33,6 @@ const manifest: DirectPanelManifest = {
     selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, personal: false, deepLink: true, external: false },
   },
   members: { run: { target: { projectionId: runNow.id }, inputs: { task: { state: "selectedTask" } } } },
-  commands: {},
 };
 
 /** A panel's module as an author writes it: its component reads the instance's state; its HTML is the template. */

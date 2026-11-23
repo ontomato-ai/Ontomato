@@ -174,12 +174,12 @@ beforeAll(async () => {
     });
     await register("product-panels", entry.panelId, {
       name: entry.entrance.pageKey, description: "", visibility: "domain", content: vuePanelContent("list"),
-      manifest: { state: {}, members: { list: { target: { projectionId } } }, commands: {} },
+      manifest: { state: {}, members: { list: { target: { projectionId } } } },
     });
   }
   await register("product-panels", changing.panelId, {
     name: changing.entrance.pageKey, description: "", visibility: "domain", content: vuePanelContent(),
-    manifest: { state: {}, members: {}, commands: {} },
+    manifest: { state: {}, members: {} },
   });
   const libraryProjection = "projection-skill-library";
   const skillType = { type: { kind: "PlatformObjectType", id: SKILL } };
@@ -200,7 +200,7 @@ beforeAll(async () => {
   await register("product-panels", library.panelId, {
     name: "Skill catalogue", description: "", visibility: "domain", content: vuePanelContent("catalogue"),
     manifest: { state: { search: { type: { kind: "scalar", type: "string" }, default: "" } },
-      members: { catalogue: { target: { projectionId: libraryProjection }, inputs: { search: { state: "search" } } } }, commands: {} },
+      members: { catalogue: { target: { projectionId: libraryProjection }, inputs: { search: { state: "search" } } } } },
   });
   // Only the stored projection predates the current source contract. Its registered panel, grants and uses stay valid.
   const changed = await state.pool.query(
@@ -241,7 +241,7 @@ it("keeps a registered panel across SDK releases and refuses only an incompatibl
     manifest: { state: {}, members: {
       list: { target: { projectionId: "projection-good" } },
       healthy: { target: { projectionId: "projection-skill-library" } },
-    }, commands: {} },
+    } },
   });
   const oldDirectory = path.dirname(cataloguePath);
   const sdkRoot = path.dirname(oldDirectory);
@@ -418,7 +418,7 @@ it("reads detail.definition on the real builtin component entry through the auth
 it("serves current panel records and snapshots without browser storage", async () => {
   const id = "panel-cache-policy";
   const definition = { name: "Before", description: "", visibility: "domain",
-    content: vuePanelContent(), manifest: { state: {}, members: {}, commands: {} } };
+    content: vuePanelContent(), manifest: { state: {}, members: {} } };
   await register("product-panels", id, definition);
   const url = `${state.base}/api/product-panels/${id}`;
   const urls = [url, url + "/snapshot"];

@@ -126,7 +126,6 @@ const manifest = (projectionId: string): DirectPanelManifest => ({
       },
     },
   },
-  commands: {},
 });
 const twoClasses = [
   { primaryKey: "org", label: "Organization", fields: { layer: "fact" } },
@@ -438,9 +437,16 @@ it("distinguishes search hits from path results visually, in banners, and in pag
   const { instance, element } = mount(false);
   await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
 
-  // Search hit uses accent tone + search banner + kind:"search" in pageContext.
+  // Search hit uses accent tone + non-overlay search banner (without duplicated prefix) + kind:"search" in pageContext.
   instance.state.set("pathClasses", [{ className: OBJECT_TYPE, primaryKey: "person" }] as never);
   await vi.waitFor(() => expect(element.querySelector("[data-graph-search-banner]")).not.toBeNull());
+  const stage = element.querySelector<HTMLElement>(".sdk-object-graph-canvas-stage")!;
+  expect(stage).not.toBeNull();
+  expect(stage.querySelector(".mock-g6-canvas")).not.toBeNull();
+  const searchBanner = element.querySelector<HTMLElement>("[data-graph-search-banner]")!;
+  expect(stage.contains(searchBanner)).toBe(false);
+  expect(searchBanner.textContent?.split(publicEn.platform.graphSearchHighlightLabel).length).toBe(2);
+  expect(searchBanner.getAttribute("title")).toBe("Search matches (1): Person");
   expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("search");
   expect(element.querySelector("[data-graph-path-banner]")).toBeNull();
   expect(canvas.nodes.map(({ id, tone }) => [id, tone])).toEqual([["org", "muted"], ["person", "accent"]]);
@@ -450,23 +456,139 @@ it("distinguishes search hits from path results visually, in banners, and in pag
     items: [{ kind: OBJECT_TYPE, id: "person", label: "Person" }],
   }]);
 
-  // Setting pathFrom + pathTo switches cleanly to path tone + path banner + kind:"path" in pageContext.
+  // Setting pathFrom + pathTo switches cleanly to path tone + non-overlay path banner + kind:"path" in pageContext.
   instance.state.setState({
     pathFrom: { className: OBJECT_TYPE, primaryKey: "person" } as never,
     pathTo: { className: OBJECT_TYPE, primaryKey: "org" } as never,
   });
   await vi.waitFor(() => expect(element.querySelector("[data-graph-path-banner]")).not.toBeNull());
+  const pathBanner = element.querySelector<HTMLElement>("[data-graph-path-banner]")!;
+  expect(stage.contains(pathBanner)).toBe(false);
+  expect(pathBanner.textContent).toContain(publicEn.platform.graphPathHighlightLabel);
+  expect(pathBanner.textContent).not.toContain(publicEn.platform.graphSearchHighlightLabel);
   expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("path");
   expect(element.querySelector("[data-graph-search-banner]")).toBeNull();
   expect(canvas.nodes.map(({ id, tone }) => [id, tone])).toEqual([["org", "path"], ["person", "path"]]);
   expect(canvas.edges.map(({ id, tone }) => [id, tone])).toEqual([["works-in", "path"]]);
   expect(instance.pageContext.value.highlights?.[0]).toMatchObject({ kind: "path", found: true, hops: 1 });
 
-  // Clearing path endpoints restores the active search highlight.
+  // Clearing path endpoints restores the active search highlight; clearing search removes the banner.
   instance.state.setState({ pathFrom: null, pathTo: null });
   await vi.waitFor(() => expect(element.querySelector("[data-graph-search-banner]")).not.toBeNull());
   expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("search");
   expect(instance.pageContext.value.highlights?.[0]).toMatchObject({ kind: "search" });
+
+  instance.state.set("pathClasses", [] as never);
+  await vi.waitFor(() => expect(element.querySelector("[data-graph-search-banner]")).toBeNull());
+  expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("none");
+  expect(instance.pageContext.value.highlights).toBeUndefined();
+});
+
+it("dims non-adjacent nodes and edges on selection without showing any highlight banner or search pageContext", async () => {
+  classes = [
+    { primaryKey: "person", label: "Person", fields: { layer: "fact" } },
+    { primaryKey: "team", label: "Team", fields: { layer: "fact" } },
+    { primaryKey: "dept", label: "Department", fields: { layer: "fact" } },
+    { primaryKey: "org", label: "Organization", fields: { layer: "capability" } },
+    { primaryKey: "isolated", label: "Isolated", fields: { layer: "capability" } },
+  ];
+  relations = [
+    { primaryKey: "r-pt", label: "In team", fields: { fromclass: "person", toclass: "team" } },
+    { primaryKey: "r-td", label: "Under dept", fields: { fromclass: "team", toclass: "dept" } },
+    { primaryKey: "r-do", label: "Part of org", fields: { fromclass: "dept", toclass: "org" } },
+  ];
+  try {
+    const { instance, element } = mount(false);
+    await vi.waitFor(() => expect(canvas.nodes).toHaveLength(5));
+
+    // Selecting only a node keeps it selected, marks its direct peers and connecting edges with the warm neighbor tone,
+    // and dims unrelated elements without showing a banner.
+    instance.state.setState({
+      selectedClass: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+      selectedRelation: null,
+    });
+    await nextTick();
+    expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("none");
+    expect(element.querySelector("[data-graph-search-banner]")).toBeNull();
+    expect(element.querySelector("[data-graph-path-banner]")).toBeNull();
+    expect(instance.pageContext.value.highlights).toBeUndefined();
+    expect(canvas.nodes.map(({ id, tone }) => [id, tone ?? "default"])).toEqual([
+      ["person", "default"],
+      ["team", "neighbor"],
+      ["dept", "muted"],
+      ["org", "muted"],
+      ["isolated", "muted"],
+    ]);
+    expect(canvas.edges.map(({ id, tone }) => [id, tone ?? "default"])).toEqual([
+      ["r-pt", "neighbor"],
+      ["r-td", "muted"],
+      ["r-do", "muted"],
+    ]);
+
+    // Selecting only an edge keeps that edge crisp, marks its two endpoints as neighbors, and dims the rest with no banner.
+    instance.state.setState({
+      selectedClass: null,
+      selectedRelation: { className: RELATIONSHIP, primaryKey: "r-td" } as never,
+    });
+    await nextTick();
+    expect(element.querySelector("[data-graph-highlight-kind]")?.getAttribute("data-graph-highlight-kind")).toBe("none");
+    expect(element.querySelector("[data-graph-search-banner]")).toBeNull();
+    expect(element.querySelector("[data-graph-path-banner]")).toBeNull();
+    expect(instance.pageContext.value.highlights).toBeUndefined();
+    expect(canvas.nodes.map(({ id, tone }) => [id, tone ?? "default"])).toEqual([
+      ["person", "muted"],
+      ["team", "neighbor"],
+      ["dept", "neighbor"],
+      ["org", "muted"],
+      ["isolated", "muted"],
+    ]);
+    expect(canvas.edges.map(({ id, tone }) => [id, tone ?? "default"])).toEqual([
+      ["r-pt", "muted"],
+      ["r-td", "default"],
+      ["r-do", "muted"],
+    ]);
+
+    // Clearing selection restores all nodes and edges to default tone.
+    canvas.emit!("blank");
+    await nextTick();
+    expect(canvas.nodes.map(({ tone }) => tone ?? "default")).toEqual(["default", "default", "default", "default", "default"]);
+    expect(canvas.edges.map(({ tone }) => tone ?? "default")).toEqual(["default", "default", "default"]);
+  } finally {
+    classes = twoClasses;
+    relations = oneRelation;
+  }
+});
+
+it("keeps unrelated nodes undimmed on editable canvases and supports force layout, hidden banners, compact toolbar, and hint", async () => {
+  const { instance, element } = mount(true, {}, {
+    layout: "force",
+    highlightBanner: false,
+    showFocusButton: false,
+    hint: "Click a node to inspect",
+  });
+  await vi.waitFor(() => expect(canvas.nodes).toHaveLength(2));
+
+  // Selecting a node on an editable canvas does not dim other nodes so users can connect them freely.
+  instance.state.set("selectedClass", { className: OBJECT_TYPE, primaryKey: "person" } as never);
+  await nextTick();
+  expect(canvas.nodes.map(({ id, tone }) => [id, tone ?? "default"])).toEqual([
+    ["org", "default"],
+    ["person", "default"],
+  ]);
+
+  // Compact toolbar hides focus-selected; hint renders cleanly.
+  expect(element.querySelector('[data-graph-action="focus-selected"]')).toBeNull();
+  expect(element.querySelector('[data-graph-action="relayout"]')).not.toBeNull();
+  expect(element.querySelector("[data-graph-op-hint]")?.textContent?.trim()).toBe("Click a node to inspect");
+
+  // With highlightBanner disabled, path highlights still report to pageContext without rendering the inline banner.
+  instance.state.setState({
+    pathFrom: { className: OBJECT_TYPE, primaryKey: "person" } as never,
+    pathTo: { className: OBJECT_TYPE, primaryKey: "org" } as never,
+  });
+  await nextTick();
+  expect(element.querySelector("[data-graph-path-banner]")).toBeNull();
+  expect(instance.pageContext.value.highlights?.[0]?.kind).toBe("path");
 });
 
 it("separates 'no path found in the visible graph' from 'relations hidden due to permissions' when edges are forbidden", async () => {

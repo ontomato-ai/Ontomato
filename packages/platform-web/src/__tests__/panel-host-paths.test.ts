@@ -106,19 +106,22 @@ describe("the panel host's addresses", () => {
     expect(await port.release()).toEqual({ base: "/apps-sdk/current", manifest });
     await port.snapshot("panel-a");
     const observer = panelAuthorDefinitions().observe([target], () => {}, error => { throw error; });
-    await candidatePanelHost({ id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", ref: "working", pageKey: "tasks" }).source().catch(() => {});
-    await vi.waitFor(() => expect(requested.length).toBe(7));
-    expect(requested.map((one) => `${one.method} ${one.url}`)).toEqual([
-      "GET /api/data-query/platform/applications/resolve-entry?path=%2Fapplications%2Fapp-a%2Ftasks",
-      "GET /api/product-panels/panel-a",
-      "GET /api/apps-sdk/current",
-      "GET /apps-sdk/current/sdk.json",
-      // A page's snapshot is read for that page: Node confirms which page skill member it reaches with it.
-      "GET /api/product-panels/panel-a/snapshot?applicationId=app-a&useId=use-a&pageKey=tasks&access=domain-member",
-      "POST /api/product-panels/definition-stream",
-      "GET /api/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/panel-candidate?ref=working",
-    ]);
-    observer.close();
+    try {
+      await candidatePanelHost({ id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", ref: "working", pageKey: "tasks" }).source().catch(() => {});
+      await vi.waitFor(() => expect(requested.length).toBe(7));
+      expect(requested.map((one) => `${one.method} ${one.url}`)).toEqual([
+        "GET /api/data-query/platform/applications/resolve-entry?path=%2Fapplications%2Fapp-a%2Ftasks",
+        "GET /api/product-panels/panel-a?includeProjections=1",
+        "GET /api/apps-sdk/current",
+        "GET /apps-sdk/current/sdk.json",
+        // A page's snapshot is read for that page: Node confirms which page skill member it reaches with it.
+        "GET /api/product-panels/panel-a/snapshot?applicationId=app-a&useId=use-a&pageKey=tasks&access=domain-member",
+        "POST /api/product-panels/definition-stream",
+        "GET /api/workspaces/7c9e6679-7425-40de-944b-e07fc1f90ae7/panel-candidate?ref=working",
+      ]);
+    } finally {
+      observer.close();
+    }
     expect(subscriptionSignal?.aborted).toBe(true);
     expect(requested).toHaveLength(7);
   });

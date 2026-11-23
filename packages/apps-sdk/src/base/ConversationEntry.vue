@@ -16,12 +16,15 @@ const props = withDefaults(
     labelKey?: string;
     /** Button visual emphasis. */
     type?: "primary" | "default";
+    /** Optional leading icon on the button (`book-open` for knowledge/guide entries). */
+    icon?: "book-open";
     /** Disables the entry button. */
     disabled?: boolean;
   }>(),
   {
     labelKey: undefined,
     type: "default",
+    icon: undefined,
     disabled: false,
   },
 );
@@ -87,7 +90,23 @@ async function openComposer() {
       :disabled="disabled || opening"
       @click="openComposer"
     >
-      {{ buttonLabel }}
+      <svg
+        v-if="icon === 'book-open'"
+        class="sdk-conversation-entry-icon"
+        viewBox="0 0 24 24"
+        width="15"
+        height="15"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 7v14" />
+        <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
+      </svg>
+      <span>{{ buttonLabel }}</span>
     </button>
     <p v-if="failure" role="alert" class="sdk-conversation-entry-error">{{ failure.message }}</p>
   </div>
@@ -96,20 +115,27 @@ async function openComposer() {
 <style scoped>
 /* A primary action is solid; any other is a neutral outline with a quiet fill on hover and press (DESIGN.md). */
 .sdk-conversation-entry {
+  align-self: flex-start;
   display: inline-flex;
   flex-direction: column;
   gap: var(--spacing-xs);
 }
 .sdk-conversation-entry-btn {
+  align-items: center;
   background: transparent;
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-md);
   color: var(--el-text-color-primary);
   cursor: pointer;
+  display: inline-flex;
   font-size: var(--text-sm);
+  gap: 6px;
   height: var(--control-height);
   padding: 0 var(--spacing-lg);
   transition: background-color var(--transition-fast);
+}
+.sdk-conversation-entry-icon {
+  flex-shrink: 0;
 }
 .sdk-conversation-entry-btn:hover:not(:disabled) {
   background: var(--ui-fill-tertiary);

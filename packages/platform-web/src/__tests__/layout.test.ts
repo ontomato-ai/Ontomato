@@ -19,6 +19,7 @@ const labels: PlatformShellLabels = {
   theme: { light: "Light", dark: "Dark" },
   signOut: "Log out",
   opensInNewTab: "Opens in a new tab",
+  openStandalone: "Open standalone",
   pages: "Pages",
   save: "Save",
   discard: "Discard",
@@ -85,7 +86,8 @@ describe("the platform layout", () => {
     const catalog = catalogFixture();
     const product = {
       ...catalog[0]!, id: "app-report", names: { en: "Report" }, kind: "product" as const,
-      category: "business" as const, releaseId: "release-1", entry: { path: "/products/app-report?applicationId=app-report" },
+      category: "business" as const, releaseId: "release-1", allowStandalone: true,
+      entry: { path: "/products/app-report?applicationId=app-report" },
     };
     const panel = {
       ...product, id: "app-panel", names: { en: "Operations panel" }, releaseId: null,
@@ -220,5 +222,87 @@ describe("the platform layout", () => {
     await router.push("/browser/data");
     await flushPromises();
     expect(rowName(wrapper.find(".rail-row.active"))).toBe("platform.objectBrowser");
+  });
+
+  it("shows standalone open buttons in the expanded rail only for apps that allow it, and blocks ?standalone=1 when disabled", async () => {
+    localStorage.setItem("ontomato.platform.railCollapsed", "false");
+    const { wrapper, router } = await mountLayout("/ontology/objects", ["ontology-modeling"]);
+    router.addRoute({ path: "/applications/:applicationId/:panelPath(.*)?", component: page("application") });
+    const catalog = catalogFixture();
+    const openPanel = {
+      ...catalog[0]!, id: "app-open", names: { en: "Open panel" }, kind: "product" as const,
+      category: "business" as const, releaseId: null, allowStandalone: true,
+      entry: { path: "/applications/app-open", renderer: "panels" },
+      panelUses: [{ id: "tasks", pageKey: "tasks", panelId: "tasks", path: "/applications/app-open/tasks", access: { kind: "domain-member" as const }, names: { en: "Tasks" } }],
+    };
+    const lockedPanel = {
+      ...openPanel, id: "app-locked", names: { en: "Locked panel" }, allowStandalone: false,
+      entry: { path: "/applications/app-locked", renderer: "panels" },
+      panelUses: [{ id: "tasks", pageKey: "locked-tasks", panelId: "tasks", path: "/applications/app-locked/tasks", access: { kind: "domain-member" as const }, names: { en: "Tasks" } }],
+    };
+    const applications = appDeclarations(generatedNavigation(), closedAccess([]), catalogPartition([...catalog, openPanel, lockedPanel], "en"), t);
+    await wrapper.setProps({ apps: applications, dynamicAppIds: [openPanel.id, lockedPanel.id], pinnedAppIds: [] });
+
+    const standaloneHrefs = wrapper.findAll("a.rail-standalone").map(link => link.attributes("href"));
+    expect(standaloneHrefs.some(href => href?.endsWith("#/applications/app-open?standalone=1"))).toBe(true);
+    expect(standaloneHrefs.some(href => href?.includes("/applications/app-locked"))).toBe(false);
+
+    // Clicking the application row itself still emits selectApp (in-platform navigation).
+    const openRow = wrapper.findAll(".rail-row").find(row => row.text().includes("Open panel"))!;
+    await openRow.trigger("click");
+    expect(wrapper.emitted("selectApp")?.at(-1)).toEqual(["app-open"]);
+
+    // Visiting a disabled app with ?standalone=1 keeps the rail visible, strips the flag, and leaves sessionStorage clean.
+    await router.push("/applications/app-locked/tasks?standalone=1&state=%7B%22a%22%3A1%7D");
+    await flushPromises();
+    expect(wrapper.find(".platform-rail").exists()).toBe(true);
+    expect(router.currentRoute.value.query.standalone).toBeUndefined();
+    expect(router.currentRoute.value.query.state).toBe('{"a":1}');
+    expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBeNull();
+
+    // Even if this tab was previously standalone on an allowed app, navigating to a disabled app restores the platform rail.
+    await router.push("/applications/app-open/tasks?standalone=1");
+    await flushPromises();
+    expect(wrapper.find(".platform-rail").exists()).toBe(false);
+    expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBe("1");
+
+    await router.push("/applications/app-locked/tasks");
+    await flushPromises();
+    expect(wrapper.find(".platform-rail").exists()).toBe(true);
+    expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBeNull();
+    localStorage.clear();
+  });
+
+  it("waits for the catalog before honoring ?standalone=1 so disabled apps never flash or persist standalone mode", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/", component: { render: () => h(RouterView) }, children: [{ path: "/applications/:applicationId/:panelPath(.*)?", component: page("application") }] }],
+    });
+    await router.push("/applications/app-locked/tasks?standalone=1");
+    const wrapper = mount(PlatformLayout, {
+      props: {
+        apps: [],
+        loading: true,
+        shownPage: { title: "Tasks", named: true },
+        account: null,
+        preferences: { locales: ["en"], locale: "en", setLocale: () => {}, theme: "light", setTheme: () => {} },
+        labels,
+        pageActions: null,
+      },
+      global: { plugins: [router] },
+    });
+    mounted.push(wrapper);
+    await flushPromises();
+    expect(wrapper.find(".platform-rail").exists()).toBe(true);
+    expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBeNull();
+
+    await wrapper.setProps({
+      loading: false,
+      apps: [{ id: "app-locked", label: "Locked", icon: "pages", category: "business", prefix: "/applications/app-locked", home: "/applications/app-locked", allowStandalone: false }],
+    });
+    await flushPromises();
+    expect(wrapper.find(".platform-rail").exists()).toBe(true);
+    expect(router.currentRoute.value.query.standalone).toBeUndefined();
+    expect(sessionStorage.getItem("ontomato.externalLinkTab")).toBeNull();
   });
 });

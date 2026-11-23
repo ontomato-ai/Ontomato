@@ -40,6 +40,8 @@ const markBrand = computed(() => ({ ...props.brand, name: brandName.value }));
 const builtLabel = computed(() => props.labels.builtApplication || "App Builder");
 const appLabel = (app: PlatformApp) => app.built ? `${app.label} · ${builtLabel.value}` : app.label;
 const newTabLabel = (app: PlatformApp) => [appLabel(app), props.labels.opensInNewTab].filter(Boolean).join(" · ");
+const standaloneActionText = computed(() => props.labels.openStandalone || props.labels.opensInNewTab || "Open standalone");
+const standaloneAriaLabel = (app: PlatformApp) => `${app.label} · ${standaloneActionText.value}`;
 
 /** The rail's applications, in order: the ontology applications, then the business ones (the external one last). */
 const scrolling = computed(() => {
@@ -185,19 +187,35 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
               <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
               <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
             </span>
-            <button
+            <div
               v-else
-              type="button"
-              class="rail-row"
-              :class="{ active: app.id === activeAppId }"
-              :aria-current="app.id === activeAppId ? 'page' : undefined"
-              :title="collapsed || app.built ? appLabel(app) : undefined"
-              :aria-label="collapsed || app.built ? appLabel(app) : undefined"
-              @click="selectApp(app)"
+              class="rail-item"
+              :class="{ active: app.id === activeAppId, 'has-standalone': !collapsed && Boolean(app.standaloneHref) }"
             >
-              <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-              <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
-            </button>
+              <button
+                type="button"
+                class="rail-row"
+                :class="{ active: app.id === activeAppId }"
+                :aria-current="app.id === activeAppId ? 'page' : undefined"
+                :title="collapsed || app.built ? appLabel(app) : undefined"
+                :aria-label="collapsed || app.built ? appLabel(app) : undefined"
+                @click="selectApp(app)"
+              >
+                <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
+                <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+              </button>
+              <ElTooltip v-if="!collapsed && app.standaloneHref" v-bind="actionTooltipProps" :content="standaloneActionText">
+                <a
+                  class="rail-standalone"
+                  :href="app.standaloneHref"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :aria-label="standaloneAriaLabel(app)"
+                >
+                  <ExternalLink :size="13" aria-hidden="true" />
+                </a>
+              </ElTooltip>
+            </div>
           </li>
         </ul>
       </template>
@@ -248,19 +266,35 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
           <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
           <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
         </span>
-        <button
+        <div
           v-else
-          type="button"
-          class="rail-row"
-          :class="{ active: app.id === activeAppId }"
-          :aria-current="app.id === activeAppId ? 'page' : undefined"
-          :title="collapsed ? app.label : undefined"
-          :aria-label="collapsed ? app.label : undefined"
-          @click="selectApp(app)"
+          class="rail-item"
+          :class="{ active: app.id === activeAppId, 'has-standalone': !collapsed && Boolean(app.standaloneHref) }"
         >
-          <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
-          <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
-        </button>
+          <button
+            type="button"
+            class="rail-row"
+            :class="{ active: app.id === activeAppId }"
+            :aria-current="app.id === activeAppId ? 'page' : undefined"
+            :title="collapsed ? app.label : undefined"
+            :aria-label="collapsed ? app.label : undefined"
+            @click="selectApp(app)"
+          >
+            <component :is="appIcon(app.icon)" class="rail-icon" :size="16" aria-hidden="true" />
+            <span v-if="!collapsed" class="rail-label">{{ app.label }}</span>
+          </button>
+          <ElTooltip v-if="!collapsed && app.standaloneHref" v-bind="actionTooltipProps" :content="standaloneActionText">
+            <a
+              class="rail-standalone"
+              :href="app.standaloneHref"
+              target="_blank"
+              rel="noopener noreferrer"
+              :aria-label="standaloneAriaLabel(app)"
+            >
+              <ExternalLink :size="13" aria-hidden="true" />
+            </a>
+          </ElTooltip>
+        </div>
       </li>
     </ul>
 
@@ -423,6 +457,64 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
 .collapsed .rail-divider {
   width: 24px;
   margin: 8px auto;
+}
+.rail-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+}
+.rail-item.has-standalone:hover {
+  background: var(--shell-rail-hover);
+}
+.rail-item.has-standalone.active {
+  background: var(--shell-rail-selected);
+}
+.rail-item.has-standalone.active:hover {
+  background: var(--shell-rail-selected-hover);
+}
+.rail-item.has-standalone > .rail-row {
+  flex: 1;
+  min-width: 0;
+  padding-right: 4px;
+  background: transparent;
+}
+.rail-item.has-standalone > .rail-row:hover,
+.rail-item.has-standalone > .rail-row.active,
+.rail-item.has-standalone > .rail-row.active:hover {
+  background: transparent;
+}
+.rail-standalone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--el-text-color-tertiary);
+  opacity: 0.65;
+  text-decoration: none;
+  transition: background-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+}
+.rail-item:hover .rail-standalone,
+.rail-item:focus-within .rail-standalone {
+  opacity: 1;
+  color: var(--el-text-color-secondary);
+}
+.rail-standalone:hover,
+.rail-standalone:focus-visible {
+  background: var(--shell-rail-hover);
+  color: var(--el-text-color-primary);
+  opacity: 1;
+}
+.rail-standalone:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
+}
+.collapsed .rail-item {
+  justify-content: center;
 }
 .rail-row {
   position: relative;

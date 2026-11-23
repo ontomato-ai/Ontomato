@@ -23,7 +23,6 @@ const panel = panelRecord("panel-personal", "Personal", definePanel({
     view: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: true },
   },
   members: {},
-  commands: {},
 }));
 panel.content = { ...panel.content, module: `import { h } from "vue";
 import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";

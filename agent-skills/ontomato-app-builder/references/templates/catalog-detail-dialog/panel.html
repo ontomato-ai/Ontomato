@@ -1,0 +1,43 @@
+<style>
+  .catalog-page { display: flex; flex-direction: column; min-width: 0; min-height: 100%; container: catalog-page / inline-size; }
+  .catalog-view { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--spacing-lg) var(--page-gutter) var(--page-content-gap); }
+  .detail-view { display: flex; flex-direction: column; min-width: 0; min-height: 100%; }
+  .detail-body { display: grid; grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.15fr); gap: var(--page-content-gap); padding: var(--page-content-gap) var(--page-gutter); align-items: stretch; }
+  .detail-card { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; padding: var(--page-section-padding, var(--spacing-lg)); border: 1px solid var(--sdk-border-color, var(--ui-border)); border-radius: var(--radius-md); background: var(--sdk-bg-color); }
+  .detail-card h2 { margin: 0; color: var(--sdk-text-color-primary); font-size: var(--text-lg); font-weight: var(--font-semibold); }
+  .create-dialog-body .sdk-owner-form, .create-dialog-body .sdk-owner-form-inner { height: auto; }
+  .create-dialog-body .sdk-owner-form-body { overflow: visible; }
+  @container catalog-page (max-width: 850px) { .detail-body { grid-template-columns: minmax(0, 1fr); } }
+</style>
+<div id="app">
+  <section class="catalog-page">
+    <template v-if="!selectedKey">
+      <page-header :title="t('panel.name')">
+        <template #actions>
+          <sdk-button type="primary" :disabled="creating" @click="startCreate">{{ t("command.new") }}</sdk-button>
+        </template>
+      </page-header>
+      <div class="catalog-view">
+        <projection slot="list" @update:selected="stopCreating"></projection>
+      </div>
+    </template>
+    <div v-else class="detail-view">
+      <page-header :title="selectedTitle" :back-label="t('detail.back')" :draft="formDraft" @back="back"></page-header>
+      <div class="detail-body">
+        <section class="detail-card">
+          <h2>{{ t("detail.basicInfo") }}</h2>
+          <projection slot="form" @saved="onSaved" @discarded="onDiscarded"></projection>
+        </section>
+        <section class="detail-card">
+          <h2>{{ t("detail.overview") }}</h2>
+          <projection slot="detail"></projection>
+        </section>
+      </div>
+    </div>
+    <sdk-dialog v-model="createDialog" :title="t('dialog.createTitle')" width="540px" append-to-body destroy-on-close>
+      <div class="create-dialog-body">
+        <projection slot="form" v-if="createDialog" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"></projection>
+      </div>
+    </sdk-dialog>
+  </section>
+</div>

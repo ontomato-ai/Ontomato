@@ -55,6 +55,9 @@ class MetricViewBindingContractTest {
     when(admin.getJSONRule(anyString())).thenReturn(Map.of("classDef", List.of(
         JSONObject.of("className", "/Employee", "attrs", List.of(JSONObject.of("name", "salary"))))));
     ReflectionTestUtils.setField(service, "adminService", admin);
+    var langService = mock(io.ontomato.dataengine.service.LangService.class);
+    when(langService.get(anyString(), anyString())).thenAnswer(call -> call.getArgument(1));
+    ReflectionTestUtils.setField(service, "langService", langService);
     ReflectionTestUtils.setField(service, "abcProgramService", execution);
     ReflectionTestUtils.setField(service, "subjectValues",
         new SubjectValueResolver(mock(SubjectAttributeLookup.class)));

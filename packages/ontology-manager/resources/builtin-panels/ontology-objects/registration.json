@@ -4,7 +4,7 @@
       "id": "builtin-product-ontology-objects",
       "input": {
         "name": "对象类型",
-        "description": "对象类型的目录、新建，以及类详情：基本信息、属性、关系、主键状态"
+        "description": "定义业务对象类型、属性与标识字段"
       }
     }
   ]

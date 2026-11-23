@@ -28,7 +28,7 @@ class ProductGrantControllerTest {
     }
     @Test void refusedGrantReadKeepsTheJavaStatusAndReason() throws Exception {
         var grants=mock(ProductGrantService.class);
-        when(grants.grants("profile")).thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required"));
+        when(grants.grantViews("profile")).thenThrow(new ResponseStatusException(HttpStatus.FORBIDDEN,"Product edit Grant required"));
         var mvc=MockMvcBuilders.standaloneSetup(new ProductGrantController(grants,mock(WorkbenchServiceAuthentication.class)))
             .setControllerAdvice(new BaseControllerAdvice())
             .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
@@ -37,6 +37,18 @@ class ProductGrantControllerTest {
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.code").value(403))
             .andExpect(jsonPath("$.message").value("Product edit Grant required"));
+    }
+    @Test void principalsEndpointDelegatesKindKeywordAndLimit() throws Exception {
+        var grants = mock(ProductGrantService.class);
+        when(grants.searchPrincipals("role", "admin", 25))
+            .thenReturn(java.util.List.of(new io.ontomato.dataengine.service.ProductPrincipalLookup.PrincipalOption("r-1", "Administrator")));
+        var mvc = MockMvcBuilders.standaloneSetup(new ProductGrantController(grants, mock(WorkbenchServiceAuthentication.class)))
+            .setMessageConverters(new MappingJackson2HttpMessageConverter()).build();
+        mvc.perform(post("/product-governance/principals").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"kind\":\"role\",\"keyword\":\"admin\",\"limit\":25}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.options[0].id").value("r-1"))
+            .andExpect(jsonPath("$.options[0].name").value("Administrator"));
     }
     @Test void registrationCannotReachTheStoreWithoutServiceAuthentication() {
         var grants=mock(ProductGrantService.class);

@@ -52,7 +52,8 @@ public final class FunctionForm {
       LangService langService) {
     String operation = values.getString("operation");
     boolean write = Function.OPERATION_WRITE.equals(operation);
-    boolean legacy = legacy(values);
+    boolean product = Function.OPERATION_PRODUCT.equals(operation);
+    boolean legacy = !write && !product && legacy(values);
     JSONArray fields = new JSONArray();
     fields.add(
         PanelFormFields.field(
@@ -77,18 +78,33 @@ public final class FunctionForm {
             null,
             false));
     String operationReason = readOnlyReason != null ? readOnlyReason : (existing ? operationReadOnlyReason : null);
+    JSONArray operationEnum = product
+        ? JSONArray.of(Function.OPERATION_READ, Function.OPERATION_WRITE, Function.OPERATION_PRODUCT)
+        : JSONArray.of(Function.OPERATION_READ, Function.OPERATION_WRITE);
     fields.add(
         PanelFormFields.field(
             "/operation",
             text(langService, lang, "PanelForm.operation"),
-            PanelFormFields.select(operationOptions(lang, langService)),
-            JSONObject.of("type", "string", "enum", JSONArray.of(Function.OPERATION_READ, Function.OPERATION_WRITE)),
+            PanelFormFields.select(operationOptions(lang, langService, product)),
+            JSONObject.of("type", "string", "enum", operationEnum),
             false,
             operationReason != null,
             operationReason,
             null,
             true));
-    if (write) {
+    if (product) {
+      fields.add(
+          PanelFormFields.field(
+              "/sourceArtifact",
+              text(langService, lang, "PanelForm.sourceArtifact"),
+              PanelFormFields.code("json"),
+              PanelFormFields.schema("object"),
+              false,
+              true,
+              readOnlyReason,
+              null,
+              false));
+    } else if (write) {
       fields.add(
           PanelFormFields.field(
               "/parameters",
@@ -147,17 +163,19 @@ public final class FunctionForm {
                 text(langService, lang, "PanelForm.legacyCodeHint"),
                 false));
     }
-    fields.add(
-        PanelFormFields.field(
-            "/logic",
-            text(langService, lang, "PanelForm.logic"),
-            PanelFormFields.text(true),
-            PanelFormFields.schema("string"),
-            false,
-            readOnlyReason != null,
-            readOnlyReason,
-            null,
-            false));
+    if (!product) {
+      fields.add(
+          PanelFormFields.field(
+              "/logic",
+              text(langService, lang, "PanelForm.logic"),
+              PanelFormFields.text(true),
+              PanelFormFields.schema("string"),
+              false,
+              readOnlyReason != null,
+              readOnlyReason,
+              null,
+              false));
+    }
     if (write)
       fields.add(
           PanelFormFields.field(
@@ -301,10 +319,13 @@ public final class FunctionForm {
         "classNames", new JSONArray());
   }
 
-  private static JSONArray operationOptions(String lang, LangService langService) {
+  private static JSONArray operationOptions(String lang, LangService langService, boolean includeProduct) {
     JSONArray options = new JSONArray();
     options.add(PanelFormFields.option(Function.OPERATION_READ, text(langService, lang, "PanelForm.operation.read")));
     options.add(PanelFormFields.option(Function.OPERATION_WRITE, text(langService, lang, "PanelForm.operation.write")));
+    if (includeProduct) {
+      options.add(PanelFormFields.option(Function.OPERATION_PRODUCT, text(langService, lang, "PanelForm.operation.product")));
+    }
     return options;
   }
 

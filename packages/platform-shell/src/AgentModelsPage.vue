@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, shallowRef } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import { modelLabel, modelSelectionView, selectedModelId } from "@ontomato/contracts/model-selection";
 import type { ModelOptions } from "@ontomato/contracts/model-settings";
 import { useAgentModelLabels, type AgentModelEntry, type AgentModelSource } from "./agent-models";
+import { confirmDanger } from "./confirm-danger";
 import { useUnsavedChanges } from "./unsaved-changes";
 import PlatformPageHeader from "./PlatformPageHeader.vue";
 
@@ -78,14 +79,10 @@ async function save() {
 }
 
 async function discard() {
-  const confirmed = await ElMessageBox.confirm(labels.value.discardMessage, labels.value.discardTitle, {
-    type: "warning",
+  const confirmed = await confirmDanger(labels.value.discardMessage, labels.value.discardTitle, {
     confirmButtonText: labels.value.discard,
     cancelButtonText: labels.value.cancel,
-  }).then(
-    () => true,
-    () => false,
-  );
+  });
   if (confirmed) take(agents.value!);
 }
 

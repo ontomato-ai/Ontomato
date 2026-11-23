@@ -77,7 +77,6 @@ it("draws the projection the panel's state chooses, reads and operates it by the
   const manifest: DirectPanelManifest = {
     state: { chosen: { type: { kind: "object", objectType: PRODUCT_PROJECTION }, personal: false, deepLink: true, external: false } },
     members: { preview: { target: { fromState: "chosen", candidates: { rule: "usable" } } } },
-    commands: {},
   };
   const forbidden = new PanelMemberUnavailable(403, "Not yours");
   const instance = createDirectPanelInstance(manifest, {
@@ -120,7 +119,6 @@ it("runs the panel the state chooses in place, publishing its operations and con
         theme: { light: { "--sdk-color-primary": "#0a7d4f" } },
       },
     },
-    commands: {},
   };
   const innerManifest: DirectPanelManifest = {
     state: {
@@ -128,7 +126,6 @@ it("runs the panel the state chooses in place, publishing its operations and con
       note: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
     },
     members: { approve: { target: { projectionId: "tasks-a" } } },
-    commands: {},
   };
   const placed: { path: PanelMemberPath; initial: unknown; theme: unknown; inner: ReturnType<typeof createDirectPanelInstance>; dispose: ReturnType<typeof vi.fn> }[] = [];
   const outer = createDirectPanelInstance(outerManifest, {
@@ -179,9 +176,8 @@ it("asks for the chosen object's detail panel by the object alone, and the place
   const outerManifest: DirectPanelManifest = {
     state: { chosenTask: { type: taskType, personal: false, deepLink: true, external: false } },
     members: { detail: { target: { fromState: "chosenTask", candidates: { rule: "objectDetail" } } } },
-    commands: {},
   };
-  const innerManifest: DirectPanelManifest = { state: {}, members: { approve: { target: { projectionId: "tasks-a" } } }, commands: {} };
+  const innerManifest: DirectPanelManifest = { state: {}, members: { approve: { target: { projectionId: "tasks-a" } } } };
   const asked: unknown[] = [];
   const outer = createDirectPanelInstance(outerManifest, {
     ...base(reads, { "tasks-a": list("tasks-a") }), initial: {},

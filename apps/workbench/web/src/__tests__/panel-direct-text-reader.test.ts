@@ -45,7 +45,7 @@ const documentRef = { className: "Document", primaryKey: "doc-1" };
 function mount(projection: DirectProjection, inputs: Record<string, RuntimeJsonValue>, answer: (request: PanelMemberReadRequest) => ProductPanelReadResponse) {
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(definePanel({
-    state: {}, members: { reader: { target: { projectionId: projection.id }, inputs: Object.fromEntries(Object.entries(inputs).map(([name, literal]) => [name, { literal }])) } }, commands: {},
+    state: {}, members: { reader: { target: { projectionId: projection.id }, inputs: Object.fromEntries(Object.entries(inputs).map(([name, literal]) => [name, { literal }])) } },
   }), {
     pageKey: "p", url: () => "/p", label: () => "P", initial: {},
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
@@ -136,7 +136,6 @@ it("opens the source the page writes, in the reader its anchor names, and reads 
       issue: { target: { projectionId: "issue-sources" }, inputs: shared, outputs: opened },
       all: { target: { projectionId: "all-sources" }, inputs: shared, outputs: opened },
     },
-    commands: {},
   }), {
     pageKey: "p", url: () => "/p", label: () => "P", initial: {},
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},

@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { copyExternalLink, externalLinkTab, rememberExternalLinkTab } from "./external-link";
+import { clearExternalLinkTab, copyExternalLink, externalLinkTab, rememberExternalLinkTab } from "./external-link";
+import { allowsStandalone } from "@ontomato/contracts/platform-identity";
 import { useRoute, useRouter, RouterView, RouterLink } from "vue-router";
 import { Link } from "lucide-vue-next";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 import type { PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 import {
-  AppPanelPages,
+  AppMenu,
   PlatformPageHeader,
   PlatformShell,
   useAppTheme,
+  type AppMenuGroup,
   type PlatformAccount,
   type PlatformBrand,
   type PlatformPageActions,
@@ -35,6 +37,8 @@ export interface PlatformShownPage {
   named?: boolean;
   /** Back to where the reader came from, for a page the application's menu does not reach. */
   back?: () => void;
+  /** Optional custom label for the header back control (for example a detail view returning to its catalog). */
+  backLabel?: string;
   /** The entry's external link (its address with its state), which the header's "more" offers to copy. */
   externalLink?: string;
 }
@@ -73,7 +77,8 @@ const emit = defineEmits<{ selectApp: [id: string] }>();
 function appFor(path: string): PlatformAppDeclaration | null {
   let match: PlatformAppDeclaration | null = null;
   for (const app of props.apps ?? []) {
-    if (path !== app.prefix && !path.startsWith(`${app.prefix}/`)) continue;
+    // The application gallery owns `/applications` alone; `/applications/<id>` belongs to that application.
+    if (path !== app.prefix && (app.id === "application-gallery" || !path.startsWith(`${app.prefix}/`))) continue;
     if (!match || app.prefix.length > match.prefix.length) match = app;
   }
   return match;
@@ -107,11 +112,37 @@ const moreActions = computed(() => props.shownPage?.externalLink
     onClick: () => void copyExternalLink(props.shownPage!.externalLink!, { copied: props.labels.externalLinkCopied, title: props.labels.copyExternalLink }) }]
   : []);
 const externalTab = ref(externalLinkTab());
-watch(() => route.query.standalone, (flag) => {
-  if (flag !== '1' || externalTab.value) return;
-  externalTab.value = true;
-  rememberExternalLinkTab();
-}, { immediate: true });
+const standaloneRequested = ref(route.query.standalone === "1");
+const standaloneAllowed = computed(() => allowsStandalone(activeApp.value));
+const hideRail = computed(() => {
+  if (!standaloneAllowed.value) return false;
+  if (externalTab.value) return true;
+  return (route.query.standalone === "1" || standaloneRequested.value) && !props.loading;
+});
+watch(
+  [() => route.query.standalone, () => activeApp.value, () => props.loading],
+  ([flag, app, loading]) => {
+    if (flag === "1") standaloneRequested.value = true;
+    if (app && !allowsStandalone(app)) {
+      standaloneRequested.value = false;
+      if (externalTab.value) {
+        externalTab.value = false;
+        clearExternalLinkTab();
+      }
+      if (flag !== undefined) {
+        const { standalone: _dropped, ...rest } = route.query;
+        void router.replace({ path: route.path, query: rest, hash: route.hash });
+      }
+      return;
+    }
+    if (!standaloneRequested.value || externalTab.value) return;
+    if (loading && app === null) return;
+    standaloneRequested.value = false;
+    externalTab.value = true;
+    rememberExternalLinkTab();
+  },
+  { immediate: true },
+);
 const browserWorkspace = computed(() => route.path === "/browser/data" || route.path.startsWith("/browser/data/"));
 
 /**
@@ -120,6 +151,13 @@ const browserWorkspace = computed(() => route.path === "/browser/data" || route.
  * layout"). The current row is the page the address shows: a screen of a page (a detail) marks that page.
  */
 const menu = computed(() => (activeApp.value?.frame === "menu" && !props.appFramed ? activeApp.value : null));
+const menuGroups = computed<readonly AppMenuGroup[]>(() =>
+  (menu.value?.groups ?? []).map((group) => ({
+    key: group.key,
+    ...(group.label ? { label: group.label } : {}),
+    items: group.pages,
+  })),
+);
 const activePageId = computed(() => (route.meta.page as string | undefined) ?? route.path);
 function selectMenuPage(path:string){
   const external=activeApp.value?.id==='ontology'&&!path.startsWith('/ontology/');
@@ -149,7 +187,7 @@ const headerLabels = computed(() => ({
 <template>
   <PlatformShell
     :loading="loading"
-    :hide-rail="externalTab"
+    :hide-rail="hideRail"
     :class="{ 'object-browser-layout': browserWorkspace }"
     :apps="blocked ? [] : railApps"
     :active-app-id="activeAppId"
@@ -166,17 +204,15 @@ const headerLabels = computed(() => ({
       catalog arrives, after the page has been drawn; a page area per case would mount the page a second time then.
     -->
     <div ref="appBody" class="platform-app-body" :class="{ 'has-menu': menu !== null && !blocked }">
-      <aside v-if="menu && !blocked" class="platform-app-menu" :aria-label="labels.pages">
-        <h2 class="app-menu-title">{{ menu.label }}</h2>
-        <select class="mobile-page-select" :aria-label="labels.pages" :value="activePageId" @change="selectMenuPage(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in menu.groups??[]" :key="group.key" :label="group.label||menu.label"><option v-for="page in group.pages" :key="page.id" :value="page.id" :disabled="!!page.unavailableHint">{{page.label}}</option></optgroup><option v-if="menu.foot" :value="menu.foot.id">{{menu.foot.label}}</option></select>
-        <AppPanelPages
-          class="app-menu-pages"
-          :groups="menu.groups ?? []"
-          :foot="menu.foot"
-          :active-page-id="activePageId"
-          @select-page="selectMenuPage"
-        />
-      </aside>
+      <AppMenu
+        v-if="menu && !blocked"
+        :title="menu.label"
+        :groups="menuGroups"
+        :foot="menu.foot ?? null"
+        :active-id="activePageId"
+        :aria-label="labels.pages"
+        @select="selectMenuPage"
+      />
       <div class="platform-app-page">
         <PlatformPageHeader
           v-if="headerShown"
@@ -185,7 +221,7 @@ const headerLabels = computed(() => ({
           :actions="pageActions?.actions"
           :draft="pageActions?.draft ?? null"
           :labels="headerLabels"
-          :back-label="shownPage?.back ? labels.back : undefined"
+          :back-label="shownPage?.back ? (shownPage.backLabel ?? labels.back) : undefined"
           :more="moreActions"
           :more-label="labels.more"
           @back="shownPage?.back?.()"
@@ -231,7 +267,9 @@ const headerLabels = computed(() => ({
 .platform-page-body.own-frame {
   padding: 0;
 }
-.platform-page-body.browser-workspace {
+.platform-page-body.browser-workspace,
+.platform-page-body:has(> .panel-application-area),
+.platform-page-body:has(> .panel-host) {
   padding: 0;
   overflow: hidden;
 }
@@ -242,41 +280,6 @@ const headerLabels = computed(() => ({
   display: flex;
   flex: 1;
   min-height: 0;
-}
-/* An application with a menu of its own: the menu in its band, the page on the application's surface. */
-.platform-app-menu {
-  display: flex;
-  flex-direction: column;
-  flex: 0 0 var(--shell-app-column);
-  width: var(--shell-app-column);
-  box-sizing: border-box;
-  padding: 14px 10px 12px;
-  background: var(--shell-panel-bg);
-  border-right: 1px solid var(--el-border-color);
-  overflow: hidden;
-  min-height: 0;
-}
-/* The groups fill the column, so the application's own entry sits at its foot. */
-/*
- * The pages' list fills the room the title leaves, so the foot sits at the bottom of the column. The list draws itself at
- * least as tall as its parent; under the title that is one title too tall and pushes the foot out of view.
- */
-.platform-app-menu > .app-menu-pages {
-  flex: 1 1 0;
-  min-height: 0;
-  height: auto;
-}
-.app-menu-title {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  min-height: 36px;
-  margin: 0;
-  padding: 0 10px;
-  color: var(--el-text-color-primary);
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
-  line-height: var(--leading-lg);
 }
 .platform-app-page {
   display: flex;
@@ -293,14 +296,8 @@ const headerLabels = computed(() => ({
   color: var(--el-text-color-secondary);
   font-size: var(--text-base);
 }
-.mobile-page-select{display:none}
 @media(max-width:600px){
   .platform-app-body.has-menu{flex-direction:column;min-width:0}
-  .platform-app-menu{flex:0 0 auto;width:100%;padding:var(--spacing-sm) var(--page-gutter);border-right:0;border-bottom:1px solid var(--el-border-color);flex-direction:row;align-items:center;gap:var(--spacing-md)}
-  .app-menu-title{min-height:28px;font-size:var(--text-sm);padding-inline:var(--spacing-sm)}
-  .platform-app-menu>.app-menu-pages{display:none}
-  .app-menu-title{padding:0;white-space:nowrap}
-  .mobile-page-select{display:block;flex:1;min-width:0;max-width:100%;height:var(--control-height);padding:var(--spacing-xs) var(--spacing-sm);border:1px solid var(--el-border-color);border-radius:var(--radius-sm);background:var(--el-bg-color);color:var(--el-text-color-primary);font:inherit;font-size:var(--text-sm)}
   .platform-app-page{flex:1;overflow:hidden}
 }
 </style>

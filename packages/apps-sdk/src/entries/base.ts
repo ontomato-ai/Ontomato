@@ -7,14 +7,40 @@ export type {
   ObjectListColumn,
   ObjectListRef,
 } from "../base/object-list-types";
+export { default as ObjectCount } from "../base/ObjectCount.vue";
+export type { ObjectCountItem } from "../base/object-count-types";
 export { default as ObjectRelations } from "../base/ObjectRelations.vue";
 export { default as ObjectSummary } from "../base/ObjectSummary.vue";
+export { default as ObjectHeader } from "../base/ObjectHeader.vue";
+export { default as PageHeader } from "../base/PageHeader.vue";
+export type { PageHeaderDraft, PageHeaderLabels } from "../base/page-header-types";
+export { default as AppMenu } from "../base/AppMenu.vue";
+export type { AppMenuGroup, AppMenuIcon, AppMenuItem } from "../base/app-menu-types";
+export { default as TypedValue } from "../base/TypedValue.vue";
+export { default as RecordTemplate } from "../base/RecordTemplate.vue";
+export { default as InfoBanner } from "../base/InfoBanner.vue";
+export { default as ObjectRefCard } from "../base/ObjectRefCard.vue";
+export { default as MetricCard } from "../base/MetricCard.vue";
+export type {
+  TypedFieldFormat,
+  TypedNumberFormat,
+  TypedValueKind,
+} from "../base/display-value";
+export type { MetricCardItem } from "../base/metric-card-types";
 export { default as ObjectForm } from "../base/ObjectForm.vue";
+export { default as ObjectFormFields } from "../base/ObjectFormFields.vue";
+export type {
+  ObjectFormGroup,
+  ObjectFormPresentation,
+  ObjectFormResolvedGroup,
+  ObjectFormSlotScope,
+} from "../base/object-form-types";
 export { default as OperationButton } from "../base/OperationButton.vue";
 export { default as FileUploadControl } from "../base/FileUploadControl.vue";
 export { default as SegmentedControl } from "../base/SegmentedControl.vue";
 export type { SegmentedControlOption } from "../base/segmented-control-types";
 export { default as TwoPaneLayout } from "../base/TwoPaneLayout.vue";
+export { default as WorkbenchLayout } from "../base/WorkbenchLayout.vue";
 export { default as SectionGroup } from "../base/SectionGroup.vue";
 export { default as ReferencePicker } from "../base/ReferencePicker.vue";
 export { default as ObjectGraph } from "../base/ObjectGraph.vue";

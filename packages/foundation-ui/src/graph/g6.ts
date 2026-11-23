@@ -3,6 +3,8 @@ export { default as G6GraphCanvas } from "./G6GraphCanvas.vue";
 export { G6_LABEL_SIZE, G6_LABEL_WIDTH, G6_NODE_SIZE } from "./g6-elements";
 /** Where nodes nobody placed go: by their relations, the most connected first. */
 export { layoutByRelations, type LayoutRoom, type RelationLayout, type RelationLayoutLook } from "./relation-layout";
+/** Deterministic radial force-directed layout for organic entity/ontology graphs. */
+export { layoutByForce } from "./force-layout";
 export { graphCategorySlot, readGraphPalette } from "./palette";
 export type {
   GraphCanvasEdge,

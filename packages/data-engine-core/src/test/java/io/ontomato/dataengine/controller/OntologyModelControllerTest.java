@@ -69,7 +69,8 @@ class OntologyModelControllerTest {
 	@Test
 	void aCreateBodyReachesTheOwnerAsItsRecordAndAnswersCreated() throws Exception {
 		when(service.createObjectType(any(), eq(user), eq("en"))).thenReturn(
-				new ObjectTypeView("Pump", "Pump", "", 1, 0, 0, Map.of("status", "ok", "name", "pump_no")));
+				new ObjectTypeView("Pump", "Pump", "", 1, 0, 0, Map.of("status", "ok", "name", "pump_no"),
+						List.of("pump_no")));
 
 		var response = mvc().perform(post("/ontology/model/object-type/create")
 				.header("Accept-Language", "en")
@@ -170,7 +171,8 @@ class OntologyModelControllerTest {
 	@Test
 	void updatesAndDeletionsBindTheirPathAndBody() throws Exception {
 		when(service.updateObjectType(eq("Device"), any(), eq(user), eq("en"))).thenReturn(
-				new ObjectTypeView("Device", "Devices", "A device", 1, 0, 0, Map.of("status", "ok", "name", "id")));
+				new ObjectTypeView("Device", "Devices", "A device", 1, 0, 0, Map.of("status", "ok", "name", "id"),
+						List.of("id")));
 		when(service.deleteObjectType("Device", user, "en")).thenReturn(new ClassDeletion(List.of("owns")));
 
 		var update = mvc().perform(post("/ontology/model/object-type/update")

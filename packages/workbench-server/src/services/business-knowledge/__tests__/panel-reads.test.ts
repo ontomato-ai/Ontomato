@@ -235,6 +235,30 @@ it("shows a long content from shortly before its first hit under the title, as t
   expect(hit!.highlights?.subtitle).toEqual([{ start: 13, end: 20 }]);
 });
 
+it("strips raw Markdown syntax from list summaries while preserving highlight offsets and full body text", async () => {
+  const markdownEntry = {
+    knowledgeID: "k-md",
+    knowledgeTitle: "Staff scope",
+    knowledgeTags: ["Business"],
+    status: 1,
+    knowledgeText: "- When querying `career` staff, **never filter by** `contract` rules.",
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (new URL(url).pathname.endsWith("/admin/getBussinessKnowledge"))
+      return Response.json({ success: true, data: { "k-md": markdownEntry } });
+    return Response.json({ success: true, data: draftForm });
+  }));
+  const reads = createBusinessKnowledgeReadAdapter(viewer);
+
+  const { rows: [plain] } = await reads.query({});
+  expect(plain!.subtitle).toBe("When querying career staff, never filter by contract rules.");
+  expect(plain!.fields.knowledgeText).toBe(markdownEntry.knowledgeText);
+  const { rows: [listed] } = await reads.query({ search: "contract" });
+  expect(listed!.subtitle).toBe("…r filter by contract rules.");
+  const start = listed!.subtitle!.indexOf("contract");
+  expect(listed!.highlights?.subtitle).toEqual([{ start, end: start + "contract".length }]);
+});
+
 it("forwards the owner's form for a draft and for one entry's target", async () => {
   const { fetchOwner, sent } = ownerFetch();
   vi.stubGlobal("fetch", fetchOwner);

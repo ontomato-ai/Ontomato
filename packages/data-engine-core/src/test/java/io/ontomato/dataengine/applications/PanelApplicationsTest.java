@@ -384,9 +384,17 @@ class PanelApplicationsTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.panelUses.length()").value(2))
             .andExpect(jsonPath("$.data.panelUses[0].names.en").value("Tasks"));
+        assertDoesNotThrow(() -> ApplicationPanelUse.validate(List.of(
+            new ApplicationPanelUse("use-zh", "zh-only", "panel-p", "/applications/app-panel-a/zh-only",
+                new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("zh-CN", "任务"))
+        )));
         assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(
             new ApplicationPanelUse("use-invalid", "invalid", "panel-p", "/applications/app-panel-a/invalid",
-                new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("zh-CN", "任务"))
+                new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of())
+        )));
+        assertThrows(ResponseStatusException.class, () -> ApplicationPanelUse.validate(List.of(
+            new ApplicationPanelUse("use-blank", "blank", "panel-p", "/applications/app-panel-a/blank",
+                new ApplicationPanelUse.Access(null, "domain-member"), null, Map.of("zh-CN", "   "))
         )));
     }
 

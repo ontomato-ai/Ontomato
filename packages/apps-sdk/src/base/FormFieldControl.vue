@@ -2,20 +2,25 @@
 import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElButton } from "element-plus/es/components/button/index";
-import { ElFormItem } from "element-plus/es/components/form/index";
 import { ElInput } from "element-plus/es/components/input/index";
+import { ElRadio, ElRadioGroup } from "element-plus/es/components/radio/index";
 import { ElOption, ElSelect } from "element-plus/es/components/select/index";
 import { ElSwitch } from "element-plus/es/components/switch/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelFormField } from "@ontomato/contracts/panel-projection";
+import {
+  panelFormObjectActiveFields,
+  panelFormObjectActiveVariant,
+  type PanelFormField,
+} from "@ontomato/contracts/panel-projection";
 import { findPanelFormOption, type PanelFormOption } from "@ontomato/contracts/form-fields";
-import { admitsNull, valueAt } from "../panel/form-values";
+import { admitsNull, cloneJsonValue, valueAt } from "../panel/form-values";
 import { agentAvatar, avatarIconOptions, darkAvatarColorOptions, lightAvatarColorOptions, storedAgentAvatar } from "@ontomato/agent-shell-ui/avatar";
 import { useDarkMode } from "@ontomato/foundation-ui/theme";
 import { useFormControls } from "./form-controls";
 import FormCodeField from "./FormCodeField.vue";
 import FormLocalizedText from "./FormLocalizedText.vue";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
+import FormFieldFrame from "./FormFieldFrame.vue";
 import FormRowField from "./FormRowField.vue";
 import { ApplicationIconPicker } from "@ontomato/platform-shell";
 import { ScheduleFrequency, frequencyDraft, frequencyOf, type FrequencyDraft } from "@ontomato/platform-schedules/frequency-control";
@@ -88,7 +93,7 @@ function move(index: number, to: number) {
 const remove = (index: number) => controls.reorder(props.path, rows.value.map((_, at) => at).filter((at) => at !== index));
 
 function addRow() {
-  if (control.value.kind === "object-array") set([...rows.value, control.value.defaultItem ?? {}]);
+  if (control.value.kind === "object-array") set([...rows.value, cloneJsonValue(control.value.defaultItem ?? {})]);
   else set([...rows.value, ""]);
 }
 /** A number as the reader typed it; cleared, it is null, never 0. (The input itself refuses text that is no number.) */
@@ -115,7 +120,25 @@ const setAvatar = (next: { key?: string; swatch?: number }) => set(storedAgentAv
 /** A hidden field is the owner's and is drawn by no control; an advanced one is drawn in the level's advanced section. */
 const drawn = (fields: readonly PanelFormField[], advanced: boolean) =>
   fields.filter((child) => child.control.kind !== "hidden" && (child.advanced === true) === advanced);
-const addObject = () => set(control.value.kind === "object" ? control.value.defaultObject ?? {} : {});
+const objectVariant = computed(() => (
+  control.value.kind === "object"
+    ? panelFormObjectActiveVariant(control.value, object.value ?? undefined)
+    : undefined
+));
+const objectFields = computed(() => (
+  control.value.kind === "object"
+    ? panelFormObjectActiveFields(control.value, object.value ?? undefined)
+    : []
+));
+const commonObjectPaths = computed(() => new Set(
+  control.value.kind === "object" ? control.value.fields.map((child) => child.path) : [],
+));
+const objectChildKey = (child: PanelFormField) => (
+  commonObjectPaths.value.has(child.path) || objectVariant.value === undefined
+    ? child.path
+    : `${objectVariant.value}:${child.path}`
+);
+const addObject = () => set(control.value.kind === "object" ? cloneJsonValue(control.value.defaultObject ?? {}) : {});
 /**
  * A frequency, edited as the scheduled task page edits it: the editor keeps every kind's own values while the reader
  * switches kinds, and the owner's value is the chosen kind's alone. A new value from the owner (a draft, a refresh)
@@ -135,33 +158,49 @@ function setFrequency(next: FrequencyDraft) {
 </script>
 
 <template>
-  <el-form-item
-    class="sdk-form-field"
-    :label="field.label"
-    :required="field.required"
+  <form-field-frame
+    :field="field"
+    :path="path"
     :error="controls.errors.value[path]"
-    :class="{ 'sdk-owner-form-field-changed': controls.changed.value.has(path), 'is-readonly': field.readOnly }"
-    :data-field="path"
+    :changed="controls.changed.value.has(path)"
+    :disabled="disabled"
+    :field-class="controls.changed.value.has(path) ? 'sdk-form-field sdk-owner-form-field-changed' : 'sdk-form-field'"
   >
     <template v-if="control.kind === 'text' || control.kind === 'markdown'">
       <el-input
         :model-value="text"
         :type="control.kind === 'markdown' || control.multiline ? 'textarea' : 'text'"
-        :autosize="control.kind === 'markdown' ? { minRows: 6 } : undefined"
+        :rows="control.kind === 'text' && control.multiline && !control.rows ? 3 : undefined"
+        :autosize="control.kind === 'markdown' ? { minRows: 6 } : (control.kind === 'text' && control.multiline && control.rows ? { minRows: control.rows, maxRows: Math.max(control.rows, 24) } : undefined)"
         :placeholder="control.kind === 'text' ? control.placeholder ?? undefined : undefined"
         :maxlength="control.kind === 'text' ? control.maxLength : undefined"
+        :show-word-limit="control.kind === 'text' && control.maxLength !== undefined && !off"
         :disabled="off"
         @update:model-value="set($event)"
       ></el-input>
       <!-- Markdown says how long it is as the reader writes it, as the agent settings page did for its prompt. -->
       <p v-if="control.kind === 'markdown'" class="sdk-form-field-count">{{ t("platform.formCharacters", { count: text.length }) }} · Markdown</p>
     </template>
+    <el-radio-group
+      v-else-if="control.kind === 'select' && !control.multiple && !objectOptions && control.presentation === 'radio'"
+      :model-value="typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : ''"
+      :disabled="off"
+      @update:model-value="set($event as RuntimeJsonValue)"
+    >
+      <el-radio
+        v-for="(option, index) in control.options"
+        :key="index"
+        :value="typeof option.value === 'string' || typeof option.value === 'number' || typeof option.value === 'boolean' ? option.value : ''"
+        :disabled="option.disabled"
+      >{{ option.label }}</el-radio>
+    </el-radio-group>
     <!-- Options whose values are objects: chosen by place, shown as the declared option the value is, written whole. -->
     <el-select
       v-else-if="control.kind === 'select' && objectOptions"
       :model-value="control.multiple ? rows.map(optionIndex) : optionIndex(value)"
       :multiple="control.multiple"
       :clearable="!field.required"
+      :placeholder="control.placeholder ?? undefined"
       :disabled="off"
       class="sdk-form-field-wide"
       @update:model-value="chooseObject"
@@ -184,6 +223,7 @@ function setFrequency(next: FrequencyDraft) {
       :allow-create="control.allowCreate"
       :default-first-option="control.allowCreate"
       :fit-input-width="control.options.some(optionNote)"
+      :placeholder="control.placeholder ?? undefined"
       :disabled="off"
       class="sdk-form-field-wide"
       @update:model-value="set($event)"
@@ -249,20 +289,20 @@ function setFrequency(next: FrequencyDraft) {
     <div v-else-if="control.kind === 'object'" class="sdk-form-object">
       <template v-if="object">
         <form-field-control
-          v-for="child in drawn(control.fields, false)"
-          :key="child.path"
+          v-for="child in drawn(objectFields, false)"
+          :key="objectChildKey(child)"
           :field="child"
           :path="path + child.path"
           :disabled="off"
         ></form-field-control>
         <form-advanced-section
-          v-if="drawn(control.fields, true).length"
+          v-if="drawn(objectFields, true).length"
           class="sdk-form-object"
-          :paths="drawn(control.fields, true).map((child) => path + child.path)"
+          :paths="drawn(objectFields, true).map((child) => path + child.path)"
         >
           <form-field-control
-            v-for="child in drawn(control.fields, true)"
-            :key="child.path"
+            v-for="child in drawn(objectFields, true)"
+            :key="objectChildKey(child)"
             :field="child"
             :path="path + child.path"
             :disabled="off"
@@ -341,18 +381,10 @@ function setFrequency(next: FrequencyDraft) {
       </div>
     </div>
     <p v-else role="alert" class="sdk-form-field-unavailable">{{ t("platform.formControlUnavailable") }}</p>
-    <p v-if="field.readOnly && field.readOnlyReason && !controls.sharedReadOnlyReasons.value.has(field.readOnlyReason)" class="sdk-form-field-help">{{ field.readOnlyReason }}</p>
-    <p v-else-if="field.help" class="sdk-form-field-help">{{ field.help }}</p>
-  </el-form-item>
+  </form-field-frame>
 </template>
 
 <style scoped>
-/* A value the owner keeps read-only is still the reader's to read: Element Plus's disabled grey is for a control that is
-   off, not for a value that is shown. */
-.sdk-form-field.is-readonly :deep(:is(.el-input__inner, .el-textarea__inner, .el-select__selected-item)) {
-  color: var(--el-text-color-regular);
-  -webkit-text-fill-color: var(--el-text-color-regular);
-}
 .sdk-form-avatar {
   display: flex;
   flex-direction: column;
@@ -390,15 +422,6 @@ function setFrequency(next: FrequencyDraft) {
 }
 .sdk-form-field-wide {
   width: 100%;
-}
-.sdk-owner-form-field-changed > :deep(.el-form-item__label) {
-  color: var(--brand-link);
-}
-.sdk-form-field-help {
-  color: var(--el-text-color-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  margin: var(--spacing-xs) 0 0;
 }
 .sdk-form-field-count {
   width: 100%;
