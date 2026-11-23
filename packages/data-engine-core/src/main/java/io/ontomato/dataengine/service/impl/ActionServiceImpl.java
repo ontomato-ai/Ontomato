@@ -808,7 +808,7 @@ public class ActionServiceImpl implements ActionService {
       codeReadOnlyReason = langService.get(lang, "Action.publishedIsFrozen");
     JSONArray classOptions = JSONArray.from(adminService.getJSONRule(domainId).get("classDef"));
     return ActionForm.describe(
-        values, errors, existing, readOnlyReason, codeReadOnlyReason, classOptions, lang, langService);
+        values, errors, readOnlyReason, codeReadOnlyReason, classOptions, lang, langService);
   }
 
   @Override

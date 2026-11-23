@@ -54,7 +54,7 @@ const createForm = {
     { path: "/name", label: "Name", control: { kind: "text" }, valueSchema: {}, required: true, readOnly: false },
   ],
   values: { className: "", name: "" }, errors: [],
-  save: { method: "POST" as const, path: "/ontology/model/attribute/create", bodySchema: {}, draftOperation: "attribute.create" },
+  save: { method: "POST" as const, path: "/ontology/model/attribute/create", bodySchema: {} },
 };
 const save = {
   kind: "form.save", handlerRef: `${ATTRIBUTE}.save`, label: "Save", effect: "write", target: { source: "input", input: "attribute" },

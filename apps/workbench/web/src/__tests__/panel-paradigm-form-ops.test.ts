@@ -42,7 +42,6 @@ const formSaveMeta = {
   method: "PUT",
   path: "/functions/:id",
   bodySchema: {},
-  draftOperation: "function.save",
 };
 
 const saveDescriptor: PanelOwnerOperationDescriptor = {

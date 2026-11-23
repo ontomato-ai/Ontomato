@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { PanelDownloadFile } from "@ontomato/contracts/panel-download";
 import type { PanelOperationOutcome } from "@ontomato/contracts/panel-agent";
-import type { PanelFormTarget, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelFormTarget, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import {
   describePanelOperationFromDeclaration, panelOperationDeclarationSchema, type PanelOperationDeclaration,
   type PanelOwnerOperationDescriptor, type PanelReadOperationResult, type panelBatchInvocationSchema,
@@ -95,13 +95,8 @@ export type PanelWriteServerOperation = ServerOperation & (
   TargetedExecution & {
     kind: "form.save";
     batch: false;
-    draftOperation(target: PanelOperationTarget): string;
     draftInput(input: Record<string, unknown>, target: PanelOperationTarget): Record<string, unknown>;
-
-    create?: {
-      draftValues(values: unknown, domainId: string): Record<string, unknown>;
-      createdObject(data: unknown): PanelObjectIdentity;
-    };
+    create?: boolean;
   } |
   ({ kind: "action" } & (
     (TargetedExecution & {

@@ -1409,7 +1409,7 @@ test("form save preserves nested JSON and the owner's revision when present", ()
 });
 
 const editableField = { required: false, readOnly: false };
-const ownerSave = { method: "PUT", path: "/workflows/example", bodySchema: {}, draftOperation: "workflow.update" };
+const ownerSave = { method: "PUT", path: "/workflows/example", bodySchema: {} };
 
 test("field validation stays in the ready form and preserves the submitted value", async () => {
   const { productPanelReadResponseSchema } = await import("./panel-host");

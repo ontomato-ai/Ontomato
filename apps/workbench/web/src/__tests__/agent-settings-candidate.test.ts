@@ -90,8 +90,8 @@ const fields: PanelFormDescription["fields"] = [
     { readOnly: true, readOnlyReason: "Only a domain governance administrator changes it" }),
 ];
 const save = (create: boolean) => create
-  ? { method: "POST" as const, path: "/assistant/agent-definitions", bodySchema: {}, draftOperation: "agent.create" }
-  : { method: "PUT" as const, path: `/assistant/agent-definitions/${AGENT}`, bodySchema: {}, draftOperation: "agent.update" };
+  ? { method: "POST" as const, path: "/assistant/agent-definitions", bodySchema: {} }
+  : { method: "PUT" as const, path: `/assistant/agent-definitions/${AGENT}`, bodySchema: {} };
 const definition = (id: string, values: PanelFormValues) => ({ id, sortOrder: 0, ...values });
 
 type Read = {

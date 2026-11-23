@@ -88,7 +88,7 @@ function network(candidate: () => CandidatePanelSource | Response) {
     if (request.path === "/api/product-panels/read") return Response.json({ status: "ready", value: {
       fields: [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: {}, required: false, readOnly: false }],
       values: (request.body as { runtimeParams?: { values?: object } }).runtimeParams?.values ?? { name: "" }, errors: [], revision: 1,
-      save: { method: "POST", path: "/assistant/agent-definitions", bodySchema: {}, draftOperation: "agent.create" },
+      save: { method: "POST", path: "/assistant/agent-definitions", bodySchema: {} },
     } });
     return nothingAt(request);
   };

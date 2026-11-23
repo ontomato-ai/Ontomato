@@ -187,7 +187,7 @@ it("keeps form field mode intact when formField is declared and renders nothing 
         values: { model: "openai/gpt" },
         errors: [],
         revision: 1,
-        save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.update" },
+        save: { method: "PUT", path: "/agents/:id", bodySchema: {} },
       });
     },
     {

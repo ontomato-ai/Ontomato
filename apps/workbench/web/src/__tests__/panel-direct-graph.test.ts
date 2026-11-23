@@ -251,7 +251,7 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
           ],
           values: { classNames: ["Customer"] },
           errors: [],
-          save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: `${AGENT_DEFINITION}.save` },
+          save: { method: "PUT", path: "/agents/:id", bodySchema: {} },
         });
       }
       if (request.dataName === "nodes") {
@@ -309,7 +309,7 @@ it("draws direct ObjectGraph in a frame via frameMemberData and edits the paired
         ],
         values: { classNames: ["Customer"] },
         errors: [],
-        save: { method: "PUT" as const, path: "/agents/:id", bodySchema: {}, draftOperation: `${AGENT_DEFINITION}.save` },
+        save: { method: "PUT" as const, path: "/agents/:id", bodySchema: {} },
       }),
       save: vi.fn(async () => ({ primaryKey: "agent-1", label: "Agent", fields: {} })),
     },

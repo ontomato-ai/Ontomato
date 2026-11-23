@@ -129,7 +129,6 @@ function formResult(
       method: "PUT",
       path: `/api/product-${kind}s/${encodeURIComponent(id)}`,
       bodySchema: jsonSchema(schema),
-      draftOperation: revision === undefined ? `${kind}.create` : `${kind}.update`,
     },
   };
 }

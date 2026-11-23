@@ -195,7 +195,6 @@ function actionFormDescription(values: { name: string; code: string }, isCreate:
       method: isCreate ? "POST" : "PUT",
       path: isCreate ? "/actions" : "/actions/approve-order",
       bodySchema: { type: "object" },
-      draftOperation: isCreate ? "action.create" : "action.update",
     },
   };
 }

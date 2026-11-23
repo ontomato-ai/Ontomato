@@ -103,7 +103,6 @@ const ownerFormDescription = (target: { kind: string; primaryKey?: string }, val
     method: "POST",
     path: target.kind === "draft" ? "/data-query/admin/addBussinessKnowledge" : "/data-query/admin/editBussinessKnowledge",
     bodySchema: { type: "object" },
-    draftOperation: target.kind === "draft" ? "knowledge.create" : "knowledge.update",
   },
 });
 

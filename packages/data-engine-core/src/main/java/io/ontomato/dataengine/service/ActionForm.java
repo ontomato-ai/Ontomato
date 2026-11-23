@@ -12,9 +12,6 @@ import java.util.List;
 public final class ActionForm {
   private ActionForm() {}
 
-  public static final String CREATE_OPERATION = "action.create";
-  public static final String UPDATE_OPERATION = "action.update";
-
   private static final List<String> STATUSES =
       List.of(Action.STATUS_PENDING_REVIEW, Action.STATUS_PUBLISHED, Action.STATUS_UNUSED);
 
@@ -39,7 +36,6 @@ public final class ActionForm {
   public static JSONObject describe(
       JSONObject values,
       List<ObjectNode> errors,
-      boolean existing,
       String readOnlyReason,
       String codeReadOnlyReason,
       JSONArray classOptions,
@@ -139,7 +135,7 @@ public final class ActionForm {
             codeReason,
             null,
             false));
-    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save(existing));
+    return JSONObject.of("fields", fields, "values", values, "errors", errors, "save", save());
   }
 
   /** The field errors of an incoming draft, empty when the owner accepts it; nothing is saved. */
@@ -253,7 +249,7 @@ public final class ActionForm {
     return options;
   }
 
-  private static JSONObject save(boolean existing) {
+  private static JSONObject save() {
     JSONObject properties = new JSONObject();
     properties.put("id", PanelFormFields.schema("string"));
     properties.put("name", JSONObject.of("type", "string", "minLength", 1));
@@ -271,8 +267,7 @@ public final class ActionForm {
             JSONObject.of(
                 "type", "object",
                 "properties", properties,
-                "required", JSONArray.of("name", "function")),
-        "draftOperation", existing ? UPDATE_OPERATION : CREATE_OPERATION);
+                "required", JSONArray.of("name", "function")));
   }
 
   /** A removable object writes null when removed, so its schema admits null beside the object. */

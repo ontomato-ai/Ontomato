@@ -220,7 +220,7 @@ function emptyForm(id: string) {
     values: {},
     errors: [],
     revision: 1,
-    save: { method: "PUT", path: `/applications/${id}`, bodySchema: {}, draftOperation: `${APPLICATION}.save` },
+    save: { method: "PUT", path: `/applications/${id}`, bodySchema: {} },
   };
 }
 

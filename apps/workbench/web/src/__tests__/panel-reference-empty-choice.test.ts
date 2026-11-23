@@ -62,7 +62,7 @@ function open(options: unknown[], held: unknown[]) {
       if ("operations" in request) return { status: "ready", value: { save } as never };
       if (request.dataName === "options") return { status: "ready", value: { options } as never };
       if (request.dataName === "selected") return { status: "ready", value: { options: held } as never };
-      return { status: "ready", value: { fields, values: { model: null }, errors: [], revision: 1, save: { method: "PUT", path: "/agents/:id", bodySchema: {}, draftOperation: "agent.update" } } as never };
+      return { status: "ready", value: { fields, values: { model: null }, errors: [], revision: 1, save: { method: "PUT", path: "/agents/:id", bodySchema: {} } } as never };
     },
   });
   const element = document.createElement("div");

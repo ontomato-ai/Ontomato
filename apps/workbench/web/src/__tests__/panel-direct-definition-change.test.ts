@@ -42,7 +42,7 @@ const manifest: DirectPanelManifest = {
 const description = {
   fields: [{ path: "/name", label: "Name", control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false }],
   values: { name: "Nightly" }, errors: [], revision: 2,
-  save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+  save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
 };
 
 afterEach(() => {

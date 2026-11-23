@@ -72,7 +72,6 @@ function mountCustomerForm(options: {
   objectType?: string;
   primaryKey?: string | null;
   includeCreateForm?: boolean;
-  draftOperation?: string;
 }) {
   const objectType = options.objectType ?? CUSTOMER;
   const primaryKey = options.primaryKey === undefined ? "cust-1" : options.primaryKey;
@@ -175,7 +174,6 @@ function mountCustomerForm(options: {
           method: "PUT",
           path: `/ontology/objects/${objectType}`,
           bodySchema: {},
-          draftOperation: options.draftOperation ?? `${objectType}.update`,
         },
       });
     },
@@ -665,7 +663,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     const platform = mountCustomerForm({
       objectType: FUNCTION,
       primaryKey: "fn-1",
-      draftOperation: "function.save",
       fields: [
         { path: "/name", label: "Name", valueSchema: { type: "string" }, required: true, readOnly: false, control: { kind: "text" } },
         { path: "/description", label: "Description", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
@@ -738,7 +735,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
       objectType: FUNCTION,
       primaryKey: null,
       includeCreateForm: true,
-      draftOperation: "function.save",
       fields: [
         { path: "/name", label: "Name", valueSchema: { type: "string" }, required: true, readOnly: true, control: { kind: "text" } },
       ],
@@ -827,7 +823,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
       objectType: FUNCTION,
       primaryKey: null,
       includeCreateForm: true,
-      draftOperation: "function.save",
       fields: platformFields,
       values: platformValues,
       operations: {
@@ -870,7 +865,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     const deniedEdit = mountCustomerForm({
       objectType: FUNCTION,
       primaryKey: "fn-1",
-      draftOperation: "function.save",
       fields: platformFields,
       values: platformValues,
       operations: {
@@ -901,7 +895,6 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     const admittedEdit = mountCustomerForm({
       objectType: FUNCTION,
       primaryKey: "fn-1",
-      draftOperation: "function.save",
       fields: platformFields,
       values: platformValues,
       operations: {

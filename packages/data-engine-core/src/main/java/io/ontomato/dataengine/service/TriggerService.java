@@ -109,7 +109,7 @@ public class TriggerService {
 						values, actionIds(domainActions), workflowIds(domainWorkflows), lang, langService);
 			}
 		}
-		return TriggerForm.describe(values, errors, existing, domainActions, domainWorkflows, lang, langService);
+		return TriggerForm.describe(values, errors, domainActions, domainWorkflows, lang, langService);
 	}
 
 	/**

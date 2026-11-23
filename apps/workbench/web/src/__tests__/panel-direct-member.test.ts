@@ -51,7 +51,7 @@ const manifest: DirectPanelManifest = {
 const field = (path: string, label: string) => ({ path, label, control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false });
 const form = (name: string, revision = 3) => ({
   fields: [field("/name", "Name"), field("/note", "Note")], values: { name, note: "" }, errors: [], revision,
-  save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+  save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {} },
 });
 const runNow = {
   kind: "action", handlerRef: "schedules.runNow", label: "立即运行", effect: "write", target: { source: "input", input: "task" },

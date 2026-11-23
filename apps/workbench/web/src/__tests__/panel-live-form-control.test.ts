@@ -176,7 +176,7 @@ function mountLiveForm(options: {
         values,
         errors: [],
         revision: 4,
-        save: { method: "PUT", path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+        save: { method: "PUT", path: "/tasks/:id", bodySchema: {} },
       });
     },
   });

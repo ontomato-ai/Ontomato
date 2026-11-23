@@ -125,7 +125,6 @@ it("reads the viewer's task rows and selected summary, and recomputes the select
   const create = await reads.createForm({});
   expect(create).toMatchObject({
     values: { task: { title: "", appId: "", frequency: { kind: "daily", time: "09:00" }, timeZone: task.timeZone } },
-    save: { draftOperation: "platform:ScheduledTask.create" },
   });
   const prefilling = await reads.createForm({ defaultAppId: "operations" });
   expect(prefilling.values.task).toMatchObject({ appId: "operations" });

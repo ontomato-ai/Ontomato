@@ -54,7 +54,7 @@ const triggerForm = {
   ],
   values: { name: "Nightly check", condition: { frequency: { kind: "daily", time: "09:00" }, timeZone: "Asia/Shanghai" } },
   errors: [],
-  save: { method: "POST", path: "/trigger/save", bodySchema: { type: "object" }, draftOperation: "trigger.update" },
+  save: { method: "POST", path: "/trigger/save", bodySchema: { type: "object" } },
 };
 
 afterEach(() => {

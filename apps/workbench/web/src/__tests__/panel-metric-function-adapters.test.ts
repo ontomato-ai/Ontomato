@@ -35,7 +35,7 @@ const formDescription = {
   fields: [{ path: "/name", label: "Name", control: { kind: "text" }, valueSchema: { type: "string" }, required: true, readOnly: false }],
   values: { name: "Revenue" },
   errors: [],
-  save: { method: "POST", path: "/metricView/save", bodySchema: {}, draftOperation: "metric-view.update" },
+  save: { method: "POST", path: "/metricView/save", bodySchema: {} },
 };
 
 describe("metric and function resource adapters", () => {
@@ -176,7 +176,7 @@ describe("metric and function resource adapters", () => {
     const description = {
       ...formDescription,
       errors: [],
-      save: { method: "POST", path: "/function/save", bodySchema: {}, draftOperation: "function.create" },
+      save: { method: "POST", path: "/function/save", bodySchema: {} },
     };
     const { requests, sent } = fake(() => ({ success: true, data: description }));
     const [adapter] = functionAdapters(requests);

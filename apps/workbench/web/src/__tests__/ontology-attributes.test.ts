@@ -200,7 +200,7 @@ function createAttributeForm() {
     values: { className: "", name: "" },
     errors: [],
     revision: 1,
-    save: { method: "POST", path: "/ontology/model/attribute/create", bodySchema: {}, draftOperation: `${ATTRIBUTE}.save` },
+    save: { method: "POST", path: "/ontology/model/attribute/create", bodySchema: {} },
   };
 }
 
@@ -236,7 +236,7 @@ function editAttributeForm(item: FixtureAttribute) {
     values: { name: item.name, showName: item.label, attrDesc },
     errors: [],
     revision: 1,
-    save: { method: "PUT", path: `/ontology/model/attribute/${item.primaryKey}`, bodySchema: {}, draftOperation: `${ATTRIBUTE}.save` },
+    save: { method: "PUT", path: `/ontology/model/attribute/${item.primaryKey}`, bodySchema: {} },
   };
 }
 

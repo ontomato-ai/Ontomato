@@ -588,7 +588,7 @@ describe("Item 1.1, 1.4, 1.6 & 2.4: ObjectForm fixedFields staleness, expectedTa
     ],
     values: { scope: "Scope-A", name: "Original" },
     errors: [],
-    save: { method: "PUT", path: "/tasks/t-1", bodySchema: {}, draftOperation: "tasks.save" },
+    save: { method: "PUT", path: "/tasks/t-1", bodySchema: {} },
   };
 
   const saveDescriptor: PanelOwnerOperationDescriptor = {

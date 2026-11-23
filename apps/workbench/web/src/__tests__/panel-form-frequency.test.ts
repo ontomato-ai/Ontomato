@@ -40,7 +40,7 @@ const description = {
   fields: [field("/title", "Title", { kind: "text" }), field("/frequency", "Frequency", { kind: "frequency" })],
   values: { title: "Weekly knowledge check", frequency: { kind: "daily", time: "09:00" } },
   errors: [], revision: 1,
-  save: { method: "PUT", path: "/schedules/tasks/:id", bodySchema: {}, draftOperation: "schedule.update" },
+  save: { method: "PUT", path: "/schedules/tasks/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 const saveDescriptor = {

@@ -363,7 +363,7 @@ beforeAll(async () => {
             })) },
           }],
           values, errors: [],
-          save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.create" },
+          save: { method: "POST", path: "/action/save", bodySchema: {} },
         } });
       } else {
         expect(req.body).toMatchObject({
@@ -372,7 +372,7 @@ beforeAll(async () => {
         });
         res.json({ success: true, data: {
           fields: [], values: req.body.values, errors: [],
-          save: { method: "POST", path: "/action/save", bodySchema: {}, draftOperation: "action.update" },
+          save: { method: "POST", path: "/action/save", bodySchema: {} },
         } });
       }
     });
@@ -396,7 +396,7 @@ beforeAll(async () => {
       if (!draft) expect(req.body.target).toEqual({ kind: "object", objectType, primaryKey: definition.id });
       res.json({ success: true, data: {
         fields: [], values: req.body.values ?? { name: draft ? "" : definition.name }, errors: [],
-        save: { method: "POST", path: `/${root}/save`, bodySchema: {}, draftOperation: draft ? "create" : "update" },
+        save: { method: "POST", path: `/${root}/save`, bodySchema: {} },
       } });
     });
   }
@@ -699,7 +699,7 @@ it("reads back stable member keys and named data, and leaves the record intact a
     status: "ready", value: { revision: task.revision, values: { task: { title: task.title, frequency: task.frequency } } },
   });
   expect(await (await read("create", "createForm", {})).json()).toMatchObject({
-    status: "ready", value: { values: { task: { appId: "", timeZone: task.timeZone } }, save: { draftOperation: "platform:ScheduledTask.create" } },
+    status: "ready", value: { values: { task: { appId: "", timeZone: task.timeZone } } },
   });
   expect(await (await read("create", "createForm", { defaultAppId: task.appId })).json()).toMatchObject({
     status: "ready", value: {
@@ -1184,7 +1184,7 @@ it("reads the metric and function catalogues, a definition and its forms with th
     expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { primaryKey: definition.id } });
     expect(await read("missing", "record")).toEqual({ status: "error", message: "Definition not found" });
     expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft" }, errors: [] } });
-    expect(await read("create", "form")).toMatchObject({ status: "ready", value: { values: { name: "" }, save: { draftOperation: "create" } } });
+    expect(await read("create", "form")).toMatchObject({ status: "ready", value: { values: { name: "" } } });
   }
 });
 
@@ -1294,7 +1294,7 @@ it("dispatches the action catalog's reads and both operation descriptions", asyn
   expect(await read("summary", "record")).toMatchObject({ status: "ready", value: { fields: { status: "Published" } } });
   expect(await read("definition", "form")).toMatchObject({ status: "ready", value: { values: { name: "Draft review" }, errors: [] } });
   expect(await read("create", "createForm")).toMatchObject({
-    status: "ready", value: { values: { name: "New review" }, save: { draftOperation: "action.create" } },
+    status: "ready", value: { values: { name: "New review" } },
   });
   expect(await read("explained", "definition")).toMatchObject({
     status: "ready", value: { source: "DERIVED", effects: [{ kind: "UPDATE_OBJECT", kindLabel: "更新对象" }], affects: ["Order"] },

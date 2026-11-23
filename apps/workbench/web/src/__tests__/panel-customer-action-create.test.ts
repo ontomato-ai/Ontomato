@@ -39,7 +39,7 @@ const createFormDescription = {
   ],
   values: { customer: "", amount: null },
   errors: [],
-  save: { method: "POST", path: "/ontology/objects/CustomerOrder", bodySchema: {}, draftOperation: "CustomerOrder.create" },
+  save: { method: "POST", path: "/ontology/objects/CustomerOrder", bodySchema: {} },
 };
 
 afterEach(() => {
@@ -193,7 +193,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
           return ready({
             ...createFormDescription,
             values: { customer: "New Co", amount: 55 },
-            save: { method: "PUT", path: "/ontology/objects/CustomerOrder", bodySchema: {}, draftOperation: "CustomerOrder.update" },
+            save: { method: "PUT", path: "/ontology/objects/CustomerOrder", bodySchema: {} },
           });
         }
         return ready(createFormDescription);
@@ -233,7 +233,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
           return ready({
             ...createFormDescription,
             values: { customer: "New Co", amount: 55 },
-            save: { method: "PUT", path: "/ontology/objects/CustomerOrder", bodySchema: {}, draftOperation: "CustomerOrder.update" },
+            save: { method: "PUT", path: "/ontology/objects/CustomerOrder", bodySchema: {} },
           });
         }
         const values = (request.runtimeParams?.values as Record<string, unknown> | undefined) ?? { customer: "", amount: null };
@@ -305,7 +305,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
         return ready({
           ...createFormDescription,
           values,
-          save: { method: "PUT", path: "/ontology/objects/CustomerOrder", bodySchema: {}, draftOperation: "CustomerOrder.update" },
+          save: { method: "PUT", path: "/ontology/objects/CustomerOrder", bodySchema: {} },
         });
       },
     });
@@ -521,7 +521,7 @@ describe("OperationButton with targetless customer Action", () => {
       ],
       values: { campus: "", term: "", customer: "", phone: "", grade: "", note: "" },
       errors: [],
-      save: { method: "POST", path: "/ontology/objects/CustomerOrder", bodySchema: {}, draftOperation: "CustomerOrder.create" },
+      save: { method: "POST", path: "/ontology/objects/CustomerOrder", bodySchema: {} },
     };
 
     const actionParams = {

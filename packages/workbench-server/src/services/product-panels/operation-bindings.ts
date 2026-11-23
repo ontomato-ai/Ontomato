@@ -15,6 +15,6 @@ export function boundProjectionOperations(projection: Pick<ProductProjectionInpu
 }
 
 export function allowsOperationDraft(projection: Pick<ProductProjectionInput, "data">, handler: PanelServerOperation): boolean {
-  return handler.kind === "form.save" && Boolean(handler.create) && Object.values(projection.data).some(({ source, read }) =>
+  return handler.kind === "form.save" && handler.create === true && Object.values(projection.data).some(({ source, read }) =>
     read === "createForm" && "type" in source && source.type.kind === "PlatformObjectType" && source.type.id === handler.targetType);
 }

@@ -131,7 +131,7 @@ it.each([["normalizes a legacy address and renews", false], ["keeps the schedule
         case "record": return Response.json({ status: "ready", value: row });
         case "form": return Response.json({ status: "ready", value: {
           fields: [], values: {}, errors: [], revision: 1,
-          save: { method: "PUT", path: `/scheduled-tasks/${taskId}`, bodySchema: {}, draftOperation: "platform:ScheduledTask.save" },
+          save: { method: "PUT", path: `/scheduled-tasks/${taskId}`, bodySchema: {} },
         } });
         case "runs": {
           if (!checkHistory) return Response.json({ status: "ready", value: { runs: [run], nextCursor: null } });

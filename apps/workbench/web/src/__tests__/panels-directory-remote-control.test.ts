@@ -176,7 +176,6 @@ function formDescription(mode: "create" | "edit", key: string, includeMembersFie
       method: mode === "create" ? "POST" : "PUT",
       path: `/api/product-panels/${key || "new"}`,
       bodySchema: {},
-      draftOperation: mode === "create" ? "create" : "save",
     },
   };
 }

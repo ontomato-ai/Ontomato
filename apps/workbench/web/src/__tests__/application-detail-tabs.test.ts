@@ -156,7 +156,6 @@ function entryFormDescription(entryId: string) {
       method: "PUT",
       path: "/applications/app-1",
       bodySchema: {},
-      draftOperation: `${APPLICATION}.save`,
     },
   };
 }

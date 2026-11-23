@@ -45,7 +45,7 @@ const description = {
   values: { names: { en: "Orders", "zh-CN": "订单" } },
   errors: [{ field: "/names/en", code: "already_exists", message: "Another application is named Orders" }],
   revision: 1,
-  save: { method: "PUT", path: "/applications/:id", bodySchema: {}, draftOperation: "application.save" },
+  save: { method: "PUT", path: "/applications/:id", bodySchema: {} },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 const saveDescriptor = {

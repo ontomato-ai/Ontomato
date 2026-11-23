@@ -251,7 +251,6 @@ function formDescription(mode: "create" | "edit", key: string) {
       method: mode === "create" ? "POST" : "PUT",
       path: `/api/product-projections/${key || "new"}`,
       bodySchema: {},
-      draftOperation: mode === "create" ? "create" : "save",
     },
   };
 }

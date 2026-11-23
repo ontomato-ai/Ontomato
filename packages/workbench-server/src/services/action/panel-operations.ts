@@ -140,17 +140,9 @@ export const m6ServerOperations = [
     targetSchema: actionSaveTarget,
     inputSchema: saveInputSchema,
     resultSchema: savedIdSchema,
-    draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "action.create" : "action.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
 
-    create: {
-      draftValues(values: unknown) {
-        return runtimeJsonObjectSchema.parse(values);
-      },
-      createdObject(data: unknown) {
-        return { objectType: ACTION, primaryKey: savedIdSchema.parse(data).id };
-      },
-    },
+    create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/action/save", saveBody(target, input),
         "ACTION_SAVE_FAILED", ACTION, [ACTION, FUNCTION]);

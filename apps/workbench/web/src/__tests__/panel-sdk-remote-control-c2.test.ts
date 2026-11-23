@@ -655,7 +655,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperation) & sch
               values: { task: { title: "Nightly test", appId: "agents", timeZone: "UTC" } },
               errors: [],
               revision: 1,
-              save: { method: "PUT", path: `/scheduled-tasks/${taskId}`, bodySchema: {}, draftOperation: "platform:ScheduledTask.save" },
+              save: { method: "PUT", path: `/scheduled-tasks/${taskId}`, bodySchema: {} },
             },
           });
           case "runs": return Response.json({ status: "ready", value: { runs: [], nextCursor: null } });
@@ -1016,7 +1016,7 @@ describe("C2-2: owner unknown / refusal / failure outcomes never wrapped as exec
       fields: [{ path: "/title", label: "Title", control: { kind: "text" }, valueSchema: { type: "string" }, required: false, readOnly: false }],
       values: { title: "Original" },
       errors: [],
-      save: { method: "PUT", path: "/tasks/t-1", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
+      save: { method: "PUT", path: "/tasks/t-1", bodySchema: {} },
     };
 
     const manifest: DirectPanelManifest = {

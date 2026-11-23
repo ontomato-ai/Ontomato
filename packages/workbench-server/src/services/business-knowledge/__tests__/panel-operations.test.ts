@@ -49,7 +49,7 @@ const answers = (path: string, body: unknown) => (requestPath: string) =>
 const values = { knowledgeID: "", knowledgeTitle: "Order rule", knowledgeText: "Orders need a customer", knowledgeTags: ["Business"], status: 1 };
 
 describe("business knowledge panel server operations", () => {
-  it("declares the save target, draft operation and create identity", () => {
+  it("accepts knowledge entry and draft targets for form saves", () => {
     const operation = m7ServerOperations.find(item => item.handlerRef === `${BUSINESS_KNOWLEDGE}.save`)!;
     expect(operation.kind).toBe("form.save");
     if (operation.kind !== "form.save") throw new Error("not a form save");
@@ -57,9 +57,6 @@ describe("business knowledge panel server operations", () => {
     expect(operation.targetSchema.safeParse(target).success).toBe(true);
     expect(operation.targetSchema.safeParse({ ...target, objectType: "platform:FeedbackRecord" }).success).toBe(false);
     expect(operation.targetSchema.safeParse({ kind: "draft" }).success).toBe(true);
-    expect(operation.draftOperation(target)).toBe("knowledge.update");
-    expect(operation.draftOperation({ kind: "draft" })).toBe("knowledge.create");
-    expect(operation.create?.createdObject({ id: "k-new" })).toEqual({ objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-new" });
   });
 
   it("sends a new entry's complete values and answers the stored id", async () => {

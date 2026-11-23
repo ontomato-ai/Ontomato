@@ -50,7 +50,6 @@ const formSaveMeta = {
   method: "PUT" as const,
   path: "/settings/:id",
   bodySchema: {},
-  draftOperation: "settings.update",
 };
 
 const i18n = () => createI18n({ legacy: false, locale: "en", messages: { en: publicEn } });

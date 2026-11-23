@@ -115,7 +115,7 @@ it("opens a create form in build-test without validating empty values or admitti
   const opened = await response.json();
   expect(opened).toMatchObject({
     values: { name: "", enabled: true, modelSelection: { modelId: null }, skills: [], classNames: [], executionUserId: null },
-    save: { method: "POST", path: "/assistant/agent-definitions", draftOperation: "agent.create" },
+    save: { method: "POST", path: "/assistant/agent-definitions" },
   });
   expect(opened.values).not.toHaveProperty("sortOrder");
   expect(opened.save.bodySchema.properties).not.toHaveProperty("sortOrder");
@@ -184,7 +184,7 @@ it("opens a stored definition and checks execution permissions concurrently", as
     values: { name: "Stored assistant", enabled: false, icon: "old icon", enabledMcpServiceIds: [id],
       classNames: ["Customer"], executionUserId: "operator", modelSelection: { modelId: "test/chat" },
       skills: [{ name: "report", namespace: { kind: "domain", domainId: "domain" } }] },
-    save: { method: "PUT", path: `/assistant/agent-definitions/${id}`, draftOperation: "agent.update" },
+    save: { method: "PUT", path: `/assistant/agent-definitions/${id}` },
   });
   expect(opened.values).not.toHaveProperty("sortOrder");
   expect(opened.fields).toContainEqual(expect.objectContaining({

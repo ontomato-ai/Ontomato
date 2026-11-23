@@ -55,7 +55,7 @@ const metricTarget = { kind: "object" as const, objectType: METRIC_VIEW, primary
 const functionTarget = { kind: "object" as const, objectType: FUNCTION, primaryKey: "f1" };
 
 describe("metric and function panel server operations", () => {
-  it("declares the metric save target, draft operation and create identity", () => {
+  it("accepts metric view and draft targets for form saves", () => {
     const operation = write(`${METRIC_VIEW}.save`);
     expect(operation.kind).toBe("form.save");
     if (operation.kind !== "form.save") throw new Error("not a form save");
@@ -63,9 +63,6 @@ describe("metric and function panel server operations", () => {
     expect(operation.targetSchema.safeParse(metricTarget).success).toBe(true);
     expect(operation.targetSchema.safeParse({ ...metricTarget, objectType: FUNCTION }).success).toBe(false);
     expect(operation.targetSchema.safeParse({ kind: "draft" }).success).toBe(true);
-    expect(operation.draftOperation(metricTarget)).toBe("metric-view.update");
-    expect(operation.draftOperation({ kind: "draft" })).toBe("metric-view.create");
-    expect(operation.create?.createdObject({ id: "created" })).toEqual({ objectType: METRIC_VIEW, primaryKey: "created" });
   });
 
   it("sends the complete metric values and returns the saved asset", async () => {
@@ -369,7 +366,6 @@ describe("metric and function panel server operations", () => {
     const save = write(`${FUNCTION}.save`);
     if (save.kind !== "form.save") throw new Error("not a form save");
     expect(save.targetSchema.safeParse(functionTarget).success).toBe(true);
-    expect(save.draftOperation(functionTarget)).toBe("function.update");
     const saved = hostWith(() => Response.json({ success: true, data: { id: "f1", name: "Revenue query" } }));
     expect(await save.execute(saved.host, functionTarget, { values: { name: "Revenue query" } }))
       .toEqual({
