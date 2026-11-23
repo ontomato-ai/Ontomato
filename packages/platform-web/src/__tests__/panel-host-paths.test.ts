@@ -670,4 +670,119 @@ describe("controlled personal state fields", () => {
       vi.useRealTimers();
     }
   });
+
+  it("puts only changed personal fields across concurrent sessions so two tabs editing different fields do not overwrite each other", async () => {
+    const prefsUse = {
+      id: "use-personal-prefs",
+      pageKey: "personal-prefs",
+      panelId: "panel-personal-prefs",
+      path: "/applications/app-a/personal-prefs",
+      access: { kind: "domain-member" as const },
+    };
+    const prefsManifest = definePanel({
+      state: {
+        density: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "compact" },
+        sort: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "asc" },
+      },
+      members: {},
+    });
+    const storage: Record<string, unknown> = { density: "compact", sort: "asc" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: prefsUse,
+      panels: { [prefsUse.panelId]: panelRecord(prefsUse.panelId, "Personal Prefs", prefsManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const tab1Scope = effectScope();
+    const tab2Scope = effectScope();
+    try {
+      const tab1 = tab1Scope.run(() => usePanelInstance(platformPanelHost("app-a", prefsUse, () => {}), {
+        labels: hostLabels,
+        label: () => "Personal Prefs",
+        address: () => prefsUse.path,
+        initial: () => ({}),
+      }))!;
+      const tab2 = tab2Scope.run(() => usePanelInstance(platformPanelHost("app-a", prefsUse, () => {}), {
+        labels: hostLabels,
+        label: () => "Personal Prefs",
+        address: () => prefsUse.path,
+        initial: () => ({}),
+      }))!;
+      await Promise.all([tab1.ready, tab2.ready]);
+
+      expect(mountedState(tab1).values.value).toEqual({ density: "compact", sort: "asc" });
+      expect(mountedState(tab2).values.value).toEqual({ density: "compact", sort: "asc" });
+
+      mountedState(tab1).set("density", "spacious");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(writes).toEqual([{ memberPath: [], values: { density: "spacious" } }]);
+
+      mountedState(tab2).set("sort", "desc");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(writes).toEqual([
+        { memberPath: [], values: { density: "spacious" } },
+        { memberPath: [], values: { sort: "desc" } },
+      ]);
+      expect(storage).toEqual({ density: "spacious", sort: "desc" });
+    } finally {
+      tab1Scope.stop();
+      tab2Scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("issues zero PUT requests when a personal field is changed and reverted to its stored value within the debounce window", async () => {
+    const prefsUse = {
+      id: "use-personal-revert",
+      pageKey: "personal-revert",
+      panelId: "panel-personal-revert",
+      path: "/applications/app-a/personal-revert",
+      access: { kind: "domain-member" as const },
+    };
+    const prefsManifest = definePanel({
+      state: {
+        density: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "compact" },
+        sort: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "asc" },
+      },
+      members: {},
+    });
+    const storage: Record<string, unknown> = { density: "compact", sort: "asc" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: prefsUse,
+      panels: { [prefsUse.panelId]: panelRecord(prefsUse.panelId, "Personal Revert", prefsManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const scope = effectScope();
+    try {
+      const view = scope.run(() => usePanelInstance(platformPanelHost("app-a", prefsUse, () => {}), {
+        labels: hostLabels,
+        label: () => "Personal Revert",
+        address: () => prefsUse.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      mountedState(view).set("density", "spacious");
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(200);
+      mountedState(view).set("density", "compact");
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(writes).toEqual([]);
+      expect(storage).toEqual({ density: "compact", sort: "asc" });
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
 });
