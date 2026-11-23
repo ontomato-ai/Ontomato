@@ -142,6 +142,8 @@ export const en = {
   "panels.productCatalog.application.home": "Home page",
   "panels.productCatalog.application.renderer": "Renderer",
   "panels.productCatalog.application.framePanel": "Frame panel",
+  "panels.productCatalog.application.allowStandalone": "Allow standalone open",
+  "panels.productCatalog.application.externalLink": "External link",
   "panels.productCatalog.application.owner": "Owner",
   "panels.productCatalog.application.updatedAt": "Updated",
   "panels.productCatalog.application.platformOwner": "Platform",

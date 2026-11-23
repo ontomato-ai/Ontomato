@@ -3,8 +3,9 @@ import { platformRoutes } from '@ontomato/platform-shell/routes';
 
 export function agentBuilderShortcut(apps: readonly PlatformAppDeclaration[], opensAgentSettings: boolean, label: string): PlatformAppDeclaration | undefined {
   const path = platformRoutes.agents.path;
-  if (!apps.some(app => app.id === 'agents') || !opensAgentSettings) return;
-  return { id: 'agent-builder', label, icon: 'agent-builder', rail: 'builders', category: 'build', prefix: path, home: path };
+  const agents = apps.find(app => app.id === 'agents');
+  if (!agents || !opensAgentSettings) return;
+  return { id: 'agent-builder', label, icon: 'agent-builder', rail: 'builders', category: 'build', prefix: path, home: path, allowStandalone: agents.allowStandalone };
 }
 
 /** Builder outputs sit under their tools; other dynamic entries use bounded personal shortcuts. */

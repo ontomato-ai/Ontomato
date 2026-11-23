@@ -1,6 +1,7 @@
 import type { InjectionKey, Ref } from "vue";
-import type { CatalogApplication } from "@ontomato/contracts/platform-identity";
+import { allowsStandalone, type CatalogApplication } from "@ontomato/contracts/platform-identity";
 import type { PlatformApp, PlatformBrand, PlatformPanelGroup, PlatformPanelPage, PlatformRailSection } from "@ontomato/platform-shell";
+import { externalLinkOf } from "./external-link";
 
 /**
  * How an application that holds several pages shows them: as a menu in its own column beside its pages, headed by the
@@ -36,6 +37,8 @@ export interface PlatformAppDeclaration {
   /** An external application: its fixed address, or the host's resolver for a signed jump; the rail opens it. */
   href?: string;
   open?: () => void;
+  /** Whether standalone open (`standalone=1`) is allowed for this application; defaults to true when omitted. */
+  allowStandalone?: boolean;
   /** Pages of a page-only application, in display order. */
   groups?: readonly PlatformPanelGroup[];
   /** The application's own entry at the foot of its column (its models), when the account may open it. */
@@ -61,13 +64,18 @@ export const platformApplicationsKey: InjectionKey<Readonly<Ref<readonly Platfor
  * other opening; an application of the platform's own is selected through the rail's `selectApp`.
  */
 export function railApp(declaration: PlatformAppDeclaration, open: () => void): PlatformApp {
+  const isExternal = Boolean(declaration.href || declaration.open);
+  const standaloneTarget = !isExternal && allowsStandalone(declaration)
+    ? (declaration.home || declaration.prefix)
+    : undefined;
   return {
     id: declaration.id,
     label: declaration.label,
     icon: declaration.icon,
     built: declaration.built,
     rail: declaration.rail,
-    open: declaration.href || declaration.open ? open : undefined,
+    open: isExternal ? open : undefined,
+    standaloneHref: standaloneTarget ? externalLinkOf(standaloneTarget) : undefined,
   };
 }
 

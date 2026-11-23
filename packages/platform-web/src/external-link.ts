@@ -27,6 +27,15 @@ export function rememberExternalLinkTab() {
   }
 }
 
+/** Clears this tab's external link marker when navigating into an application that disables standalone mode. */
+export function clearExternalLinkTab() {
+  try {
+    sessionStorage.removeItem(TAB_KEY);
+  } catch {
+    // Ignore storage errors in restricted environments.
+  }
+}
+
 /** An entry's address (hash route, with its state) as the external link: the full page address with the flag. */
 export function externalLinkOf(address: string, location: Pick<Location, "origin" | "pathname"> = window.location) {
   const [path, search = ""] = address.split("?");

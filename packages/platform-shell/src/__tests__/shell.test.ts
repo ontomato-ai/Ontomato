@@ -14,6 +14,7 @@ const labels: PlatformShellLabels = {
   theme: { light: "Light", dark: "Dark" },
   signOut: "Sign out",
   opensInNewTab: "Opens in a new tab",
+  openStandalone: "Open standalone",
   pages: "Pages",
   save: "Save",
   discard: "Discard",
@@ -96,6 +97,47 @@ describe("platform rail", () => {
     expect(external?.getAttribute("target")).toBe("_blank");
     expect(external?.getAttribute("rel")).toContain("noopener");
     expect(external?.classList.contains("active")).toBe(false);
+  });
+
+  it("shows a direct standalone open button only when expanded and enabled, keeping row clicks inside the platform", async () => {
+    const onSelect = vi.fn();
+    const standaloneApps: PlatformApp[] = [
+      { id: "agents", label: "Agent Platform", icon: "agents", rail: "top", standaloneHref: "https://example.test/#/agents/chat?standalone=1" },
+      { id: "ontology", label: "Ontology manager", icon: "ontology", rail: "apps" },
+      { id: "settings", label: "System settings", icon: "settings", rail: "bottom", standaloneHref: "https://example.test/#/settings?standalone=1" },
+    ];
+    const expanded = await mount(PlatformRail, {
+      apps: standaloneApps,
+      activeAppId: "agents",
+      account,
+      preferences: preferences(),
+      labels,
+      collapsed: false,
+      onSelectApp: onSelect,
+    });
+    const links = [...expanded.querySelectorAll<HTMLAnchorElement>("a.rail-standalone")];
+    expect(links.map(link => link.getAttribute("href"))).toEqual([
+      "https://example.test/#/agents/chat?standalone=1",
+      "https://example.test/#/settings?standalone=1",
+    ]);
+    for (const link of links) {
+      expect(link.target).toBe("_blank");
+      expect(link.relList.contains("noopener")).toBe(true);
+    }
+    // Clicking the application row itself still selects inside the platform.
+    expanded.querySelector<HTMLButtonElement>(".rail-row.active")?.click();
+    expect(onSelect).toHaveBeenCalledWith("agents");
+
+    app?.unmount();
+    const collapsed = await mount(PlatformRail, {
+      apps: standaloneApps,
+      activeAppId: "agents",
+      account,
+      preferences: preferences(),
+      labels,
+      collapsed: true,
+    });
+    expect(collapsed.querySelectorAll("a.rail-standalone")).toHaveLength(0);
   });
 
   it("draws no external application when the edition has none", async () => {

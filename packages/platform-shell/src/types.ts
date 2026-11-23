@@ -21,6 +21,11 @@ export interface PlatformApp {
    * new tab itself. Either `href` or `open`, like the platform navigation's links.
    */
   open?: () => void;
+  /**
+   * External link URL (`?standalone=1`) for opening this application directly in a standalone tab from the expanded
+   * rail; absent when standalone open is disabled or for external-link applications.
+   */
+  standaloneHref?: string;
   /** Declared but not built yet; shown disabled with this hint rather than hidden. */
   unavailableHint?: string;
 }
@@ -108,6 +113,8 @@ export interface PlatformShellLabels {
   signOut: string;
   /** Accessible name of the mark on rows that open in a new tab; without it the mark is decorative. */
   opensInNewTab?: string;
+  /** Accessible name and tooltip of the expanded-rail button that opens an application in a standalone tab. */
+  openStandalone?: string;
   /** The application panel's navigation landmark. */
   pages: string;
   /** The page header's own actions: shown only for a page that hands over a draft. */
