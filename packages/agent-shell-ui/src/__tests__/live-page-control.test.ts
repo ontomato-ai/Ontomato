@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PresentationFrame } from "@ontomato/contracts/agent-presentation";
 import { pageContextLine, writtenText } from "../page-context";
 import { useConversationDisplay, type DisplayPage, type DisplayView } from "../conversation-display";
@@ -96,10 +97,10 @@ describe("live agent page control (requirement-64995244)", () => {
   it("updates non-deepLink declared public state in place without reloading and returns updated public state in receipt", async () => {
     const { display } = setup();
     await display.present(frame({ kind: "page", address: "/actions" }));
-    const liveValues: Record<string, unknown> = { activeTab: "definition", keyword: "", checked: [] };
+    const liveValues: Record<string, RuntimeJsonValue> = { activeTab: "definition", keyword: "", checked: [] };
     display.context({ url: "/actions", label: "Actions", selection: [], state: { ...liveValues } });
 
-    const applyState = vi.fn((patch: Readonly<Record<string, unknown>>) => {
+    const applyState = vi.fn((patch: Readonly<Record<string, RuntimeJsonValue>>) => {
       Object.assign(liveValues, patch);
       display.context({ url: "/actions", label: "Actions", selection: [], state: { ...liveValues } });
     });
