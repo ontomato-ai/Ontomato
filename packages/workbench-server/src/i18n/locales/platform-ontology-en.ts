@@ -31,6 +31,7 @@ export const platformOntologyEn = {
   "platformOntology.types.orgPosition": "Organization position",
   "platformOntology.types.orgGrant": "Organization grant",
   "platformOntology.types.sdkComponent": "SDK component",
+  "platformOntology.types.productAsset": "Product asset",
   "platformOntology.types.productProjection": "Projection",
   "platformOntology.types.productPanel": "Panel",
   "platformOntology.types.application": "Application",

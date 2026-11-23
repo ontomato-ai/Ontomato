@@ -1822,7 +1822,7 @@ test("Trigger definition reads, writes and Workflow minimal list use exact bindi
   assert.ok(panelClientReads(workflows).some(read => read.method === "POST" && read.service === "/data-query" && read.path.test("/workflow/query")));
   assert.ok(clientSends([workflows], "POST", "/data-query", "/workflow/query"));
   assert.ok(!clientSends([workflows], "POST", "/data-query", "/workflow/save"));
-  assert.deepEqual(Object.keys(platformObjectTypes[WORKFLOW].reads ?? {}), ["list"]);
+  assert.equal(platformObjectTypes[WORKFLOW].reads?.list.result, "panelRecordList");
   assert.deepEqual(platformObjectTypes[TRIGGER].operations, [`${TRIGGER}.save`, SET_TRIGGER_STATUS, DELETE_TRIGGER]);
 });
 

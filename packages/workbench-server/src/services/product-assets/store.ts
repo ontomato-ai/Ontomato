@@ -66,7 +66,7 @@ async function queryAuthorizedProducts(owner:ProductOwner,query:ProductQuery){
 export async function countProductTypes(owner:ProductOwner){return withProductGrants(owner,()=>countAuthorizedProducts(owner));}
 async function countAuthorizedProducts(owner:ProductOwner){
   const access=currentProductGrants(owner);
-  const result=await db().query(`SELECT document->>'kind' AS kind,count(*)::int AS count FROM ${t('product_assets')} WHERE domain_id=$1 AND id=ANY($2::text[]) GROUP BY document->>'kind'`,[owner.domainId,[...new Set([...access.use,...access.edit])]]);
+  const result=await db().query<{ kind: string; count: number }>(`SELECT document->>'kind' AS kind,count(*)::int AS count FROM ${t('product_assets')} WHERE domain_id=$1 AND id=ANY($2::text[]) GROUP BY document->>'kind'`,[owner.domainId,[...new Set([...access.use,...access.edit])]]);
   return Object.fromEntries(result.rows.map(row=>[row.kind,row.count]));
 }
 /** Walk the requested composition in SQL instead of loading every visible document. */

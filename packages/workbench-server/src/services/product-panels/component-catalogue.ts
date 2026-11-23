@@ -89,6 +89,10 @@ function formatSdkPortType(type: DirectPanelPortType, locale: string | undefined
   }
 }
 
+export async function countSdkComponents(owner: ProductOwner) {
+  return { rows: [], total: (await readAuthorComponentCatalogue(owner)).size };
+}
+
 export async function listSdkComponents(owner: ProductOwner, locale: string | undefined, search?: string): Promise<PanelRecord[]> {
   const components = await readAuthorComponentCatalogue(owner);
   const term = search?.trim().toLowerCase();

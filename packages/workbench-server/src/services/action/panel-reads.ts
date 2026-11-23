@@ -390,6 +390,7 @@ export async function readObjectActions(viewer: AssistantCredentials, objectType
 
 export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantCredentials, _callerUserName?: string) {
   const owner = actionOwner(viewer);
+  const readActions = () => owner("action-list", "/action/queryList", {}, z.array(actionSchema));
   const translate = (key: string) => tForLocale(viewer.locale, key);
   const fieldLabels = () => Object.fromEntries(
     ["status", "origin", "createdBy", "reviewedBy", "function", "updatedAt"]
@@ -403,7 +404,10 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
   return {
     async list(): Promise<PanelRecord[]> {
       const labels = fieldLabels();
-      return (await owner("action-list", "/action/queryList", {}, z.array(actionSchema))).map(action => actionRecord(action, labels));
+      return (await readActions()).map(action => actionRecord(action, labels));
+    },
+    async count() {
+      return { rows: [], total: (await readActions()).length };
     },
     async record(primaryKey: string): Promise<PanelRecord> {
       return actionRecord(await owner("action-record", "/action/queryById", { id: primaryKey }, actionSchema), fieldLabels());

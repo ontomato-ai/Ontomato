@@ -13,7 +13,7 @@ import {
   AUDIT_LOG, BUILDER_AGENT, DIAGNOSIS_MODEL, GENERAL_SETTINGS, PUBLISHED_MCP_SERVICE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD_CARD, FUNCTION, MCP_SERVICE_OPTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
-  PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
+  PRODUCT_ASSET, PRODUCT_PROJECTION, RELATIONSHIP, ROLE, SDK_COMPONENT, TRIGGER, WORKFLOW,
   type PlatformReadDeclaration,
 } from "@ontomato/contracts/platform-object-types";
 import type { ProductPanel, ProductProjection } from "@ontomato/contracts/product-panels";
@@ -42,6 +42,7 @@ import { createApplicationReadAdapter } from "./application-catalogue";
 import { createProductPanelReadAdapter, createProductProjectionReadAdapter } from "./catalog-reads";
 import { requireChartReadRegistration } from "./chart-sources";
 import {
+  countSdkComponents,
   listSdkComponents,
   readProjectionComponent,
   readSdkComponent,
@@ -111,6 +112,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const functions = createFunctionReadAdapter(owner, viewer, callerUserName);
   const cards = createDashboardCardReadAdapter(owner, viewer);
   const modelReads: Record<string, ReadAdapter> = {
+    count: selection => model.count(selection.typeId),
     list: (selection, params) => model.list(selection.typeId, {
       className: panelReadParameterSchemas.className.optional().parse(params.className),
     }),
@@ -180,6 +182,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       createForm: (_selection, params) => builder.createForm(formParams(params)),
     },
     [ACTION]: {
+      count: async () => (await actions()).count(),
       list: async () => (await actions()).list(),
       record: async selection => (await actions()).record(selection.primaryKey!),
       form: async (selection, params) => (await actions()).form(selection.primaryKey!, formParams(params)),
@@ -200,6 +203,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       createForm: async (_selection, params) => (await triggers()).createForm(formParams(params)),
     },
     [WORKFLOW]: {
+      count: async () => (await workflows()).count(),
       list: async () => (await workflows()).list(),
     },
     [METRIC_VIEW]: {
@@ -224,6 +228,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       ),
     },
     [AGENT_DEFINITION]: {
+      count: async () => (await definitions()).count(),
       list: async () => (await definitions()).list(),
       record: async selection => (await definitions()).record(selection.primaryKey!),
       form: async (selection, params) => (await definitions()).form(selection.primaryKey!, formParams(params)),
@@ -244,6 +249,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       },
     },
     [SDK_COMPONENT]: {
+      count: () => countSdkComponents(owner),
       catalogue: (_selection, params) => listSdkComponents(owner, viewer.locale, panelReadParameterSchemas.keyword.optional().parse(params.search)),
       definition: selection => readSdkComponent(owner, selection.primaryKey!, viewer.locale),
       record: selection => readSdkComponentRecord(owner, selection.primaryKey!, viewer.locale),
@@ -354,6 +360,13 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
     [OBJECT_TYPE]: modelReads,
     [ATTRIBUTE]: modelReads,
     [RELATIONSHIP]: modelReads,
+    [PRODUCT_ASSET]: {
+      async count() {
+        const { countProductTypes } = await import("../product-assets/store");
+        const counts = await countProductTypes(owner);
+        return { rows: [], total: Object.values(counts).reduce((sum, count) => sum + count, 0) };
+      },
+    },
     [PRODUCT_PROJECTION]: {
       ...catalogueReads(projectionCatalogue),
       usedByRows: selection => projectionCatalogue.usedByRows(selection.primaryKey!),

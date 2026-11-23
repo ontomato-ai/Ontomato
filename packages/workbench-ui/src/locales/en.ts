@@ -1212,6 +1212,7 @@ export default {
       "orgPosition": "Organization position",
       "orgGrant": "Organization grant",
       "sdkComponent": "SDK component",
+      "productAsset": "Product asset",
       "productProjection": "Projection",
       "productPanel": "Panel",
       "application": "Application",
