@@ -411,7 +411,9 @@ const startNode = computed<PlatformGraphNode | null>(() =>
 
 useMemberOutput("startLabel", () => startNode.value?.label || null);
 useMemberOutput("startDetail", () =>
-  startNode.value ? `${typeDisplayName(startNode.value.className)} · ${startNode.value.primaryKey}` : null,
+  startNode.value
+    ? `${typeDisplayName(startNode.value.className, undefined, (startNode.value as { typeLabel?: string }).typeLabel)} · ${startNode.value.primaryKey}`
+    : null,
 );
 
 const visibleRelationKindLabels = computed<string[]>(() => {
@@ -422,9 +424,11 @@ const visibleRelationKindLabels = computed<string[]>(() => {
   const labels: string[] = [];
   for (const item of held) {
     const id =
-      item && typeof item === "object" && typeof (item as { primaryKey?: unknown }).primaryKey === "string"
-        ? (item as { primaryKey: string }).primaryKey
-        : null;
+      typeof item === "string"
+        ? item
+        : item && typeof item === "object" && typeof (item as { primaryKey?: unknown }).primaryKey === "string"
+          ? (item as { primaryKey: string }).primaryKey
+          : null;
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const spec = byId.get(id);
