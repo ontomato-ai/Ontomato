@@ -39,8 +39,6 @@ import type {
 const { assertPermission } = vi.hoisted(() => ({ assertPermission: vi.fn() }));
 vi.mock("../../../identity/installed", () => ({ assertPermission }));
 vi.mock("../../assistant/skills", () => ({}));
-vi.mock("../../app-builder/panel-model", () => ({ builderModelOperations: [] }));
-vi.mock("../../ops-diagnosis/panel-model", () => ({ diagnosisModelOperations: [] }));
 
 type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
@@ -201,9 +199,15 @@ describe("model settings owner reads & forms", () => {
     expect(azureBase.required).toBe(true);
     expect(azureBase.control).toMatchObject({ kind: "text", placeholder: PROVIDER_SPECS.azure.apiBasePlaceholder });
     expect(azureKey.control).toMatchObject({ kind: "text", secret: true });
+    expect(azureForm.errors.some((e) => e.field === "/apiBase" && e.code === "required")).toBe(true);
 
     const customForm = await reads.createForm({ values: { provider: "custom_openai" } });
     expect(customForm.fields.find((f) => f.path === "/apiBase")!.required).toBe(true);
+    expect(customForm.errors.some((e) => e.field === "/apiBase" && e.code === "required")).toBe(true);
+
+    const invalidProviderForm = await reads.createForm({ values: { name: "bad", provider: "bogus", apiKey: "sk-1" } });
+    expect(invalidProviderForm.values.provider).toBe("bogus");
+    expect(invalidProviderForm.errors.some((e) => e.field === "/provider" && e.code === "invalid_option")).toBe(true);
 
     const deepseekForm = await reads.createForm({ values: { provider: "deepseek" } });
     expect(deepseekForm.fields.find((f) => f.path === "/apiBase")!.required).toBe(false);
