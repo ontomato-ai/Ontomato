@@ -53,7 +53,7 @@ public class ModelConfigurationMigration {
     public static String rewrite(String ref, JSONObject mapping) {
         if (ref == null) return null;
         String mapped = mapping.getJSONObject("references").getString(ref);
-        return mapped != null ? mapped : mapping.getString("unconfiguredProviderId") + "/" + ref;
+        return mapped != null ? mapped : mapping.getString("unavailablePrefix") + "/" + ref;
     }
     public void migrateDomain(String domain) throws Exception {
         var rows = jdbc.queryForList("SELECT content FROM business_config WHERE id=?", domain);
@@ -93,7 +93,7 @@ public class ModelConfigurationMigration {
                 JSONObject.of("modelId", after).toJSONString(com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue), domain, row.get("agent_id").toString(), selection.toJSONString(com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue));
         }
         var options = runtime.json(domain, "embedding-upgrade", "/v1/models/options", "GET", null, null);
-        if (options.getString("embeddingModelId") != null) vectors.modelSettingsChanged(domain);
+        if (options.getString("embeddingModel") != null) vectors.modelSettingsChanged(domain);
     }
     private static boolean unconfigured(JSONObject old) {
         for (String field : new String[]{"baseUrl", "modelName", "apiKey"}) {
