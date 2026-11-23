@@ -151,11 +151,21 @@ describe("delegated tasks in a reply", () => {
       role: "notification" as const, kind: "agent-result" as const, source: { session: { providerId: "ontology", sessionId: roundId }, runId: roundId },
       content: "Delivered", timestamp: 6,
     } };
-    const continuation = snapshot({ run: run({ id: answerRun }), cursor: { runId: answerRun, seq: 3, streamId }, messages: [notification] });
+    const continuation = snapshot({ run: run({ id: answerRun, createdAt: at(6) }), cursor: { runId: answerRun, seq: 3, streamId }, messages: [notification] });
     applyRunSnapshot(state, continuation);
     expect(progress(tasks)).toEqual([[answerRun, "answering"]]);
-    applyRunSnapshot(state, { ...continuation, run: run({ id: answerRun, status: "stopped", finishedAt: at(9) }) });
+    expect(conversationItems(state, tasks)).toContainEqual(expect.objectContaining({ runId, handoff: true }));
+    expect(conversationItems(state, tasks)).toContainEqual(expect.objectContaining({ runId: answerRun, startedAt: Date.parse(timestamp) }));
+    const finalMessage = { contextSeq: 1, id: partialId, runId: answerRun, messageSeq: 3, message: { ...partial, stopReason: "stop" as const } };
+    applyRunSnapshot(state, {
+      ...continuation,
+      messages: [notification, finalMessage],
+      run: run({ id: answerRun, createdAt: at(6), status: "stopped", answerMessageId: partialId, finishedAt: at(9) }),
+    });
     expect(progress(tasks)).toEqual([]);
+    expect(conversationItems(state, tasks)).toContainEqual(expect.objectContaining({
+      runId: answerRun, handoff: false, startedAt: Date.parse(timestamp), finishedAt: Date.parse(at(9)),
+    }));
   });
 });
 

@@ -40,6 +40,8 @@ export interface ResponseItem {
   /** Everything the run did except its answer's text, in order; it streams here while the run is active. */
   process: ProcessBlock[];
   running: boolean;
+  /** An intermediate reply whose work continues in a delegated run. */
+  handoff?: boolean;
   retrievalProgress?: "retrieving" | "datasetReady" | "answering";
   /** Present once the run stopped; rendering decides how each PI reason is shown. */
   end: { stopReason: RuntimeStopReason | null; errorMessage: string | null } | null;
@@ -48,7 +50,7 @@ export interface ResponseItem {
   answerText: string;
   /** Quality reviews of the data this reply's answer cited; shown after the answer, never part of it. */
   reviews: ResponseReview[];
-  /** The run's start and stop times in ms, for the elapsed-time line. */
+  /** Start of the linked work and stop of this reply, in ms. */
   startedAt: number | null;
   finishedAt: number | null;
 }
@@ -82,11 +84,14 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
   const items: ConversationItem[] = [];
   const retrievals = new Map<string, Array<ChannelAgentTask>>();
   const datasetsByRun = new Map<string, ChannelAgentTask>();
+  const delegatedByRun = new Map<string, ChannelAgentTask>();
+  const linkedStarts = new Map<string, Set<string>>();
   const resultRuns = new Map<string, string>();
   const reviews = new Map<string, ResponseReview[]>();
   for (const task of tasks?.tasks ?? []) {
     if (task.kind === "agent") {
       if (task.kind === "agent" && task.parentTaskId !== null) continue;
+      delegatedByRun.set(task.runId, task);
       retrievals.set(task.root.runId, [...(retrievals.get(task.root.runId) ?? []), task]);
       if (task.retrieval?.datasets.length && ["starting", "running", "completed"].includes(task.status)) {
         datasetsByRun.set(task.runId, task);
@@ -152,6 +157,14 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       continue;
     }
     if (message.role === "notification") {
+      if (entry.runId && message.kind === "agent-result" && "session" in message.source) {
+        const task = delegatedByRun.get(message.source.runId);
+        if (task?.retrieval && task.root.runId !== entry.runId) {
+          const roots = linkedStarts.get(entry.runId) ?? new Set<string>();
+          roots.add(task.root.runId);
+          linkedStarts.set(entry.runId, roots);
+        }
+      }
       if (entry.runId && message.kind === "agent-result" && "session" in message.source && datasetsByRun.has(message.source.runId)) {
         resultRuns.set(message.source.runId, entry.runId);
         if (state.runs[entry.runId]?.status === "running") openResponse(entry.runId).retrievalProgress = "answering";
@@ -185,6 +198,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
         record.message.role === "notification" && record.message.kind === "agent-result" &&
         "session" in record.message.source && record.message.source.runId === task.runId)));
     if (answer) {
+      current.handoff = handoff;
       const blocks = message.content.filter((block) => block.type === "text");
       current.answerMessageId = handoff ? null : entry.id;
       current.answerText = blocks
@@ -236,6 +250,20 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
     });
   }
 
+  // Result notifications link separate assistant runs. Use their wall-clock span, not a sum of potentially overlapping work.
+  function startOf(runId: string, seen: Set<string>): number | null {
+    if (seen.has(runId)) return null;
+    seen.add(runId);
+    const created = state.runs[runId]?.createdAt;
+    let start = created ? Date.parse(created) : NaN;
+    for (const root of linkedStarts.get(runId) ?? []) {
+      if (!responses.get(root)?.handoff) continue;
+      const linked = startOf(root, seen);
+      if (linked !== null && (!Number.isFinite(start) || linked < start)) start = linked;
+    }
+    return Number.isFinite(start) ? start : null;
+  }
+
   for (const item of items) {
     if (item.kind !== "response") continue;
     const run = state.runs[item.runId];
@@ -247,7 +275,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       else if (pending.some(task => datasetsByRun.has(task.runId))) item.retrievalProgress = "datasetReady";
     }
     item.workspaceCommit = run?.workspaceCommit ?? null;
-    item.startedAt = run?.createdAt ? Date.parse(run.createdAt) : null;
+    item.startedAt = startOf(item.runId, new Set());
     item.finishedAt = run?.finishedAt ? Date.parse(run.finishedAt) : null;
     item.end = run && run.status === "stopped"
       ? { stopReason: run.stopReason, errorMessage: run.errorMessage }
