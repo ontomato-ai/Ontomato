@@ -3,7 +3,6 @@ import {
   DEFAULT_CHAT_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_RETRIES,
   DEFAULT_MODEL_TIMEOUT_SECONDS,
-  modelApiKeyWriteSchema,
   modelConnectionNameSchema,
   modelConnectionWriteSchema,
   modelEntrySchema,
@@ -12,6 +11,7 @@ import {
   modelSettingsSchema,
   modelSettingsWriteSchema,
   ontologyAgentModelsSchema,
+  requiresApiBase,
   supportsEmbeddings,
   type ModelConnection,
   type ModelConnectionWrite,
@@ -27,8 +27,8 @@ import {
   runtimeModelTestRequestSchema,
   runtimeModelTestResponseSchema,
 } from "@ontomato/contracts/runtime-model-test";
-import { runtimeHttpUrlSchema, runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import type { PanelFormOption } from "@ontomato/contracts/form-fields";
+import { runtimeJsonObjectSchema, type RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { FormFieldError, PanelFormOption } from "@ontomato/contracts/form-fields";
 import { DATA_QUERY_GATEWAY } from "@ontomato/contracts/panel-client-requests";
 import { panelFormTargetSchema } from "@ontomato/contracts/panel-manifest";
 import {
@@ -86,22 +86,21 @@ const SAVE_CONNECTION_OP = `${MODEL_CONNECTION}.save`;
 const SAVE_MODEL_OP = `${MODEL_ENTRY}.save`;
 const SAVE_USAGE_OP = `${MODEL_USAGE}.save`;
 
-/** Per-provider field rules derived from LiteLLM's `provider_create_fields.json` and B1's connection contract. */
+/** Per-provider UI labels and default base URL placeholders. Validation rules live in `@ontomato/contracts/model-settings`. */
 export const PROVIDER_SPECS: Record<ModelProvider, {
   labelKey: string;
-  apiBaseRequired: boolean;
   apiBasePlaceholder: string;
 }> = {
-  openai: { labelKey: "panels.modelSettings.providers.openai", apiBaseRequired: false, apiBasePlaceholder: "https://api.openai.com/v1" },
-  azure: { labelKey: "panels.modelSettings.providers.azure", apiBaseRequired: true, apiBasePlaceholder: "https://<resource>.openai.azure.com" },
-  bigmodel: { labelKey: "panels.modelSettings.providers.bigmodel", apiBaseRequired: false, apiBasePlaceholder: "https://open.bigmodel.cn/api/paas/v4" },
-  volcengine: { labelKey: "panels.modelSettings.providers.volcengine", apiBaseRequired: false, apiBasePlaceholder: "https://ark.cn-beijing.volces.com/api/v3" },
-  deepseek: { labelKey: "panels.modelSettings.providers.deepseek", apiBaseRequired: false, apiBasePlaceholder: "https://api.deepseek.com" },
-  dashscope: { labelKey: "panels.modelSettings.providers.dashscope", apiBaseRequired: false, apiBasePlaceholder: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
-  moonshot: { labelKey: "panels.modelSettings.providers.moonshot", apiBaseRequired: false, apiBasePlaceholder: "https://api.moonshot.cn/v1" },
-  custom_openai: { labelKey: "panels.modelSettings.providers.custom_openai", apiBaseRequired: true, apiBasePlaceholder: "https://api.example.com/v1" },
-  anthropic: { labelKey: "panels.modelSettings.providers.anthropic", apiBaseRequired: false, apiBasePlaceholder: "https://api.anthropic.com" },
-  gemini: { labelKey: "panels.modelSettings.providers.gemini", apiBaseRequired: false, apiBasePlaceholder: "https://generativelanguage.googleapis.com/v1beta" },
+  openai: { labelKey: "panels.modelSettings.providers.openai", apiBasePlaceholder: "https://api.openai.com/v1" },
+  azure: { labelKey: "panels.modelSettings.providers.azure", apiBasePlaceholder: "https://<resource>.openai.azure.com" },
+  bigmodel: { labelKey: "panels.modelSettings.providers.bigmodel", apiBasePlaceholder: "https://open.bigmodel.cn/api/paas/v4" },
+  volcengine: { labelKey: "panels.modelSettings.providers.volcengine", apiBasePlaceholder: "https://ark.cn-beijing.volces.com/api/v3" },
+  deepseek: { labelKey: "panels.modelSettings.providers.deepseek", apiBasePlaceholder: "https://api.deepseek.com" },
+  dashscope: { labelKey: "panels.modelSettings.providers.dashscope", apiBasePlaceholder: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+  moonshot: { labelKey: "panels.modelSettings.providers.moonshot", apiBasePlaceholder: "https://api.moonshot.cn/v1" },
+  custom_openai: { labelKey: "panels.modelSettings.providers.custom_openai", apiBasePlaceholder: "https://api.example.com/v1" },
+  anthropic: { labelKey: "panels.modelSettings.providers.anthropic", apiBasePlaceholder: "https://api.anthropic.com" },
+  gemini: { labelKey: "panels.modelSettings.providers.gemini", apiBasePlaceholder: "https://generativelanguage.googleapis.com/v1beta" },
 };
 
 const nullable = <T extends z.ZodTypeAny>(schema: T) => schema.nullish().transform((value) => value ?? null);
@@ -194,28 +193,43 @@ const testInputSchema = z.object({
   }).strict(),
 }).strict();
 
-async function ownerJson(host: DataQueryOperationHost, path: string, init: NonNullable<Parameters<typeof fetch>[1]>) {
+async function requestOwnerEnvelope(host: DataQueryOperationHost, path: string, body?: unknown) {
+  const init = body === undefined
+    ? { method: "GET" }
+    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   const response = await host.request(`${DATA_QUERY_GATEWAY}${path}`, init);
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = (body as { message?: string; error?: string } | null)?.message
-      ?? (body as { error?: string } | null)?.error
-      ?? `Model settings request failed: HTTP ${response.status}`;
-    const code = typeof (body as { code?: unknown } | null)?.code === "string"
-      ? (body as { code: string }).code
-      : "MODEL_SETTINGS_UNAVAILABLE";
-    throw new HttpError(response.status, message, code);
-  }
-  const envelope = ownerEnvelopeSchema.parse(body);
+  return { status: response.status, envelope: ownerEnvelopeSchema.parse(await response.json()) };
+}
+
+async function ownerData<T>(
+  host: DataQueryOperationHost,
+  path: string,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  body?: unknown,
+): Promise<T> {
+  const { status, envelope } = await requestOwnerEnvelope(host, path, body);
   if (!envelope.success) {
-    throw new HttpError(422, envelope.message ?? `Model settings request failed: ${path}`, String(envelope.code ?? "MODEL_SETTINGS_FAILED"));
+    const failure = ownerWriteFailure(envelope, "MODEL_SETTINGS_UNAVAILABLE", `Owner request failed: ${path}`);
+    throw new HttpError(status >= 400 ? status : 422, failure.message, failure.code);
   }
-  return envelope.data;
+  return schema.parse(envelope.data);
+}
+
+async function ownerWrite(
+  host: DataQueryOperationHost,
+  path: string,
+  body: unknown,
+  failureCode: string,
+  fallbackMessage: string,
+): Promise<{ ok: true; data: unknown } | { ok: false; outcome: Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }> }> {
+  const { envelope } = await requestOwnerEnvelope(host, path, body);
+  if (!envelope.success) return { ok: false, outcome: ownerWriteFailure(envelope, failureCode, fallbackMessage) };
+  return { ok: true, data: envelope.data };
 }
 
 async function readSettings(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<ModelSettingsData> {
   await assertPermission(credentials, ["system-config"]);
-  return modelSettingsSchema.parse(await ownerJson(host, "/model-settings", { method: "GET" }));
+  return ownerData(host, "/model-settings", modelSettingsSchema);
 }
 
 async function saveSettings(
@@ -224,39 +238,91 @@ async function saveSettings(
   write: ModelSettingsWrite,
 ): Promise<{ ok: true; data: ModelSettingsData } | { ok: false; outcome: Extract<SinglePanelOperationOutcome, { kind: "refusal" | "failure" }> }> {
   await assertPermission(credentials, ["system-config"]);
-  const response = await host.request(`${DATA_QUERY_GATEWAY}/model-settings/save`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(write),
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = (body as { message?: string; error?: string } | null)?.message
-      ?? (body as { error?: string } | null)?.error
-      ?? `Unable to save model settings: HTTP ${response.status}`;
-    const code = typeof (body as { code?: unknown } | null)?.code === "string" ? (body as { code: string }).code : undefined;
-    return {
-      ok: false,
-      outcome: code && response.status < 500
-        ? { kind: "refusal", code, message }
-        : { kind: "failure", code: code ?? "MODEL_SETTINGS_SAVE_FAILED", message },
-    };
-  }
-  const envelope = ownerEnvelopeSchema.parse(body);
-  if (!envelope.success) {
-    return { ok: false, outcome: ownerWriteFailure(envelope, "MODEL_SETTINGS_SAVE_FAILED", "Unable to save model settings") };
-  }
-  return { ok: true, data: modelSettingsSchema.parse(envelope.data) };
+  const result = await ownerWrite(host, "/model-settings/save", write, "MODEL_SETTINGS_SAVE_FAILED", "Unable to save model settings");
+  if (!result.ok) return result;
+  return { ok: true, data: modelSettingsSchema.parse(result.data) };
 }
 
 async function readOntologyAgents(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<OntologyAgentModel[]> {
   await assertPermission(credentials, ["system-config"]);
-  return ontologyAgentModelsSchema.parse(await ownerJson(host, "/ontology/ai/agent-models", { method: "GET" })).agents;
+  return (await ownerData(host, "/ontology/ai/agent-models", ontologyAgentModelsSchema)).agents;
 }
 
 async function readVectorRebuild(host: DataQueryOperationHost, credentials: AssistantCredentials): Promise<VectorRebuildStatus> {
   await assertPermission(credentials, ["system-config"]);
-  return vectorRebuildStatusSchema.parse(await ownerJson(host, "/businessConfig/vectorRebuildStatus", { method: "GET" }));
+  return ownerData(host, "/businessConfig/vectorRebuildStatus", vectorRebuildStatusSchema);
+}
+
+function issueCode(issue: z.ZodIssue): FormFieldError["code"] {
+  if (
+    issue.code === z.ZodIssueCode.invalid_enum_value
+    || issue.code === z.ZodIssueCode.invalid_literal
+    || issue.code === z.ZodIssueCode.invalid_union_discriminator
+  ) {
+    return "invalid_option";
+  }
+  if (issue.code === z.ZodIssueCode.invalid_type) {
+    if (issue.received === "undefined" || issue.received === "null") return "required";
+    if (issue.expected === "number") return "invalid_number";
+    if (issue.expected === "array") return "invalid_array";
+    if (issue.expected === "object") return "invalid_object";
+  }
+  if (issue.code === z.ZodIssueCode.too_small && issue.type === "string" && issue.minimum === 1) return "required";
+  if ((issue.code === z.ZodIssueCode.too_small || issue.code === z.ZodIssueCode.too_big) && issue.type === "number") {
+    return "invalid_number";
+  }
+  if (issue.code === z.ZodIssueCode.too_big && issue.type === "string") return "value_too_long";
+  return "invalid_format";
+}
+
+function mapZodIssues(
+  issues: readonly z.ZodIssue[],
+  fieldFor: (path: readonly (string | number)[]) => string = (path) => `/${path.join("/")}`,
+): FormFieldError[] {
+  return issues.map((issue) => ({
+    field: fieldFor(issue.path),
+    code: issueCode(issue),
+    message: issue.message,
+  }));
+}
+
+function parseExtraHeaders(rawHeaders: unknown, locale?: string): {
+  extraHeaders?: Record<string, string>;
+  headerIndexByName: Map<string, number>;
+  errors: FormFieldError[];
+} {
+  const headerIndexByName = new Map<string, number>();
+  if (rawHeaders === undefined) return { headerIndexByName, errors: [] };
+  const rows = z.array(headerRowSchema).safeParse(rawHeaders);
+  if (!rows.success) {
+    return {
+      headerIndexByName,
+      errors: mapZodIssues(rows.error.issues, (path) => `/extraHeaders${path.length ? `/${path.join("/")}` : ""}`),
+    };
+  }
+  const errors: FormFieldError[] = [];
+  const extraHeaders: Record<string, string> = {};
+  for (let i = 0; i < rows.data.length; i++) {
+    const row = rows.data[i]!;
+    const headerName = row.name.trim();
+    if (!headerName) {
+      if (row.value.trim()) {
+        errors.push({ field: `/extraHeaders/${i}/name`, code: "required", message: tForLocale(locale, "panels.modelSettings.errors.headerNameRequired") });
+      }
+      continue;
+    }
+    if (headerIndexByName.has(headerName)) {
+      errors.push({ field: `/extraHeaders/${i}/name`, code: "already_exists", message: tForLocale(locale, "panels.modelSettings.errors.headerDuplicate", { name: headerName }) });
+      continue;
+    }
+    headerIndexByName.set(headerName, i);
+    extraHeaders[headerName] = row.value;
+  }
+  return {
+    ...(Object.keys(extraHeaders).length > 0 ? { extraHeaders } : {}),
+    headerIndexByName,
+    errors,
+  };
 }
 
 function providerLabel(provider: ModelProvider, locale?: string): string {
@@ -284,95 +350,69 @@ function parseConnectionDraft(
   settings: ModelSettingsData,
   locale?: string,
 ): {
-  values: ConnectionFormValues;
+  values: Record<string, unknown>;
   connectionName: string;
   connection?: ModelConnectionWrite;
-  errors: PanelFormDescription["errors"];
+  errors: FormFieldError[];
 } {
-  const providerCandidate = typeof raw.provider === "string" && modelProviderSchema.safeParse(raw.provider).success
-    ? (raw.provider as ModelProvider)
-    : "openai";
-  const values: ConnectionFormValues = {
-    name: creating ? String(raw.name ?? "") : (existingName ?? String(raw.name ?? "")),
-    provider: providerCandidate,
-    apiBase: typeof raw.apiBase === "string" ? raw.apiBase : "",
-    apiKey: typeof raw.apiKey === "string" ? raw.apiKey : "",
-    extraHeaders: Array.isArray(raw.extraHeaders)
-      ? raw.extraHeaders
-        .filter((row): row is Record<string, unknown> => row !== null && typeof row === "object")
-        .map((row) => ({ name: String(row.name ?? ""), value: String(row.value ?? "") }))
-      : [],
-  };
+  const values: Record<string, unknown> = creating ? raw : { ...raw, name: existingName! };
+  const errors: FormFieldError[] = [];
 
-  const errors: PanelFormDescription["errors"] = [];
-  const name = values.name.trim();
-  const spec = PROVIDER_SPECS[values.provider];
-
+  let connectionName = existingName ?? "";
   if (creating) {
-    if (!name) {
-      errors.push({ field: "/name", code: "required", message: tForLocale(locale, "panels.modelSettings.errors.connectionNameRequired") });
-    } else if (!modelConnectionNameSchema.safeParse(name).success) {
-      errors.push({ field: "/name", code: "invalid_format", message: tForLocale(locale, "panels.modelSettings.errors.connectionNameInvalid") });
-    } else if (Object.hasOwn(settings.connections, name)) {
-      errors.push({ field: "/name", code: "already_exists", message: tForLocale(locale, "panels.modelSettings.errors.connectionNameTaken", { name }) });
+    const parsedName = modelConnectionNameSchema.safeParse(values.name);
+    if (!parsedName.success) {
+      errors.push(...mapZodIssues(parsedName.error.issues, () => "/name"));
+    } else if (Object.hasOwn(settings.connections, parsedName.data)) {
+      errors.push({
+        field: "/name",
+        code: "already_exists",
+        message: tForLocale(locale, "panels.modelSettings.errors.connectionNameTaken", { name: parsedName.data }),
+      });
+    } else {
+      connectionName = parsedName.data;
     }
   }
 
-  if (!creating && existingName && !supportsEmbeddings(values.provider)) {
+  const headers = parseExtraHeaders(values.extraHeaders, locale);
+  errors.push(...headers.errors);
+
+  const apiBase = values.apiBase === "" || values.apiBase === null || values.apiBase === undefined
+    ? undefined
+    : values.apiBase;
+  const parsed = modelConnectionWriteSchema.safeParse({
+    provider: values.provider,
+    ...(apiBase !== undefined ? { apiBase } : {}),
+    apiKey: values.apiKey,
+    ...(headers.extraHeaders ? { extraHeaders: headers.extraHeaders } : {}),
+  });
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      if (issue.path[0] === "extraHeaders" && typeof issue.path[1] === "string" && headers.headerIndexByName.has(issue.path[1])) {
+        errors.push({ field: `/extraHeaders/${headers.headerIndexByName.get(issue.path[1])}/value`, code: issueCode(issue), message: issue.message });
+      } else {
+        const field = issue.path.length > 0 ? `/${issue.path.join("/")}` : "/apiKey";
+        const code = issue.code === z.ZodIssueCode.custom && issue.path[0] === "apiBase" && apiBase === undefined
+          ? "required"
+          : issueCode(issue);
+        errors.push({ field, code, message: issue.message });
+      }
+    }
+  }
+
+  if (!creating && existingName && parsed.success && !supportsEmbeddings(parsed.data.provider)) {
     const hasEmbedding = modelsForConnection(settings, existingName).some(([, entry]) => entry.type === "embedding");
     if (hasEmbedding) {
       errors.push({ field: "/provider", code: "invalid_option", message: tForLocale(locale, "panels.modelSettings.errors.providerNoEmbeddings") });
     }
   }
 
-  const apiBase = (values.apiBase ?? "").trim();
-  if (spec.apiBaseRequired && !apiBase) {
-    errors.push({ field: "/apiBase", code: "required", message: tForLocale(locale, "panels.modelSettings.errors.apiBaseRequired") });
-  } else if (apiBase && !runtimeHttpUrlSchema.safeParse(apiBase).success) {
-    errors.push({ field: "/apiBase", code: "invalid_format", message: tForLocale(locale, "panels.modelSettings.errors.apiBaseInvalid") });
-  }
-
-  const apiKeyCheck = modelApiKeyWriteSchema.safeParse(values.apiKey);
-  if (!apiKeyCheck.success) {
-    errors.push({ field: "/apiKey", code: "invalid_format", message: apiKeyCheck.error.issues[0]?.message ?? tForLocale(locale, "panels.modelSettings.errors.apiKeyRequired") });
-  }
-
-  const extraHeaders: Record<string, string> = {};
-  const seenHeaders = new Set<string>();
-  for (let i = 0; i < (values.extraHeaders?.length ?? 0); i++) {
-    const row = values.extraHeaders![i]!;
-    const headerName = row.name.trim();
-    if (!headerName) {
-      if (row.value.trim()) {
-        errors.push({ field: `/extraHeaders/${i}/name`, code: "required", message: tForLocale(locale, "panels.modelSettings.errors.headerNameRequired") });
-      }
-      continue;
-    }
-    if (seenHeaders.has(headerName)) {
-      errors.push({ field: `/extraHeaders/${i}/name`, code: "already_exists", message: tForLocale(locale, "panels.modelSettings.errors.headerDuplicate", { name: headerName }) });
-      continue;
-    }
-    seenHeaders.add(headerName);
-    extraHeaders[headerName] = row.value;
-  }
-
-  if (errors.length > 0) return { values, connectionName: name, errors };
-
-  const candidate: ModelConnectionWrite = {
-    provider: values.provider,
-    ...(apiBase ? { apiBase } : {}),
-    apiKey: values.apiKey,
-    ...(Object.keys(extraHeaders).length > 0 ? { extraHeaders } : {}),
+  return {
+    values,
+    connectionName,
+    ...(errors.length === 0 && parsed.success ? { connection: parsed.data } : {}),
+    errors,
   };
-  const parsed = modelConnectionWriteSchema.safeParse(candidate);
-  if (!parsed.success) {
-    for (const issue of parsed.error.issues) {
-      const top = String(issue.path[0] ?? "apiKey");
-      errors.push({ field: `/${top}`, code: "invalid_format", message: issue.message });
-    }
-    return { values, connectionName: name, errors };
-  }
-  return { values, connectionName: name, connection: parsed.data, errors: [] };
 }
 
 function buildConnectionForm(
@@ -387,7 +427,9 @@ function buildConnectionForm(
     : toConnectionFormValues(existingName!, settings.connections[existingName!]!);
   const merged = { ...baseValues, ...(inputs.values ?? {}) };
   const evaluated = parseConnectionDraft(merged, creating, existingName, settings, locale);
-  const spec = PROVIDER_SPECS[evaluated.values.provider];
+  const parsedProvider = modelProviderSchema.safeParse(evaluated.values.provider);
+  const apiBaseRequired = parsedProvider.success ? requiresApiBase(parsedProvider.data) : false;
+  const apiBasePlaceholder = parsedProvider.success ? PROVIDER_SPECS[parsedProvider.data].apiBasePlaceholder : undefined;
   const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
 
   const fields: PanelFormField[] = [
@@ -422,13 +464,13 @@ function buildConnectionForm(
     {
       path: "/apiBase",
       label: t("panels.modelSettings.fields.apiBase"),
-      help: spec.apiBaseRequired
+      help: apiBaseRequired
         ? t("panels.modelSettings.fields.apiBaseHelpRequired")
         : t("panels.modelSettings.fields.apiBaseHelpOptional"),
-      required: spec.apiBaseRequired,
+      required: apiBaseRequired,
       readOnly: false,
       valueSchema: cachedZodToRuntimeJsonSchema(z.string()),
-      control: { kind: "text", placeholder: spec.apiBasePlaceholder },
+      control: { kind: "text", ...(apiBasePlaceholder ? { placeholder: apiBasePlaceholder } : {}) },
     },
     {
       path: "/apiKey",
@@ -476,7 +518,7 @@ function buildConnectionForm(
   // Report errors only once the user has started editing (or on existing invalid values).
   const errors = inputs.values ? evaluated.errors : [];
   return {
-    values: evaluated.values as unknown as Record<string, RuntimeJsonValue>,
+    values: evaluated.values as Record<string, RuntimeJsonValue>,
     fields,
     errors,
     save: {
@@ -486,16 +528,6 @@ function buildConnectionForm(
       draftOperation: creating ? "modelConnection.create" : "modelConnection.update",
     },
   };
-}
-
-function optionalPositiveInt(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === "") return undefined;
-  return typeof value === "number" ? value : Number(value);
-}
-
-function optionalNumber(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === "") return undefined;
-  return typeof value === "number" ? value : Number(value);
 }
 
 function toModelFormValues(name: string, entry: ModelEntry): ModelFormValues {
@@ -518,82 +550,86 @@ function toModelFormValues(name: string, entry: ModelEntry): ModelFormValues {
 function parseModelDraft(
   raw: Record<string, unknown>,
   connectionName: string,
-  connection: ModelConnection,
   existingModelName: string | null,
   settings: ModelSettingsData,
   locale?: string,
 ): {
-  values: ModelFormValues;
+  values: Record<string, unknown>;
   modelName: string;
   entry?: ModelEntry;
-  errors: PanelFormDescription["errors"];
+  errors: FormFieldError[];
 } {
-  const embeddingAllowed = supportsEmbeddings(connection.provider);
-  const type: "chat" | "embedding" = raw.type === "embedding" ? "embedding" : "chat";
-  const values: ModelFormValues = {
-    name: String(raw.name ?? ""),
-    model: String(raw.model ?? ""),
-    type,
-    contextWindow: optionalPositiveInt(raw.contextWindow) ?? null,
-    maxOutputTokens: optionalPositiveInt(raw.maxOutputTokens) ?? null,
-    supportsReasoning: raw.supportsReasoning === true,
-    supportsVision: raw.supportsVision === true,
-    temperature: optionalNumber(raw.temperature) ?? null,
-    topP: optionalNumber(raw.topP) ?? null,
-    dimensions: optionalPositiveInt(raw.dimensions) ?? null,
-    timeoutSeconds: optionalPositiveInt(raw.timeoutSeconds) ?? null,
-    maxRetries: optionalNumber(raw.maxRetries) ?? null,
-  };
-
-  const errors: PanelFormDescription["errors"] = [];
-  const name = values.name.trim();
-  const upstream = values.model.trim();
-  const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
-
-  if (!name) {
-    errors.push({ field: "/name", code: "required", message: t("panels.modelSettings.errors.modelNameRequired") });
-  } else if (name !== existingModelName && Object.hasOwn(settings.models, name)) {
-    errors.push({ field: "/name", code: "already_exists", message: t("panels.modelSettings.errors.modelNameTaken", { name }) });
-  }
-  if (!upstream) {
-    errors.push({ field: "/model", code: "required", message: t("panels.modelSettings.errors.upstreamModelRequired") });
-  }
-  if (type === "embedding" && !embeddingAllowed) {
-    errors.push({ field: "/type", code: "invalid_option", message: t("panels.modelSettings.errors.providerNoEmbeddings") });
-  }
-  if (type === "embedding" && (values.dimensions === null || values.dimensions === undefined || !Number.isInteger(values.dimensions) || values.dimensions <= 0)) {
-    errors.push({ field: "/dimensions", code: "required", message: t("panels.modelSettings.errors.dimensionsRequired") });
+  const errors: FormFieldError[] = [];
+  const parsedName = modelNameSchema.safeParse(raw.name);
+  let modelName = "";
+  if (!parsedName.success) {
+    errors.push(...mapZodIssues(parsedName.error.issues, () => "/name"));
+  } else if (parsedName.data !== existingModelName && Object.hasOwn(settings.models, parsedName.data)) {
+    errors.push({
+      field: "/name",
+      code: "already_exists",
+      message: tForLocale(locale, "panels.modelSettings.errors.modelNameTaken", { name: parsedName.data }),
+    });
+  } else {
+    modelName = parsedName.data;
   }
 
-  if (errors.length > 0) return { values, modelName: name, errors };
-
+  const defined = (value: unknown) => value !== null && value !== undefined;
   const common = {
     connection: connectionName,
-    model: upstream,
-    ...(values.timeoutSeconds !== null && values.timeoutSeconds !== undefined ? { timeoutSeconds: values.timeoutSeconds } : {}),
-    ...(values.maxRetries !== null && values.maxRetries !== undefined ? { maxRetries: values.maxRetries } : {}),
+    model: raw.model,
+    ...(defined(raw.timeoutSeconds) ? { timeoutSeconds: raw.timeoutSeconds } : {}),
+    ...(defined(raw.maxRetries) ? { maxRetries: raw.maxRetries } : {}),
   };
-  const candidate = type === "embedding"
-    ? { ...common, type: "embedding" as const, dimensions: values.dimensions! }
+  const candidate = raw.type === "embedding"
+    ? {
+      ...common,
+      type: raw.type,
+      dimensions: raw.dimensions === null ? undefined : raw.dimensions,
+    }
     : {
       ...common,
-      type: "chat" as const,
-      ...(values.contextWindow !== null && values.contextWindow !== undefined ? { contextWindow: values.contextWindow } : {}),
-      ...(values.maxOutputTokens !== null && values.maxOutputTokens !== undefined ? { maxOutputTokens: values.maxOutputTokens } : {}),
-      ...(values.supportsReasoning ? { supportsReasoning: true } : {}),
-      ...(values.supportsVision ? { supportsVision: true } : {}),
-      ...(values.temperature !== null && values.temperature !== undefined ? { temperature: values.temperature } : {}),
-      ...(values.topP !== null && values.topP !== undefined ? { topP: values.topP } : {}),
+      type: raw.type,
+      ...(defined(raw.contextWindow) ? { contextWindow: raw.contextWindow } : {}),
+      ...(defined(raw.maxOutputTokens) ? { maxOutputTokens: raw.maxOutputTokens } : {}),
+      ...(raw.supportsReasoning !== undefined ? { supportsReasoning: raw.supportsReasoning } : {}),
+      ...(raw.supportsVision !== undefined ? { supportsVision: raw.supportsVision } : {}),
+      ...(defined(raw.temperature) ? { temperature: raw.temperature } : {}),
+      ...(defined(raw.topP) ? { topP: raw.topP } : {}),
     };
 
-  const parsed = modelEntrySchema.safeParse(candidate);
-  if (!parsed.success) {
-    for (const issue of parsed.error.issues) {
-      errors.push({ field: `/${String(issue.path[0] ?? "name")}`, code: "invalid_format", message: issue.message });
-    }
-    return { values, modelName: name, errors };
+  const parsedEntry = modelEntrySchema.safeParse(candidate);
+  if (!parsedEntry.success) {
+    errors.push(...mapZodIssues(parsedEntry.error.issues, (path) => `/${path.length ? path.join("/") : "type"}`));
   }
-  return { values, modelName: name, entry: parsed.data, errors: [] };
+
+  if (parsedEntry.success && modelName) {
+    const check = modelSettingsWriteSchema.safeParse({
+      connections: settings.connections,
+      models: { [modelName]: parsedEntry.data },
+      defaultModel: null,
+      embeddingModel: null,
+    });
+    if (!check.success) {
+      for (const issue of check.error.issues) {
+        if (issue.path[0] === "models" && issue.path[1] === modelName && issue.path.length > 2) {
+          const rest = issue.path.slice(2);
+          errors.push({
+            field: `/${rest.join("/")}`,
+            code: rest[0] === "type" ? "invalid_option" : issueCode(issue),
+            message: issue.message,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    values: raw,
+    modelName,
+    ...(errors.length === 0 && parsedEntry.success ? { entry: parsedEntry.data } : {}),
+    errors,
+  };
 }
 
 function buildModelForm(
@@ -624,7 +660,7 @@ function buildModelForm(
     : toModelFormValues(existingModelName, settings.models[existingModelName]!);
 
   const merged = { ...baseValues, ...(inputs.values ?? {}) };
-  const evaluated = parseModelDraft(merged, connectionName, connection, existingModelName, settings, locale);
+  const evaluated = parseModelDraft(merged, connectionName, existingModelName, settings, locale);
   const embeddingAllowed = supportsEmbeddings(connection.provider);
   const isEmbedding = evaluated.values.type === "embedding";
   const t = (key: string, params?: Record<string, unknown>) => tForLocale(locale, key, params);
@@ -985,6 +1021,36 @@ function requireDomainKey(primaryKey: string) {
   if (primaryKey !== DOMAIN_KEY) throw new HttpError(404, "Domain model usage not found", "NOT_FOUND");
 }
 
+function parseUsageDraft(
+  raw: Record<string, unknown>,
+  settings: ModelSettingsData,
+): {
+  values: Record<string, unknown>;
+  next?: ModelSettingsWrite;
+  errors: FormFieldError[];
+} {
+  const defaultModel = raw.defaultModel === "" ? null : raw.defaultModel;
+  const embeddingModel = raw.embeddingModel === "" ? null : raw.embeddingModel;
+  const checked = modelSettingsWriteSchema.safeParse({
+    ...settingsWriteFromData(settings),
+    defaultModel,
+    embeddingModel,
+  });
+  if (!checked.success) {
+    return {
+      values: raw,
+      errors: checked.error.issues
+        .filter((issue) => issue.path[0] === "defaultModel" || issue.path[0] === "embeddingModel")
+        .map((issue) => ({
+          field: `/${String(issue.path[0])}`,
+          code: issue.code === z.ZodIssueCode.custom ? "invalid_option" : issueCode(issue),
+          message: issue.message,
+        })),
+    };
+  }
+  return { values: raw, next: checked.data, errors: [] };
+}
+
 export function createModelUsageReads(actor: PanelOperationActor) {
   const host = operationHost(actor);
   const locale = actor.credentials.locale;
@@ -997,12 +1063,14 @@ export function createModelUsageReads(actor: PanelOperationActor) {
       const chatModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "chat");
       const embeddingModels = Object.entries(settings.models).filter(([, entry]) => entry.type === "embedding");
 
-      const defaultModel = typeof inputs.values?.defaultModel === "string"
-        ? inputs.values.defaultModel
-        : (settings.defaultModel ?? "");
-      const embeddingModel = typeof inputs.values?.embeddingModel === "string"
-        ? inputs.values.embeddingModel
-        : (settings.embeddingModel ?? "");
+      const baseValues = {
+        defaultModel: settings.defaultModel ?? "",
+        embeddingModel: settings.embeddingModel ?? "",
+      };
+      const merged: Record<string, unknown> = { ...baseValues, ...(inputs.values ?? {}) };
+      const evaluated = parseUsageDraft(merged, settings);
+      const defaultModel = typeof merged.defaultModel === "string" ? merged.defaultModel : "";
+      const embeddingModel = typeof merged.embeddingModel === "string" ? merged.embeddingModel : "";
 
       const chatOptions: PanelFormOption[] = [
         { value: "", label: t("panels.modelSettings.usage.noDefaultChat"), description: null, disabled: false, disabledReason: null },
@@ -1046,13 +1114,7 @@ export function createModelUsageReads(actor: PanelOperationActor) {
         });
       }
 
-      const errors: PanelFormDescription["errors"] = [];
-      if (inputs.values && chatMissing) {
-        errors.push({ field: "/defaultModel", code: "invalid_option", message: t("panels.modelSettings.errors.defaultChatInvalid") });
-      }
-      if (inputs.values && embeddingMissing) {
-        errors.push({ field: "/embeddingModel", code: "invalid_option", message: t("panels.modelSettings.errors.embeddingInvalid") });
-      }
+      const errors = inputs.values ? evaluated.errors : [];
 
       const fields: PanelFormField[] = [
         {
@@ -1082,7 +1144,7 @@ export function createModelUsageReads(actor: PanelOperationActor) {
       ];
 
       return {
-        values: { defaultModel, embeddingModel },
+        values: merged as Record<string, RuntimeJsonValue>,
         fields,
         errors,
         save: {
@@ -1162,30 +1224,20 @@ function buildConnectionDraftFromForm(
   draft: Record<string, unknown>,
   locale?: string,
 ): { connectionName: string; connection: ModelConnectionWrite } {
-  const connectionName = String(draft.name ?? "").trim();
-  const provider = modelProviderSchema.parse(draft.provider);
-  const apiBase = typeof draft.apiBase === "string" ? draft.apiBase.trim() : "";
-  const apiKey = typeof draft.apiKey === "string" ? draft.apiKey : "";
-  const extraHeaders: Record<string, string> = {};
-  if (Array.isArray(draft.extraHeaders)) {
-    for (const row of draft.extraHeaders) {
-      if (!row || typeof row !== "object") continue;
-      const key = String((row as Record<string, unknown>).name ?? "").trim();
-      if (!key) continue;
-      extraHeaders[key] = String((row as Record<string, unknown>).value ?? "");
-    }
+  const headers = parseExtraHeaders(draft.extraHeaders, locale);
+  if (headers.errors.length > 0) {
+    throw new HttpError(400, headers.errors[0]!.message, "INVALID_REQUEST");
   }
-  const spec = PROVIDER_SPECS[provider];
-  if (spec.apiBaseRequired && !apiBase) {
-    throw new HttpError(400, tForLocale(locale, "panels.modelSettings.errors.apiBaseRequired"), "INVALID_REQUEST");
-  }
+  const apiBase = draft.apiBase === "" || draft.apiBase === null || draft.apiBase === undefined
+    ? undefined
+    : draft.apiBase;
   const parsed = runtimeModelDiscoveryRequestSchema.safeParse({
-    connectionName,
+    connectionName: draft.name,
     connection: {
-      provider,
-      ...(apiBase ? { apiBase } : {}),
-      apiKey,
-      ...(Object.keys(extraHeaders).length > 0 ? { extraHeaders } : {}),
+      provider: draft.provider,
+      ...(apiBase !== undefined ? { apiBase } : {}),
+      apiKey: draft.apiKey,
+      ...(headers.extraHeaders ? { extraHeaders: headers.extraHeaders } : {}),
     },
   });
   if (!parsed.success) {
@@ -1268,28 +1320,34 @@ const saveModelImpact: PanelImpactInspector = {
     const existing = settings.models[currentName];
     if (!existing) return null;
     const { values } = saveInputSchema.parse(call.input);
-    const nextName = typeof values.name === "string" ? values.name.trim() : currentName;
-    const nextType = values.type === "embedding" ? "embedding" : values.type === "chat" ? "chat" : existing.type;
-    const nextDimensions = optionalPositiveInt(values.dimensions);
+    const evaluated = parseModelDraft(
+      { ...toModelFormValues(currentName, existing), ...values },
+      existing.connection,
+      currentName,
+      settings,
+      host.locale,
+    );
+    if (!evaluated.entry) return null;
+    const nextName = evaluated.modelName;
+    const nextEntry = evaluated.entry;
     const notes: string[] = [];
-    if (nextType !== existing.type) {
-      if (settings.defaultModel === currentName && nextType !== "chat") {
+    if (nextEntry.type !== existing.type) {
+      if (settings.defaultModel === currentName && nextEntry.type !== "chat") {
         notes.push(tForLocale(host.locale, "panels.modelSettings.impact.clearsDefaultChat", { name: currentName }));
       }
-      if (settings.embeddingModel === currentName && nextType !== "embedding") {
+      if (settings.embeddingModel === currentName && nextEntry.type !== "embedding") {
         notes.push(tForLocale(host.locale, "panels.modelSettings.impact.clearsEmbedding", { name: currentName }));
       }
     }
     if (
       existing.type === "embedding" &&
-      nextType === "embedding" &&
+      nextEntry.type === "embedding" &&
       settings.embeddingModel === currentName &&
-      nextDimensions !== undefined &&
-      nextDimensions !== existing.dimensions
+      nextEntry.dimensions !== existing.dimensions
     ) {
       notes.push(tForLocale(host.locale, "panels.modelSettings.impact.embeddingDimensionsChanged"));
     }
-    if (nextName && nextName !== currentName) {
+    if (nextName !== currentName) {
       const affectedAgents = agents.filter((agent) => agent.modelSelection.modelId === currentName);
       if (affectedAgents.length > 0) {
         notes.push(tForLocale(host.locale, "panels.modelSettings.impact.renameAffectsAgents", {
@@ -1313,12 +1371,13 @@ const saveUsageImpact: PanelImpactInspector = {
   async inspect(host, calls) {
     const settings = await readSettings(host, host.executor.credentials);
     const { values } = saveInputSchema.parse(calls[0]!.input);
-    const nextDefault = typeof values.defaultModel === "string"
-      ? (values.defaultModel.trim() || null)
-      : settings.defaultModel;
-    const nextEmbedding = typeof values.embeddingModel === "string"
-      ? (values.embeddingModel.trim() || null)
-      : settings.embeddingModel;
+    const evaluated = parseUsageDraft(
+      { defaultModel: settings.defaultModel ?? "", embeddingModel: settings.embeddingModel ?? "", ...values },
+      settings,
+    );
+    if (!evaluated.next) return null;
+    const nextDefault = evaluated.next.defaultModel;
+    const nextEmbedding = evaluated.next.embeddingModel;
     const notes: string[] = [];
     if (nextDefault !== settings.defaultModel) {
       notes.push(
@@ -1477,12 +1536,8 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       await assertPermission(host.executor.credentials, ["system-config"]);
       const { draft } = discoverInputSchema.parse(call.input);
       const request = buildConnectionDraftFromForm(draft, host.locale);
-      const data = await ownerJson(host, "/model-settings/discover", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-      });
-      return { kind: "json", value: runtimeModelDiscoveryResponseSchema.parse(data) };
+      const value = await ownerData(host, "/model-settings/discover", runtimeModelDiscoveryResponseSchema, request);
+      return { kind: "json", value };
     },
   } satisfies PanelReadServerOperation,
   {
@@ -1508,12 +1563,8 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
         model: { ...existing, connection: connectionName },
         ...(parameters.prompt ? { prompt: parameters.prompt } : {}),
       });
-      const data = await ownerJson(host, "/model-settings/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-      });
-      return { kind: "json", value: runtimeModelTestResponseSchema.parse(data) };
+      const value = await ownerData(host, "/model-settings/test", runtimeModelTestResponseSchema, request);
+      return { kind: "json", value };
     },
   } satisfies PanelReadServerOperation,
   {
@@ -1533,10 +1584,11 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     async execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Adding a model requires a selected connection");
       const settings = await readSettings(host, host.executor.credentials);
-      const connection = settings.connections[target.primaryKey];
-      if (!connection) return { kind: "refusal", code: "NOT_FOUND", message: `Connection '${target.primaryKey}' not found` };
+      if (!settings.connections[target.primaryKey]) {
+        return { kind: "refusal", code: "NOT_FOUND", message: `Connection '${target.primaryKey}' not found` };
+      }
       const { values } = saveInputSchema.parse(input);
-      const evaluated = parseModelDraft(values, target.primaryKey, connection, null, settings, host.locale);
+      const evaluated = parseModelDraft(values, target.primaryKey, null, settings, host.locale);
       if (evaluated.errors.length > 0 || !evaluated.entry) {
         return {
           kind: "refusal",
@@ -1580,11 +1632,12 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
       const settings = await readSettings(host, host.executor.credentials);
       const existing = settings.models[target.primaryKey];
       if (!existing) return { kind: "refusal", code: "NOT_FOUND", message: `Model '${target.primaryKey}' not found` };
-      const connection = settings.connections[existing.connection];
-      if (!connection) return { kind: "refusal", code: "NOT_FOUND", message: `Connection '${existing.connection}' not found` };
+      if (!settings.connections[existing.connection]) {
+        return { kind: "refusal", code: "NOT_FOUND", message: `Connection '${existing.connection}' not found` };
+      }
       const { values } = saveInputSchema.parse(input);
       const merged = { ...toModelFormValues(target.primaryKey, existing), ...values };
-      const evaluated = parseModelDraft(merged, existing.connection, connection, target.primaryKey, settings, host.locale);
+      const evaluated = parseModelDraft(merged, existing.connection, target.primaryKey, settings, host.locale);
       if (evaluated.errors.length > 0 || !evaluated.entry) {
         return {
           kind: "refusal",
@@ -1670,25 +1723,19 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     async execute(host: PanelOperationHost, _target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const settings = await readSettings(host, host.executor.credentials);
       const { values } = saveInputSchema.parse(input);
-      const next = settingsWriteFromData(settings);
-      if (typeof values.defaultModel === "string") {
-        next.defaultModel = values.defaultModel.trim() || null;
-      }
-      if (typeof values.embeddingModel === "string") {
-        next.embeddingModel = values.embeddingModel.trim() || null;
-      }
-      const checked = modelSettingsWriteSchema.safeParse(next);
-      if (!checked.success) {
-        const issue = checked.error.issues[0];
-        const field = issue?.path[0] === "embeddingModel" ? "/embeddingModel" : "/defaultModel";
+      const evaluated = parseUsageDraft(
+        { defaultModel: settings.defaultModel ?? "", embeddingModel: settings.embeddingModel ?? "", ...values },
+        settings,
+      );
+      if (evaluated.errors.length > 0 || !evaluated.next) {
         return {
           kind: "refusal",
           code: "INVALID_MODEL_USAGE",
-          message: issue?.message ?? "Invalid model selection",
-          errors: [{ field, code: "invalid_option", message: issue?.message ?? "Invalid model selection" }],
+          message: evaluated.errors[0]?.message ?? "Invalid model selection",
+          errors: evaluated.errors,
         };
       }
-      const saved = await saveSettings(host, host.executor.credentials, checked.data);
+      const saved = await saveSettings(host, host.executor.credentials, evaluated.next);
       if (!saved.ok) return saved.outcome;
       return {
         kind: "success",
@@ -1713,17 +1760,8 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     inspectImpact: rebuildVectorsImpact,
     async execute(host: PanelOperationHost): Promise<SinglePanelOperationOutcome> {
       await assertPermission(host.executor.credentials, ["system-config"]);
-      const response = await host.request(`${DATA_QUERY_GATEWAY}/businessConfig/rebuildVectors`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) {
-        return { kind: "failure", code: "VECTOR_REBUILD_FAILED", message: (body as { message?: string } | null)?.message ?? `HTTP ${response.status}` };
-      }
-      const envelope = ownerEnvelopeSchema.parse(body);
-      if (!envelope.success) return ownerWriteFailure(envelope, "VECTOR_REBUILD_FAILED", "Unable to start vector rebuild");
+      const result = await ownerWrite(host, "/businessConfig/rebuildVectors", {}, "VECTOR_REBUILD_FAILED", "Unable to start vector rebuild");
+      if (!result.ok) return result.outcome;
       return { kind: "success", data: {}, affected: affected(MODEL_USAGE, DOMAIN_KEY, [MODEL_USAGE]) };
     },
   },
@@ -1742,17 +1780,8 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     targetLabel: async (host) => tForLocale(host.locale, "panels.modelSettings.usageTitle"),
     async execute(host: PanelOperationHost): Promise<SinglePanelOperationOutcome> {
       await assertPermission(host.executor.credentials, ["system-config"]);
-      const response = await host.request(`${DATA_QUERY_GATEWAY}/businessConfig/pauseVectorRebuild`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) {
-        return { kind: "failure", code: "VECTOR_REBUILD_PAUSE_FAILED", message: (body as { message?: string } | null)?.message ?? `HTTP ${response.status}` };
-      }
-      const envelope = ownerEnvelopeSchema.parse(body);
-      if (!envelope.success) return ownerWriteFailure(envelope, "VECTOR_REBUILD_PAUSE_FAILED", "Unable to pause vector rebuild");
+      const result = await ownerWrite(host, "/businessConfig/pauseVectorRebuild", {}, "VECTOR_REBUILD_PAUSE_FAILED", "Unable to pause vector rebuild");
+      if (!result.ok) return result.outcome;
       return { kind: "success", data: {}, affected: affected(MODEL_USAGE, DOMAIN_KEY, [MODEL_USAGE]) };
     },
   },

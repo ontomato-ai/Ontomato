@@ -37,6 +37,11 @@ export function supportsEmbeddings(provider: ModelProvider): boolean {
   return provider !== "anthropic";
 }
 
+/** Azure and generic OpenAI-compatible connections have no default upstream URL. */
+export function requiresApiBase(provider: ModelProvider): boolean {
+  return provider === "azure" || provider === "custom_openai";
+}
+
 /** Configuration values are literals, never environment interpolation or commands. */
 const literalValueSchema = z.string().refine(value =>
   !/^[!$]/.test(value.trimStart()) && !/\$(?:\{|[A-Za-z_])/.test(value),
@@ -54,7 +59,16 @@ const connectionFields = {
   apiBase: runtimeHttpUrlSchema.optional(),
   extraHeaders: z.record(literalValueSchema).optional(),
 };
-export const modelConnectionWriteSchema = z.object({ ...connectionFields, apiKey: modelApiKeyWriteSchema }).strict();
+export const modelConnectionWriteSchema = z.object({ ...connectionFields, apiKey: modelApiKeyWriteSchema }).strict()
+  .superRefine((connection, ctx) => {
+    if (requiresApiBase(connection.provider) && !connection.apiBase) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["apiBase"],
+        message: "An API base URL is required for this provider",
+      });
+    }
+  });
 export const modelConnectionSchema = z.object({
   ...connectionFields,
   apiKey: z.string().refine(isMaskedSecret, "Model reads must contain masked keys"),
