@@ -65,6 +65,7 @@ class PageSkillsContractTest {
 
     @Test void projectionRetainsDeniedIdentitiesButNeverTheirMappingsOrDefaults() {
         var access=mock(ApplicationAccess.class); var user=mock(User.class);
+        when(access.withPageSkillAuthorization(any(),any())).thenCallRealMethod();
         when(user.getDomainId()).thenReturn("domain");
         var catalog=spy(new ApplicationCatalog(mock(JdbcTemplate.class),mock(TransactionTemplate.class),access,"{}",mock(PanelResources.class),mock(io.ontomato.dataengine.service.ProductGrantService.class)));
         var allowed=menu("allowed");var denied=menu("denied");

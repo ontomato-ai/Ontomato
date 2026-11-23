@@ -32,6 +32,7 @@ class PanelApplicationsTest {
 
     PanelApplicationsTest() {
         when(user.getId()).thenReturn("author"); when(user.getDomainId()).thenReturn("domain");
+        when(access.withPageSkillAuthorization(any(), any())).thenCallRealMethod();
         when(tx.execute(any())).thenAnswer(call -> ((TransactionCallback<?>)call.getArgument(0)).doInTransaction(null));
         when(grants.allowed(anyString(), eq("use"))).thenReturn(true);
         catalog = spy(new ApplicationCatalog(db, tx, access, "{}", panels, grants));

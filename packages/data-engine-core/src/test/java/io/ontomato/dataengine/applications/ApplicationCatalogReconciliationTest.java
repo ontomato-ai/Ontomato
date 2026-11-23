@@ -48,6 +48,7 @@ class ApplicationCatalogReconciliationTest extends PostgresTestDatabase {
     @BeforeEach void setup() {
         new ApplicationCatalogUpgrade(jdbc).afterPropertiesSet();
         access = mock(ApplicationAccess.class);
+        when(access.withPageSkillAuthorization(any(), any())).thenCallRealMethod();
         identity = mock(IdentityService.class);
         grants = mock(ProductGrantService.class);
         panels = mock(PanelResources.class);
