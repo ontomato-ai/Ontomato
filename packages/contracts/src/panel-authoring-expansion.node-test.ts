@@ -740,3 +740,93 @@ test("operation params support declarative formField and formFields wiring for c
     operations: { save: { operation: updateAction.id, params: { payload: { formFields: {} } } } },
   }).success, false);
 });
+
+test("top-level targetless Actions expand cleanly on both ObjectForm and OperationButton without duplicating across objectTypes", async () => {
+  const { platformTypeTableResponseSchema } = await import("./platform-type-table");
+  const { customerOntologyReads } = await import("./platform-object-types");
+
+  const table = platformTypeTableResponseSchema.parse({
+    objectTypes: {
+      Order: { reads: customerOntologyReads },
+      AuditLog: { reads: customerOntologyReads },
+    },
+    operations: [
+      {
+        id: "create-order",
+        kind: "action",
+        effect: "write",
+        target: { source: "none" },
+        inputSchema: {
+          type: "object",
+          properties: { values: { type: "object", properties: { customer: { type: "string" } }, additionalProperties: false } },
+          required: ["values"],
+          additionalProperties: false,
+        },
+        batch: false,
+        affects: ["Order", "AuditLog"],
+      },
+    ],
+    resultSchemas: {
+      panelRecordQuery: { type: "object" },
+      panelRecord: { type: "object" },
+      panelFormDescription: { type: "object" },
+    },
+  });
+
+  const emptyPorts = { props: [], events: [], slots: [] };
+  const formComponent: Parameters<typeof expandPanelAuthoringMember>[2]["components"][number] = {
+    componentId: "ObjectForm",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectForm",
+    role: "control",
+    meaning: "Form",
+    effects: "Writes",
+    bindsElement: ["ObjectType:*"],
+    ports: emptyPorts,
+    data: {
+      form: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] },
+      createForm: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] },
+    },
+  };
+  const buttonComponent: Parameters<typeof expandPanelAuthoringMember>[2]["components"][number] = {
+    componentId: "OperationButton",
+    module: "@ontomato/sdk/base",
+    exportName: "OperationButton",
+    role: "control",
+    meaning: "Button",
+    effects: "Writes",
+    bindsElement: ["Action:*"],
+    ports: emptyPorts,
+    config: [{ name: "operation", type: "string", description: "Operation", required: true }],
+  };
+
+  const formMember = panelAuthoringMemberSchema.parse({
+    component: "ObjectForm",
+    type: "Order",
+    data: { createForm: "createForm" },
+    operations: { save: "create-order" },
+  });
+  assert("component" in formMember);
+  const expandedForm = expandPanelAuthoringMember("orderCreate", formMember, {
+    state: {},
+    components: [formComponent, buttonComponent],
+    typeTable: table,
+  });
+  assert.deepEqual(expandedForm.projection.operations, {
+    save: { operation: { kind: "Action", id: "create-order" } },
+  });
+
+  const btnMember = panelAuthoringMemberSchema.parse({
+    component: "OperationButton",
+    operation: "create-order",
+  });
+  assert("component" in btnMember);
+  const expandedBtn = expandPanelAuthoringMember("createBtn", btnMember, {
+    state: {},
+    components: [formComponent, buttonComponent],
+    typeTable: table,
+  });
+  assert.deepEqual(expandedBtn.projection.operations, {
+    "create-order": { operation: { kind: "Action", id: "create-order" } },
+  });
+});

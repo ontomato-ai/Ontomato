@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeKeySchema } from "./agent-runtime-values";
-import { panelOperationDeclarationSchema, panelReadResultIdSchema } from "./panel-operations";
+import { panelOperationDeclarationSchema, panelReadResultIdSchema, type PanelOperationDeclaration } from "./panel-operations";
 import { panelReadParameterSchemas } from "./panel-projection";
 import { platformOntologyLayers, type PanelReadParameterId } from "./platform-object-types";
 
@@ -48,6 +48,17 @@ export const platformTypeTableEntrySchema = z.object({
 }).strict();
 export type PlatformTypeTableEntry = z.infer<typeof platformTypeTableEntrySchema>;
 
+export type PlatformTypeTableOperation = PanelOperationDeclaration & {
+  /** Customer object types declared as affected by this targetless operation. */
+  affects?: string[];
+};
+export const platformTypeTableOperationSchema: z.ZodType<PlatformTypeTableOperation> = z.lazy(() =>
+  panelOperationDeclarationSchema.extend({
+    /** Customer object types declared as affected by this targetless operation. */
+    affects: z.array(runtimeKeySchema).optional(),
+  }).strict(),
+);
+
 const unavailableObjectActionSchema = z.object({
   id: runtimeKeySchema,
   objectType: runtimeKeySchema.optional(),
@@ -58,13 +69,15 @@ export type UnavailableObjectAction = z.infer<typeof unavailableObjectActionSche
 /** The authenticated author catalogue, keyed by the owner type's ID. */
 export const platformTypeTableResponseSchema = z.object({
   objectTypes: z.record(runtimeKeySchema, platformTypeTableEntrySchema),
+  /** Targetless domain operations (such as creation or global Actions), listed once by unique ID. */
+  operations: z.array(z.lazy(() => platformTypeTableOperationSchema)).optional(),
   /** Standalone JSON Schemas for the distinct result IDs referenced by the returned reads. */
   resultSchemas: z.record(z.lazy(() => panelReadResultIdSchema), runtimeJsonObjectSchema),
   /** Broken published actions have no executable declaration. A missing target has no object type. */
   unavailableActions: z.array(unavailableObjectActionSchema).optional(),
   /** The owner refused the class catalogue without returning class identities. */
   customerTypesUnavailable: z.object({ reason: z.string().min(1) }).strict().optional(),
-}).strict().superRefine(({ objectTypes, resultSchemas }, ctx) => {
+}).strict().superRefine(({ objectTypes, operations, resultSchemas }, ctx) => {
   for (const [typeId, entry] of Object.entries(objectTypes)) {
     for (const [name, { result }] of Object.entries(entry.reads ?? {})) {
       if (!Object.hasOwn(resultSchemas, result)) {
@@ -72,6 +85,14 @@ export const platformTypeTableResponseSchema = z.object({
           message: `Read result '${result}' has no declared schema` });
       }
     }
+  }
+  const seenOperations = new Set<string>();
+  for (const [index, operation] of (operations ?? []).entries()) {
+    if (seenOperations.has(operation.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["operations", index, "id"],
+        message: `Duplicate top-level operation '${operation.id}'` });
+    }
+    seenOperations.add(operation.id);
   }
 });
 export type PlatformTypeTableResponse = z.infer<typeof platformTypeTableResponseSchema>;

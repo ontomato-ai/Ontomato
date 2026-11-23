@@ -30,27 +30,92 @@ export const panelOperationStore = {
   },
   async invalidatePendingFormSaves(
     owner: AssistantOwner,
-    match: { rootSession?: AgentSessionRef; targetType: string; primaryKey?: string | null },
+    match: {
+      rootSession?: AgentSessionRef;
+      targetType?: string;
+      affectedTypes?: readonly string[];
+      primaryKey?: string | null;
+      slot?: string;
+      panelId?: string;
+      actionId?: string;
+    },
     reason: { code: string; message: string },
   ): Promise<number> {
-    const params: unknown[] = [owner.domainId, owner.userId, JSON.stringify(reason), match.targetType];
+    const params: unknown[] = [owner.domainId, owner.userId, JSON.stringify(reason)];
+    const push = (value: unknown) => {
+      params.push(value);
+      return `$${params.length}`;
+    };
     const clauses = [
       "domain_id=$1",
       "owner_id=$2",
       "intent->>'dispatched'='false'",
-      "intent->'operation'->>'kind'='form.save'",
       "intent->'source'->>'kind' IS NULL",
       "intent->'invalidated' IS NULL",
     ];
+    const targetClauses: string[] = [];
     if (match.primaryKey) {
-      params.push(match.primaryKey);
-      clauses.push(`intent->'call'->'target'->>'kind'='object' AND intent->'call'->'target'->>'objectType'=$4 AND intent->'call'->'target'->>'primaryKey'=$${params.length}`);
+      if (match.targetType) {
+        const typeParam = push(match.targetType);
+        const keyParam = push(match.primaryKey);
+        targetClauses.push(
+          `(intent->'operation'->>'kind'='form.save' OR intent->'operation'->>'handlerRef'='actions.execute')` +
+          ` AND intent->'call'->'target'->>'kind'='object'` +
+          ` AND intent->'call'->'target'->>'objectType'=${typeParam}` +
+          ` AND intent->'call'->'target'->>'primaryKey'=${keyParam}`,
+        );
+      }
     } else {
-      clauses.push("intent->'call'->'target'->>'kind'='draft' AND intent->'binding'->>'id'=$4");
+      const types = [...new Set([
+        ...(match.targetType ? [match.targetType] : []),
+        ...(match.affectedTypes ?? []),
+      ])];
+      if (types.length === 1) {
+        const typeParam = push(types[0]);
+        targetClauses.push(
+          `intent->'operation'->>'kind'='form.save' AND intent->'call'->'target'->>'kind'='draft' AND intent->'binding'->>'id'=${typeParam}`,
+        );
+      } else if (types.length > 1) {
+        const typesParam = push(types);
+        targetClauses.push(
+          `intent->'operation'->>'kind'='form.save' AND intent->'call'->'target'->>'kind'='draft' AND intent->'binding'->>'id'=ANY(${typesParam}::text[])`,
+        );
+      }
+      const actionDraftPredicates: string[] = [];
+      if (match.slot) {
+        const slotParam = push(match.slot);
+        if (match.panelId) {
+          const panelParam = push(match.panelId);
+          actionDraftPredicates.push(`(intent->>'panelId'=${panelParam} AND intent->'operation'->>'slot'=${slotParam})`);
+        } else {
+          actionDraftPredicates.push(`intent->'operation'->>'slot'=${slotParam}`);
+        }
+      }
+      if (match.actionId) {
+        const actionParam = push(match.actionId);
+        actionDraftPredicates.push(`intent->'binding'->>'id'=${actionParam}`);
+      }
+      if (types.length === 1) {
+        const typeParam = push(types[0]);
+        actionDraftPredicates.push(`(intent->'operation'->'action'->'affects' ? ${typeParam})`);
+      } else if (types.length > 1) {
+        const typesParam = push(types);
+        actionDraftPredicates.push(`(intent->'operation'->'action'->'affects' ?| ${typesParam}::text[])`);
+      }
+      if (actionDraftPredicates.length > 0) {
+        targetClauses.push(
+          `intent->'operation'->>'handlerRef'='actions.execute'` +
+          ` AND (intent->'call'->'target' IS NULL OR jsonb_typeof(intent->'call'->'target')='null' OR intent->'call'->'target'->>'kind'='draft')` +
+          ` AND (${actionDraftPredicates.join(" OR ")})`,
+        );
+      }
     }
+    if (!targetClauses.length) return 0;
+    clauses.push(`(${targetClauses.join(" OR ")})`);
     if (match.rootSession) {
-      params.push(match.rootSession.providerId, match.rootSession.sessionId);
-      clauses.push(`intent->'rootSession'->>'providerId'=$${params.length - 1} AND intent->'rootSession'->>'sessionId'=$${params.length}`);
+      const providerParam = push(match.rootSession.providerId);
+      const sessionParam = push(match.rootSession.sessionId);
+      clauses.push(`intent->'rootSession'->>'providerId'=${providerParam} AND intent->'rootSession'->>'sessionId'=${sessionParam}`);
     }
     const result = await db().query(
       `UPDATE ${t("panel_operation_intents")} SET intent=jsonb_set(intent,'{invalidated}',$3::jsonb) WHERE ${clauses.join(" AND ")}`,

@@ -603,3 +603,58 @@ it("refuses generating a panel skill when legacy listColumn syntax is present", 
   const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
   await expect(offering!.provide(taskRef)).rejects.toThrow(SkillSourceRecordError);
 });
+
+it("describes targetless customer Actions without requiring object selection and specifies call.target: null", async () => {
+  javaSources([uses[0]!]);
+  vi.mocked(backendPost).mockImplementation(async (_name, url) => {
+    if (String(url).endsWith("/action/queryList")) {
+      return {
+        text: JSON.stringify({
+          success: true,
+          data: [
+            {
+              id: "create-order",
+              name: "Create order",
+              codeHash: "a".repeat(64),
+              target: null,
+              definition: { affects: ["Order"] },
+              function: { parameters: [{ name: "customer", type: "TYPE_STRING" }] },
+            },
+          ],
+        }),
+      } as never;
+    }
+    throw new Error(`Unexpected backendPost ${url}`);
+  });
+  extraProjections.set("create-order-btn", {
+    name: "Create order button",
+    description: "Runs targetless order creation.",
+    visibility: "domain",
+    componentId: "@ontomato/sdk:OperationButton",
+    inputs: {},
+    outputs: {},
+    data: {},
+    config: { operation: "create" },
+    operations: {
+      create: { operation: { kind: "Action", id: "create-order" } },
+    },
+  });
+  const id = uses[0]!.panelId;
+  const row = trialPanels.get(id)!;
+  panels.set(id, {
+    ...row,
+    content: { ...row.content, ...vuePanelContent("createBtn") },
+    manifest: {
+      state: {},
+      members: {
+        createBtn: { target: { projectionId: "create-order-btn" } },
+      },
+    },
+  });
+  const [offering] = await panelSkillProvider.list({ domainId, reader: skillReader, reportSourceFailure });
+  const markdown = (await offering!.provide(taskRef)).files[0]!.content;
+  expect(markdown).toContain("Create order (createBtn.create), Action create-order, target null.");
+  expect(markdown).toContain("No object selection is required.");
+  expect(markdown).toContain("call: { target: null, input: { values: { ... } } }");
+  expect(markdown).not.toContain("for the actual selected object");
+});

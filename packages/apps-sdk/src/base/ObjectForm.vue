@@ -133,8 +133,8 @@ const props = withDefaults(defineProps<{
   unassignedFields: "append",
 });
 const emit = defineEmits<{
-  /** The owner saved the form: the object it saved, or the one it created. */
-  saved: [object: { className: string; primaryKey: string }];
+  /** The owner saved the form: the object it saved, or the one it created (primaryKey is null when not reported). */
+  saved: [object: { className: string; primaryKey: string | null }];
   /** The reader discarded the changes the form held. */
   discarded: [];
   /** The reader cancelled creating a new object. */
@@ -276,7 +276,7 @@ const actionSaveWiring = computed<ActionSaveWiring | null>(() => {
   if (!currentTarget) return null;
   const opsState = member.operations.value;
   if (opsState.status !== "ready") return null;
-  const save = formSave(opsState);
+  const save = formSave(opsState, currentTarget);
   if (save) {
     if (save.descriptor.kind === "form.save") return null;
     if (currentTarget.kind === "draft" && save.descriptor.target.source !== "none" && save.descriptor.target.source !== "draft") {
@@ -626,8 +626,8 @@ function edit(path: string, next: PanelFormValues) {
   if (currentTarget) {
     panel.instance.notifyFormEdited(
       currentTarget.kind === "object"
-        ? { kind: "object", objectType: currentTarget.objectType, primaryKey: currentTarget.primaryKey }
-        : { kind: "draft", objectType },
+        ? { kind: "object", objectType: currentTarget.objectType, primaryKey: currentTarget.primaryKey, slot: slot.slot }
+        : { kind: "draft", objectType, slot: slot.slot },
     );
   }
   const field = activeFieldAt(fields.value, next, path);
@@ -1209,19 +1209,37 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
     });
     submitted.value = new Set();
     held = null;
+    if (into.kind === "draft" && saved.primaryKey === null) {
+      // A create Action that does not report a single new primary key settles cleanly back to the initial create form,
+      // notifies success, emits `saved`, and lets `affected.objectTypes` drive list refreshes on the page.
+      if (ownerOpened.value) {
+        adopt(ownerOpened.value);
+      } else {
+        ownerOpened.value = { ...ownerShown.value!, values: {} };
+        opened.value = { ...description.value!, values: {} };
+        values.value = {};
+        invalid.value = {};
+        changed.value = new Set();
+      }
+      panel.notify({ kind: "success", text: saved.message ?? t("platform.operationDone") });
+      emit("saved", { className: objectType, primaryKey: null });
+      if (hasActiveDraft.value) {
+        await panel.instance.settleDraft(slot.slot, undefined);
+      }
+      return saved;
+    }
     ownerOpened.value = { ...ownerShown.value!, values: payloadValues };
     opened.value = { ...description.value!, values: payloadValues };
     values.value = payloadValues;
     invalid.value = {};
     changed.value = new Set();
-    if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
+    if (into.kind === "draft" && saved.primaryKey !== null) moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey });
     emit("saved", { className: objectType, primaryKey: saved.primaryKey });
     // The save went through the coordinator, whose receipt reaches the host's one refresh port and is read again there.
 
-    // A received draft ends with its save; a create draft first records the object it created. The save stands either
-    // way: a record that fails is shown with the form, on the object the owner created.
+    // A received draft ends with its save; a create draft first records the object it created when one was reported.
     if (hasActiveDraft.value) {
-      await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey : undefined);
+      await panel.instance.settleDraft(slot.slot, into.kind === "draft" && saved.primaryKey !== null ? saved.primaryKey : undefined);
     }
     return saved;
   } catch (reason) {
