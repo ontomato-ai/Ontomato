@@ -23,7 +23,11 @@ import {
  */
 
 const deletedSchema = z.object({}).strict();
-const statusInputSchema = z.object({ status: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]) }).strict();
+const statusInputSchema = z.object({
+  status: z.enum(["PENDING_REVIEW", "PUBLISHED", "UNUSED"]).describe(
+    "Target publication status (PENDING_REVIEW, PUBLISHED, or UNUSED)",
+  ),
+}).strict();
 /**
  * The owner answers one status change per requested id: a saved action, its refusal, or its failure. The saved action
  * is read with the rest of the receipt, so a receipt this operation cannot read leaves only its own group unknown.

@@ -336,6 +336,12 @@ describe("platform-ontology composite query", () => {
     ]);
     expect(sdkComponent?.operations).toBeUndefined();
 
+    const action = byId.get("platform:Action");
+    expect(Object.keys(action?.reads ?? {}).sort()).toEqual([
+      "annotatedExplanation", "createForm", "definition", "derivedConditions", "derivedEffects",
+      "derivedParameters", "derivedSummary", "explanation", "form", "list", "record",
+    ]);
+
     const role = byId.get(ROLE);
     expect(Object.keys(role?.reads ?? {}).sort()).toEqual(["createForm", "form", "options", "query", "record", "resolve"]);
     expect(role?.operations?.map((op) => op.id)).toEqual([`${ROLE}.save`, DELETE_ROLE]);

@@ -782,6 +782,180 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
     unmount();
   });
 
+  it("marks all non-hidden platform form fields read-only without Action copy when platform form.save permission is absent", async () => {
+    const ownerLockedReason = "Locked by owner policy";
+    const platformFields: PanelFormField[] = [
+      { path: "/id", label: "ID", valueSchema: { type: "string" }, required: true, readOnly: true, readOnlyReason: ownerLockedReason, control: { kind: "text" } },
+      { path: "/internalToken", label: "Token", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "hidden" } },
+      { path: "/name", label: "Name", valueSchema: { type: "string" }, required: true, readOnly: false, control: { kind: "text" } },
+      {
+        path: "/config",
+        label: "Config",
+        valueSchema: { type: "object" },
+        required: false,
+        readOnly: false,
+        control: {
+          kind: "object",
+          fields: [
+            {
+              path: "/mode",
+              label: "Mode",
+              valueSchema: { type: "string" },
+              required: true,
+              readOnly: false,
+              control: {
+                kind: "select",
+                options: [{ value: "http", label: "HTTP", description: null, disabled: false, disabledReason: null }],
+                multiple: false,
+                allowCreate: false,
+              },
+            },
+            { path: "/endpoint", label: "Endpoint", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
+          ],
+          variantBy: "/mode",
+          variants: {
+            http: [
+              { path: "/timeoutMs", label: "Timeout", valueSchema: { type: "integer" }, required: false, readOnly: false, control: { kind: "number" } },
+            ],
+          },
+        },
+      },
+      {
+        path: "/parameters",
+        label: "Parameters",
+        valueSchema: { type: "array" },
+        required: false,
+        readOnly: false,
+        control: {
+          kind: "object-array",
+          itemFields: [
+            { path: "/key", label: "Key", valueSchema: { type: "string" }, required: true, readOnly: false, control: { kind: "text" } },
+          ],
+        },
+      },
+    ];
+    const platformValues: PanelFormValues = {
+      id: "fn-1",
+      internalToken: "secret",
+      name: "Adjust age",
+      config: { mode: "http", endpoint: "https://example.test", timeoutMs: 5000 },
+      parameters: [{ key: "personId" }],
+    };
+
+    // 1. Create mode without platform form.save permission (only targetless `review` Action admitted).
+    const deniedCreate = mountCustomerForm({
+      objectType: FUNCTION,
+      primaryKey: null,
+      includeCreateForm: true,
+      draftOperation: "function.save",
+      fields: platformFields,
+      values: platformValues,
+      operations: {
+        save: { operation: { kind: "PlatformOperation", id: `${FUNCTION}.save` }, target: { input: "target" } },
+        review: { operation: { kind: "Action", id: "action-review" } },
+      },
+      admittedOperations: {
+        review: actionDescriptor("Submit review", { name: {} }, { source: "none" }),
+      },
+    });
+
+    await vi.waitFor(() => expect(deniedCreate.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Adjust age"));
+    await nextTick();
+
+    const createHandle = deniedCreate.instance.forms.handle("customerForm")!;
+    expect(deniedCreate.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(true);
+    expect(deniedCreate.element.querySelector<HTMLInputElement>('[data-field="/config/endpoint"] input')?.disabled).toBe(true);
+    expect(deniedCreate.element.querySelector<HTMLInputElement>('[data-field="/config/timeoutMs"] input')?.disabled).toBe(true);
+    expect(deniedCreate.element.querySelector<HTMLInputElement>('[data-field="/parameters/0/key"] input')?.disabled).toBe(true);
+    expect(createHandle.fields.value.find((f) => f.path === "/internalToken")?.readOnly).toBe(false);
+    expect(createHandle.fields.value.find((f) => f.path === "/id")?.readOnlyReason).toBe(ownerLockedReason);
+    const configFieldCreate = createHandle.fields.value.find((f) => f.path === "/config");
+    expect(configFieldCreate?.readOnly).toBe(true);
+    expect(configFieldCreate?.control.kind === "object" && configFieldCreate.control.fields[0]?.readOnly).toBe(true);
+    expect(configFieldCreate?.control.kind === "object" && configFieldCreate.control.variants?.http?.[0]?.readOnly).toBe(true);
+    const paramsFieldCreate = createHandle.fields.value.find((f) => f.path === "/parameters");
+    expect(paramsFieldCreate?.readOnly).toBe(true);
+    expect(paramsFieldCreate?.control.kind === "object-array" && paramsFieldCreate.control.itemFields[0]?.readOnly).toBe(true);
+    expect(createHandle.canSubmit.value).toBe(false);
+    const createBtn = [...deniedCreate.element.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")]
+      .find((button) => button.textContent?.trim() === "Create")!;
+    expect(createBtn.disabled).toBe(true);
+    expect(deniedCreate.element.textContent).not.toContain(publicEn.platform.formFieldNotSavedByAction);
+    expect(deniedCreate.element.textContent).toContain(ownerLockedReason);
+    await expect(deniedCreate.instance.forms.submit("customerForm")).rejects.toThrow("admits no save");
+    expect(deniedCreate.prepared).toHaveLength(0);
+    deniedCreate.unmount();
+
+    // 2. Edit mode without platform form.save permission (only `review` Action admitted).
+    const deniedEdit = mountCustomerForm({
+      objectType: FUNCTION,
+      primaryKey: "fn-1",
+      draftOperation: "function.save",
+      fields: platformFields,
+      values: platformValues,
+      operations: {
+        save: { operation: { kind: "PlatformOperation", id: `${FUNCTION}.save` }, target: { input: "target" } },
+        review: { operation: { kind: "Action", id: "action-review" }, target: { input: "target" } },
+      },
+      admittedOperations: {
+        review: actionDescriptor("Submit review", { name: {} }),
+      },
+    });
+
+    await vi.waitFor(() => expect(deniedEdit.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Adjust age"));
+    await nextTick();
+
+    const editHandle = deniedEdit.instance.forms.handle("customerForm")!;
+    expect(deniedEdit.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(true);
+    expect(deniedEdit.element.querySelector<HTMLInputElement>('[data-field="/config/endpoint"] input')?.disabled).toBe(true);
+    expect(deniedEdit.element.querySelector<HTMLInputElement>('[data-field="/parameters/0/key"] input')?.disabled).toBe(true);
+    expect(editHandle.fields.value.find((f) => f.path === "/id")?.readOnlyReason).toBe(ownerLockedReason);
+    expect(editHandle.canSubmit.value).toBe(false);
+    expect(deniedEdit.element.textContent).not.toContain(publicEn.platform.formFieldNotSavedByAction);
+    expect(deniedEdit.element.textContent).toContain(ownerLockedReason);
+    await expect(deniedEdit.instance.forms.submit("customerForm")).rejects.toThrow("admits no save");
+    expect(deniedEdit.prepared).toHaveLength(0);
+    deniedEdit.unmount();
+
+    // 3. Edit mode with platform form.save permission stays editable and submits via `save`.
+    const admittedEdit = mountCustomerForm({
+      objectType: FUNCTION,
+      primaryKey: "fn-1",
+      draftOperation: "function.save",
+      fields: platformFields,
+      values: platformValues,
+      operations: {
+        save: { operation: { kind: "PlatformOperation", id: `${FUNCTION}.save` }, target: { input: "target" } },
+        review: { operation: { kind: "Action", id: "action-review" }, target: { input: "target" } },
+      },
+      admittedOperations: {
+        save: {
+          kind: "form.save",
+          handlerRef: `${FUNCTION}.save`,
+          label: "Save",
+          effect: "write",
+          batch: false,
+          target: { source: "input", input: "target" },
+          inputSchema: {},
+          resultSchema: {},
+        },
+        review: actionDescriptor("Submit review", { name: {} }),
+      },
+    });
+
+    await vi.waitFor(() => expect(admittedEdit.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(false));
+    expect(admittedEdit.element.querySelector<HTMLInputElement>('[data-field="/config/endpoint"] input')?.disabled).toBe(false);
+    expect(admittedEdit.element.querySelector<HTMLInputElement>('[data-field="/parameters/0/key"] input')?.disabled).toBe(false);
+    expect(admittedEdit.element.querySelector<HTMLInputElement>('[data-field="/id"] input')?.disabled).toBe(true);
+    admittedEdit.instance.forms.handle("customerForm")!.set("/name", "Adjusted age");
+    await nextTick();
+    expect(admittedEdit.instance.forms.handle("customerForm")!.canSubmit.value).toBe(true);
+    await admittedEdit.instance.forms.submit("customerForm");
+    expect(admittedEdit.prepared).toHaveLength(1);
+    expect(admittedEdit.prepared[0]![0]).toBe("customerForm.save");
+    admittedEdit.unmount();
+  });
+
   it("stays all read-only in edit mode when only a targetless create Action is declared/admitted", async () => {
     const { instance, element, prepared, unmount } = mountCustomerForm({
       fields: baseFields,

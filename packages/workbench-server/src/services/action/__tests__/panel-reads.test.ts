@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { annotatedCodeSchema } from "@ontomato/contracts/annotated-code";
 import { ACTION } from "@ontomato/contracts/panel-client-requests";
 import { panelOperationDeclarationSchema, panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
-import { panelRecordListSchema } from "@ontomato/contracts/panel-projection";
+import { panelRecordListSchema, panelRecordSchema } from "@ontomato/contracts/panel-projection";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 import { HttpError } from "../../../utils/errors";
@@ -66,13 +67,15 @@ function ownerAnswering(answers: Record<string, (body: Record<string, unknown>) 
 const ok = (data: unknown) => () => Response.json({ success: true, data });
 
 describe("action catalog reads", () => {
-  it("lists the actions with the owner's display names and this owner's column names", async () => {
-    ownerAnswering({ "/action/queryList": ok([approve]) });
+  it("lists the actions with the owner's display names, status tones, and this owner's column names", async () => {
+    const pending = { ...approve, id: "review-order", name: "Review order", status: "PENDING_REVIEW", statusLabel: "Pending review" };
+    const unused = { ...approve, id: "legacy-order", name: "Legacy order", status: "UNUSED", statusLabel: "Unused" };
+    ownerAnswering({ "/action/queryList": ok([approve, pending, unused]) });
 
     const records = await createActionReadAdapter(owner, viewer).list();
 
     expect(panelRecordListSchema.parse(records)).toEqual(records);
-    expect(records).toEqual([{
+    expect(records[0]).toEqual({
       primaryKey: "approve-order", label: "Approve order", subtitle: "Approve a pending order",
       fieldLabels: {
         status: "Status", origin: "Origin", createdBy: "Created by", reviewedBy: "Last published by",
@@ -82,7 +85,10 @@ describe("action catalog reads", () => {
         status: "Published", origin: "User", createdBy: "Alice", reviewedBy: "", function: "approve_order",
         updatedAt: "2026-11-20T08:30:00.000Z",
       },
-    }]);
+      tones: { status: "success" },
+    });
+    expect(records[1]?.tones).toEqual({ status: "warning" });
+    expect(records[2]?.tones).toEqual({ status: "info" });
   });
 
   it("reads one action as a record", async () => {
@@ -134,6 +140,285 @@ describe("action catalog reads", () => {
 
     ownerAnswering({ "/action/queryById": ok({ ...explained, codeSegments: [{ ...segment, kindLabel: undefined }] }) });
     await expect(adapter.explanation("approve-order")).rejects.toThrow();
+  });
+
+  it("projects derivedSummary, derivedEffects, derivedParameters, and derivedConditions as standard panel records", async () => {
+    const richDefinition = {
+      version: 1,
+      source: "DERIVED",
+      verified: false,
+      name: "Approve order",
+      description: "Approves and links an order",
+      codeHash: "a".repeat(64),
+      explanationVersion: 3,
+      declaredTarget: { className: "Order", keyParameter: "order_id" },
+      affects: ["Order", "AuditEntry"],
+      effects: [
+        { kind: "EXTERNAL_CALL", kindLabel: "External call", title: "Notify webhook", narrative: "Calls billing" },
+        { kind: "DELETE_VECTOR", kindLabel: "Delete vector", attrName: "summary_vec", objectIdFrom: "order_id" },
+        {
+          kind: "CREATE_EDGE", kindLabel: "Create edge", relation: "APPROVED_BY",
+          sourceClass: "Order", targetClass: "Reviewer", sourceObjectIdFrom: "order_id", targetObjectIdFrom: "reviewer_id",
+        },
+        { kind: "DELETE_OBJECT", kindLabel: "Delete object", className: "Draft", objectIdFrom: "draft_id" },
+        {
+          kind: "UPDATE_OBJECT", kindLabel: "Update object", title: "Mark approved", className: "Order",
+          objectIdFrom: "order_id", assignments: [{ field: "status", valueFrom: "approved" }], guards: "status == 'open'",
+        },
+        { kind: "CREATE_OBJECT", kindLabel: "Create object", title: "Record audit", className: "AuditEntry" },
+      ],
+      parameters: [
+        {
+          name: "order_id", type: "TYPE_STRING", description: "Target order key",
+          sample: "ORD-1", objectTypes: ["Order"], required: null, constraints: null,
+        },
+        {
+          name: "note", type: "TYPE_STRING", description: null,
+          sample: "ok", objectTypes: [], required: null, constraints: null,
+        },
+      ],
+      submissionCriteria: {
+        operator: "OR",
+        conditions: [
+          { objectParameter: "order_id", className: "Order", field: "status", operator: "=", value: "open", message: "Order must be open" },
+          { objectParameter: "order_id", className: "Order", field: "status", operator: "=", value: "pending", failureMessage: "Must be pending" },
+        ],
+        unrepresentable: [
+          { description: "Reviewer has budget authority", reason: "Checked dynamically in helper" },
+        ],
+        source: "GENERATED",
+        verified: false,
+      },
+    };
+    ownerAnswering({ "/action/queryById": ok({ ...approve, definition: richDefinition }) });
+    const adapter = createActionReadAdapter(owner, viewer);
+
+    const summary = await adapter.derivedSummary("approve-order");
+    expect(panelRecordSchema.parse(summary)).toEqual(summary);
+    expect(summary).toMatchObject({
+      primaryKey: "approve-order",
+      label: "Approve order",
+      subtitle: "Approves and links an order",
+      fields: { declaredTarget: "Order ← order_id" },
+      tags: { affects: ["Order", "AuditEntry"] },
+    });
+
+    const effects = await adapter.derivedEffects("approve-order");
+    expect(panelRecordListSchema.parse(effects)).toEqual(effects);
+    // Ordered strictly by group: Creates -> Updates -> Deletes -> Relations -> Vector fields -> Other effects.
+    expect(effects.map(row => row.fields.group)).toEqual([
+      "Creates", "Updates", "Deletes", "Relations", "Vector fields", "Other effects",
+    ]);
+    expect(effects.map(row => row.tones?.kind)).toEqual([
+      "success", "info", "danger", "success", "danger", "warning",
+    ]);
+    expect(effects[1]).toMatchObject({
+      label: "Mark approved",
+      fields: {
+        group: "Updates",
+        kind: "Update object",
+        target: "Order · Object ← order_id",
+        fields: "status ← approved",
+        guards: "status == 'open'",
+      },
+    });
+    expect(effects[3]?.fields.target).toBe("APPROVED_BY · Order → Reviewer · ← order_id · → reviewer_id");
+
+    const parameters = await adapter.derivedParameters("approve-order");
+    expect(panelRecordListSchema.parse(parameters)).toEqual(parameters);
+    expect(parameters).toEqual([
+      expect.objectContaining({
+        primaryKey: "order_id",
+        className: "platform:ActionParameter",
+        label: "order_id",
+        subtitle: "Target order key",
+        fields: { type: "TYPE_STRING", required: "", sample: "ORD-1", constraints: "" },
+        tags: { objectTypes: ["Order"] },
+      }),
+      expect.objectContaining({
+        primaryKey: "note",
+        className: "platform:ActionParameter",
+        label: "note",
+        fields: { type: "TYPE_STRING", required: "", objectTypes: "", sample: "ok", constraints: "" },
+      }),
+    ]);
+
+    const conditions = await adapter.derivedConditions("approve-order");
+    expect(panelRecordListSchema.parse(conditions)).toEqual(conditions);
+    expect(conditions).toHaveLength(3);
+    expect(conditions[0]).toMatchObject({
+      label: "order_id Order.status = open",
+      subtitle: "Order must be open",
+      fields: { kind: "Rule", join: "OR", detail: "Order must be open" },
+      tones: { kind: "info" },
+    });
+    expect(conditions[2]).toMatchObject({
+      label: "Reviewer has budget authority",
+      subtitle: "Checked dynamically in helper",
+      fields: { kind: "Custom check", join: "", detail: "Checked dynamically in helper" },
+      tones: { kind: "warning" },
+    });
+
+    // Targetless action with empty affects, effects, parameters, and conditions.
+    ownerAnswering({
+      "/action/queryById": ok({
+        ...approve,
+        definition: { version: 1, source: "DERIVED", verified: false, name: "Empty", description: null, codeHash: null, explanationVersion: null },
+      }),
+    });
+    const emptySummary = await adapter.derivedSummary("empty-action");
+    expect(emptySummary.fields).toEqual({
+      declaredTarget: "No target: the action runs on parameters alone",
+      affects: "None",
+    });
+    expect(await adapter.derivedEffects("empty-action")).toEqual([]);
+    expect(await adapter.derivedParameters("empty-action")).toEqual([]);
+    expect(await adapter.derivedConditions("empty-action")).toEqual([]);
+  });
+
+  it("maps annotatedExplanation recursively across segs, trySegs, catchs, finallySegs, and branchArms with pre-split parameter refs", async () => {
+    const explained = {
+      ...approve,
+      definition: {
+        version: 1,
+        source: "DERIVED",
+        verified: false,
+        name: "Approve order",
+        parameters: [
+          { name: "order", type: "TYPE_STRING", description: null, objectTypes: [], required: null, constraints: null },
+          { name: "order_id", type: "TYPE_STRING", description: "Primary key", objectTypes: ["Order"], required: null, constraints: null },
+        ],
+      },
+      function: {
+        name: "approve_order",
+        code: "def run(order_id, order):\n    pass\n",
+      },
+      codeSegments: [
+        {
+          id: "try-1",
+          kind: "TRY_CATCH",
+          kindLabel: "Try/Catch",
+          title: "Protected approval",
+          codeRange: { start: 1, end: 10 },
+          narrative: "Guards approval write",
+          trySegs: [
+            {
+              id: "upd-1",
+              kind: "UPDATE_OBJECT",
+              kindLabel: "Update object",
+              title: "Update order",
+              codeRange: { start: 2, end: 5 },
+              class: "Order",
+              objectIdFrom: "order_id",
+              assignments: [{ field: "note", valueFrom: "concat(order_id, order)" }],
+              filters: {
+                objects: [{ alias: "o", class: "Order", conditions: "o.id == order_id" }],
+                relationship: [{ from: "o", type: "HAS", to: "i" }],
+              },
+              output: { fields: ["status"], group_by: "status", sort: "created_at", limit: 10 },
+            },
+          ],
+          catchs: [
+            {
+              error: "RuntimeError",
+              segs: [
+                { id: "err-1", kind: "ERROR_HANDLING", kindLabel: "Error handling", title: "Handle failure", codeRange: { start: 6, end: 7 } },
+              ],
+            },
+          ],
+          finallySegs: [
+            { id: "fin-1", kind: "CUSTOM", kindLabel: "Cleanup", title: "Release lock", codeRange: { start: 8, end: 9 } },
+          ],
+        },
+        {
+          id: "br-1",
+          kind: "BRANCH",
+          kindLabel: "Branch",
+          title: "Conditional follow-up",
+          codeRange: { start: 11, end: 14 },
+          branchArms: [
+            {
+              condition: "ok",
+              segs: [
+                {
+                  id: "loop-1",
+                  kind: "LOOP",
+                  kindLabel: "Loop",
+                  title: "Iterate items",
+                  codeRange: { start: 12, end: 14 },
+                  segs: [
+                    { id: "q-1", kind: "QUERY", kindLabel: "Query", title: "Read item", codeRange: { start: 13, end: 13 } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      businessMeaning: {
+        operations: ["Approve the order", "Notify downstream billing"],
+        negativeEffect: "Cannot be undone once billing starts.",
+      },
+    };
+    ownerAnswering({ "/action/queryById": ok(explained) });
+    const adapter = createActionReadAdapter(owner, viewer);
+
+    const result = await adapter.annotatedExplanation("approve-order");
+    expect(annotatedCodeSchema.parse(result)).toEqual(result);
+    expect(result.code).toBe("def run(order_id, order):\n    pass\n");
+    expect(result.segments).toHaveLength(2);
+    expect(result.segments[0]).toMatchObject({
+      id: "try-1",
+      tone: "warning",
+      note: "Guards approval write",
+      lineRange: { start: 1, end: 10 },
+    });
+    expect(result.segments[0]?.children?.map(child => [child.id, child.tone])).toEqual([
+      ["upd-1", "accent"],
+      ["err-1", "danger"],
+      ["fin-1", "neutral"],
+    ]);
+
+    // Verify longest-first parameter reference tokenization (`order_id` does not split on shorter `order`).
+    const updateDetails = result.segments[0]?.children?.[0]?.details ?? [];
+    const fieldsRow = updateDetails.find(row => row.label === "Fields");
+    expect(fieldsRow).toEqual({
+      label: "Fields",
+      parts: [
+        { text: "note ← concat(" },
+        { text: "order_id", refKey: "order_id" },
+        { text: ", " },
+        { text: "order", refKey: "order" },
+        { text: ")" },
+      ],
+    });
+    const objectFromRow = updateDetails.find(row => row.label === "Object from");
+    expect(objectFromRow).toEqual({
+      label: "Object from",
+      parts: [{ text: "order_id", refKey: "order_id" }],
+    });
+    expect(updateDetails.some(row => row.label === "Objects read")).toBe(true);
+    expect(updateDetails.some(row => row.label === "Relation")).toBe(true);
+    expect(updateDetails.some(row => row.label === "Output fields")).toBe(true);
+    expect(updateDetails.some(row => row.label === "Limit")).toBe(true);
+
+    // Branch -> Loop -> Query nesting.
+    expect(result.segments[1]?.children?.[0]?.id).toBe("loop-1");
+    expect(result.segments[1]?.children?.[0]?.children?.[0]).toMatchObject({ id: "q-1", tone: "info" });
+
+    // Summary sections from businessMeaning.
+    expect(result.summary).toEqual([
+      { title: "What it does", kind: "list", items: ["Approve the order", "Notify downstream billing"] },
+      { title: "What can go wrong", kind: "text", text: "Cannot be undone once billing starts.", tone: "warning" },
+    ]);
+
+    // Unexplained action returns valid empty annotatedCode.
+    ownerAnswering({ "/action/queryById": ok({ ...approve, codeSegments: null, businessMeaning: null }) });
+    const emptyAnnotated = await adapter.annotatedExplanation("approve-order");
+    expect(annotatedCodeSchema.parse(emptyAnnotated)).toEqual({
+      code: "# ontomato-python:2",
+      segments: [],
+    });
   });
 
   it("asks the owner for the form of a new action an agent drafts into", async () => {
