@@ -397,6 +397,10 @@ async function send(text: string) {
 .thread > .response + .user-turn {
   margin-top: calc(var(--conversation-turn-gap) - var(--conversation-message-gap));
 }
+/* A folded handoff and the next folded response belong to the same turn. */
+.thread > .collapsed-handoff + .response:has(> .process-region:not(.open)) {
+  margin-block-start: calc(var(--conversation-process-gap) - var(--conversation-message-gap));
+}
 /* The question: a right-aligned sunken bubble. */
 .user-bubble {
   max-width: min(85%, 620px);
