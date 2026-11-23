@@ -448,19 +448,19 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectRelations",
     role: "control",
     meaning:
-      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction, stored/derived line semantics, and optional edge binding details (`reads`, `operations`, `viaInput`). Supports filtering by relation kind (`visibleRelationKinds` and optional `showRelationFilter` multi-select), optional header summary (`showSummary`) and empty-group collapsing (`collapseEmptyGroups`), moving selection to a clicked peer node (`selected`), and promoting a peer node as graph start (`allowSetStart` / `start`). Exposes `status`, `edgeCount`, and `label` as read-only outputs.",
+      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction, stored/derived line semantics, and optional edge binding details (`reads`, `operations`, `viaInput`). Supports filtering by relation kind (`visibleRelationKinds` and optional `showRelationFilter` multi-select), optional header summary (`showSummary`) and empty-group collapsing (`collapseEmptyGroups`), moving selection to a clicked peer node (`selected`), and promoting a peer node as graph start (`allowSetStart` / `start`). Exposes `status`, `edgeCount`, and `label` as read-only outputs. `edgeCount` is null when the result is truncated. For a customer relationship, set `data.neighbors.type` to the relationship ID.",
     effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection, start, and visible relation kinds state.",
-    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Relationship:*"],
     // The node a reader moved to, when no state the author bound holds it.
     data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
     inputs: {
-      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
+      selected: { kind: "object", objectType: "@any" },
+      visibleRelationKinds: { kind: "list", items: { kind: "scalar", type: "string" } },
     },
     outputs: {
-      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
+      selected: { kind: "object", objectType: "@any" },
+      start: { kind: "object", objectType: "@any" },
+      visibleRelationKinds: { kind: "list", items: { kind: "scalar", type: "string" } },
     },
     readOnlyOutputs: {
       status: { kind: "scalar", type: "string" },
