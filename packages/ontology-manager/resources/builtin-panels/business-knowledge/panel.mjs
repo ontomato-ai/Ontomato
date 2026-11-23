@@ -183,26 +183,7 @@ await mountPanel({
       if (ref) returnTarget.value = ref;
       instance.state.setState({ ...(ref ? { selected: ref, formTarget: ref } : {}), mode: "view" });
       detailOpen.value = true;
-      // Re-read admitted operations so approve visibility tracks any saved status change immediately.
-      instance.refreshObjects();
     }
-
-    function onApproveDone(outcome) {
-      const changed =
-        outcome?.kind === "success" ||
-        (outcome?.kind === "batch" && outcome.items.some((item) => item.outcome.kind === "success"));
-      if (changed) instance.refreshObjects();
-    }
-
-    const stopOperationSync = instance.onOperationCompleted(({ affected }) => {
-      if (
-        affected?.objectTypes?.includes(TYPE) ||
-        affected?.objects?.some((item) => item.objectType === TYPE)
-      ) {
-        instance.refreshObjects();
-      }
-    });
-    onBeforeUnmount(() => stopOperationSync());
 
     let observer;
     onMounted(() => {
@@ -236,7 +217,6 @@ await mountPanel({
       saveForm,
       onSaved,
       onDiscarded,
-      onApproveDone,
     };
   },
 });
