@@ -186,8 +186,10 @@ const props = withDefaults(
      */
     layout?: "auto" | "list" | "table" | "cards";
     /**
-     * The table's columns, each a field of the owner's records (`key`, its header `labelKey`, and how it is drawn); absent,
-     * the list is compact: each item shows its label, then `statusField`, `subtitleField` and `tagsField` as configured.
+     * The table's columns, each a field of the owner's records (`key`, its header `labelKey`, optional `subtitleKey`
+     * drawn as a muted second line beneath the column's primary value in table cells when non-empty, and how it is
+     * drawn); absent, the list is compact: each item shows its label, then `statusField`, `subtitleField` and
+     * `tagsField` as configured.
      */
     columns?: readonly ObjectListColumn[];
     /**

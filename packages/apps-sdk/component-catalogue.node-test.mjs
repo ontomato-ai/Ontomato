@@ -218,10 +218,30 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.equal(declared.get("ReferencePicker").data.options.required, false);
     assert.equal(declared.get("ReferencePicker").data.selected.required, false);
     assert.equal(declared.get("ReferencePicker").data.rows.required, false);
+    assert.deepEqual(declared.get("ReferencePicker").data.rows.runtimeParams, ["search"]);
     assert.equal(declared.get("ObjectSummary").outputs, undefined, "navigating is an event, not a state");
     const ontologyNode = { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] };
     assert.deepEqual(declared.get("ObjectRefCard").outputs, { navigate: ontologyNode });
-    assert.ok(declared.get("ObjectForm").bindsElement.includes("ObjectType:*"), "ObjectForm applies to customer object types");
+    for (const id of [
+      "ObjectList",
+      "ObjectCount",
+      "ObjectSummary",
+      "ObjectHeader",
+      "ObjectForm",
+      "ReferencePicker",
+      "OntologyGraph",
+      "ObjectRelations",
+      "TypedValue",
+      "RecordTemplate",
+      "InfoBanner",
+      "ObjectRefCard",
+      "MetricCard",
+      "ObjectTextReader",
+    ]) {
+      assert.ok(declared.get(id).bindsElement.includes("ObjectType:*"), `${id} applies to customer object types`);
+    }
+    assert.ok(declared.get("ObjectRelations").bindsElement.includes("Relationship:*"), "ObjectRelations applies to customer relationships");
+    assert.ok(declared.get("OperationButton").bindsElement.includes("Action:*"), "OperationButton applies to customer actions");
     // A placement hands a graph its running inputs from the panel's state, which an inline member binds by these names.
     assert.deepEqual(declared.get("OntologyGraph").inputs, {
       mode: { kind: "scalar", type: "string" },
@@ -356,6 +376,16 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(componentsDoc, /`<sdk-button>`/);
     assert.match(componentsDoc, /`v-sdk-loading`/);
     assert.match(componentsDoc, /`--sdk-color-primary`/);
+    assert.match(
+      componentsDoc,
+      /## ObjectList[\s\S]*?subtitleKey` drawn as a muted second line beneath the column's primary cell value[\s\S]*?full list length \(`0` when empty\) for complete unpaged lists \(`panelRecordList`\), or strictly the owner-reported `total`/u,
+      "docs/components.md must accurately document ObjectList total output and columns[].subtitleKey",
+    );
+    assert.match(
+      componentsDoc,
+      /## ObjectRelations[\s\S]*?Applicable object types \(bind through a projection's declared reads or operations\): `PlatformObjectType:\*`, `ObjectType:\*`, `Relationship:\*`[\s\S]*?Inputs:\n\n- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType[\s\S]*?Hands over \(bindable to the panel's state\):\n\n- `selected`: one object of the fact, capability, governance, product layers or platform:OntologyType/u,
+      "docs/components.md must print both layers and objectTypes for object-union ports",
+    );
     assert.match(
       componentsDoc,
       /## ObjectList[\s\S]*?Configuration types:\n\n```ts\n[\s\S]*?type ObjectListColumn = \{[\s\S]*?key: string;[\s\S]*?labelKey\?:[\s\S]*?subtitleKey\?:[\s\S]*?emptyKey\?:[\s\S]*?wrap\?:/u,

@@ -253,7 +253,12 @@ export function checkCatalogue(entries, declared, root, tsconfig) {
 function portTypeText(type) {
   if (type.kind === "object") return type.objectType === "@binding" ? "one object of the projection's type" : `one ${type.objectType}`;
   if (type.kind === "list") return `a list of ${portTypeText(type.items).replace(/^one object/, "objects").replace(/^one /, "")}`;
-  if (type.kind === "object-union") return `one object of ${type.objectTypes ? type.objectTypes.join(" or ") : `the ${type.layers.join(", ")} layers`}`;
+  if (type.kind === "object-union") {
+    const parts = [];
+    if (type.layers?.length) parts.push(`the ${type.layers.join(", ")} layers`);
+    if (type.objectTypes?.length) parts.push(type.objectTypes.join(" or "));
+    return `one object of ${parts.join(" or ")}`;
+  }
   if (type.kind === "scalar") return type.type;
   return type.kind;
 }
@@ -310,7 +315,7 @@ export function catalogueMarkdown(version, catalogueOrComponents, typeDefinition
       lines.push("");
     }
     if (component.inputs && Object.keys(component.inputs).length)
-      lines.push("Inputs:", "", ...Object.entries(component.inputs).map(([name, type]) => `- \`${name}\`: ${type.kind === "object" ? type.objectType : type.type ?? type.kind}`), "");
+      lines.push("Inputs:", "", ...Object.entries(component.inputs).map(([name, type]) => `- \`${name}\`: ${portTypeText(type)}`), "");
     if (component.config?.length) {
       lines.push("Configuration (the projection's `config`):", "");
       const referencedTypes = new Set();

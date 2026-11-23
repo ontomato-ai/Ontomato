@@ -196,3 +196,212 @@ it("reads a reference's choices and held values, and a type's create form, as a 
   expect(await source.describe({ target: { kind: "draft" }, values: { name: "Analyst" }, changedField: "/name" })).toEqual(description);
   expect(describe).toHaveBeenCalledWith({ target: { kind: "draft" }, values: { name: "Analyst" }, changedField: "/name" });
 });
+
+it("clears stale ready data, declared read outputs, and admitted operations immediately on target switch while keeping same-target refreshes ready", async () => {
+  const headerProjection: DirectProjection = {
+    ...record,
+    id: "type-header",
+    name: "Type header",
+    componentId: "@ontomato/sdk:ObjectHeader",
+    inputs: { target: { kind: "object", objectType: ONTOLOGY_TYPE } },
+    outputs: {},
+    config: {},
+    data: {
+      record: { source: { object: { input: "target" } }, read: "record", params: {} },
+    },
+    operations: {
+      remove: {
+        operation: { kind: "PlatformOperation", id: "agents.delete" },
+        target: { input: "target" },
+      },
+    },
+  };
+  const objectsProjection: DirectProjection = {
+    ...record,
+    id: "type-objects",
+    name: "Type objects",
+    componentId: "@ontomato/sdk:ObjectList",
+    inputs: { type: { kind: "scalar", type: "string" } },
+    outputs: {},
+    config: {},
+    data: {
+      objects: {
+        source: { type: { kind: "PlatformObjectType", id: ONTOLOGY_TYPE } },
+        read: "objects",
+        params: { type: { input: "type" } },
+      },
+    },
+  };
+  const manifest: DirectPanelManifest = {
+    state: {
+      selectedTypeRef: { type: { kind: "object", objectType: ONTOLOGY_TYPE }, personal: false, deepLink: false, external: false },
+      selectedType: { type: { kind: "scalar", type: "string" }, personal: false, deepLink: false, external: false },
+    },
+    members: {
+      header: { target: { projectionId: headerProjection.id }, inputs: { target: { state: "selectedTypeRef" } } },
+      objects: { target: { projectionId: objectsProjection.id }, inputs: { type: { state: "selectedType" } } },
+    },
+  };
+
+  type Resolver = (response: import("@ontomato/contracts/panel-host").ProductPanelReadResponse) => void;
+  const pendingRecords = new Map<string, Resolver[]>();
+  const pendingOps = new Map<string, Resolver[]>();
+  const pendingObjects = new Map<string, Resolver[]>();
+  const enqueue = (map: Map<string, Resolver[]>, key: string) =>
+    new Promise<import("@ontomato/contracts/panel-host").ProductPanelReadResponse>((resolve) => {
+      const list = map.get(key) ?? [];
+      list.push(resolve);
+      map.set(key, list);
+    });
+
+  const instance = createDirectPanelInstance(manifest, {
+    pageKey: "target-switch",
+    url: () => "/target-switch",
+    label: () => "Target switch",
+    initial: {
+      selectedTypeRef: { className: ONTOLOGY_TYPE, primaryKey: ACTION },
+      selectedType: ACTION,
+    },
+    text: createPanelText({}, { value: "en" } as never, "en"),
+    ...noOperations,
+    readProjection: async (id) => (id === headerProjection.id ? headerProjection : objectsProjection),
+    read: (request) => {
+      if ("operations" in request) {
+        const key = (request.inputs.target as { primaryKey?: string } | null)?.primaryKey ?? "none";
+        return enqueue(pendingOps, key);
+      }
+      if (request.dataName === "record") {
+        const key = (request.inputs.target as { primaryKey: string }).primaryKey;
+        return enqueue(pendingRecords, key);
+      }
+      const type = String(request.inputs.type ?? "");
+      const search = String((request.runtimeParams as Record<string, unknown> | undefined)?.search ?? "");
+      return enqueue(pendingObjects, `${type}:${search}`);
+    },
+  });
+
+  const scope = effectScope();
+  let headerRecord!: ComputedRef<MemberDataState>;
+  let headerOps!: ComputedRef<import("../../../../../packages/apps-sdk/src/panel/member-operations").MemberOperationsState>;
+  let objectsData!: ComputedRef<MemberDataState>;
+  scope.run(() => {
+    const headerInputs = () => ({ target: instance.state.values.value.selectedTypeRef ?? null }) as MemberInputs;
+    headerRecord = instance.memberData("header", headerProjection, headerInputs).use("record");
+    headerOps = instance.memberOperations("header", headerProjection, headerInputs);
+    objectsData = instance.memberData("objects", objectsProjection, () => ({ type: instance.state.values.value.selectedType ?? null }) as MemberInputs).use("objects");
+  });
+
+  // Resolve target A (`ACTION`) for record, operations, and objects.
+  await vi.waitFor(() => {
+    expect(pendingRecords.get(ACTION)?.length).toBe(1);
+    expect(pendingOps.get(ACTION)?.length).toBe(1);
+    expect(pendingObjects.get(`${ACTION}:`)?.length).toBe(1);
+  });
+  pendingRecords.get(ACTION)!.shift()!({
+    status: "ready",
+    value: {
+      primaryKey: ACTION,
+      label: "Action",
+      fields: {},
+      outputs: { directoryPath: "/ontology/assets/actions", directoryName: "Actions" },
+    } as never,
+  });
+  pendingOps.get(ACTION)!.shift()!({
+    status: "ready",
+    value: {
+      remove: {
+        kind: "action",
+        handlerRef: "agents.delete",
+        label: "Delete",
+        effect: "write",
+        target: { source: "input", input: "target" },
+        inputSchema: {},
+        resultSchema: {},
+        batch: false,
+      },
+    } as never,
+  });
+  pendingObjects.get(`${ACTION}:`)!.shift()!({
+    status: "ready",
+    value: objectsAnswer(ACTION, 1, 20) as never,
+  });
+
+  await vi.waitFor(() => {
+    expect(headerRecord.value.status).toBe("ready");
+    expect(headerOps.value.status).toBe("ready");
+    expect(objectsData.value.status).toBe("ready");
+    expect(instance.outputs.header?.directoryPath).toBe("/ontology/assets/actions");
+    expect(instance.outputs.header?.directoryName).toBe("Actions");
+  });
+
+  // Same-target refresh and non-target parameter change (search) keep ready state until the new answer arrives.
+  instance.refresh({
+    objects: [{ objectType: ONTOLOGY_TYPE, primaryKey: ACTION }],
+    objectTypes: [ONTOLOGY_TYPE],
+  });
+  instance.memberParam("objects", "search").set("ref");
+  await nextTick();
+  expect(headerRecord.value.status).toBe("ready");
+  expect(headerOps.value.status).toBe("ready");
+  expect(objectsData.value.status).toBe("ready");
+  expect(instance.outputs.header?.directoryPath).toBe("/ontology/assets/actions");
+
+  // Resolve the same-target refresh before switching targets.
+  pendingRecords.get(ACTION)!.shift()!({
+    status: "ready",
+    value: {
+      primaryKey: ACTION,
+      label: "Action v2",
+      fields: {},
+      outputs: { directoryPath: "/ontology/assets/actions", directoryName: "Actions" },
+    } as never,
+  });
+  pendingOps.get(ACTION)!.shift()!({ status: "ready", value: {} as never });
+  pendingObjects.get(`${ACTION}:ref`)!.shift()!({ status: "ready", value: objectsAnswer(ACTION, 1, 20) as never });
+  await nextTick();
+
+  // Switch target from A (`ACTION`) to B (`USER`) while panel is active: stale ready state and outputs clear immediately.
+  instance.state.set("selectedTypeRef", { className: ONTOLOGY_TYPE, primaryKey: USER });
+  instance.state.set("selectedType", USER);
+
+  expect(headerRecord.value.status).toBe("loading");
+  expect(headerOps.value.status).toBe("loading");
+  expect(objectsData.value.status).toBe("loading");
+
+  await vi.waitFor(() => {
+    expect(instance.outputs.header?.directoryPath ?? null).toBeNull();
+    expect(instance.outputs.header?.directoryName ?? null).toBeNull();
+    expect(pendingRecords.get(USER)?.length).toBe(1);
+    expect(pendingOps.get(USER)?.length).toBe(1);
+    expect(pendingObjects.get(`${USER}:ref`)?.length).toBe(1);
+  });
+
+  // Resolving target B restores ready state and publishes B's outputs.
+  pendingRecords.get(USER)!.shift()!({
+    status: "ready",
+    value: {
+      primaryKey: USER,
+      label: "User",
+      fields: {},
+      outputs: { directoryPath: "/settings/users", directoryName: "Users" },
+    } as never,
+  });
+  pendingOps.get(USER)!.shift()!({ status: "ready", value: {} as never });
+  pendingObjects.get(`${USER}:ref`)!.shift()!({ status: "ready", value: objectsAnswer(USER, 1, 20) as never });
+
+  await vi.waitFor(() => {
+    expect(headerRecord.value.status).toBe("ready");
+    expect(instance.outputs.header?.directoryPath).toBe("/settings/users");
+    expect(instance.outputs.header?.directoryName).toBe("Users");
+  });
+
+  // Clearing target transitions immediately to awaiting and clears outputs.
+  instance.state.set("selectedTypeRef", null);
+  expect(headerRecord.value.status).toBe("awaiting");
+  await vi.waitFor(() => {
+    expect(instance.outputs.header?.directoryPath ?? null).toBeNull();
+    expect(instance.outputs.header?.directoryName ?? null).toBeNull();
+  });
+
+  scope.stop();
+});
