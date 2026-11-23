@@ -375,7 +375,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     readProjection: () => Promise.reject(new Error("A direct panel's members read their projections through the instance")),
   });
   /** Every datum shown now, with how to read it again when an operation reports its source changed. */
-  const shown = new Set<{ data: DirectProjectionData; inputs: () => MemberInputs; reread(): void }>();
+  const shown = new Set<{ data: DirectProjectionData; inputs: () => MemberInputs; reread(): void; markInactive(): void }>();
   /** Every member's operations read now, read again with everything shown. */
   const operationReads = new Set<() => void>();
   /** Where the members the instance holds live, each in its own scope, so a member held anew ends the old one. */
@@ -646,23 +646,32 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           const state = shallowRef<MemberDataState>({ status: "loading" });
           let sequence = 0;
           const entryData = projection.data[name]!;
-          const dependsOnStateInputs = "object" in entryData.source || Object.keys(placement.inputs ?? {}).length > 0;
-          const targetKeyOf = () => JSON.stringify([
-            sourceObject(entryData, inputs()) ?? null,
-            readParams(projection, entryData, placement, inputs(), {}).authored,
-          ]);
-          let lastTargetKey = targetKeyOf();
+          const isObjectDatum = "object" in entryData.source;
+          const objectTargetKeyOf = () => (isObjectDatum ? JSON.stringify(sourceObject(entryData, inputs()) ?? null) : null);
+          let targetKeyWhileInactive: string | null = null;
+          let wasInactive = false;
           const reread = () => {
-            const nextTargetKey = targetKeyOf();
-            const targetChanged = nextTargetKey !== lastTargetKey;
-            lastTargetKey = nextTargetKey;
-            // When the bound target or state inputs switch to another object, transition immediately to loading
-            // instead of showing the previous record until the new answer arrives. Same-target refreshes keep the
-            // current datum on screen without flashing.
-            if (targetChanged) state.value = { status: "loading" };
-            // Unseen, the instance reads nothing; the refresh when it is seen again reads every shown datum.
-            if (!active) return;
+            // Unseen, the instance reads nothing; remember the target it last showed so returning to a different
+            // object clears the stale record immediately instead of flashing it while the new read is in flight.
+            if (!active) {
+              if (!wasInactive) {
+                wasInactive = true;
+                targetKeyWhileInactive = objectTargetKeyOf();
+              }
+              return;
+            }
+            if (wasInactive) {
+              wasInactive = false;
+              const nextTargetKey = objectTargetKeyOf();
+              if (isObjectDatum && nextTargetKey !== targetKeyWhileInactive) {
+                state.value = { status: "loading" };
+              }
+              targetKeyWhileInactive = null;
+            }
             const reading = ++sequence;
+            // A datum already shown stays on screen until its new answer arrives: rereading replaces what it shows, never
+            // the component drawing it. Only a first read (or one after an empty, refused, failed, or deactivated-switch
+            // answer) shows loading.
             if (state.value.status !== "ready") state.value = { status: "loading" };
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
             void answer(name, inputs()).then((result) => {
@@ -671,11 +680,16 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
               state.value = result.status === "error" ? { ...result, retry: () => { state.value = { status: "loading" }; reread(); } } : result;
             });
           };
-          const entry = { data: entryData, inputs, reread };
+          const entry = { data: entryData, inputs, reread, markInactive: () => {
+            if (!wasInactive) {
+              wasInactive = true;
+              targetKeyWhileInactive = objectTargetKeyOf();
+            }
+          } };
           shown.add(entry);
           watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), reread, { immediate: true });
           onScopeDispose(() => shown.delete(entry));
-          return computed<MemberDataState>(() => (addressPending.value && dependsOnStateInputs ? { status: "loading" } : state.value));
+          return computed<MemberDataState>(() => (addressPending.value && isObjectDatum ? { status: "loading" } : state.value));
         },
         read: (name, params, overrides = {}) => {
           const { inputs: run, own: ownRun } = runValues(projection, name, params);
@@ -750,6 +764,9 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
     },
     setActive(next: boolean) {
       active = next;
+      if (!next) {
+        for (const entry of shown) entry.markInactive();
+      }
       for (const mount of nestedMounts) mount.activate(next);
     },
     projectionChanged(id: string, revision?: number) {
