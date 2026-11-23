@@ -110,6 +110,12 @@ export interface HarnessOpenRequest {
    * the moment it is invoked; a tool the definition gained later appears only in new sessions.
    */
   readonly tools: readonly RuntimeToolDeclaration[];
+  /**
+   * Whether the engine's own file and command tools are on. False for product sessions, which act only through
+   * `tools`. Set once with `tools` when the native session is created and kept with it; when resuming, the
+   * engine uses the value it kept.
+   */
+  readonly engineTools: boolean;
   readonly limits: CodeLimits;
   readonly language: string;
   readonly signal: AbortSignal;
