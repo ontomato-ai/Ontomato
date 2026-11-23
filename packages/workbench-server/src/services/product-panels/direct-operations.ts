@@ -201,41 +201,38 @@ async function admitBoundOperation(
   const { slot, projection } = placement;
   const { binding, owner } = bound;
   const { descriptor, fixed, selected } = resolveTarget(placement, bound, selection, pinnedInputs, actor.credentials.locale);
-  const id = panelOperationId(placement.nested?.memberPath.map(segment => segment.member) ?? slot, bound.name);
   if (binding.operation.kind === "Action") {
     if (selected?.kind === "object") {
       const { objectType, primaryKey } = selected;
       const resolved = await resolveObjectAction(operationHost(actor), { actionId: binding.operation.id, object: { objectType, primaryKey } });
       const handler: PanelWriteServerOperation = objectActionOperation(resolved);
-      const described = { ...describeObjectAction(resolved), target: descriptor };
-      const operation = panelWriteOperationSnapshotSchema.parse({
-        ...described,
-        ...placement.nested,
-        id,
-        slot,
+      return {
+        effect: "write" as const,
+        handler,
+        describe: () => ({ ...describeObjectAction(resolved), target: descriptor }),
         action: { actionId: resolved.actionId, codeHash: resolved.codeHash, object: resolved.object! },
-      });
-      return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: selected, selected };
+        fixedTarget: selected,
+        selected,
+      };
     }
     if (binding.target !== undefined) return undefined;
     const resolved = await resolveObjectAction(operationHost(actor), { actionId: binding.operation.id });
     const handler: PanelWriteServerOperation = objectActionOperation(resolved);
-    const described = { ...describeObjectAction(resolved), target: descriptor };
     const createFormTypes = Object.values(projection.data).flatMap(datum =>
       datum.read === "createForm" && "type" in datum.source ? [datum.source.type.id] : []);
     const affects = [...new Set([...resolved.affects, ...createFormTypes])];
-    const operation = panelWriteOperationSnapshotSchema.parse({
-      ...described,
-      ...placement.nested,
-      id,
-      slot,
+    return {
+      effect: "write" as const,
+      handler,
+      describe: () => ({ ...describeObjectAction(resolved), target: descriptor }),
       action: {
         actionId: resolved.actionId,
         codeHash: resolved.codeHash,
         ...(affects.length > 0 && { affects }),
       },
-    });
-    return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: null, selected: null };
+      fixedTarget: null,
+      selected: null,
+    };
   }
   if (!owner) throw new HttpError(422, `Operation '${binding.operation.id}' has no server owner client`, "OPERATION_UNAVAILABLE");
   const { handler } = owner;
@@ -246,12 +243,16 @@ async function admitBoundOperation(
       if (!draftSlot || !Object.hasOwn(placement.panel.manifest.members, draftSlot)) {
         throw new HttpError(422, `Member '${slot}', operation '${bound.name}' must declare a form member in readOperationInputs.${bound.name}.draft.slot`, "PANEL_OPERATION_DRAFT_UNBOUND");
       }
-      const described = await describeServerOperation(handler, host, slot, { source: "draft", slot: draftSlot });
-      return { effect: "read" as const, handler, descriptor: described, fixedTarget: undefined, selected: undefined };
+      return {
+        effect: "read" as const, handler, fixedTarget: undefined, selected: undefined,
+        describe: () => describeServerOperation(handler, host, slot, { source: "draft", slot: draftSlot }),
+      };
     }
     if (handler.target.source === "input" && selected?.kind !== "object") return undefined;
-    const described = await describeServerOperation(handler, host, slot, descriptor);
-    return { effect: "read" as const, handler, descriptor: described, fixedTarget: fixed, selected };
+    return {
+      effect: "read" as const, handler, fixedTarget: fixed, selected,
+      describe: () => describeServerOperation(handler, host, slot, descriptor),
+    };
   }
   const writeDraftSlot = placement.member.operationDrafts?.[bound.name]?.slot;
   if (writeDraftSlot && !Object.hasOwn(placement.panel.manifest.members, writeDraftSlot)) {
@@ -259,14 +260,11 @@ async function admitBoundOperation(
   }
   const draft = handler.kind === "form.save" && selected?.kind !== "object";
   if (draft && !allowsOperationDraft(projection, handler) && !(handler.create && writeDraftSlot)) return undefined;
-  const described = await describeServerOperation(handler, host, slot,
-    draft ? { source: "draft", slot: writeDraftSlot ?? slot } : descriptor);
-  const operation = panelWriteOperationSnapshotSchema.parse({ ...described, ...placement.nested, id, slot });
   return {
     effect: "write" as const,
     handler,
-    operation,
-    descriptor: described,
+    describe: () => describeServerOperation(handler, host, slot,
+      draft ? { source: "draft", slot: writeDraftSlot ?? slot } : descriptor),
     selected,
     fixedTarget: draft ? { kind: "draft" as const } : fixed,
   };
@@ -295,9 +293,10 @@ export async function readAdmittedProjectionOperations(
       continue;
     }
     if (!result) continue;
+    const described = await result.describe();
     const unavailableReason = await resolveAdmittedOperationUnavailable(actor, bound, result, inputs, pinnedInputs);
-    const descriptor = unavailableReason === undefined ? result.descriptor
-      : { ...result.descriptor, unavailable: panelOperationUnavailableSchema.parse(unavailableReason) };
+    const descriptor = unavailableReason === undefined ? described
+      : { ...described, unavailable: panelOperationUnavailableSchema.parse(unavailableReason) };
     descriptions.push([bound.name, descriptor]);
   }
   return Object.fromEntries(descriptions);
@@ -492,11 +491,18 @@ export async function declaredDirectOperation(
 
   const pinnedInputs = resolvePinnedInputs(use, trail, placement.member, options.isFrameRoot === true);
   const boundParams = resolvePinnedBoundParams(bound.binding, pinnedInputs, target);
-  const current = await admitBoundOperation({ owner, credentials }, placement, bound, () => target, pinnedInputs);
-  if (!current) throw new HttpError(400, `Select an eligible target for operation '${id}'`, "PANEL_SELECTION_REQUIRED");
-  if (current.effect === "read") return { ...current, boundParams };
+  const admitted = await admitBoundOperation({ owner, credentials }, placement, bound, () => target, pinnedInputs);
+  if (!admitted) throw new HttpError(400, `Select an eligible target for operation '${id}'`, "PANEL_SELECTION_REQUIRED");
+  const { describe, action, ...current } = admitted;
+  const descriptor = await describe();
+  if (current.effect === "read") return { ...current, descriptor, boundParams };
+  const operation = panelWriteOperationSnapshotSchema.parse({
+    ...descriptor, ...placement.nested, id, slot, ...(action && { action }),
+  });
   return {
     ...current,
+    descriptor,
+    operation,
     boundParams,
     ...(bound.binding.params ? { bindingParams: bound.binding.params } : {}),
     use,
