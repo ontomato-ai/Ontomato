@@ -26,9 +26,10 @@ export const uiDirectives: readonly AppsSdkUiDirectiveEntry[] = SDK_UI_DIRECTIVE
 export const themeTokens: readonly AppsSdkThemeTokenEntry[] = sdkThemeTokenCatalogueEntries();
 
 /*
- * Semantic metadata of the components this SDK version exports (overall design 3.1): what each means, what it binds,
- * the data it reads and the parameters it takes, and the state it hands over. The build generates `components.json` and
- * the catalogue document from this list. What a projection can do is the operations it names, not its component's.
+ * Semantic metadata of the components this SDK version exports (overall design 3.1): what each means, its applicable
+ * object types, the data it reads and the parameters it takes, and the state it hands over. The build generates
+ * `components.json` and the catalogue document from this list. What a projection can do is the operations it names, not
+ * its component's.
  *
  * Only components this version actually exports may be declared, and the build checks that: a declaration for something
  * absent, or a public component with no declaration, fails it rather than shipping an undescribed component.

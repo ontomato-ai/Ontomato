@@ -4,8 +4,9 @@ import type { PanelReadResultId } from "@ontomato/contracts/platform-object-type
 
 /*
  * What a component of this SDK version offers a projection (overall design 3.1, 3.2): its identity, whether it presents
- * or controls, the ontology elements it may bind, the parameters it takes and the state it hands its host. What a
- * projection can do is not the component's: the projection names its owners' operations, whatever draws it.
+ * or controls, its applicable object types (bind through a projection's declared reads or operations), the parameters
+ * it takes and the state it hands its host. What a projection can do is not the component's: the projection names its
+ * owners' operations, whatever draws it.
  *
  * Type tools read a component's props and events; they cannot read what the component *means* — that a table bound to a
  * scheduled task reads it, that a button bound to `schedules.runNow` runs it. So the meaning is declared here, once,
@@ -40,7 +41,10 @@ export interface ComponentMetadata {
     /** The read parameters it gives itself at run time, beside what the projection maps. */
     readonly runtimeParams?: readonly string[];
   }>>;
-  /** The ontology elements it may bind, as `Kind:id` or `Kind:*` when any of that kind does. */
+  /**
+   * Applicable object types (bind through a projection's declared reads or operations), as `Kind:id` or `Kind:*`
+   * when any of that kind applies.
+   */
   readonly bindsElement?: readonly string[];
   /** The parameters it takes, by name; a projection's `inputs` are these. */
   readonly inputs?: Readonly<Record<string, OntologyParameterType>>;

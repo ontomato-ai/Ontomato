@@ -34,6 +34,7 @@ export const componentDeclarationBase = <Data extends z.ZodTypeAny, Input extend
   role: z.enum(["presentation", "control"]),
   meaning: name,
   effects: z.string().optional(),
+  /** Applicable object types (bind through a projection's declared reads or operations), as `Kind:id` or `Kind:*`. */
   bindsElement: z.array(name).optional(),
   /** Omit this declaration for components that do not consume platform-supplied data. */
   data: data.optional(),
