@@ -193,7 +193,9 @@ export interface DirectPanelMount {
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
   snapshotMeta?(): {
+    readonly panelInstanceId?: string;
     readonly memberInstances?: Readonly<Record<string, string>>;
+    readonly entryInstances?: Readonly<Record<string, string>>;
     readonly checkedKeys?: Readonly<Record<string, readonly string[]>>;
   };
   isLoading?(): boolean;
@@ -228,6 +230,8 @@ export interface PanelInstanceView {
   readonly direct: Readonly<ShallowRef<DirectInstance | null>>;
   /** What names this instance's element, where its panel's CSS applies. */
   readonly instance: string;
+  /** Live mount identity that rotates whenever the panel definition is replaced in place. */
+  readonly mountId: Readonly<Ref<string>>;
   /** What the panel's author should know without the panel failing: its CSS reached outside it and applies nowhere. */
   readonly notice: Readonly<ShallowRef<string>>;
   /** The reader's deep-linkable state, as the address carries it. */
@@ -250,15 +254,20 @@ export interface PanelInstanceView {
   refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected, operation?: PanelCompletedOperation): void;
   /** A person clicked one of those operations: the instance runs it, and the promise settles with its answer. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;
+  /** Validates a public state patch against the currently loaded panel manifest without mutating state. */
+  validateState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Applies a live patch to any declared public state fields in place (no reload, no business writes). */
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Fills explicit fields on a mounted live form through the form's own editing entry. */
   fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
   /** Executes a declared operation or local semantic action through the mounted component's own UI entry. */
   executeAction(request: PageActionRequestInput): Promise<PageActionOutcome>;
-  /** Live binding metadata (nested panel instance IDs and checked row keys) for display snapshots. */
+  /** Live binding metadata (mount/panel/member/entry instance IDs and checked row keys) for display snapshots. */
   snapshotMeta(): {
+    readonly mountId: string;
+    readonly panelInstanceId?: string;
     readonly memberInstances?: Readonly<Record<string, string>>;
+    readonly entryInstances?: Readonly<Record<string, string>>;
     readonly checkedKeys?: Readonly<Record<string, readonly string[]>>;
   };
   /** True while the panel definition, direct mount, or declared members are still loading. */
@@ -386,6 +395,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   const admitted = shallowRef(!port.admitted);
   const direct = shallowRef<DirectInstance | null>(null);
   const instance = newPanelInstanceName();
+  const mountId = shallowRef(randomId());
   const notice = shallowRef("");
   /** Takes the drawn panel's CSS away again. */
   let dropStyle: (() => void) | undefined;
@@ -580,6 +590,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const shown = source.value;
     source.value = next;
     if (direct.value && shown && JSON.stringify(definitionOf(shown)) === JSON.stringify(definitionOf(next))) return false;
+    if (shown) mountId.value = randomId();
     endDirect();
     document.value = "";
     registration?.dispose();
@@ -960,6 +971,20 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     else pendingDirectAddress = next;
   }
 
+  function validateState(patch: Readonly<Record<string, RuntimeJsonValue>>) {
+    if (!Object.keys(patch).length) return;
+    if (source.value) {
+      validatePublicStatePatch(source.value.panel, patch);
+      return;
+    }
+    for (const [name, value] of Object.entries(patch)) {
+      const parsed = panelStateValueSchema.safeParse(value);
+      if (!parsed.success) {
+        throw new TypeError(`Invalid value for state '${name}': ${parsed.error.issues[0]?.message ?? "invalid type"}`);
+      }
+    }
+  }
+
   function applyState(patch: Readonly<Record<string, RuntimeJsonValue>>) {
     if (!Object.keys(patch).length) return;
     if (!source.value || !direct.value) {
@@ -1024,8 +1049,10 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     refresh,
     direct,
     instance,
+    mountId,
     notice,
     admitted,
+    validateState,
     applyState,
     fillForm(request) {
       if (!direct.value?.mount.fillForm) {
@@ -1051,7 +1078,10 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       return direct.value.mount.executeAction(request);
     },
     snapshotMeta() {
-      return direct.value?.mount.snapshotMeta?.() ?? {};
+      return {
+        mountId: mountId.value,
+        ...(direct.value?.mount.snapshotMeta?.() ?? {}),
+      };
     },
     isLoading() {
       if (displayLoad.value.status === "error") return false;

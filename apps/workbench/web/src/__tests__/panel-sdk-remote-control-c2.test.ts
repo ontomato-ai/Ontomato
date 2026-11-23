@@ -32,7 +32,7 @@ import {
 } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { directMountKey } from "../../../../../packages/apps-sdk/src/panel/direct-projection";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
-import { usePanelOperationAction } from "../../../../../packages/apps-sdk/src/panel/panel-operation";
+import { usePanelOperation } from "../../../../../packages/apps-sdk/src/panel/panel-operation";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import examples from "../../../../../packages/contracts/examples/platform-schedules.json";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
@@ -185,7 +185,7 @@ function mountHarness(options: {
   };
 }
 
-describe("C2-1: mounted custom panel operation entries (usePanelOperationAction) & schedules panel", () => {
+describe("C2-1: mounted custom panel operation entries (usePanelOperation) & schedules panel", () => {
   afterEach(() => {
     leaveFrame();
     useApplicationCatalog().applications.value = [];
@@ -202,7 +202,7 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperationAction)
 
     const CustomActionComponent = defineComponent({
       setup() {
-        const action = usePanelOperationAction("customOp", "approve", {
+        const action = usePanelOperation("customOp", "approve", {
           available,
           disabled,
           busy: externalBusy,
@@ -754,15 +754,23 @@ describe("C2-1: mounted custom panel operation entries (usePanelOperationAction)
         call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: taskId }, input: {} },
       });
 
-      // 5. opRunNow.runNow when owner refuses with TASK_RUNNING -> reports failed AND runs panel settlement setting runId.
+      // 5. opRunNow.runNow when owner refuses with TASK_RUNNING -> reports failed with TASK_RUNNING code AND runs panel settlement setting runId.
       runNowMode = "task_running";
       const runningRes = await controller!.executeAction!({
         operation: "opRunNow.runNow",
         input: {},
         agentRun: AGENT_RUN,
       });
-      expect(runningRes).toMatchObject({ ok: false, reason: "failed", operation: "opRunNow.runNow" });
+      expect(runningRes).toMatchObject({ ok: false, reason: "failed", code: "TASK_RUNNING", operation: "opRunNow.runNow" });
       await vi.waitFor(() => expect(latestContext.value?.state?.runId).toBe(activeRunId));
+
+      // 5b. renew.renewCredential uses { entry: false } and is NOT exposed as a page_action entry.
+      const renewRes = await controller!.executeAction!({
+        operation: "renew.renewCredential",
+        input: {},
+        agentRun: AGENT_RUN,
+      });
+      expect(renewRes).toMatchObject({ ok: false, reason: "action_not_found", operation: "renew.renewCredential" });
 
       // 6. opDelete.delete succeeds AND triggers panel settlement (clears selectedTask & runId, shows delete toast).
       const deleteRes = await controller!.executeAction!({

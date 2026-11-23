@@ -18,9 +18,9 @@ export { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemb
 export { usePanelOutput, usePanelOutputs } from "./panel/panel-output";
 export { useFormFieldSlot, useListRowSlot, type FormFieldSlotContext, type ListRowSlotContext, type ListRowSlotOperation } from "./panel/slot-context";
 export {
-  usePanelOperationAction,
-  type PanelOperationActionAvailability,
-  type PanelOperationActionContext,
-  type PanelOperationActionHandle,
-  type UsePanelOperationActionOptions,
+  usePanelOperation,
+  type PanelOperationAvailability,
+  type PanelOperationContext,
+  type PanelOperationHandle,
+  type UsePanelOperationOptions,
 } from "./panel/panel-operation";

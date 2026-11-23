@@ -12,6 +12,7 @@ import {
 } from "vue";
 import type { PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import type { ProjectionOperationBinding } from "@ontomato/contracts/panel-projection";
@@ -51,49 +52,44 @@ import { readOperationInput } from "./read-operation-input";
 import type { PanelOperationBinding } from "./types";
 
 /*
- * One operation the panel's own code runs (the line's main control, 2026-11-21): an operation a member's projection
- * names under `operations.<name>`, found by the member and that name. It is the operation the page's header and an
- * agent run, as its owner admits it now: an action on an object is admitted once the object is chosen, and a read
- * (an export the reader saves) is read, a write frozen as one intent the host confirms where the owner asks.
+ * One operation the panel's own code runs (product-layer standard detail 3.8): an operation a member's projection
+ * names under `operations.<name>`, found by the member and that name.
  *
- * When a panel draws its own button, switch, or menu item rather than `<OperationButton>`, it registers that mounted
- * UI entry via `usePanelOperationAction(member, name, options)` (product-layer standard detail 3.8). The entry lives
- * strictly for the lifetime of the calling component's mount, shares one execution and settlement path between human
- * clicks and agent `page_action` calls, filters interactive inputs through the same schema, and enforces the universal
- * 4-tuple staleness check before auto-dispatch and conversation confirmation.
+ * There is one API — `usePanelOperation(member, name, options?)`. By default (`options.entry !== false`), calling it
+ * in a component's synchronous `setup()` registers a mounted UI action entry for that component's lifetime so human
+ * clicks and agent `page_action` calls share one availability check, input schema filter, preparation, universal
+ * 4-tuple confirmation verification, dispatch, and `onSettled` callback. For non-UI automated background flows
+ * (such as credential renewal on mount), pass `{ entry: false }` explicitly.
  */
 
-/** One member's operation, as the page's code holds it. */
-export interface PanelOperationHandle {
-  /** The owner's description while it admits the operation now — its label, kind and target — else null. */
-  readonly operation: ComputedRef<PanelOperationBinding | null>;
-  /** Runs it with the page's own input; a read answers what it read (or the file the reader saved). */
-  run(input?: Readonly<Record<string, unknown>>): Promise<unknown>;
-}
-
-/** Availability check answer for a custom mounted panel action entry. */
-export interface PanelOperationActionAvailability {
+/** Availability check answer for a panel operation entry. */
+export interface PanelOperationAvailability {
   readonly ok: boolean;
   readonly message?: string;
 }
 
-/** Context passed to `onSettled` after a custom panel action executes (human, full-auto, or confirmed). */
-export interface PanelOperationActionContext {
+/** Context passed to `onSettled` after a panel operation executes (human, full-auto, or confirmed). */
+export interface PanelOperationContext {
   readonly operationId: string;
   readonly input: Readonly<Record<string, RuntimeJsonValue>>;
   readonly target: PanelOperationCall["target"] | readonly PanelObjectIdentity[];
   readonly named: PanelWriteResult["named"];
 }
 
-/** Options for registering a mounted custom UI entry (button, switch, menu item) for a declared panel operation. */
-export interface UsePanelOperationActionOptions {
+/** Options for `usePanelOperation(member, name, options?)`. */
+export interface UsePanelOperationOptions {
   /**
-   * Whether the custom UI entry is currently visible and available for the user.
+   * Whether this handle represents a mounted page UI entry reachable by `page_action` (default `true`).
+   * Pass `false` only for non-UI automated flows (for example automatic credential renewal on mount).
+   */
+  entry?: boolean;
+  /**
+   * Whether the UI entry is currently visible and available for the user.
    * Return `false` or `{ ok: false, message }` to refuse agent invocation and invalidate pending confirmations.
    */
-  available?: MaybeRefOrGetter<boolean | PanelOperationActionAvailability>;
+  available?: MaybeRefOrGetter<boolean | PanelOperationAvailability>;
   /**
-   * Whether the custom UI entry is currently disabled. A non-empty string disables the entry with that reason.
+   * Whether the UI entry is currently disabled. A non-empty string disables the entry with that reason.
    */
   disabled?: MaybeRefOrGetter<boolean | string>;
   /**
@@ -114,7 +110,7 @@ export interface UsePanelOperationActionOptions {
    */
   onSettled?: (
     receipt: PanelWriteResult | PanelReadOperationResult,
-    context: PanelOperationActionContext,
+    context: PanelOperationContext,
   ) => void | Promise<void>;
   /**
    * Optional error callback invoked when execution fails before dispatch (e.g. prepare failure).
@@ -126,52 +122,35 @@ export interface UsePanelOperationActionOptions {
   ) => void;
 }
 
-/** Mounted custom UI entry handle returned by `usePanelOperationAction`. */
-export interface PanelOperationActionHandle {
-  /** The owner's description while it admits the operation now — else null. */
+/** One member's operation, as the page's code holds it. */
+export interface PanelOperationHandle {
+  /** The owner's description while it admits the operation now — its label, kind and target — else null. */
   readonly operation: ComputedRef<PanelOperationBinding | null>;
   /** Live member operations read state (`loading`, `ready`, `forbidden`, `error`, `empty`). */
   readonly state: ComputedRef<MemberOperationsState>;
-  /** True while this action is preparing, awaiting confirmation, or dispatching. */
+  /** True while this operation is preparing, awaiting confirmation, or dispatching. */
   readonly running: ComputedRef<boolean>;
-  /** True only while the action is actively dispatching on the server. */
+  /** True only while the operation is actively dispatching on the server. */
   readonly dispatching: ComputedRef<boolean>;
-  /** Runs the operation from the panel's own UI control (button/switch/menu) through the shared path. */
-  run(input?: Readonly<Record<string, RuntimeJsonValue>>): Promise<PanelWriteResult | PanelReadOperationResult | undefined>;
+  /** Runs the operation with the page's own input; a read answers what it read (or the file saved), a write answers its receipt. */
+  run(input?: Readonly<Record<string, unknown>>): Promise<unknown>;
 }
 
 /**
- * ```js
- * const approve = usePanelOperation("detail", "approve");
- * // <el-button :disabled="!approve.operation.value" @click="approve.run()">{{ approve.operation.value?.label }}</el-button>
- * ```
- */
-export function usePanelOperation(member: string, name: string): PanelOperationHandle {
-  if (!getCurrentInstance())
-    throw new Error("Call usePanelOperation in a component's setup, before any await: it finds the panel through the component that calls it");
-  const { instance, manifest } = usePanelContext();
-  if (!Object.hasOwn(manifest.members, member)) throw new Error(`The panel declares no member '${member}'`);
-  const id = instance.operationIdOf(member, name);
-  return {
-    operation: computed(() => instance.operations.value.find((operation) => operation.id === id) ?? null),
-    run: (input) => instance.invoke(id, input),
-  };
-}
-
-/**
- * Registers a mounted custom panel UI entry (custom button, switch, or dropdown menu item) for a declared
- * member operation so human clicks and agent `page_action` calls share the exact same availability guards,
- * input filtering, preparation, 4-tuple confirmation verification, dispatch, and panel-owned settlement.
+ * Binds a declared member operation (`operations.<name>`) to the calling component's synchronous `setup()`.
  *
- * Automatically unregisters when the calling component unmounts.
+ * By default (`options.entry !== false`), this also registers the calling component as a mounted page action entry so
+ * human clicks and agent `page_action` calls share the exact same availability guards, input filtering, preparation,
+ * 4-tuple confirmation verification, dispatch, and `onSettled` callback, unregistering automatically on unmount.
+ * Pass `{ entry: false }` for non-UI background flows (such as credential renewal on mount).
  */
-export function usePanelOperationAction(
+export function usePanelOperation(
   member: string,
   name: string,
-  options: UsePanelOperationActionOptions = {},
-): PanelOperationActionHandle {
+  options: UsePanelOperationOptions = {},
+): PanelOperationHandle {
   if (!getCurrentInstance())
-    throw new Error("Call usePanelOperationAction in a component's setup, before any await: it binds the action entry to that component's mount");
+    throw new Error("Call usePanelOperation in a component's setup, before any await: it finds the panel through the component that calls it");
   const { instance, manifest } = usePanelContext();
   if (!Object.hasOwn(manifest.members, member)) throw new Error(`The panel declares no member '${member}'`);
   const directMount = inject(directMountKey, null);
@@ -180,6 +159,7 @@ export function usePanelOperationAction(
   let unmounted = false;
   const runningRef = ref(false);
   const dispatchingRef = ref(false);
+  const entryInstanceId = ref(randomId());
   const memberContext = shallowRef<PanelMemberContext | null>(null);
   const memberLoadError = shallowRef<string | null>(null);
 
@@ -258,7 +238,7 @@ export function usePanelOperationAction(
   function resolveInputFields(desc: PanelOwnerOperationDescriptor): readonly OperationInputField[] {
     if (desc.upload) return [];
     const hasDeclaredReadInputs = manifest.members[member]?.readOperationInputs?.[name] !== undefined;
-    if (desc.effect === "read" && (desc.target.source === "draft" || hasDeclaredReadInputs)) return [];
+    if (desc.effect === "read" && (desc.target.source === "draft" || hasDeclaredReadInputs) && !options.prepareInput) return [];
     const hasDeclaredDraft = manifest.members[member]?.operationDrafts?.[name] !== undefined;
     if (desc.effect === "write" && hasDeclaredDraft) return [];
     const boundKeys = new Set(Object.keys(currentOperationBinding()?.params ?? {}));
@@ -344,35 +324,41 @@ export function usePanelOperationAction(
   }
 
   async function runFromHuman(
-    providedInput?: Readonly<Record<string, RuntimeJsonValue>>,
+    providedInput?: Readonly<Record<string, unknown>>,
   ): Promise<PanelWriteResult | PanelReadOperationResult | undefined> {
     if (unmounted || instance.isDisposed() || runningRef.value || Boolean(toValue(options.busy))) {
       return undefined;
     }
+    const rawProvided = providedInput as Readonly<Record<string, RuntimeJsonValue>> | undefined;
     const desc = descriptor.value;
     if (!desc) {
       const err = new Error(`The panel offers no operation '${id}'`);
       if (options.onError) {
-        options.onError(err, { operationId: id, input: providedInput ?? {} });
+        options.onError(err, { operationId: id, input: rawProvided ?? {} });
         return undefined;
       }
       throw err;
     }
     const targetInfo = resolveMemberOperationTarget(manifest, member, desc, instance.state.values.value);
-    const { effectiveInput } = buildInput(desc, providedInput, false);
     const settledTarget = targetInfo.checkedState !== null ? targetInfo.checkedTargets : targetInfo.target;
+    let effectiveInput: Record<string, RuntimeJsonValue> = {};
 
     runningRef.value = true;
     dispatchingRef.value = desc.effect === "read";
     try {
+      effectiveInput = buildInput(desc, rawProvided, false).effectiveInput;
       if (desc.effect === "read") {
         const hasDeclaredReadInputs = manifest.members[member]?.readOperationInputs?.[name] !== undefined;
-        const input = desc.target.source === "draft" || hasDeclaredReadInputs
+        const useDeclaredReadInput =
+          !options.prepareInput
+          && Object.keys(effectiveInput).length === 0
+          && (desc.target.source === "draft" || hasDeclaredReadInputs);
+        const input = useDeclaredReadInput
           ? readOperationInput(
               instance,
               member,
               name,
-              desc.target.source === "draft" ? instance.forms.handle(desc.target.slot)!.values.value : {},
+              desc.target.source === "draft" ? instance.forms.handle(desc.target.slot)?.values.value ?? {} : {},
             )
           : effectiveInput;
         const readResult = await instance.readOperation(id, { target: targetInfo.target, input });
@@ -481,7 +467,19 @@ export function usePanelOperationAction(
       };
     }
 
-    const { allowedFields, prepared, effectiveInput } = buildInput(desc, input, true);
+    let allowedFields: readonly OperationInputField[];
+    let prepared: Readonly<Record<string, RuntimeJsonValue>>;
+    let effectiveInput: Record<string, RuntimeJsonValue>;
+    try {
+      const built = buildInput(desc, input, true);
+      allowedFields = built.allowedFields;
+      prepared = built.prepared;
+      effectiveInput = built.effectiveInput;
+    } catch (reason) {
+      const err = reason instanceof Error ? reason : new Error(String(reason));
+      options.onError?.(err, { operationId: id, input: input ?? {} });
+      return { ok: false, reason: "failed", message: err.message };
+    }
     const missing = allowedFields
       .filter((field) => field.required && !(field.name in prepared))
       .map((field) => field.name);
@@ -532,12 +530,16 @@ export function usePanelOperationAction(
     try {
       if (desc.effect === "read") {
         const hasDeclaredReadInputs = manifest.members[member]?.readOperationInputs?.[name] !== undefined;
-        const readInput = desc.target.source === "draft" || hasDeclaredReadInputs
+        const useDeclaredReadInput =
+          !options.prepareInput
+          && Object.keys(effectiveInput).length === 0
+          && (desc.target.source === "draft" || hasDeclaredReadInputs);
+        const readInput = useDeclaredReadInput
           ? readOperationInput(
               instance,
               member,
               name,
-              desc.target.source === "draft" ? instance.forms.handle(desc.target.slot)!.values.value : {},
+              desc.target.source === "draft" ? instance.forms.handle(desc.target.slot)?.values.value ?? {} : {},
             )
           : effectiveInput;
         const readResult = await instance.readOperation(id, { target: targetInfo.target, input: readInput });
@@ -630,6 +632,14 @@ export function usePanelOperationAction(
                 });
                 return classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
               } catch (dispatchReason) {
+                if (dispatchReason instanceof PanelSubmissionStaleError) {
+                  return {
+                    ok: false,
+                    intentId: preparation.intentId,
+                    reason: "stale",
+                    message: dispatchReason.message,
+                  };
+                }
                 const err = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
                 options.onError?.(err, { operationId: id, input: effectiveInput });
                 return {
@@ -673,10 +683,32 @@ export function usePanelOperationAction(
     }
   };
 
-  const unregister = instance.registerActionHandler(id, handleAgentAction);
+  const entryBindingSignature = computed(() => {
+    const desc = descriptor.value;
+    const declaredDraftSlot = manifest.members[member]?.operationDrafts?.[name]?.slot;
+    const draftFormId = declaredDraftSlot
+      ? (instance.forms.snapshot(declaredDraftSlot)?.formInstanceId ?? null)
+      : null;
+    const targetInfo = desc
+      ? resolveMemberOperationTarget(manifest, member, desc, instance.state.values.value)
+      : null;
+    return JSON.stringify({
+      target: targetInfo?.target ?? null,
+      checked: targetInfo?.checkedTargets ?? null,
+      inputs: currentMemberInputs(),
+      draftFormId,
+    });
+  });
+  watch(entryBindingSignature, (next, prev) => {
+    if (next !== prev) entryInstanceId.value = randomId();
+  });
+
+  const unregister = options.entry === false
+    ? undefined
+    : instance.registerActionHandler(id, handleAgentAction, { entryInstanceId: () => entryInstanceId.value });
   onBeforeUnmount(() => {
     unmounted = true;
-    unregister();
+    unregister?.();
   });
 
   return {

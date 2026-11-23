@@ -48,10 +48,11 @@ for review. When the user asks to save, call `page_action({ operation: "form.sav
 For a requested deletion, pass the intended agent to
 `present({ target: "/agents/settings", state: { mode: "edit", selected: { className: "platform:AgentDefinition", primaryKey: id } } })`.
 From the opened page snapshot, check that `current.target.state.selected.primaryKey` equals
-that `id` and take `current.target.pageInstanceId` as `expectedPageInstanceId`.
-If the selection differs, is absent, or the page instance cannot be verified, stop and tell the
+that `id`.
+If the selection differs or is absent, stop and tell the
 user the intended agent could not be verified on the page. Otherwise call
-`page_action({ operation: "remove.delete", expectedPageInstanceId, expectedTarget: { kind: "object", objectType: "platform:AgentDefinition", primaryKey: id } })`.
+`page_action({ operation: "remove.delete" })`; the platform automatically attaches the last
+observed page and entry binding and rejects the call as stale if the page or selection moved.
 Writes default to user confirmation in the conversation.
 
 If you need to validate the complete definition before handing over the form, send

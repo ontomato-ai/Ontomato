@@ -528,6 +528,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         dirty: () => placed.dirty(),
         context: placed.pageContext.value,
         memberInstances: () => placed.memberInstances(),
+        entryInstances: () => placed.entryInstances(),
         checkedKeys: () => placed.checkedKeys(),
         isLoading: () => mount.isLoading?.() ?? false,
         fillForm: (request) => placed.fillForm(request),

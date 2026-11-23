@@ -790,4 +790,124 @@ describe("live agent page control (requirement-64995244)", () => {
 
     unregister();
   });
+
+  it("validates state before mutating URL or selection when present carries query + invalid state (C2 review II.2)", async () => {
+    const { display, serialized } = setup();
+    await display.present(frame({ kind: "page", address: "/ontology/panels?selected=panel-a" }));
+    expect(display.page.value?.address).toBe("/ontology/panels?selected=panel-a");
+    const serializedCountBefore = serialized.length;
+
+    const applyState = vi.fn();
+    const unregister = display.registerPageController("/ontology/panels", {
+      validateState(patch) {
+        for (const key of Object.keys(patch)) {
+          if (key !== "selected" && key !== "detailMode") {
+            throw new Error(`Panel state has no declared public field '${key}'`);
+          }
+        }
+      },
+      applyState,
+    });
+
+    const rejected = await display.present(frame({
+      kind: "page",
+      address: "/ontology/panels?selected=panel-b",
+      state: { detailMod: "edit" },
+    }));
+
+    expect(rejected).toMatchObject({
+      status: "not_opened",
+      reason: "unsupported_target",
+      error: { code: "invalid_state" },
+    });
+    expect(display.page.value?.address).toBe("/ontology/panels?selected=panel-a");
+    expect(serialized).toHaveLength(serializedCountBefore);
+    expect(applyState).not.toHaveBeenCalled();
+    unregister();
+  });
+
+  it("rotates pageInstanceId on in-place mountId replacement and preserves owner error codes & partial completion", async () => {
+    const { display } = setup();
+    await display.present(frame({ kind: "page", address: "/actions" }));
+    let currentMountId = "mount-v1";
+    const intentId = "44444444-4444-4444-8444-444444444444";
+
+    let mode: "refusal" | "partial" = "refusal";
+    const unregister = display.registerPageController("/actions", {
+      applyState() {},
+      snapshotMeta: () => ({ mountId: currentMountId, panelInstanceId: `panel-${currentMountId}` }),
+      executeAction: async (): Promise<PageActionOutcome> => {
+        if (mode === "refusal") {
+          return {
+            ok: false,
+            reason: "failed",
+            operation: "opRunNow.runNow",
+            intentId,
+            code: "TASK_RUNNING",
+            message: "Task is already running.",
+          };
+        }
+        return {
+          ok: false,
+          kind: "partially_executed",
+          reason: "partial_completion",
+          operation: "form.save",
+          intentId,
+          code: "FORBIDDEN",
+          message: "Protected field rejected.",
+          savedFields: ["/name"],
+          outcome: { kind: "refusal", code: "FORBIDDEN", message: "Protected field rejected.", savedFields: { "/name": "OK" } },
+        };
+      },
+    });
+
+    const initialSnap = display.snapshot();
+    const initialPageId = initialSnap.known && initialSnap.target?.kind === "page" ? initialSnap.target.pageInstanceId : undefined;
+    expect(initialPageId).toContain(":mount-v1");
+
+    // 1. Owner refusal preserves TASK_RUNNING error code instead of flattening to FAILED.
+    const refused = await display.present(frame({
+      kind: "page_action",
+      operation: "opRunNow.runNow",
+      expectedPageInstanceId: initialPageId,
+    }));
+    expect(refused).toMatchObject({
+      status: "not_executed",
+      reason: "failed",
+      operation: "opRunNow.runNow",
+      error: { code: "TASK_RUNNING", message: "Task is already running." },
+    });
+
+    // 2. Partial completion reports status 'partially_executed' with savedFields and owner code.
+    mode = "partial";
+    const partial = await display.present(frame({
+      kind: "page_action",
+      operation: "form.save",
+      expectedPageInstanceId: initialPageId,
+    }));
+    expect(partial).toMatchObject({
+      status: "partially_executed",
+      reason: "partial_completion",
+      operation: "form.save",
+      savedFields: ["/name"],
+      error: { code: "FORBIDDEN", message: "Protected field rejected." },
+    });
+    expect(presentationResultSchema.safeParse(partial).success).toBe(true);
+
+    // 3. In-place panel definition update rotates mountId -> stale expectedPageInstanceId is rejected.
+    currentMountId = "mount-v2";
+    const stale = await display.present(frame({
+      kind: "page_action",
+      operation: "form.save",
+      expectedPageInstanceId: initialPageId,
+    }));
+    expect(stale).toMatchObject({
+      status: "not_executed",
+      reason: "stale",
+    });
+    const refreshedSnap = display.snapshot();
+    expect(refreshedSnap.known && refreshedSnap.target?.kind === "page" ? refreshedSnap.target.pageInstanceId : undefined).toContain(":mount-v2");
+
+    unregister();
+  });
 });

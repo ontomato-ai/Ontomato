@@ -3,6 +3,7 @@ import { Comment, Fragment, Text, computed, getCurrentInstance, nextTick, onBefo
 import { useI18n } from "vue-i18n";
 import type { PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
 import type { PanelRowOperationsMap } from "@ontomato/contracts/panel-host";
 import type { PanelChildObjectIdentity, PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
@@ -2037,9 +2038,67 @@ onBeforeUnmount(() => {
   listUnmounted = true;
 });
 
+/** Unique mounted list instance ID; rotates on remount, dynamic type switch, or parent/member input change. */
+const listInstanceId = ref(randomId());
+watch(
+  () => JSON.stringify({ activeType: activeType.value, inputs: member.inputs.value }),
+  (next, prev) => {
+    if (next !== prev) listInstanceId.value = randomId();
+  },
+);
+
 /**
- * Resolves a loaded row by composite `<className>:<primaryKey>` key first (exact identity for mixed-type lists),
- * falling back to plain `primaryKey` only when unambiguous across loaded rows.
+ * Whether this list is declared or observed to hold multiple/dynamic object types, in which case
+ * row actions must always use the composite `<className>:<primaryKey>` key and reject bare primary keys.
+ */
+const requiresCompositeRowKey = computed<boolean>(() => {
+  if (datumName === "objects" || !rowObjectType) return true;
+  const isUnionState = (stateName: string | undefined) => {
+    if (!stateName) return false;
+    const field = panel.manifest.state[stateName];
+    if (!field) return false;
+    return field.type.kind === "object-union"
+      || (field.type.kind === "list" && field.type.items.kind === "object-union");
+  };
+  if (
+    isUnionState(placement.inputs?.selected && "state" in placement.inputs.selected ? placement.inputs.selected.state : undefined)
+    || isUnionState(placement.outputs?.selected?.state)
+    || isUnionState(placement.outputs?.checked?.state)
+  ) {
+    return true;
+  }
+  const fallback = activeType.value ?? rowObjectType;
+  return rows.value.some((item) => Boolean(item.className && item.className !== fallback));
+});
+
+/** Briefly waits for an in-flight initial list load to settle so row actions do not falsely report `action_not_found`. */
+function waitForInitialRowsLoad(timeoutMs = 2000): Promise<boolean> {
+  if (datumState.value.status !== "loading") return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let done = false;
+    let stop: (() => void) | null = null;
+    const finish = (settled: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      stop?.();
+      resolve(settled);
+    };
+    const timer = setTimeout(() => finish(datumState.value.status !== "loading"), timeoutMs);
+    stop = watch(
+      () => datumState.value.status,
+      (status) => {
+        if (listUnmounted || panel.instance.isDisposed()) finish(false);
+        else if (status !== "loading") finish(true);
+      },
+      { immediate: true },
+    );
+  });
+}
+
+/**
+ * Resolves a loaded row by composite `<className>:<primaryKey>` key first (required for mixed-type and
+ * dynamic-type lists), falling back to plain `primaryKey` only on fixed single-type lists when unambiguous.
  */
 function findLoadedRowByKey(
   rowKey: string,
@@ -2052,6 +2111,13 @@ function findLoadedRowByKey(
       ok: false,
       reason: "input_required",
       message: `Row key '${rowKey}' matched multiple loaded rows.`,
+    };
+  }
+  if (requiresCompositeRowKey.value) {
+    return {
+      ok: false,
+      reason: "input_required",
+      message: `Row key '${rowKey}' must use the composite '<className>:<primaryKey>' format on a multi-type or dynamic-type list.`,
     };
   }
   const plainMatches = rows.value.filter((item) => item.primaryKey === rowKey);
@@ -2191,6 +2257,14 @@ async function executeRowOperation(
               applyRowAnswer({ ...confirmed, named: deferred.named });
               return classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
             } catch (dispatchReason) {
+              if (dispatchReason instanceof PanelSubmissionStaleError) {
+                return {
+                  ok: false,
+                  intentId: preparation.intentId,
+                  reason: "stale",
+                  message: dispatchReason.message,
+                };
+              }
               rowOpFailure.value = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
               return {
                 ok: false,
@@ -2302,6 +2376,16 @@ watch(
           if (!rowKey) {
             return { ok: false, reason: "input_required", message: `Row action '${operationName}' requires rowKey.` };
           }
+          if (datumState.value.status === "loading" && (!initialLoadDone || rows.value.length === 0)) {
+            const settled = await waitForInitialRowsLoad();
+            if (!settled || listUnmounted || panel.instance.isDisposed()) {
+              return {
+                ok: false,
+                reason: "action_not_ready",
+                message: `List is still loading rows for action '${operationName}'.`,
+              };
+            }
+          }
           const matched = findLoadedRowByKey(rowKey);
           if (!matched.ok) {
             return { ok: false, reason: matched.reason, message: matched.message };
@@ -2389,7 +2473,7 @@ watch(
           }
           return { ok: true, outcome: rowOpOutcome.value ?? undefined };
         },
-        { scope: "row" },
+        { scope: "row", entryInstanceId: () => listInstanceId.value },
       ),
     );
   },

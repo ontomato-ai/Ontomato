@@ -1550,7 +1550,30 @@ async function saveBoardFromAction(operation, agentRun) {
   };
 }
 
+function currentActiveCardId() {
+  if (parametersOpen.value && parametersCard.value?.id) return parametersCard.value.id;
+  return selectedCardId() || "";
+}
+
+function snapshotMeta() {
+  const dashboardId = normalizeId(props.dashboardId) || undefined;
+  const cardId = currentActiveCardId() || undefined;
+  return {
+    ...(dashboardId ? { dashboardId } : {}),
+    ...(cardId ? { cardId } : {}),
+  };
+}
+
 async function fillForm(request) {
+  const activeDashboardId = normalizeId(props.dashboardId) || null;
+  if (request.expectedDashboardId !== undefined && request.expectedDashboardId !== activeDashboardId) {
+    return {
+      ok: false,
+      reason: "stale",
+      ...(request.member ? { member: request.member } : {}),
+      message: "The displayed dashboard board changed since the last observation.",
+    };
+  }
   if (request.member === "board") {
     const id = normalizeId(props.dashboardId);
     if (!id || !Array.isArray(chartGroups.value)) {
@@ -1648,6 +1671,15 @@ async function fillForm(request) {
       message: `No form '${request.member}' exists on this dashboard page.`,
     };
   }
+  const activeCardId = currentActiveCardId() || null;
+  if (request.expectedCardId !== undefined && request.expectedCardId !== activeCardId) {
+    return {
+      ok: false,
+      reason: "stale",
+      member: "card.parameters",
+      message: "The selected dashboard card changed since the last observation.",
+    };
+  }
   const selectedId = selectedCardId();
   if (!parametersOpen.value) {
     const opened = await openParametersForCard(selectedId);
@@ -1685,6 +1717,31 @@ async function fillForm(request) {
 
 async function executeAction(request) {
   const operation = request.operation;
+  const activeDashboardId = normalizeId(props.dashboardId) || null;
+  if (request.expectedDashboardId !== undefined && request.expectedDashboardId !== activeDashboardId) {
+    return {
+      ok: false,
+      reason: "stale",
+      operation,
+      message: "The displayed dashboard board changed since the last observation.",
+    };
+  }
+  const isCardScopedAction =
+    operation === "card.parameters.save"
+    || operation === "card.parameters.discard"
+    || (operation === "card.parameters.open" && typeof request.input?.cardId !== "string")
+    || ((operation === "form.save" || operation === "form.discard") && parametersOpen.value);
+  if (isCardScopedAction && request.expectedCardId !== undefined) {
+    const activeCardId = currentActiveCardId() || null;
+    if (request.expectedCardId !== activeCardId) {
+      return {
+        ok: false,
+        reason: "stale",
+        operation,
+        message: "The selected dashboard card changed since the last observation.",
+      };
+    }
+  }
   if (operation === "page.refresh") {
     const id = normalizeId(props.dashboardId);
     if (id) await loadDashboardAll(id);
@@ -1754,6 +1811,7 @@ defineExpose({
     return id ? loadDashboardAll(id) : Promise.resolve();
   },
   isDirty: () => isDirty.value,
+  snapshotMeta,
   selectCardById,
   openParametersForCard,
   fillForm,

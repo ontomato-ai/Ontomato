@@ -311,13 +311,26 @@ it("fills editable fields live in the form and its field projections, marked and
   expect(context.instance.dirty()).toBe(true);
   expect(formSaveCalls(sent)).toEqual([]);
 
-  // A second fill while dirty is refused unless overwriteUnsaved is explicitly true.
+  // Agent refining its own previously filled field merges cleanly without blocked_unsaved.
+  const refined = await context.instance.fillForm({
+    member: "definition",
+    values: { "/name": "Analyst v2b" },
+  });
+  expect(refined).toMatchObject({ ok: true, member: "definition", filledFields: ["/name"] });
+  expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst v2b");
+
+  // A manual user edit on a field blocks agent overwrite on that field unless overwriteUnsaved is explicitly true.
+  const nameInput = fieldItem("/name")!.querySelector("input")!;
+  nameInput.value = "Analyst user edit";
+  nameInput.dispatchEvent(new Event("input"));
+  await vi.waitFor(() => expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst user edit"));
+
   const blocked = await context.instance.fillForm({
     member: "definition",
     values: { "/name": "Analyst v3" },
   });
   expect(blocked).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "definition" });
-  expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst v2");
+  expect(fieldItem("/name")?.querySelector("input")?.value).toBe("Analyst user edit");
 
   const overwritten = await context.instance.fillForm({
     member: "definition",

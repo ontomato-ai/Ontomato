@@ -79,7 +79,7 @@ export interface PanelFormAdapter {
    */
   fill?(
     values: Readonly<Record<string, RuntimeJsonValue>>,
-    options?: { overwriteUnsaved?: boolean; expectedTarget?: ExpectedPageTarget },
+    options?: { overwriteUnsaved?: boolean; expectedFormInstanceId?: string; expectedTarget?: ExpectedPageTarget },
   ): Promise<PanelFormAdapterFillResult>;
   /** Saves what the form holds now, through the owner, at the revision it was read at where the owner has one. */
   submit(override?: FormSubmitOverride): Promise<unknown>;
@@ -128,10 +128,17 @@ export class PanelFormAdapters {
   async fill(
     slot: string,
     values: Readonly<Record<string, RuntimeJsonValue>>,
-    options?: { overwriteUnsaved?: boolean; expectedTarget?: ExpectedPageTarget },
+    options?: { overwriteUnsaved?: boolean; expectedFormInstanceId?: string; expectedTarget?: ExpectedPageTarget },
   ): Promise<FormFillOutcome> {
     const adapter = this.#bySlot.get(slot);
-    if (!adapter) return { ok: false, reason: "form_not_found", member: slot, message: `Form '${slot}' is not mounted` };
+    if (!adapter) {
+      return {
+        ok: false,
+        reason: options?.expectedFormInstanceId !== undefined ? "stale" : "form_not_found",
+        member: slot,
+        message: `Form '${slot}' is not mounted`,
+      };
+    }
     if (!adapter.fill) return { ok: false, reason: "form_not_ready", member: slot, message: `Form '${slot}' does not support live filling` };
     const result = await adapter.fill(values, options);
     return result.ok

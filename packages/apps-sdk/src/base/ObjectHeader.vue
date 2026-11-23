@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, watch } from "vue";
+import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
+import { randomId } from "@ontomato/contracts/random-id";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
@@ -297,6 +298,18 @@ const headerOwnedOperationNames = computed<readonly string[]>(() => {
   return headerOperationSpecs.value.filter((name) => !inlineSet.has(name));
 });
 
+const headerEntryInstanceId = ref(randomId());
+watch(
+  () => JSON.stringify({
+    recordKey: record.value?.primaryKey ?? null,
+    inputs: member.value?.inputs.value ?? null,
+    checked: panel?.instance.checkedKeys() ?? null,
+  }),
+  (next, prev) => {
+    if (next !== prev) headerEntryInstanceId.value = randomId();
+  },
+);
+
 let unregisterHeaderActions: (() => void)[] = [];
 function clearHeaderActionHandlers() {
   for (const unregister of unregisterHeaderActions) unregister();
@@ -380,6 +393,7 @@ watch(
           }
           return { ok: true, outcome: moreOutcome.value ?? undefined };
         },
+        { entryInstanceId: () => headerEntryInstanceId.value },
       ),
     );
   },
