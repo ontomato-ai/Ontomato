@@ -14,7 +14,8 @@ const props = defineProps<{ task: ChannelAgentTask; sessionId: string }>();
 const shell = inject(shellContextKey)!;
 const labels = computed(() => shell.labels.value.tasks!);
 const running = computed(() => props.task.status === "running" || props.task.status === "starting");
-const { open, toggle } = useAutoFold(() => running.value);
+// The outer process already shows live progress. Keep retrieval details steady as the task changes state.
+const { open, toggle } = useAutoFold(() => !props.task.retrieval && running.value);
 const visited = ref(open.value);
 watch(open, value => { if (value) visited.value = true; });
 
@@ -24,14 +25,19 @@ function reason(error: AgentTaskError) {
 </script>
 
 <template>
-  <div :id="`agent-task-${task.id}`" class="task" :class="{ open }">
+  <div :id="`agent-task-${task.id}`" class="task" :class="{ open, retrieval: !!task.retrieval }">
     <component :is="task.process.mode === 'page' ? 'a' : 'button'" :type="task.process.mode === 'page' ? undefined : 'button'" :href="task.process.mode === 'page' ? task.process.href : undefined" class="task-summary" :aria-expanded="task.process.mode === 'page' ? undefined : open" @click="task.process.mode !== 'page' && toggle()">
       <LoaderCircle v-if="running" :size="14" class="spin" />
       <CircleAlert v-else-if="task.status === 'failed'" :size="14" class="danger" />
       <Database v-else :size="14" />
       <span v-if="task.retrieval" class="executor">{{ labels.retriever }}</span>
-      <span class="status">{{ labels.status[task.status] }}</span>
-      <span class="detail">{{ task.title }}</span>
+      <span class="status">
+        <template v-if="task.retrieval">
+          <span v-for="(label, state) in labels.status" :key="state" class="status-size" aria-hidden="true">{{ label }}</span>
+        </template>
+        <span>{{ labels.status[task.status] }}</span>
+      </span>
+      <span class="detail" :title="task.title">{{ task.title }}</span>
       <ChevronRight :size="14" class="chevron" />
     </component>
     <div v-if="visited && task.process.mode !== 'page'" v-show="open" class="task-body">
@@ -74,8 +80,17 @@ function reason(error: AgentTaskError) {
   color: var(--el-text-color-secondary);
   font: inherit;
   font-size: var(--text-sm, 13px);
+  line-height: var(--leading-sm);
   cursor: pointer;
   transition: background-color var(--transition-fast, 150ms);
+}
+.retrieval .task-summary {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: start;
+}
+.task-summary > svg {
+  flex-shrink: 0;
 }
 .task-summary:hover {
   background: var(--el-fill-color);
@@ -91,9 +106,18 @@ function reason(error: AgentTaskError) {
   font-weight: 500;
 }
 .status {
+  display: inline-grid;
   flex-shrink: 0;
+  white-space: nowrap;
+}
+.status > span {
+  grid-area: 1 / 1;
+}
+.status-size {
+  visibility: hidden;
 }
 .detail {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
