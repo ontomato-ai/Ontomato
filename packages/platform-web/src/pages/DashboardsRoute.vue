@@ -6,7 +6,7 @@ import {
   DashboardHome, useDashboardStore, type DashboardSurface,
 } from "@ontomato/workbench-ui/features/dashboard";
 import { DASHBOARDS_PAGE_SKILL } from "@ontomato/workbench-ui/features/workbench";
-import { PageComposer } from "@ontomato/agent-shell-ui";
+import { PageComposer, type DisplayObjectRefresh, type DisplayPageController } from "@ontomato/agent-shell-ui";
 import AppPage from "./AppPage.vue";
 
 /**
@@ -27,8 +27,10 @@ const props = withDefaults(
     dashboardId?: string;
     /** The page's own navigation beside a conversation: the conversation's parameter, not the browser's address. */
     navigate?: (next: { dashboardId?: string }) => void;
+    objectRefresh?: DisplayObjectRefresh | null;
+    registerPageController?: (controller: DisplayPageController) => () => void;
   }>(),
-  { paired: false, dashboardId: undefined, navigate: undefined },
+  { paired: false, dashboardId: undefined, navigate: undefined, objectRefresh: null, registerPageController: undefined },
 );
 
 const { t } = useI18n();
@@ -87,7 +89,10 @@ const page = computed(
     title: t('assistant.featureDashboards'),
     labels: { save: t('common.save'), discard: t('common.cancel'), unsavedChanges: t('admin.unsavedChanges') },
   }">
-    <DashboardHome />
+    <DashboardHome
+      :object-refresh="props.objectRefresh"
+      :register-page-controller="props.registerPageController"
+    />
     <template v-if="!props.paired" #foot>
       <!-- The page's own composer offers the agents this page can work with, the same declaration the conversation reads. -->
       <p v-if="problem" class="page-composer-error" role="alert">{{ problem }}</p>

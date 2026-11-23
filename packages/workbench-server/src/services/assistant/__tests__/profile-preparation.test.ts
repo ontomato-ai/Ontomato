@@ -20,7 +20,7 @@ const digest = 'a'.repeat(64);
 function request(executionUserId:string|null=null):AssistantPreparation {
  return {a:{id:'agent',kind:'regular',skills:[analyst],enabled_mcp_service_ids:['external'],model_selection:{modelId:null}},session:{id:'session',agent_id:'agent'},turn:{id:'run',created_at:new Date(),retrieval_scope_id:'run',class_names:['Person']},message:'Question',inputId:'input',input:{role:'user',content:'Question',timestamp:1},ontologyContext:null,owner:{domainId:'domain',userId:'human'},credentials:{token:'human-secret',locale:'en'},executionUserId,executionCredentials:executionUserId===null?{token:'human-secret',locale:'en'}:{apiKey:'executor-key',locale:'en',executionUserId}} as unknown as AssistantPreparation;
 }
-beforeEach(()=>{vi.resetAllMocks();mocks.source.mockResolvedValue(null);mocks.open.mockResolvedValue({id:"run"});mocks.profile.mockResolvedValue(null);mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageDrafts:true});mocks.callback.mockReturnValue({value:'sealed-callback'});mocks.overview.mockResolvedValue('Ontology');mocks.environment.mockImplementation(credentials=>({values:{},secrets:{ONTOMATO_TK:credentials.token}}));});
+beforeEach(()=>{vi.resetAllMocks();mocks.source.mockResolvedValue(null);mocks.open.mockResolvedValue({id:"run"});mocks.profile.mockResolvedValue(null);mocks.skills.mockResolvedValue({skills:[{skill:analyst,digest}],pageControl:true});mocks.callback.mockReturnValue({value:'sealed-callback'});mocks.overview.mockResolvedValue('Ontology');mocks.environment.mockImplementation(credentials=>({values:{},secrets:{ONTOMATO_TK:credentials.token}}));});
 it('limits a Profile run to frozen projection tools without inherited skills or model-readable human credentials',async()=>{
  mocks.source.mockResolvedValue({profileId:'profile'});
  mocks.profile.mockResolvedValue({id:'profile',agentId:'agent',releaseId:'release',instructions:'Instructions',tools:[],contextViews:[]});
@@ -62,7 +62,7 @@ it('exposes structured external variables to the model and skill environment as 
 
 it.each(['regular','analysis'])('prepares the default %s with reusable chart producers and their shared instruction',async(kind)=>{
  const input=request();input.a.kind=kind;input.a.skills=defaultAssistantSkills;
- mocks.skills.mockResolvedValue({skills:input.a.skills.map(skill=>({skill,digest})),pageDrafts:false});mocks.environment.mockReturnValue({values:{},secrets:{}});
+ mocks.skills.mockResolvedValue({skills:input.a.skills.map(skill=>({skill,digest})),pageControl:false});mocks.environment.mockReturnValue({values:{},secrets:{}});
  const run=await prepareAnalystRun(input);
  for(const name of ['echarts','leaflet','admin-choropleth-map']){
    expect(run.definition.skills).toContainEqual({skill:{name,namespace:{kind:'provider',provider:'workbench'}},digest});
@@ -73,9 +73,9 @@ it.each(['regular','analysis'])('prepares the default %s with reusable chart pro
 });
 it('tells a run for the user that the page line only locates, so attributes are read rather than guessed',async()=>{
  const user=await prepareAnalystRun({...request(),reader:'user'});
- expect(user.definition.systemPrompt).toContain('That line only locates');
+ expect(user.definition.systemPrompt).toContain('that line only locates');
  expect(user.definition.systemPrompt).toContain("read its current value with the page skill's reads");
  // A delegated run is not read by the user and has no page beside it.
  const delegated=await prepareAnalystRun({...request(),reader:'delegated'});
- expect(delegated.definition.systemPrompt).not.toContain('That line only locates');
+ expect(delegated.definition.systemPrompt).not.toContain('that line only locates');
 });

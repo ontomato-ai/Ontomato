@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { runtimeJsonObjectSchema, runtimeJsonValueSchema } from "./agent-runtime-values";
 import { formFieldErrorSchema } from "./form-fields";
-import { pageDraftLinkSchema } from "./page-draft";
 import {
   panelMemberItemKeySchema,
   panelObjectRefSchema,
@@ -222,8 +221,6 @@ export const panelOperationCallSchema = z
     target: panelFormTargetSchema.nullable(),
     /** What the caller supplies, by the operation's `inputSchema`; a form save's is the owner's form values. */
     input: z.record(key, z.unknown()).default({}),
-    /** A create from an existing draft link; the host verifies the artifact and records the new object under its owner. */
-    draft: pageDraftLinkSchema.optional(),
   })
   .strict();
 export type PanelOperationCall = z.infer<typeof panelOperationCallSchema>;

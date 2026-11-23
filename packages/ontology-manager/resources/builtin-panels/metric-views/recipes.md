@@ -3,7 +3,7 @@
 This page manages this domain's metric views (`platform:MetricView`): browse and search the catalog, edit or create a
 metric view definition and its parameter bindings, test an unsaved definition against real data, batch-change
 publication status, and delete metrics. The page has no built-in natural-language generation button: new or updated
-definitions are prepared in this conversation, tested here, and drafted into the form for a person to review and save.
+definitions are prepared in this conversation, tested here, and filled into the live form for a person to review and save.
 
 ## Page structure
 
@@ -26,12 +26,13 @@ definitions are prepared in this conversation, tested here, and drafted into the
    `function.returnDef.columnLabels` (every output key labeled in the reader's language), `function.logic`,
    `matchQuestions`, and any `bindings` rows with values for every declared parameter. Declare every parameter the query
    package uses and no others; never copy another metric's values into `parameterDefs` as defaults.
-3. **Test on real data before drafting.** Use the two read-only trial operations declared on this page — `trial`
+3. **Test on real data before filling the form.** Use the two read-only trial operations declared on this page — `trial`
    (`metricViews.test`, Markdown output) and `trialJson` (`metricViews.testExecute`, raw JSON output with truncation
    metadata) — with `{ draft, parameters }`. Neither saves anything. Treat a truncated result as partial, never as the
    complete numbers.
-4. **Draft into the form and leave saving to the reader.** How to write the draft is in this page's generated skill;
-   the reader reviews it in the `definition` form and saves or discards it.
+4. **Fill the live form and leave saving to the reader (or confirm via `page_action`).** Open the target metric (or set
+   `creating: true` with `selected: null` via `present`), call `fill_form` on `definition`, and let the reader review
+   and save (or call `page_action` when requested).
 
 ## Owner rules this page shows and never rejudges
 

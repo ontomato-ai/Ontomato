@@ -532,9 +532,6 @@ const PanelsDirectory = {
       tab.value = "overview";
       clearNotices();
     }, { immediate: true });
-    watch(instance.draft, draft => {
-      if (draft) mode.value = draft.target.id ? "edit" : "create";
-    }, { immediate: true });
     // What the reader chose decides the page; the notices belong to the last write, so they stay.
     watch(selected, () => {
       if (mode.value === "create") return;

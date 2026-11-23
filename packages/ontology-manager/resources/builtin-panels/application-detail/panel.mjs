@@ -1,6 +1,5 @@
 import { computed, nextTick, watch } from "vue";
 import {
-  draftTarget,
   mountPanel,
   panelAddress,
   usePanelContext,
@@ -8,7 +7,6 @@ import {
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
-const APPLICATION = "platform:Application";
 const PANEL = "platform:ProductPanel";
 const PROJECTION = "platform:ProductProjection";
 const CATALOG_PATH = "/ontology/applications";
@@ -152,35 +150,6 @@ const ApplicationDetailPanel = {
       [recordReady, canGrant],
       ([ready, allowed]) => {
         if (ready && !allowed && tabModel.value === "grants") {
-          tabModel.value = "identity";
-        }
-      },
-      { immediate: true },
-    );
-
-    // Route incoming assistant drafts cleanly to the matching form/tab, or redirect create drafts to the catalogue.
-    watch(
-      instance.draft,
-      (draft) => {
-        if (!draft) return;
-        const target = draftTarget(draft);
-        if (target.kind === "create") {
-          void navigate(CATALOG_PATH).catch(() => undefined);
-          return;
-        }
-        if (target.id && target.id !== selectedKey.value) {
-          instance.state.set("selected", { className: APPLICATION, primaryKey: target.id });
-        }
-        if (draft.slot === "entriesForm") {
-          instance.state.setState({ tab: "entries", entriesView: "bulk" });
-        } else if (draft.slot === "entryForm") {
-          const draftEntryId = draft.form?.id;
-          instance.state.setState({
-            tab: "entries",
-            entriesView: "list",
-            editingEntryId: typeof draftEntryId === "string" && draftEntryId ? draftEntryId : "__new__",
-          });
-        } else {
           tabModel.value = "identity";
         }
       },

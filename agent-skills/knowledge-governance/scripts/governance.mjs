@@ -2,7 +2,6 @@ import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 const base = process.env.ONTOMATO_ONTOLOGY_URL?.replace(/\/$/, "");
 if (!base) throw new Error("Set ONTOMATO_ONTOLOGY_URL (see SKILL.md)");
-const markdownLink = (title, href) => `[${title.replace(/[\\[\]]/g, "\\$&")}](${href})`;
 const [command, arg] = process.argv.slice(2),
   platform = process.env.ONTOMATO_SKILL_SCENARIO === "platform",
   stateFile = platform ? "work/.governance-platform-window.json" : "work/.governance-run.json";
@@ -53,27 +52,21 @@ if (platform && command === "import-knowledge") {
   if (!response.ok || result.success !== true)
     throw new Error(`HTTP ${response.status}: ${JSON.stringify(result)}`);
   const existing = new Map(Object.entries(result.data));
-  const drafts = [];
-  await mkdir("outputs/drafts", { recursive: true });
-  for (const item of args.items) {
+  const items = args.items.map((item) => {
     const previous = existing.get(item.id);
-    const draft = {
-      pageKey: "business-knowledge",
-      operation: previous ? "knowledge.update" : "knowledge.create",
-      target: { objectType: "platform:BusinessKnowledge", ...(previous ? { id: previous.knowledgeID } : {}) },
+    return {
+      mode: previous ? "update" : "create",
+      ...(previous ? { id: previous.knowledgeID } : {}),
+      page: "/ontology/knowledge",
       form: {
-        knowledgeTitle: item.title, knowledgeText: item.text,
+        knowledgeTitle: item.title,
+        knowledgeText: item.text,
         knowledgeTags: item.tags ?? previous?.knowledgeTags ?? [],
         status: previous ? previous.status : 0,
       },
     };
-    const path = `outputs/drafts/knowledge-${randomUUID()}.page-draft.json`;
-    await writeFile(path, JSON.stringify(draft, null, 2));
-    const query = new URLSearchParams({ draftSessionId: process.env.ONTOMATO_SESSION_ID,
-      draftRunId: process.env.ONTOMATO_RUN_ID, draftPath: path });
-    drafts.push({ path, link: markdownLink(item.title, `#/ontology/knowledge?${query}`) });
-  }
-  console.log(JSON.stringify({ drafts }, null, 2));
+  });
+  console.log(JSON.stringify({ items }, null, 2));
   process.exit(0);
 }
 let state = null;

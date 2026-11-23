@@ -2,7 +2,6 @@ import type { Component } from "vue";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
 import type { RuntimeRunStatus } from "@ontomato/contracts/agent-runtime-values";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 
 export type ArtifactPresentation = "inline" | "panel";
 
@@ -141,8 +140,6 @@ export interface ShellPanelOperationsPort {
   read(sessionId: string): Promise<boolean | null>;
   /** Resolves to the value the host now holds. */
   write(sessionId: string, confirmBeforeExecute: boolean): Promise<boolean>;
-  /** Notifies the server that the user manually edited an unsaved form, invalidating pending agent save confirmations. */
-  notifyFormEdited?(sessionId: string, target: PanelFormEditedTarget): Promise<void>;
   /** Cancels a pending agent-page intent bound to a question when the original live page instance is gone. */
   cancelPendingQuestionIntent?(
     questionId: string,

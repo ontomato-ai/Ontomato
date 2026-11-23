@@ -2,7 +2,7 @@
   <div
     ref="rootRef"
     class="chart-container"
-    :class="{ 'chart-container--draft': draft, 'chart-container--selected': selected }"
+    :class="{ 'chart-container--selected': selected }"
     tabindex="0"
     role="group"
     :aria-labelledby="titleId"
@@ -12,7 +12,7 @@
   >
     <div class="chart-header">
       <div class="chart-heading">
-        <h3 :id="titleId" :title="shownTitle">{{ shownTitle }}</h3>
+        <h3 :id="titleId" :title="title">{{ title }}</h3>
         <span
           v-if="partialNotice && state !== 'empty'"
           class="chart-partial"
@@ -30,19 +30,6 @@
           @command="handleCommand"
         />
       </div>
-      <!-- A draft's marks sit under the name it gives, so a narrow card still shows that name and the chart's change. -->
-      <div v-if="renamed || chartChanged" class="chart-draft-marks">
-        <del v-if="renamed" class="chart-original-name" :title="title">{{ title }}</del>
-        <span
-          v-if="chartChanged"
-          class="chart-draft-badge"
-          role="note"
-          :title="t('dashboard.draft.chartChanged')"
-          :aria-label="t('dashboard.draft.chartChanged')"
-        >
-          {{ t("dashboard.draft.chartChanged") }}
-        </span>
-      </div>
     </div>
     <div
       v-loading="loading"
@@ -52,8 +39,8 @@
       <div class="chart-wrapper__canvas">
         <MetricChart
           v-if="state === 'ready'"
-          :key="drawnFile.name"
-          :file="drawnFile.content"
+          :key="chart.chartFile.name"
+          :file="chart.chartFile.content"
           :metric="output"
           height="100%"
           :empty="t('common.noData')"
@@ -77,8 +64,8 @@
     <ChartZoomModal
       :open="modalOpen"
       :mode="modalMode"
-      :title="shownTitle"
-      :file="drawnFile.content"
+      :title="title"
+      :file="chart.chartFile.content"
       :metric="output"
       :table="table"
       @close="closeZoom"
@@ -110,18 +97,10 @@ const { t } = useI18n();
 
 /**
  * One chart card: the platform's chart draws the card's own `.chart.json` file filled from the metric's current output.
- * A draft may name another file or another name for the same card; it draws that file over this output and touches
- * nothing the card has saved.
  */
 const props = defineProps({
   chart: { type: Object, required: true },
   dashboardId: { type: String, default: "" },
-  /** A draft's chart file for this card, drawn over the saved one. */
-  previewFile: { type: Object, default: null },
-  /** A draft's name for this card. */
-  previewName: { type: String, default: "" },
-  /** Whether the card is shown as a draft: it says so, and does not save its layout while it is one. */
-  draft: { type: Boolean, default: false },
   /** Whether this card is the one the reader chose: a message sent from beside the page asks about it. */
   selected: { type: Boolean, default: false },
 });
@@ -140,11 +119,6 @@ const titleId = useId();
 let interactable = null;
 const loading = computed(() => props.chart.state === "loading");
 const title = computed(() => String(props.chart?.title || props.chart?.name || ""));
-const renamed = computed(() => Boolean(props.previewName) && props.previewName !== title.value);
-const shownTitle = computed(() => (props.previewName ? props.previewName : title.value));
-const chartChanged = computed(() => Boolean(props.previewFile));
-/** The file this card draws: the draft's when it names one, otherwise the card's saved file. */
-const drawnFile = computed(() => (props.previewFile ? props.previewFile : props.chart.chartFile));
 /** This refresh's output for the card; the platform's chart fills it into the file. */
 const output = computed(() => ({
   columns: props.chart.columns ?? [],
@@ -158,7 +132,7 @@ const TABLE_ROWS = 500;
 /** The data table and the zoomed table read this refresh's rows, written in the formats the card's file states. */
 const table = computed(() => {
   const data = { columns: output.value.columns, rows: output.value.rows, truncation: props.chart.truncation ?? null };
-  const table = chartCardTable(drawnFile.value.content, data);
+  const table = chartCardTable(props.chart.chartFile.content, data);
   return { columns: table.columns, rows: table.rows.slice(0, TABLE_ROWS) };
 });
 
@@ -176,7 +150,7 @@ function handleViewQuery() {
 
 /** The reader asked for this card: one card is chosen at a time, and choosing it again keeps it chosen. */
 function select() {
-  emit("select", { id: props.chart.id, name: shownTitle.value, kind: "chart" });
+  emit("select", { id: props.chart.id, name: title.value, kind: "chart" });
 }
 
 /** A tool or the resize handle acts on the card; choosing it is the reader pointing at the card itself. */
@@ -330,11 +304,6 @@ onBeforeUnmount(() => {
   border-color: var(--el-border-color-dark);
 }
 
-.chart-container--draft {
-  border-color: var(--el-color-primary);
-  border-style: dashed;
-}
-
 .chart-container--selected {
   border-color: var(--el-color-primary);
   box-shadow: 0 0 0 1px var(--el-color-primary);
@@ -363,36 +332,6 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
-}
-
-/*
- * A draft's marks, under its name: the name it replaces, struck out and shortened when the card is narrow, then the
- * chart's own change, which is always whole.
- */
-.chart-draft-marks {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-}
-
-.chart-original-name {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--el-text-color-tertiary);
-  font-size: var(--text-xs);
-  text-decoration: line-through;
-}
-
-.chart-draft-badge {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-  font-size: var(--text-xs);
 }
 
 .chart-wrapper {

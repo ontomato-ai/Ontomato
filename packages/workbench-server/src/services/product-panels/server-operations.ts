@@ -91,7 +91,7 @@ export type PanelWriteServerOperation = ServerOperation & (
     batch: false;
     draftOperation(target: PanelOperationTarget): string;
     draftInput(input: Record<string, unknown>, target: PanelOperationTarget): Record<string, unknown>;
-    formInstructions: string;
+
     create?: {
       draftValues(values: unknown, domainId: string): Record<string, unknown>;
       createdObject(data: unknown): PanelObjectIdentity;

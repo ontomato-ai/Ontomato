@@ -120,14 +120,6 @@ await mountPanel({
       if (!sel && !isEditing) detailOpen.value = false;
     });
 
-    const activeDraft = computed(() => {
-      const candidate = instance.draft;
-      if (candidate && typeof candidate === "object" && "value" in candidate) {
-        return candidate.value ?? null;
-      }
-      return candidate ?? null;
-    });
-
     let revertingMode = false;
     watch(
       mode,
@@ -137,7 +129,7 @@ await mountPanel({
           return;
         }
         if (next === "create") {
-          if (prev === "edit" && !activeDraft.value) {
+          if (prev === "edit") {
             if (!(await confirmLeave())) {
               revertingMode = true;
               instance.state.set("mode", "edit");
@@ -230,23 +222,6 @@ await mountPanel({
       instance.state.setState({ ...(ref ? { selected: ref, formTarget: ref } : {}), mode: "view" });
       detailOpen.value = true;
     }
-
-    watch(
-      activeDraft,
-      (draft) => {
-        if (!draft) return;
-        detailOpen.value = true;
-        if (draft.target?.id) {
-          const ref = { className: TYPE, primaryKey: draft.target.id };
-          returnTarget.value = ref;
-          instance.state.setState({ selected: ref, formTarget: ref, mode: "edit" });
-        } else {
-          if (selected.value) returnTarget.value = selected.value;
-          instance.state.setState({ selected: null, formTarget: null, mode: "create" });
-        }
-      },
-      { immediate: true },
-    );
 
     let observer;
     onMounted(() => {

@@ -84,14 +84,6 @@ await mountPanel({
       if (listed(before.rows) && !listed(now.rows)) instance.state.set("selected", null);
     });
 
-    // A draft opens the form: in creation for a new attribute, in editing for an existing one. A create draft brings its
-    // own owner type, so the page stops fixing the class it was filtered to.
-    watch(instance.draft, draft => {
-      if (!draft) return;
-      if (draft.target?.id) setCreating(false);
-      else instance.state.setState({ creating: true, createIn: null });
-    }, { immediate: true });
-
     return {
       selected, selectedKey, selectedVisible, isPrimaryKey, className, search, typesData, rowsData, detail, creating, createDialog, types, rows, visibleRows,
       ownerLabel, countText, setClassName, setSearch, isSelected, selectRow, closeEditor, onSaved, onDiscarded, yes, openOwner,

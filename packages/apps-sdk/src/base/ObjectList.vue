@@ -204,7 +204,7 @@ const props = withDefaults(
     /** How many items a page holds when the owner's read pages (a query's cursor, or page numbers); 20 by default. */
     pageSize?: number;
     /**
-     * Automatically selects the first listed item only in two cases (and never while a draft is active):
+     * Automatically selects the first listed item only in two cases:
      * (a) on first showing when nothing is selected yet, and
      * (b) after the reader changes search or filter parameters and the previously selected item is no longer listed
      *     (selecting the first new match, or clearing selection to null when no items match).
@@ -1216,7 +1216,7 @@ function applyFallback(listed: readonly PlatformObjectRecord[]) {
   const filterChanged = pendingFilterFallback;
   pendingFilterFallback = false;
 
-  if (!hasSelectedBinding || !props.fallbackToFirst || panel.instance.draft.value !== null) return;
+  if (!hasSelectedBinding || !props.fallbackToFirst) return;
 
   // (a) First showing with no selection yet: pick the first row when non-empty.
   if (isInitialLoad) {
@@ -1640,20 +1640,6 @@ watch(rows, (listed) => {
   if (!listed.some((row) => rowIdentityKey(row) === expandedKey.value)) {
     expandedKey.value = null;
   }
-});
-
-let unregisterRowDetailHost: (() => void) | undefined;
-watch(
-  hasRowDetailSlot,
-  (present) => {
-    unregisterRowDetailHost?.();
-    unregisterRowDetailHost = present ? panel.instance.forms.registerRowDetailHost(member.key) : undefined;
-  },
-  { immediate: true },
-);
-onBeforeUnmount(() => {
-  unregisterRowDetailHost?.();
-  unregisterRowDetailHost = undefined;
 });
 
 const activeRowLabel = ref<string | null>(null);

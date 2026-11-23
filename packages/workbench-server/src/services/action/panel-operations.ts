@@ -99,7 +99,6 @@ const deleteActionImpact: PanelImpactInspector = {
   },
 };
 
-const formInstructions = "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 export const m6ServerOperations = [
   {
@@ -115,7 +114,7 @@ export const m6ServerOperations = [
     resultSchema: savedIdSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "action.create" : "action.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     create: {
       draftValues(values: unknown) {
         return runtimeJsonObjectSchema.parse(values);

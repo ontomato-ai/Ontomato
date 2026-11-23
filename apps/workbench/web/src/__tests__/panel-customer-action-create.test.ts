@@ -148,7 +148,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
     }
   });
 
-  it("agent create draft follows the exact same clean settlement when targetless Action omits primaryKey", async () => {
+  it("live fillForm create follows the exact same clean settlement when targetless Action omits primaryKey", async () => {
     const harness = mountCreatePanel({
       manifest,
       projections,
@@ -163,31 +163,17 @@ describe("ObjectForm create mode with targetless customer Action", () => {
       const customerInput = () => harness.element.querySelector<HTMLInputElement>('[data-field="/customer"] input')!;
       await vi.waitFor(() => expect(customerInput()).not.toBeNull());
 
-      // Receive an agent create draft on the form.
-      const link = { sessionId: "s-1", runId: "r-1", path: "outputs/drafts/new-order.page-draft.json" };
-      const draft = {
-        pageKey: "customer-orders",
-        operation: "CustomerOrder.create",
-        target: { objectType: ORDER },
-        form: { customer: "Agent Corp", amount: 88 },
-      };
-      harness.instance.forms.hold(
-        draft,
-        link,
-        harness.instance.receiveDraft,
-        () => true,
-        () => {},
-        harness.instance.rollbackDraft,
-      );
+      const filled = await harness.instance.fillForm({
+        member: "orderForm",
+        values: { "/customer": "Agent Corp", "/amount": 88 },
+      });
+      expect(filled).toMatchObject({ ok: true, member: "orderForm", filledFields: ["/customer", "/amount"] });
       await vi.waitFor(() => expect(customerInput().value).toBe("Agent Corp"));
-      expect(harness.instance.draft.value?.slot).toBe("orderForm");
 
       await harness.instance.forms.submit("orderForm");
 
       expect(harness.savedEvents).toEqual([{ className: ORDER, primaryKey: null }]);
       expect(harness.element.querySelector('[role="alert"]')).toBeNull();
-      expect(harness.instance.draft.value).toBeNull();
-      expect(harness.recordedDrafts).toEqual([]);
       expect(harness.instance.forms.dirty("orderForm")).toBe(false);
       expect(customerInput().value).toBe("");
       await vi.waitFor(() => expect(document.querySelector(".el-message--success")?.textContent).toContain(publicEn.platform.operationDone));
@@ -236,7 +222,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
     }
   });
 
-  it("switches to the newly created object on a save receipt with a unique primary key", async () => {
+  it("switches to the newly created object when live executeAction saves a filled create form", async () => {
     const harness = mountCreatePanel({
       manifest,
       projections,
@@ -258,33 +244,34 @@ describe("ObjectForm create mode with targetless customer Action", () => {
       const customerInput = () => harness.element.querySelector<HTMLInputElement>('[data-field="/customer"] input')!;
       await vi.waitFor(() => expect(customerInput()).not.toBeNull());
 
-      const link = { sessionId: "s-1", runId: "r-3", path: "outputs/drafts/order-3.page-draft.json" };
-      const draft = {
-        pageKey: "customer-orders",
-        operation: "CustomerOrder.create",
-        target: { objectType: ORDER },
-        form: { customer: "New Co", amount: 55 },
-      };
-      harness.instance.forms.hold(draft, link, harness.instance.receiveDraft, () => true, () => {}, harness.instance.rollbackDraft);
+      const filled = await harness.instance.fillForm({
+        member: "orderForm",
+        values: { "/customer": "New Co", "/amount": 55 },
+      });
+      expect(filled).toMatchObject({ ok: true, member: "orderForm", filledFields: ["/customer", "/amount"] });
       await vi.waitFor(() => expect(customerInput().value).toBe("New Co"));
 
-      // Server `/operate` dispatch reports a unique created object in affected.objects.
-      harness.instance.refresh(
-        { objects: [{ objectType: ORDER, primaryKey: "ord-99" }], objectTypes: [ORDER] },
-        { operationId: "orderForm.save", panelId: "panel-orders", target: null },
-      );
+      harness.setOutcome({
+        kind: "success",
+        data: { result: "{\"id\":\"ord-99\"}", affects: [ORDER] },
+        affected: { objects: [{ objectType: ORDER, primaryKey: "ord-99" }], objectTypes: [ORDER] },
+      });
 
+      const executed = await harness.instance.executeAction({
+        operation: "orderForm.save",
+        agentRun: { sessionId: "11111111-1111-4111-8111-111111111111", runId: "22222222-2222-4222-8222-222222222222" },
+      });
+      expect(executed).toMatchObject({ ok: true, kind: "executed", operation: "orderForm.save" });
       await vi.waitFor(() => expect(harness.savedEvents).toEqual([{ className: ORDER, primaryKey: "ord-99" }]));
-      expect(harness.prepared).toHaveLength(0);
+      expect(harness.prepared).toHaveLength(1);
       expect(harness.instance.state.values.value.selected).toEqual({ className: ORDER, primaryKey: "ord-99" });
-      await vi.waitFor(() => expect(harness.recordedDrafts).toEqual([{ link, created: "ord-99" }]));
-      expect(harness.instance.draft.value).toBeNull();
+      expect(harness.instance.forms.dirty("orderForm")).toBe(false);
     } finally {
       harness.unmount();
     }
   });
 
-  it("emits form-edited on edit-mode Discard and settles edit ObjectForm on a save receipt", async () => {
+  it("discards edit-mode live fill cleanly and settles edit ObjectForm when executeAction saves", async () => {
     const editOrderDescriptor: PanelOwnerOperationDescriptor = {
       ...createOrderDescriptor,
       label: "Update order",
@@ -301,7 +288,6 @@ describe("ObjectForm create mode with targetless customer Action", () => {
     };
     let serverCustomer = "Old Co";
     let listReadCount = 0;
-    const formEditedEvents: unknown[] = [];
     const harness = mountCreatePanel({
       manifest,
       projections: editProjections,
@@ -323,61 +309,42 @@ describe("ObjectForm create mode with targetless customer Action", () => {
         });
       },
     });
-    harness.instance.onFormEdited((target) => formEditedEvents.push(target));
     try {
       const customerInput = () => harness.element.querySelector<HTMLInputElement>('[data-field="/customer"] input')!;
       await vi.waitFor(() => expect(customerInput()?.value).toBe("Old Co"));
       await vi.waitFor(() => expect(listReadCount).toBe(1));
 
-      // Agent delivers an edit draft into the open form.
-      const link1 = { sessionId: "s-2", runId: "r-1", path: "outputs/drafts/edit-1.page-draft.json" };
-      harness.instance.forms.hold(
-        {
-          pageKey: "customer-orders",
-          operation: "CustomerOrder.update",
-          target: { objectType: ORDER, id: "ord-1" },
-          form: { customer: "Draft Edit", amount: 10 },
-        },
-        link1,
-        harness.instance.receiveDraft,
-        () => true,
-        () => {},
-        harness.instance.rollbackDraft,
-      );
-      await vi.waitFor(() => expect(customerInput().value).toBe("Draft Edit"));
+      await harness.instance.fillForm({
+        member: "orderForm",
+        values: { "/customer": "Live Edit" },
+      });
+      await vi.waitFor(() => expect(customerInput().value).toBe("Live Edit"));
 
-      // User discards -> emits form-edited for that specific object target + slot.
       harness.instance.forms.discard("orderForm");
       await nextTick();
-      expect(formEditedEvents).toEqual([{ kind: "object", objectType: ORDER, primaryKey: "ord-1", slot: "orderForm" }]);
       expect(customerInput().value).toBe("Old Co");
+      expect(harness.instance.forms.dirty("orderForm")).toBe(false);
 
-      // Agent delivers a fresh edit draft and server `/operate` executes & broadcasts completion.
-      const link2 = { sessionId: "s-2", runId: "r-2", path: "outputs/drafts/edit-2.page-draft.json" };
-      harness.instance.forms.hold(
-        {
-          pageKey: "customer-orders",
-          operation: "CustomerOrder.update",
-          target: { objectType: ORDER, id: "ord-1" },
-          form: { customer: "Persisted Co", amount: 10 },
-        },
-        link2,
-        harness.instance.receiveDraft,
-        () => true,
-        () => {},
-        harness.instance.rollbackDraft,
-      );
+      await harness.instance.fillForm({
+        member: "orderForm",
+        values: { "/customer": "Persisted Co" },
+      });
       await vi.waitFor(() => expect(customerInput().value).toBe("Persisted Co"));
 
       serverCustomer = "Persisted Co";
-      harness.instance.refresh(
-        { objects: [{ objectType: ORDER, primaryKey: "ord-1" }], objectTypes: [ORDER] },
-        { operationId: "orderForm.save", panelId: "panel-orders", target: { objectType: ORDER, primaryKey: "ord-1" } },
-      );
+      harness.setOutcome({
+        kind: "success",
+        data: { result: "{\"ok\":true}", affects: [ORDER] },
+        affected: { objects: [{ objectType: ORDER, primaryKey: "ord-1" }], objectTypes: [ORDER] },
+      });
+      const executed = await harness.instance.executeAction({
+        operation: "orderForm.save",
+        agentRun: { sessionId: "11111111-1111-4111-8111-111111111111", runId: "22222222-2222-4222-8222-222222222223" },
+      });
+      expect(executed).toMatchObject({ ok: true, kind: "executed", operation: "orderForm.save" });
 
       await vi.waitFor(() => expect(harness.savedEvents).toEqual([{ className: ORDER, primaryKey: "ord-1" }]));
-      expect(harness.prepared).toHaveLength(0);
-      await vi.waitFor(() => expect(harness.instance.draft.value).toBeNull());
+      expect(harness.prepared).toHaveLength(1);
       expect(harness.instance.forms.dirty("orderForm")).toBe(false);
       expect(customerInput().value).toBe("Persisted Co");
       await vi.waitFor(() => expect(listReadCount).toBe(2));

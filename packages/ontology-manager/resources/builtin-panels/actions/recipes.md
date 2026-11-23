@@ -2,8 +2,8 @@
 
 This page manages the domain's actions (`platform:Action`): reading them one by one, editing a definition, changing
 status, deleting what is no longer wanted, and reading the definition and code explanation the owner derives from the
-code. The page skill lists the projections, their reads and operations (read the current data, draft a change, call
-an operation); this adds what the page does not show.
+code. The page skill lists the projections, their reads and operations (read the current data, fill live forms, call
+an operation via `page_action`); this adds what the page does not show.
 
 ## What the page shows
 
@@ -21,10 +21,10 @@ an operation); this adds what the page does not show.
 
 - The selected action is in this message's page context: the `selection` with `className` `platform:Action` and the
   action id as `primaryKey`, or empty when nothing is selected. "This action" means it.
-- The form's content is what the owner's form read returns: read the action's `form` (the page skill gives the exact
-  read) for its `fields`, `values` and `save.draftOperation`. That is the definition form on the page now.
-- The reader's unsaved edits do not reach you; the page does not copy the form's values. Before confirming or
-  continuing the reader's edit, read the form once; when it differs from what you were about to change, say how.
+- The form's content is what the owner's form read returns (and `observe_display` shows the live mounted form values,
+  including unsaved user edits). Read the action's `form` for its `fields` and `values`.
+- Before editing or continuing the reader's edit, check `observe_display` and read the form once; when it differs from
+  what you were about to change, say how.
 - To explain what an action does, read its `explanation`: `codeSegments` are the explained parts of the code, each
   with its `codeRange` lines, `kindLabel` and `title`; `businessMeaning.operations` are what it does and
   `businessMeaning.negativeEffect` what can go wrong. `definition` is what the owner derives from the same code:
@@ -32,7 +32,7 @@ an operation); this adds what the page does not show.
 
 ## Running a definition in the owner's sandbox
 
-The owner adopts a draft that changes the code or the parameters only when the run that wrote the draft executed the
+The owner adopts a save that changes the code or the parameters only when the run that prepared it executed the
 same code and parameters in the owner's sandbox and the owner accepted it. This run reaches the owner's authoring
 endpoints under `$ONTOMATO_AUTHORING_URL`; send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and
 `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID` with each call, and JSON bodies.
@@ -47,29 +47,28 @@ endpoints under `$ONTOMATO_AUTHORING_URL`; send `X-Ontomato-Callback-Credential:
    each parameter carrying the sample value it runs with in `value`. A non-empty `result.error` is the owner's answer:
    fix the code or the sample and repeat from step 3.
 5. `POST $ONTOMATO_AUTHORING_URL/action/explain-draft` with the same `code` and `parameterDefs`, and keep its
-   `explanationRef` for the draft.
+   `explanationRef` for the form.
 
-Run these in the same run that writes the draft, and draft exactly the code and parameters that passed. Only a test of
+Run these in the same run that fills the form, and fill exactly the code and parameters that passed. Only a test of
 that exact code and those parameters with no `result.error` counts: a probe or another version passing does not, and
-the owner refuses the draft when the reader opens it. When a step is refused, do not draft; say which step stopped and
+the owner refuses the save. When a step is refused, do not fill the form; say which step stopped and
 quote the owner. A sample class "outside the authoring scope" is outside the classes this run was admitted for: name
-that class and stop. Do not retry with other classes and do not draft. To author on it, the reader switches to an agent
+that class and stop. Do not retry with other classes and do not fill the form. To author on it, the reader switches to an agent
 that can load this page's skill, whose class scope includes that class and whose executor may act on it.
 
-## Editing an action: draft it, the reader saves
+## Editing an action: fill the live form, the reader saves (or confirms)
 
 1. Read the action's `form` first. Use only the owner's field paths and current values; do not invent field names.
 2. When the change touches the code or the parameters, run the changed definition in the owner's sandbox (above)
-   before drafting. A change to the name, description, status or target alone needs no run: the owner compares the
+   before filling the form. A change to the name, description, status or target alone needs no run: the owner compares the
    code and parameters with the saved ones.
-3. Write the page draft. How a draft is written and linked is in this page's generated skill; this page adds only
-   that an edit takes the selected action as its target.
-4. Put only the changed fields in the draft's `form`, plus `explanationRef` when you ran the code. The owner checks the
-   whole form and shows a refusal beside the field it concerns.
-5. Hand the reader the draft link: opening it fills the form and marks the changed fields, and the reader saves. You
-   never save.
+3. Ensure the target action is open on the `"definition"` tab via `present` (`selected`, `activeTab: "definition"`).
+4. Call `fill_form` on `form` with only the changed fields, plus `explanationRef` when you ran the code. The page marks
+   the changed fields and keeps them unsaved.
+5. Leave saving to the reader, or invoke `page_action` on `form.save` when the reader explicitly asks to save (default
+   sessions ask for confirmation in chat first; full-auto saves directly).
 
-When a draft changes `function/code`, say so: on save the owner explains the new code, and the derived definition and
+When an edit changes `function/code`, say so: on save the owner explains the new code, and the derived definition and
 code explanation follow it. A
 published action's code cannot change (the owner refuses at `/function/code`); stop using it or create another action
 instead.
@@ -84,12 +83,11 @@ opening line; the reader sends the message. The action starts with you:
    the Python `code` by the owner's protocol.
 2. Run it in the owner's sandbox (above) until the owner accepts the run.
 3. Read `createForm` once for the new action form's fields and defaults (the status defaults to `PENDING_REVIEW`).
-4. Put the definition that passed into the form as it is: `name`, `description`, `target` (`className` and
+4. Open the create form via `present` with `{ state: { selected: null, creating: true, activeTab: "definition" } }`.
+5. Call `fill_form` on `form` with the definition that passed as it is: `name`, `description`, `target` (`className` and
    `keyParameter`, omitted when there is no target), `function` (`name`, `operation`, `parameters`, `returnDef`,
-   `logic`, `code`) and `explanationRef`. Do not rewrite a parameter or a line of code after the run.
-5. Write it as the page draft — how, and how to link it, is in this page's generated skill; a new action's draft
-   carries no existing object. Hand the reader the link; the reader checks and saves it, and the action appears in the
-   catalog.
+   `logic`, `code`) and `explanationRef`. Do not rewrite a parameter or a line of code after the run. Let the reader
+   review and save, or invoke `page_action` on `form.save` when requested.
 6. Never write `codeSegments` or the business meaning yourself; they come from the owner's explanation.
 
 ## Changing status (batch)

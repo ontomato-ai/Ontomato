@@ -1,6 +1,5 @@
 import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
-import { PAGE_DRAFT_QUERY_KEYS } from "@ontomato/contracts/page-draft";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
 import { RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
@@ -9,8 +8,8 @@ import { platformRoutes } from "@ontomato/platform-shell/routes";
  * A page's detail address once a panel has taken the page over: the address a link, a bookmark, an agent's answer or a
  * knowledge text still names opens the panel at its use path with that object selected. One conversion, made where an
  * address enters a page: the router, before any route is entered, and the page beside a conversation, before its
- * address is resolved to a page. For a replaced detail path, the draft's query is kept. A conversion that consumes
- * legacy query keys at an existing entry keeps the rest of that entry's address.
+ * address is resolved to a page. A conversion that consumes legacy query keys at an existing entry keeps the rest of
+ * that entry's address.
  *
  * A detail address is either one of its own (`/ontology/objects/:className`) or the panel's own path naming the
  * selection in its query (modelling's `?focus=&id=`); an entry's state says which addresses it selects from.
@@ -153,12 +152,7 @@ export function detailSelectionAddress(entries: readonly DetailSelection[], addr
       }
       return panelAddress(query.size ? `${entry.use}?${query}` : entry.use, merged);
     }
-    const kept = new URLSearchParams();
-    for (const key of PAGE_DRAFT_QUERY_KEYS) {
-      const value = url.searchParams.get(key);
-      if (value !== null) kept.set(key, value);
-    }
-    return panelAddress(kept.size ? `${entry.use}?${kept}` : entry.use, state);
+    return panelAddress(entry.use, state);
   }
   return null;
 }

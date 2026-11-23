@@ -80,16 +80,6 @@ await mountPanel({
         if (!value && dialog.value === "relation") closeDialog();
       },
     });
-    // Open the matching create dialog when an assistant draft targets either creation form.
-    watch(
-      instance.draft,
-      draft => {
-        if (!draft) return;
-        if (draft.slot === "classCreate" && dialog.value !== "class") instance.state.set("dialog", "class");
-        else if (draft.slot === "relationCreate" && dialog.value !== "relation") instance.state.set("dialog", "relation");
-      },
-      { immediate: true },
-    );
     const pickAttribute = row => instance.state.set("selectedAttribute", {
       className: "platform:Attribute",
       primaryKey: String(row.primaryKey),

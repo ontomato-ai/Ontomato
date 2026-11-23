@@ -234,7 +234,7 @@
       <p v-if="failure" class="pd-error">{{ t('error', { message: failure }) }}</p>
       <p v-if="message" class="pd-note">{{ message }}</p>
 
-      <!-- the create and edit form: kept mounted so an agent's draft reaches it while the detail is open -->
+      <!-- the create and edit form: kept mounted while the detail is open -->
       <div v-show="mode === 'create' || mode === 'edit'" class="pd-cards">
         <div class="pd-header">
           <h2>{{ mode === 'create' ? t('form.new') : t('form.edit') }}</h2>

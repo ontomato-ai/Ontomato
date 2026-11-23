@@ -72,13 +72,12 @@ The ready result includes `primaryKey`, `label`, `fields` and the owner's locali
 On the same read endpoint, send `operations: true` for the `run` member to get the owner descriptions keyed by
 local operation name. Supply that member's inputs, including the selected task for this example.
 
-For an agent run with the page skill loaded, the same operation is requested through
-`POST $ONTOMATO_PANEL_OPERATIONS_URL/operate` with the run's callback credential and run ID. The request contains
-a new intent UUID, the same application and use, `operationId: "run.runNow"`, and a `call` with
-`target: { kind: "object", objectType: "platform:ScheduledTask", primaryKey: "<taskId>" }` and `input: {}`.
-A `confirmation-required` result ends that tool call without a write. After the initiating person confirms,
-the answering run uses its own credentials to dispatch that intent. The owner write starts the run and returns
-the result and affected task. A repeated dispatch reports the existing result.
+For an agent run with the page skill loaded and the page open beside the conversation, invoke the same operation
+through `page_action({ operation: "run.runNow" })`. The page prepares the intent through the same human operation
+endpoint under the logged-in user's permissions, asks for confirmation in the conversation by default (returning
+`awaiting_confirmation` without blocking), and dispatches once when the user confirms while verifying the live page
+instance and target have not changed. In full-auto sessions it dispatches immediately. A repeated lookup by intent ID
+reports the existing result without re-executing.
 
 ## Write the page skill's common tasks
 
@@ -91,8 +90,8 @@ For Business Knowledge at `/ontology/knowledge`, the owner supplies these rules.
    tag choices or create a new tag. Status `0` means pending review and `1` means approved, the default for manual creation.
 2. Split a search on whitespace. A match contains every term somewhere in its title, body or tags.
 3. Read the current record before editing. The owner uses last-write-wins updates.
-4. In the default mode, hand a draft to the user for form saves. Execute declared writes after the user's confirmation
-   or when the application allows automatic execution.
+4. In the default mode, fill the live form with `fill_form` and request saving or declared writes through `page_action`
+   (which asks for confirmation in conversation by default, or executes immediately in full-auto sessions).
 5. Approval sets the status to `1`. A delete confirmation names the titles and number of entries because deletion is
    permanent. For batch approvals or deletions, report each outcome and leave failed entries for review.
 6. Use the Business Knowledge page for creating, editing, reviewing and deleting records. Use the existing

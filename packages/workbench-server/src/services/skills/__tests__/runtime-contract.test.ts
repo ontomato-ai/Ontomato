@@ -222,9 +222,9 @@ it("admits protected packages only through the initiator's exact entrance and ev
   });
   expect(provide).not.toHaveBeenCalled();
   await expect(prepareAssistantSkills(domain, { kind: "custom", skills: [old] }, credentials, context))
-    .resolves.toEqual({ skills: [], pageDrafts: false, currentPage: null });
+    .resolves.toEqual({ skills: [], pageControl: false, currentPage: null });
   const prepared = await prepareAssistantSkills(domain, { kind: "regular", skills: [old] }, credentials, context);
-  expect(prepared).toEqual({ skills: [{ skill: protectedRef, digest: "b".repeat(64) }], pageDrafts: true, currentPage: actualPage });
+  expect(prepared).toEqual({ skills: [{ skill: protectedRef, digest: "b".repeat(64) }], pageControl: true, currentPage: actualPage });
   expect(loadedPageSkillVersion(protectedRef, prepared.skills)).toEqual(prepared.skills[0]);
   expect(loadedPageSkillVersion(protectedSkillRef("product-panels", domain, "panel-b"), prepared.skills)).toBeNull();
 
@@ -250,7 +250,7 @@ it("admits protected packages only through the initiator's exact entrance and ev
   await expect(validateAssistantSkills(domain, [protectedRef], credentials))
     .rejects.toMatchObject({ code: "SKILL_NOT_FOUND", message: "Skill is not in this domain's catalogue" });
   await expect(prepareAssistantSkills(domain, { kind: "regular", skills: [old] }, credentials))
-    .resolves.toEqual({ skills: [], pageDrafts: false, currentPage: null });
+    .resolves.toEqual({ skills: [], pageControl: false, currentPage: null });
   expect(readManifest).not.toHaveBeenCalled();
   expect(provide).not.toHaveBeenCalled();
 

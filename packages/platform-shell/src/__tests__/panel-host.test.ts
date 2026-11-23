@@ -30,9 +30,8 @@ const SCHEDULED_TASK = "platform:ScheduledTask";
 const labels: PanelHostLabels = {
   notStarted: "Not started",
   failures: { fileUnavailable: "Could not load {file}", scriptThrew: "Script failed", scriptRejected: "Script rejected" },
-    content: { styleOutside: "Style outside" },
-    draft: { opening: "Opening the draft", close: "Close", toAgent: "To agent", toAgentText: "Unused: {reason}" },
-    refresh: "Refresh",
+  content: { styleOutside: "Style outside" },
+  refresh: "Refresh",
 };
 
 /** Panel P: a task list, the task's form and a button that runs it. Its list and summary are the shared projection X. */
@@ -537,111 +536,6 @@ describe("the panel host", () => {
     expect(document).toContain('import {mountPanel} from "@ontomato/sdk/panel";');
   });
 
-  it("drops a settled draft's link from the address, and only the link the address still names", async () => {
-    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
-    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
-    const session = "6f1c2d3e-4b5a-4c6d-8e7f-a0b1c2d3e4f5";
-    const runs = ["0a1b2c3d-4e5f-4a6b-8c7d-e8f9a0b1c2d3", "1b2c3d4e-5f6a-4b7c-9d8e-f9a0b1c2d3e4"];
-    const link = (runId: string) => ({ sessionId: session, runId, path: "outputs/drafts/task.page-draft.json" });
-    const query = (runId: string) => new URLSearchParams({ tab: "runs", draftSessionId: session, draftRunId: runId, draftPath: link(runId).path });
-    const page = shallowRef(`/applications/app-a/a/schedules?${query(runs[1]!)}`);
-    const selected = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } };
-    const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port.port("use-a"), { labels,
-      label: (source) => source.kind === "registered" ? source.panel.name : "",
-      address: () => page.value,
-      initial: () => selected,
-    }))!;
-    await a.ready;
-    const instance = port.started("use-a");
-    const opened = a.address.value;
-
-    // A late word about the draft opened before this one leaves the address alone.
-    instance.run.draftSettled(link(runs[0]!));
-    expect(a.address.value).toBe(opened);
-    expect(instance.addresses).toEqual([]);
-
-    // The draft the address links: its three parameters go, the page's own and its state stay, and the instance hears it.
-    instance.run.draftSettled(link(runs[1]!));
-    const settled = panelAddress("/applications/app-a/a/schedules?tab=runs", selected, panelP);
-    expect(a.address.value).toBe(settled);
-    expect(instance.addresses).toEqual([settled]);
-    instance.run.state(selected, settled);
-    expect(a.address.value).toBe(settled);
-    scope.stop();
-  });
-
-  it("keeps the panel running when its linked draft cannot be used, says why, and leaves the draft on the reader's word", async () => {
-    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
-    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
-    const draft = { sessionId: "6f1c2d3e-4b5a-4c6d-8e7f-a0b1c2d3e4f5", runId: "1b2c3d4e-5f6a-4b7c-9d8e-f9a0b1c2d3e4", path: "outputs/drafts/task.page-draft.json" };
-    const query = new URLSearchParams({ tab: "runs", draftSessionId: draft.sessionId, draftRunId: draft.runId, draftPath: draft.path });
-    const selected = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-1" } };
-    const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port.port("use-a"), { labels,
-      label: (source) => source.kind === "registered" ? source.panel.name : "",
-      address: () => `/applications/app-a/a/schedules?${query}`,
-      initial: () => selected,
-    }))!;
-    await a.ready;
-    const instance = port.started("use-a");
-
-    // An old-shape draft the panel could not read: the panel stays, and the reason is said above it.
-    instance.run.draftRefused("The draft is in an old shape");
-    expect(a.error.value).toBe("");
-    expect(a.direct.value).not.toBeNull();
-    expect(a.draftRefusal.value).toBe("The draft is in an old shape");
-    // Closed, the notice goes and the address still links the draft.
-    a.dismissDraftRefusal();
-    expect(a.draftRefusal.value).toBe("");
-    expect(a.address.value).toContain("draftRunId=");
-
-    // Leaving the draft: its three parameters go, the page's own and its state stay, and the instance hears it.
-    instance.run.draftRefused("No form takes it");
-    a.leaveDraft();
-    const left = panelAddress("/applications/app-a/a/schedules?tab=runs", selected, panelP);
-    expect(a.draftRefusal.value).toBe("");
-    expect(a.address.value).toBe(left);
-    expect(instance.addresses).toEqual([left]);
-    scope.stop();
-  });
-
-  it("opens a linked draft before the page is shown, and shows the page once the draft is in or refused", async () => {
-    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
-    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
-    const link = (runId: string) => new URLSearchParams({ draftSessionId: "6f1c2d3e-4b5a-4c6d-8e7f-a0b1c2d3e4f5", draftRunId: runId, draftPath: "outputs/drafts/task.page-draft.json" });
-    const page = shallowRef(`/applications/app-a/a/schedules?${link("1b2c3d4e-5f6a-4b7c-9d8e-f9a0b1c2d3e4")}`);
-    const scope = effectScope();
-    const a = scope.run(() => usePanelInstance(port.port("use-a"), { labels,
-      label: (source) => source.kind === "registered" ? source.panel.name : "",
-      address: () => page.value,
-      initial: () => ({}),
-    }))!;
-    // Said at once, while the panel is still being read.
-    expect(a.draftOpening.value).toBe(true);
-    await a.ready;
-    const instance = port.started("use-a");
-    // The panel runs, out of sight, while its draft is opened.
-    expect(a.direct.value).not.toBeNull();
-    expect(a.draftOpening.value).toBe(true);
-    instance.run.draftOpened();
-    expect(a.draftOpening.value).toBe(false);
-
-    // Another draft linked at the same page is opened first again; one it refuses shows the page with the reason.
-    page.value = `/applications/app-a/a/schedules?${link("2b2c3d4e-5f6a-4b7c-9d8e-f9a0b1c2d3e4")}`;
-    await nextTick();
-    expect(a.draftOpening.value).toBe(true);
-    instance.run.draftRefused("The draft is in an old shape");
-    expect(a.draftOpening.value).toBe(false);
-    expect(a.draftRefusal.value).toBe("The draft is in an old shape");
-
-    // An address with no draft opens nothing first.
-    page.value = "/applications/app-a/a/schedules";
-    await nextTick();
-    expect(a.draftOpening.value).toBe(false);
-    scope.stop();
-  });
-
   it("hands an operation's call to its instance, and each call its own answer", async () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
@@ -658,7 +552,6 @@ describe("the panel host", () => {
   it("applies non-deepLink declared public state on mount and in place without reloading or writing to the address", async () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
-    const formEdits: unknown[] = [];
     const scope = effectScope();
     const a = scope.run(() => usePanelInstance(port.port("use-a"), {
       labels,
@@ -666,7 +559,6 @@ describe("the panel host", () => {
       address: () => "/applications/app-a/a/schedules",
       initial: () => ({}),
       liveState: () => ({ search: "daily", selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-9" } }),
-      formEdited: (target) => formEdits.push(target),
     }))!;
     await a.ready;
     const started = port.started("use-a");
@@ -685,9 +577,67 @@ describe("the panel host", () => {
     expect(started.statePatches).toEqual([{ search: "hourly" }]);
     expect(() => a.applyState({ undeclared: "x" })).toThrow(/no declared public field/);
     expect(() => a.applyState({ search: 42 })).toThrow(/holds no/);
+    scope.stop();
+  });
 
-    started.run.formEdited?.({ kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-9" });
-    expect(formEdits).toEqual([{ kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-9" }]);
+  it("forwards live fillForm and executeAction calls to the mounted direct panel and reports not-ready before mount", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const fillCalls: unknown[] = [];
+    const actionCalls: unknown[] = [];
+    const basePort = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] }).port("use-a");
+    const wrappedPort: PanelHostPort = {
+      ...basePort,
+      async coded(source, run, target) {
+        const mount = await basePort.coded(source, run, target);
+        return {
+          ...mount,
+          async fillForm(request) {
+            fillCalls.push(request);
+            return { ok: true, member: request.member ?? "taskForm", filledFields: Object.keys(request.values) };
+          },
+          async executeAction(request) {
+            actionCalls.push(request);
+            return { ok: true, kind: "executed", operation: request.operation };
+          },
+        };
+      },
+    };
+    const scope = effectScope();
+    const a = scope.run(() => usePanelInstance(wrappedPort, {
+      labels,
+      label: (source) => source.kind === "registered" ? source.panel.name : "",
+      address: () => "/applications/app-a/a/schedules",
+      initial: () => ({}),
+    }))!;
+    const agentRun = { sessionId: "s1", runId: "r1", toolCallId: "t1" };
+    const [beforeFill, beforeAction] = [
+      a.fillForm({ member: "taskForm", values: { name: "Nightly" } }),
+      a.executeAction({ operation: "taskForm.save", agentRun }),
+    ];
+    await expect(beforeFill).resolves.toMatchObject({
+      ok: false,
+      reason: "form_not_ready",
+      member: "taskForm",
+    });
+    await expect(beforeAction).resolves.toMatchObject({
+      ok: false,
+      reason: "action_not_ready",
+      operation: "taskForm.save",
+    });
+
+    await a.ready;
+    await expect(a.fillForm({ member: "taskForm", values: { name: "Nightly" } })).resolves.toEqual({
+      ok: true,
+      member: "taskForm",
+      filledFields: ["name"],
+    });
+    await expect(a.executeAction({ operation: "taskForm.save", agentRun })).resolves.toEqual({
+      ok: true,
+      kind: "executed",
+      operation: "taskForm.save",
+    });
+    expect(fillCalls).toEqual([{ member: "taskForm", values: { name: "Nightly" } }]);
+    expect(actionCalls).toEqual([{ operation: "taskForm.save", agentRun }]);
     scope.stop();
   });
 });

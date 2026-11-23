@@ -7,7 +7,6 @@ import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/c
 import {
   panelManifestSchema, panelOperationId,
 } from "@ontomato/contracts/panel-manifest";
-import { draftTarget, PAGE_DRAFT_QUERY_KEYS, type PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
 import type { PanelOperationDeclaration } from "@ontomato/contracts/panel-operations";
 import { declaredCustomerFormSaveName, directReadDeclaration, projectionOperationIsRowScoped, projectionReadReference } from "@ontomato/contracts/panel-projection";
@@ -21,10 +20,9 @@ import { SkillSourceRecordError, type ProtectedSkillOffering, type SkillSourceFa
 import { getLocale, resolveLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductRow } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { cachedZodToJsonSchemaString } from "../../utils/zod-json-schema";
 import { readObjectActions } from "../action/panel-reads";
 import { readPanelComponentCatalogue, readProjectionComponent } from "./component-catalogue";
-import { allowsOperationDraft, boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
+import { boundProjectionOperations, type BoundProjectionOperation } from "./operation-bindings";
 import { panelServerOperationLabel } from "./server-operations";
 import { panelSkillScope } from "./skill-identity";
 
@@ -41,7 +39,7 @@ function panelSkillManifest(skill: RuntimeSkillRef, panel: PanelDescription, sou
   const actions = [
     ...(panel.reads ? ["read current data"] : []),
     "open the panel",
-    ...(panel.forms.length ? ["draft changes"] : []),
+    ...(panel.forms.length ? ["fill live forms"] : []),
     ...(panel.operations.length ? ["review declared operations"] : []),
   ];
   const actionText = verbs.format(actions);
@@ -197,7 +195,6 @@ type PanelDescription = ReturnType<typeof describePanel>;
 type OperationDescription = BoundProjectionOperation & {
   id: string;
   label: string;
-  draft: boolean;
   member: string;
   rowScoped: boolean;
   customerForm?: CustomerFormBinding;
@@ -264,9 +261,6 @@ function describePanel(
           ...bound,
           id: panelOperationId(member, bound.name),
           label,
-          draft: bound.owner !== undefined
-            ? allowsOperationDraft(projection, bound.owner.handler)
-            : customerForm?.mode === "create",
           member,
           rowScoped: projectionOperationIsRowScoped(bound.binding),
           ...(customerForm ? { customerForm } : {}),
@@ -309,36 +303,30 @@ function describeSkill({ name, description, content, state, projections, operati
       "Write every platform page link in your reply as a site-relative path starting with one slash (only as a reference for the user to return to that view later). Never put a scheme, hostname, or port in a platform page link. Do not use `http://`, `https://`, `//host`, or `localhost`.",
       "Use the canonical path from the current page context. When building a reply link with deep-link state, pass each field marked `deepLink: true` as its own flat named query parameter (e.g. `?selected=my-app&tab=entries&search=foo`; omit null/default values and never serialize JSON into `?state=` or `?frame=`). Pass a single-type `object` field as its `primaryKey` directly, a multi-type `object-union` field as `className~primaryKey`, a `list` field as repeated parameters (`?tag=a&tag=b`), and application frame state as `frame.<name>=...`.",
     ].join("\n"),
-    describeDraft(forms),
+    describeLiveForms(forms),
     [
-      "### Declared operations",
+      "### Declared operations and live page actions",
       ...operations.map(describeOperation),
       ...(operations.length ? [] : [hasPlacedMembers ? "No operations directly on this panel." : "No operations."]),
-      "Call the declared operation with POST `$ONTOMATO_PANEL_OPERATIONS_URL/operate`, JSON `{intentId:<new UUID>,applicationId,useId,operationId,call:{target,input}}`. Send `X-Ontomato-Callback-Credential: $ONTOMATO_EXECUTION_CALLBACK` and `X-Ontomato-Run-Id: $ONTOMATO_RUN_ID`. Never call a write owner endpoint directly from a platform panel skill.",
+      "When this run has the `page_action` tool and this page is open beside the conversation, invoke declared operations directly through `page_action({ operation, memberPath?, rowKey?, input? })` so the page runs the exact same UI button/form entry a human clicks with the logged-in user's permissions. Never call a write owner endpoint directly from a platform panel skill.",
+      "Use `page_action({ operation: \"page.refresh\" })` to reload displayed data or `page_action({ operation: \"<formMember>.discard\" })` to discard unsaved edits in a mounted form.",
       ...(operations.some(operation => operation.owner?.declaration.batch) ? [
-        "For an operation marked as batch-capable, use `calls:[{target,input},...]` in place of `call`. Submit all concrete targets and their inputs under one intent for one confirmation. A batch result reports the owner's outcome for each item when available.",
+        "For a batch-capable operation on checked items, first select/check the target items through declared public state (`present({ target, state })`), then invoke the batch operation with `page_action({ operation })`.",
       ] : []),
       ...(operations.some(operation => operation.rowScoped) ? [
-        "For a row-scoped operation declared on a list projection, first read that list member's named data (`rows` or `objects`) via `$ONTOMATO_PANEL_OPERATIONS_URL/read` to inspect the rows and their batch per-row availability (`rowOperations`).",
-        "Then POST to `$ONTOMATO_PANEL_OPERATIONS_URL/operate` with `operationId` (`<listMember>.<opName>`) and `call: {target, input}` using the row's target (when target is `{row: true}` or `{rowField}`) or outer object target, and any row-bound input fields. Entry-pinned and literal parameters are enforced server-side.",
+        "For a row-scoped operation declared on a list projection, pass `rowKey` set to the loaded row's primary key (`page_action({ operation: \"<listMember>.<opName>\", rowKey, input? })`). The list verifies per-row availability and bound parameters directly on that mounted row.",
       ] : []),
-      "Use the applicationId and useId from the current page context. For a local operation, use the operationId listed above. If the host did not provide a current use, ask the reader to open the panel before attempting a panel operation.",
       ...(hasPlacedMembers ? [
-        "For an operation in a mounted child, use the root entry and the full `memberPath` ending at the projection that declares the operation. To get its local operation names and descriptions, send the corresponding `/read` request with `operations:true` in place of `dataName`.",
-        "Send that `memberPath` in `/operate`. Build `operationId` by joining each segment's `member` and then the local operation name with dots. With `memberPath: [previewSegment,{member:\"approve\"}]`, where previewSegment has member preview and its actual selection, the local operation approve gives `operationId: \"preview.approve.approve\"`.",
+        "For an operation in a mounted nested panel, pass its `memberPath` keys (or dot-joined `operation` ID such as `preview.approve.approve`) to `page_action`. To inspect a nested panel's declared operations, send a `/read` request with `operations: true` in place of `dataName`.",
       ] : []),
-      "Form save (`form.save`) is a declared operation just like an action. In default confirmation mode, calling `/operate` for `form.save` returns `confirmation-required` with `intentId` while the form remains unsaved in the side panel (and the user can also click Save directly on the page). If the user edits or saves that form before confirming, the pending confirmation is invalidated (`FORM_CONFIRMATION_STALE`) and `/dispatch` refuses rather than overwriting the user's newer edits — let the user save on the page or re-read the form and request a new confirmation with a new `intentId`. Session automatic mode allows the same declared save to execute directly. Only the authenticated session owner changes that setting.",
-      ...(forms.some(form => form.customerForm !== undefined) ? [
-        "For a customer Action that saves a form, first fill the live form using \"Draft a change\" and `present`. Then read that form's `save` from `observe_display` and pass its `operationId` and `call` unchanged to `/operate` with the entry identifiers, member path when present, and a new intent ID. The page builds this call from its field wiring and only reports it when the form can save. If `save` is absent, resolve the form's issue before requesting a save. A later edit, discard, or page save invalidates the pending confirmation (`FORM_CONFIRMATION_STALE`).",
-      ] : []),
-      "An action can return confirmation-required with intentId. End this tool call immediately; do not wait or poll. Continue independent work or finish the round. A genuine user agent-answer is delivered back to this conversation and can wake a later run. Then POST `{}` to `$ONTOMATO_PANEL_OPERATIONS_URL/intents/<intentId>/dispatch` using THAT RUN's callback and run ID. Node verifies the real selected option and the current executor. Free text, defaults, parent answers, questionId or a different toolCallId never authorize execution. Changed parameters/target/executor require a new intent and confirmation.",
-      "A dispatched result is final for that intent, including failure/unknown; never retry the owner call under another toolCallId. Read the intent at `/api/panel-operation-intents/<intentId>` through ONTOMATO_WORKBENCH_URL when needed; this read does not execute it.",
+      "Form save (`form.save` or a form-saving Action) submits the live form currently displayed on the page — never pass form field values in `page_action`. Fill the form with `fill_form` first, then call `page_action({ operation: \"<formSaveOperationId>\" })`. In default confirmation mode, `page_action` prepares the intent, shows the confirmation prompt in the conversation, and returns `awaiting_confirmation` with `intentId` and `questionId` while the form stays unsaved and editable. Do not wait or poll; finish the round or continue independent work. When the user confirms in the conversation, the page verifies that the instance, target, and form contents have not changed before dispatching (any edit, manual save, navigation, or reload invalidates that confirmation). In full-auto sessions, `page_action` executes immediately and returns `executed`.",
+      "A dispatched result is final for that intent, including failure/unknown; never retry a write call under a new tool call when receipt is missing (`unknown`). Read the intent at `/api/panel-operation-intents/<intentId>` through `ONTOMATO_WORKBENCH_URL` when needed; this read does not execute it.",
     ].join("\n"),
     ...(recipes === undefined ? [] : [`### Recipes\n\n${recipes}`]),
   ].filter(Boolean).join("\n\n");
 }
 
-function describeOperation({ id, label, binding, owner, draft, rowScoped, customerForm }: OperationDescription): string {
+function describeOperation({ id, label, binding, owner, rowScoped, customerForm }: OperationDescription): string {
   const target = JSON.stringify(binding.target ?? null);
   const rowScope = rowScoped ? " Row-scoped operation on list rows." : "";
   const boundParams = binding.params && Object.keys(binding.params).length > 0
@@ -348,12 +336,12 @@ function describeOperation({ id, label, binding, owner, draft, rowScoped, custom
   if (!owner) {
     if (customerForm) {
       const read = customerForm.mode === "create" ? "createForm" : "form";
-      return `- ${label} (${id}), form save via Action ${binding.operation.id}, target ${target}. Read \`${read}\` for \`${customerForm.objectType}\`, then fill this page's live form using "Draft a change" and \`present\`. Request save with the live form's \`save\` from \`observe_display\`.`;
+      return `- ${label} (${id}), form save via Action ${binding.operation.id}, target ${target}. Read \`${read}\` for \`${customerForm.objectType}\`, open the live form with \`present\`, fill fields with \`fill_form\`, then invoke \`page_action({ operation: "${id}" })\`.`;
     }
     if (!binding.target) {
-      return `- ${label} (${id}), Action ${binding.operation.id}, target null.${suffix} No object selection is required. Read the admitted description with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it with \`call: { target: null, input: { values: { ... } } }\`.`;
+      return `- ${label} (${id}), Action ${binding.operation.id}, target null.${suffix} No object selection is required. Invoke with \`page_action({ operation: "${id}", input? })\`.`;
     }
-    return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}.${suffix} Read the admitted description for the actual selected object with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it.`;
+    return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}.${suffix} Invoke with \`page_action({ operation: "${id}"${rowScoped ? ', rowKey: "<row primaryKey>"' : ""}, input? })\`.`;
   }
   const { handler, declaration } = owner;
   const summary = `- ${label} (${id}), kind ${handler.kind}, handlerRef ${handler.handlerRef}, target ${target}.${suffix}`;
@@ -363,9 +351,7 @@ function describeOperation({ id, label, binding, owner, draft, rowScoped, custom
   if (handler.kind !== "form.save") {
     return `${summary} Input ${JSON.stringify(declaration.inputSchema)}.${declaration.batch ? " Batch-capable." : ""}`;
   }
-  const schema = (value: z.ZodTypeAny) => cachedZodToJsonSchemaString(value, { $refStrategy: "none" });
-  const created = draft ? " For automatic save from an existing create draft, supply its artifact location as call.draft {sessionId,runId,path}." : "";
-  return `${summary} Call target schema ${schema(handler.targetSchema)}. Call input schema ${schema(handler.inputSchema)}. ${handler.formInstructions}${created}`;
+  return `${summary} Fill the mounted form, then invoke \`page_action({ operation: "${id}" })\` to save it.`;
 }
 
 function describeReads(reads: readonly { member: string; dataName: string; read: string; result: string }[], hasPlacedMembers: boolean): string {
@@ -385,59 +371,18 @@ function describeReads(reads: readonly { member: string; dataName: string; read:
   ].join("\n");
 }
 
-function describeDraft(forms: readonly OperationDescription[]): string {
+function describeLiveForms(forms: readonly OperationDescription[]): string {
   if (!forms.length) return "";
-  const [sessionKey, runKey, pathKey] = PAGE_DRAFT_QUERY_KEYS;
-  const examples = forms.map(form => {
-    const owner = form.owner?.handler;
-    if (owner?.kind === "form.save") {
-      const { targetType: objectType } = owner;
-      const example = (target: PageDraftObjectRef) => {
-        const effective = draftTarget({ target });
-        const operation = owner.draftOperation(effective.kind === "create"
-          ? { kind: "draft" }
-          : { kind: "object", objectType: effective.objectType, primaryKey: effective.id });
-        return { operation, target };
-      };
-      return {
-        id: form.id,
-        edit: example({ objectType, id: "<owner object id>" }),
-        create: form.draft ? example({ objectType }) : undefined,
-      };
-    }
-    if (form.customerForm) {
-      const { objectType, mode } = form.customerForm;
-      return {
-        id: form.id,
-        edit: mode === "edit" ? { operation: `${objectType}.update`, target: { objectType, id: "<owner object id>" } } : undefined,
-        create: mode === "create" ? { operation: `${objectType}.create`, target: { objectType } } : undefined,
-      };
-    }
-    throw new Error(`Expected a form owner for ${form.id}`);
-  });
-  const firstExample = examples[0]!.edit ?? examples[0]!.create!;
   return [
-    "### Draft a change",
-    "Read the owner's form for the intended target. Follow that form-save operation's drafting instructions under Declared operations to choose and validate the values in `form`. Write `outputs/drafts/<name>.page-draft.json` with this envelope, using the operation and target given for your form below.",
-    "```json",
-    JSON.stringify({ pageKey: "<current page context pageKey>", ...firstExample, form: {} }, null, 2),
-    "```",
-    ...examples.map(({ id, edit, create }) => {
-      const modes = [
-        ...(edit ? [`For editing, use \`${JSON.stringify(edit)}\`.`] : []),
-        ...(create ? [`For creation, use \`${JSON.stringify(create)}\`.`] : []),
-      ];
-      return `- Form \`${id}\`. ${modes.join(" ")}`;
+    "### Fill a live form",
+    "When this run has `present` and `fill_form`, fill the live form directly beside the conversation.",
+    "1. First make sure the target page, object, tab, or create dialog is open (`present({ target, state })`) so the form member is mounted.",
+    "2. Call `fill_form({ member, memberPath?, values, overwriteUnsaved? })` with explicit field paths (e.g. `{\"/name\": \"...\", \"/description\": \"...\"}` or top-level field keys). The form uses its own editing entry, highlights every changed field, runs owner-driven dynamic updates, and stays unsaved.",
+    "3. If `fill_form` returns `not_filled` with `reason: \"blocked_unsaved\"`, the form already holds unsaved edits. Never overwrite them silently: ask the user in conversation whether to keep their edits or replace them, and only call `fill_form` again with `overwriteUnsaved: true` after the user confirms.",
+    "4. To save the filled form, call `page_action({ operation: \"<formSaveOperationId>\" })` (or let the user click Save directly on the page).",
+    ...forms.map(({ id, member, customerForm, owner }) => {
+      const objectType = customerForm?.objectType ?? (owner?.handler.kind === "form.save" ? owner.handler.targetType : "");
+      return `- Form member \`${member}\` (save operation \`${id}\`${objectType ? `, type \`${objectType}\`` : ""}).`;
     }),
-    "Use field names and nested JSON in `form`. Field paths such as `/className` locate values but are not keys in the draft.",
-    "For an edit, copy the selected object's opaque ID from its owner into `target.id`. For creation, `target` contains only `objectType`.",
-    "An owner's revision, when required, is part of the operation input.",
-    "Write each draft to a fresh output path. After the write succeeds, in the same shell call run `test -s \"$ONTOMATO_OUTPUT_DIR/drafts/<name>.page-draft.json\" && printenv ONTOMATO_SESSION_ID ONTOMATO_RUN_ID`, substituting the actual filename. Before sharing the link, check that this is the file you just wrote and use the IDs printed by that call.",
-    `Set \`${sessionKey}\` and \`${runKey}\` from those runtime-injected IDs. Never copy a run ID from the conversation, a previous link, or an earlier run. Use the current page context's canonical path as a site-relative address starting with a single \`/\` (for example, \`/ontology/assets/actions\`) and preserve the entry's existing query parameters. Do not prefix it with \`$ONTOMATO_BASE_URL\`, a hostname, or a URL scheme.`,
-    `The raw value of \`${pathKey}\` is the draft file's path relative to the producing run's artifact area. It starts with \`outputs/drafts/\` and has no leading \`/\`. URL-encode that value exactly once when adding it to the query.`,
-    `Use \`?${sessionKey}=SESSION_ID&${runKey}=RUN_ID&${pathKey}=outputs%2Fdrafts%2Fedit.page-draft.json\` for an \`edit.page-draft.json\` draft. Replace \`SESSION_ID\` and \`RUN_ID\` with the producing run's actual session and run IDs. When this run has the \`present\` tool, immediately call \`present({ target: "<canonical path>?${sessionKey}=SESSION_ID&${runKey}=RUN_ID&${pathKey}=..." })\` in this same round so the draft fills the form beside the conversation right away, marking changed fields while keeping the form unsaved.`,
-    "If `present` with a draft returns `not_opened` with `reason: \"blocked_unsaved\"`, the form already holds unsaved edits from the user. Never overwrite them silently: ask the user in conversation whether to keep their own edits or replace them with your draft, and only call `present` again with `overwriteUnsavedDraft: true` after the user explicitly confirms.",
-    "You may also include the draft link in your final reply as a reference to return to that draft later. Any reply link must be a Markdown link with a destination that starts with a single slash. Never put a scheme, hostname, port, or `localhost` in the draft link. Use the draft file path only inside `draftPath`. A standalone file link opens a JSON file card.",
-    `Example reference link: [Open the draft](/ontology/applications?${sessionKey}=SESSION_ID&${runKey}=RUN_ID&${pathKey}=outputs%2Fdrafts%2Fedit.page-draft.json). Use your current entry path and the producing run's IDs, and preserve its existing query parameters.`,
   ].join("\n");
 }

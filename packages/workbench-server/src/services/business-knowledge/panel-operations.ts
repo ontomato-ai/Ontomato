@@ -168,7 +168,6 @@ async function save(host: Host, target: PanelOperationTarget, values: Record<str
   return { kind: "success", data: {}, affected: affected(target.primaryKey) };
 }
 
-const formInstructions = "Read the knowledge form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 /*
  * The delete's impact for a confirming human: which entries it takes, each under the title the owner lists it by, and
@@ -206,7 +205,7 @@ export const m7ServerOperations = [
     resultSchema: savedResultSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "knowledge.create" : "knowledge.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     create: {
       draftValues(values: unknown) {
         return runtimeJsonObjectSchema.parse(values);

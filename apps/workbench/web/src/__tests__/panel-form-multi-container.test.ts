@@ -103,7 +103,6 @@ function mountFormScenario(options: {
   customSlot?: boolean;
   withHeaderAndBack?: boolean;
   initialUrl?: string;
-  draftArtifact?: Record<string, unknown>;
 }) {
   const projection: DirectProjection = {
     ...baseRecord,
@@ -155,9 +154,6 @@ function mountFormScenario(options: {
           label: "Save",
           confirmation: { kind: "none" },
         });
-      }
-      if (path.includes("/page-draft") && options.draftArtifact) {
-        return Response.json(options.draftArtifact);
       }
       return Response.json({ projection });
     },
@@ -504,7 +500,7 @@ describe("ObjectForm multi-card, multi-tab, multi-step, and custom-slot forms sh
     expect(mount.instance.dirty()).toBe(false);
   });
 
-  it("receives an agent page draft spanning multiple tabs and highlights changed tabs cleanly", async () => {
+  it("fills fields spanning multiple tabs live and highlights changed tabs cleanly", async () => {
     const { element, mount } = mountFormScenario({
       config: {
         presentation: "tabs",
@@ -513,17 +509,20 @@ describe("ObjectForm multi-card, multi-tab, multi-step, and custom-slot forms sh
           { key: "script", titleKey: "tab.script", fields: ["/code", "/notes"] },
         ],
       },
-      initialUrl: "/functions?draftSessionId=7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01&draftRunId=7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02&draftPath=outputs%2Fdrafts%2Ffn.page-draft.json",
-      draftArtifact: {
-        pageKey: "fn-editor",
-        operation: "function.update",
-        target: { objectType: FUNCTION, id: "fn-1" },
-        form: { displayName: "AI Margin", code: "return (a - b) * 100;" },
-      },
     });
 
+    await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/displayName"] input')?.value).toBe("Margin"));
+
+    const result = await mount.instance.fillForm({
+      member: "form",
+      values: { "/displayName": "AI Margin", "/code": "return (a - b) * 100;" },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      member: "form",
+      filledFields: ["/displayName", "/code"],
+    });
     await vi.waitFor(() => {
-      expect(mount.instance.draft.value).not.toBeNull();
       expect(element.querySelector('[data-form-tab="general"]')?.classList.contains("is-changed")).toBe(true);
       expect(element.querySelector('[data-form-tab="script"]')?.classList.contains("is-changed")).toBe(true);
     });

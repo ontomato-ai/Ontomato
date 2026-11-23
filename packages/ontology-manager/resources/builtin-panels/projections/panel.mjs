@@ -234,15 +234,6 @@ await mountPanel({
       if (creating.value) instance.state.set("creating", null);
     }
     watch(creating, active => { if (active) editing.value = false; });
-    watch(instance.draft, (draft) => {
-      if (!draft) return;
-      if (draft.target.id) {
-        closeForm();
-        editing.value = true;
-      } else {
-        instance.state.set("creating", true);
-      }
-    }, { immediate: true });
 
     const current = computed(() => (record.value.status === "ready" ? record.value.value : null));
     const ownerIds = computed(() => [...new Set([

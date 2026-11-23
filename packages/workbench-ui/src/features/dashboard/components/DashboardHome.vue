@@ -5,46 +5,46 @@ import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-vue-next";
-import { pageDraftLink, readPageDraft, withoutPageDraftQuery, type PageDraftLink } from "@ontomato/agent-shell-ui";
-import { createAssistantClient } from "../../workbench/assistant-host";
+import type { DisplayObjectRefresh, DisplayPageController } from "@ontomato/agent-shell-ui";
+import type { FormFillOutcome, FormFillRequestInput, PageActionOutcome, PageActionRequestInput } from "@ontomato/contracts/agent-presentation";
 import { useDashboardStore } from "../stores/dashboard";
 import DashboardPanel from "./DashboardPanel.vue";
-import { acceptDraft, boardIdentity, changesNothing, DASHBOARD_PAGE_KEY, DraftRejected, type AcceptedDraft } from "../draft";
-import { dashboardOperationSchema, type DashboardAuthoringForm, type DashboardOperation } from "@ontomato/contracts/dashboard";
-import { fetchCardParameterForm, fetchDashboardLocalDetail } from "../api";
-import { cardError, type CardError } from "./utils/metricCard";
 
 /**
- * The dashboard feature page of the workbench shell: dashboard tabs above the selected board. A link an agent wrote
- * may name a page draft: this page reads it, checks it against the board the reader owns, and hands it to the board,
- * which shows its changes and saves nothing until the reader says so.
+ * The dashboard feature page of the workbench shell: dashboard tabs above the selected board.
  *
- * The page is the same at its own address and beside a conversation, so its draft comes from whichever address it is
- * shown at: the page's own query here, the conversation's `?page=` there. Both are the platform's page link, read the
- * one way the platform reads them.
+ * The page is the same at its own address and beside a conversation, so its selection rides in whichever address it is
+ * shown at: the page's own query here, the conversation's `?page=` there. When mounted beside a conversation, it
+ * registers a `DisplayPageController` so live `present` state updates, `fill_form`, and `page_action` operate on the
+ * currently displayed board directly.
  */
+const props = defineProps<{
+  objectRefresh?: DisplayObjectRefresh | null;
+  registerPageController?: (controller: DisplayPageController) => () => void;
+}>();
+
 const { t } = useI18n();
 const store = useDashboardStore();
 const route = useRoute();
 const router = useRouter();
 const openMenuId = ref<string | null>(null);
+const panelRef = ref<{
+  reload: () => Promise<void>;
+  selectCardById: (cardId: string) => boolean;
+  fillForm: (request: FormFillRequestInput) => Promise<FormFillOutcome>;
+  executeAction: (request: PageActionRequestInput) => Promise<PageActionOutcome>;
+} | null>(null);
 const { dashboardItems, loadingDashboards, currentDashboardId, editingDashboardId, editingDashboardName } =
   storeToRefs(store);
-const shell = createAssistantClient();
-
-const draft = ref<AcceptedDraft | null>(null);
-const draftFailure = ref<CardError | null>(null);
 
 /**
  * The address this page is shown at: its own query at its own address, the page parameter's own address beside a
- * conversation, which is where the platform's page link carries the board and the draft alike.
+ * conversation.
  */
 function pageAddress(): Record<string, unknown> {
   const paired = typeof route.query.page === "string" ? route.query.page : "";
   return paired ? Object.fromEntries(new URLSearchParams(paired.split("?")[1] ?? "")) : route.query;
 }
-
-const link = computed(() => pageDraftLink(pageAddress()));
 
 /**
  * The card chosen in the board, as the page's own address names it. The address carries it because the board is read
@@ -107,34 +107,52 @@ watch(
   { immediate: true },
 );
 
-/**
- * Reads the draft the link names through the platform's own reader, which checks the page it was written for and one of
- * this page's save actions, then hands it to the board only once the board it names is this reader's: every object a
- * draft addresses has to be that board's own.
- *
- * A draft that would save only what is already saved — one the reader saved and opens again — is not handed over: the
- * board opens as itself and its address stops naming the draft.
- */
-async function readDraft(pageLink: PageDraftLink) {
-  const received = await readPageDraft<DashboardAuthoringForm<DashboardOperation>, DashboardOperation>(shell, pageLink, {
-    pageKey: DASHBOARD_PAGE_KEY,
-    operations: dashboardOperationSchema.options,
+if (props.registerPageController) {
+  const unregister = props.registerPageController({
+    applyState(patch) {
+      if (typeof patch.dashboardId === "string" && patch.dashboardId.trim()) {
+        void store.selectDashboard(patch.dashboardId.trim());
+      }
+      if (typeof patch.cardId === "string" && patch.cardId.trim()) {
+        panelRef.value?.selectCardById(patch.cardId.trim());
+      }
+    },
+    fillForm(request) {
+      if (!panelRef.value) {
+        return Promise.resolve({
+          ok: false,
+          reason: "form_not_ready",
+          ...(request.member ? { member: request.member } : {}),
+          message: "No dashboard is currently open.",
+        });
+      }
+      return panelRef.value.fillForm(request);
+    },
+    async executeAction(request) {
+      if (request.operation === "page.refresh") {
+        await store.loadDashboards();
+        await panelRef.value?.reload();
+        return { ok: true, kind: "executed", operation: request.operation };
+      }
+      if (!panelRef.value) {
+        return {
+          ok: false,
+          reason: "action_not_ready",
+          operation: request.operation,
+          message: "No dashboard is currently open.",
+        };
+      }
+      return panelRef.value.executeAction(request);
+    },
   });
-  const form = received.form as { dashboardId?: string; id?: string };
-  const id = String(form.dashboardId ?? form.id ?? "");
-  const detail = await fetchDashboardLocalDetail(id);
-  if (!detail) throw new DraftRejected(t("dashboard.draft.unavailable"));
-  const accepted = acceptDraft({ ...received, pageKey: DASHBOARD_PAGE_KEY, form: received.form }, boardIdentity(detail));
-  // A card's parameters are not part of the board: their draft is compared with that card's own form.
-  const parameters = accepted.operation === "dashboard.card.parameters"
-    ? await fetchCardParameterForm(detail.id, (accepted.form as { cardId: string }).cardId)
-    : null;
-  const unchanged = changesNothing(detail, accepted, parameters);
-  if (!unchanged) draft.value = accepted;
-  await store.selectDashboard(detail.id);
-  // Opening the board writes the address first, so the draft is taken out of the address that write leaves.
-  if (unchanged) discardDraft();
+  onBeforeUnmount(unregister);
 }
+
+watch(() => props.objectRefresh?.seq, () => {
+  if (!props.objectRefresh) return;
+  void store.loadDashboards();
+  void panelRef.value?.reload();
+});
 
 /* ======================== the boards list ======================== */
 
@@ -187,43 +205,11 @@ watch(tabsRef, (element, previous) => {
 });
 onBeforeUnmount(() => resize.disconnect());
 
-/**
- * Dropping the draft only empties this page: the saved board stays as it was, and the address it is shown at — its own,
- * or the conversation's page parameter — stops naming the draft and keeps everything else it names.
- */
-function discardDraft() {
-  draft.value = null;
-  draftFailure.value = null;
-  replaceAddress(withoutPageDraftQuery(pageAddress()) as Record<string, string>);
-}
-
-const failureText = computed(() => draftFailure.value?.message ?? "");
-
 onMounted(async () => {
   await store.loadDashboards({ notifyError: true });
-  if (link.value) {
-    try {
-      await readDraft(link.value);
-      return;
-    } catch (error) {
-      draftFailure.value = cardError(error);
-      // A draft this page cannot fill leaves the reader on their own board.
-    }
-  }
   if (!currentDashboardId.value && dashboardItems.value[0])
     void store.selectDashboard(dashboardItems.value[0].id);
 });
-
-watch(
-  () => pageAddress(),
-  (address, previous) => {
-    const next = pageDraftLink(address);
-    const before = pageDraftLink(previous ?? {});
-    if (next?.sessionId === before?.sessionId && next?.runId === before?.runId && next?.path === before?.path) return;
-    if (next) void readDraft(next).catch((error: unknown) => { draftFailure.value = cardError(error); });
-    else if (draft.value) discardDraft();
-  },
-);
 </script>
 
 <template>
@@ -302,15 +288,13 @@ watch(
         <span>{{ t("analysis.createDashboard") }}</span>
       </el-button>
     </div>
-    <p v-if="failureText" class="draft-failure" role="alert">{{ failureText }}</p>
     <div class="home-body">
       <DashboardPanel
         v-if="currentDashboardId"
-        :key="`${currentDashboardId}:${draft ? draft.operation : 'saved'}`"
+        ref="panelRef"
+        :key="currentDashboardId"
         :dashboard-id="currentDashboardId"
-        :draft="draft"
         :card-id="chosenCardId"
-        @discard-draft="discardDraft"
         @select-card="(card: { id: string; name: string } | null) => writeCard(card)"
       />
       <el-empty v-else-if="!loadingDashboards" :description="t('analysis.noDashboards')" />
@@ -333,11 +317,6 @@ watch(
   flex-wrap: wrap;
   flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color);
-}
-.draft-failure {
-  margin: var(--spacing-sm) 0 0;
-  color: var(--el-color-danger);
-  font-size: var(--text-sm);
 }
 .home-body {
   flex: 1;

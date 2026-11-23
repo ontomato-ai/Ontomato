@@ -21,11 +21,6 @@ await mountPanel({
     const detailVisible = computed(() => selected.value !== null || creating.value);
     const setCreating = (value) => instance.state.set("creating", value);
 
-    // Keep the detail view open when an agent draft arrives (including create drafts when nothing is selected).
-    watch(instance.draft, (draft) => {
-      if (draft && !selected.value) setCreating(true);
-    }, { immediate: true });
-
     watch(selected, (next) => {
       if (next) {
         setCreating(false);

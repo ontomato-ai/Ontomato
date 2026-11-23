@@ -93,7 +93,8 @@ async function call(path:string,method:string){
     ...(method==="POST"?{body:JSON.stringify({releaseId})}:{})});
 }
 
-it.each(endpoints)("checks %s dependencies as the selected executor while retaining initiator ownership",async(path,method,status)=>{
+it.each(endpoints)("checks %s dependencies with the logged-in user when a default is configured",async(path,method,status)=>{
+  state.visible=new Set(["U"]);
   const response=await call(path,method);
   expect(response.status).toBe(status);
   if(method==="GET")expect(await response.json()).toMatchObject({asset:{id:profileId},releaseId,issues:[]});
@@ -103,8 +104,9 @@ it.each(endpoints)("checks %s dependencies as the selected executor while retain
     expect(state.bind).toHaveBeenCalledWith(owner,expect.any(String),profileId,releaseId,[],{});
   }
   const capability=state.post.mock.calls.find(([name])=>name==="projection-object-contract")!;
-  expect(capability[3].headers).toMatchObject({"X-API-Key":"V-key"});
-  expect(capability[3].headers).not.toHaveProperty("tk");
+  expect(capability[3].headers).toMatchObject({tk:"U-token"});
+  expect(capability[3].headers).not.toHaveProperty("X-API-Key");
+  expect(state.post.mock.calls.some(([name])=>name==="agent-execution-resolve")).toBe(false);
   expect(state.post.mock.calls.filter(([name])=>name==="product-grant-owner-resources").every(([, ,body])=>body.userId==="U")).toBe(true);
 });
 
@@ -127,8 +129,7 @@ it.each(endpoints)("keeps %s in self mode on U credentials without resolving a s
   expect(state.post.mock.calls.some(([name])=>name==="agent-execution-resolve")).toBe(false);
 });
 
-it.each(endpoints)("preserves %s dependency denial when self-mode U cannot access the ontology class",async(path,method)=>{
-  state.executor=null;
+it.each(endpoints)("denies %s when only the default execution identity can access the ontology class",async(path,method)=>{
   const response=await call(path,method);
   expect(response.status).toBe(404);
   expect(await response.json()).toMatchObject({error:{code:"ONTOLOGY_QUERY_FAILED"}});

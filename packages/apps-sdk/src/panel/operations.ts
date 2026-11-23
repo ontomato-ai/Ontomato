@@ -3,7 +3,7 @@ import { projectionOperation } from "@ontomato/contracts/panel-projection";
 import { operationCall, operationInvocation, type PanelProjectionRegistration } from "./ports";
 import type { PanelOperationBinding } from "./types";
 import type { PanelStateStore } from "./state";
-import type { PanelFormAdapters } from "./draft";
+import type { PanelFormAdapters } from "./forms";
 import type { PanelReadCall, PanelWriteInvocation } from "./human-operations";
 
 /*

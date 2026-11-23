@@ -69,7 +69,7 @@
       <span v-if="countText !== null" class="attrs-count">{{ t("attr.count", { count: countText }) }}</span>
     </div>
 
-    <!-- Fallback editor when an attribute is selected (e.g. via deep link / draft) before the list loads or while filtered out. -->
+    <!-- Fallback editor when an attribute is selected (e.g. via deep link) before the list loads or while filtered out. -->
     <section v-if="selected && !creating && !selectedVisible" class="attrs-fallback-card">
       <div class="attrs-editor-head">
         <div>

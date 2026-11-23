@@ -23,14 +23,12 @@ import {
 import type { PanelText } from "./text";
 import { panelOperations } from "./operations";
 import type { PanelProjectionRegistration } from "./ports";
-import { PanelFormAdapters, type PageDraftLink, type ReceivedPanelDraft, type UnclaimedDraft } from "./draft";
+import { PanelFormAdapters } from "./forms";
 import { handlerFor } from "./handlers";
-import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PanelOperationBinding } from "./types";
 import type { AppBridgeConfirmPanelOperationResult } from "@ontomato/contracts/app-bridge";
 import type {
   PanelAgentRunRef,
-  PanelFormEditedTarget,
   PanelHumanOperationDispatchResponse,
   PanelHumanOperationPreparation,
 } from "@ontomato/contracts/panel-agent";
@@ -48,15 +46,13 @@ import type { ConfirmPanelOperation, PanelHumanOperations, PanelOperationDescrip
 
 /** What an instance needs from the platform: the reader's request path, and the panel's own key and address. */
 export interface PanelInstanceOptions {
-  /** The page's registration key: the application use's pageKey, which a draft names too. */
+  /** The page's registration key: the application use's pageKey. */
   pageKey: string;
   url: () => string;
   label: () => string;
   initial?: PanelInitialState;
   /** Reads a current projection by ID, as the reader. */
   readProjection: (id: string) => Promise<ProductProjection>;
-  /** Records, as the reader, the object a create draft's save created, so the draft addresses it from then on. */
-  recordDraftCreated: (link: PageDraftLink, id: string) => Promise<void>;
   /** Translates platform message keys (such as object-union type display names) in the current locale. */
   translate?: (key: string, params?: Readonly<Record<string, string>>) => string;
   /** The panel's own words (its content's messages) in the current language: what a state operation is called. */
@@ -65,7 +61,6 @@ export interface PanelInstanceOptions {
   operations: PanelHumanOperations;
   /** The host's confirmation and single dispatch of a prepared write. */
   confirmOperation: ConfirmPanelOperation;
-  reportDraftError?: (reason: unknown) => void;
   /**
    * Where this instance sits in the panel the reader opened (a panel placed from another's state), or nothing for the
    * opened panel itself: every member path, operation ID and page-context selection of this instance starts with it.
@@ -161,7 +156,7 @@ export interface NestedPublisher {
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
 }
 
-/** A completed panel write operation reported by the host (e.g. an agent `/operate` dispatch). */
+/** A completed panel write operation reported by the host. */
 export interface PanelOperationCompletion {
   readonly operation: PanelCompletedOperation;
   readonly affected?: PanelOperationAffected;
@@ -185,28 +180,8 @@ export interface PanelInstance {
   /** The values a member's component set for parameters bound to no state, by name. */
   ownParams(member: string): Readonly<Record<string, RuntimeJsonValue>>;
   readonly projections: DeepReadonly<Ref<readonly PanelProjectionRegistration[]>>;
-  /** The form adapters its projections registered, for the draft its address names. */
+  /** The mounted form adapters its projections registered for live filling, submission, and visibility. */
   readonly forms: PanelFormAdapters;
-  /** Set once a form accepts a draft with changed fields. Cleared when the reader saves or discards it. */
-  readonly draft: Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>;
-  receiveDraft(value: ReceivedPanelDraft<Record<string, unknown>>): void;
-  /** Clears a draft tentatively claimed by an unmounted member when its form still cannot be drawn on screen. */
-  rollbackDraft(value: ReceivedPanelDraft<Record<string, unknown>>): void;
-  /**
-   * Ends the draft a form in `slot` holds, once the reader saved or discarded it: a saved create draft first records the
-   * object it created (`created`), then whoever listens hears which draft ended. A slot that holds no draft has nothing
-   * to end.
-   */
-  settleDraft(slot: string, created?: string): Promise<void>;
-  /** Hears each draft that ended, by its link; the returned function stops it. */
-  onDraftSettled(listener: (link: PageDraftLink) => void): () => void;
-  /**
-   * What a draft this instance holds is for — its object's type and its operation — when none of its forms takes it:
-   * every slot its declaration names has registered its projection, and every form among them declined the draft (none
-   * binds the type, or none of that type performs the operation). Null otherwise, and while a slot is still to register,
-   * since that may be the form that takes the draft.
-   */
-  readonly unclaimedDraft: Readonly<Ref<UnclaimedDraft | null>>;
   /** True while an external address update changing deep-link state is held pending reactivation. */
   readonly addressPending?: Readonly<Ref<boolean>>;
   register(registration: PanelProjectionRegistration): () => void;
@@ -259,7 +234,7 @@ export interface PanelInstance {
   readonly outputs: Readonly<Record<string, Readonly<Record<string, RuntimeJsonValue | null>>>>;
   /** Publish or clear one read-only output for a projection member. */
   setMemberOutput(member: string, name: string, value: RuntimeJsonValue | null): void;
-  /** Whether this instance holds unsaved changes: a received draft, a form the reader edited, or a panel placed in it. */
+  /** Whether this instance holds unsaved changes: a form the reader edited, or a panel placed in it. */
   dirty(): boolean;
   /** A member's path in the panel the reader opened: this instance's own, then the member's segment. */
   memberPathOf(member: string): PublisherPath;
@@ -288,10 +263,7 @@ export interface PanelInstance {
     handler: PanelMountedActionHandler,
     options?: { readonly scope?: "default" | "row" },
   ): () => void;
-  /** Notifies the host that the user manually edited an unsaved form, invalidating pending agent save confirmations. */
-  notifyFormEdited(target: PanelFormEditedTarget): void;
-  onFormEdited(listener: (target: PanelFormEditedTarget) => void): () => void;
-  /** Notifies mounted members that a panel operation completed remotely (e.g. via agent `/operate`). */
+  /** Notifies mounted members that a panel operation completed. */
   operationCompleted(event: PanelOperationCompletion): void;
   onOperationCompleted(listener: (event: PanelOperationCompletion) => void): () => void;
 }
@@ -313,8 +285,6 @@ function namedTargets(confirmation: PanelHumanOperationPreparation["confirmation
 export function createPanelInstance(manifest: PanelManifest, options: PanelInstanceOptions): PanelInstance {
   const state = createPanelState(manifest, options.initial);
   const objectListeners = new Set<(object: PanelObjectIdentity | null) => void>();
-  const settledListeners = new Set<(link: PageDraftLink) => void>();
-  const formEditedListeners = new Set<(target: PanelFormEditedTarget) => void>();
   const operationCompletedListeners = new Set<(event: PanelOperationCompletion) => void>();
   const objectChanged = (object: PanelObjectIdentity | null) => {
     for (const listener of objectListeners) listener(object);
@@ -375,7 +345,9 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     // write does, and is read again from there; the receipt itself rereads nothing.
     const path = writeOptions?.memberPath ?? operationPath(operationId);
     const agentScope = activeAgentAction;
-    const preparation = await options.operations.prepare(operationId, invocation, path, agentScope?.agentRun);
+    const preparation = agentScope?.agentRun
+      ? await options.operations.prepare(operationId, invocation, path, agentScope.agentRun)
+      : await options.operations.prepare(operationId, invocation, path);
     const named = namedTargets(preparation.confirmation);
     if (agentScope && preparation.autoMode === false && preparation.questionId) {
       throw new PanelOperationDeferred({
@@ -641,8 +613,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     }
   }
   const topLevelMemberKeys = Object.keys(manifest.members);
-  const forms = new PanelFormAdapters(options.reportDraftError, topLevelMemberKeys);
-  const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
+  const forms = new PanelFormAdapters(topLevelMemberKeys);
   const memberOutputStore = reactive<Record<string, Record<string, RuntimeJsonValue | null>>>({});
   function setMemberOutput(member: string, name: string, value: RuntimeJsonValue | null) {
     let bucket = memberOutputStore[member];
@@ -703,31 +674,10 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     pageContext,
     operations,
     forms,
-    draft: readonly(draft) as Readonly<Ref<ReceivedPanelDraft<Record<string, unknown>> | null>>,
-    receiveDraft(value) { draft.value = value; },
-    rollbackDraft(value) { if (draft.value === value) draft.value = null; },
-    async settleDraft(slot, created) {
-      const ended = draft.value;
-      if (ended?.slot !== slot) return;
-      if (created !== undefined && ended.target.id === undefined)
-        await options.recordDraftCreated(ended.link, created);
-      if (draft.value === ended) draft.value = null;
-      for (const listener of settledListeners) listener(ended.link);
-    },
-    onDraftSettled(listener) {
-      settledListeners.add(listener);
-      return () => settledListeners.delete(listener);
-    },
-    unclaimedDraft: computed(() => {
-      const registered = registrations.value;
-      if (!topLevelMemberKeys.every((member) => registered.some((registration) => registration.slot === member))) return null;
-      const formSlots = registered.filter((registration) => registration.takesDrafts).map((registration) => registration.slot);
-      return forms.unclaimed(formSlots, forms.hasRowDetailHost());
-    }),
     projections: readonly(registrations),
     register(registration) {
       // In the declaration's slot order, whichever projection finished loading first: the operations an agent lists and
-      // the header draws, and the forms a draft is offered to, keep the panel's own order.
+      // the header draws keep the panel's own order.
       const order = Object.keys(manifest.members);
       registrations.value = [...registrations.value, registration]
         .sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
@@ -805,7 +755,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     },
     outputs: memberOutputStore,
     setMemberOutput,
-    dirty: () => draft.value !== null || forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
+    dirty: () => forms.dirty() || [...publishers.values()].some((publisher) => publisher.value.dirty()),
     memberPathOf,
     operationIdOf,
     operationPath,
@@ -826,13 +776,6 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     fillForm,
     executeAction,
     registerActionHandler,
-    notifyFormEdited(target) {
-      for (const listener of formEditedListeners) listener(target);
-    },
-    onFormEdited(listener) {
-      formEditedListeners.add(listener);
-      return () => formEditedListeners.delete(listener);
-    },
     operationCompleted(event) {
       for (const listener of operationCompletedListeners) listener(event);
     },
@@ -855,9 +798,4 @@ export function applyPanelRequest(manifest: PanelManifest, state: PanelStateStor
     patch[name] = value;
   }
   state.setState(patch);
-}
-
-/** The draft link an address carries, if it carries one. */
-export function pageDraftLinkOf(address: string): PageDraftLink | null {
-  return pageDraftLink(Object.fromEntries(new URL(address, "http://page.invalid").searchParams));
 }

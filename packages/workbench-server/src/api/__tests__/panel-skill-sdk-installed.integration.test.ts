@@ -60,7 +60,7 @@ it("lists a code panel's protected skill from the bundled current SDK and saves 
   expect(result.rows).toEqual([{ name: "Renamed", skills: [skill] }]);
 });
 
-it("validates a typed agent draft that includes the installed panel skill", async () => {
+it("validates an agent settings form that includes the installed panel skill", async () => {
   const form = { name: "Renamed", description: "", icon: null, enabled: true, systemPrompt: "", skills: [skill] };
   const validate = (target: object) => fetch(base + "/agent-definitions/validate", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form, target }),
@@ -87,7 +87,7 @@ it("publishes the panel skill for the authorized entry's wired state fields", as
     const prepared = await prepareAssistantSkills(fixture.domainId, agent, credentials, context);
     digest ??= prepared.skills[0]!.digest;
     expect(prepared).toEqual({
-      skills: [{ skill, digest }], pageDrafts: true,
+      skills: [{ skill, digest }], pageControl: true,
       currentPage: { entrance, member: { source, memberPath: [], ref: skill }, path },
     });
   }
@@ -122,7 +122,7 @@ it("publishes the panel skill for the authorized entry's wired state fields", as
   expect(await pageSkillMemberContext(denied, entrance, { kind: "application-use", applicationId, useId }, { id: fixture.panelId }))
     .toMatchObject({ member: null });
   expect(await prepareAssistantSkills(fixture.domainId, agent, credentials)).toEqual({
-    skills: [], pageDrafts: false, currentPage: null,
+    skills: [], pageControl: false, currentPage: null,
   });
   expect(published).not.toHaveBeenCalled();
 });
@@ -264,7 +264,7 @@ it("catalogue diagnostics isolate an admitted broken projection across list, poi
   const preparedRegular = await prepareAssistantSkills(fixture.domainId, agent, creds, goodContext);
   expect(preparedRegular).toMatchObject({
     skills: [{ skill: goodRef, digest: expect.stringMatching(/^[a-f0-9]{64}$/) }],
-    currentPage: { member: currentMember(good) }, pageDrafts: true, skippedPageSkills: skipped,
+    currentPage: { member: currentMember(good) }, pageControl: true, skippedPageSkills: skipped,
   });
   await expect(prepareAssistantSkills(fixture.domainId, agent, creds, brokenContext))
     .rejects.toMatchObject({ status: 502, details: { skill: member.ref } });

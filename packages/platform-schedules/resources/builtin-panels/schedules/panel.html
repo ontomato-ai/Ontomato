@@ -165,7 +165,7 @@
       </div>
 
       <aside v-show="paneOpen" class="pane" data-pane>
-        <!-- New task: the owner's create form, kept mounted so it can take an agent's draft. -->
+        <!-- New task: the owner's create form. -->
         <div v-if="mode === 'create'" class="task-form" data-form="create">
           <div class="pane-head">
             <div><h2>{{ t("form.newTitle") }}</h2><p>{{ t("form.subtitle") }}</p></div>
@@ -177,14 +177,14 @@
           <sdk-alert :title="t('form.identity')" type="info" :closable="false" show-icon></sdk-alert>
         </div>
 
-        <!-- Edit: the owner's form for the selected task, kept mounted so it can take an agent's draft. -->
+        <!-- Edit: the owner's form for the selected task. -->
         <div v-if="mode !== 'create'" v-show="mode === 'edit' && selected" ref="editPane" tabindex="-1"
           class="task-form" data-form="edit" @keydown.esc="closeEditOnEscape">
           <div class="pane-head">
             <div><h2>{{ t("form.editTitle") }}</h2><p>{{ selectedRow?.label }} · {{ t("form.conflictHint") }}</p></div>
             <sdk-button text size="small" @click="cancelForm">{{ t("action.close") }}</sdk-button>
           </div>
-          <projection slot="editForm" @saved="saved" @discarded="cancelForm" @draft-refused="openEdit"></projection>
+          <projection slot="editForm" @saved="saved" @discarded="cancelForm"></projection>
           <sdk-alert :title="t('form.identity')" type="info" :closable="false" show-icon></sdk-alert>
         </div>
 

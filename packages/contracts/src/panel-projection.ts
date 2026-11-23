@@ -1082,7 +1082,7 @@ const formSaveRequestSchema = z.object({
   path: z.string().startsWith("/"),
   /** Derived from the native request schema, including any owner-required wrapper or revision. */
   bodySchema: runtimeJsonObjectSchema,
-  /** The operation name used by the existing page-draft envelope for this target. */
+  /** The owner’s create or update operation name for this form target. */
   draftOperation: z.string().min(1),
 }).strict();
 

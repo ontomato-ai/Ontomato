@@ -158,16 +158,6 @@ await mountPanel({
       }
     }, { immediate: true });
 
-    // A draft link opens the form that took the draft.
-    watch(instance.draft, draft => {
-      if (!draft) return;
-      if (draft.slot === "objectForm" && !draft.target?.id) {
-        setCreating(true);
-        instance.state.set("selected", null);
-      }
-      if (draft.slot === "attributeForm") attributeMode.value = draft.target?.id ? "edit" : "create";
-    }, { immediate: true });
-
     function openClass(primaryKey) {
       setCreating(false);
       instance.state.setState({

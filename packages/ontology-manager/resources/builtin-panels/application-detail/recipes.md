@@ -14,10 +14,10 @@ This non-menu detail page inspects and maintains one `platform:Application` at `
 ## Common flows
 
 1. **Edit identity or toggle standalone opening (`allowStandalone`)**:
-   - Open with `tab: "identity"` and draft `platform:Application.save` targeting `save`.
+   - Open with `tab: "identity"` via `present`, fill fields in `save` via `fill_form`, and save via `page_action` when requested.
    - When `allowStandalone` is enabled, `runtimeSummary` / `summary` exposes the copyable `externalLink`; disabling `allowStandalone` hides `externalLink`.
 2. **Add, edit, or delete an entry**:
-   - Draft `platform:Application.save` targeting `entryForm` (single entry) or `entriesForm` (bulk table), or run `deleteEntry` declared on `entriesList`.
+   - Open `tab: "entries"` (with `editingEntryId` for the single-entry `entryForm` dialog or `entriesView: "bulk"` for `entriesForm`) via `present`, fill via `fill_form`, and save via `page_action`, or run `deleteEntry` declared on `entriesList` via `page_action`.
 3. **Manage domain sharing and grants**:
    - Use `shareEnable` / `shareDisable` (`applications.share`), `grantSubmit` (`applications.grant`), or `revoke` declared on `grantsList`.
 4. **Delete an application**:

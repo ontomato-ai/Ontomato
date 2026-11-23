@@ -5,8 +5,8 @@
   the definition form from the form and createForm reads drawn by the ObjectForm (saved by platform:Action.save),
   the derived definition and code explanation from the definition and explanation reads; the status change is a batch
   setStatus operation and delete is the delete operation.
-  There is no blank manual creation: the new-action button opens this page's agent input; once the owner adopts the
-  agent's definition it becomes a page draft the reader checks and saves.
+  There is no blank manual creation: the new-action button opens this page's agent input; the agent opens create mode
+  via `present`, fills the live `ObjectForm` via `fill_form`, and submits via `page_action` when requested.
 -->
 <style>
   [v-cloak] { display: none; }
@@ -217,7 +217,7 @@
       </div>
 
       <!-- Definition: drawn as the owner declares it; the owner makes a system action read-only and a published action's code read-only. -->
-      <projection slot="form" v-show="activeTab === 'definition'"></projection>
+      <projection slot="form" v-show="activeTab === 'definition'" @saved="onFormSaved" @discarded="onFormDiscarded" @cancel="onFormDiscarded"></projection>
 
       <!-- Derived definition: the effects, parameters and submission conditions the owner derives from the code. -->
       <section class="ac-section" v-show="activeTab === 'derived'">

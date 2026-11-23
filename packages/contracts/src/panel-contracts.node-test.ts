@@ -11,7 +11,7 @@ import {
   FEEDBACK_RECORD, IMPORT_SKILL, SKILL,
 } from "./panel-client-requests";
 import {
-  createPanelHumanOperationIntentRequestSchema, createPanelOperationIntentRequestSchema,
+  createPanelHumanOperationIntentRequestSchema,
   dispatchPanelHumanOperationIntentRequestSchema, inspectPanelOperationImpactRequestSchema,
   isPanelHumanOperationIntent, panelHumanOperationDispatchResponseSchema, panelHumanOperationPreparationSchema,
   panelOperationOutcomeSchema,
@@ -44,7 +44,6 @@ import {
   panelOperationSchema, panelStateOperationSchema, panelStateValueSchema, singleOntologyParameterTypeSchema,
 } from "./panel-manifest";
 import { pageSelectionSchema } from "./page-context";
-import { pageDraftSchema } from "./page-draft";
 import { findPanelFormOption, panelFormObjectSelectError } from "./form-fields";
 import {
   panelFormDescriptionSchema, panelFormFieldSchema, panelFormFrequencyValueSchema,
@@ -767,7 +766,7 @@ test("application addresses carry flat named frame and entry state while preserv
     validateApplicationPanelAddressState,
   } = await import("./panel-host");
   const path = "/applications/app-school/orders";
-  const query = new URLSearchParams([["draftPath", "outputs/drafts/秋季.json"], ["standalone", "1"], ["from", "workspace"]]);
+  const query = new URLSearchParams([["standalone", "1"], ["from", "工作区"]]);
   const frame = { term: "秋季 & 春季" };
   const state = { mode: "list", term: "ignored", tags: ["one", "two"] };
   const encoded = applicationPanelAddress(path, { frame, state, query });
@@ -1509,12 +1508,10 @@ test("frequency uses the scheduled-task value and keeps time zone in a separate 
   assert.equal(panelFormFrequencyValueSchema.safeParse({ ...frequency, timeZone }).success, false);
 });
 
-test("submitted field pointers stay separate from draft values and their presence", () => {
+test("form save preserves omitted and explicit null values alongside submitted field pointers", () => {
   const omitted = { steps: [{ actionId: "review" }] };
   const explicitNull = { ...omitted, runContract: null };
-  const draft = { pageKey: "workflows", operation: "workflow.update", target: { objectType: "platform:Workflow", id: "example" } };
-  assert.deepEqual(pageDraftSchema.parse({ ...draft, form: omitted }).form, omitted);
-  assert.deepEqual(pageDraftSchema.parse({ ...draft, form: explicitNull }).form, explicitNull);
+  assert.deepEqual(panelFormSaveInputSchema.parse({ values: omitted }).values, omitted);
 
   for (const submittedFields of [undefined, [], ["/runContract", "/steps/0/actionId"]]) {
     const input = { values: explicitNull, ...(submittedFields === undefined ? {} : { submittedFields }) };
@@ -1669,20 +1666,6 @@ test("canonical relation paths are already routable and carry no view state", ()
     assert.equal(panelUsePath(applicationPanelUsePathSchema.parse(path)), path);
   for (const path of ["//", "//example.com/x", "/ontology/../agents/settings", "/agents/settings?mode=create"])
     assert.equal(applicationPanelUsePathSchema.safeParse(path).success, false);
-});
-
-test("a frame settles a particular draft artifact without proposing an address", () => {
-  const settled = {
-    kind: "draft-settled",
-    draft: {
-      sessionId: "5931a639-a70d-4dae-96db-6b8a4460d228",
-      runId: "6a0c53c8-d21c-48cd-861e-5102be9e297b",
-      path: "outputs/drafts/agent.page-draft.json",
-    },
-  };
-  assert.deepEqual(panelFrameMessageSchema.parse(settled), settled);
-  assert.equal(panelFrameMessageSchema.safeParse({ ...settled, address: "/agents/settings" }).success, false);
-  assert.equal(panelFrameMessageSchema.safeParse({ ...settled, draft: { ...settled.draft, path: "outputs/report.md" } }).success, false);
 });
 
 test("candidate source needs only workspace identity, content and build-test context", () => {
@@ -2335,11 +2318,11 @@ test("batch confirmation and dispatch share the same concrete calls under one in
   const call = { target: { ...operationTarget, kind: "object" }, input: {} };
   const calls = [call, { ...call, target: { ...call.target, primaryKey: "another" } }];
   const use = { applicationId: "ontology", useId: "knowledge", operationId: "list.delete" };
-  const batch = { ...use, intentId: operationIntentId, calls };
-  assert.deepEqual(createPanelOperationIntentRequestSchema.parse(batch), batch);
+  const batch = { ...use, calls };
+  assert.deepEqual(createPanelHumanOperationIntentRequestSchema.parse(batch), batch);
   assert.deepEqual(inspectPanelOperationImpactRequestSchema.parse({ ...use, calls }), { ...use, calls });
-  assert.equal(createPanelOperationIntentRequestSchema.safeParse({ ...batch, call }).success, false);
-  assert.equal(createPanelOperationIntentRequestSchema.safeParse({
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({ ...batch, call }).success, false);
+  assert.equal(createPanelHumanOperationIntentRequestSchema.safeParse({
     ...batch, calls: [{ ...call, executionUserId: "another" }],
   }).success, false);
   assert.equal(panelWriteOperationSnapshotSchema.safeParse({
@@ -2422,7 +2405,9 @@ test("a frame can prepare a human intent and only the host can dispatch it", () 
   assert.equal(clientSends(bindings, "GET", "", `/panel-operation-intents/${operationIntentId}`), false);
   assert.equal(clientSends(bindings, "POST", "", `${create}/${operationIntentId}/dispatch`), false);
   assert.deepEqual(dispatchPanelHumanOperationIntentRequestSchema.parse({}), {});
-  assert.equal(dispatchPanelHumanOperationIntentRequestSchema.safeParse({ confirmed: true }).success, false);
+  for (const forged of [{ confirmed: true }, { questionId: operationIntentId }, { call }]) {
+    assert.equal(dispatchPanelHumanOperationIntentRequestSchema.safeParse(forged).success, false);
+  }
   const reply = { kind: "dispatched", intentId: operationIntentId, outcome: { kind: "unknown", message: "No receipt" } };
   assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(reply), reply);
 });
@@ -3171,7 +3156,7 @@ test("operationDrafts validates target form member and directs projectionOperati
 
 test("targetless customer Actions live in top-level type table operations and omit object on action snapshots", async () => {
   const { platformTypeTableResponseSchema } = await import("./platform-type-table");
-  const { panelWriteOperationSnapshotSchema, panelFormEditedTargetSchema } = await import("./panel-agent");
+  const { panelWriteOperationSnapshotSchema } = await import("./panel-agent");
   const { EXECUTE_OBJECT_ACTION } = await import("./platform-object-types");
 
   const createOrder = {
@@ -3224,9 +3209,4 @@ test("targetless customer Actions live in top-level type table operations and om
   assert.equal(snapshot.action?.object, undefined);
   assert.deepEqual(snapshot.action?.affects, ["Order"]);
 
-  // Form edit notifications accept optional slot for both object and draft targets.
-  assert.deepEqual(
-    panelFormEditedTargetSchema.parse({ kind: "draft", objectType: "Order", slot: "orderForm" }),
-    { kind: "draft", objectType: "Order", slot: "orderForm" },
-  );
 });

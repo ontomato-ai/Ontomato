@@ -55,8 +55,6 @@ import {
  * locale.
  */
 
-const formInstructions =
-  "Read the form for the intended target. Use its fields, values and save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.";
 
 const recordLabelSchema = z.object({ label: z.string().min(1) }).passthrough();
 const saveInputSchema = panelFormSaveInputSchema.omit({ revision: true }).strict();
@@ -274,7 +272,7 @@ export const governanceServerOperations = [
     resultSchema: savedIdSchema,
     draftOperation: () => "user.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       return save(host, "/panel/governance/users/save", saveBody(target, input), "USER_SAVE_FAILED", USER, [USER, ROLE]);
     },
@@ -396,7 +394,7 @@ export const governanceServerOperations = [
     resultSchema: savedIdSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "role.create" : "role.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     create: {
       draftValues(values: unknown) {
         return runtimeJsonObjectSchema.parse(values);
@@ -454,7 +452,7 @@ export const governanceServerOperations = [
     resultSchema: savedIdSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "permissionPolicy.create" : "permissionPolicy.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     create: {
       draftValues(values: unknown) {
         return runtimeJsonObjectSchema.parse(values);
@@ -665,7 +663,7 @@ export const governanceServerOperations = [
     resultSchema: savedIdSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "orgUnit.create" : "orgUnit.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     create: {
       draftValues(values: unknown) {
         return runtimeJsonObjectSchema.parse(values);
@@ -842,7 +840,7 @@ export const governanceServerOperations = [
     resultSchema: savedIdSchema,
     draftOperation: (target: PanelOperationTarget) => target.kind === "draft" ? "orgPosition.create" : "orgPosition.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     create: {
       draftValues(values: unknown) {
         return runtimeJsonObjectSchema.parse(values);
@@ -913,7 +911,7 @@ export const governanceServerOperations = [
     resultSchema: savedIdSchema,
     draftOperation: () => "orgGrant.update",
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions,
+
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       if (target.kind !== "object") throw new Error("Grant save acts on a selected organization grant");
       const envelope = await ownerPost(host, "/panel/governance/org-grants/save", saveBody(target, input), ownerEnvelopeSchema);

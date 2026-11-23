@@ -162,8 +162,7 @@ describe("a panel application's page beside the conversation", () => {
     expect(instances).toHaveLength(1);
     expect(display.pageContext.value).toEqual(contextOf(String(router.currentRoute.value.query.page), "task-2"));
 
-    const draft = "/applications/app-a/tasks?draftSessionId=s&draftRunId=r&draftPath=outputs%2Fdrafts%2Fnext.page-draft.json";
-    await router.replace({ query: { ...router.currentRoute.value.query, page: panelAddress(draft, selected("task-3")) } });
+    await router.replace({ query: { ...router.currentRoute.value.query, page: panelAddress("/applications/app-a/tasks", selected("task-3")) } });
     await flushPromises();
     expect(instances).toHaveLength(1);
     expect(wrapper.get(".panel-double").attributes("data-requested")).toBe(JSON.stringify(selected("task-3")));

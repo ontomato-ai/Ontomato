@@ -151,7 +151,7 @@ export type PanelReadOperationResult = z.infer<typeof panelReadOperationResultSc
 
 
 /** One call or a nonempty set of concrete calls belonging to the same operation and execution identity. */
-const panelBatchOperationCallSchema = panelOperationCallSchema.omit({ draft: true }).extend({
+const panelBatchOperationCallSchema = panelOperationCallSchema.extend({
   target: panelObjectIdentitySchema.extend({ kind: z.literal("object") }),
 });
 export const panelSingleInvocationSchema = z.object({ call: panelOperationCallSchema }).strict();

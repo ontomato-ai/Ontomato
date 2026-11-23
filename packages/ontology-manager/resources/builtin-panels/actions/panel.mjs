@@ -11,8 +11,8 @@ import { mountPanel, usePanelContext, usePanelData, usePanelOperation } from "@o
  * projections; nothing here requests an interface itself.
  *
  * There is no blank manual creation: the one ConversationEntry button opens this page's agent input; the agent writes
- * and trial-runs the code by the page skill, and once the owner adopts it drafts the result into the ObjectForm here for
- * the reader to check and save.
+ * and trial-runs the code by the page skill, then opens create mode via `present`, fills the live `ObjectForm` via
+ * `fill_form`, and submits via `page_action` when requested.
  */
 
 const ACTION_TYPE = "platform:Action";
@@ -155,20 +155,27 @@ const ActionsCatalog = {
       get: () => (typeof instance.state.values.value.activeTab === "string" && instance.state.values.value.activeTab ? instance.state.values.value.activeTab : "definition"),
       set: (value) => instance.state.set("activeTab", value || "definition"),
     });
-    /** An agent's draft opens the definition form as it arrives, a new action's draft too (nothing is selected then). */
-    const draftVisible = computed(() => instance.draft.value !== null);
-    watch(instance.draft, (draft) => {
-      if (draft) activeTab.value = "definition";
+    const creating = computed(() => values.value.creating === true);
+    watch(creating, (active) => {
+      if (active) activeTab.value = "definition";
     }, { immediate: true });
-    const detailVisible = computed(() => selected.value !== null || draftVisible.value);
+    const detailVisible = computed(() => selected.value !== null || creating.value);
 
     function selectRow(row) {
-      instance.state.set("selected", { className: ACTION_TYPE, primaryKey: row.primaryKey });
-      activeTab.value = "definition";
+      instance.state.setState({
+        selected: { className: ACTION_TYPE, primaryKey: row.primaryKey },
+        creating: false,
+        activeTab: "definition",
+      });
     }
     function back() {
-      instance.state.set("selected", null);
-      activeTab.value = "definition";
+      instance.state.setState({ selected: null, creating: false, activeTab: "definition" });
+    }
+    function onFormSaved() {
+      if (creating.value) instance.state.set("creating", false);
+    }
+    function onFormDiscarded() {
+      if (creating.value) instance.state.set("creating", false);
     }
     /*
      * A selected action the catalog no longer lists is gone (deleted here or elsewhere), so the page goes back to the
@@ -443,7 +450,7 @@ const ActionsCatalog = {
       keywordModel, rowsRead, visibleRows,
       checked, allChecked, isChecked, toggleChecked, toggleAll, clearChecked,
       statusOptions, statusToSet, statusRunning, statusResults, statusAdmitted, statusLabel, applyStatus,
-      selectRow, back, statusTagType, columnLabel, formatTime,
+      selectRow, back, onFormSaved, onFormDiscarded, statusTagType, columnLabel, formatTime,
       record, recordLabel, recordStatus, recordOrigin, systemAction,
       definitionRead, declaredTarget, affects, parameters, conditions, effectGroups,
       effectLine, effectFields, effectChecks, conditionText,

@@ -37,12 +37,9 @@
 「角色/成员 + ID + 使用/编辑」三样，加上域内共享的开关；共享时所有者会连它用到、且你有权授出的投影一起授出，
 没能连带的投影 ID 会显示出来。
 
-## 智能体怎么起草
+## 智能体怎么填表
 
-要改一个面板，先读它的表单（概览页签上的字段就是所有者表单的字段），草稿只放要改的字段。新建面板至少给 `name`、
-`content.html`、`content.module` 和 `manifest`（`{state, members, events}`）。读者打开草稿后表单按草稿填好、标出改过
-的字段，等人保存；没保存就什么都没写。编辑草稿的入口状态用 `selected` 定位面板，新建草稿用 `creating: true` 打开新建
-表单。草稿格式和链接用本页技能的起草说明。
+要改一个面板，先读它的表单（概览页签上的字段就是所有者表单的字段），用 `present` 选中目标面板（`selected`）并进入编辑表单，再用 `fill_form` 只填要改的字段。新建面板时用 `present` 设 `{ selected: null, creating: true }` 打开新建表单，再用 `fill_form` 至少填入 `name`、`content.html`、`content.module` 和 `manifest`（`{state, members, events}`）。页面会标出改过的字段并保持未保存；需要保存时再用 `page_action` 调用表单保存操作（默认在对话中确认）。
 
 ## 智能体怎么执行操作
 

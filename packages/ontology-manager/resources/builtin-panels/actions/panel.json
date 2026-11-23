@@ -33,6 +33,14 @@
         },
         "deepLink": false,
         "default": "definition"
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "deepLink": false,
+        "default": false
       }
     },
     "members": {

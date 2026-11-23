@@ -3,6 +3,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import ElementPlus from "element-plus";
+import type { DisplayPageController } from "@ontomato/agent-shell-ui";
 import DashboardPanel from "../DashboardPanel.vue";
 import DashboardHome from "../DashboardHome.vue";
 import { dashboardSelectionFrom } from "../../selection";
@@ -15,7 +16,7 @@ import { workbenchI18n } from "../../../../i18n";
  * reports itself alone. Choosing a card is not a change: it writes nothing. Doubles: the dashboard API, the platform's
  * chart and the resize library.
  */
-const api = vi.hoisted(() => ({ layouts: [] as unknown[], renamed: [] as unknown[] }));
+const api = vi.hoisted(() => ({ layouts: [] as unknown[], renamed: [] as unknown[], savedParams: [] as unknown[] }));
 const file = {
   name: "revenue.chart.json",
   content: {
@@ -40,7 +41,6 @@ const board = {
   ],
 };
 
-vi.mock("../../../workbench/assistant-host", () => ({ createAssistantClient: () => ({ readPageDraft: async () => ({}), }) }));
 vi.mock("../../api", () => ({
   fetchDashboardList: async () => [{ id: "d1", name: "Sales", createdAt: 0, updatedAt: 0 }],
   fetchDashboardLocalDetail: async () => board,
@@ -50,8 +50,16 @@ vi.mock("../../api", () => ({
       : { card: { id: "n1", name: "Total revenue", query: { kind: "metric", metricId: "m-2", parameters: {} }, valueField: "total" }, metric: { id: "m-2", name: "Total", revision: "r1", status: "PUBLISHED" }, columns: [{ key: "total", label: "Total", type: null }], rows: [{ total: 60 }], truncation: null },
   modifyDashboardLayout: async (...args: unknown[]) => { api.layouts.push(args); return true; },
   modifyResultSetName: async (...args: unknown[]) => { api.renamed.push(args); return true; },
-  fetchCardParameterForm: async () => ({ revision: "r1", fields: [], values: {}, readOnly: [] }),
-  saveCardParameters: async () => ({ cardId: "c1", query: { kind: "metric", metricId: "m-1", parameters: {} }, revision: "r1" }),
+  fetchCardParameterForm: async () => ({
+    revision: "r1",
+    fields: [{ key: "year", label: "Year", required: false, defaultValue: null, help: null, placeholder: null, maxLength: 200, multiline: false, type: "text" }],
+    values: { year: "2026" },
+    readOnly: [],
+  }),
+  saveCardParameters: async (input: unknown) => {
+    api.savedParams.push(input);
+    return { cardId: "c1", query: { kind: "metric", metricId: "m-1", parameters: {} }, revision: "r1" };
+  },
   createDimension: async () => true,
   deleteDimension: async () => true,
   deleteMetric: async () => true,
@@ -77,7 +85,7 @@ const global = () => ({ plugins: [workbenchI18n(), createPinia(), router, Elemen
 
 async function open() {
   router = await openRouter();
-  const wrapper = mount(DashboardPanel, { props: { dashboardId: "d1", draft: null }, global: global() });
+  const wrapper = mount(DashboardPanel, { props: { dashboardId: "d1" }, global: global() });
   await flushPromises();
   return wrapper;
 }
@@ -85,6 +93,7 @@ async function open() {
 afterEach(() => {
   api.layouts = [];
   api.renamed = [];
+  api.savedParams = [];
   document.body.innerHTML = "";
 });
 
@@ -161,7 +170,7 @@ describe("what the dashboard reports as selected", () => {
 
   it("shows the card its address names chosen, once the board is drawn", async () => {
     router = await openRouter();
-    const wrapper = mount(DashboardPanel, { props: { dashboardId: "d1", draft: null, cardId: "n1" }, global: global() });
+    const wrapper = mount(DashboardPanel, { props: { dashboardId: "d1", cardId: "n1" }, global: global() });
     await flushPromises();
     expect(wrapper.find(".metric-container").classes()).toContain("metric-container--selected");
     expect(wrapper.find(".chart-container").classes()).not.toContain("chart-container--selected");
@@ -174,5 +183,42 @@ describe("what the dashboard reports as selected", () => {
       { kind: "dashboard-card", id: "c1", label: "c1" },
     ]);
     expect(selectionOf({})).toEqual([]);
+  });
+
+  it("registers a live DisplayPageController for fillForm and executeAction on DashboardHome", async () => {
+    router = await openRouter({ dashboardId: "d1", cardId: "c1" });
+    let registered: DisplayPageController | null = null;
+    const wrapper = mount(DashboardHome, {
+      props: {
+        registerPageController(controller: DisplayPageController) {
+          registered = controller;
+          return () => { registered = null; };
+        },
+      },
+      global: { plugins: [workbenchI18n(), createPinia(), router, ElementPlus], stubs: { EChart: true, transition: false } },
+    });
+    await flushPromises();
+    expect(registered).not.toBeNull();
+
+    const filled = await registered!.fillForm!({ values: { year: "2025" } });
+    await flushPromises();
+    expect(filled).toEqual({ ok: true, member: "card.parameters", filledFields: ["year"] });
+    expect(api.savedParams).toEqual([]);
+
+    const saved = await registered!.executeAction!({
+      operation: "card.parameters.save",
+      agentRun: { sessionId: "s1", runId: "r1", toolCallId: "t1" },
+    });
+    await flushPromises();
+    expect(saved).toEqual({ ok: true, kind: "executed", operation: "card.parameters.save" });
+    expect(api.savedParams).toEqual([{ dashboardId: "d1", cardId: "c1", revision: "r1", values: { year: "2025" } }]);
+
+    const refreshed = await registered!.executeAction!({
+      operation: "page.refresh",
+      agentRun: { sessionId: "s1", runId: "r1", toolCallId: "t2" },
+    });
+    expect(refreshed).toEqual({ ok: true, kind: "executed", operation: "page.refresh" });
+    wrapper.unmount();
+    expect(registered).toBeNull();
   });
 });
