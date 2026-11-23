@@ -243,7 +243,9 @@ function describePanel(
       return [key, { ...read, result: readDeclaration.result }];
     }));
     const boundOps = boundProjectionOperations(projection);
-    const customerForms = customerFormSaveModes(projection, actions);
+    const customerForms = boundOps.some(bound => bound.owner?.handler.kind === "form.save")
+      ? undefined
+      : customerFormSaveModes(projection, actions);
     return [{
       text: `- ${member} — ${projection.name} (${projectionId}), ${projection.componentId}. ${projection.description} ${component.meaning} Inputs: ${JSON.stringify(declaration.inputs ?? {})}. Named data: ${JSON.stringify(data)}. Configuration: ${JSON.stringify(projection.config)}.`,
       reads: Object.entries(data).map(([dataName, { read, result }]) => ({ member, dataName, read, result })),
@@ -256,7 +258,7 @@ function describePanel(
           ? panelServerOperationLabel(bound.owner.handler, locale)
           : actions?.get(bound.binding.operation.id)?.name;
         if (label === undefined) return [];
-        const customerForm = customerForms.get(bound.name);
+        const customerForm = customerForms?.get(bound.name);
         return [{
           ...bound,
           id: panelOperationId(member, bound.name),

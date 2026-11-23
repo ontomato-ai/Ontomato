@@ -26,7 +26,7 @@ import {
 } from "@ontomato/contracts/panel-host";
 import {
   matchesDirectPanelValue,
-  normalizeExternalPanelState,
+  normalizePanelDeepLinkState,
   panelStateValueSchema,
   type PanelObjectIdentity,
   type PanelOperation,
@@ -132,7 +132,7 @@ export interface DirectPanelRun {
   /** The instance's address, with its state, as the reader and a message see it. */
   url: () => string;
   label: () => string;
-  /** The declared deep-linkable state the address asks for. */
+  /** The initial state supplied by the address, the entry and live state. */
   initial: PanelHostState;
   /**
    * Its deep-linkable state, as it holds it at the address it was told last: the host carries it into the address, and
@@ -318,6 +318,8 @@ export interface PanelInstanceOptions {
   address: () => string;
   /** The current external address's requested state, including updates on the same page. */
   initial: () => Record<string, unknown>;
+  /** State values supplied by the application entry. */
+  entryInputs?: () => Readonly<Record<string, RuntimeJsonValue>> | undefined;
   /** Optional initial live state patch (covering all declared public state, not only deepLink) for a newly opened panel. */
   liveState?: () => Readonly<Record<string, RuntimeJsonValue>> | null;
   /** Entry-wired state field names that cannot be overridden by live state patches. */
@@ -390,6 +392,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   let adoptedExternalAddress = "";
   let pendingDirectAddress: string | null = null;
   let pendingLiveState: Readonly<Record<string, RuntimeJsonValue>> | null = null;
+  let appliedExternalEntry: PanelHostState = {};
   let registration: PanelFrameRegistration | undefined;
   /** Whether the frame may ask the platform for anything: not while its page is kept out of view, nor until it is checked. */
   let bridgeOpen = true;
@@ -524,6 +527,12 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const deepLinkInitial: PanelHostState = Object.fromEntries(
       Object.entries(mergedInitial).filter(([name]) => next.panel.manifest.state[name]?.deepLink),
     );
+    const initialExternalEntry: PanelHostState = Object.fromEntries(
+      Object.entries(requested).filter(([name]) => {
+        const field = next.panel.manifest.state[name];
+        return field?.external && !field.deepLink;
+      }),
+    );
     const effectiveAddress = livePatch ? panelAddress(options.address(), deepLinkInitial, next.panel.manifest) : requestedAddress;
     adoptedExternalAddress = requestedAddress;
     if (!replaceDirect(next, deepLinkInitial, effectiveAddress)) return;
@@ -536,6 +545,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     }
     mount.activate(bridgeOpen);
     direct.value = { element, mount };
+    appliedExternalEntry = initialExternalEntry;
     if (pendingDirectAddress !== null) {
       const nextAddress = pendingDirectAddress;
       pendingDirectAddress = null;
@@ -547,6 +557,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
       const lateValidated = validatePublicStatePatch(next.panel, lateLive);
       mount.setState?.(lateValidated);
     }
+    syncExternalEntryState();
   }
 
   /**
@@ -603,6 +614,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   function endDirect() {
     direct.value?.mount.dispose();
     direct.value = null;
+    appliedExternalEntry = {};
     dropStyle?.();
     dropStyle = undefined;
     notice.value = "";
@@ -869,7 +881,36 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   function requestedState(panel: HostedPanelSource["panel"]) {
-    return normalizeExternalPanelState(panel.manifest, options.initial());
+    const fromAddress = normalizePanelDeepLinkState(panel.manifest, options.initial());
+    for (const name of options.wired?.() ?? []) delete fromAddress[name];
+    return { ...fromAddress, ...entryState(panel) };
+  }
+
+  function entryState(panel: HostedPanelSource["panel"], externalOnly = false): PanelHostState {
+    return Object.fromEntries(Object.entries(options.entryInputs?.() ?? {}).filter(([name, value]) => {
+      const field = panel.manifest.state[name];
+      return value !== undefined && field?.external && (!externalOnly || !field.deepLink);
+    }));
+  }
+
+  function syncExternalEntryState() {
+    if (!source.value || !direct.value) return;
+    const panel = source.value.panel;
+    const next = entryState(panel, true);
+    const patch: Record<string, RuntimeJsonValue> = {};
+    for (const [name, value] of Object.entries(next)) {
+      if (!Object.hasOwn(appliedExternalEntry, name) || JSON.stringify(appliedExternalEntry[name]) !== JSON.stringify(value)) {
+        patch[name] = value as RuntimeJsonValue;
+      }
+    }
+    for (const name of Object.keys(appliedExternalEntry)) {
+      if (!Object.hasOwn(next, name)) {
+        const field = panel.manifest.state[name];
+        if (field) patch[name] = (field.default ?? null) as RuntimeJsonValue;
+      }
+    }
+    appliedExternalEntry = next;
+    if (Object.keys(patch).length) direct.value.mount.setState?.(patch);
   }
 
   function syncAddress(): boolean {
@@ -895,7 +936,8 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     tellAddress(requested);
     return true;
   }
-  watch([options.address, options.initial], syncAddress);
+  watch([options.address, options.initial, () => JSON.stringify(options.entryInputs?.())], syncAddress);
+  watch(() => JSON.stringify(options.entryInputs?.()), syncExternalEntryState);
 
   /** The instance's address changed outside it: the frame hears it as a message, a direct instance as a call. */
   function tellAddress(next: string) {

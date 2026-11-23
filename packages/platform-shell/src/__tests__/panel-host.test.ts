@@ -549,6 +549,98 @@ describe("the panel host", () => {
     scope.stop();
   });
 
+  it("applies an external-only entry input without accepting it from or writing it to the URL", async () => {
+    const manifest = definePanel({
+      state: {
+        term: { type: { kind: "scalar", type: "string" }, external: true },
+        privateState: { type: { kind: "scalar", type: "string" } },
+      },
+      members: {},
+    });
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", manifest)]]);
+    const path = "/applications/app-a/a/schedules";
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", path)] });
+    const term = ref("fall");
+    const scope = effectScope();
+    const view = scope.run(() => usePanelInstance(port.port("use-a"), {
+      labels,
+      label: () => "Scheduled tasks",
+      address: () => path,
+      initial: () => ({ term: "from-url" }),
+      entryInputs: () => ({ term: term.value, privateState: "not exposed" }),
+      wired: () => ["term"],
+    }))!;
+    await view.ready;
+    const started = port.started("use-a");
+    expect(started.run.initial).toEqual({ term: "fall" });
+    expect(view.address.value).toBe(path);
+    term.value = "spring";
+    await nextTick();
+    expect(started.statePatches).toEqual([{ term: "spring" }]);
+    expect(view.address.value).toBe(path);
+    scope.stop();
+  });
+
+  it("applies external-only entry inputs that arrive during mount and resets them when removed", async () => {
+    const manifest = definePanel({
+      state: {
+        term: { type: { kind: "scalar", type: "string" }, external: true, default: "autumn" },
+        campus: { type: { kind: "scalar", type: "string" }, external: true },
+        untouched: { type: { kind: "scalar", type: "string" }, external: true },
+      },
+      members: {},
+    });
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", manifest)]]);
+    const path = "/applications/app-a/a/schedules";
+    const basePort = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", path)] });
+    let releaseMount!: () => void;
+    const mountGate = new Promise<void>(resolve => { releaseMount = resolve; });
+    let mountStarted!: () => void;
+    const mountEntered = new Promise<void>(resolve => { mountStarted = resolve; });
+    const rawPort = basePort.port("use-a");
+    const gatedPort: PanelHostPort = {
+      ...rawPort,
+      coded: async (source, run, target) => {
+        mountStarted();
+        await mountGate;
+        return rawPort.coded(source, run, target);
+      },
+    };
+    const inputs = ref<Record<string, string>>({ campus: "north" });
+    const scope = effectScope();
+    const view = scope.run(() => usePanelInstance(gatedPort, {
+      labels,
+      label: () => "Scheduled tasks",
+      address: () => path,
+      initial: () => ({}),
+      entryInputs: () => inputs.value,
+      wired: () => ["term", "campus"],
+    }))!;
+
+    // Wait until adoptCoded has captured initial inputs and paused on port.coded(...):
+    // `term` arrives mid-mount while `campus` disappears before mount finishes.
+    await mountEntered;
+    inputs.value = { term: "spring" };
+    await nextTick();
+    releaseMount();
+    await view.ready;
+
+    const started = basePort.started("use-a");
+    expect(started.run.initial).toEqual({ campus: "north" });
+    expect(started.statePatches).toEqual([{ term: "spring", campus: null }]);
+    expect(view.address.value).toBe(path);
+
+    // When `term` later disappears (e.g. frame read failed), restore its declared default without touching unrelated fields.
+    inputs.value = {};
+    await nextTick();
+    expect(started.statePatches).toEqual([
+      { term: "spring", campus: null },
+      { term: "autumn" },
+    ]);
+    expect(view.address.value).toBe(path);
+    scope.stop();
+  });
+
   it("applies non-deepLink declared public state on mount and in place without reloading or writing to the address", async () => {
     const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
     const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });

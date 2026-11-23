@@ -253,6 +253,23 @@ export function platformPanelHost(
   };
 }
 
+async function reconcileCachedApplicationFrame(
+  cacheKey: string, framePanelId: string, query: URLSearchParams,
+) {
+  const cached = getCachedPanel(cacheKey);
+  if (!cached) return;
+  const scope = currentDefinitionCacheScope();
+  let verified;
+  try {
+    verified = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(framePanelId)}?${query}`));
+  } catch (failure) {
+    invalidateCachedPanel(cacheKey);
+    throw failure;
+  }
+  const forbidden = reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
+  return { panel: verified.panel.revision === cached.revision ? cached : undefined, forbidden };
+}
+
 /**
  * An application's own frame for the entry the reader opened (product-layer standard, part one; design §三): the panel
  * \`resolve-entry\` named as the application's \`framePanelId\`, read for that entry (\`source=frame\`) and run in this
@@ -276,25 +293,14 @@ export function framePanelHost(
   return {
     async source() {
       sourceReconciled = false;
-      const cached = getCachedPanel(cacheKey);
-      if (cached) {
-        const scope = currentDefinitionCacheScope();
-        let verified;
-        try {
-          verified = panelDefinitionSnapshotSchema.parse(await json(`${panelHostPaths.snapshot(framePanelId)}?${query}`));
-        } catch (failure) {
-          invalidateCachedPanel(cacheKey);
-          throw failure;
-        }
-        const forbidden = reconcileDefinitionCacheWithSnapshot(cacheKey, cached, verified, scope);
-        if (verified.panel.revision === cached.revision) {
-          lastPanel = cached;
-          mountUnavailable = forbidden;
-          sourceReconciled = true;
-          return { kind: "registered", applicationId, use, panel: cached };
-        }
-        invalidateCachedPanel(cacheKey);
+      const reconciled = await reconcileCachedApplicationFrame(cacheKey, framePanelId, query);
+      if (reconciled) {
         sourceReconciled = true;
+        if (reconciled.panel) {
+          lastPanel = reconciled.panel;
+          mountUnavailable = reconciled.forbidden;
+          return { kind: "registered", applicationId, use, panel: reconciled.panel };
+        }
       }
       // Node answers the frame's record (bundled with its fixed projections) alone, with no page skill: the frame is no page of its own.
       const scope = currentDefinitionCacheScope();
@@ -749,19 +755,15 @@ export async function readApplicationFrameManifest(
   applicationId: string,
   use: ApplicationPanelUse,
   framePanelId: string,
-): Promise<Pick<PanelManifest, "state"> | null> {
+): Promise<Pick<PanelManifest, "state">> {
   const cacheKey = framePanelCacheKey(applicationId, framePanelId);
-  const cached = getCachedPanel(cacheKey);
-  if (cached) return cached.manifest;
-  try {
-    const scope = currentDefinitionCacheScope();
-    const query = new URLSearchParams({ applicationId, useId: use.id, source: "frame" });
-    const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${query}`));
-    setCachedPanel(cacheKey, answer.panel, scope);
-    return answer.panel.manifest;
-  } catch {
-    return null;
-  }
+  const query = new URLSearchParams({ applicationId, useId: use.id, source: "frame" });
+  const reconciled = await reconcileCachedApplicationFrame(cacheKey, framePanelId, query);
+  if (reconciled?.panel) return reconciled.panel.manifest;
+  const scope = currentDefinitionCacheScope();
+  const answer = productPanelResponseSchema.parse(await json(`${panelHostPaths.panel(framePanelId)}?${query}`));
+  setCachedPanel(cacheKey, answer.panel, scope);
+  return answer.panel.manifest;
 }
 
 class PanelStreamContractError extends Error {}

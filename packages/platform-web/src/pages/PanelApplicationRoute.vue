@@ -292,13 +292,14 @@ watch(
       frameManifest.value = null;
       return;
     }
-    if (frameManifest.value?.framePanelId === framePanelId) return;
     // Beside a conversation (unframed), load the frame panel's manifest so declared deep-link defaults
     // populate `frameState` even when omitted from the URL (and empty overrides decode against frame types).
     if (!navigate || !resolvedUse) return;
     void readApplicationFrameManifest(applicationId, resolvedUse, framePanelId).then((manifest) => {
       if (!current) return;
-      frameManifest.value = manifest ? { framePanelId, manifest } : null;
+      frameManifest.value = { framePanelId, manifest };
+    }, () => {
+      if (current) frameManifest.value = null;
     });
   },
   { immediate: true },
@@ -631,18 +632,8 @@ function withdraw(page: KeptPage) {
 function addressOf(page: KeptPage) {
   return page === shownPage.value && opened.value.includes("?") ? pageAddress.value : page.reported;
 }
-/** The opening state last handed to each page: the same object while its content is the same, so the host sees no change. */
-const handed = new WeakMap<KeptPage, { key: string; state: Record<string, unknown> }>();
 function stateOf(page: KeptPage) {
-  const state = page === shownPage.value && opened.value.includes("?") ? requestedState.value : panelAddressState(page.reported);
-  const inputs = entryInputs(page.use);
-  if (!Object.keys(inputs).length) return state;
-  const merged = { ...state, ...inputs };
-  const key = JSON.stringify(merged);
-  const last = handed.get(toRaw(page));
-  if (last?.key === key) return last.state;
-  handed.set(toRaw(page), { key, state: merged });
-  return merged;
+  return page === shownPage.value && opened.value.includes("?") ? requestedState.value : panelAddressState(page.reported);
 }
 
 const liveStatePatch = computed(() =>
@@ -695,6 +686,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
             :wired="Object.keys(page.use.inputs ?? {})"
             :address="addressOf(page)"
             :initial="stateOf(page)"
+            :entry-inputs="entryInputs(page.use)"
             :live-state="page === shownPage ? liveStatePatch : null"
             :frame-state="frameState"
             :history-back="!props.navigate"
@@ -731,6 +723,7 @@ function reportDirty(page: KeptPage, dirty: boolean) {
           :wired="Object.keys(page.use.inputs ?? {})"
           :address="addressOf(page)"
           :initial="stateOf(page)"
+          :entry-inputs="entryInputs(page.use)"
           :live-state="page === shownPage ? liveStatePatch : null"
           :frame-state="frameState"
           :history-back="!props.navigate"

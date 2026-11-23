@@ -74,8 +74,8 @@ import { useDataStateLabels } from "./data-state-labels";
  *
  * A page that opens the form under a parent (an attribute created in its class, a relationship from its two ends) fixes
  * the fields that parent decides, through `fixedFields`: the form shows each with the page's value, read-only, and
- * submits it with every save; one fixed from a state that holds nothing (no parent chosen) is the owner's to edit as usual. The owner's form does not know which page it is in, so the page says it; the owner checks
- * the value as it checks any other.
+ * includes it in platform form saves. Customer Actions take their values through parameter wiring. One fixed from a
+ * state that holds nothing (no parent chosen) is the owner's to edit as usual.
  */
 /**
  * What the form tells the page's code, which decides what the page shows next (a form's own buttons do not): the owner
@@ -85,8 +85,9 @@ const props = withDefaults(defineProps<{
   /**
    * The fields the page fixes, by the owner's JSON Pointer path: each value comes from a field of the panel's state
    * (`{state}`, the value it holds, or with `path` the part of it that JSON Pointer names, such as an object
-   * reference's `/primaryKey`) or is written here (`{literal}`). The form shows them read-only and submits them with
-   * every save; while the state holds nothing, the field is not fixed.
+   * reference's `/primaryKey`) or is written here (`{literal}`). The form shows them read-only and includes them in
+   * platform form saves. Customer Actions take their values through parameter wiring. While the state holds nothing,
+   * the field is not fixed.
    */
   fixedFields?: Record<string, { state: string; path?: string } | { literal: RuntimeJsonValue }>;
   /**
@@ -573,10 +574,10 @@ onBeforeUnmount(panel.instance.onOperationCompleted(async ({ operation, affected
   if (into.kind === "object" && (!operation.target || targetKey(into) !== targetKey({ kind: "object", ...operation.target }))) return;
   if (into.kind === "draft" && operation.target) return;
   const created = affected?.objects.filter((object) => object.objectType === objectType) ?? [];
-  await settleSave(into, {
+  await settleSave(into, prunedValues.value)({
     primaryKey: into.kind === "object" ? into.primaryKey : created.length === 1 ? created[0]!.primaryKey : null,
     message: operation.message,
-  }, prunedValues.value);
+  });
 }));
 
 useProjectionObjectRefresh((id) => id === key.value, () => {
@@ -1249,13 +1250,14 @@ function saveInput(payloadValues: PanelFormValues) {
   const { revision } = opened.value!;
   return {
     values: payloadValues,
-    submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
+    submittedFields: [...submitted.value],
     ...(revision === undefined ? {} : { revision }),
   };
 }
 
 function saveContext() {
   return {
+    fixedFieldPaths: Object.keys(fixedValues.value),
     changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
     baselineValues: opened.value!.values,
     formatUnwiredFieldRefusal: (paths: readonly string[]) => ({
@@ -1267,16 +1269,27 @@ function saveContext() {
   };
 }
 
-/** Finish a successful save whether the page button or the agent requested it. */
-async function settleSave(into: PanelFormTarget, saved: FormSaveResult, payloadValues: PanelFormValues) {
-  if (into.kind === "draft" && saved.primaryKey === null) {
-    adopt(ownerOpened.value!);
-    panel.notify({ kind: "success", text: saved.message ?? t("platform.operationDone") });
-  } else {
-    adopt({ ...ownerShown.value!, values: payloadValues, errors: [] });
-    if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey! });
-  }
-  emit("saved", { className: objectType, primaryKey: saved.primaryKey });
+/** Finish the save for the target it started with, whether the page button or the agent requested it. */
+function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
+  const savedHeld = held;
+  return async (saved: FormSaveResult) => {
+    if (held === savedHeld) held = null;
+    const createdWithoutKey = into.kind === "draft" && saved.primaryKey === null;
+    const stillShowingTarget = !unmounted && target.value === into;
+    if (stillShowingTarget) {
+      heldRefusal = null;
+      if (createdWithoutKey) {
+        adopt(ownerOpened.value!);
+      } else {
+        adopt({ ...ownerShown.value!, values: payloadValues, errors: [] });
+        if (into.kind === "draft") moveTo({ kind: "object", objectType, primaryKey: saved.primaryKey! });
+      }
+    }
+    if (!stillShowingTarget || createdWithoutKey) {
+      panel.notify({ kind: "success", text: saved.message ?? t("platform.operationDone") });
+    }
+    emit("saved", { className: objectType, primaryKey: saved.primaryKey });
+  };
 }
 
 /**
@@ -1300,9 +1313,10 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
   refusal.value = null;
   errors.value = {};
   const payloadValues = pruneInactivePanelFormVariants(fields.value, values.value);
+  const finishSave = settleSave(into, payloadValues);
   try {
     const saved = await forms.save(into, saveInput(payloadValues), override, saveContext());
-    await settleSave(into, saved, payloadValues);
+    await finishSave(saved);
     return saved;
   } catch (reason) {
     if (reason instanceof PanelOperationDeferred) {
@@ -1346,7 +1360,7 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
               return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
             }
             const saved = resolveFormSaveAnswer(confirmed, into, descriptorKind, objectType);
-            await settleSave(into, saved, payloadValues);
+            await finishSave(saved);
             return {
               ok: true,
               intentId: preparation.intentId,

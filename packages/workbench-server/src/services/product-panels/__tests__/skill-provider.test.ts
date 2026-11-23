@@ -685,6 +685,10 @@ it("documents filling and saving mounted customer Action forms", async () => {
     config: {},
     operations: {
       save: { operation: { kind: "Action", id: "create-order" } },
+      approveKnowledge: {
+        operation: { kind: "PlatformOperation", id: "knowledge.approve" },
+        target: { literal: { className: "platform:BusinessKnowledge", primaryKey: "article" } },
+      },
     },
   });
   extraProjections.set("order-edit-form", {

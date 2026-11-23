@@ -308,13 +308,18 @@ it("serves the ontology model's catalog reads to a panel viewer through the owne
     {
       primaryKey: "warehouse", label: "Warehouse",
       fields: { className: "warehouse", showName: "Warehouse", classDesc: "", attributeCount: "2", businessKeyCount: "0",
-        relationshipCount: "1", primaryKey: "ok", searchableAttributes: ["ID", "id", "CODE", "code"] },
-      fieldLabels: { className: "API name", showName: "Display name", classDesc: "Description" },
+        relationshipCount: "1", primaryKey: "ok", primaryKeyName: "id", searchableAttributes: ["ID", "id", "CODE", "code"] },
+      fieldLabels: { className: "API name", primaryKeyName: "Primary key name", showName: "Display name", classDesc: "Description" },
+      tones: { primaryKey: "success" },
+      outputs: { primaryKeyStatus: "ok", primaryKeyName: "id", attributeCount: 2, businessKeyCount: 0, relationshipCount: 1 },
     },
     expect.objectContaining({ primaryKey: "item", label: "item" }),
   ]);
   expect(await read("attributes", "rows")).toMatchObject([
-    { primaryKey: '["warehouse","id"]', label: "ID", fields: { className: "warehouse", primaryKey: "true" },
+    { primaryKey: '["warehouse","id"]', label: "ID", fields: {
+      className: "warehouse", primaryKey: "true", classNameLabel: "Warehouse",
+      ownerObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "warehouse", label: "Warehouse" },
+    },
       fieldLabels: { className: "Owner object type", businessKey: "Business key" } },
     { primaryKey: '["warehouse","code"]', label: "CODE" },
   ]);

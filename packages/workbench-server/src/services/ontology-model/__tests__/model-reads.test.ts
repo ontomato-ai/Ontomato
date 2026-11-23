@@ -33,7 +33,7 @@ const objectTypes = [
     classDesc: "A device",
     attributeCount: 3,
     businessKeyCount: 1,
-    relationshipCount: 1,
+    relationshipCount: 2,
     primaryKey: { status: "ok", name: "id" },
     searchableAttributes: ["id", "Site", "site_id"],
   },
@@ -66,7 +66,7 @@ const attributes = [
     showName: "Site",
     type: "varchar",
     attrDesc: "Owning site",
-    enable: true,
+    enable: false,
     businessKey: true,
     primaryKey: false,
   },
@@ -242,11 +242,14 @@ describe("ontology model read adapter", () => {
           classDesc: "A device",
           attributeCount: "3",
           businessKeyCount: "1",
-          relationshipCount: "1",
+          relationshipCount: "2",
           primaryKey: "ok",
+          primaryKeyName: "id",
           searchableAttributes: ["id", "Site", "site_id"],
         },
-        fieldLabels: { className: "API name", showName: "Display name", classDesc: "Description" },
+        fieldLabels: { className: "API name", primaryKeyName: "Primary key name", showName: "Display name", classDesc: "Description" },
+        tones: { primaryKey: "success" },
+        outputs: { primaryKeyStatus: "ok", primaryKeyName: "id", attributeCount: 3, businessKeyCount: 1, relationshipCount: 2 },
       },
       {
         primaryKey: "Site",
@@ -261,6 +264,8 @@ describe("ontology model read adapter", () => {
           primaryKey: "missing",
         },
         fieldLabels: { className: "API name", showName: "Display name", classDesc: "Description" },
+        tones: { primaryKey: "warning" },
+        outputs: { primaryKeyStatus: "missing", primaryKeyName: "", attributeCount: 1, businessKeyCount: 0, relationshipCount: 1 },
       },
     ]);
 
@@ -268,6 +273,7 @@ describe("ontology model read adapter", () => {
     const refreshedTypes = await adapter.list(OBJECT_TYPE);
     expect(refreshedTypes[0]?.fieldLabels).toEqual({
       className: "API name v2",
+      primaryKeyName: "Primary key name v2",
       showName: "Display name v2",
       classDesc: "Description v2",
     });
@@ -279,6 +285,8 @@ describe("ontology model read adapter", () => {
         label: "id",
         fields: {
           className: "Device",
+          classNameLabel: "Device",
+          ownerObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "Device", label: "Device" },
           name: "id",
           type: "varchar",
           attrDesc: "",
@@ -288,6 +296,8 @@ describe("ontology model read adapter", () => {
         },
         fieldLabels: {
           className: "Owner object type",
+          classNameLabel: "Owner object type",
+          ownerObject: "Owner object type",
           name: "API name",
           type: "Data type",
           attrDesc: "Description",
@@ -295,21 +305,27 @@ describe("ontology model read adapter", () => {
           businessKey: "Business key",
           primaryKey: "Primary key",
         },
+        tones: { primaryKey: "success", businessKey: "default", enable: "success" },
+        outputs: { isPrimaryKey: true, className: "Device" },
       },
       {
         primaryKey: '["Device","site_id"]',
         label: "Site",
         fields: {
           className: "Device",
+          classNameLabel: "Device",
+          ownerObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "Device", label: "Device" },
           name: "site_id",
           type: "varchar",
           attrDesc: "Owning site",
-          enable: "true",
+          enable: "false",
           businessKey: "true",
           primaryKey: "false",
         },
         fieldLabels: {
           className: "Owner object type",
+          classNameLabel: "Owner object type",
+          ownerObject: "Owner object type",
           name: "API name",
           type: "Data type",
           attrDesc: "Description",
@@ -317,6 +333,8 @@ describe("ontology model read adapter", () => {
           businessKey: "Business key",
           primaryKey: "Primary key",
         },
+        tones: { primaryKey: "default", businessKey: "info", enable: "warning" },
+        outputs: { isPrimaryKey: false, className: "Device" },
       },
     ]);
     expect("references" in (attrs[0] ?? {})).toBe(false);
@@ -401,22 +419,31 @@ describe("ontology model read adapter", () => {
   });
 
   it("reads single records for all three types and surfaces 404s when missing", async () => {
-    stubOwner(request => catalogRoute(request) ?? formRoute(request));
+    stubOwner(request => request.url.pathname === "/ontology/model/object-types"
+      ? Response.json([{ ...objectTypes[0], showName: "Smart Device" }, objectTypes[1]])
+      : catalogRoute(request));
     const adapter = createOntologyModelReadAdapter(owner, viewer);
 
     const objectType = panelRecordSchema.parse(await adapter.record(OBJECT_TYPE, "Device"));
     expect(objectType).toMatchObject({
       primaryKey: "Device",
       label: "Device",
-      fields: { attributeCount: "3", primaryKey: "ok" },
+      fields: { attributeCount: "3", primaryKey: "ok", primaryKeyName: "id" },
       fieldLabels: { className: "API name", showName: "Display name", classDesc: "Description" },
+      tones: { primaryKey: "success" },
+      outputs: { primaryKeyStatus: "ok", primaryKeyName: "id", attributeCount: 3, businessKeyCount: 1, relationshipCount: 2 },
     });
 
     const attribute = panelRecordSchema.parse(await adapter.record(ATTRIBUTE, JSON.stringify(["Device", "site_id"])));
     expect(attribute).toMatchObject({
       primaryKey: '["Device","site_id"]',
       label: "Site",
-      fields: { className: "Device", name: "site_id", businessKey: "true" },
+      fields: {
+        className: "Device", name: "site_id", businessKey: "true", classNameLabel: "Smart Device",
+        ownerObject: { kind: "reference", className: OBJECT_TYPE, primaryKey: "Device", label: "Smart Device" },
+      },
+      tones: { primaryKey: "default", businessKey: "info", enable: "warning" },
+      outputs: { isPrimaryKey: false, className: "Device" },
     });
 
     const relationship = panelRecordSchema.parse(await adapter.record(RELATIONSHIP, "owns"));
@@ -428,6 +455,18 @@ describe("ontology model read adapter", () => {
       .rejects.toMatchObject({ status: 404, message: "Object type not found" });
     await expect(adapter.record(RELATIONSHIP, "missing"))
       .rejects.toMatchObject({ status: 404, message: "Relationship not found" });
+  });
+
+  it.each([["multiple", "danger"], ["disabled", "warning"]])("marks a %s primary key with %s tone", async (status, tone) => {
+    stubOwner(request => request.url.pathname === "/ontology/model/object-type"
+      ? Response.json({ ...objectTypes[0], primaryKey: { status } })
+      : catalogRoute(request));
+    const adapter = createOntologyModelReadAdapter(owner, viewer);
+
+    expect(await adapter.record(OBJECT_TYPE, "Device")).toMatchObject({
+      tones: { primaryKey: tone },
+      outputs: { primaryKeyStatus: status },
+    });
   });
 
   it("describes edit forms and create forms with the right targets and changedField refreshes", async () => {
