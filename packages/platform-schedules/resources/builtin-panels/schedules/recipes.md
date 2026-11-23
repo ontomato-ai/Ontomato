@@ -5,7 +5,8 @@
 ## 页面上有什么
 
 - `tasks.rows`：本人的全部任务。每行 `fields` 有 `application`（应用 ID）、`settings`（应用给出的配置摘要）、`state`（`on`、`off` 或 `paused: 原因`）、`nextRun`（下次运行时间）、`lastRun`（最近一次运行的状态）、`frequency`、`timeZone`、`lastRunAt`、`lastRunSummary` 和 `latestResultPath`。
-- 状态 `app`：按应用筛选（应用 ID，空为全部）。按标题搜索只在页面里做，不进状态。
+- 状态 `app`：按应用筛选（应用 ID，空为全部）。
+- 状态 `search`：按标题搜索（字符串，空字符串为全部标题）。
 - 状态 `selectedTask`：选中的任务。选中后：
   - `detail.record`：任务记录；`detail.form`：属主表单，`values.task` 里是标题、应用、频率、时区、通知邮箱，根上是应用自己的参数；`revision` 是当前修订号。
   - `history.runs`：执行记录，新到旧，一页一页（`cursor` 取上一页的 `nextCursor`）。每条有状态、触发方式、开始时间、耗时（毫秒）、失败原因 `error`、结果摘要、结果链接 `resultLink`、执行详情 `executionDetails` 和运行时的配置 `snapshot`。

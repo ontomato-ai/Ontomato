@@ -21,6 +21,7 @@ beforeEach(async()=>{
     else if(req.url==="/window")res.end(JSON.stringify({id,sessionId:id,runId:run,expiresAt:new Date(Date.now()+60_000).toISOString(),token:"governance-grant"}));
     else if(req.url?.endsWith("/skill-runs"))res.end(JSON.stringify({id,sessionId:id,runId:run,expiresAt:new Date(Date.now()+60_000).toISOString()}));
     else if(req.url?.endsWith("/close")){res.statusCode=204;res.end();}
+    else if(req.url?.endsWith("/actions/import_knowledge"))res.end(JSON.stringify({imported:["new"],skipped:["existing"],status:"pending"}));
     else res.end(JSON.stringify({saved:true}));
   });server.listen(0,"127.0.0.1");await once(server,"listening");url=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -49,7 +50,7 @@ it("platform knowledge import returns fields for each live form and never calls 
   expect(calls.map(call=>call.path)).toEqual(["/admin/getBussinessKnowledge"]);
   expect(result.items).toEqual([
     {mode:"create",page:"/ontology/knowledge",form:{knowledgeTitle:"New",knowledgeText:"New text",knowledgeTags:["new-tag"],status:0}},
-    {mode:"update",id:"existing",page:"/ontology/knowledge",form:{knowledgeTitle:"Changed",knowledgeText:"Changed text",knowledgeTags:["retained"],status:1}},
+    {mode:"update",id:"existing",page:"/ontology/knowledge",form:{knowledgeTitle:"Changed",knowledgeText:"Changed text"}},
   ]);
 });
 
@@ -61,13 +62,17 @@ it("platform import uses the execution callback for its business-page read witho
 });
 
 it("pending import uses the platform governance window and the execution callback", async () => {
-  await command("import-pending", true, {
-    items: [{ id: "new", title: "New", text: "New text", sourceIds: ["source"] }],
+  const { stdout } = await command("import-pending", true, {
+    items: [
+      { id: "new", title: "New", text: "New text", sourceIds: ["source"] },
+      { id: "existing", title: "Original", text: "Old text", sourceIds: ["source"] },
+    ],
   }, true);
   expect(calls).toEqual([
     { path: "/window", token: "host-callback", run },
     { path: `/ontology/ai/knowledge-governance/${id}/runs/${run}/actions/import_knowledge`, token: "governance-grant", run, callback: "executor-callback" },
   ]);
+  expect(JSON.parse(stdout)).toEqual({ imported: ["new"], skipped: ["existing"], status: "pending" });
 });
 
 it("platform work-record updates return only the saved result without a report link",async()=>{
