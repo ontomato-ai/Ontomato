@@ -439,4 +439,164 @@ describe("AnnotatedCode", () => {
       ),
     );
   });
+
+  it("clears highlight and read-only output when bound activeSegmentId is externally cleared to null or empty", async () => {
+    const { element, instance } = mountAnnotatedCode({
+      state: { activeSeg: { type: { kind: "scalar", type: "string" } } },
+      memberInputs: { activeSegmentId: { state: "activeSeg" } },
+      memberOutputs: { activeSegmentId: { state: "activeSeg" } },
+      answer: () => ({ status: "ready", value: samplePayload as never }),
+    });
+
+    await vi.waitFor(() => expect(element.querySelectorAll(".sdk-annotated-code-seg")).toHaveLength(5));
+
+    // Click a segment to activate it via the component.
+    element.querySelector<HTMLElement>("[data-segment-id='seg-branch']")!.click();
+    await vi.waitFor(() => expect(instance.outputs.code?.activeSegmentId).toBe("seg-branch"));
+    expect(element.querySelector("[data-segment-id='seg-branch']")?.getAttribute("aria-current")).toBe("true");
+    expect(element.querySelector("[data-line='2']")?.getAttribute("data-hit")).toBe("true");
+
+    // External state cleared to null must clear highlight and read-only output without falling back to a local copy.
+    instance.state.set("activeSeg", null);
+    await vi.waitFor(() => expect(instance.outputs.code?.activeSegmentId).toBeNull());
+    expect(element.querySelector("[aria-current='true']")).toBeNull();
+    expect(element.querySelector("[data-line][data-hit='true']")).toBeNull();
+
+    // Activate again via line click, then externally clear to empty string.
+    element.querySelector<HTMLElement>("[data-line='1']")!.click();
+    await vi.waitFor(() => expect(instance.outputs.code?.activeSegmentId).toBe("seg-read"));
+    expect(element.querySelector("[data-line='1']")?.getAttribute("data-hit")).toBe("true");
+
+    instance.state.set("activeSeg", "");
+    await vi.waitFor(() => expect(instance.outputs.code?.activeSegmentId).toBeNull());
+    expect(element.querySelector("[aria-current='true']")).toBeNull();
+    expect(element.querySelector("[data-line][data-hit='true']")).toBeNull();
+  });
+
+  it("supports unbound local segment selection and respects fixed literal activeSegmentId without stale fallback", async () => {
+    // Unbound: clicking lines and segments works via member's own param store.
+    const unbound = mountAnnotatedCode({
+      answer: () => ({ status: "ready", value: samplePayload as never }),
+    });
+    await vi.waitFor(() => expect(unbound.element.querySelectorAll(".sdk-annotated-code-seg")).toHaveLength(5));
+
+    unbound.element.querySelector<HTMLElement>("[data-line='5']")!.click();
+    await vi.waitFor(() => expect(unbound.instance.outputs.code?.activeSegmentId).toBe("seg-return"));
+    expect(unbound.element.querySelector("[data-segment-id='seg-return']")?.getAttribute("aria-current")).toBe("true");
+    expect(unbound.element.querySelector("[data-line='5']")?.getAttribute("data-hit")).toBe("true");
+
+    // Fixed literal input: clicking another segment neither overwrites the literal nor creates a stale fallback.
+    const fixed = mountAnnotatedCode({
+      memberInputs: { activeSegmentId: { literal: "seg-read" } },
+      answer: () => ({ status: "ready", value: samplePayload as never }),
+    });
+    await vi.waitFor(() => expect(fixed.element.querySelectorAll(".sdk-annotated-code-seg")).toHaveLength(5));
+    expect(fixed.instance.outputs.code?.activeSegmentId).toBe("seg-read");
+
+    fixed.element.querySelector<HTMLElement>("[data-segment-id='seg-return']")!.click();
+    await vi.waitFor(() => expect(fixed.instance.outputs.code?.activeSegmentId).toBe("seg-read"));
+    expect(fixed.element.querySelector("[data-segment-id='seg-read']")?.getAttribute("aria-current")).toBe("true");
+    expect(fixed.element.querySelector("[data-segment-id='seg-return']")?.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("auto-scrolls both codeBox and segmentsBox on external activeSegmentId changes without breaking single-pane manual clicks", async () => {
+    const { element, instance } = mountAnnotatedCode({
+      state: { activeSeg: { type: { kind: "scalar", type: "string" } } },
+      memberInputs: { activeSegmentId: { state: "activeSeg" } },
+      memberOutputs: { activeSegmentId: { state: "activeSeg" } },
+      answer: () => ({ status: "ready", value: samplePayload as never }),
+    });
+
+    await vi.waitFor(() => expect(element.querySelectorAll(".sdk-annotated-code-seg")).toHaveLength(5));
+
+    const codeBox = element.querySelector<HTMLElement>(".sdk-annotated-code-lines")!;
+    const segmentsBox = element.querySelector<HTMLElement>(".sdk-annotated-code-segments")!;
+    const line5 = element.querySelector<HTMLElement>("[data-line='5']")!;
+    const line2 = element.querySelector<HTMLElement>("[data-line='2']")!;
+    const segReturn = element.querySelector<HTMLElement>("[data-segment-id='seg-return']")!;
+    const segBranch = element.querySelector<HTMLElement>("[data-segment-id='seg-branch']")!;
+
+    const makeRect = (top: number, height: number): DOMRect =>
+      ({ top, bottom: top + height, left: 0, right: 200, width: 200, height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+
+    Object.defineProperty(codeBox, "clientHeight", { value: 120, configurable: true });
+    Object.defineProperty(segmentsBox, "clientHeight", { value: 150, configurable: true });
+    codeBox.getBoundingClientRect = () => makeRect(0, 120);
+    segmentsBox.getBoundingClientRect = () => makeRect(0, 150);
+    line5.getBoundingClientRect = () => makeRect(240, 20);
+    line2.getBoundingClientRect = () => makeRect(100, 20);
+    segReturn.getBoundingClientRect = () => makeRect(300, 40);
+    segBranch.getBoundingClientRect = () => makeRect(180, 40);
+
+    // 1. External change to activeSeg scrolls BOTH codeBox (to line 5) and segmentsBox (to seg-return).
+    codeBox.scrollTop = 0;
+    segmentsBox.scrollTop = 0;
+    instance.state.set("activeSeg", "seg-return");
+
+    await vi.waitFor(() => {
+      // targetRect.top (240) - boxRect.top (0) - clientHeight/3 (40) = 200
+      expect(codeBox.scrollTop).toBe(200);
+      // targetRect.top (300) - boxRect.top (0) - clientHeight/3 (50) = 250
+      expect(segmentsBox.scrollTop).toBe(250);
+    });
+
+    // 2. Manual segment card click scrolls ONLY codeBox (segmentsBox remains where user clicked).
+    codeBox.scrollTop = 0;
+    segmentsBox.scrollTop = 42;
+    segBranch.click();
+    await vi.waitFor(() => {
+      expect(instance.outputs.code?.activeSegmentId).toBe("seg-branch");
+      // line2: 100 - 0 - 40 = 60
+      expect(codeBox.scrollTop).toBe(60);
+    });
+    expect(segmentsBox.scrollTop).toBe(42);
+
+    // 3. Manual code line click scrolls ONLY segmentsBox (codeBox remains where user clicked).
+    codeBox.scrollTop = 77;
+    segmentsBox.scrollTop = 0;
+    line5.click();
+    await vi.waitFor(() => {
+      expect(instance.outputs.code?.activeSegmentId).toBe("seg-return");
+      // segReturn: 300 - 0 - 50 = 250
+      expect(segmentsBox.scrollTop).toBe(250);
+    });
+    expect(codeBox.scrollTop).toBe(77);
+  });
+
+  it("auto-scrolls both panes once content loads when activeSegmentId is pre-set externally", async () => {
+    let resolveContent!: (value: ProductPanelReadResponse) => void;
+    const scrollIntoViewCalls: string[] = [];
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function scrollIntoViewSpy() {
+      const line = this.getAttribute("data-line");
+      const seg = this.getAttribute("data-segment-id");
+      if (line) scrollIntoViewCalls.push(`line:${line}`);
+      if (seg) scrollIntoViewCalls.push(`seg:${seg}`);
+    };
+
+    try {
+      const { element, instance } = mountAnnotatedCode({
+        state: { activeSeg: { type: { kind: "scalar", type: "string" } } },
+        initial: { activeSeg: "seg-return" },
+        memberInputs: { activeSegmentId: { state: "activeSeg" } },
+        memberOutputs: { activeSegmentId: { state: "activeSeg" } },
+        answer: () =>
+          new Promise<ProductPanelReadResponse>((resolve) => {
+            resolveContent = resolve;
+          }),
+      });
+
+      await vi.waitFor(() => expect(element.querySelector(".sdk-annotated-code[data-status='loading']")).not.toBeNull());
+      expect(scrollIntoViewCalls).toEqual([]);
+
+      resolveContent({ status: "ready", value: samplePayload as never });
+
+      await vi.waitFor(() => {
+        expect(instance.outputs.code?.activeSegmentId).toBe("seg-return");
+        expect(scrollIntoViewCalls).toEqual(["line:5", "seg:seg-return"]);
+      });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
 });
