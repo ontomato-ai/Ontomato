@@ -36,7 +36,7 @@ import type { AssistantCredentials } from "../../platform/agent-runtime/runtime"
 import { HttpError } from "../../utils/errors";
 import { cachedZodToRuntimeJsonSchema } from "../../utils/zod-json-schema";
 import { searchProductGrantPrincipals, type ProductOwner } from "../product-governance/grants";
-import { currentProductGrants, currentProductUsedBy, listCurrentProducts } from "./catalog";
+import { currentProductGrants, currentProductUsedBy, listCurrentProducts, listUnavailablePanels, readCataloguePanel } from "./catalog";
 import { readAuthorComponentCatalogue } from "./component-catalogue";
 import { readCurrentPanel, readCurrentProjection } from "./current";
 
@@ -305,8 +305,54 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
         ...(diagnostics?.length ? { diagnostics } : {}),
       };
     },
+    async unavailable(): Promise<PanelRecord[]> {
+      return (await listUnavailablePanels(owner, viewer)).map(({ id, reason, revision }) => ({
+        primaryKey: id,
+        className: PRODUCT_PANEL,
+        label: id,
+        subtitle: reason,
+        fields: { id, reason, ...(revision !== undefined && { revision }), canDelete: Boolean(revision) },
+        fieldLabels: {
+          id: panelWord("id"),
+          reason: panelWord("unavailableReason"),
+          revision: panelWord("revision"),
+          canDelete: panelWord("canDelete"),
+        },
+        tones: { reason: "danger" },
+      }));
+    },
     async record(primaryKey: string): Promise<PanelRecord> {
-      const panel = await rawRecord(primaryKey);
+      const { panel, unavailable } = await readCataloguePanel(owner, viewer, primaryKey);
+      if (unavailable) {
+        const { id, reason, revision } = unavailable;
+        const diagnostics = {
+          unavailable: true,
+          unavailableReason: reason,
+          ...(revision !== undefined && { revision }),
+          canEdit: false,
+          canGrant: false,
+          canDelete: Boolean(revision),
+          isBuiltin: isBuiltinProductId(id),
+          isTemplate: false,
+          domainShared: false,
+          hiddenUsedByCount: 0,
+        };
+        return {
+          primaryKey: id,
+          className: PRODUCT_PANEL,
+          label: id,
+          subtitle: reason,
+          fields: { id, objectType: PRODUCT_PANEL, ...diagnostics },
+          fieldLabels: {
+            id: panelWord("id"),
+            unavailableReason: panelWord("unavailableReason"),
+            revision: panelWord("revision"),
+            objectType: panelWord("objectType"),
+          },
+          tones: { unavailableReason: "danger" },
+          outputs: diagnostics,
+        };
+      }
       const isBuiltin = panel.visibility === "platform" || isBuiltinProductId(panel.id);
       const isTemplate = Boolean(panel.template);
       const [ownerNames, domainShared, hiddenUsedByCount] = await Promise.all([
@@ -336,6 +382,8 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
           objectType: PRODUCT_PANEL,
           domainShared,
           hiddenUsedByCount,
+          unavailable: false,
+          unavailableReason: "",
         },
         fieldLabels: {
           id: panelWord("id"),
@@ -364,6 +412,8 @@ export function createProductPanelReadAdapter(owner: ProductOwner, viewer: Assis
           domainShared,
           revision: panel.revision,
           hiddenUsedByCount,
+          unavailable: false,
+          unavailableReason: "",
         },
       };
     },
