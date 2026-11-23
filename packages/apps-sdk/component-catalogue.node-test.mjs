@@ -274,11 +274,13 @@ test("the built SDK's components.json is the catalogue its contract declares", (
 
     // Official components declare read-only outputs separately from writable public state.
     assert.deepEqual(Object.keys(declared.get("ObjectList").readOnlyOutputs ?? {}).sort(), [
-      "activeLabel", "checkedCount", "filteredCount", "selectedLabel", "total",
+      "activeLabel", "checkedCount", "filteredCount", "firstItem", "selectedLabel", "total",
     ]);
     assert.deepEqual(Object.keys(declared.get("ObjectForm").readOnlyOutputs ?? {}).sort(), ["dirty", "draft", "label"]);
     assert.deepEqual(Object.keys(declared.get("ObjectSummary").readOnlyOutputs ?? {}), ["label"]);
-    assert.deepEqual(Object.keys(declared.get("ObjectHeader").readOnlyOutputs ?? {}), ["label"]);
+    assert.deepEqual(Object.keys(declared.get("ObjectHeader").readOnlyOutputs ?? {}).sort(), [
+      "errorMessage", "fields", "label", "status",
+    ]);
 
     // SDK UI primitives, directives, and theme tokens are published under Ontomato SDK names with zero third-party leaks.
     assert.equal(catalogue.uiPrimitives.length, 108);

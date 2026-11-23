@@ -51,17 +51,30 @@
         },
         "default": "principal"
       },
-      "userKeyword": {
+      "grantUser": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:User"
+        }
+      },
+      "grantRole": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Role"
+        }
+      },
+      "grantPrincipalId": {
         "type": {
           "kind": "scalar",
           "type": "string"
         }
       },
-      "roleKeyword": {
+      "grantVerb": {
         "type": {
           "kind": "scalar",
           "type": "string"
-        }
+        },
+        "default": "use"
       }
     },
     "members": {
@@ -73,18 +86,16 @@
           "record": "record"
         },
         "config": {
-          "subtitle": ""
+          "subtitle": "",
+          "outputFields": [
+            "canMaintain",
+            "canEditEntries",
+            "canGrant",
+            "openPath",
+            "domainShared"
+          ]
         },
         "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a08"
-      },
-      "record": {
-        "component": "PanelData",
-        "type": "platform:Application",
-        "target": "selected",
-        "data": {
-          "record": "record"
-        },
-        "id": "builtin-product-039ac450-89cc-43df-a347-bf6862881a6e"
       },
       "runtimeSummary": {
         "component": "ObjectSummary",
@@ -106,7 +117,8 @@
             "renderer",
             "framePanel",
             "allowStandalone",
-            "externalLink"
+            "externalLink",
+            "themeSummary"
           ],
           "copyableFields": [
             "externalLink"
@@ -136,7 +148,8 @@
             "renderer",
             "framePanel",
             "allowStandalone",
-            "externalLink"
+            "externalLink",
+            "themeSummary"
           ],
           "copyableFields": [
             "externalLink"
@@ -164,23 +177,94 @@
         },
         "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0a"
       },
-      "entriesRead": {
-        "component": "PanelData",
+      "entriesList": {
+        "component": "ObjectList",
         "type": "platform:Application",
         "target": "selected",
         "data": {
-          "entries": "entries"
+          "rows": "entryRows"
         },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a02"
-      },
-      "grantsRead": {
-        "component": "PanelData",
-        "type": "platform:Application",
-        "target": "selected",
-        "data": {
-          "grants": "grants"
+        "operations": {
+          "deleteEntry": {
+            "operation": "applications.deleteEntry",
+            "target": {
+              "state": "selected"
+            },
+            "params": {
+              "entryId": {
+                "row": "primaryKey"
+              }
+            }
+          }
         },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a03"
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "entries.empty",
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "entries.colName",
+              "minWidth": 150
+            },
+            {
+              "key": "path",
+              "labelKey": "entries.colPath",
+              "minWidth": 180
+            },
+            {
+              "key": "panel",
+              "labelKey": "entries.colPanel",
+              "kind": "reference",
+              "minWidth": 180
+            },
+            {
+              "key": "group",
+              "labelKey": "entries.colGroup",
+              "width": 110
+            },
+            {
+              "key": "access",
+              "labelKey": "entries.colAccess",
+              "width": 130
+            },
+            {
+              "key": "defaultAgent",
+              "labelKey": "entries.colAgent",
+              "width": 130
+            }
+          ],
+          "rowActions": {
+            "labelKey": "entries.colActions",
+            "width": 140,
+            "align": "right",
+            "maxVisible": 2,
+            "items": [
+              {
+                "kind": "local",
+                "id": "edit",
+                "labelKey": "action.edit",
+                "primary": true,
+                "when": {
+                  "field": "canEdit",
+                  "equals": true
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "deleteEntry",
+                "labelKey": "action.delete",
+                "danger": true,
+                "when": {
+                  "field": "canEdit",
+                  "equals": true
+                }
+              }
+            ]
+          }
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0b"
       },
       "entryForm": {
         "component": "ObjectForm",
@@ -225,6 +309,220 @@
         },
         "id": "builtin-product-fe66a20c-a476-4988-ac4d-d42dfaa1908a"
       },
+      "usedPanelsList": {
+        "component": "ObjectList",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "rows": "usedPanels"
+        },
+        "config": {
+          "layout": "list",
+          "searchable": false,
+          "fallbackToFirst": true,
+          "emptyText": "assets.noPanels",
+          "subtitleField": "subtitle"
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0c"
+      },
+      "panelMembersList": {
+        "component": "ObjectList",
+        "type": "platform:ProductPanel",
+        "target": "inspectedPanel",
+        "data": {
+          "rows": "memberRows"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "assets.noMembers",
+          "columns": [
+            {
+              "key": "target",
+              "labelKey": "assets.colTarget",
+              "kind": "reference",
+              "minWidth": 200
+            },
+            {
+              "key": "kindLabel",
+              "labelKey": "assets.colKind",
+              "kind": "tag",
+              "width": 100
+            },
+            {
+              "key": "slot",
+              "labelKey": "assets.colSlot",
+              "width": 140
+            }
+          ]
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0d"
+      },
+      "grantsList": {
+        "component": "ObjectList",
+        "type": "platform:Application",
+        "target": "selected",
+        "data": {
+          "rows": "grantRows"
+        },
+        "operations": {
+          "revoke": {
+            "operation": "applications.grant",
+            "target": {
+              "state": "selected"
+            },
+            "params": {
+              "principalKind": {
+                "rowField": "principalKind"
+              },
+              "principalId": {
+                "rowField": "principalId"
+              },
+              "verb": {
+                "rowField": "verb"
+              },
+              "remove": {
+                "literal": true
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "grants.none",
+          "columns": [
+            {
+              "key": "principalKindLabel",
+              "labelKey": "grants.kind",
+              "kind": "tag",
+              "width": 130
+            },
+            {
+              "key": "label",
+              "labelKey": "grants.principalCol",
+              "subtitleKey": "subtitle",
+              "minWidth": 220
+            },
+            {
+              "key": "verbLabel",
+              "labelKey": "grants.verb",
+              "kind": "tag",
+              "width": 120
+            }
+          ],
+          "rowActions": {
+            "labelKey": "grants.actions",
+            "width": 100,
+            "align": "right",
+            "maxVisible": 1,
+            "items": [
+              {
+                "kind": "operation",
+                "operation": "revoke",
+                "labelKey": "grants.revoke",
+                "danger": true,
+                "when": {
+                  "field": "revocable",
+                  "equals": true
+                }
+              }
+            ]
+          }
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0e"
+      },
+      "userPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:User",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "state": {
+          "selected": "grantUser"
+        },
+        "config": {
+          "size": "default",
+          "placeholderKey": "grants.selectMember"
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a0f"
+      },
+      "rolePicker": {
+        "component": "ReferencePicker",
+        "type": "platform:Role",
+        "data": {
+          "options": "options",
+          "selected": "resolve"
+        },
+        "state": {
+          "selected": "grantRole"
+        },
+        "config": {
+          "size": "default",
+          "placeholderKey": "grants.selectRole"
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a10"
+      },
+      "grantSubmit": {
+        "component": "OperationButton",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.grant",
+        "operationParams": {
+          "principalKind": {
+            "state": "grantPrincipalKind"
+          },
+          "principalId": {
+            "state": "grantPrincipalId"
+          },
+          "verb": {
+            "state": "grantVerb"
+          },
+          "remove": {
+            "literal": false
+          }
+        },
+        "config": {
+          "type": "primary",
+          "labelKey": "grants.submit"
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a11"
+      },
+      "shareEnable": {
+        "component": "OperationButton",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.share",
+        "operationParams": {
+          "shared": {
+            "literal": true
+          }
+        },
+        "config": {
+          "size": "small",
+          "labelKey": "grants.enableShare"
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a12"
+      },
+      "shareDisable": {
+        "component": "OperationButton",
+        "type": "platform:Application",
+        "target": "selected",
+        "operation": "applications.share",
+        "operationParams": {
+          "shared": {
+            "literal": false
+          }
+        },
+        "config": {
+          "size": "small",
+          "labelKey": "grants.disableShare"
+        },
+        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a13"
+      },
       "deleteApp": {
         "component": "OperationButton",
         "type": "platform:Application",
@@ -236,82 +534,6 @@
           "icon": "trash"
         },
         "id": "builtin-product-6391d99c-9f5a-4f5e-8958-efc070e8c5f2"
-      },
-      "deleteEntry": {
-        "component": "PanelData",
-        "type": "platform:Application",
-        "target": "selected",
-        "operation": "applications.deleteEntry",
-        "id": "builtin-product-79bc66a4-3d18-4901-81eb-2a028f1402e2"
-      },
-      "grant": {
-        "component": "PanelData",
-        "type": "platform:Application",
-        "target": "selected",
-        "operation": "applications.grant",
-        "id": "builtin-product-2362357b-12bb-4ccd-9928-818095da486a"
-      },
-      "share": {
-        "component": "PanelData",
-        "type": "platform:Application",
-        "target": "selected",
-        "operation": "applications.share",
-        "id": "builtin-product-e6ccc147-3201-4576-b4a4-16790f380c55"
-      },
-      "panelCatalogue": {
-        "component": "PanelData",
-        "type": "platform:ProductPanel",
-        "data": {
-          "rows": {
-            "read": "query",
-            "params": {
-              "size": {
-                "literal": 100
-              }
-            }
-          }
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a05"
-      },
-      "panelInfo": {
-        "component": "PanelData",
-        "type": "platform:ProductPanel",
-        "target": "inspectedPanel",
-        "data": {
-          "panel": "record",
-          "members": "members"
-        },
-        "id": "builtin-product-dff28ce4-6907-4c05-b65b-1ca9ca25c7cd"
-      },
-      "userOptions": {
-        "component": "PanelData",
-        "type": "platform:User",
-        "data": {
-          "options": {
-            "read": "options",
-            "params": {
-              "keyword": {
-                "state": "userKeyword"
-              }
-            }
-          }
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a06"
-      },
-      "roleOptions": {
-        "component": "PanelData",
-        "type": "platform:Role",
-        "data": {
-          "options": {
-            "read": "options",
-            "params": {
-              "keyword": {
-                "state": "roleKeyword"
-              }
-            }
-          }
-        },
-        "id": "builtin-product-9a4e1c2b-7f05-4d8a-9c31-6e2b4d8f1a07"
       }
     }
   },
@@ -341,7 +563,6 @@
         "entries.addTitle": "添加入口",
         "entries.bulkEdit": "整表编辑",
         "entries.backToList": "返回入口列表",
-        "entries.forbidden": "无权查看入口。",
         "entries.empty": "这个应用还没有入口。",
         "entries.emptyNotPanelApp": "该应用不是面板组合应用，不支持在此维护导航入口。",
         "entries.colName": "菜单名",
@@ -351,28 +572,16 @@
         "entries.colAccess": "准入",
         "entries.colAgent": "默认智能体",
         "entries.colActions": "操作",
-        "entries.accessDomainMember": "本域成员",
-        "entries.defaultAgent": "通用助手",
-        "entries.panelCatalogue": "面板目录",
-        "entries.inspectPanel": "查看所用投影",
-        "entries.frameAndTheme": "外框与主题",
-        "entries.framePanel": "外框面板",
-        "entries.themeOverrides": "主题覆盖",
-        "entries.themeLight": "浅色模式",
-        "entries.themeDark": "深色模式",
-        "entries.noTheme": "未覆盖主题变量",
-        "entries.deleted": "入口已删除。",
         "entries.saved": "入口已保存。",
-        "entries.deleteConfirm": "删除入口「{name}」？删除后将无法恢复。",
         "assets.usedPanels": "用到的面板（{count}）",
         "assets.noPanels": "当前应用未引用任何面板。",
         "assets.panelMembers": "面板用到的投影与成员",
         "assets.selectPanel": "从左侧选择一个面板查看它用到的投影。",
-        "assets.loadingPanel": "正在读取面板成员…",
         "assets.noMembers": "该面板未引用其他投影或嵌套面板。",
         "assets.openPanel": "在面板目录打开",
-        "assets.openProjection": "打开",
-        "grants.forbidden": "无权查看这个应用的授权。",
+        "assets.colTarget": "成员",
+        "assets.colKind": "类型",
+        "assets.colSlot": "槽位",
         "grants.none": "暂无单独授权记录。",
         "grants.kind": "主体类型",
         "grants.principalCol": "主体",
@@ -380,7 +589,6 @@
         "grants.actions": "操作",
         "grants.principal": "成员",
         "grants.role": "角色",
-        "grants.domain": "本域成员",
         "grants.use": "使用",
         "grants.edit": "维护",
         "grants.revoke": "撤销",
@@ -389,13 +597,11 @@
         "grants.shareTitle": "向本域成员共享",
         "grants.sharedDesc": "已向本域所有成员开放使用权限。",
         "grants.privateDesc": "当前仅对下方授权的成员与角色开放。",
+        "grants.enableShare": "开启域内共享",
+        "grants.disableShare": "关闭域内共享",
         "grants.selectMember": "搜索或选择成员",
         "grants.selectRole": "搜索或选择角色",
         "grants.submit": "授予",
-        "grants.needPrincipal": "请选择或输入授权主体。",
-        "grants.added": "授权已添加。",
-        "grants.revoked": "授权已撤销。",
-        "grants.shareUpdated": "域内共享设置已更新。",
         "notify.saved": "更改已保存。",
         "notify.deleted": "应用已删除。"
       },
@@ -423,7 +629,6 @@
         "entries.addTitle": "Add entry",
         "entries.bulkEdit": "Edit full table",
         "entries.backToList": "Back to list",
-        "entries.forbidden": "You cannot view these entries.",
         "entries.empty": "This application has no entries yet.",
         "entries.emptyNotPanelApp": "This application is not a panel application and cannot edit navigation entries here.",
         "entries.colName": "Menu name",
@@ -433,28 +638,16 @@
         "entries.colAccess": "Access",
         "entries.colAgent": "Default agent",
         "entries.colActions": "Actions",
-        "entries.accessDomainMember": "Domain members",
-        "entries.defaultAgent": "General assistant",
-        "entries.panelCatalogue": "Panel catalogue",
-        "entries.inspectPanel": "Inspect projections",
-        "entries.frameAndTheme": "Frame & theme",
-        "entries.framePanel": "Frame panel",
-        "entries.themeOverrides": "Theme overrides",
-        "entries.themeLight": "Light mode",
-        "entries.themeDark": "Dark mode",
-        "entries.noTheme": "No theme overrides",
-        "entries.deleted": "Entry deleted.",
         "entries.saved": "Entry saved.",
-        "entries.deleteConfirm": "Delete entry \"{name}\"? This cannot be undone.",
         "assets.usedPanels": "Used panels ({count})",
         "assets.noPanels": "No panels are referenced by this application.",
         "assets.panelMembers": "Projections & nested panels",
         "assets.selectPanel": "Select a panel to view the projections it uses.",
-        "assets.loadingPanel": "Loading panel members…",
         "assets.noMembers": "This panel does not reference other projections or nested panels.",
         "assets.openPanel": "Open in Panels",
-        "assets.openProjection": "Open",
-        "grants.forbidden": "You cannot view grants for this application.",
+        "assets.colTarget": "Member",
+        "assets.colKind": "Kind",
+        "assets.colSlot": "Slot",
         "grants.none": "No individual grants yet.",
         "grants.kind": "Subject type",
         "grants.principalCol": "Subject",
@@ -462,7 +655,6 @@
         "grants.actions": "Actions",
         "grants.principal": "Member",
         "grants.role": "Role",
-        "grants.domain": "Domain members",
         "grants.use": "Use",
         "grants.edit": "Maintain",
         "grants.revoke": "Revoke",
@@ -471,13 +663,11 @@
         "grants.shareTitle": "Share with domain members",
         "grants.sharedDesc": "All members in this domain can open this application.",
         "grants.privateDesc": "Only the granted members and roles below can open it.",
+        "grants.enableShare": "Enable domain sharing",
+        "grants.disableShare": "Disable domain sharing",
         "grants.selectMember": "Search or select a member",
         "grants.selectRole": "Search or select a role",
         "grants.submit": "Grant",
-        "grants.needPrincipal": "Select or enter a subject.",
-        "grants.added": "Grant added.",
-        "grants.revoked": "Grant revoked.",
-        "grants.shareUpdated": "Domain sharing updated.",
         "notify.saved": "Changes saved.",
         "notify.deleted": "Application deleted."
       },
@@ -505,7 +695,6 @@
         "entries.addTitle": "新增入口",
         "entries.bulkEdit": "整表編輯",
         "entries.backToList": "返回入口清單",
-        "entries.forbidden": "無權檢視入口。",
         "entries.empty": "這個應用還沒有入口。",
         "entries.emptyNotPanelApp": "此應用不是面板組合應用，不支援在此維護導覽入口。",
         "entries.colName": "選單名",
@@ -515,28 +704,16 @@
         "entries.colAccess": "准入",
         "entries.colAgent": "預設智慧體",
         "entries.colActions": "操作",
-        "entries.accessDomainMember": "本域成員",
-        "entries.defaultAgent": "通用助手",
-        "entries.panelCatalogue": "面板目錄",
-        "entries.inspectPanel": "檢視所用投影",
-        "entries.frameAndTheme": "外框與主題",
-        "entries.framePanel": "外框面板",
-        "entries.themeOverrides": "主題覆寫",
-        "entries.themeLight": "淺色模式",
-        "entries.themeDark": "深色模式",
-        "entries.noTheme": "未覆寫主題變數",
-        "entries.deleted": "入口已刪除。",
         "entries.saved": "入口已儲存。",
-        "entries.deleteConfirm": "刪除入口「{name}」？刪除後將無法復原。",
         "assets.usedPanels": "用到的面板（{count}）",
         "assets.noPanels": "目前應用未引用任何面板。",
         "assets.panelMembers": "面板用到的投影與成員",
         "assets.selectPanel": "從左側選擇一個面板檢視它用到的投影。",
-        "assets.loadingPanel": "正在讀取面板成員…",
         "assets.noMembers": "此面板未引用其他投影或巢狀面板。",
         "assets.openPanel": "在面板目錄開啟",
-        "assets.openProjection": "開啟",
-        "grants.forbidden": "無權檢視此應用的授權。",
+        "assets.colTarget": "成員",
+        "assets.colKind": "類型",
+        "assets.colSlot": "槽位",
         "grants.none": "暫無單獨授權紀錄。",
         "grants.kind": "主體類型",
         "grants.principalCol": "主體",
@@ -544,7 +721,6 @@
         "grants.actions": "操作",
         "grants.principal": "成員",
         "grants.role": "角色",
-        "grants.domain": "本域成員",
         "grants.use": "使用",
         "grants.edit": "維護",
         "grants.revoke": "撤銷",
@@ -553,13 +729,11 @@
         "grants.shareTitle": "向本域成員共享",
         "grants.sharedDesc": "已向本域所有成員開放使用權限。",
         "grants.privateDesc": "目前僅對下方授權的成員與角色開放。",
+        "grants.enableShare": "開啟域內共享",
+        "grants.disableShare": "關閉域內共享",
         "grants.selectMember": "搜尋或選擇成員",
         "grants.selectRole": "搜尋或選擇角色",
         "grants.submit": "授予",
-        "grants.needPrincipal": "請選擇或輸入授權主體。",
-        "grants.added": "授權已新增。",
-        "grants.revoked": "授權已撤銷。",
-        "grants.shareUpdated": "域內共享設定已更新。",
         "notify.saved": "變更已儲存。",
         "notify.deleted": "應用已刪除。"
       }

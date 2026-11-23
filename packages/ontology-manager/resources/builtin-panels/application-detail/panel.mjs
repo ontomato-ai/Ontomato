@@ -1,30 +1,16 @@
-import { computed, nextTick, reactive, ref, watch } from "vue";
+import { computed, nextTick, watch } from "vue";
 import {
   draftTarget,
   mountPanel,
   usePanelContext,
-  usePanelData,
   usePanelFormDraft,
+  usePanelOutput,
 } from "@ontomato/sdk/panel";
 
 const APPLICATION = "platform:Application";
 const PANEL = "platform:ProductPanel";
 const PROJECTION = "platform:ProductProjection";
 const CATALOG_PATH = "/ontology/applications";
-
-function localizedText(map) {
-  if (!map || typeof map !== "object") return "";
-  const lang = typeof document !== "undefined" ? document.documentElement.lang : "";
-  if (lang && map[lang]) return map[lang];
-  if (map["zh-CN"]) return map["zh-CN"];
-  if (map.en) return map.en;
-  return Object.values(map).find((value) => typeof value === "string" && value.trim()) ?? "";
-}
-
-function looksLikeColor(value) {
-  if (typeof value !== "string") return false;
-  return /^(#|rgb\(|rgba\(|hsl\(|hsla\()/i.test(value.trim());
-}
 
 const ApplicationDetailPanel = {
   setup() {
@@ -34,6 +20,7 @@ const ApplicationDetailPanel = {
     const selected = computed(() => values.value.selected ?? null);
     const selectedKey = computed(() => selected.value?.primaryKey ?? "");
 
+    // All business view states live in manifest.state so both URLs and agents can read/write them.
     const tabModel = computed({
       get: () => values.value.tab || "identity",
       set: (next) => instance.state.set("tab", next || "identity"),
@@ -59,52 +46,74 @@ const ApplicationDetailPanel = {
     });
     const grantPrincipalKindModel = computed({
       get: () => (values.value.grantPrincipalKind === "role" ? "role" : "principal"),
-      set: (next) => instance.state.set("grantPrincipalKind", next === "role" ? "role" : "principal"),
+      set: (next) => {
+        instance.state.setState({
+          grantPrincipalKind: next === "role" ? "role" : "principal",
+          grantUser: null,
+          grantRole: null,
+          grantPrincipalId: null,
+        });
+      },
     });
+    const grantVerbModel = computed({
+      get: () => (values.value.grantVerb === "edit" ? "edit" : "use"),
+      set: (next) => instance.state.set("grantVerb", next === "edit" ? "edit" : "use"),
+    });
+    const grantPrincipalId = computed(() => values.value.grantPrincipalId ?? "");
 
-    const record = usePanelData("record", "record");
-    const entries = usePanelData("entriesRead", "entries");
-    const grants = usePanelData("grantsRead", "grants");
-    const panelCatalogue = usePanelData("panelCatalogue", "rows");
-    const panelInfo = usePanelData("panelInfo", "panel");
-    const panelMembers = usePanelData("panelInfo", "members");
-    const userOptions = usePanelData("userOptions", "options");
-    const roleOptions = usePanelData("roleOptions", "options");
+    // Read-only projection outputs only (zero usePanelData calls).
+    const recordStatus = usePanelOutput("headerTitle", "status");
+    const recordError = usePanelOutput("headerTitle", "errorMessage");
+    const headerFields = usePanelOutput("headerTitle", "fields");
 
-    const app = computed(() => (record.value.status === "ready" ? record.value.value : null));
-    const canMaintain = computed(() => Boolean(app.value?.fields?.canMaintain));
-    const canEditEntries = computed(() => Boolean(app.value?.fields?.canEditEntries));
-    const canGrant = computed(() => Boolean(app.value?.fields?.canGrant));
-    const appPath = computed(() => app.value?.fields?.home || app.value?.fields?.path || "");
+    const entryTotalOutput = usePanelOutput("entriesList", "total");
+    const usedPanelsTotalOutput = usePanelOutput("usedPanelsList", "total");
+    const usedPanelsFirstOutput = usePanelOutput("usedPanelsList", "firstItem");
+    const usedPanelsSelectedLabel = usePanelOutput("usedPanelsList", "activeLabel");
 
-    const entryData = computed(() => (entries.value.status === "ready" ? entries.value.value : null));
-    const entryRows = computed(() => entryData.value?.panelUses ?? []);
-    const grantRows = computed(() => (grants.value.status === "ready" ? grants.value.value?.grants ?? [] : []));
-    const isDomainShared = computed(() => (grants.value.status === "ready" ? Boolean(grants.value.value?.shared) : false));
+    const recordReady = computed(() => recordStatus.value === "ready");
+    const canMaintain = computed(() => headerFields.value?.canMaintain === true);
+    const canEditEntries = computed(() => headerFields.value?.canEditEntries === true);
+    const canGrant = computed(() => headerFields.value?.canGrant === true);
+    const openPath = computed(() => (typeof headerFields.value?.openPath === "string" ? headerFields.value.openPath : ""));
+    const domainShared = computed(() => headerFields.value?.domainShared === true);
+
+    const entryTotal = computed(() => (typeof entryTotalOutput.value === "number" ? entryTotalOutput.value : 0));
+    const usedPanelsTotal = computed(() => (typeof usedPanelsTotalOutput.value === "number" ? usedPanelsTotalOutput.value : 0));
 
     const recordErrorText = computed(() => {
-      if (record.value.status === "failed") {
-        const message = record.value.error?.message;
-        if (message && message !== "Application not found") return message;
-      }
+      const message = typeof recordError.value === "string" ? recordError.value : "";
+      if (message && message !== "Application not found") return message;
       return t("detail.notFound");
     });
 
-    const busy = ref(false);
-
     const identityDraft = usePanelFormDraft("save", {
-      when: () =>
-        Boolean(selectedKey.value)
-        && record.value.status === "ready"
-        && canMaintain.value
-        && tabModel.value === "identity",
+      when: () => Boolean(selectedKey.value) && recordReady.value && canMaintain.value && tabModel.value === "identity",
     });
 
-    // Navigate back to the catalog entry so the platform's unified unsaved-changes guard intercepts dirty edits.
-    function goBack() {
-      void navigate(CATALOG_PATH).catch(() => undefined);
-    }
+    const inspectedPanelId = computed(() => values.value.inspectedPanel?.primaryKey ?? "");
+    const inspectedPanelTitle = computed(() => {
+      const active = typeof usedPanelsSelectedLabel.value === "string" ? usedPanelsSelectedLabel.value : "";
+      return active || inspectedPanelId.value;
+    });
 
+    // Keep grantPrincipalId synced from the selected ReferencePicker object.
+    watch(
+      () => ({
+        kind: grantPrincipalKindModel.value,
+        userKey: values.value.grantUser?.primaryKey ?? "",
+        roleKey: values.value.grantRole?.primaryKey ?? "",
+      }),
+      ({ kind, userKey, roleKey }) => {
+        const nextId = kind === "role" ? roleKey : userKey;
+        if ((values.value.grantPrincipalId ?? "") !== nextId) {
+          instance.state.set("grantPrincipalId", nextId || null);
+        }
+      },
+      { immediate: true },
+    );
+
+    // Reset sub-views when switching to a different application.
     watch(selectedKey, (next, prev) => {
       if (prev && next !== prev) {
         instance.state.setState({
@@ -112,17 +121,32 @@ const ApplicationDetailPanel = {
           editingEntryId: null,
           inspectedPanel: null,
           grantDialog: null,
+          grantUser: null,
+          grantRole: null,
+          grantPrincipalId: null,
         });
       }
     });
 
+    // Fall back from grants tab if the current reader cannot grant on this application.
     watch(
-      app,
-      (item) => {
-        if (!item) return;
-        instance.nameObjects(APPLICATION, [{ primaryKey: item.primaryKey, label: item.label }]);
-        if (!item.fields?.canGrant && tabModel.value === "grants") {
+      [recordReady, canGrant],
+      ([ready, allowed]) => {
+        if (ready && !allowed && tabModel.value === "grants") {
           tabModel.value = "identity";
+        }
+      },
+      { immediate: true },
+    );
+
+    // Auto-select the first referenced panel when the Panels & Projections tab loads.
+    watch(
+      [tabModel, usedPanelsFirstOutput],
+      ([tab, first]) => {
+        if (tab !== "assets" || inspectedPanelId.value || !first || typeof first !== "object") return;
+        const primaryKey = typeof first.primaryKey === "string" ? first.primaryKey : "";
+        if (primaryKey) {
+          instance.state.set("inspectedPanel", { className: PANEL, primaryKey });
         }
       },
       { immediate: true },
@@ -158,6 +182,15 @@ const ApplicationDetailPanel = {
       { immediate: true },
     );
 
+    // Route back to the catalog entry so the platform's unified unsaved-changes guard intercepts dirty edits.
+    function goBack() {
+      void navigate(CATALOG_PATH).catch(() => undefined);
+    }
+
+    function retryRecord() {
+      instance.refreshObjects();
+    }
+
     function onSaved() {
       instance.refreshObjects();
       notify({ kind: "success", text: t("notify.saved") });
@@ -179,8 +212,23 @@ const ApplicationDetailPanel = {
       editingEntryId.value = "";
     }
 
+    function openAddEntry() {
+      instance.state.setState({ entriesView: "list", editingEntryId: "__new__" });
+    }
+
     function toggleEntriesView() {
       entriesViewModel.value = entriesBulkMode.value ? "list" : "bulk";
+    }
+
+    function onEntryRowAction({ id, ref }) {
+      if (id === "edit" && ref?.primaryKey) {
+        instance.state.setState({ entriesView: "list", editingEntryId: ref.primaryKey });
+      }
+    }
+
+    function onChooseUsedPanel(ref) {
+      if (!ref?.primaryKey) return;
+      instance.state.set("inspectedPanel", { className: PANEL, primaryKey: ref.primaryKey });
     }
 
     async function onDeleteDone(outcome) {
@@ -191,14 +239,36 @@ const ApplicationDetailPanel = {
       void navigate(CATALOG_PATH).catch(() => undefined);
     }
 
-    function retryRecord() {
+    function onShareDone(outcome) {
+      if (outcome?.kind === "success") instance.refreshObjects();
+    }
+
+    function openGrantDialog() {
+      instance.state.setState({
+        grantPrincipalKind: "principal",
+        grantUser: null,
+        grantRole: null,
+        grantPrincipalId: null,
+        grantVerb: "use",
+        grantDialog: true,
+      });
+    }
+
+    function onGrantAdded(outcome) {
+      if (outcome?.kind !== "success") return;
+      instance.state.setState({
+        grantDialog: null,
+        grantUser: null,
+        grantRole: null,
+        grantPrincipalId: null,
+      });
       instance.refreshObjects();
     }
 
     async function openApplication() {
-      if (!appPath.value) return;
+      if (!openPath.value) return;
       try {
-        await navigate(appPath.value);
+        await navigate(openPath.value);
       } catch (reason) {
         notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
       }
@@ -218,259 +288,19 @@ const ApplicationDetailPanel = {
       void openCatalogueRecord("/ontology/panels", PANEL, panelId);
     }
 
-    function openMemberCatalogue(member) {
-      if (!member?.primaryKey) return;
-      if (member.className === PROJECTION) {
-        void openCatalogueRecord("/ontology/projections", PROJECTION, member.primaryKey);
-      } else {
-        openPanelCatalogue(member.primaryKey);
-      }
-    }
-
     function onNavigateReference(reference) {
-      if (!reference) return;
-      if (reference.className === PANEL) openPanelCatalogue(reference.primaryKey);
-      else if (reference.className === PROJECTION) openMemberCatalogue(reference);
-    }
-
-    // --- Panel display name lookup & Panels/Projections tab ---
-    const panelNameMap = computed(() => {
-      if (panelCatalogue.value.status !== "ready") return {};
-      const list = panelCatalogue.value.value?.rows ?? [];
-      return Object.fromEntries(list.map((row) => [row.primaryKey, row.label || row.primaryKey]));
-    });
-
-    function panelDisplayName(panelId) {
-      if (!panelId) return "—";
-      return panelNameMap.value[panelId] || panelId;
-    }
-
-    const usedPanels = computed(() => [...new Set(entryRows.value.map((row) => row.panelId).filter(Boolean))]);
-    const inspectedPanelId = computed(() => values.value.inspectedPanel?.primaryKey ?? "");
-
-    function inspectPanel(panelId) {
-      if (!panelId) return;
-      instance.state.set("inspectedPanel", { className: PANEL, primaryKey: panelId });
-    }
-
-    function inspectPanelAndOpenTab(panelId) {
-      instance.state.setState({
-        inspectedPanel: { className: PANEL, primaryKey: panelId },
-        tab: "assets",
-      });
-    }
-
-    watch(
-      [tabModel, usedPanels],
-      ([tab, panels]) => {
-        if (tab !== "assets" || panels.length === 0) return;
-        if (!inspectedPanelId.value || !panels.includes(inspectedPanelId.value)) {
-          inspectPanel(panels[0]);
-        }
-      },
-      { immediate: true },
-    );
-
-    const inspectedMembers = computed(() => {
-      if (panelMembers.value.status === "ready") {
-        const value = panelMembers.value.value;
-        const list = Array.isArray(value) ? value : value?.members ?? value?.rows ?? [];
-        if (list.length) {
-          return list
-            .map((item) => ({
-              className: item.className || (item.kind === "panel" ? PANEL : PROJECTION),
-              primaryKey: item.primaryKey || item.projectionId || item.panelId || item.id,
-              label: item.label || item.name || item.primaryKey || item.projectionId || item.panelId,
-            }))
-            .filter((item) => Boolean(item.primaryKey));
-        }
-      }
-      if (panelInfo.value.status !== "ready") return [];
-      const members = panelInfo.value.value?.fields?.members ?? panelInfo.value.value?.members ?? [];
-      if (Array.isArray(members)) return members;
-      return Object.values(members)
-        .map((item) => item?.target?.projectionId)
-        .filter(Boolean)
-        .map((primaryKey) => ({ className: PROJECTION, primaryKey, label: primaryKey }));
-    });
-
-    // --- Entries helpers & theme breakdown ---
-    function groupLabel(groupKey) {
-      if (!groupKey) return "—";
-      const found = (entryData.value?.groups ?? []).find((group) => group.key === groupKey);
-      return found ? localizedText(found.names) || groupKey : groupKey;
-    }
-
-    function accessText(access) {
-      if (!access) return "—";
-      if (access.kind === "domain-member") return t("entries.accessDomainMember");
-      if (access.permissionCode) return access.permissionCode;
-      return "—";
-    }
-
-    function agentText(agent) {
-      if (!agent) return t("entries.defaultAgent");
-      if (agent.kind === "id") return agent.id;
-      if (agent.kind === "preset") return agent.agentKind;
-      return t("entries.defaultAgent");
-    }
-
-    const themeEntries = computed(() => {
-      const theme = entryData.value?.theme ?? {};
-      const toList = (bucket) =>
-        Object.entries(bucket ?? {}).map(([key, value]) => ({ key, value: String(value ?? "") }));
-      return { light: toList(theme.light), dark: toList(theme.dark) };
-    });
-    const hasThemeOverrides = computed(
-      () => themeEntries.value.light.length > 0 || themeEntries.value.dark.length > 0,
-    );
-
-    function openAddEntry() {
-      instance.state.setState({ entriesView: "list", editingEntryId: "__new__" });
-    }
-
-    function openEditEntry(row) {
-      instance.state.setState({ entriesView: "list", editingEntryId: row.id });
-    }
-
-    const appTarget = computed(() =>
-      selected.value ? { kind: "object", objectType: APPLICATION, primaryKey: selected.value.primaryKey } : null,
-    );
-
-    async function runWrite(member, operation, input) {
-      if (!appTarget.value) return null;
-      busy.value = true;
-      try {
-        const outcome = await instance.runOperation(member, operation, input, appTarget.value);
-        if (outcome.kind === "cancelled") return null;
-        if (outcome.kind === "failed") throw new Error(outcome.message || "Operation failed");
-        instance.refreshObjects();
-        return outcome;
-      } finally {
-        busy.value = false;
+      if (!reference?.primaryKey) return;
+      if (reference.className === PANEL) {
+        openPanelCatalogue(reference.primaryKey);
+      } else if (reference.className === PROJECTION) {
+        void openCatalogueRecord("/ontology/projections", PROJECTION, reference.primaryKey);
       }
     }
-
-    const deleteEntryTarget = reactive({ open: false, id: "", name: "" });
-
-    function confirmRemoveEntry(row) {
-      deleteEntryTarget.id = row.id;
-      deleteEntryTarget.name = localizedText(row.names) || row.id;
-      deleteEntryTarget.open = true;
-    }
-
-    async function executeRemoveEntry() {
-      const entryId = deleteEntryTarget.id;
-      if (!entryId) return;
-      try {
-        const outcome = await runWrite("deleteEntry", "deleteEntry", { entryId });
-        if (outcome) {
-          deleteEntryTarget.open = false;
-          notify({ kind: "success", text: t("entries.deleted") });
-        }
-      } catch (reason) {
-        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
-      }
-    }
-
-    // --- Grants & Domain Sharing ---
-    const grantError = ref("");
-    const grantDraft = reactive({ principalId: "", verb: "use" });
 
     const grantKindOptions = computed(() => [
       { value: "principal", label: t("grants.principal") },
       { value: "role", label: t("grants.role") },
     ]);
-
-    watch(grantPrincipalKindModel, () => {
-      grantDraft.principalId = "";
-      grantError.value = "";
-    });
-
-    const activePrincipalOptions = computed(() => {
-      const source = grantPrincipalKindModel.value === "role" ? roleOptions.value : userOptions.value;
-      if (source.status !== "ready") return [];
-      const list = source.value?.options ?? [];
-      return list
-        .filter((item) => typeof item.value === "string" && item.value.length > 0)
-        .map((item) => ({ value: item.value, label: item.label || item.value }));
-    });
-    const principalOptionsLoading = computed(
-      () => (grantPrincipalKindModel.value === "role" ? roleOptions.value.status : userOptions.value.status) === "loading",
-    );
-
-    function onPrincipalSearch(query) {
-      const term = typeof query === "string" ? query.trim() : "";
-      if (grantPrincipalKindModel.value === "role") {
-        instance.state.set("roleKeyword", term || null);
-      } else {
-        instance.state.set("userKeyword", term || null);
-      }
-    }
-
-    function grantKindLabel(kind) {
-      if (kind === "role") return t("grants.role");
-      if (kind === "domain") return t("grants.domain");
-      return t("grants.principal");
-    }
-
-    function openGrantDialog() {
-      grantError.value = "";
-      grantDraft.principalId = "";
-      grantDraft.verb = "use";
-      instance.state.setState({
-        grantPrincipalKind: "principal",
-        userKeyword: null,
-        roleKeyword: null,
-        grantDialog: true,
-      });
-    }
-
-    async function submitGrant() {
-      grantError.value = "";
-      const principalId = String(grantDraft.principalId ?? "").trim();
-      if (!principalId) {
-        grantError.value = t("grants.needPrincipal");
-        return;
-      }
-      try {
-        const outcome = await runWrite("grant", "grant", {
-          principalKind: grantPrincipalKindModel.value,
-          principalId,
-          verb: grantDraft.verb,
-          remove: false,
-        });
-        if (outcome) {
-          grantDialogOpen.value = false;
-          notify({ kind: "success", text: t("grants.added") });
-        }
-      } catch (reason) {
-        grantError.value = reason instanceof Error ? reason.message : String(reason);
-      }
-    }
-
-    async function revokeExistingGrant(row) {
-      try {
-        const outcome = await runWrite("grant", "grant", {
-          principalKind: row.principalKind,
-          principalId: row.principalId,
-          verb: row.verb,
-          remove: true,
-        });
-        if (outcome) notify({ kind: "success", text: t("grants.revoked") });
-      } catch (reason) {
-        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
-      }
-    }
-
-    async function toggleDomainShare(shared) {
-      try {
-        const outcome = await runWrite("share", "share", { shared: Boolean(shared) });
-        if (outcome) notify({ kind: "success", text: t("grants.shareUpdated") });
-      } catch (reason) {
-        notify({ kind: "error", text: reason instanceof Error ? reason.message : String(reason) });
-      }
-    }
 
     return {
       t,
@@ -481,64 +311,39 @@ const ApplicationDetailPanel = {
       entryDialogOpen,
       grantDialogOpen,
       grantPrincipalKindModel,
-      record,
+      grantVerbModel,
+      grantPrincipalId,
+      grantKindOptions,
+      recordStatus,
+      recordReady,
       recordErrorText,
-      app,
       canMaintain,
       canEditEntries,
       canGrant,
-      appPath,
-      entries,
-      entryData,
-      entryRows,
-      grants,
-      grantRows,
-      isDomainShared,
-      panelInfo,
-      panelMembers,
-      busy,
+      openPath,
+      domainShared,
+      entryTotal,
+      usedPanelsTotal,
+      inspectedPanelId,
+      inspectedPanelTitle,
       identityDraft,
       goBack,
+      retryRecord,
       onSaved,
       onEntriesFormSaved,
       onEntryFormSaved,
       closeEntryDialog,
+      openAddEntry,
       toggleEntriesView,
+      onEntryRowAction,
+      onChooseUsedPanel,
       onDeleteDone,
-      retryRecord,
+      onShareDone,
+      openGrantDialog,
+      onGrantAdded,
       openApplication,
       openPanelCatalogue,
-      openMemberCatalogue,
       onNavigateReference,
-      panelDisplayName,
-      usedPanels,
-      inspectedPanelId,
-      inspectedMembers,
-      inspectPanel,
-      inspectPanelAndOpenTab,
-      groupLabel,
-      themeEntries,
-      hasThemeOverrides,
-      looksLikeColor,
-      localizedText,
-      accessText,
-      agentText,
-      openAddEntry,
-      openEditEntry,
-      deleteEntryTarget,
-      confirmRemoveEntry,
-      executeRemoveEntry,
-      grantError,
-      grantDraft,
-      grantKindOptions,
-      activePrincipalOptions,
-      principalOptionsLoading,
-      onPrincipalSearch,
-      grantKindLabel,
-      openGrantDialog,
-      submitGrant,
-      revokeExistingGrant,
-      toggleDomainShare,
     };
   },
 };
