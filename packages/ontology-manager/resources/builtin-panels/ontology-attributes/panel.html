@@ -132,7 +132,7 @@
   }
 </style>
 <div id="app">
-  <section class="attrs-page">
+  <section ref="rootRef" class="attrs-page">
     <template v-if="!selectedKey">
       <page-header :title="t('panel.name')" :description="t('attr.description')">
         <template #actions>
@@ -182,12 +182,14 @@
           </span>
           <h1 v-if="detailStatus !== 'ready'">{{ selectedKey }}</h1>
         </template>
-        <template v-if="detailStatus === 'ready'" #actions>
-          <projection slot="setPrimaryKey" v-show="!isPrimaryKey"></projection>
-          <sdk-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
-            <span><sdk-button disabled>{{ t("attr.setPrimaryKey") }}</sdk-button></span>
-          </sdk-tooltip>
-          <projection slot="remove" @done="onRemoveDone"></projection>
+        <template #actions>
+          <template v-if="detailStatus === 'ready'">
+            <projection slot="setPrimaryKey" v-show="!isPrimaryKey" @done="onSetPrimaryKeyDone"></projection>
+            <sdk-tooltip v-if="isPrimaryKey" :content="t('attr.alreadyPrimaryKey')" placement="top">
+              <span><sdk-button disabled>{{ t("attr.setPrimaryKey") }}</sdk-button></span>
+            </sdk-tooltip>
+            <projection slot="remove" @done="onRemoveDone"></projection>
+          </template>
         </template>
       </page-header>
 
@@ -214,7 +216,7 @@
     </div>
 
     <!-- Create attribute dialog (mutually exclusive with detail editing since creating clears selected). -->
-    <sdk-dialog v-model="createDialog" :title="t('attr.creating')" width="540px" append-to-body destroy-on-close>
+    <sdk-dialog v-model="createDialog" :title="t('attr.creating')" :width="narrow ? '94%' : '540px'" append-to-body destroy-on-close>
       <div class="attrs-create-body">
         <projection v-if="createDialog" slot="form" @saved="onSaved" @discarded="onDiscarded" @cancel="cancelCreate"></projection>
       </div>

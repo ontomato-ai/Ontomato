@@ -1,4 +1,4 @@
-import { computed, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import {
   draftTarget,
   mountPanel,
@@ -6,6 +6,7 @@ import {
   usePanelBack,
   usePanelContext,
   usePanelFormDraft,
+  usePanelNarrow,
   usePanelOutput,
 } from "@ontomato/sdk/panel";
 
@@ -16,6 +17,8 @@ await mountPanel({
   setup() {
     const { instance, navigate, t } = usePanelContext();
     const values = instance.state.values;
+    const rootRef = ref(null);
+    const narrow = usePanelNarrow(rootRef);
 
     const selected = computed(() => values.value.selected);
     const selectedKey = computed(() => (selected.value ? selected.value.primaryKey : ""));
@@ -118,6 +121,11 @@ await mountPanel({
       cancelCreate();
     }
 
+    function onSetPrimaryKeyDone(outcome) {
+      if (outcome?.kind !== "success") return;
+      instance.refreshObjects();
+    }
+
     function onRemoveDone(outcome) {
       if (outcome?.kind !== "success") return;
       closeDetail();
@@ -144,6 +152,8 @@ await mountPanel({
     );
 
     return {
+      rootRef,
+      narrow,
       selectedKey,
       detailStatus,
       isPrimaryKey,
@@ -160,6 +170,7 @@ await mountPanel({
       cancelCreate,
       onSaved,
       onDiscarded,
+      onSetPrimaryKeyDone,
       onRemoveDone,
       refresh: () => instance.refreshObjects(),
     };
