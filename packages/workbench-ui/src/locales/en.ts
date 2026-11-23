@@ -813,6 +813,7 @@ export default {
     "taskCancelled": "Cancelled",
     "taskRows": "{n} row | {n} rows",
     "datasetTruncatedRows": "First {limit} rows only",
+    "datasetUncheckedConditions": "Conditions not verified by the automated check: {conditions}",
     "review": "Quality review",
     "reviewRunning": "Checking",
     "reviewFailed": "Could not complete",

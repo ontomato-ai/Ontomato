@@ -6,6 +6,9 @@ import org.springframework.stereotype.Service;
 /** Definition owners authorize their own entries; the directory stores no definition or permission copy. */
 @Service
 public class AgentDirectory {
+  public static JSONObject retrieverContextSchema() {
+    return JSONObject.of("type", "object", "properties", JSONObject.of("queryIntent", JSONObject.of("type", "object")), "additionalProperties", false);
+  }
   private final AgentCaller callers;
   private final OntologyAgentLabels labels;
   private final ActionCreationService actions;
@@ -21,7 +24,7 @@ public class AgentDirectory {
     try {
       callers.requireQueryUser(executor);
       agents.add(JSONObject.of("ref",OntologyAgentStore.retrieverRef(),"name","Data retrieval","description","Answer data questions with retrieval results",
-          "contextSchema", JSONObject.of("type", "object", "properties", JSONObject.of("queryIntent", JSONObject.of("type", "object")), "additionalProperties", false)));
+          "contextSchema", retrieverContextSchema()));
       try { actions.authorize(executionOwner);agents.add(JSONObject.of("ref",JSONObject.of("providerId","ontology","agentId",ActionCreationService.AGENT),"name","Action creation","description","Draft and test an action")); }
       catch(org.springframework.web.server.ResponseStatusException denied) { if(denied.getStatusCode().value()!=403) throw denied; }
     } catch(org.springframework.web.server.ResponseStatusException denied) { if(denied.getStatusCode().value()!=403) throw denied; }

@@ -95,6 +95,7 @@ return computed<ShellLabels>(() => ({
   lineageOperations: t("assistant.lineageOperations"),
   lineageOutputs: t("assistant.lineageOutputs"),
   truncatedRows: (limit) => t("assistant.datasetTruncatedRows", { limit }),
+  datasetUncheckedConditions: (conditions) => t("assistant.datasetUncheckedConditions", { conditions: conditions.join(" / ") }),
   filterColumn: (column) => t("assistant.datasetFilterColumn", { column }),
   filterSearch: t("assistant.datasetFilterSearch"),
   filterAll: t("assistant.datasetFilterAll"),

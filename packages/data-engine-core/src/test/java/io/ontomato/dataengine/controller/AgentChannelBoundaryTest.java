@@ -209,7 +209,9 @@ class AgentChannelBoundaryTest {
     var actions = mock(ActionCreationService.class);
     doThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN)).when(actions).authorize(any());
     var listed = new AgentDirectory(agentCallers, actions, labels).list(actor, "a", "en");
-    var directoryRef = listed.getJSONArray("agents").getJSONObject(0).getJSONObject("ref");
-    assertEquals(directoryRef, JSONObject.parseObject(files.get("retriever-ref.json")));
+    var entry = listed.getJSONArray("agents").getJSONObject(0);
+    var descriptor = JSONObject.parseObject(files.get("retriever-ref.json"));
+    assertEquals(entry.getJSONObject("ref"), descriptor.getJSONObject("ref"));
+    assertEquals(entry.getJSONObject("contextSchema"), descriptor.getJSONObject("contextSchema"));
   }
 }

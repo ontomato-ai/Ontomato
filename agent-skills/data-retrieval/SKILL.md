@@ -71,6 +71,11 @@ one item per class. For example:
 ]
 ```
 
+For a later batch that probes text values, pass `--schema @work/schema.json` with the saved
+schema response. The script checks the class, field and type before sending `distinct-values`.
+That operation only supports `varchar` and `text`; use a scoped DSL query for dates, numbers and
+other types. A rejected probe is a query error, never a zero-match result.
+
 Verify required filters early with a scoped query that includes the relevant fields together.
 A missing field or null value is unknown, never evidence that the record meets the filter.
 A limited sample cannot prove all scoped values are null. Once complete scoped evidence shows
@@ -84,5 +89,13 @@ identity in their query definitions, but deliver each requested table separately
 over a capped detail result to claim a complete count. Once the required outputs and their
 coverage are verified, deliver and end; do not generate alternative variants without a concrete
 error or changed user decision.
+
+For a category share and its breakdown of one population, use one grouped delivery when the
+category is a single-valued field on the counted class and the complete breakdown contains all
+the evidence requested. With a direct relationship, pass `groupField` and the population's
+`filters` to `related-count`. Keep the null group. The assistant can derive the total, target
+category count and share from the complete, mutually exclusive groups. Do not run a separate
+numerator or denominator query. If the table is truncated, the categories overlap, or an
+independent summary table is explicitly requested, this shortcut does not apply.
 
 Outside the product, set ONTOMATO_ONTOLOGY_URL and ONTOMATO_TK (or ONTOMATO_API_KEY), optionally ONTOMATO_LANGUAGE and ONTOMATO_OUTPUT_DIR, run `begin @work/question.json` with `{"question":"..."}` before delivering and `close` when done. Inside the product these are already set. Keep work/.retrieval-*.json and work/.dataset-*.json so a lost response can be reconciled.

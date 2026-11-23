@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, inject, onBeforeUnmount, ref, watch } from "vue";
 import { copyText } from "@ontomato/foundation-ui/clipboard";
 import { Check, ChevronRight, CircleAlert, Copy, LoaderCircle, Square, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-vue-next";
 import type { ShellFeedbackPort, ShellFeedbackValue } from "../types";
@@ -56,20 +56,18 @@ watch(() => shell.taskFocus?.value, (focus) => {
   if (focus && props.item.process.some((block) => block.kind === "task" && block.task.id === focus.taskId)) reveal();
 });
 
-/** The main run's elapsed time: ticking while it is active, its duration once it stopped. */
+const timingActive = computed(() => props.item.running || props.item.retrievalProgress === "retrieving" || props.item.retrievalProgress === "datasetReady");
 const now = ref(Date.now());
 let ticker: ReturnType<typeof setInterval> | null = null;
 watch(
-  () => props.item.running,
+  timingActive,
   (running) => {
     if (ticker) clearInterval(ticker);
+    if (running) now.value = Date.now();
     ticker = running ? setInterval(() => (now.value = Date.now()), 1000) : null;
   },
   { immediate: true },
 );
-onMounted(() => {
-  if (!ticker && props.item.running) ticker = setInterval(() => (now.value = Date.now()), 1000);
-});
 onBeforeUnmount(() => ticker && clearInterval(ticker));
 function clock(ms: number) {
   const total = Math.max(0, Math.round(ms / 1000));
@@ -78,11 +76,14 @@ function clock(ms: number) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 const status = computed(() => {
-  const { startedAt, finishedAt, running } = props.item;
-  const until = running ? now.value : finishedAt;
-  if (startedAt === null || until === null) return running ? labels.value.working : null;
-  const time = clock(until - startedAt);
-  return running ? `${labels.value.working} · ${labels.value.elapsed(time)}` : labels.value.worked(time);
+  const { startedAt, finishedAt, handoff } = props.item;
+  if (timingActive.value) {
+    const stage = retrievalStatus.value ?? labels.value.working;
+    return startedAt === null ? stage : `${stage} · ${labels.value.elapsed(clock(now.value - startedAt))}`;
+  }
+  if (handoff) return labels.value.tasks?.retriever ?? labels.value.thinking;
+  if (startedAt === null || finishedAt === null) return null;
+  return labels.value.elapsed(clock(finishedAt - startedAt));
 });
 
 // The answer id appears after the run settles, and the component stays mounted, so read the stored
@@ -145,16 +146,16 @@ async function submit(value: ShellFeedbackValue) {
           type="button"
           class="process-toggle"
           :aria-expanded="open"
-          :aria-live="retrievalStatus || !item.running ? 'polite' : 'off'"
+          :aria-live="timingActive ? 'off' : 'polite'"
           @click="toggle"
         >
           <LoaderCircle v-if="item.running || delegating" :size="12" class="spin" />
-          <span>{{ retrievalStatus || status }}</span>
+          <span>{{ status }}</span>
           <ChevronRight :size="14" class="chevron" />
         </button>
-        <div v-else class="process-toggle" :aria-live="retrievalStatus || !item.running ? 'polite' : 'off'">
+        <div v-else class="process-toggle" :aria-live="timingActive ? 'off' : 'polite'">
           <LoaderCircle v-if="item.running" :size="12" class="spin" />
-          <span>{{ retrievalStatus || status }}</span>
+          <span>{{ status }}</span>
         </div>
         <button v-if="taskCount && shell.openTasks" type="button" class="process-toggle tasks-entry" @click="shell.openTasks(item.runId)">
           {{ labels.tasks!.count(taskCount) }}
@@ -278,7 +279,7 @@ button.process-toggle {
   cursor: pointer;
   transition: background-color var(--transition-fast, 150ms);
 }
-/* The reply's delegated work, right after its process line's chevron: "Worked for 0:25 › 2 tasks". Its own padding
+/* The reply's delegated work sits after its process line's chevron. Its own padding
    is the space from the chevron, so every language's label stands as written, with no separator glyph inside it. */
 button.process-toggle:hover {
   background: var(--el-fill-color);
@@ -292,7 +293,7 @@ button.process-toggle:focus-visible {
   flex-shrink: 0;
   transition: transform var(--transition-fast, 150ms);
 }
-.open .chevron {
+.process-toggle[aria-expanded="true"] > .chevron {
   transform: rotate(90deg);
 }
 .process-region {

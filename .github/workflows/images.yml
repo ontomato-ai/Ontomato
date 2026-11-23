@@ -19,7 +19,7 @@ on:
     tags: ["v*"]
 
 concurrency:
-  group: images-${{ github.ref }}
+  group: images-${{ github.ref }}${{ (github.event_name == 'push' && github.ref == 'refs/heads/develop' && vars.IMAGES_AUTO_BUILD == 'false') && '-paused' || '' }}
   # Develop and tags run to completion. Other branches let new runs take over.
   cancel-in-progress: ${{ github.ref_type == 'branch' && github.ref != 'refs/heads/develop' }}
 
@@ -33,10 +33,11 @@ env:
 
 jobs:
   checks:
-    if: github.ref_type == 'branch'
+    if: github.ref_type == 'branch' && (github.event_name != 'push' || github.ref != 'refs/heads/develop' || vars.IMAGES_AUTO_BUILD != 'false')
     uses: ./.github/workflows/pr-checks.yml
 
   build:
+    if: github.event_name != 'push' || github.ref != 'refs/heads/develop' || vars.IMAGES_AUTO_BUILD != 'false'
     outputs:
       build-tag: ${{ steps.publish.outputs.build-tag }}
     strategy:
