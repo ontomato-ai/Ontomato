@@ -73,7 +73,8 @@ COPY requirements-py310.txt /app/licenses/python-requirements.txt
 COPY --from=sandbox-builder /output/nsjail /usr/local/sbin/nsjail
 COPY --from=sandbox-builder /output/licenses/ /app/licenses/
 COPY sandbox-policy/sources.lock /app/licenses/sandbox-sources.lock
-COPY sandbox-policy/seccomp.json sandbox-policy/apparmor sandbox-policy/selinux.cil \
+COPY sandbox-policy/debian-packages.lock /app/licenses/sandbox-debian-sources.lock
+COPY sandbox-policy/seccomp.json sandbox-policy/apparmor sandbox-policy/ontomato-agent-runtime.cil \
      sandbox-policy/engine.py sandbox-policy/preflight.mjs sandbox-policy/probe.py /usr/local/lib/ontomato-sandbox/
 RUN sha256sum /usr/local/sbin/nsjail /usr/bin/socat /usr/sbin/ip > /app/licenses/sandbox-binaries.sha256 \
  && dpkg-query -W socat iproute2 > /app/licenses/sandbox-debian-packages.txt \

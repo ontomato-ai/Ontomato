@@ -60,7 +60,7 @@ def run_preflight(env_file):
     policy_dir.mkdir(exist_ok=True)
     container = command([*docker, "create", "--pull=never", image], root, "runtime image policy")
     try:
-        for asset in ("seccomp.json", "apparmor", "selinux.cil"):
+        for asset in ("seccomp.json", "apparmor", "ontomato-agent-runtime.cil"):
             command([*docker, "cp", f"{container}:{ASSETS}/{asset}", str(policy_dir / asset)],
                     root, "runtime image policy")
     finally:
@@ -76,7 +76,7 @@ def run_preflight(env_file):
         selected = f"apparmor={PROFILE}"
     elif "name=selinux" in security:
         require_tool("semodule", "SELinux")
-        command(admin(["semodule", "-i", str(policy_dir / "selinux.cil")]), root, "SELinux")
+        command(admin(["semodule", "-i", str(policy_dir / "ontomato-agent-runtime.cil")]), root, "SELinux")
         selected = f"label=type:{SELINUX_TYPE}"
     select_policy(env_file, selected)
 
@@ -88,4 +88,12 @@ def run_preflight(env_file):
         args += ["--security-opt", option]
     # This probes the rendered service's image and security settings with its own ephemeral filesystem.
     args += ["--entrypoint", "/usr/local/bin/node", runtime["image"], "--import", "tsx", f"{ASSETS}/preflight.mjs"]
-    print(command(args, root, "agent-runtime sandbox preflight"))
+    try:
+        print(command(args, root, "agent-runtime sandbox preflight"))
+    except RuntimeError as error:
+        message = str(error)
+        if re.search(r"apparmor.*(?:denied|failed|not found|unable)|(?:denied|failed).*apparmor", message, re.I):
+            raise RuntimeError(f"AppArmor: {message}") from error
+        if re.search(r"SELinux|setexeccon|invalid label", message, re.I):
+            raise RuntimeError(f"SELinux: {message}") from error
+        raise

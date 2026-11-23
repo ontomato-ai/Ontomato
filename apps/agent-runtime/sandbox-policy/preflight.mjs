@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import console from "node:console";
 import { execFile } from "node:child_process";
 import { once } from "node:events";
 import { chown, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -69,25 +70,26 @@ try {
     ].join(" "),
   });
   let diagnostic = "";
+  let stage = "";
   probe.stderr.on("data", chunk => { diagnostic += chunk; });
   const lines = createInterface({ input: probe.stdout });
-  const controller = new AbortController();
   const namespace = await Promise.race([
     (async () => {
       for await (const line of lines) {
         console.log(line);
+        if (line.startsWith("probe: ")) stage = line.slice("probe: ".length);
         if (line.startsWith("namespace: ")) return line.slice("namespace: ".length);
       }
       const exit = await probe.exited;
-      const layer = /network bridge:|net::|net\.cc|lo.*(?:RTM|failed)|socket\(/i.test(diagnostic)
+      const layer = stage || (/network bridge:|net::|net\.cc|lo.*(?:RTM|failed)|socket\(/i.test(diagnostic)
         ? "network bridge"
-        : /mount|pivot_root/i.test(diagnostic) ? "mounts" : "Docker capability/seccomp";
+        : /pivot_root|clone\(|unshare\(/i.test(diagnostic) ? "Docker capability/seccomp" : "mounts");
       throw new Error(`${layer}: sandbox exited ${exit}\n${diagnostic}`);
     })(),
-    delay(15000, undefined, { signal: controller.signal }).then(() => {
+    delay(15000, undefined, { ref: false }).then(() => {
       throw new Error(`sandbox startup timed out\n${diagnostic}`);
     }),
-  ]).finally(() => controller.abort());
+  ]);
   assert.ok((await namespaceMembers(namespace, options.uid)).length >= 4, "expected engine, bridges and detached descendant");
   await sandbox.stop();
   assert.deepEqual(await namespaceMembers(namespace, options.uid), [], "detached processes kept the network namespace alive");

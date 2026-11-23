@@ -8,6 +8,7 @@ import time
 from urllib.request import urlopen
 
 uid, gateway, callback, *denied = os.environ["PROBE"].split()
+print("probe: Docker capability/seccomp", flush=True)
 status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines())
 assert os.getuid() == os.geteuid() == int(uid)
 assert os.getgid() == os.getegid() == int(uid)
@@ -25,6 +26,7 @@ def readonly(file):
         raise AssertionError(f"wrote read-only file: {file}")
 
 
+print("probe: mounts", flush=True)
 assert Path("/skills/selected/SKILL.md").read_text() == "selected"
 for file in ["/skills/selected/SKILL.md", "/etc/passwd", "/usr/local/lib/ontomato-sandbox/probe.py"]:
     readonly(file)
@@ -35,6 +37,7 @@ for file in ["/data", "/app", "/skills/unselected", "/workspace/other-session"]:
     assert not os.path.lexists(file), file
 print("mounts: only selected skill and system files are readable; session, native state and project writable", flush=True)
 
+print("probe: network bridge", flush=True)
 interfaces = subprocess.check_output(["/usr/sbin/ip", "-j", "link"], text=True)
 assert [interface["ifname"] for interface in json.loads(interfaces)] == ["lo"]
 assert subprocess.check_output(["/usr/sbin/ip", "route"], text=True).strip() == ""
