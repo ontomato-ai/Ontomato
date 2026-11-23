@@ -55,7 +55,7 @@ async function loadComponentFor(member: PanelMemberContext): Promise<Component> 
 }
 
 if (isScoped) {
-  void props.instance.placingScoped(props.member, () => props.inputs ?? {}, listRowSlot?.ref.value).then(async ({ context, dispose }) => {
+  void props.instance.placingScoped(props.member, () => props.inputs ?? {}, listRowSlot?.itemKey.value).then(async ({ context, dispose }) => {
     disposeScoped = dispose;
     const component = await loadComponentFor(context);
     loaded.value = { component, slot: { slot: props.member, projection: context.projection, get inputs() { return context.inputs.value; } }, member: context };

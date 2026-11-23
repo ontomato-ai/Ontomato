@@ -37,7 +37,7 @@ const manifest: DirectPanelManifest = {
   state: { agent: { type: { kind: "object", objectType: AGENT_DEFINITION }, personal: false, deepLink: true, external: false } },
   members: {
     form: { target: { projectionId: form.id }, inputs: { agent: { state: "agent" } } },
-    model: { target: { projectionId: picker.id }, inputs: {}, formField: { slot: "form", path: "/model" } },
+    model: { target: { projectionId: picker.id }, inputs: {} },
   },
 };
 const following = { primaryKey: "@default", value: null, label: "Domain default (GPT)" };
@@ -67,7 +67,7 @@ function open(options: unknown[], held: unknown[]) {
   });
   const element = document.createElement("div");
   document.body.append(element);
-  const app = createApp({ render: () => [mount.member("form"), mount.member("model")] });
+  const app = createApp({ render: () => [mount.member("form", { "field-model": () => [mount.member("model")] })] });
   app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })).use(ElementPlus).mount(element);
   return { mount, app, element };
 }

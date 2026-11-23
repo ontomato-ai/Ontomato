@@ -1,5 +1,6 @@
 import { shallowReactive, shallowRef, type Ref } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { PanelFormField, PanelFormValues } from "@ontomato/contracts/panel-projection";
 import type { PageDraft, PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import { PanelDraftUnusable } from "./draft-refusal";
@@ -127,6 +128,7 @@ export interface PanelDraftReceiver {
 export class PanelFormAdapters {
   readonly #bySlot = shallowReactive(new Map<string, PanelFormAdapter>());
   readonly #receivers = shallowReactive(new Map<string, PanelDraftReceiver>());
+  readonly #rowDetailHosts = shallowReactive(new Set<string>());
   /** Whether undrawn member-level receivers may be offered a held draft (waits until initial member placings settle). */
   readonly #undrawnReady = shallowRef(true);
   /** The draft this panel received and no registered form has taken yet, with the slots it was offered to. */
@@ -180,6 +182,24 @@ export class PanelFormAdapters {
     if (this.#undrawnReady.value === ready) return;
     this.#undrawnReady.value = ready;
     if (ready) this.#offerNext();
+  }
+
+  /** Registers a mounted list member whose `#row-detail` slot can host row-scoped forms for `itemKey` drafts. */
+  registerRowDetailHost(slot: string): () => void {
+    this.#rowDetailHosts.add(slot);
+    return () => {
+      this.#rowDetailHosts.delete(slot);
+    };
+  }
+
+  /** Whether any mounted list currently provides a `#row-detail` slot. */
+  hasRowDetailHost(): boolean {
+    return this.#rowDetailHosts.size > 0;
+  }
+
+  /** The `itemKey` of the currently held unclaimed draft, if any, so list `#row-detail` hosts can auto-expand that row. */
+  get heldItemKey(): PanelMemberItemKey | null {
+    return this.#held.value?.draft.target.itemKey ?? null;
   }
 
   /** Re-evaluates a held draft after a drawn member unmounts or fails to load its form component. */

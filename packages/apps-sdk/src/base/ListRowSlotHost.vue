@@ -1,6 +1,7 @@
 <script lang="ts">
 import { Comment, Fragment, Text, computed, defineComponent, provide, type PropType, type Slot, type VNode } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { listRowSlotKey, type ListRowSlotOperation } from "../panel/slot-context";
 import type { PanelObjectRef } from "../panel/state";
@@ -23,10 +24,12 @@ function hasRenderableVNodes(vnodes: readonly VNode[]): boolean {
  */
 export default defineComponent({
   name: "ListRowSlotHost",
+  inheritAttrs: false,
   props: {
     listSlot: { type: String, required: true },
     row: { type: Object as PropType<PlatformObjectRecord>, required: true },
     rowRef: { type: Object as PropType<PanelObjectRef>, required: true },
+    itemKey: { type: [String, Object] as PropType<PanelMemberItemKey>, default: undefined },
     index: { type: Number, required: true },
     operations: {
       type: Object as PropType<Readonly<Record<string, ListRowSlotOperation>>>,
@@ -47,6 +50,7 @@ export default defineComponent({
       listSlot: props.listSlot,
       row: computed(() => props.row),
       ref: computed(() => props.rowRef),
+      itemKey: computed(() => props.itemKey ?? props.rowRef),
       index: computed(() => props.index),
       operations: computed(() => props.operations),
       runOperation: (operationName, extraInput) => props.runOperation(operationName, extraInput),

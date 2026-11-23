@@ -43,9 +43,9 @@ const placementStyle = computed(() => attrs.style as StyleValue);
 const loading = ref(true);
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ projection: ProductProjection; component: Component; member: PanelMemberContext } | null>(null);
-const inputs = ref<Record<string, unknown>>({});
+const resolvedInputs = ref<Record<string, unknown>>({});
 /** A member's inputs are JSON as the state holds them. */
-const memberInputs = computed(() => inputs.value as MemberInputs);
+const memberInputs = computed(() => resolvedInputs.value as MemberInputs);
 let registered: (() => void) | undefined;
 /** What the member's operations are read in, for the projection drawn now. */
 let operationsScope: EffectScope | undefined;
@@ -124,7 +124,7 @@ onBeforeUnmount(() => {
 watch(
   [() => panel.instance.state.values.value, () => props.inputs],
   () => {
-    inputs.value = {
+    resolvedInputs.value = {
       ...slotInputValues(panel.manifest, props.slot, panel.instance.state.values.value),
       ...(props.inputs ?? {}),
     };
@@ -138,7 +138,7 @@ provide(projectionKey, {
     return loaded.value!.projection;
   },
   get inputs() {
-    return inputs.value;
+    return resolvedInputs.value;
   },
 } as ProjectionSlot);
 provide(panelMemberKey, () => loaded.value!.member);
@@ -148,7 +148,7 @@ provide(panelMemberKey, () => loaded.value!.member);
   <div class="sdk-panel-member" :data-member="slot" :class="placementClass" :style="placementStyle">
     <p v-if="failure" role="alert">{{ failure.message }}</p>
     <div v-else-if="loading || !loaded" class="sdk-projection-loading"></div>
-    <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...listeners, ...inputs }">
+    <component :is="loaded.component" v-else v-bind="{ ...loaded.projection.config, ...listeners, ...resolvedInputs }">
       <template v-for="(_, name) in $slots" :key="name" #[name]="slotProps">
         <slot :name="name" v-bind="slotProps ?? {}"></slot>
       </template>

@@ -22,6 +22,7 @@ function hasRenderableVNodes(vnodes: readonly VNode[]): boolean {
  */
 export default defineComponent({
   name: "FormFieldSlotHost",
+  inheritAttrs: false,
   props: {
     formSlot: { type: String, required: true },
     path: { type: String, required: true },

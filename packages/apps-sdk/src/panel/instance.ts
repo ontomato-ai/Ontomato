@@ -331,7 +331,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       const registered = registrations.value;
       if (!topLevelMemberKeys.every((member) => registered.some((registration) => registration.slot === member))) return null;
       const formSlots = registered.filter((registration) => registration.takesDrafts).map((registration) => registration.slot);
-      return forms.unclaimed(formSlots, false);
+      return forms.unclaimed(formSlots, forms.hasRowDetailHost());
     }),
     projections: readonly(registrations),
     register(registration) {

@@ -1,5 +1,6 @@
 import { inject, type ComputedRef, type InjectionKey } from "vue";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
+import type { PanelMemberItemKey } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import type { PanelFormField } from "@ontomato/contracts/panel-projection";
 import type { PlatformObjectRecord } from "./platform-objects";
@@ -42,6 +43,7 @@ export interface ListRowSlotContext {
   readonly listSlot: string;
   readonly row: ComputedRef<PlatformObjectRecord>;
   readonly ref: ComputedRef<PanelObjectRef>;
+  readonly itemKey: ComputedRef<PanelMemberItemKey>;
   readonly index: ComputedRef<number>;
   readonly operations: ComputedRef<Readonly<Record<string, ListRowSlotOperation>>>;
   runOperation(operationName: string, extraInput?: Readonly<Record<string, RuntimeJsonValue>>): Promise<void>;

@@ -378,6 +378,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       inputSchema: z.object({}).strict(),
       resultSchema: z.object({ deleted: z.boolean() }).strict(),
       batch: false,
+      targetLabel: async (_host, target) => `Task:${target.primaryKey}`,
       unavailableBatch,
       execute: async () => ({ kind: "success", data: { deleted: true } }),
     };
@@ -394,6 +395,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       inputSchema: z.object({ taskId: z.string() }).strict(),
       resultSchema: z.object({ revoked: z.boolean() }).strict(),
       batch: false,
+      targetLabel: async (_host, target) => `App:${target.primaryKey}`,
       unavailable: unavailableSingle,
       execute: async () => ({ kind: "success", data: { revoked: true } }),
     };
@@ -437,7 +439,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     setProduct(makePanel("P", {
       state: {
-        app: { type: { kind: "object", objectType: APPLICATION }, default: null },
+        app: { type: { kind: "object", objectType: APPLICATION }, default: null, personal: false, deepLink: false, external: true },
       },
       members: {
         tasks: {
@@ -448,7 +450,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     }));
 
     const res = await readProductPanelData(owner, credentials, {
-      source: { kind: "application", applicationId: "A", useId: "tasks" },
+      source: { kind: "registered", applicationId: "A", useId: "tasks" },
       memberPath: [{ member: "tasks" }],
       dataName: "rows",
       inputs: { app: { className: APPLICATION, primaryKey: "app-1" } },
@@ -533,7 +535,6 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     // 1. Human channel succeeds; server injects literal param `source`.
     const humanReq: CreatePanelHumanOperationIntentRequest = {
-      intentId: uuid(101),
       applicationId: "A",
       useId: "tasks",
       operationId: "tasks.remove",
@@ -546,7 +547,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     expect(prepared.intentId).toBeTruthy();
     const dispatched = await dispatchHumanPanelOperation(owner, credentials, prepared.intentId);
     expect(dispatched.kind).toBe("dispatched");
-    if (dispatched.kind === "dispatched") expect(dispatched.outcome.kind).toBe("success");
+    if (dispatched.kind === "dispatched") expect(dispatched.outcome?.kind).toBe("success");
     expect(executed).toEqual([
       {
         target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-2" },
@@ -556,8 +557,9 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     // 2. Rejects tampered literal param on human channel.
     await expect(prepareHumanPanelOperation(owner, credentials, {
-      ...humanReq,
-      intentId: uuid(102),
+      applicationId: "A",
+      useId: "tasks",
+      operationId: "tasks.remove",
       call: {
         target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-2" },
         input: { note: "0 3 * * *", source: "tampered" },
@@ -566,8 +568,9 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     // 3. Rejects mismatched objectType for target: { row: true }.
     await expect(prepareHumanPanelOperation(owner, credentials, {
-      ...humanReq,
-      intentId: uuid(103),
+      applicationId: "A",
+      useId: "tasks",
+      operationId: "tasks.remove",
       call: {
         target: { kind: "object", objectType: BUSINESS_KNOWLEDGE, primaryKey: "bk-1" },
         input: { note: "0 3 * * *" },
@@ -610,6 +613,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
       inputSchema: z.object({ scope: z.string(), rowId: z.string(), fixedTag: z.string() }).strict(),
       resultSchema: z.object({ ok: z.boolean() }).strict(),
       batch: false,
+      targetLabel: async (_host, target) => `App:${target.primaryKey}`,
       execute: async (_host, target, input) => {
         executed.push({ target, input });
         return { kind: "success", data: { ok: true } };
@@ -658,8 +662,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     setProduct(makePanel("CHILD", {
       state: {
-        childApp: { type: { kind: "object", objectType: APPLICATION }, default: null },
-        childScope: { type: { kind: "scalar", type: "string" }, default: null },
+        childApp: { type: { kind: "object", objectType: APPLICATION }, default: null, personal: false, deepLink: false, external: true },
+        childScope: { type: { kind: "scalar", type: "string" }, default: null, personal: false, deepLink: false, external: true },
       },
       members: {
         rows: {
@@ -674,8 +678,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     setProduct(makePanel("P", {
       state: {
-        pinnedApp: { type: { kind: "object", objectType: APPLICATION }, default: null },
-        pinnedScope: { type: { kind: "scalar", type: "string" }, default: null },
+        pinnedApp: { type: { kind: "object", objectType: APPLICATION }, default: null, personal: false, deepLink: false, external: true },
+        pinnedScope: { type: { kind: "scalar", type: "string" }, default: null, personal: false, deepLink: false, external: true },
       },
       members: {
         nested: {
@@ -690,7 +694,6 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     // 1. Tampering with pinned outer target is rejected.
     await expect(prepareHumanPanelOperation(owner, credentials, {
-      intentId: uuid(201),
       applicationId: "A",
       useId: "tasks",
       memberPath: [{ member: "nested" }, { member: "rows" }],
@@ -703,7 +706,6 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     // 2. Tampering with entry-pinned bound param `scope` is rejected.
     await expect(prepareHumanPanelOperation(owner, credentials, {
-      intentId: uuid(202),
       applicationId: "A",
       useId: "tasks",
       memberPath: [{ member: "nested" }, { member: "rows" }],
@@ -716,7 +718,6 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
 
     // 3. Valid request has pinned `scope` and literal `fixedTag` automatically injected server-side.
     const prepared = await prepareHumanPanelOperation(owner, credentials, {
-      intentId: uuid(203),
       applicationId: "A",
       useId: "tasks",
       memberPath: [{ member: "nested" }, { member: "rows" }],
@@ -729,7 +730,7 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     expect(prepared.intentId).toBeTruthy();
     const done = await dispatchHumanPanelOperation(owner, credentials, prepared.intentId);
     expect(done.kind).toBe("dispatched");
-    if (done.kind === "dispatched") expect(done.outcome.kind).toBe("success");
+    if (done.kind === "dispatched") expect(done.outcome?.kind).toBe("success");
     expect(executed).toEqual([
       {
         target: { kind: "object", objectType: APPLICATION, primaryKey: "app-pinned" },

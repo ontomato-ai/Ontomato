@@ -8,7 +8,6 @@ import {
   definePanel,
   type PanelManifest,
   type PanelMemberPath,
-  type PanelOperationRowContext,
 } from "@ontomato/contracts/panel-manifest";
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
@@ -46,7 +45,6 @@ interface PreparedCall {
   operationId: string;
   invocation: PanelWriteInvocation;
   memberPath?: PanelMemberPath;
-  rowContext?: PanelOperationRowContext;
 }
 
 let cleanup: (() => void) | null = null;
@@ -141,6 +139,7 @@ function mountPanel(options: {
   manifest: PanelManifest;
   projections: Record<string, DirectProjection>;
   members: readonly string[];
+  memberSlots?: (instance: DirectPanelInstance) => Record<string, Record<string, (slotProps: Record<string, unknown>) => ReturnType<typeof h>[]>>;
   initial?: Record<string, unknown>;
   answer: (request: PanelMemberReadRequest) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>;
 }) {
@@ -156,8 +155,8 @@ function mountPanel(options: {
     ...noOperations,
     operations: {
       ...noOperations.operations,
-      async prepare(operationId, invocation, memberPath, rowContext) {
-        preparedCalls.push({ operationId, invocation, memberPath, rowContext });
+      async prepare(operationId, invocation, memberPath) {
+        preparedCalls.push({ operationId, invocation, memberPath });
         return {
           intentId: `intent-${preparedCalls.length}`,
           operationId,
@@ -187,8 +186,9 @@ function mountPanel(options: {
 
   const element = document.createElement("div");
   document.body.appendChild(element);
+  const resolvedSlots = options.memberSlots?.(instance);
   const app = createApp({
-    setup: () => () => h("div", options.members.map((member) => h(PanelMember, { instance, member, key: member }))),
+    setup: () => () => h("div", options.members.map((member) => h(PanelMember, { instance, member, key: member }, resolvedSlots?.[member]))),
   })
     .use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } as never }))
     .use(ElementPlus);
@@ -238,8 +238,7 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
         entries: { target: { projectionId: "app-entries-list" } },
         rowForm: {
           target: { projectionId: "app-entry-row-form" },
-          listRowDetail: { slot: "entries" },
-          inputs: { app: { state: "application" }, entryId: { item: "primaryKey" } },
+          inputs: { app: { state: "application" } },
         },
       },
     });
@@ -252,6 +251,15 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
     const { instance, element, reads, preparedCalls } = mountPanel({
       manifest,
       projections,
+      memberSlots: (inst) => ({
+        entries: {
+          "row-detail": (slotProps) => [h(PanelMember, {
+            instance: inst,
+            member: "rowForm",
+            inputs: { entryId: (slotProps.row as { primaryKey: string }).primaryKey },
+          })],
+        },
+      }),
       members: ["parentForm", "addEntryForm", "entries"],
       initial: { application: { className: APPLICATION, primaryKey: "app-1" } },
       answer(request) {
@@ -350,12 +358,6 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
     await vi.waitFor(() => expect(preparedCalls).toHaveLength(1));
     expect(preparedCalls[0]).toMatchObject({
       operationId: "rowForm.save",
-      memberPath: [{ member: "rowForm", itemKey: "entry-2" }],
-      rowContext: {
-        state: {
-          application: { className: APPLICATION, primaryKey: "app-1" },
-        },
-      },
     });
     await vi.waitFor(() => expect(instance.draft.value).toBeNull());
   });
@@ -386,8 +388,7 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
         entries: { target: { projectionId: "app-entries-list" } },
         rowForm: {
           target: { projectionId: "app-entry-row-form" },
-          listRowDetail: { slot: "entries" },
-          inputs: { app: { state: "application" }, entryId: { item: "primaryKey" } },
+          inputs: { app: { state: "application" } },
         },
         addEntryForm: { target: { projectionId: "app-add-entry-form" }, inputs: { app: { state: "application" } } },
       },
@@ -397,6 +398,15 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
       manifest,
       projections,
       members: ["entries", "addEntryForm"],
+      memberSlots: (inst) => ({
+        entries: {
+          "row-detail": (slotProps) => [h(PanelMember, {
+            instance: inst,
+            member: "rowForm",
+            inputs: { entryId: (slotProps.row as { primaryKey: string }).primaryKey },
+          })],
+        },
+      }),
       initial: { application: { className: APPLICATION, primaryKey: "app-1" } },
       answer(request) {
         if (request.operations) return ready(saveOperation("applications.addEntry"));
@@ -479,7 +489,6 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
         items: { target: { projectionId: "hetero-list" } },
         rowForm: {
           target: { projectionId: "hetero-row-form" },
-          listRowDetail: { slot: "items" },
           inputs: { app: { state: "application" } },
         },
       },
@@ -489,6 +498,11 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
       manifest,
       projections,
       members: ["items"],
+      memberSlots: (inst) => ({
+        items: {
+          "row-detail": () => [h(PanelMember, { instance: inst, member: "rowForm" })],
+        },
+      }),
       initial: { application: { className: APPLICATION, primaryKey: "app-1" } },
       answer(request) {
         if (request.operations) return ready(saveOperation("applications.updateEntry"));

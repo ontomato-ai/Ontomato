@@ -277,9 +277,9 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     export const panelDefinitionContentSchema = {
       parse,
       safeParse(value) {
-        return typeof value.content.module === "string"
+        return typeof value.content.html === "string" && (value.content.module === undefined || typeof value.content.module === "string")
           ? ok(value)
-          : invalid([{ path: ["content", "module"], message: "Required" }]);
+          : invalid([{ path: ["content", "html"], message: "Required" }]);
       }
     };
   `;
@@ -562,9 +562,10 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.deepEqual(JSON.parse(icons.stdout), ["app-window", "folder", "calendar"]);
     assert.equal(requests.splice(0).some(([method]) => method !== "GET"), false);
     await rm(moduleFile);
-    await assert.rejects(run("panel", "check", directory), error => error.stderr.includes("panel.mjs: required Vue module is missing"));
+    const noModuleCheck = await run("panel", "check", directory);
+    assert.equal(JSON.parse(noModuleCheck.stdout).status, "valid");
     await writeFile(moduleFile, panel.content.module);
-    assert.equal(requests.some(([method, url]) => method !== "GET" || url === projectionPath), false);
+    assert.equal(requests.some(([method]) => method !== "GET"), false);
     requests.length = 0;
     const draft = join(directory, "manager");
     const scaffold = await run("panel", "scaffold", "platform:AgentDefinition", draft, "--id", "app-template-catalog-detail", "--operation", "platform:AgentDefinition.save");

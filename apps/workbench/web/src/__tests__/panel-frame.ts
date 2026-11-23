@@ -240,8 +240,36 @@ await mountPanel({
 });
 `;
 
-export function panelRecord(id: string, name: string, manifest: PanelManifest): ProductPanel {
-  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: PLACE_EVERY_MEMBER }, manifest };
+export function panelRecord(
+  id: string,
+  name: string,
+  manifest: PanelManifest,
+  slots?: Record<string, Record<string, string>>,
+): ProductPanel {
+  if (!slots) {
+    return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module: PLACE_EVERY_MEMBER }, manifest };
+  }
+  const nested = new Set(Object.values(slots).flatMap(map => Object.values(map)));
+  const module = `import { h, resolveComponent } from "vue";
+import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+const slotMap = ${JSON.stringify(slots)};
+const nested = new Set(${JSON.stringify([...nested])});
+await mountPanel({
+  setup() {
+    const { manifest } = usePanelContext();
+    return () => {
+      const Projection = resolveComponent("Projection");
+      return h("div", Object.keys(manifest.members).filter(slot => !nested.has(slot)).map(slot => {
+        const children = slotMap[slot];
+        if (!children) return h(Projection, { slot });
+        const slotFns = Object.fromEntries(Object.entries(children).map(([name, child]) => [name, () => h(Projection, { slot: child })]));
+        return h(Projection, { slot }, slotFns);
+      }));
+    };
+  },
+});
+`;
+  return { ...current, id, name, description: name, content: { html: '<div id="app"></div>', module }, manifest };
 }
 
 /** A use relation of one of the trial's applications, as Java declares it. */
@@ -514,6 +542,29 @@ export async function panelHostFrame() {
 export function panelOf(...slots: string[]) {
   return defineComponent({
     render: () => h("div", slots.map((name) => h(resolveComponent("Projection"), { slot: name }))),
+  });
+}
+
+/** A panel component that nests child projections inside parent projections' named Vue slots. */
+export function panelWithSlots(
+  slots: readonly string[],
+  nested: Readonly<Record<string, Readonly<Record<string, string>>>>,
+) {
+  return defineComponent({
+    render() {
+      const Projection = resolveComponent("Projection");
+      return h(
+        "div",
+        slots.map((name) => {
+          const children = nested[name];
+          if (!children) return h(Projection, { slot: name });
+          const slotFns = Object.fromEntries(
+            Object.entries(children).map(([slotName, child]) => [slotName, () => h(Projection, { slot: child })]),
+          );
+          return h(Projection, { slot: name }, slotFns);
+        }),
+      );
+    },
   });
 }
 

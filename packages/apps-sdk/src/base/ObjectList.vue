@@ -9,6 +9,7 @@ import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@o
 import {
   authoredReadParameterSource,
   directReadDeclaration,
+  panelRecordItemKey,
   panelRecordObjectRef,
   panelRowOperationKey,
   type PanelRecordQuery,
@@ -801,6 +802,10 @@ function rowSelectionValue(row: PlatformObjectRecord): ObjectListRef {
   return panelRecordObjectRef(row, activeType.value ?? objectType);
 }
 
+function rowItemKey(row: PlatformObjectRecord) {
+  return panelRecordItemKey(row, { fallbackClassName: activeType.value ?? objectType });
+}
+
 function rowClassName(row: PlatformObjectRecord): string {
   return rowSelectionValue(row).className;
 }
@@ -1526,6 +1531,20 @@ watch(rows, (listed) => {
   if (!listed.some((row) => rowIdentityKey(row) === expandedKey.value)) {
     expandedKey.value = null;
   }
+});
+
+let unregisterRowDetailHost: (() => void) | undefined;
+watch(
+  hasRowDetailSlot,
+  (present) => {
+    unregisterRowDetailHost?.();
+    unregisterRowDetailHost = present ? panel.instance.forms.registerRowDetailHost(member.key) : undefined;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  unregisterRowDetailHost?.();
+  unregisterRowDetailHost = undefined;
 });
 
 const activeRowLabel = ref<string | null>(null);
@@ -2281,11 +2300,12 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
                   :ref="(el) => setDetailElement(entry.key, el)"
                   class="sdk-object-list-detail-row"
                 >
-                  <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell">
+                  <td :colspan="tableColumnCount" class="sdk-object-list-detail-cell sdk-object-list-detail-host">
                     <list-row-slot-host
                       :list-slot="member.key"
                       :row="entry.row"
                       :row-ref="rowSelectionValue(entry.row)"
+                      :item-key="rowItemKey(entry.row)"
                       :index="entry.rowIndex"
                       :operations="rowOperationsFor(entry.row)"
                       :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2559,13 +2579,14 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
             <div
               v-if="hasRowDetailSlot && isRowExpanded(entry.row)"
               :ref="(el) => setDetailElement(entry.key, el)"
-              class="sdk-object-list-card-detail"
+              class="sdk-object-list-card-detail sdk-object-list-detail-host"
               @click.stop
             >
               <list-row-slot-host
                 :list-slot="member.key"
                 :row="entry.row"
                 :row-ref="rowSelectionValue(entry.row)"
+                :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"
                 :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"
@@ -2731,13 +2752,14 @@ useMemberOutput("activeLabel", () => activeRowLabel.value ?? selectedRowLabel.va
             <div
               v-if="hasRowDetailSlot && isRowExpanded(entry.row)"
               :ref="(el) => setDetailElement(entry.key, el)"
-              class="sdk-object-list-row-detail"
+              class="sdk-object-list-row-detail sdk-object-list-detail-host"
               @click.stop
             >
               <list-row-slot-host
                 :list-slot="member.key"
                 :row="entry.row"
                 :row-ref="rowSelectionValue(entry.row)"
+                :item-key="rowItemKey(entry.row)"
                 :index="entry.rowIndex"
                 :operations="rowOperationsFor(entry.row)"
                 :run-operation="(opName, extra) => runRowOperation(entry.row, opName, extra)"

@@ -179,8 +179,8 @@ test("every published --sdk-* and platform theme token is backed by design-token
   assert.ok(result.total >= 100);
 });
 
-test("checkPanelWorkspace accepts domain-component listColumn, per-row operationParams, and listRowDetail", (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "panel-list-column-ok-"));
+test("checkPanelWorkspace accepts manifest.components for Vue slots, ObjectList row operations, and nested slot projections", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "panel-slots-ok-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const domainComponentId = "domain-component:11111111-1111-4111-8111-111111111111";
   writeFileSync(join(dir, "registration.json"), JSON.stringify({
@@ -191,6 +191,9 @@ test("checkPanelWorkspace accepts domain-component listColumn, per-row operation
       state: {
         selected: { type: { kind: "object", objectType: "platform:BusinessKnowledge" }, deepLink: true },
       },
+      components: {
+        "app-icon-name-cell": domainComponentId,
+      },
       members: {
         apps: {
           component: "ObjectList",
@@ -199,48 +202,42 @@ test("checkPanelWorkspace accepts domain-component listColumn, per-row operation
           state: { selected: "selected" },
           config: {
             columns: [
-              { key: "name", labelKey: "col.app" },
-              { key: "actions", labelKey: "col.actions" },
+              { key: "name", labelKey: "col.app", width: "240px" },
             ],
+            rowActions: {
+              maxVisible: 2,
+              items: [
+                { kind: "local", id: "edit", labelKey: "action.edit" },
+                { kind: "operation", operation: "approve" },
+              ],
+            },
           },
-        },
-        appNameCell: {
-          component: domainComponentId,
-          listColumn: { slot: "apps", column: "name" },
-          inputs: {
-            icon: { itemField: "icon" },
-            names: { itemField: "names" },
-            fallbackLabel: { item: "label" },
-          },
-        },
-        revokeRow: {
-          component: "OperationButton",
-          listColumn: { slot: "apps", column: "actions" },
-          type: "platform:BusinessKnowledge",
-          target: "selected",
-          operation: "knowledge.approve",
-          operationParams: {
-            principalId: { itemField: "principalId" },
-            remove: { literal: true },
+          operations: {
+            approve: {
+              operation: "knowledge.approve",
+              target: { row: true },
+              params: {
+                principalId: { rowField: "principalId" },
+                remove: { literal: true },
+              },
+            },
           },
         },
         rowDetail: {
           component: "ObjectSummary",
-          listRowDetail: { slot: "apps" },
           type: "platform:BusinessKnowledge",
-          inputs: { target: { item: true } },
+          inputs: { target: { fromSlot: true } },
           data: { record: "record" },
         },
       },
     },
     content: {
       messages: {
-        en: { "panel.name": "Apps", "col.app": "Application", "col.actions": "Actions" },
+        en: { "panel.name": "Apps", "col.app": "Application", "action.edit": "Edit" },
       },
     },
   }, null, 2));
-  writeFileSync(join(dir, "panel.html"), `<div id="app"><projection slot="apps"></projection></div>\n`);
-  writeFileSync(join(dir, "panel.mjs"), `import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n`);
+  writeFileSync(join(dir, "panel.html"), `<main><projection slot="apps"><template #cell-name="{ row }"><app-icon-name-cell :icon="row.fields.icon" :names="row.fields.names" :fallback-label="row.label"></app-icon-name-cell></template><template #row-detail="{ ref }"><projection slot="rowDetail" :inputs="{ target: ref }"></projection></template></projection></main>\n`);
 
   const script = `
     import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
@@ -279,12 +276,6 @@ test("checkPanelWorkspace accepts domain-component listColumn, per-row operation
           data: { record: { results: ["panelRecord"], required: true } },
           ports: { props: [], events: [], slots: [] },
         },
-        {
-          componentId: "OperationButton", module: "@ontomato/sdk/base", exportName: "OperationButton", role: "control", meaning: "Button",
-          data: {},
-          config: [{ name: "operation", type: "string", description: "Local operation", required: true }],
-          ports: { props: [], events: [], slots: [] },
-        },
       ],
     };
     const typeTable = {
@@ -312,67 +303,38 @@ test("checkPanelWorkspace accepts domain-component listColumn, per-row operation
   assert.equal(result.status, "valid");
 });
 
-test("checkPanelWorkspace reports actionable diagnostics for invalid listColumn and listRowDetail bindings", (t) => {
+test("checkPanelWorkspace rejects removed legacy listColumn, listRowDetail, and formField member attachments", (t) => {
   const cases = [
     {
-      label: "listColumn targeting non-ObjectList host",
-      members: {
-        detail: { component: "ObjectSummary", type: "platform:BusinessKnowledge", target: "selected", data: { record: "record" } },
-        badCell: { component: "OperationButton", listColumn: { slot: "detail", column: "actions" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
-      },
-      html: `<div id="app"><projection slot="detail"></projection></div>\n`,
-      pattern: /manifest\.members\.badCell\.listColumn\.slot:.*'detail'.*'@ontomato\/sdk:ObjectSummary'.*ObjectList/u,
-    },
-    {
-      label: "listColumn targeting compact ObjectList without config.columns",
-      members: {
-        apps: { component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" } },
-        badCell: { component: "OperationButton", listColumn: { slot: "apps", column: "actions" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
-      },
-      html: `<div id="app"><projection slot="apps"></projection></div>\n`,
-      pattern: /manifest\.members\.badCell\.listColumn\.column:.*'apps'.*no config\.columns.*actions/u,
-    },
-    {
-      label: "listColumn targeting undeclared column key",
-      members: {
-        apps: { component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" }, config: { columns: [{ key: "label" }] } },
-        badCell: { component: "OperationButton", listColumn: { slot: "apps", column: "missingCol" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
-      },
-      html: `<div id="app"><projection slot="apps"></projection></div>\n`,
-      pattern: /manifest\.members\.badCell\.listColumn\.column:.*'missingCol'.*'apps'.*\(label\)/u,
-    },
-    {
-      label: "listColumn declaring independent data read",
-      members: {
-        apps: { component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" }, config: { columns: [{ key: "summary" }] } },
-        badCell: { component: "ObjectSummary", listColumn: { slot: "apps", column: "summary" }, type: "platform:BusinessKnowledge", target: "selected", data: { record: "record" } },
-      },
-      html: `<div id="app"><projection slot="apps"></projection></div>\n`,
-      pattern: /manifest\.members\.badCell\.data:.*listColumn.*cannot declare independent data reads/u,
-    },
-    {
-      label: "listRowDetail targeting non-ObjectList host",
-      members: {
-        detail: { component: "ObjectSummary", type: "platform:BusinessKnowledge", target: "selected", data: { record: "record" } },
-        badDetail: { component: "ObjectSummary", listRowDetail: { slot: "detail" }, type: "platform:BusinessKnowledge", inputs: { target: { item: true } }, data: { record: "record" } },
-      },
-      html: `<div id="app"><projection slot="detail"></projection></div>\n`,
-      pattern: /manifest\.members\.badDetail\.listRowDetail\.slot:.*'detail'.*'@ontomato\/sdk:ObjectSummary'.*ObjectList/u,
-    },
-    {
-      label: "duplicate listColumn on same host column",
+      label: "legacy listColumn attachment",
       members: {
         apps: { component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" }, config: { columns: [{ key: "actions" }] } },
-        firstCell: { component: "OperationButton", listColumn: { slot: "apps", column: "actions" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
-        secondCell: { component: "OperationButton", listColumn: { slot: "apps", column: "actions" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
+        badCell: { component: "OperationButton", listColumn: { slot: "apps", column: "actions" }, type: "platform:BusinessKnowledge", target: "selected", operation: "knowledge.approve" },
       },
-      html: `<div id="app"><projection slot="apps"></projection></div>\n`,
-      pattern: /manifest\.members\.secondCell\.listColumn:.*'apps'.*'actions'.*'firstCell'/u,
+      html: `<main><projection slot="apps"></projection></main>\n`,
+      pattern: /Unrecognized key\(s\) in object: 'listColumn'/u,
+    },
+    {
+      label: "legacy listRowDetail attachment",
+      members: {
+        apps: { component: "ObjectList", type: "platform:BusinessKnowledge", data: { rows: "query" } },
+        badDetail: { component: "ObjectSummary", listRowDetail: { slot: "apps" }, type: "platform:BusinessKnowledge", data: { record: "record" } },
+      },
+      html: `<main><projection slot="apps"></projection></main>\n`,
+      pattern: /Unrecognized key\(s\) in object: 'listRowDetail'/u,
+    },
+    {
+      label: "legacy formField attachment",
+      members: {
+        picker: { component: "ObjectSummary", formField: { slot: "form", path: "/skills" }, type: "platform:BusinessKnowledge", data: { record: "record" } },
+      },
+      html: `<main></main>\n`,
+      pattern: /Unrecognized key\(s\) in object: 'formField'/u,
     },
   ];
 
   for (const item of cases) {
-    const dir = mkdtempSync(join(tmpdir(), "panel-list-column-bad-"));
+    const dir = mkdtempSync(join(tmpdir(), "panel-legacy-hook-bad-"));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     writeFileSync(join(dir, "registration.json"), JSON.stringify({
       panels: [{ id: "apps-panel", mode: "create", input: { name: "Apps", description: "", visibility: "domain" } }],
@@ -384,7 +346,6 @@ test("checkPanelWorkspace reports actionable diagnostics for invalid listColumn 
       },
     }, null, 2));
     writeFileSync(join(dir, "panel.html"), item.html);
-    writeFileSync(join(dir, "panel.mjs"), `import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n`);
 
     const script = `
       import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
@@ -440,90 +401,28 @@ test("checkPanelWorkspace reports actionable diagnostics for invalid listColumn 
   }
 });
 
-test("checkPanelWorkspace leaves viewport units allowed by default and rejects them across panel.html and CSS files when enabled", (t) => {
-  const runWithViewportToggle = (directory, rejectViewportUnits) => {
-    const script = `
-      import * as baseChecks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
-      import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
-      const checks = ${rejectViewportUnits}
-        ? {
-            ...baseChecks,
-            checkAuthoringStyles: (css, file, baseOffset = 0, fullSource = css) =>
-              baseChecks.checkAuthoringStyles(css, file, baseOffset, fullSource, { rejectViewportUnits: true }),
-            checkAuthoringTemplate: (template, file, options = {}) =>
-              baseChecks.checkAuthoringTemplate(template, file, { ...options, rejectViewportUnits: true }),
-          }
-        : baseChecks;
-      console.log(JSON.stringify(await checkPanelWorkspace(${JSON.stringify(directory)}, {
-        checks,
-        catalogue: { version: "1.0.0", components: [] },
-        version: "1.0.0",
-      })));
-    `;
-    return execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", script], {
-      cwd: ROOT,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  };
-
-  // Default (off): existing panels with viewport units continue to pass checkPanelWorkspace.
-  const defaultDir = mkdtempSync(join(tmpdir(), "panel-viewport-default-"));
-  t.after(() => rmSync(defaultDir, { recursive: true, force: true }));
-  writeWorkspace(defaultDir, {
-    html: `<style>.root { height: calc(100dvh - 120px); }</style>\n<div id="app"></div>\n`,
+test("checkPanelWorkspace allows CSS viewport units across panel.html and standalone CSS files", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "panel-viewport-allowed-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeWorkspace(dir, {
+    html: `<style>.root { height: calc(100dvh - 120px); min-height: 100vh; }</style>\n<main class="root"></main>\n`,
     extraCss: `.pane { width: 50vw; min-height: 80svh; }\n`,
   });
-  assert.equal(JSON.parse(runWithViewportToggle(defaultDir, false)).status, "valid");
-
-  // Enabled: rejects viewport units in both panel.html <style> and standalone CSS files with exact locations.
-  const badCases = [
-    {
-      label: "100vh in panel.html <style>",
-      files: { html: `<style>\n.root { height: 100vh; }\n</style>\n<div id="app"></div>\n` },
-      pattern: /panel\.html:2:17:.*100vh.*content box/u,
-    },
-    {
-      label: "calc(100dvh - 120px) in panel.html <style>",
-      files: { html: `<style>.root { height: calc(100dvh - 120px); }</style>\n<div id="app"></div>\n` },
-      pattern: /panel\.html:1:29:.*100dvh.*rem\/px min-height/u,
-    },
-    {
-      label: "50vw and 80svh in standalone CSS file",
-      files: { extraCss: `.pane { width: 50vw; }\n.side { min-height: 80svh; }\n` },
-      pattern: /extra\.css:1:16:.*50vw[\s\S]*extra\.css:2:21:.*80svh/u,
-    },
-  ];
-  for (const item of badCases) {
-    const dir = mkdtempSync(join(tmpdir(), "panel-viewport-bad-"));
-    t.after(() => rmSync(dir, { recursive: true, force: true }));
-    writeWorkspace(dir, item.files);
-    assert.throws(
-      () => runWithViewportToggle(dir, true),
-      (error) => {
-        const output = `${error.stderr ?? ""}${error.stdout ?? ""}`;
-        assert.match(output, item.pattern, `${item.label} diagnostic mismatch: ${output}`);
-        return true;
-      },
-      `${item.label} should fail when viewport unit rejection is enabled`,
-    );
-  }
-
-  // Enabled: accepts normal content-box CSS, comments, strings, and custom property names containing viewport substrings.
-  const okDir = mkdtempSync(join(tmpdir(), "panel-viewport-ok-"));
-  t.after(() => rmSync(okDir, { recursive: true, force: true }));
-  writeWorkspace(okDir, {
-    html: [
-      "<style>",
-      "  /* 100vh in comment is ignored */",
-      '  .root-100vh { height: 100%; min-height: 24rem; --pane-50vw: 320px; }',
-      '  .badge::after { content: "100dvh"; }',
-      "</style>",
-      '<div id="app" class="root-100vh"></div>',
-    ].join("\n"),
-    extraCss: `.pane { flex: 1; min-height: 0; overflow: auto; padding: 12px; width: 100%; }\n`,
-  });
-  assert.equal(JSON.parse(runWithViewportToggle(okDir, true)).status, "valid");
+  const script = `
+    import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+    import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
+    console.log(JSON.stringify(await checkPanelWorkspace(${JSON.stringify(dir)}, {
+      checks,
+      catalogue: { version: "1.0.0", components: [] },
+      version: "1.0.0",
+    })));
+  `;
+  const result = JSON.parse(execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", script], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }));
+  assert.equal(result.status, "valid");
 });
 
 test("panel check allows normal HTML/CSS layout, semantic buttons, and data-free SDK UI primitives", (t) => {

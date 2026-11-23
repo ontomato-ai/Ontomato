@@ -6,7 +6,7 @@ import type { PanelFormDescription, PanelFormValues } from "@ontomato/contracts/
 import { AGENT_DEFINITION, SKILL } from "@ontomato/contracts/panel-client-requests";
 import { platformPanelHost } from "../../../../../packages/platform-web/src/panel-host";
 import { confirmDiscard,
-  formSaveCalls, humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelOf, panelRecord, panelUse, registered, writePanelDocument, type Sent,
+  formSaveCalls, humanIntents, ignoreChanges, inside, installPlatform, leaveFrame, nothingAt, panelFrame, panelRecord, panelUse, panelWithSlots, registered, writePanelDocument, type Sent,
 } from "./panel-frame";
 
 /*
@@ -77,10 +77,10 @@ const manifest = definePanel({
   state: { selectedAgent: { type: { kind: "object", objectType: AGENT_DEFINITION }, deepLink: true } },
   members: {
     definition: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "selectedAgent" } } },
-    skills: { target: { projectionId: "agent-skills" }, inputs: {}, formField: { slot: "definition", path: "/skills" } },
+    skills: { target: { projectionId: "agent-skills" }, inputs: {} },
   },
 });
-const panel = panelRecord("panel-submitted", "Agents", manifest);
+const panel = panelRecord("panel-submitted", "Agents", manifest, { definition: { "field-skills": "skills" } });
 const use = panelUse("use-submitted", "submitted", panel.id, "/ontology/agents");
 const link = { sessionId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d01", runId: "7d1c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d02", path: "outputs/drafts/agent.page-draft.json" };
 const draftAt = `/api/assistant/sessions/${link.sessionId}/runs/${link.runId}/page-draft`;
@@ -110,7 +110,7 @@ async function open(draft?: PanelFormValues, shown: PanelFormValues = stored) {
   const query = draft ? `?${new URLSearchParams({ draftSessionId: link.sessionId, draftRunId: link.runId, draftPath: link.path })}` : "";
   writePanelDocument(registered("ontology", use, panel), `/ontology/agents${query}`, { selectedAgent: { className: AGENT_DEFINITION, primaryKey: AGENT } } as never);
   inside(frame);
-  const mounted = await mountPanel(panelOf("definition", "skills"));
+  const mounted = await mountPanel(panelWithSlots(["definition"], { definition: { "field-skills": "skills" } }));
   await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#app [data-field="/name"] input')?.value).toBeTruthy(), { timeout: 5000 });
   const saves = () => formSaveCalls(sent);
   const submitted = (call: number) => saves()[call]!.input.submittedFields;
