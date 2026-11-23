@@ -6,6 +6,7 @@ import { TablePreview, jsonTable, parseCsv, type TableArrangeLabels, type TableD
 import { shellContextKey } from "../context";
 import type { ArtifactRendererProps } from "../types";
 import type { QuerySubgraph } from "@ontomato/contracts/query-subgraph";
+import { queryCoverageSchema, queryIntentSchema } from "@ontomato/contracts/query-intent";
 import { useArtifactText } from "./useArtifactBlob";
 import SubgraphView from "./SubgraphView.vue";
 import SlotOutlet from "../components/SlotOutlet.vue";
@@ -14,7 +15,7 @@ import AttachmentCell from "./AttachmentCell.vue";
 
 /**
  * .csv and .json datasets in the shared table, a page at a time, which the reader can sort and filter without changing
- * the file; JSON that is not a table shows as its formatted source. A partial result says so under the table. A dataset
+ * the file; JSON that is not a table shows as its formatted source. Result limits appear before the table. A dataset
  * carrying its source analysis states it under the table, each query with its conditions, and opens the graph in place.
  * Its rows can be chosen to continue the analysis.
  */
@@ -62,26 +63,43 @@ type Parsed = {
   graph: QuerySubgraph | null;
   /** The row limit a partial dataset was cut at, from the file's own truncation marker. */
   rowLimit: number | null;
+  uncheckedConditions: string[];
+  dataset: boolean;
 };
 const parsed = computed<Parsed>(() => {
-  const none = { graph: null, rowLimit: null };
+  const none = { graph: null, rowLimit: null, uncheckedConditions: [], dataset: false };
   if (text.value === null) return { table: null, raw: null, invalid: false, ...none };
   if (props.artifact.path.toLowerCase().endsWith(".csv"))
     return { table: parseCsv(text.value), raw: null, invalid: false, ...none };
   try {
     const value: unknown = JSON.parse(text.value);
     const table = jsonTable(value);
-    const dataset = value as { sourceAnalysis?: QuerySubgraph; truncation?: { rowLimit: number } | null } | null;
+    const dataset = value as { schema?: string; sourceAnalysis?: QuerySubgraph; truncation?: { rowLimit: number } | null;
+      queryIntent?: unknown; queryCoverage?: unknown } | null;
     const graph = table && dataset?.sourceAnalysis?.schema === "ontomato.query-subgraph.v1" ? dataset.sourceAnalysis : null;
+    const formal = table && (dataset?.schema === "workbench.dataset.v1" || dataset?.schema === "workbench.dataset.v2");
+    const intent = queryIntentSchema.safeParse(formal ? dataset.queryIntent : undefined);
+    const coverage = queryCoverageSchema.safeParse(formal ? dataset.queryCoverage : undefined);
+    const checked = new Map(coverage.data?.conditions.map(({ id, status }) => [id, status]));
     return {
       table, raw: table ? null : JSON.stringify(value, null, 2), invalid: false, graph,
       rowLimit: table ? dataset?.truncation?.rowLimit ?? null : null,
+      uncheckedConditions: intent.data?.conditions.filter(({ id }) => checked.get(id) !== "present").map(({ quote }) => quote) ?? [],
+      dataset: formal || /\.dataset\.json$/i.test(props.artifact.path),
     };
   } catch {
     return { table: null, raw: text.value, invalid: true, ...none };
   }
 });
 const table = computed(() => parsed.value.table);
+function displayDate(text: string | undefined): string | null {
+  if (!parsed.value.dataset || !text) return null;
+  const match = /^(\d{4}-\d{2}-\d{2})T((?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d)(\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/.exec(text);
+  if (!match || !Number.isFinite(Date.parse(text))) return null;
+  const [, date, time, fraction = ""] = match;
+  const precision = fraction.replace(/0+$/, "").replace(/\.$/, "");
+  return time === "00:00:00" && !precision ? date! : `${date} ${time}${precision}`;
+}
 /** Each query of the source analysis as the file states it, with its conditions. */
 const lineage = computed(() => {
   const graph = parsed.value.graph;
@@ -101,6 +119,10 @@ watch(() => props.artifact.id, () => {
     <div v-if="error" class="state error">{{ error }}</div>
     <div v-else-if="text === null" class="state">{{ labels.loading }}</div>
     <template v-else-if="table">
+      <p v-if="parsed.uncheckedConditions.length && labels.datasetUncheckedConditions" class="partial" role="note">
+        {{ labels.datasetUncheckedConditions(parsed.uncheckedConditions) }}
+      </p>
+      <p v-if="parsed.rowLimit !== null" class="partial" role="note">{{ labels.truncatedRows(parsed.rowLimit) }}</p>
       <div v-if="continueConversation && selected.length" class="selection-actions">
         <span>{{ labels.selectedRows?.(selected.length) ?? `${selected.length} selected` }}</span>
         <SlotOutlet :content="shell.slots?.datasetSelectionActions" :scope="{ artifact, title, selectedRowIndices: selected }" />
@@ -119,9 +141,11 @@ watch(() => props.artifact.id, () => {
         :arrange="arrange"
         @update:selected="selected = $event"
       >
-        <template #cell="{ text: cellText }"><AttachmentCell :text="cellText ?? ''" /></template>
+        <template #cell="{ text: cellText }">
+          <span v-if="displayDate(cellText)" :title="cellText">{{ displayDate(cellText) }}</span>
+          <AttachmentCell v-else :text="cellText ?? ''" />
+        </template>
       </TablePreview>
-      <p v-if="parsed.rowLimit !== null" class="partial" role="note">{{ labels.truncatedRows(parsed.rowLimit) }}</p>
       <section v-if="parsed.graph" class="lineage" :aria-label="labels.datasetLineage">
         <div class="lineage-head">
           <span class="lineage-title">{{ labels.datasetLineage }}</span>
@@ -155,7 +179,7 @@ watch(() => props.artifact.id, () => {
 .partial {
   margin: 0;
   padding: var(--spacing-xs) var(--spacing-md);
-  color: var(--el-text-color-secondary);
+  color: var(--el-color-warning-dark-2, var(--el-text-color-primary));
   font-size: var(--text-xs);
 }
 .lineage {

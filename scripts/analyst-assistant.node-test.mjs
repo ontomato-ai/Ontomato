@@ -115,6 +115,60 @@ test("an older retriever receives no intent extension and is started only once",
   });
 });
 
+test("the bundled retriever descriptor sends intent without consulting the provider directory", async () => {
+  await withAssistantPackage((request, res) => {
+    if (request.url.endsWith("/commands")) return reply(res, 200, { taskId: "task", status: "starting" });
+    reply(res, 200, { items: [] });
+  }, async ({ requests, base, directory, script }) => {
+    const intent = { schema: "ontomato.query-intent.v1", conditions: [{ id: "status", quote: "active", mapping: null }], outputs: ["Count"] };
+    await writeFile(path.join(directory, "intent.json"), JSON.stringify(intent));
+    await writeFile(path.join(directory, "retriever-ref.json"), JSON.stringify({ ref: retrieverRef,
+      contextSchema: { properties: { queryIntent: { type: "object" } } } }));
+    await run(process.execPath, [script, "start-retrieval", "Count active staff", "--intent", "@intent.json"], {
+      cwd: directory, env: { PATH: process.env.PATH, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "fixture" },
+    });
+    assert.deepEqual(requests.filter(request => request.url.endsWith("/commands")).map(request => request.body), [
+      { op: "start", agent: retrieverRef, message: "Count active staff", context: { queryIntent: intent } },
+    ]);
+  });
+});
+
+test("a malformed intent file is rejected before dispatching either branch", async () => {
+  await withAssistantPackage((_request, res) => reply(res, 500, { error: "Unexpected request" }),
+    async ({ requests, base, directory, script }) => {
+      await writeFile(path.join(directory, "intent.json"), JSON.stringify({
+        schema: "ontomato.query-intent.v1", question: "Count staff", conditions: [], outputs: ["Count"],
+      }));
+      await assert.rejects(run(process.execPath, [script, "start-retrieval", "Count staff", "--intent", "@intent.json"], {
+        cwd: directory, env: { PATH: process.env.PATH, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "fixture" },
+      }), /pass the question as the command argument/);
+      assert.deepEqual(requests, []);
+    });
+});
+
+test("a stalled recall leaves the admitted retrieval available after the timeout", async () => {
+  await withAssistantPackage((request, res) => {
+    if (request.url.endsWith("/commands")) {
+      if (request.body.op === "list") return reply(res, 503, { error: "Directory unavailable" });
+      reply(res, 200, { taskId: "running-task", status: "running" });
+    }
+  }, async ({ requests, base, directory, script }) => {
+    await writeFile(path.join(directory, "intent.json"), JSON.stringify({ schema: "ontomato.query-intent.v1", conditions: [], outputs: ["Count"] }));
+    const result = await run(process.execPath, [script, "start-retrieval", "Count people", "--intent", "@intent.json"], {
+      cwd: directory, timeout: 8000,
+      env: { PATH: process.env.PATH, ONTOMATO_ONTOLOGY_URL: base, ONTOMATO_TK: "fixture" },
+    }).catch(error => error);
+    assert.equal(result.code, 1);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.recall.error.code, "RECALL_TIMEOUT");
+    assert.equal(output.retriever.taskId, "running-task");
+    assert.equal(output.queryIntentStatus, "capability_check_unavailable");
+    assert.deepEqual(requests.filter(request => request.body?.op === "start").map(request => request.body), [{
+      op: "start", agent: retrieverRef, message: "Count people",
+    }]);
+  });
+});
+
 test("start-retrieval preserves taskId on recall failure and reports start failure with exit code 1", async () => {
   const runId = randomUUID(), taskId = randomUUID(), sessionId = randomUUID();
   let mode = "recall-error";

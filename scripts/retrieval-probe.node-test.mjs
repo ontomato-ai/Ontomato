@@ -37,3 +37,21 @@ test("invalid batches fail before any request and transport failure is not an em
   assert.equal(results[0].error.code, "PROBE_TRANSPORT_FAILED");
   assert.equal(results[0].result, undefined);
 });
+
+test("schema rejects invalid value probes without discarding the valid requests in the batch", async () => {
+  const schema = { classes: [{ className: "/person", attrs: [
+    { name: "status", type: "varchar" }, { name: "hire_date", type: "date" },
+  ] }] };
+  const probes = ["status", "hire_date", "missing"].map(attribute => ({
+    id: attribute, operation: "distinct-values", input: { className: "/person", attribute },
+  }));
+  const bodies = [];
+  const { results } = await probeBatch(probes, { ONTOMATO_ONTOLOGY_URL: "http://ontology.test" }, async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return Response.json({ values: [] });
+  }, schema);
+  assert.deepEqual(bodies, [{ className: "/person", attribute: "status", limit: 100 }]);
+  assert.deepEqual(results[0].result, { values: [] });
+  assert.match(results[1].error.message, /hire_date.*scoped DSL/);
+  assert.equal(results[2].error.code, "INVALID_PROBE_INPUT");
+});
