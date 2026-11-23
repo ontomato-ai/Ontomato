@@ -229,7 +229,6 @@ describe("action catalog reads", () => {
     expect(parameters).toEqual([
       expect.objectContaining({
         primaryKey: "order_id",
-        className: "platform:ActionParameter",
         label: "order_id",
         subtitle: "Target order key",
         fields: { type: "TYPE_STRING", required: "", sample: "ORD-1", constraints: "" },
@@ -237,7 +236,6 @@ describe("action catalog reads", () => {
       }),
       expect.objectContaining({
         primaryKey: "note",
-        className: "platform:ActionParameter",
         label: "note",
         fields: { type: "TYPE_STRING", required: "", objectTypes: "", sample: "ok", constraints: "" },
       }),
