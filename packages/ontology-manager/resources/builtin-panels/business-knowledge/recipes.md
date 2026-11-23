@@ -9,12 +9,13 @@
 
 ## 填写新增或修改表单
 
-- 新增时，先用 `present` 打开本页并将公开状态设为 `{ mode: "create" }`（打开新建表单）；修改时，先用 `present` 选中目标条目并将公开状态设为 `{ mode: "edit" }`。
-- 用 `fill_form` 往当前显示的表单里填入要修改的字段（`knowledgeTitle`、`knowledgeText`、`knowledgeTags`、`status`），页面会标出改动的字段并保持未保存；表单里已有未保存修改时会拒绝覆盖，需先向用户确认再传 `overwriteUnsaved: true`。
+- 新增时，用 `present` 打开本页，设置 `{ mode: "create", selected: null, formTarget: null }`。修改时，在同一次 `present` 中设置 `{ mode: "edit", selected: item, formTarget: item }`，其中 `item = { className: "platform:BusinessKnowledge", primaryKey: "<条目ID>" }`。填表前从页面快照确认表单目标。
+- 用 `fill_form({ member: "form", values })` 填入要修改的字段（`knowledgeTitle`、`knowledgeText`、`knowledgeTags`、`status`），页面会标出改动的字段并保持未保存。表单里已有未保存修改时会拒绝覆盖，需先向用户确认再传 `overwriteUnsaved: true`。
 - **新增的条目一律待审核**：新增时 `status` 填 `0`，不要留给读者或自己判断，也不要写 `1`。修改时保留条目原来的 `status`。
-- 如用户要求直接保存，再用 `page_action` 调用该表单的保存操作（默认在对话中弹出确认，用户确认后由页面提交当前表单；全自动会话直接保存）；否则让用户在页面上查看后自行保存。
+- 如用户要求保存，调用 `page_action({ operation: "form.save" })`（默认由用户在对话中确认，全自动会话直接保存）。仅要求预览时，把未保存的表单留在页面。
 
 ## 审核通过与删除
 
-- 单条操作用 `page_action` 调用当前选中条目或指定行的 `knowledge.approve` / `knowledge.delete`；批量操作先通过 `present` 设置 `checked` 勾选目标条目，再调用 `page_action` 执行批量操作。
+- 单条操作走 `selected`。用 `present` 选中条目，再调用 `page_action({ operation: "approve.approve" })` 或 `page_action({ operation: "remove.delete" })`。
+- 批量操作走 `checked`。用 `present` 把 `checked` 设为目标条目的对象引用数组，再调用 `page_action({ operation: "approveAll.approve" })` 或 `page_action({ operation: "deleteAll.delete" })`。
 - 写入操作由页面按会话确认设置走对话确认（默认）或全自动执行；执行失败要如实报告失败条数。

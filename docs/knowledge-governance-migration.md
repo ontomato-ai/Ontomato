@@ -110,17 +110,11 @@ Existing `application_id=governance` scheduled tasks lose their adapter. On disp
 settlement the scheduler reports `application_unavailable` and pauses the task, rather
 than silently ignoring it. No old execution path is retained.
 
-Platform import-knowledge emits one business-knowledge PageDraft per item and links to
-`#/ontology/knowledge` with the originating runtime session/run and draft path. It reads
-existing knowledge using the current user credential, creates no governance window just
-for drafting, and never calls Java import. New forms use an empty knowledgeID and status 0;
-updates target the current knowledgeID and preserve its status and any omitted tags.
-External imports still call Java. Java has no standalone side-effect-free knowledge
-validation endpoint; none was added. The page batch owns reading/filling/saving these forms.
-A knowledge draft's target names its type, `platform:BusinessKnowledge`, and an opaque
-nonempty knowledge ID for updates; non-UUID updates are covered by the same contract test
-as creates. The ontology declaration maps the governance
+Platform `import-knowledge` reads existing knowledge and returns structured entries for live
+page editing. New entries start with status 0. Updates carry the existing knowledge ID and
+retain its status and any omitted tags. The [extraction workflow](../agent-skills/knowledge-governance/references/extraction.md)
+describes live editing, pending import through a governance window in a platform run without
+page tools, and external import. The ontology declaration maps the governance
 report page to the knowledge-governance preset; business-knowledge keeps the ordinary default.
 New and existing domains lazily receive their own stable governance preset.
-PLATFORM_DRAFT_RULE remains later host work and is not duplicated in skill instructions.
 Full-stack/model/browser acceptance belongs to the controller on 128.

@@ -30,6 +30,7 @@ async function call(route, body, extra = {}) {
 const actions = {
   "read-input":"read_input",
   "import-knowledge":"import_knowledge",
+  "import-pending":"import_knowledge",
   "read-knowledge": "read_knowledge",
   "read-ontology": "read_ontology",
   "search-history": "search_history",

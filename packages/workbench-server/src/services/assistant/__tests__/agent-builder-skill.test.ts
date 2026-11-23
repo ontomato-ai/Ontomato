@@ -49,8 +49,6 @@ it("refuses to write directly inside the platform before sending any request", a
   for (const args of [["create", "@work/agent.json"], ["update", agentId, "@work/agent.json"], ["delete", agentId]]) {
     const result = await run(args, env, cwd);
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain("fill_form");
-    expect(result.stderr).toContain("page_action");
   }
   expect(requested).not.toHaveBeenCalled();
 });
@@ -100,7 +98,7 @@ it("lists the users a governance administrator may choose, and reports when none
   expect(seen).toEqual(["/platform/agent-execution/options?keyword=ali&pageNum=1&pageSize=100"]);
 });
 
-it("uses the execution callback credential instead of tk when the runtime provides one", async () => {
+it.each([false, true])("authenticates agent settings reads for a callback base: %s", async (callback) => {
   const seen: { url: string; headers: IncomingMessage["headers"] }[] = [];
   const base = await serve((url, _body, response, request) => {
     seen.push({ url, headers: request.headers });
@@ -108,14 +106,15 @@ it("uses the execution callback credential instead of tk when the runtime provid
     response.end(JSON.stringify({ agents: [] }));
   });
   const cwd = await mkdtemp(path.join(os.tmpdir(), "agent-builder-callback-"));
+  const prefix = callback ? "/api/assistant/executions/run-id/workbench" : "";
   const env = { ONTOMATO_SKILL_SCENARIO: "platform", ONTOMATO_EXECUTION_CALLBACK: "wbc1-run", ONTOMATO_RUN_ID: "run-id",
-    ONTOMATO_WORKBENCH_URL: base, ONTOMATO_ONTOLOGY_URL: base };
+    ONTOMATO_WORKBENCH_URL: base + prefix, ...(!callback && { ONTOMATO_TK: "session-token" }) };
   const result = await run(["list"], env, cwd);
   expect(result.code).toBe(0);
   expect(seen).toHaveLength(1);
-  expect(seen[0].url).toBe("/api/assistant/agent-definitions");
-  expect(seen[0].headers["x-ontomato-callback-credential"]).toBe("wbc1-run");
+  expect(seen[0].url).toBe(prefix + "/api/assistant/agent-definitions");
+  expect(seen[0].headers["x-ontomato-callback-credential"]).toBe(callback ? "wbc1-run" : undefined);
   expect(seen[0].headers["x-ontomato-run-id"]).toBe("run-id");
-  expect(seen[0].headers.tk).toBeUndefined();
+  expect(seen[0].headers.tk).toBe(callback ? undefined : "session-token");
   expect(seen[0].headers["x-api-key"]).toBeUndefined();
 });

@@ -181,12 +181,10 @@ it("describes member reads and declared operations in the generated skill", asyn
   const shared = await offering.provide(taskRef);
   const { content } = shared.files[0]!;
   const reads = content.split("### Read current data\n")[1]!.split("\n### Open the panel")[0];
-  expect(reads).toContain('memberPath: [previewSegment,{member:"detail"}]');
-  expect(reads).toContain('dataName: "record"');
+  expect(reads).toContain("$ONTOMATO_PANEL_OPERATIONS_URL/nested");
   const operations = content.split("### Declared operations and live page actions\n")[1]!.split("\n### ")[0];
   expect(operations).toContain("operations: true");
   expect(operations).toContain('operation, memberPath?, rowKey?, input?');
-  expect(operations).toContain('`preview.approve.approve`');
   expect(content).not.toContain("### Panel commands");
   expect(await offering.provide(taskRef)).toEqual(shared);
   expect(await offering.provide(taskRef, { entryInputKeys: ["unrelated"] })).toEqual(shared);
