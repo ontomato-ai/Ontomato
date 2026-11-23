@@ -56,6 +56,15 @@ for endpoint in denied:
         raise AssertionError(f"unexpected network access: {endpoint}")
 print("network: both relays respond, only lo, other session/database/container/external addresses blocked", flush=True)
 
+print("probe: private channel", flush=True)
+with socket.socket(fileno=3) as channel:
+    channel.settimeout(2)
+    with channel.makefile("rwb") as protocol:
+        protocol.write(b"engine request\n")
+        protocol.flush()
+        assert protocol.readline() == b"host reply\n"
+print("private channel: fd 3 exchanged data in both directions", flush=True)
+
 # A detached descendant must die when the namespace's PID 1 exits.
 subprocess.Popen(["/bin/sleep", "120"], start_new_session=True, stdout=subprocess.DEVNULL,
                  stderr=subprocess.DEVNULL)

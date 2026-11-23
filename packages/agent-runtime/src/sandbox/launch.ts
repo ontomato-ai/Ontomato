@@ -3,6 +3,7 @@ import { closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Duplex } from "node:stream";
 import type { HarnessDirectories, HarnessProcess, HarnessSandbox } from "../adapters/contract";
 import { prepareSandboxMounts, sandboxPolicyDirectory, type SandboxFiles } from "./mounts";
 import { callbackPort, gatewayPort, openSandboxRelays, type SandboxEndpoints } from "./network";
@@ -75,20 +76,22 @@ export async function openSessionSandbox(options: SessionSandboxOptions): Promis
           "--cwd", "/workspace", "--proc_path", "/proc",
           "--time_limit", "0", "--rlimit_cpu", "inf", "--rlimit_as", "inf",
           "--rlimit_fsize", "inf", "--rlimit_nproc", String(options.processCount),
-          "--pass_fd", "3", "--pass_fd", "4", "--",
+          "--pass_fd", "3", "--pass_fd", "4", "--pass_fd", "5", "--",
           "/usr/local/bin/python3", "-IS", `${sandboxPolicyDirectory}/engine.py`,
           String(gatewayPort), String(callbackPort), String(options.fileBytes), command, ...args,
-        ], { env: {}, stdio: ["pipe", "pipe", "pipe", fd, "pipe"] }) as ChildProcessWithoutNullStreams;
+        ], { env: {}, stdio: ["pipe", "pipe", "pipe", "pipe", fd, "pipe"] }) as ChildProcessWithoutNullStreams;
       } finally {
         closeSync(fd);
       }
+      const [, , , channel, , exitStatus] = Array.from(child.stdio);
       let engineExit = "";
-      child.stdio[4]!.on("data", chunk => { engineExit += chunk.toString(); });
+      exitStatus!.on("data", chunk => { engineExit += chunk.toString(); });
       let killed = false;
       process = {
         stdin: child.stdin,
         stdout: child.stdout,
         stderr: child.stderr,
+        channel: channel as Duplex,
         exited: new Promise((resolve, reject) => {
           child.once("error", reject);
           child.once("close", code => {

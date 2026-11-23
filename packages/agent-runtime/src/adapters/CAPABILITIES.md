@@ -58,4 +58,5 @@ These are the boundaries of the runtime's control, so they are refusals rather t
 - Retry a call whose outcome is unknown, and never replay past items or tool calls on resume.
 - Ask the user for approval or permission. The platform has none for engines, and the engine's own approval
   path is configured off.
-- Read platform facts from anywhere but its own session's directories and the host callbacks.
+- Read platform facts from anywhere but its own session's directories and the host callbacks, or reach the
+  runtime from inside the sandbox other than through the program's stdio, its private channel and the sandbox callback.

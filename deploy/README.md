@@ -48,7 +48,9 @@ GHCR; if so it pulls them, recreates those containers with their existing config
 removes the replaced images. PostgreSQL is not touched, and only this Compose project's
 containers are watched. The four images update independently, and changes to the deployment
 templates still need a manual update. Keep fixed versions without automatic updates for
-production sites.
+production sites. The agent runtime runs its sandbox preflight before serving requests
+on every container start. If the host sandbox policy changes, rerun the installer
+(`python3 prepare-env.py .env --sandbox-preflight` for this deployment).
 
 ## Offline delivery
 

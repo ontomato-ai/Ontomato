@@ -75,7 +75,7 @@ COPY --from=sandbox-builder /output/licenses/ /app/licenses/
 COPY sandbox-policy/sources.lock /app/licenses/sandbox-sources.lock
 COPY sandbox-policy/debian-packages.lock /app/licenses/sandbox-debian-sources.lock
 COPY sandbox-policy/seccomp.json sandbox-policy/apparmor sandbox-policy/ontomato-agent-runtime.cil \
-     sandbox-policy/engine.py sandbox-policy/preflight.mjs sandbox-policy/probe.py /usr/local/lib/ontomato-sandbox/
+     sandbox-policy/entrypoint.sh sandbox-policy/engine.py sandbox-policy/preflight.mjs sandbox-policy/probe.py /usr/local/lib/ontomato-sandbox/
 RUN sha256sum /usr/local/sbin/nsjail /usr/bin/socat /usr/sbin/ip > /app/licenses/sandbox-binaries.sha256 \
  && dpkg-query -W socat iproute2 > /app/licenses/sandbox-debian-packages.txt \
  && cp /usr/share/doc/socat/copyright /app/licenses/socat.txt \
@@ -92,4 +92,5 @@ RUN node --import tsx --input-type=module -e 'await import("@ontomato/agent-runt
 RUN rm -f /runtime-notices.txt /tmp/npm-licenses.json /tmp/third_party_notices.py /tmp/requirements-py310.txt
 USER 0:0
 EXPOSE 3001
+ENTRYPOINT ["/bin/sh", "/usr/local/lib/ontomato-sandbox/entrypoint.sh"]
 CMD ["node", "--import", "tsx", "src/index.ts"]

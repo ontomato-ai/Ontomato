@@ -25,7 +25,8 @@ const skillOutside = join(work, "unselected");
 const servers = [];
 let sandbox;
 let otherSandbox;
-async function endpoint(message, host = "127.0.0.1") {
+async function endpoint(message) {
+  const host = "127.0.0.1";
   const server = createServer((_request, response) => response.end(message)).listen(0, host);
   servers.push(server);
   await once(server, "listening");
@@ -51,7 +52,7 @@ try {
   await writeFile(join(skillOutside, "SKILL.md"), "unselected", { mode: 0o444 });
   const gateway = await endpoint("gateway");
   const callback = await endpoint("callback");
-  const extra = await endpoint("another service", "0.0.0.0");
+  const extra = await endpoint("another service");
   const outerAddress = Object.values(networkInterfaces()).flat().find(info => info.family === "IPv4" && !info.internal)?.address ?? "172.31.255.254";
   const options = { uid: 20001, endpoints: { gateway, callback }, processCount: 512, fileBytes: 33554432 };
   const open = (sessionDirectory, files) => openSessionSandbox({ ...options, sessionDirectory, ...files });
@@ -69,8 +70,20 @@ try {
       `${outerAddress}:5432`, "1.1.1.1:443",
     ].join(" "),
   });
+  const channel = createInterface({ input: probe.channel });
+  let request;
+  channel.once("line", line => {
+    request = line;
+    probe.channel.end("host reply\n");
+  });
   let diagnostic = "";
   let stage = "";
+  const failure = reason => {
+    const layer = stage || (/network bridge:|net::|net\.cc|lo.*(?:RTM|failed)|socket\(/i.test(diagnostic)
+      ? "network bridge"
+      : /pivot_root|clone\(|unshare\(/i.test(diagnostic) ? "Docker capability/seccomp" : "mounts");
+    return new Error(`${layer}: ${reason}\n${diagnostic}`);
+  };
   probe.stderr.on("data", chunk => { diagnostic += chunk; });
   const lines = createInterface({ input: probe.stdout });
   const namespace = await Promise.race([
@@ -81,15 +94,13 @@ try {
         if (line.startsWith("namespace: ")) return line.slice("namespace: ".length);
       }
       const exit = await probe.exited;
-      const layer = stage || (/network bridge:|net::|net\.cc|lo.*(?:RTM|failed)|socket\(/i.test(diagnostic)
-        ? "network bridge"
-        : /pivot_root|clone\(|unshare\(/i.test(diagnostic) ? "Docker capability/seccomp" : "mounts");
-      throw new Error(`${layer}: sandbox exited ${exit}\n${diagnostic}`);
+      throw failure(`sandbox exited ${exit}`);
     })(),
     delay(15000, undefined, { ref: false }).then(() => {
-      throw new Error(`sandbox startup timed out\n${diagnostic}`);
+      throw failure("sandbox startup timed out");
     }),
   ]);
+  assert.equal(request, "engine request", "private channel: unexpected request from fd 3");
   assert.ok((await namespaceMembers(namespace, options.uid)).length >= 4, "expected engine, bridges and detached descendant");
   await sandbox.stop();
   assert.deepEqual(await namespaceMembers(namespace, options.uid), [], "detached processes kept the network namespace alive");
