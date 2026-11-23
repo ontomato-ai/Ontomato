@@ -10,6 +10,7 @@ import type {
   ExpectedPageTarget,
   FormFillOutcome,
   FormFillRequestInput,
+  PageActionConfirmedDispatchResult,
   PageActionOutcome,
   PageActionRequestInput,
   PendingPageActionConfirmation,
@@ -151,6 +152,12 @@ export type PanelMountedActionResult =
   | { readonly ok: true; readonly confirmation: PendingPageActionConfirmation }
   | {
       readonly ok: false;
+      readonly reason: "unknown";
+      readonly outcome?: unknown;
+      readonly message?: string;
+    }
+  | {
+      readonly ok: false;
       readonly reason:
         | "action_not_found"
         | "action_unavailable"
@@ -160,6 +167,7 @@ export type PanelMountedActionResult =
         | "cancelled"
         | "stale"
         | "failed";
+      readonly outcome?: unknown;
       readonly message?: string;
     };
 
@@ -182,6 +190,90 @@ export function summarizeDispatchResponse(response: PanelHumanOperationDispatchR
     return `Batch completed: ${succeeded}/${outcome.items.length} succeeded.`;
   }
   return outcome.message;
+}
+
+/**
+ * Classifies an authoritative dispatch response for a mounted `page_action` handler:
+ * - Only authoritative success (or a batch with at least one success and zero unknown items) is `ok: true`.
+ * - Missing outcome, `unknown`, or a batch containing any `unknown` item is `reason: "unknown"`.
+ * - `not-dispatched`, `refusal`, `failure`, or an all-failed batch is `reason: "failed"`.
+ */
+export function classifyDispatchResponseForAction(
+  response: PanelHumanOperationDispatchResponse,
+): PanelMountedActionResult {
+  if (response.kind === "not-dispatched") {
+    return { ok: false, reason: "failed", message: response.message };
+  }
+  const { outcome } = response;
+  if (!outcome) {
+    return {
+      ok: false,
+      reason: "unknown",
+      message: "Operation was dispatched, but its outcome is unknown.",
+    };
+  }
+  if (outcome.kind === "unknown") {
+    return {
+      ok: false,
+      reason: "unknown",
+      outcome,
+      message: outcome.message || "Operation was dispatched, but its outcome is unknown.",
+    };
+  }
+  if (outcome.kind === "refusal" || outcome.kind === "failure") {
+    return { ok: false, reason: "failed", outcome, message: outcome.message };
+  }
+  if (outcome.kind === "batch") {
+    const unknownItem = outcome.items.find((item) => item.outcome.kind === "unknown");
+    if (unknownItem) {
+      return {
+        ok: false,
+        reason: "unknown",
+        outcome,
+        message: unknownItem.outcome.kind === "unknown" && unknownItem.outcome.message
+          ? unknownItem.outcome.message
+          : "Batch operation was dispatched with an unknown item outcome.",
+      };
+    }
+    if (!outcome.items.some((item) => item.outcome.kind === "success")) {
+      const firstProblem = outcome.items.map((item) => item.outcome).find(
+        (item) => item.kind === "refusal" || item.kind === "failure",
+      );
+      return {
+        ok: false,
+        reason: "failed",
+        outcome,
+        message: firstProblem && "message" in firstProblem ? firstProblem.message : "Batch operation failed.",
+      };
+    }
+    return { ok: true, outcome };
+  }
+  return { ok: true, outcome };
+}
+
+/** Classifies an authoritative dispatch response after the user approves a deferred confirmation in chat. */
+export function classifyDispatchResponseForConfirmation(
+  intentId: string,
+  response: PanelHumanOperationDispatchResponse,
+): PageActionConfirmedDispatchResult {
+  if (response.kind === "not-dispatched") {
+    return { ok: false, intentId, reason: "not_dispatched", message: response.message };
+  }
+  const actionResult = classifyDispatchResponseForAction(response);
+  if (!actionResult.ok) {
+    return {
+      ok: false,
+      intentId,
+      reason: actionResult.reason === "unknown" ? "unknown" : "failed",
+      message: actionResult.message ?? "Operation did not complete.",
+    };
+  }
+  return {
+    ok: true,
+    intentId,
+    outcome: response.outcome,
+    summary: summarizeDispatchResponse(response),
+  };
 }
 
 /** What a panel placed in one of an instance's members publishes into it: its operations, its unsaved changes. */
@@ -613,33 +705,56 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
         ...(request.expectedCheckedKeys !== undefined ? { expectedCheckedKeys: request.expectedCheckedKeys } : {}),
         agentContext,
       });
-      if (!result.ok) {
-        return {
-          ok: false,
-          reason: result.reason,
-          operation: request.operation,
-          ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
-          ...(result.message ? { message: result.message } : {}),
-        };
-      }
-      if ("confirmation" in result) {
+      const toPageActionOutcome = (mountedResult: PanelMountedActionResult): PageActionOutcome => {
+        if (!mountedResult.ok) {
+          if (mountedResult.reason === "unknown") {
+            const unknownOutcome = mountedResult.outcome !== undefined
+              ? mountedResult.outcome
+              : agentContext.completed?.response.kind === "dispatched"
+                ? agentContext.completed.response.outcome
+                : undefined;
+            return {
+              ok: false,
+              kind: "unknown",
+              reason: "outcome_unknown",
+              operation: request.operation,
+              ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+              ...(unknownOutcome !== undefined ? { outcome: unknownOutcome } : {}),
+              ...(mountedResult.message ? { message: mountedResult.message } : {}),
+            };
+          }
+          return {
+            ok: false,
+            reason: mountedResult.reason,
+            operation: request.operation,
+            ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+            ...(mountedResult.message ? { message: mountedResult.message } : {}),
+          };
+        }
+        if ("confirmation" in mountedResult) {
+          return {
+            ok: true,
+            kind: "awaiting_confirmation",
+            operation: request.operation,
+            intentId: mountedResult.confirmation.intentId,
+            questionId: mountedResult.confirmation.questionId,
+            label: mountedResult.confirmation.label,
+            confirmation: mountedResult.confirmation,
+          };
+        }
+        if (agentContext.completed) {
+          const classified = classifyDispatchResponseForAction(agentContext.completed.response);
+          if (!classified.ok) return toPageActionOutcome(classified);
+        }
         return {
           ok: true,
-          kind: "awaiting_confirmation",
+          kind: "executed",
           operation: request.operation,
-          intentId: result.confirmation.intentId,
-          questionId: result.confirmation.questionId,
-          label: result.confirmation.label,
-          confirmation: result.confirmation,
+          ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+          outcome: mountedResult.outcome ?? (agentContext.completed?.response.kind === "dispatched" ? agentContext.completed.response.outcome : agentContext.completed?.response),
         };
-      }
-      return {
-        ok: true,
-        kind: "executed",
-        operation: request.operation,
-        ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
-        outcome: result.outcome ?? (agentContext.completed?.response.kind === "dispatched" ? agentContext.completed.response.outcome : agentContext.completed?.response),
       };
+      return toPageActionOutcome(result);
     } catch (error) {
       if (error instanceof PanelConfirmationDeferred) {
         const { confirmation } = error;
@@ -661,6 +776,20 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
           ...(error.intentId ? { intentId: error.intentId } : {}),
           message: error.message,
         };
+      }
+      if (agentContext.completed) {
+        const classified = classifyDispatchResponseForAction(agentContext.completed.response);
+        if (!classified.ok && classified.reason === "unknown") {
+          return {
+            ok: false,
+            kind: "unknown",
+            reason: "outcome_unknown",
+            operation: request.operation,
+            intentId: agentContext.completed.intentId,
+            ...(classified.outcome !== undefined ? { outcome: classified.outcome } : {}),
+            ...(classified.message ? { message: classified.message } : {}),
+          };
+        }
       }
       return {
         ok: false,

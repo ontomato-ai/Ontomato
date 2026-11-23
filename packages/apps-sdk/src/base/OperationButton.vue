@@ -5,6 +5,7 @@ import { ElButton } from "element-plus/es/components/button/index";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
+import { classifyDispatchResponseForAction } from "../panel/instance";
 import { useMember, useMemberOperations } from "../panel/member";
 import { missingOperationDescriptorResult } from "../panel/member-operations";
 import { matchesExpectedCheckedKeys, matchesExpectedTarget } from "../panel/operation-binding";
@@ -249,6 +250,10 @@ const unregisterAction = panel.instance.registerActionHandler(
       };
     }
     const status = await run(props.operation, descriptor.value, filteredInput, agentContext);
+    const dispatchedResponse = receipt.value ?? agentContext?.completed?.response;
+    if (dispatchedResponse) {
+      return classifyDispatchResponseForAction(dispatchedResponse);
+    }
     if (failure.value) {
       return { ok: false, reason: "failed", message: failure.value.message };
     }
@@ -261,7 +266,7 @@ const unregisterAction = panel.instance.registerActionHandler(
     if (read.value) {
       return { ok: true, outcome: read.value };
     }
-    return { ok: true, outcome: outcome.value ?? receipt.value ?? undefined };
+    return { ok: true, outcome: outcome.value ?? undefined };
   },
 );
 onBeforeUnmount(unregisterAction);

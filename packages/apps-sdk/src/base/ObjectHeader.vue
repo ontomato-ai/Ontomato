@@ -6,6 +6,7 @@ import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-op
 import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelContextKey, projectionKey } from "../panel/context";
+import { classifyDispatchResponseForAction } from "../panel/instance";
 import { panelMemberKey, readerDataState, useMemberOutput } from "../panel/member";
 import { missingOperationDescriptorResult } from "../panel/member-operations";
 import { matchesExpectedCheckedKeys, matchesExpectedTarget } from "../panel/operation-binding";
@@ -361,6 +362,10 @@ watch(
             };
           }
           const status = await runMoreOperation(operationName, item.descriptor, filteredInput, agentContext);
+          const dispatchedResponse = moreReceipt.value ?? agentContext?.completed?.response;
+          if (dispatchedResponse) {
+            return classifyDispatchResponseForAction(dispatchedResponse);
+          }
           if (moreFailure.value) {
             return { ok: false, reason: "failed", message: moreFailure.value.message };
           }
@@ -373,7 +378,7 @@ watch(
           if (moreRead.value) {
             return { ok: true, outcome: moreRead.value };
           }
-          return { ok: true, outcome: moreOutcome.value ?? moreReceipt.value ?? undefined };
+          return { ok: true, outcome: moreOutcome.value ?? undefined };
         },
       ),
     );

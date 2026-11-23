@@ -2,13 +2,13 @@ import { computed, onScopeDispose, ref, shallowRef, type ComputedRef, type Ref, 
 import type { PageActionConfirmedDispatchResult } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelHumanOperationDispatchResponse } from "@ontomato/contracts/panel-agent";
-import type { PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
+import type { PanelManifest, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PanelOwnerOperationDescriptor, PanelReadOperationResult } from "@ontomato/contracts/panel-operations";
 import { slotInputState, type PanelContext, type ProjectionSlot } from "../panel/context";
 import {
+  classifyDispatchResponseForConfirmation,
   PanelConfirmationDeferred,
   PanelOperationDeferred,
-  summarizeDispatchResponse,
   type PanelAgentActionContext,
   type PanelWriteResult,
 } from "../panel/instance";
@@ -50,19 +50,18 @@ const EMPTY_TARGET_INFO: OperationTargetInfo = {
   target: null,
 };
 
-/** Resolves the target object or batch checked list bound to an owner-described projection operation. */
-export function resolveOperationTarget(
-  panel: PanelContext | null,
-  slot: ProjectionSlot | null,
-  _member: PanelMemberContext | null,
+/** Resolves the target object or batch checked list bound to an owner-described member operation. */
+export function resolveMemberOperationTarget(
+  manifest: PanelManifest | null,
+  memberSlot: string | null,
   descriptor: PanelOwnerOperationDescriptor | null,
   stateValues: Readonly<Record<string, PanelFieldValue>>,
 ): OperationTargetInfo {
-  if (!panel || !slot || !descriptor) return EMPTY_TARGET_INFO;
+  if (!manifest || !memberSlot || !descriptor) return EMPTY_TARGET_INFO;
   const targetState = descriptor.target.source === "input"
-    ? slotInputState(panel.manifest, slot.slot, descriptor.target.input)
+    ? slotInputState(manifest, memberSlot, descriptor.target.input)
     : null;
-  const batch = targetState !== null && panel.manifest.state[targetState]?.type.kind === "list";
+  const batch = targetState !== null && manifest.state[targetState]?.type.kind === "list";
   const checkedState = batch ? targetState : null;
   const checkedObjects = checkedState === null ? [] : stateObjects(stateValues[checkedState]);
   const checkedTargets = checkedObjects.map(({ className, primaryKey }) => ({
@@ -75,6 +74,17 @@ export function resolveOperationTarget(
     ? { kind: "object", objectType: selected.className, primaryKey: selected.primaryKey }
     : null;
   return { batch, checkedState, checkedObjects, checkedTargets, target };
+}
+
+/** Resolves the target object or batch checked list bound to an owner-described projection operation. */
+export function resolveOperationTarget(
+  panel: PanelContext | null,
+  slot: ProjectionSlot | null,
+  _member: PanelMemberContext | null,
+  descriptor: PanelOwnerOperationDescriptor | null,
+  stateValues: Readonly<Record<string, PanelFieldValue>>,
+): OperationTargetInfo {
+  return resolveMemberOperationTarget(panel?.manifest ?? null, slot?.slot ?? null, descriptor, stateValues);
 }
 
 /** Whether an admitted operation can currently be triggered by the reader. */
@@ -464,15 +474,7 @@ export function useOperationRunner(options: {
                   return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "Operation was cancelled." };
                 }
                 applyWriteAnswer({ ...confirmed, named: deferred.named });
-                if (confirmed.response.kind === "not-dispatched") {
-                  return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
-                }
-                return {
-                  ok: true,
-                  intentId: preparation.intentId,
-                  outcome: confirmed.response.outcome,
-                  summary: summarizeDispatchResponse(confirmed.response),
-                };
+                return classifyDispatchResponseForConfirmation(preparation.intentId, confirmed.response);
               } catch (dispatchReason) {
                 failure.value = dispatchReason instanceof Error ? dispatchReason : new Error(String(dispatchReason));
                 return {

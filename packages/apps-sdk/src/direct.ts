@@ -16,3 +16,10 @@ export { readProjectionForRender } from "./panel/platform-requests";
 export { useMember, useMemberData, useMemberOperations, useMemberOutput, useMemberParam, useMemberRead } from "./panel/member";
 export { usePanelOutput, usePanelOutputs } from "./panel/panel-output";
 export { useFormFieldSlot, useListRowSlot, type FormFieldSlotContext, type ListRowSlotContext, type ListRowSlotOperation } from "./panel/slot-context";
+export {
+  usePanelOperationAction,
+  type PanelOperationActionAvailability,
+  type PanelOperationActionContext,
+  type PanelOperationActionHandle,
+  type UsePanelOperationActionOptions,
+} from "./panel/panel-operation";

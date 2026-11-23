@@ -48,7 +48,15 @@ export { useMember, useMemberOperations, useMemberOutput, useMemberParam } from 
 export { usePanelData } from "../panel/panel-data";
 export { usePanelOutput, usePanelOutputs } from "../panel/panel-output";
 export { useFormFieldSlot, useListRowSlot, type FormFieldSlotContext, type ListRowSlotContext, type ListRowSlotOperation } from "../panel/slot-context";
-export { usePanelOperation, type PanelOperationHandle } from "../panel/panel-operation";
+export {
+  usePanelOperation,
+  usePanelOperationAction,
+  type PanelOperationActionAvailability,
+  type PanelOperationActionContext,
+  type PanelOperationActionHandle,
+  type PanelOperationHandle,
+  type UsePanelOperationActionOptions,
+} from "../panel/panel-operation";
 export { ElMessageBox as SdkMessageBox } from "element-plus/es/components/message-box/index";
 export { savePanelFile, type PanelDownloadReceipt } from "../panel/save-file";
 export { usePanelNarrow, type UsePanelNarrowOptions } from "../panel/panel-narrow";
