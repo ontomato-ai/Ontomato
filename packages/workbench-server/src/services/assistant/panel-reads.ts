@@ -6,6 +6,7 @@ import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
 import type { PanelFormRequest, PanelOption, PanelRecord } from "@ontomato/contracts/panel-projection";
 import { tForLocale } from "../../i18n";
 import { assertPermission } from "../../identity/installed";
+import { HttpError } from "../../utils/errors";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { describeAgentDefinitionForm } from "./definition-form";
@@ -38,7 +39,10 @@ export function createAgentDefinitionReadAdapter(owner: AssistantOwner, viewer: 
     },
     async record(primaryKey: string) {
       await admit();
-      return record(await readAgentDefinition(id.parse(primaryKey), owner, viewer));
+      if (!id.safeParse(primaryKey).success) {
+        throw new HttpError(400, "Invalid agent definition target", "INVALID_REQUEST");
+      }
+      return record(await readAgentDefinition(primaryKey, owner, viewer));
     },
     async form(primaryKey: string, params: FormInputs) {
       await admit();

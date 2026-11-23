@@ -12,9 +12,11 @@ await mountPanel({
     const mode = computed(() => state.values.value.mode ?? "list");
     const listedAgents = computed(() => state.values.value.listedAgents);
     const listStatus = usePanelOutput("list", "status");
+    const summaryLabel = usePanelOutput("summary", "label");
     const listVisible = computed(
       () => listStatus.value !== null && listStatus.value !== "loading" && listStatus.value !== "forbidden",
     );
+    const selectedReady = computed(() => mode.value === "edit" && Boolean(summaryLabel.value));
     let fallbackAfterRemoval = false;
 
     watch(selected, (agent, prev) => {
@@ -33,23 +35,14 @@ await mountPanel({
       if (status !== "ready" && status !== "empty") return;
       const agents = status === "empty" ? [] : listed;
       if (!Array.isArray(agents)) return;
-      const current = state.values.value.selected;
-      if (!current) {
-        const shouldSelectFirst = state.values.value.mode == null
-          || (fallbackAfterRemoval && state.values.value.mode === "list");
-        fallbackAfterRemoval = false;
-        if (shouldSelectFirst && agents.length) {
-          state.set("selected", { className: AGENT, primaryKey: agents[0].primaryKey });
-        }
-        return;
-      }
-      if (!agents.some((row) => row.primaryKey === current.primaryKey)) {
-        const first = agents[0];
-        if (first) {
-          state.set("selected", { className: AGENT, primaryKey: first.primaryKey });
-        } else {
-          state.setState({ selected: null, mode: "list" });
-        }
+      // Never replace an explicit selection (e.g. a deep link to a deleted or forbidden agent)
+      // with another agent; let the summary projection report the owner's reason in place.
+      if (state.values.value.selected) return;
+      const shouldSelectFirst = state.values.value.mode == null
+        || (fallbackAfterRemoval && state.values.value.mode === "list");
+      fallbackAfterRemoval = false;
+      if (shouldSelectFirst && agents.length) {
+        state.set("selected", { className: AGENT, primaryKey: agents[0].primaryKey });
       }
     }, { immediate: true });
 
@@ -63,6 +56,6 @@ await mountPanel({
       state.setState({ selected: null, mode: "create" });
     }
 
-    return { mode, listStatus, listVisible, viewType, startCreate };
+    return { mode, listStatus, listVisible, selectedReady, viewType, startCreate };
   },
 });
