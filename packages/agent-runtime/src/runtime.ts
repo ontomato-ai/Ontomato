@@ -52,11 +52,13 @@ import {
 } from "./skills";
 import {
   piModel,
+  litellmEntry,
   modelStream,
   completeSummary,
   recoverContext,
-  type ResolvedModel,
+  type ResolvedChatModel,
 } from "./model";
+import type { ModelGatewayClient } from "./gateway-client";
 import { RuntimeError, safeMessage } from "./errors";
 import { contextTokens, cutPoint, serializeConversation } from "./compaction";
 import { connectMcp } from "./tools";
@@ -151,6 +153,8 @@ function observeDisplayTool(runId: string, callback: RuntimePresentationCallback
 
 export interface RuntimeOptions {
   store: RuntimeStore;
+  /** Every model call goes through this gateway; its leases are the only credentials the loop holds. */
+  gateway: ModelGatewayClient;
   worker?: WorkerPolicy;
   root: string;
   hosts: RuntimeHost[];
@@ -197,6 +201,7 @@ export class AgentRuntime {
   readonly files: ArtifactFiles;
   readonly mcp: RuntimeMcpServices;
   readonly models: RuntimeModelSettings;
+  readonly gateway: ModelGatewayClient;
   private active = new Map<string, Active>();
   private locks = new Map<string, Promise<unknown>>();
   private waiters = new Map<string, Set<() => void>>();
@@ -208,6 +213,7 @@ export class AgentRuntime {
     this.logs = new ServiceLogStore("agent-runtime", this.store.connectionString, this.store.schema, runtimeLogging.warn);
     this.mcp = new RuntimeMcpServices(this.store);
     this.models = new RuntimeModelSettings(this.store, options.modelRuntimeToken, options.modelSeed);
+    this.gateway = options.gateway;
     this.worker = {
       ...(options.worker ?? {
         development: process.env.NODE_ENV === "test",
@@ -297,7 +303,7 @@ export class AgentRuntime {
         `SELECT 1 FROM ${this.store.table("admissions")} WHERE host_id=$1 AND domain_id=$2 AND key=$3`,
         [scope.hostId, scope.domainId, runId],
       );
-      let config: ResolvedModel | undefined;
+      let config: ResolvedChatModel | undefined;
       let skills: InstalledSkill[] = [];
       // Read-only checks for unusable dependencies belong before admission, so a new run fails with
       // 422/503 instead of starting and reporting the same problem as a stopped run.
@@ -639,7 +645,7 @@ export class AgentRuntime {
   }
   private async execute(
     active: Active,
-    config: ResolvedModel,
+    config: ResolvedChatModel,
     request: RuntimeStartRunRequest,
     skills: InstalledSkill[],
     presentationCallback?: RuntimePresentationCallback,
@@ -654,6 +660,7 @@ export class AgentRuntime {
     let reason: RuntimeStopReason | undefined;
     let failure: string | null = null;
     let closeMcp = async () => {};
+    const lease = await this.gateway.lease({ [config.name]: litellmEntry(config) });
     try {
       const mcpConfigs = await this.mcp.resolve(scope, request.definition.externalMcp.map((ref) => ref.id));
       const rows = await this.store.contextMessages(scope, run.sessionId);
@@ -722,7 +729,7 @@ export class AgentRuntime {
       }
       if (new Set(tools.map((t) => t.name)).size !== tools.length)
         throw new Error("Exposed tool names must be unique");
-      const model = piModel(config);
+      const model = piModel(config, lease);
       await runAgentLoopContinue(
         { messages, tools },
         {
@@ -782,6 +789,7 @@ export class AgentRuntime {
                   const next = await completeSummary(
                     modelStream(
                       config,
+                      lease,
                       this.store,
                       scope,
                       run.id,
@@ -859,6 +867,7 @@ export class AgentRuntime {
         signal,
         modelStream(
           config,
+          lease,
           this.store,
           scope,
           run.id,
@@ -884,6 +893,8 @@ export class AgentRuntime {
       reason = "error";
       failure = safeMessage(error);
     }
+    // The run's model calls are over: revoke the lease before the run's stop is committed, cancelled runs included.
+    await this.gateway.release(lease);
     await this.settle(active, reason, failure);
   }
   private async settle(

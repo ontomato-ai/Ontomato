@@ -1,76 +1,154 @@
 import { logHeaders } from "@ontomato/service-logging";
 import { runtimeLogger, runtimeFailureMessage } from "./logging";
 import { randomUUID } from "node:crypto";
-import { PI_CHAT_MODEL_DEFAULTS, type ModelApi, type ModelEntry, type ModelProviderWrite, type ModelRetry } from "@ontomato/contracts/model-settings";
-import type {
-  Model,
-  Message,
-  AssistantMessage,
-  AssistantMessageEvent,
-  TranscriptContext,
-} from "@earendil-works/pi-ai";
-import { streamSimple as openaiCompletions } from "@earendil-works/pi-ai/api/openai-completions";
-import { streamSimple as openaiResponses } from "@earendil-works/pi-ai/api/openai-responses";
-import { streamSimple as anthropicMessages } from "@earendil-works/pi-ai/api/anthropic-messages";
-import { streamSimple as googleGenerativeAi } from "@earendil-works/pi-ai/api/google-generative-ai";
-import { RuntimeError } from "./errors";
+import {
+  DEFAULT_CHAT_CONTEXT_WINDOW, DEFAULT_MODEL_MAX_RETRIES, DEFAULT_MODEL_TIMEOUT_SECONDS,
+  type ModelConnection, type ModelEntry, type ModelEntryEmbedding, type ModelProvider,
+} from "@ontomato/contracts/model-settings";
+import type { Model, Message, AssistantMessage, TranscriptContext } from "@earendil-works/pi-ai";
+import { streamSimple as chatClient } from "@earendil-works/pi-ai/api/openai-completions";
 import { RuntimeStore, type Scope } from "./store";
 import type { StreamFn } from "./core/pi/types";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 
-import { createAssistantMessageEventStream, normalizeContext } from "@earendil-works/pi-ai";
+/** One model as the gateway calls it: LiteLLM's own entry, with everything the runtime resolved. */
+export interface LitellmEntry {
+  litellm_params: {
+    /** The provider prefix that decides how LiteLLM reaches the upstream, then the upstream's model name. */
+    model: string;
+    api_base?: string;
+    api_key: string;
+    extra_headers?: Record<string, string>;
+    /** Seconds, as LiteLLM takes them. */
+    timeout: number;
+    max_retries: number;
+    temperature?: number;
+    top_p?: number;
+  };
+  model_info: {
+    mode: "chat" | "embedding";
+    max_input_tokens?: number;
+    max_output_tokens?: number;
+    supports_vision?: boolean;
+    supports_reasoning?: boolean;
+    dimensions?: number;
+  };
+}
 
-export type ResolvedModel = Model<ModelApi> & { apiKey: string; retry: ModelRetry; kind: "chat" | "embedding"; dimensions?: number };
-export function resolveModel(providerId: string, provider: Omit<ModelProviderWrite, "models">, model: ModelEntry, retry: ModelRetry): ResolvedModel {
-  return { id: model.id, name: model.name ?? model.id, provider: providerId, api: provider.api,
-    baseUrl: provider.baseUrl, headers: provider.headers, apiKey: provider.apiKey, retry, kind: model.type,
-    dimensions: model.type === "embedding" ? model.dimensions : undefined,
-    reasoning: model.reasoning ?? false, input: model.input ?? ["text"], contextWindow: model.contextWindow ?? PI_CHAT_MODEL_DEFAULTS.contextWindow,
-    maxTokens: model.maxTokens ?? PI_CHAT_MODEL_DEFAULTS.maxTokens, samplingParams: model.samplingParams,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+/** A domain model, resolved from its connection, as the gateway needs it. */
+interface ResolvedBase {
+  /** The public name callers use; the lease's key and the gateway request's `model`. */
+  name: string;
+  connection: string;
+  provider: ModelProvider;
+  upstream: string;
+  apiBase?: string;
+  apiKey: string;
+  extraHeaders?: Record<string, string>;
+  timeoutSeconds: number;
+  maxRetries: number;
+  temperature?: number;
+  topP?: number;
 }
-export function piModel(config: ResolvedModel): Model<ModelApi> {
-  const { apiKey: _key, retry: _retry, kind: _kind, dimensions: _dimensions, ...model } = config;
-  return model;
+
+export interface ResolvedChatModel extends ResolvedBase {
+  type: "chat";
+  /** The length the loop plans against; 256k applies when the model sets none. */
+  contextWindow: number;
+  /** Unset sends no output limit at all, leaving the upstream's own default. */
+  maxOutputTokens?: number;
+  supportsVision: boolean;
+  supportsReasoning: boolean;
 }
-const streamProvider: StreamFn = (model, context, options) => {
-  switch (model.api) {
-    case "openai-completions": {
-      const chatModel = model as Model<"openai-completions">;
-      if (!/^(?:deepseek\/)?deepseek-(?:v4-(?:flash|pro)|flash|pro)$/iu.test(model.id)) {
-        return openaiCompletions(chatModel, context, options);
-      }
-      return openaiCompletions(chatModel, context, {
-        ...options,
-        async onPayload(payload, requestModel) {
-          const request = await options?.onPayload?.(payload, requestModel) ?? payload;
-          // Gateways can enable DeepSeek thinking by default and omit reasoning on individual tool calls.
-          // Preserve any reasoning that was returned and keep old tool-call transcripts replayable.
-          if (request && typeof request === "object" && "messages" in request && Array.isArray(request.messages)) {
-            for (const message of request.messages) {
-              if (message?.role === "assistant" && message.tool_calls?.length && message.reasoning_content == null) {
-                message.reasoning_content = "";
-              }
-            }
-          }
-          return request;
-        },
-      });
-    }
-    case "openai-responses": return openaiResponses(model as Model<"openai-responses">, context, options);
-    case "anthropic-messages": return anthropicMessages(model as Model<"anthropic-messages">, context, options);
-    case "google-generative-ai": return googleGenerativeAi(model as Model<"google-generative-ai">, context, options);
-    default: throw new RuntimeError(400, "INVALID_REQUEST", "Unsupported model API");
-  }
-};
+
+export interface ResolvedEmbeddingModel extends ResolvedBase {
+  type: "embedding";
+  dimensions: number;
+}
+
+export type ResolvedModel = ResolvedChatModel | ResolvedEmbeddingModel;
+
+/** The data-plane address one lease may call, and the token that identifies it there. */
+export interface ModelLease {
+  id: string;
+  url: string;
+  token: string;
+}
+
+/** The resolved shape of one entry: its type decides whether it has a context length or dimensions. */
+export type ResolvedOf<M extends ModelEntry> = M extends ModelEntryEmbedding ? ResolvedEmbeddingModel : ResolvedChatModel;
+
+/** A stored model and the connection it calls through, flattened into what the gateway is given. */
+export function resolvedModel<M extends ModelEntry>(name: string, connectionName: string,
+  connection: ModelConnection, model: M): ResolvedOf<M> {
+  const base: ResolvedBase = {
+    name, connection: connectionName, provider: connection.provider, upstream: model.model,
+    ...(connection.apiBase ? { apiBase: connection.apiBase } : {}),
+    apiKey: connection.apiKey,
+    ...(connection.extraHeaders ? { extraHeaders: connection.extraHeaders } : {}),
+    timeoutSeconds: model.timeoutSeconds ?? DEFAULT_MODEL_TIMEOUT_SECONDS,
+    maxRetries: model.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES,
+    ...(model.temperature === undefined ? {} : { temperature: model.temperature }),
+    ...(model.topP === undefined ? {} : { topP: model.topP }),
+  };
+  if (model.type === "embedding")
+    return { ...base, type: "embedding", dimensions: model.dimensions } as ResolvedOf<M>;
+  return {
+    ...base, type: "chat",
+    contextWindow: model.contextWindow ?? DEFAULT_CHAT_CONTEXT_WINDOW,
+    ...(model.maxOutputTokens === undefined ? {} : { maxOutputTokens: model.maxOutputTokens }),
+    supportsVision: model.supportsVision === true,
+    supportsReasoning: model.supportsReasoning === true,
+  } as ResolvedOf<M>;
+}
+
+export function litellmEntry(model: ResolvedModel): LitellmEntry {
+  return {
+    litellm_params: {
+      model: `${model.provider}/${model.upstream}`,
+      ...(model.apiBase ? { api_base: model.apiBase } : {}),
+      api_key: model.apiKey,
+      ...(model.extraHeaders ? { extra_headers: model.extraHeaders } : {}),
+      timeout: model.timeoutSeconds,
+      max_retries: model.maxRetries,
+      ...(model.temperature === undefined ? {} : { temperature: model.temperature }),
+      ...(model.topP === undefined ? {} : { top_p: model.topP }),
+    },
+    model_info: model.type === "embedding"
+      ? { mode: "embedding", dimensions: model.dimensions }
+      : {
+        mode: "chat",
+        max_input_tokens: model.contextWindow,
+        ...(model.maxOutputTokens === undefined ? {} : { max_output_tokens: model.maxOutputTokens }),
+        ...(model.supportsVision ? { supports_vision: true } : {}),
+        ...(model.supportsReasoning ? { supports_reasoning: true } : {}),
+      },
+  };
+}
 
 /**
- * pi-ai retries requests that fail before a response (connection errors, 429, 5xx) and owns that
- * policy. The one case it cannot see is a 2xx stream that breaks before any content reached the
- * caller; only that is issued again here. Both draw on one budget of maxRetries + 1 HTTP requests,
- * counted at fetch. Records omit credentials and payloads.
+ * pi's client view of a leased model: the standard Chat API at the gateway, addressed by the public name. The lease
+ * token is the only credential the loop holds; timeout and retries belong to the gateway, so nothing is retried here.
  */
+export function piModel(model: ResolvedChatModel, lease: ModelLease): Model<"openai-completions"> {
+  return {
+    id: model.name,
+    name: model.name,
+    api: "openai-completions",
+    provider: "ontomato",
+    baseUrl: `${lease.url}/v1`,
+    input: model.supportsVision ? ["text", "image"] : ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: model.contextWindow ?? DEFAULT_CHAT_CONTEXT_WINDOW,
+    // A zero cap is how pi sends no output limit; the upstream's own default then applies.
+    maxTokens: model.maxOutputTokens ?? 0,
+    reasoning: model.supportsReasoning,
+  };
+}
+
 export function modelStream(
-  config: ResolvedModel,
+  config: ResolvedChatModel,
+  lease: ModelLease,
   store: RuntimeStore,
   scope: Scope,
   runId: string,
@@ -80,65 +158,28 @@ export function modelStream(
 ): StreamFn {
   return (model, context, options) => {
     const start = Date.now();
-    const budget = config.retry.provider.maxRetries + 1;
-    let requests = 0;
-    const baseFetch = options?.fetch ?? fetch;
-    const countedFetch: typeof fetch = (input, init) => {
-      requests++;
-      return baseFetch(input, init);
-    };
-    const request = (responded: () => void) =>
-      streamProvider(model, context, {
-        ...options,
-        apiKey: config.apiKey || "unused",
-        timeoutMs: config.retry.provider.timeoutMs,
-        maxRetryDelayMs: config.retry.provider.maxRetryDelayMs,
-        maxRetries: Math.max(0, budget - requests - 1),
-        maxTokens: options?.maxTokens ?? config.maxTokens,
-        headers: { ...logHeaders(), ...modelHeaders(config, correlationId) },
-        fetch: countedFetch,
-        onResponse: async (response, responseModel) => {
-          responded();
-          await options?.onResponse?.(response, responseModel);
-        },
-      });
     const stream = createAssistantMessageEventStream();
     void (async () => {
       try {
-        for (let attempt = 1; ; attempt++) {
-          let responded = false;
-          // "start" carries no content and is held until content arrives. Its partial is the
-          // provider's live message, so keep the state it had when "start" was sent.
-          let held: AssistantMessageEvent | null = null;
-          let emitted = false;
-          let retry = false;
-          for await (const event of await request(() => (responded = true))) {
-            if (!emitted && event.type === "start") {
-              held = { type: "start", partial: structuredClone(event.partial) };
-              continue;
-            }
-            if (!emitted && event.type === "error" && event.reason === "error" && responded
-              && requests < budget && !options?.signal?.aborted) {
-              runtimeLogger.warn("model stream broke before content; retrying", { kind: "downstream",
-                target: "model-provider", attempt, errorMessage: event.error.errorMessage });
-              retry = true;
-              break;
-            }
-            if (!emitted && held) stream.push(held);
-            emitted = true;
-            if (event.type === "error") {
-              if (event.reason === "error")
-                runtimeLogger.error("model provider failed", { errorMessage: event.error.errorMessage });
-              stream.push({ ...event, error: {
-                ...event.error,
-                // No tool from an interrupted response has been dispatched.
-                content: event.error.content.filter(part => part.type !== "toolCall"),
-                errorMessage: event.reason === "error" ? runtimeFailureMessage(event.error.errorMessage, language) : "Request was aborted",
-              } });
-            } else stream.push(event);
+        const response = await chatClient(model as Model<"openai-completions">, context, {
+          ...options,
+          apiKey: lease.token,
+          maxRetries: 0,
+          headers: { ...logHeaders(), "X-Correlation-Id": correlationId },
+        });
+        for await (const event of response) {
+          if (event.type !== "error") {
+            stream.push(event);
+            continue;
           }
-          if (!retry) return;
-          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+          if (event.reason === "error")
+            runtimeLogger.error("model provider failed", { errorMessage: event.error.errorMessage });
+          stream.push({ ...event, error: {
+            ...event.error,
+            // No tool from an interrupted response has been dispatched.
+            content: event.error.content.filter(part => part.type !== "toolCall"),
+            errorMessage: event.reason === "error" ? runtimeFailureMessage(event.error.errorMessage, language) : "Request was aborted",
+          } });
         }
       } catch (error) {
         // Provider text can echo request bodies; keep it in the log and expose only readable text and HTTP status.
@@ -155,7 +196,7 @@ export function modelStream(
     let logged: Promise<AssistantMessage> | undefined;
     stream.result = () =>
       (logged ??= result().then(async (message) => {
-        runtimeLogger.info("model call completed", { kind: "downstream", target: "model-provider",
+        runtimeLogger.info("model call completed", { kind: "downstream", target: "model-gateway",
           durationMs: Date.now() - start, outcome: message.stopReason === "error" ? "failure" : message.stopReason === "aborted" ? "cancelled" : "success" });
         await store.pool.query(
           `INSERT INTO ${store.table("model_calls")} VALUES($1,$2,$3,$4,$5)`,
@@ -166,9 +207,10 @@ export function modelStream(
             runId,
             {
               purpose,
-              provider: model.provider,
-              model: model.id,
-              api: model.api,
+              connection: config.connection,
+              provider: config.provider,
+              model: config.name,
+              upstream: config.upstream,
               correlationId,
               startedAt: new Date(start).toISOString(),
               durationMs: Date.now() - start,
@@ -185,7 +227,7 @@ export function modelStream(
 
 export async function completeSummary(
   stream: StreamFn,
-  model: Model<ModelApi>,
+  model: Model<"openai-completions">,
   context: TranscriptContext,
   signal: AbortSignal,
   maxTokens?: number,
@@ -250,27 +292,4 @@ export function recoverContext(messages: Message[]): Message[] {
         });
   }
   return result;
-}
-
-export function modelHeaders(config: ResolvedModel, correlationId: string) {
-  return { ...config.headers, "X-Correlation-Id": correlationId };
-}
-
-/** One request, no agent session, persisted draft, model-call record or retry. */
-export async function testModel(config: ResolvedModel, prompt: string, correlationId: string, signal: AbortSignal) {
-  const stream = await streamProvider(piModel(config), normalizeContext({
-    messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
-  }), {
-    signal,
-    apiKey: config.apiKey || "unused",
-    maxRetries: 0,
-    maxTokens: config.maxTokens,
-    timeoutMs: config.retry.provider.timeoutMs,
-    headers: modelHeaders(config, correlationId),
-  });
-  for await (const _event of stream) signal.throwIfAborted();
-  const message = await stream.result();
-  if (message.stopReason === "error" || message.stopReason === "aborted")
-    throw new RuntimeError(502, "MODEL_TEST_FAILED", "Model connection test failed");
-  return { type: "chat" as const, content: message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n") };
 }
