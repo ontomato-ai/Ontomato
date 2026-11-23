@@ -1,24 +1,24 @@
 # Typical procedures
 
-Read `skills` and `models` first; they are also what a save validates against. Use `get` for the current definition of anything being changed, and work on a copy in `work/` so every other field goes back as the agent holds it. Only `skills` may be left out, to keep the stored ones.
+Read `skills` and `models` before choosing one, and `get` for the current definition of anything being changed. Use the [form and operations](forms.md) for the current run. In a platform run without page tools, return the proposed input as structured content for the user or assigning agent to apply.
 
 ## Create an agent
 
 1. Read `skills` and `models`. Ask for whatever the user has not decided: the job of the agent, its prompt, which skills it may use and which model.
-2. Inside the platform: open the Agent Settings page in create mode with `present`, fill the fields with `fill_form`, and save via `page_action` (or leave it unsaved for the user to save). Leave `executionUserId` as `null` unless the user wants a default identity for automated/unattended runs.
+2. With live page tools, open `/agents/settings/new` with `present`, then fill `form` with `fill_form`. Leave it visible for review. If asked to save, use `page_action({ operation: "form.save" })`. Leave `executionUserId` as `null` unless the user wants a default identity for automated/unattended runs.
 3. Outside the platform: write the whole form in `work/agent.json` with no `id` and run `create @work/agent.json`. The reply names the new agent and links `/agents/settings/<id>`.
 
 ## Change a prompt, skill or model
 
 1. `get <id>`; read `skills` and `models` if the change selects one.
-2. Inside the platform: open the agent on the Agent Settings page with `present`, call `fill_form` with only the fields being changed, and save via `page_action` (or let the user save on the page).
+2. With live page tools, use `present` to open `/agents/settings/<id>`, and `fill_form` to fill only the fields being changed. Use `page_action({ operation: "form.save" })` when asked to save.
 3. Outside the platform: copy the definition to `work/agent.json` without `id`, keep `executionUserId` as returned, omit `skills` unless changing them, and run `update <id> @work/agent.json`.
 
 ## Change the skills
 
 1. Read `skills` for the catalog this caller may choose from, and `get <id>` for the skills the agent holds now.
-2. To keep the agent's skills, remove `skills` from the copy. To replace them, write the whole array this change wants; `[]` clears them.
-3. The form stays the whole definition: every other field goes back as `get` returned it. `get` shows only the skills this caller may see, so never send that array back to keep them — that is an explicit whole-selection change. Write and validate the draft, or run `update` outside the platform.
+2. Supply the full requested selection, using `[]` to clear the skills. Omit `skills` when the change leaves them alone.
+3. With live page tools, fill the `skills` field of `form` and use `form.save` when asked to save. Outside the platform, send the complete definition with `update`, preserving the other fields.
 
 An agent may hold protected skills this caller cannot see, and `get`, the page and the catalog show only the ones this caller may see. If the agent holds such a skill, an update that names `skills` is refused as a whole and none of its fields are written; the refusal does not name the skill. That change needs someone who can see the complete selection. Report the owner's words and leave the skills alone; do not work around it by sending back the skills `get` showed.
 
@@ -32,7 +32,7 @@ An agent may hold protected skills this caller cannot see, and `get`, the page a
 
 ## Delete an agent
 
-Inside the platform, the page owns deletion: open `/agents/settings/<id>` and tell the user to delete it there. Outside the platform, `delete <id>` removes the definition.
+With live page tools, open `/agents/settings/<id>` and use `page_action({ operation: "remove.delete" })`. Outside the platform, `delete <id>` removes the definition.
 
 ## Check the result
 

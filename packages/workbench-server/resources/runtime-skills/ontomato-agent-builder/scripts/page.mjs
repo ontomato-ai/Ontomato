@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const env = process.env;
-// Inside the platform use live page tools (`present`, `fill_form`, `page_action`); outside it, write directly via API.
 const platform = env.ONTOMATO_SKILL_SCENARIO === "platform";
 const workbench = (env.ONTOMATO_WORKBENCH_URL || env.ONTOMATO_URL || "").replace(/\/$/, "");
 const ontology = (env.ONTOMATO_ONTOLOGY_URL || `${workbench}/api/data-query`).replace(/\/$/, "");
@@ -14,12 +13,15 @@ function required(value, what) {
   return value;
 }
 
-function headers() {
-  const credentials = [
-    ["ONTOMATO_EXECUTION_CALLBACK", "X-Ontomato-Callback-Credential"],
+function headers(url) {
+  const callback = ["ONTOMATO_EXECUTION_CALLBACK", "X-Ontomato-Callback-Credential"];
+  const userCredentials = [
     ["ONTOMATO_TK", "tk"],
     ["ONTOMATO_API_KEY", "X-API-Key"],
-  ].filter(([variable]) => env[variable]);
+  ];
+  const callbackUrl = new URL(url).pathname.startsWith(`/api/assistant/executions/${env.ONTOMATO_RUN_ID}/`);
+  const credentials = (platform ? (callbackUrl ? [callback] : userCredentials) : [callback, ...userCredentials])
+    .filter(([variable]) => env[variable]);
   if (credentials.length > 1)
     throw new Error("Set only one of ONTOMATO_EXECUTION_CALLBACK, ONTOMATO_TK or ONTOMATO_API_KEY");
   const result = { "Content-Type": "application/json", "Accept-Language": env.ONTOMATO_LANGUAGE || "en" };
@@ -42,7 +44,7 @@ async function request(method, url, body, extra = {}) {
   if (!workbench) throw new Error("Set ONTOMATO_WORKBENCH_URL (platform) or ONTOMATO_URL (deployment)");
   const response = await fetch(url, {
     method,
-    headers: { ...headers(), ...extra },
+    headers: { ...headers(url), ...extra },
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: "error",
   });
@@ -66,7 +68,7 @@ async function form(argument) {
 
 async function directWrite(command, args) {
   if (platform)
-    throw new Error("Direct writes are unavailable in the platform. Open the agent settings page with `present`, fill fields with `fill_form`, and save via `page_action` (or let the user save on the page).");
+    throw new Error("Agent settings writes in the platform require live page tools. With `present`, `fill_form` and `page_action`, follow SKILL.md. Without those tools, return the proposed changes as structured content for the user or assigning agent.");
   if (command === "create") return print(await request("POST", definitions, await form(args[0]), { "Idempotency-Key": randomUUID() }));
   const agentId = encodeURIComponent(required(args[0], "An agent id"));
   if (command === "update") return print(await request("PUT", `${definitions}/${agentId}`, await form(args[1])));
