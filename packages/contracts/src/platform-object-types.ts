@@ -287,7 +287,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       explanation: { source: "object", parameterMode: "fixed", params: {}, result: "actionExplanation" },
       derivedSummary: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
       derivedEffects: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
-      derivedParameters: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList", rowType: "platform:ActionParameter" },
+      derivedParameters: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       derivedConditions: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       annotatedExplanation: { source: "object", parameterMode: "fixed", params: {}, result: "annotatedCode" },
     },

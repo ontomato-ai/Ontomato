@@ -37,7 +37,7 @@ async function optionalText(file: string) {
   }
 }
 
-async function readBuiltinProducts(root: string) {
+export async function readBuiltinProducts(root: string) {
   const index = await optionalText(path.join(root, "index.json"));
   const directories = index === undefined ? [] : indexSchema.parse(JSON.parse(index));
   const panels = new Map<string, BuiltinProductPanelInput>();

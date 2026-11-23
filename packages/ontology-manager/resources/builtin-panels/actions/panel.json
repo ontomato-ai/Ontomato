@@ -59,7 +59,7 @@
       "selectedParameter": {
         "type": {
           "kind": "object",
-          "objectType": "platform:ActionParameter"
+          "objectType": "platform:Action"
         },
         "deepLink": false
       }

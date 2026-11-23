@@ -49,8 +49,6 @@ const actionSchema = z.object({
 }).passthrough();
 type ActionAsset = z.infer<typeof actionSchema>;
 
-const ACTION_PARAMETER_TYPE = "platform:ActionParameter";
-
 const logger = createLogger("action-panel-reads");
 const listedActionSchema = storedObjectActionSchema.pick({ id: true }).extend({
   target: z.unknown(),
@@ -523,7 +521,6 @@ export function createActionReadAdapter(_owner: ProductOwner, viewer: AssistantC
         const required = parameter.required == null ? "" : (parameter.required ? yesLabel : noLabel);
         return {
           primaryKey: parameter.name,
-          className: ACTION_PARAMETER_TYPE,
           label: parameter.name,
           ...(parameter.description ? { subtitle: parameter.description } : {}),
           fieldLabels: paramFieldLabels,

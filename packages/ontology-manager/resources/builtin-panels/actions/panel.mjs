@@ -11,7 +11,6 @@ import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel
  */
 
 const ACTION_TYPE = "platform:Action";
-const ACTION_PARAMETER_TYPE = "platform:ActionParameter";
 
 const TABS = [
   { key: "definition", label: "definition" },
@@ -136,7 +135,7 @@ const ActionsCatalog = {
       if (typeof refKey !== "string" || !refKey) return;
       instance.state.setState({
         activeTab: "derived",
-        selectedParameter: { className: ACTION_PARAMETER_TYPE, primaryKey: refKey },
+        selectedParameter: { className: ACTION_TYPE, primaryKey: refKey },
       });
     }
 
