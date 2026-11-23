@@ -78,6 +78,10 @@
     padding: var(--spacing-md);
     overflow-y: auto;
   }
+  .vm-side > *,
+  .vm-side-section > * {
+    flex: 0 0 auto;
+  }
   .vm-side-header {
     display: flex;
     align-items: flex-start;
@@ -110,19 +114,24 @@
     font-weight: var(--font-semibold);
     color: var(--sdk-text-color-secondary);
   }
+  .vm-side .sdk-panel-member,
   .vm-side .sdk-owner-form,
   .vm-side .sdk-owner-form-inner,
+  .vm-dialog-body .sdk-panel-member,
   .vm-dialog-body .sdk-owner-form,
   .vm-dialog-body .sdk-owner-form-inner {
+    flex: 0 0 auto;
     height: auto;
   }
   .vm-side .sdk-owner-form-body,
   .vm-dialog-body .sdk-owner-form-body {
+    flex: 0 0 auto;
     overflow: visible;
   }
   .vm-attributes .sdk-panel-member,
   .vm-attributes .sdk-object-list,
   .vm-attributes .sdk-object-list-items {
+    flex: 0 0 auto;
     height: auto;
     overflow: visible;
   }
