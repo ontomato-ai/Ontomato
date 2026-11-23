@@ -1,5 +1,6 @@
 import { loadDomainComponent } from "./domain-component";
 import { ApiRequestError, nodeApiRequest } from "@ontomato/workbench-ui";
+import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import {
   applicationEntryResolutionQuerySchema, applicationEntryResolutionSchema, productPanelPageSkillContextResponseSchema, productPanelResponseSchema, productPanelSchema,
   type ApplicationEntryResolution, type ApplicationEntryResolutionQuery, type ApplicationPanelUse,
@@ -641,20 +642,29 @@ async function withPersonalState(
 ): Promise<PanelRunMount> {
   const fields = personalFields(manifest);
   if (!fields.length || source.kind !== "registered") return mount(run);
+  const personalSet = new Set(fields);
   const scope = { source, memberPath };
   const saved = await json(`/api${PANEL_PERSONAL_STATE_READ_PATH}`, { method: "POST", body: JSON.stringify({ ...scope, fields }) })
     .then((answer) => panelPersonalStateResponseSchema.parse(answer).values, () => ({}));
   const mounted = await mount({ ...run, initial: { ...saved, ...run.initial } as PanelHostState });
-  const current = () => JSON.stringify(Object.fromEntries(fields.map((field) => [field, mounted.instance.state.values.value[field] ?? null])));
-  let stored = current();
+  // Keep saved personal preferences separate from transient external overrides so withdrawing an external entry input
+  // restores the user's saved value without writing external or fallback values back to personal storage.
+  const savedValues: Record<string, RuntimeJsonValue> = { ...saved };
+  const readField = (field: string): RuntimeJsonValue =>
+    (mounted.instance.state.values.value[field] ?? null) as RuntimeJsonValue;
+  const lastValues: Record<string, RuntimeJsonValue> = Object.fromEntries(
+    fields.map((field) => [field, readField(field)]),
+  );
+  const dirtyFields = new Set<string>();
+  let applyingExternal = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const save = (keepalive = false) => {
     timer = undefined;
-    const next = current();
-    if (next === stored) return;
-    stored = next;
+    if (!dirtyFields.size) return;
+    const values = Object.fromEntries([...dirtyFields].map((field) => [field, savedValues[field] ?? null]));
+    dirtyFields.clear();
     void json(`/api${PANEL_PERSONAL_STATE_PATH}`, {
-      method: "PUT", body: JSON.stringify({ ...scope, values: JSON.parse(next) }), ...(keepalive && { keepalive: true }),
+      method: "PUT", body: JSON.stringify({ ...scope, values }), ...(keepalive && { keepalive: true }),
     }).catch(() => {});
   };
   /** Sends at once what is still waiting for the delay; `keepalive` lets the request finish after the page is gone. */
@@ -665,12 +675,47 @@ async function withPersonalState(
   };
   const leave = () => flush(true);
   window.addEventListener("pagehide", leave);
-  const stop = Vue.watch(current, () => {
-    clearTimeout(timer);
-    timer = setTimeout(save, PERSONAL_STATE_DELAY);
-  });
+  const stop = Vue.watch(
+    () => JSON.stringify(fields.map((field) => [field, readField(field)])),
+    () => {
+      let changed = false;
+      for (const field of fields) {
+        const next = readField(field);
+        if (JSON.stringify(next) === JSON.stringify(lastValues[field])) continue;
+        lastValues[field] = next;
+        if (!applyingExternal) {
+          savedValues[field] = next;
+          dirtyFields.add(field);
+          changed = true;
+        }
+      }
+      if (!changed) return;
+      clearTimeout(timer);
+      timer = setTimeout(save, PERSONAL_STATE_DELAY);
+    },
+    { flush: "sync" },
+  );
   return {
     ...mounted,
+    setState(patch, stateOptions) {
+      const withdrawn = new Set(stateOptions?.withdrawn ?? []);
+      const resolvedPatch: Record<string, RuntimeJsonValue> = {};
+      for (const [name, value] of Object.entries(patch)) {
+        resolvedPatch[name] = withdrawn.has(name) && personalSet.has(name) && Object.hasOwn(savedValues, name)
+          ? savedValues[name]!
+          : value;
+      }
+      if (stateOptions?.external) {
+        applyingExternal = true;
+        try {
+          mounted.setState?.(resolvedPatch, stateOptions);
+        } finally {
+          applyingExternal = false;
+        }
+      } else {
+        mounted.setState?.(resolvedPatch, stateOptions);
+      }
+    },
     dispose() {
       stop();
       window.removeEventListener("pagehide", leave);
