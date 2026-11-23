@@ -31,7 +31,7 @@
           "kind": "scalar",
           "type": "string"
         },
-        "deepLink": false,
+        "deepLink": true,
         "default": "definition"
       },
       "creating": {
@@ -389,8 +389,8 @@
         "noConditions": "No submission condition is derived.",
         "noEffects": "The owner derives no effect from this code.",
         "noParameters": "No parameters.",
-        "codeStale": "Explanation expired",
-        "codeStaleHint": "The code in this form differs from the code the explanation was written for; save it and explain the action again.",
+        "codeStale": "Explanation may be outdated",
+        "codeStaleHint": "The code in this form differs from the code this explanation was written for; save it and explain the action again if needed.",
         "noExplanation": "This action has no code explanation yet.",
         "businessMeaning": "Business meaning",
         "noMeaning": "The owner recorded no business meaning for this code.",
@@ -420,8 +420,8 @@
         "noConditions": "没有推导出提交条件。",
         "noEffects": "属主没有从这段代码里推导出改动。",
         "noParameters": "没有参数。",
-        "codeStale": "解释已过期",
-        "codeStaleHint": "表单里的代码和写出这份解释时的代码不一样；保存后重新解释这个动作。",
+        "codeStale": "解释可能已过期",
+        "codeStaleHint": "表单里的代码和写出这份解释时的代码不一样；保存后按需重新解释这个动作。",
         "noExplanation": "这个动作还没有代码解释。",
         "businessMeaning": "业务含义",
         "noMeaning": "属主没有记录这段代码的业务含义。",

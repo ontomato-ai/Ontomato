@@ -1,5 +1,5 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelBack, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 /*
  * Built-in actions catalog panel: lists domain actions through ObjectList (with local search, batch status updates via
@@ -69,7 +69,7 @@ const ActionsCatalog = {
       });
     });
 
-    function back() {
+    function leaveDetail() {
       instance.state.setState({
         selected: null,
         creating: false,
@@ -78,6 +78,16 @@ const ActionsCatalog = {
         activeSegmentId: null,
         draftCode: null,
       });
+    }
+
+    // Guard both the Back button and Escape against unsaved edits in `form` across all detail tabs.
+    const detailBack = usePanelBack(() => detailVisible.value, leaveDetail, {
+      pushHistory: false,
+      forms: "form",
+    });
+
+    function back() {
+      void detailBack.back();
     }
 
     function onChooseAction() {
@@ -91,7 +101,7 @@ const ActionsCatalog = {
     }
 
     function onRemoveDone(outcome) {
-      if (outcome?.kind === "success") back();
+      if (outcome?.kind === "success") leaveDetail();
     }
 
     function onFormSaved(saved) {
