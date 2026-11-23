@@ -193,6 +193,10 @@ export interface DirectPanelInstance extends PanelInstance {
   rowMemberOperations(member: string, projection: DirectProjection, inputs: () => MemberInputs): ComputedRef<MemberOperationsState>;
   /** An operation's reported changes: the shown data they concern are read again. */
   refresh(affected: PanelOperationAffected): void;
+  /** True while a new external address with changed deep-link state is held pending reactivation. */
+  readonly addressPending: Readonly<Ref<boolean>>;
+  /** Updates whether a new external address is held pending reactivation. */
+  setAddressPending(pending: boolean): void;
   /** While the reader does not see the instance it reads nothing; a refresh when seen again brings it up to date. */
   setActive(active: boolean): void;
   /**
@@ -537,6 +541,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
   }
 
   const drawnCounts = new Map<string, number>();
+  const addressPending = shallowRef(false);
 
   const directInstance: DirectPanelInstance = Object.assign(instance, {
     currentEntry: computed(() => options.currentEntry?.entry.value ?? null),
@@ -640,12 +645,24 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
         use(name) {
           const state = shallowRef<MemberDataState>({ status: "loading" });
           let sequence = 0;
+          const entryData = projection.data[name]!;
+          const dependsOnStateInputs = "object" in entryData.source || Object.keys(placement.inputs ?? {}).length > 0;
+          const targetKeyOf = () => JSON.stringify([
+            sourceObject(entryData, inputs()) ?? null,
+            readParams(projection, entryData, placement, inputs(), {}).authored,
+          ]);
+          let lastTargetKey = targetKeyOf();
           const reread = () => {
+            const nextTargetKey = targetKeyOf();
+            const targetChanged = nextTargetKey !== lastTargetKey;
+            lastTargetKey = nextTargetKey;
+            // When the bound target or state inputs switch to another object, transition immediately to loading
+            // instead of showing the previous record until the new answer arrives. Same-target refreshes keep the
+            // current datum on screen without flashing.
+            if (targetChanged) state.value = { status: "loading" };
             // Unseen, the instance reads nothing; the refresh when it is seen again reads every shown datum.
             if (!active) return;
             const reading = ++sequence;
-            // A datum already shown stays on screen until its new answer arrives: rereading replaces what it shows, never
-            // the component drawing it. Only a first read (or one after an empty, refused or failed answer) shows loading.
             if (state.value.status !== "ready") state.value = { status: "loading" };
             // An answer for an earlier read (an earlier selection) is dropped once a later read was asked for.
             void answer(name, inputs()).then((result) => {
@@ -654,11 +671,11 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
               state.value = result.status === "error" ? { ...result, retry: () => { state.value = { status: "loading" }; reread(); } } : result;
             });
           };
-          const entry = { data: projection.data[name]!, inputs, reread };
+          const entry = { data: entryData, inputs, reread };
           shown.add(entry);
           watch(() => memberReadKey(projection, entry.data, placement, inputs(), own()), reread, { immediate: true });
           onScopeDispose(() => shown.delete(entry));
-          return computed(() => state.value);
+          return computed<MemberDataState>(() => (addressPending.value && dependsOnStateInputs ? { status: "loading" } : state.value));
         },
         read: (name, params, overrides = {}) => {
           const { inputs: run, own: ownRun } = runValues(projection, name, params);
@@ -726,6 +743,10 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       for (const object of affected.objects) instance.objectChanged(object);
       // What changed may be shown by a panel placed here, too.
       for (const mount of nestedMounts) mount.refresh(null, affected);
+    },
+    addressPending,
+    setAddressPending(pending: boolean) {
+      addressPending.value = pending;
     },
     setActive(next: boolean) {
       active = next;

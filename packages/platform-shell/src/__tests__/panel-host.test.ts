@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { effectScope, nextTick, shallowRef } from "vue";
+import { effectScope, nextTick, ref, shallowRef } from "vue";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import { panelAddress, panelAddressState, PANEL_HOST_CHANNEL } from "@ontomato/contracts/panel-host";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
@@ -389,6 +389,73 @@ describe("the panel host", () => {
     const restored = panelAddressState(panelAddress("/a/schedules", state));
     expect(restored).toEqual(state);
     expect(panelAddressState(panelAddress("/a/schedules", { selectedTask: null }))).toEqual({ selectedTask: null });
+    expect(panelAddressState("/a/schedules?state=not-json")).toEqual({});
+    expect(panelAddressState(`/a/schedules?state=${encodeURIComponent(JSON.stringify({ selectedTask: { bogus: 1 }, search: "ok" }))}`)).toEqual({ search: "ok" });
+  });
+
+  it("normalizes single-type object string shorthands and drops invalid external state values without failing the panel", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    const initial = ref<Record<string, unknown>>({
+      selectedTask: "nonexistent_acceptance_check",
+      search: 12345,
+      ignoredUnknown: "abc",
+    });
+    const scope = effectScope();
+    const a = scope.run(() =>
+      usePanelInstance(port.port("use-a"), {
+        labels,
+        label: (source) => (source.kind === "registered" ? source.panel.name : ""),
+        address: () => "/applications/app-a/a/schedules",
+        initial: () => initial.value,
+      }),
+    )!;
+    await a.ready;
+    expect(a.error.value).toBe("");
+    expect(a.direct.value).not.toBeNull();
+    expect(port.started("use-a").run.initial).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "nonexistent_acceptance_check" },
+    });
+    expect(panelAddressState(a.address.value)).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "nonexistent_acceptance_check" },
+    });
+    scope.stop();
+  });
+
+  it("recovers a kept panel instance from a mount error once the requested address changes or it is reopened", async () => {
+    const panels = new Map([["panel-p", record("panel-p", "Scheduled tasks", panelP)]]);
+    const port = platform({ panels, uses: [useRelation("use-a", "schedules", "panel-p", "/a/schedules")] });
+    port.codedFailure = new Error("Transient state error");
+    const initial = ref<Record<string, unknown>>({ selectedTask: { className: SCHEDULED_TASK, primaryKey: "bad-1" } });
+    const shown = ref(true);
+    const scope = effectScope();
+    const a = scope.run(() =>
+      usePanelInstance(port.port("use-a"), {
+        labels,
+        label: (source) => (source.kind === "registered" ? source.panel.name : ""),
+        address: () => "/applications/app-a/a/schedules",
+        initial: () => initial.value,
+        shown: () => shown.value,
+      }),
+    )!;
+    await a.ready;
+    expect(a.error.value).toContain("Transient state error");
+    expect(a.direct.value).toBeNull();
+
+    // Leave to another page, then return with a valid selection: the kept instance clears the error and mounts anew.
+    shown.value = false;
+    await nextTick();
+    port.codedFailure = null;
+    initial.value = { selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" } };
+    shown.value = true;
+    await vi.waitFor(() => {
+      expect(a.error.value).toBe("");
+      expect(a.direct.value).not.toBeNull();
+    });
+    expect(port.started("use-a").run.initial).toEqual({
+      selectedTask: { className: SCHEDULED_TASK, primaryKey: "task-2" },
+    });
+    scope.stop();
   });
 
   it("runs the trial's own panel content in a document of its own making", () => {
