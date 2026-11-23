@@ -255,7 +255,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectForm",
     role: "control",
     meaning:
-      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults, non-blocking warnings), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, offers a retry button when a form read fails, and takes an agent's draft for its object. Hidden owner fields have no control. Fields declaring `defaultValue` (including `null`) show a Reset to default control that restores a deep copy of the default into the draft without saving immediately, disabled while already at default, read-only, or saving. Fields declaring `warning` render non-blocking warning guidance under the control without blocking Save. Set `config.layout` to `rows` (default `stacked`) for a settings-row layout (label and help left, control/error/warning middle, Reset to default right, stacking cleanly in narrow containers). Set `config.actions` to `header` (default `footer`) to hide the bottom action bar and hand Save, Discard, and the unsaved marker to the enclosing page header (falling back to the footer when no header host is present), `create-only` to show Cancel/Create only in create mode while the panel places its own edit Save button, or `none` to omit the bar in both modes. With footer actions, an edit form hides the save bar while clean or when all non-hidden fields are read-only, and reveals it pinned at the foot once edited with a count of modified fields alongside Discard and Save; a create form keeps Cancel and Create pinned at the foot and emits `cancel` after resetting (confirming first if edited). Link a reference picker (or a graph choosing a list) to its owner field through `formField`: the form draws it in that field's place, so the owner's order and sections hold; a reference without one is shown as unavailable to edit. An owner may group its fields into `sections` (each a title and a hint, in order); the form draws them one after another with a list of them beside. It asks before Discard throws unsaved changes away. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It tells the page `saved` (with the object), `discarded`, and `cancel`, and asks the reader before the panel moves it off unsaved changes.",
+      "Draws one object's form exactly as its owner declares it (fields, values, read-only rules, defaults, non-blocking warnings), from its `form` datum for the object its edited input holds, or, with nothing chosen and a `createForm` datum, a new object's. It asks the owner again when a field the form depends on changes, saves through the owner's form save its projection names (only the fields the reader set), marks the fields the owner refuses, offers a retry button when a form read fails, and takes an agent's draft for its object. Hidden owner fields have no control. Fields declaring `defaultValue` (including `null`) show a Reset to default control that restores a deep copy of the default into the draft without saving immediately, disabled while already at default, read-only, or saving. Fields declaring `warning` render non-blocking warning guidance under the control without blocking Save. Set `config.layout` to `rows` (default `stacked`) for a settings-row layout (label and help left, control/error/warning middle, Reset to default right, stacking cleanly in narrow containers). Set `config.presentation` to `cards` (1 or 2 columns via `cardColumns` or group `column: 'main' | 'side' | 'full'`), `tabs`, or `steps` alongside `config.groups` (or owner `sections`), or supply a `#default` slot containing `<object-form-fields>` slices inside arbitrary panel cards, tabs, or steps — all sharing the same single form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and agent draft lifecycle. Set `config.actions` to `footer` (default), `create-only` (Cancel/Create only in create mode while edit Save/Discard lives in `<page-header>` via `usePanelFormDraft`), or `none` to omit the bar in both modes. With footer actions, an edit form hides the save bar while clean or when all non-hidden fields are read-only, and reveals it pinned at the foot once edited with a count of modified fields alongside Discard and Save; a create form keeps Cancel and Create pinned at the foot and emits `cancel` after resetting (confirming first if edited). Link a reference picker (or a graph choosing a list) to its owner field through `formField`: the form draws it in that field's place, so the owner's order and sections hold; a reference without one is shown as unavailable to edit. An owner may group its fields into `sections` (each a title and a hint, in order); the form draws them one after another with a list of them beside. It asks before Discard throws unsaved changes away. A page that opens it under a parent fixes the fields the parent decides with `fixedFields` (each from a panel state field or a literal): they show read-only and every save submits them. It tells the page `saved` (with the object), `discarded`, and `cancel`, and asks the reader before the panel moves it off unsaved changes.",
     effects: "Reads the owner's form and saves through the owner's own interface; it saves through the owner's form save its projection names.",
     bindsElement: ["PlatformObjectType:*", "Action:*"],
     // A form edits an existing record or creates a new one; which of the two a placement shows is its own choice.
@@ -470,6 +470,86 @@ export const components: readonly ComponentMetadata[] = [
     meaning:
       "Official application navigation menu column shared by the platform shell and application frame panels. Inside an application frame panel, `<app-menu>` automatically renders the admitted entries from `usePanelContext().entryMenu`, highlights `usePanelContext().currentEntry.path`, adapts to a compact selector on narrow screens, and navigates via `usePanelContext().navigate(id)` unless a custom `@select` handler is provided. Supply `:counts` (from declared `PanelData` owner reads) and `:icons` (curated platform icon keys) to attach live directory badges and row icons, or supply explicit `:groups` and `:active-id` for custom menus.",
     effects: "Navigates within the platform through the panel host when the reader selects a menu entry; reads no business data itself.",
+  }),
+  defineComponentMeta({
+    componentId: "TypedValue",
+    module: "@ontomato/sdk/base",
+    exportName: "TypedValue",
+    role: "presentation",
+    meaning:
+      "Displays one typed field value according to its owner-declared type — text, tabular number (`numberFormat`), localized date/datetime/relative-time, localized boolean, semantic status tag (`tone` or `record.tones`), tag list, clickable object reference (`navigate`), multi-language name, list, or code/JSON — without computing business logic. Reads from its projection's `record` (`panelRecord`) or metric `result` (`metricOutput`, scalar/first-row or named column at `rowIndex`) datum, or renders a direct `value` prop standalone or inside a slot.",
+    effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      record: { results: ["panelRecord"], required: false },
+      result: { results: ["metricOutput"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "RecordTemplate",
+    module: "@ontomato/sdk/base",
+    exportName: "RecordTemplate",
+    role: "presentation",
+    meaning:
+      "Fills already-provided values from one record (`record`) or one metric result row (`result` at `rowIndex`) into a fixed `{fieldKey}` sentence template (`template`, `templateKey`, or locale-keyed `templates`), with optional per-field `fieldFormats`. Pure display with no expressions, calculation, or conditional sentence branching — derived values and business conditions belong in a MetricView, Action, or owner read. Each placeholder renders via `TypedValue`, keeping references clickable (`navigate`), booleans/names localized, tones tinted, and numbers tabular.",
+    effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      record: { results: ["panelRecord"], required: false },
+      result: { results: ["metricOutput"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "InfoBanner",
+    module: "@ontomato/sdk/base",
+    exportName: "InfoBanner",
+    role: "presentation",
+    meaning:
+      "Standardized informational, reminder, warning, success, or danger callout banner (`tone` or `toneField`) for detail cards and guidance notices. Renders static or localized copy (`title`/`text`, `titleKey`/`textKey`, `titles`/`texts`), custom slot content (`#default`, `#actions`), or already-provided values bound from a `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field` or a fixed `{fieldKey}` `template` (no calculation or conditional branching).",
+    effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      record: { results: ["panelRecord"], required: false },
+      result: { results: ["metricOutput"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "ObjectRefCard",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectRefCard",
+    role: "presentation",
+    meaning:
+      "Displays one clickable object reference card — leading icon or monogram, optional role caption (such as Source or Target), primary localized display name, secondary monospace API name / primary key, and optional status badge — emitting `navigate` (and writing declared navigation output) on click. Reads a reference field (`field`) or the object itself from `record` (`panelRecord`) or metric `result` (`metricOutput`), or renders a direct `reference` / `record` prop standalone.",
+    effects: "Reads the bound object's `record` or MetricView `result` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      record: { results: ["panelRecord"], required: false },
+      result: { results: ["metricOutput"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "MetricCard",
+    module: "@ontomato/sdk/base",
+    exportName: "MetricCard",
+    role: "presentation",
+    meaning:
+      "Displays one or more statistical metric cards (label + tabular numeral + optional unit, description, and semantic tone) in `card`, `compact`, or `inline` variants for ontology headers, dashboards, and catalog summaries. Directly consumes a MetricView's `result` (`metricOutput`, extracting a scalar or named column from the first or `rowIndex` row, and surfacing truncation hints), a single `record` (`panelRecord`), `rows` (`panelRecordList` / `panelRecordQuery`), or `objects` (`panelOntologyObjects`), or standalone `value`/`items` props.",
+    effects: "Reads the bound MetricView `result`, `record`, `rows`, or `objects` datum as the reader when declared; writes nothing.",
+    bindsElement: ["PlatformObjectType:*", "MetricView:*"],
+    data: {
+      result: { results: ["metricOutput"], required: false },
+      record: { results: ["panelRecord"], required: false },
+      rows: { results: ["panelRecordList", "panelRecordQuery"], required: false },
+      objects: { results: ["panelOntologyObjects"], required: false },
+    },
+  }),
+  defineComponentMeta({
+    componentId: "ObjectFormFields",
+    module: "@ontomato/sdk/base",
+    exportName: "ObjectFormFields",
+    role: "presentation",
+    meaning:
+      "Renders a selected subset of an enclosing `ObjectForm`'s fields (`fields`, `section`, `group`, or `rest`) inside panel-authored cards, tabs, or wizard steps while keeping one shared form state, validation, dirty tracking, `usePanelFormDraft`, `usePanelBack`, and agent draft lifecycle. It reads nothing itself and binds no ontology element.",
   }),
   defineComponentMeta({
     componentId: "PathTree",

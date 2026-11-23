@@ -15,7 +15,6 @@ import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { framePanelHost, platformPanelHost, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import EntryUnit from "./EntryUnit.vue";
-import { entryCountsChanged } from "../entry-counts";
 import { expandDeclaredComposer, hostThemeMode } from "../app-host";
 import { platformApplicationsKey } from "../apps";
 import { useApplicationCatalog } from "../catalog";
@@ -85,7 +84,6 @@ function changed(change: PanelObjectChange) {
   frameHost.value?.refresh(change.target, change.affected);
   if (change.affected) {
     countedTypesChanged?.(change.affected.objectTypes);
-    entryCountsChanged();
   }
 }
 watch(() => props.objectRefresh?.seq, () => {
@@ -257,7 +255,7 @@ const frameContext = computed(() => resolution.value ? applicationFrameContextOf
  */
 const hostMenu = computed<readonly AppMenuGroup[] | null>(() => {
   const app = catalogApp.value;
-  if (!app || isPanelApplication(app)) return null;
+  if (!app || isPanelApplication(app) || !app.framePanelId) return null;
   const declaration = platformApplications?.value.find((item) => item.id === props.applicationId);
   if (!declaration?.groups?.length) return null;
   return declaration.groups.map((group) => ({

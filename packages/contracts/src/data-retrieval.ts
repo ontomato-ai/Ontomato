@@ -1,6 +1,7 @@
 import { packagePathSchema, packageRecipeSchema, queryPackageSchema } from "./query-package";
 import { runtimeStopReasonSchema } from "./agent-runtime-values";
 import { z } from "zod";
+import { queryIntentSchema, queryCoverageSchema, queryConditionBindingsSchema } from "./query-intent";
 import { querySubgraphSchema } from "./query-subgraph";
 import {
   runtimeJsonValueSchema,
@@ -83,6 +84,9 @@ export const datasetPayloadSchema = z
     assumptions: z.array(z.string()),
     decisionIds: z.array(id),
     selfCheck: selfCheckSchema.nullable(),
+    queryIntent: queryIntentSchema.optional(),
+    queryCoverage: queryCoverageSchema.optional(),
+    conditionBindings: queryConditionBindingsSchema.optional(),
     execution: z.object({ receiptId: id, executedAt: z.string() }).strict(),
   })
   .strict()
@@ -122,6 +126,7 @@ export const datasetPayloadSchema = z
 export const retrievalInputSchema = z
   .object({
     question: z.string().trim().min(1),
+    queryIntent: queryIntentSchema.optional(),
     timeoutSeconds: z.number().int().min(1).max(600).optional(),
     userQuotes: z.array(z.string()).default([]),
     classNames: z.array(z.string()).optional(),
@@ -176,6 +181,7 @@ export const retrievalAnswersSchema = z
 export const submissionRecipeSchema = packageRecipeSchema.omit({ packageSha256: true, executionInputSha256: true });
 export const prepareDatasetSchema = z
   .object({
+    conditionBindings: queryConditionBindingsSchema.optional(),
     recipe: submissionRecipeSchema,
     sourceAnalysis: querySubgraphSchema.optional(),
     title: z.string().min(1),

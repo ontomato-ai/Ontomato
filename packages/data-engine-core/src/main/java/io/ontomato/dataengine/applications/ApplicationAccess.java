@@ -10,6 +10,10 @@ public interface ApplicationAccess {
     void requireConnectedRegistration(User user);
     boolean canMaintain(JSONObject application, User user);
     boolean canEnter(JSONObject application, User user);
+    /** A read-only page-skill projection may reuse one subject's authorization facts. */
+    default <T> T withPageSkillAuthorization(User user, java.util.function.Supplier<T> read) {
+        return read.get();
+    }
     java.util.List<PageSkills.Mapping> pageSkills(java.util.List<PageSkills.Mapping> mappings, User user);
     java.util.List<ApplicationPanelUse> panelUses(java.util.List<ApplicationPanelUse> uses, User user);
     /** Edition-owned declarations contribute codes without moving menu metadata into the catalog. */

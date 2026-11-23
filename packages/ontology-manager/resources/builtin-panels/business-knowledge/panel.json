@@ -107,6 +107,7 @@
           "tagsField": "knowledgeTags",
           "fallbackToFirst": true,
           "pageSize": 20,
+          "pagination": "pages",
           "subtitleLines": 2,
           "searchable": false,
           "emptyText": "panel.empty",

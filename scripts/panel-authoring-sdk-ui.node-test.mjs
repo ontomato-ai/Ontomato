@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TSX_LOADER = join(ROOT, "packages/contracts/node_modules/tsx/dist/loader.mjs");
-const PANEL_CHECK_URL = pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/panel-check.mjs")).href;
+const PANEL_CHECK_URL = pathToFileURL(join(ROOT, "agent-skills/ontomato-app-builder/scripts/panel-check.mjs")).href;
 const CONTRACTS_CHECK_URL = pathToFileURL(join(ROOT, "packages/contracts/src/panel-check.ts")).href;
 
 function runCheck(kind, directory) {
@@ -129,6 +129,7 @@ test("every shipped builtin panel passes checkBuiltinPanelSource with zero third
       "packages/ontology-manager/resources/builtin-panels",
       "packages/platform-admin/resources/builtin-panels",
       "packages/platform-schedules/resources/builtin-panels",
+      "packages/platform-shell/resources/builtin-panels",
     ];
     let checked = 0;
     for (const root of roots) {
@@ -541,7 +542,7 @@ test("panel check allows normal HTML/CSS layout, semantic buttons, and data-free
 
   const runCli = (...args) => execFileSync(
     process.execPath,
-    ["--import", TSX_LOADER, join(ROOT, "agent-skills/ontomato-app-builder/ontomato.mjs"), ...args],
+    ["--import", TSX_LOADER, join(ROOT, "agent-skills/ontomato-app-builder/scripts/ontomato.mjs"), ...args],
     { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
   );
 
@@ -564,6 +565,124 @@ test("panel check allows normal HTML/CSS layout, semantic buttons, and data-free
     mjs: 'import { mountPanel } from "@ontomato/sdk/panel";\nmountPanel({});\n',
   });
   assert.equal(JSON.parse(runCli("panel", "check", cleanDir, "--sdk-dir", sdkDir)).status, "valid");
+});
+
+test("checkPanelWorkspace accepts official display components bound to metricOutput/panelRecord and multi-card ObjectForm", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "panel-display-form-ok-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "registration.json"), JSON.stringify({
+    panels: [{ id: "metrics-and-form", mode: "create", input: { name: "Overview", description: "", visibility: "domain" } }],
+  }, null, 2));
+  writeFileSync(join(dir, "panel.json"), JSON.stringify({
+    manifest: {
+      state: {
+        selectedMetric: { type: { kind: "object", objectType: "platform:MetricView" }, deepLink: true },
+        selectedRel: { type: { kind: "object", objectType: "platform:Relationship" }, deepLink: true },
+      },
+      members: {
+        kpi: {
+          component: "MetricCard",
+          type: "platform:MetricView",
+          target: "selectedMetric",
+          data: { result: "result" },
+          config: { field: "total_count", unit: "items" },
+        },
+        scalar: {
+          component: "TypedValue",
+          type: "platform:MetricView",
+          target: "selectedMetric",
+          data: { result: "result" },
+          config: { field: "total_count", kind: "number" },
+        },
+        sentence: {
+          component: "RecordTemplate",
+          type: "platform:MetricView",
+          target: "selectedMetric",
+          data: { result: "result" },
+          config: { template: "{region}: {total_count}" },
+        },
+        notice: {
+          component: "InfoBanner",
+          type: "platform:MetricView",
+          target: "selectedMetric",
+          data: { result: "result" },
+          config: { tone: "info", field: "summary" },
+        },
+        sourceCard: {
+          component: "ObjectRefCard",
+          type: "platform:Relationship",
+          target: "selectedRel",
+          data: { record: "record" },
+          config: { field: "sourceObjectType", caption: "Source" },
+        },
+        editForm: {
+          component: "ObjectForm",
+          type: "platform:Relationship",
+          target: "selectedRel",
+          data: { form: "form" },
+          operation: "platform:Relationship.save",
+          config: {
+            presentation: "cards",
+            cardColumns: 2,
+            groups: [
+              { key: "basic", title: "Basic", fields: ["/name"], column: "main" },
+              { key: "meta", title: "Meta", fields: ["/description"], column: "side" },
+            ],
+          },
+        },
+      },
+    },
+    content: { messages: { en: { "panel.name": "Overview" } } },
+  }, null, 2));
+  writeFileSync(join(dir, "panel.html"), [
+    '<div id="app">',
+    '  <info-banner tone="info" text="Static hint" />',
+    '  <projection slot="kpi"></projection>',
+    '  <projection slot="scalar"></projection>',
+    '  <projection slot="sentence"></projection>',
+    '  <projection slot="notice"></projection>',
+    '  <projection slot="sourceCard"></projection>',
+    '  <projection slot="editForm">',
+    '    <template #default>',
+    '      <object-form-fields :fields="[\'/name\']" />',
+    '      <object-form-fields rest />',
+    '    </template>',
+    '  </projection>',
+    '</div>',
+  ].join("\n"));
+  writeFileSync(join(dir, "panel.mjs"), 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});\n');
+
+  const script = `
+    import * as checks from ${JSON.stringify(CONTRACTS_CHECK_URL)};
+    import { checkPanelWorkspace } from ${JSON.stringify(PANEL_CHECK_URL)};
+    const catalogue = {
+      version: "1.0.0",
+      components: [
+        { componentId: "MetricCard", module: "@ontomato/sdk/base", exportName: "MetricCard", role: "presentation", meaning: "Metric card", data: { result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
+        { componentId: "TypedValue", module: "@ontomato/sdk/base", exportName: "TypedValue", role: "presentation", meaning: "Typed value", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
+        { componentId: "RecordTemplate", module: "@ontomato/sdk/base", exportName: "RecordTemplate", role: "presentation", meaning: "Record template", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
+        { componentId: "InfoBanner", module: "@ontomato/sdk/base", exportName: "InfoBanner", role: "presentation", meaning: "Info banner", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
+        { componentId: "ObjectRefCard", module: "@ontomato/sdk/base", exportName: "ObjectRefCard", role: "presentation", meaning: "Object ref card", data: { record: { results: ["panelRecord"], required: false }, result: { results: ["metricOutput"], required: false } }, ports: { props: [], events: [], slots: [] } },
+        { componentId: "ObjectForm", module: "@ontomato/sdk/base", exportName: "ObjectForm", role: "control", meaning: "Object form", data: { form: { results: ["panelFormDescription"], required: false, runtimeParams: ["values", "changedField"] } }, ports: { props: [], events: [], slots: [] } },
+      ],
+    };
+    const typeTable = {
+      objectTypes: {
+        "platform:MetricView": { reads: checks.platformObjectTypes["platform:MetricView"].reads, operations: [] },
+        "platform:Relationship": {
+          reads: checks.platformObjectTypes["platform:Relationship"].reads,
+          operations: [{ id: "platform:Relationship.save", kind: "form.save", effect: "write", batch: false, target: { source: "input", input: "target" }, inputSchema: { type: "object" } }],
+        },
+      },
+    };
+    console.log(JSON.stringify(await checkPanelWorkspace(${JSON.stringify(dir)}, { checks, catalogue, typeTable, version: "1.0.0" })));
+  `;
+  const result = JSON.parse(execFileSync(process.execPath, ["--import", TSX_LOADER, "--input-type=module", "-e", script], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }));
+  assert.equal(result.status, "valid");
 });
 
 test("every shipped skill template workspace passes checkPanelWorkspace", () => {

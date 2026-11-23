@@ -4,7 +4,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ensurePythonEnv, runtimeEnvironment, waitForRuntime } from "./dev-runtime.mjs";
 
@@ -21,6 +21,19 @@ export function buildWorkbenchSkills(root = ROOT) {
   for (const script of SKILL_BUILDERS) {
     execFileSync(process.execPath, [join(root, script)], { cwd: root, stdio: "inherit" });
   }
+}
+
+/** Prepare deployment-owned panels before the server can replace their database collection. */
+export function buildWorkbenchPanels(root) {
+  const require = createRequire(join(root, "apps/workbench/package.json"));
+  const product = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).name;
+  execFileSync(process.execPath, [join(root, "apps/workbench/node_modules/@ontomato/apps-sdk/build.mjs"),
+    "web/src/sdk-edition.ts", join(root, "dist/apps-sdk")], {
+    cwd: join(root, "apps/workbench"), stdio: "inherit",
+    env: { ...process.env, APPS_SDK_BUILD: JSON.stringify({ product, release: false }) },
+  });
+  execFileSync(process.execPath, ["--import", pathToFileURL(require.resolve("tsx/esm")).href,
+    join(ROOT, "scripts/dev-panels.mjs"), root], { cwd: root, stdio: "inherit" });
 }
 
 // Pure: mode + product -> the child's env/tool/args/cwd.
@@ -143,6 +156,8 @@ export async function runCli(product) {
     if (mode === "dev" || mode === "server") {
       buildWorkbenchSkills();
     }
+    // Combined dev starts this same server entry; prepare once, immediately before it starts.
+    if (mode === "server") buildWorkbenchPanels(product.root);
     const env = runtimeEnvironment(product);
     if (mode === "dev" || mode === "runtime")
       env.AGENT_RUNTIME_PYTHON ||= ensurePythonEnv(

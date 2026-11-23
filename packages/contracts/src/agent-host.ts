@@ -43,6 +43,7 @@ export const agentHostRunStatusSchema = z
     id: runtimeIdSchema,
     status: runtimeRunStatusSchema,
     stopReason: runtimeStopReasonSchema.nullable(),
+    delegatedRunning: z.boolean().optional(),
   })
   .strict();
 /** Only a shell with a display port requests a binding when it opens the stream. */

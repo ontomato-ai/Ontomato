@@ -274,7 +274,7 @@ onBeforeUnmount(() => {
               :aria-current="session.id === sessionId ? 'page' : undefined"
               @click="emit('selectSession', session.id)"
             >
-              <span v-if="session.latestRun?.status === 'running'" class="running" aria-hidden="true" />
+              <span v-if="session.latestRun?.status === 'running' || session.latestRun?.delegatedRunning" class="running" aria-hidden="true" />
               <span class="session-title">{{ session.title || labels.newConversation }}</span>
               <span
                 v-if="session.origin === 'scheduled'"

@@ -1,0 +1,43 @@
+{
+  "manifest": {
+    "state": {},
+    "members": {
+      "content": {
+        "target": {
+          "fromPlatform": "currentEntry",
+          "candidates": {
+            "rule": "applicationEntry"
+          }
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Platform application frame"
+      },
+      "zh-CN": {
+        "panel.name": "平台通用应用外框"
+      },
+      "zh-TW": {
+        "panel.name": "平台通用應用外框"
+      },
+      "ja": {
+        "panel.name": "プラットフォーム共通フレーム"
+      },
+      "ar": {
+        "panel.name": "إطار التطبيق القياسي"
+      },
+      "fr": {
+        "panel.name": "Cadre d'application standard"
+      },
+      "de": {
+        "panel.name": "Standard-Anwendungsrahmen"
+      },
+      "it": {
+        "panel.name": "Cornice applicazione standard"
+      }
+    }
+  }
+}

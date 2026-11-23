@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { configuration, holdForeground, start } from "./dev-command.mjs";
+import { buildWorkbenchPanels, configuration, holdForeground, start } from "./dev-command.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ENTRY = fileURLToPath(import.meta.url).replace(/\.node-test\.mjs$/, ".mjs");
@@ -44,6 +44,26 @@ test("an unknown mode is rejected", () => {
     () => configuration("unknown", { root: ROOT }, {}),
     /Unknown development command: unknown/
   );
+});
+
+test("development resource preparation fails before panel staging when the SDK cannot build", () => {
+  const root = mkdtempSync(join(tmpdir(), "dev-panels-"));
+  try {
+    const app = join(root, "apps/workbench");
+    const sdk = join(app, "node_modules/@ontomato/apps-sdk");
+    mkdirSync(sdk, { recursive: true });
+    writeFileSync(join(root, "package.json"), '{"name":"fixture-edition"}');
+    writeFileSync(join(app, "package.json"), '{}');
+    writeFileSync(join(sdk, "build.mjs"), `
+      import { writeFileSync } from "node:fs";
+      writeFileSync("sdk-request.json", JSON.stringify({ args: process.argv.slice(2), facts: JSON.parse(process.env.APPS_SDK_BUILD) }));
+      process.exit(7);
+    `);
+    assert.throws(() => buildWorkbenchPanels(root), /Command failed/);
+    const record = JSON.parse(readFileSync(join(app, "sdk-request.json"), "utf8"));
+    assert.deepEqual(record.facts, { product: "fixture-edition", release: false });
+    assert.deepEqual(record.args, ["web/src/sdk-edition.ts", join(root, "dist/apps-sdk")]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("holdForeground forwards on Unix and only holds on Windows, then releases its listeners", () => {

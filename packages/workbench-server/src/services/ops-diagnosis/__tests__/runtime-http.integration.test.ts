@@ -233,11 +233,11 @@ describe("diagnosis through real host/runtime/PG/skill processes", () => {
       expect(await stream.next()).toEqual({ type: "run_started", sessionId: session, runId: run });
       const running = await api("/api/observe/agent/sessions/status", { sessionIds: [session] }, "alice:a");
       expect(running.status).toBe(200);
-      expect(running.body).toEqual({ sessions: [{ sessionId: session, latestRun: { id: run, status: "running", stopReason: null } }] });
+      expect(running.body).toEqual({ sessions: [{ sessionId: session, latestRun: { id: run, status: "running", stopReason: null, delegatedRunning: false } }] });
       expect((await api(`/api/observe/agent/sessions/${session}/runs/${run}/cancel`, {}, "alice:a")).body.run.stopReason).toBe("aborted");
       expect(await stream.next()).toEqual({ type: "run_stopped", sessionId: session, runId: run });
       const stoppedStatus = await api("/api/observe/agent/sessions/status", { sessionIds: [session] }, "alice:a");
-      expect(stoppedStatus.body.sessions[0].latestRun).toEqual({ id: run, status: "stopped", stopReason: "aborted" });
+      expect(stoppedStatus.body.sessions[0].latestRun).toEqual({ id: run, status: "stopped", stopReason: "aborted", delegatedRunning: false });
       const foreignStatus = await api("/api/observe/agent/sessions/status", { sessionIds: [session] }, "bob:a");
       expect(foreignStatus.status).toBe(200);
       expect(foreignStatus.body).toEqual({ sessions: [] });

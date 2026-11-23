@@ -1,0 +1,383 @@
+<script setup lang="ts">
+import { computed, inject, useSlots } from "vue";
+import { useI18n } from "vue-i18n";
+import type { DashboardMetricOutput } from "@ontomato/contracts/dashboard";
+import type { PanelFieldTone, PanelRecordFieldValue } from "@ontomato/contracts/panel-projection";
+import { panelContextKey } from "../panel/context";
+import { panelMemberKey } from "../panel/member";
+import type { PlatformObjectRecord } from "../panel/platform-objects";
+import {
+  asTone,
+  extractMetricCell,
+  extractMetricRow,
+  useOptionalMemberDatum,
+  type DisplayDataStateKind,
+} from "./display-value";
+import { resolveLocalizedText } from "./localized-text";
+import { displayFieldText, rawRecordField } from "./record-field";
+import RecordTemplate from "./RecordTemplate.vue";
+
+type BannerTone = "info" | "success" | "warning" | "danger";
+
+/**
+ * Standardized informational, reminder, warning, success, or danger callout banner (for example relationship detail
+ * guidance cards or read-only explanations). Supports static or localized copy, custom slot content, or binding to a
+ * projection's `record` (`panelRecord`) or metric `result` (`metricOutput`) datum via `field` or a fixed `{fieldKey}`
+ * `template` (with no calculation or conditional branching).
+ */
+const props = withDefaults(
+  defineProps<{
+    /** Semantic banner tone (`"info"`, `"success"`, `"warning"`, `"danger"`). Defaults to `"info"`. */
+    tone?: BannerTone;
+    /** Optional field key on a bound `record` whose value or `record.tones[toneField]` determines the banner tone. */
+    toneField?: string;
+    /** Optional fallback heading text. */
+    title?: string;
+    /** Panel message key (resolved via `panel.t`) or platform i18n key for the heading. */
+    titleKey?: string;
+    /** Locale-keyed headings (for example `{ en: "Note", "zh-CN": "说明" }`). */
+    titles?: Readonly<Record<string, string>>;
+    /** Optional fallback body text. */
+    text?: string;
+    /** Panel message key (resolved via `panel.t`) or platform i18n key for the body text. */
+    textKey?: string;
+    /** Locale-keyed body texts. */
+    texts?: Readonly<Record<string, string>>;
+    /** Optional field key on a bound `record` or column key on a bound metric `result` providing the body text. */
+    field?: string;
+    /** Optional fixed `{fieldKey}` sentence template formatted against the bound `record` or metric `result` row. */
+    template?: string;
+    /** Panel or platform i18n key resolving `template` in the active locale. */
+    templateKey?: string;
+    /** Locale-keyed templates formatted against the bound `record` or metric `result` row. */
+    templates?: Readonly<Record<string, string>>;
+    /** Zero-based row index when reading from a bound metric `result` (`metricOutput`) table. Defaults to `0`. */
+    rowIndex?: number;
+    /** Tighter padding for dense sidebars and narrow detail cards. Defaults to `false`. */
+    compact?: boolean;
+    /** Omit the leading status icon. Defaults to `false`. */
+    hideIcon?: boolean;
+    /** Hide the banner completely when bound projection text resolves empty. Defaults to `false`. */
+    hideWhenEmpty?: boolean;
+  }>(),
+  {
+    tone: "info",
+    toneField: undefined,
+    title: undefined,
+    titleKey: undefined,
+    titles: undefined,
+    text: undefined,
+    textKey: undefined,
+    texts: undefined,
+    field: undefined,
+    template: undefined,
+    templateKey: undefined,
+    templates: undefined,
+    rowIndex: 0,
+    compact: false,
+    hideIcon: false,
+    hideWhenEmpty: false,
+  },
+);
+
+defineSlots<{
+  /** Optional custom body content rendered beneath the title instead of or beside plain `text`. */
+  default?(): unknown;
+  /** Optional right-aligned action buttons or links inside the banner. */
+  actions?(): unknown;
+}>();
+
+const slots = useSlots();
+const i18n = (() => {
+  try {
+    return useI18n();
+  } catch {
+    return null;
+  }
+})();
+const locale = computed(() => i18n?.locale.value ?? "en");
+const translate = (key: string) => (i18n ? i18n.t(key) : key);
+const hasTranslation = (key: string) => (i18n ? i18n.te(key) : false);
+
+const panel = inject(panelContextKey, null);
+const memberGetter = inject(panelMemberKey, null);
+const member = memberGetter?.() ?? null;
+const boundDatum = useOptionalMemberDatum(member, ["record", "result"] as const);
+
+interface ResolvedBound {
+  readonly state: DisplayDataStateKind;
+  readonly record: PlatformObjectRecord | null;
+  readonly metricRow: Readonly<Record<string, unknown>> | null;
+  readonly fieldText: string;
+  readonly notice?: string;
+}
+
+const resolvedBound = computed<ResolvedBound>(() => {
+  if (!boundDatum) {
+    return { state: "standalone", record: null, metricRow: null, fieldText: "" };
+  }
+  const current = boundDatum.state.value;
+  if (current.status === "loading") return { state: "loading", record: null, metricRow: null, fieldText: "" };
+  if (current.status === "empty") return { state: "empty", record: null, metricRow: null, fieldText: "" };
+  if (current.status === "forbidden") {
+    return { state: "forbidden", record: null, metricRow: null, fieldText: "", notice: translate("platform.dataForbidden") };
+  }
+  if (current.status === "awaiting") {
+    return { state: "awaiting", record: null, metricRow: null, fieldText: "", notice: translate("platform.dataAwaiting") };
+  }
+  if (current.status === "error") {
+    return {
+      state: "error",
+      record: null,
+      metricRow: null,
+      fieldText: "",
+      notice: current.message || translate("platform.dataUnreachable"),
+    };
+  }
+  if (boundDatum.name === "result") {
+    const output = current.value as unknown as DashboardMetricOutput;
+    const row = extractMetricRow(output, props.rowIndex);
+    if (!row) return { state: "empty", record: null, metricRow: null, fieldText: "" };
+    const cell = extractMetricCell(output, props.field, props.rowIndex);
+    const fieldText = cell.value === undefined || cell.value === null ? "" : String(cell.value);
+    return { state: "ready", record: null, metricRow: row, fieldText };
+  }
+  const record = current.value as unknown as PlatformObjectRecord;
+  const fieldKey = props.field;
+  const raw = fieldKey ? rawRecordField(record, fieldKey) : undefined;
+  const fieldText = raw !== undefined ? displayFieldText(raw as PanelRecordFieldValue, locale.value, translate) : "";
+  return { state: "ready", record, metricRow: null, fieldText };
+});
+
+function toBannerTone(tone: PanelFieldTone | undefined): BannerTone | undefined {
+  if (tone === "info" || tone === "success" || tone === "warning" || tone === "danger") return tone;
+  return undefined;
+}
+
+const effectiveTone = computed<BannerTone>(() => {
+  const rec = resolvedBound.value.record;
+  if (rec && props.toneField) {
+    const fromTones = toBannerTone(asTone(rec.tones?.[props.toneField]));
+    if (fromTones) return fromTones;
+    const raw = rawRecordField(rec, props.toneField);
+    const fromValue = toBannerTone(asTone(raw));
+    if (fromValue) return fromValue;
+  }
+  return props.tone;
+});
+
+const resolvedTitle = computed(() =>
+  resolveLocalizedText({
+    key: props.titleKey,
+    map: props.titles,
+    fallback: props.title,
+    locale: locale.value,
+    panelText: panel?.t,
+    t: translate,
+    te: hasTranslation,
+  }),
+);
+
+const resolvedStaticText = computed(() =>
+  resolveLocalizedText({
+    key: props.textKey,
+    map: props.texts,
+    fallback: props.text,
+    locale: locale.value,
+    panelText: panel?.t,
+    t: translate,
+    te: hasTranslation,
+  }),
+);
+
+const hasTemplate = computed(() => Boolean(props.template || props.templateKey || props.templates));
+
+const bodyText = computed(() => {
+  if (boundDatum && props.field) {
+    return resolvedBound.value.fieldText;
+  }
+  if (boundDatum && !hasTemplate.value && !resolvedStaticText.value && !slots.default && boundDatum.name === "result") {
+    return resolvedBound.value.fieldText;
+  }
+  return resolvedStaticText.value;
+});
+
+const isHidden = computed(() => {
+  if (!props.hideWhenEmpty) return false;
+  if (slots.default) return false;
+  if (resolvedBound.value.state === "loading") return false;
+  if (resolvedBound.value.state === "empty") return true;
+  if (hasTemplate.value) {
+    return Boolean(boundDatum && resolvedBound.value.state !== "ready");
+  }
+  return !resolvedTitle.value && !bodyText.value;
+});
+
+const ariaRole = computed(() => (effectiveTone.value === "warning" || effectiveTone.value === "danger" ? "alert" : "status"));
+</script>
+
+<template>
+  <aside
+    v-if="!isHidden"
+    class="sdk-info-banner"
+    :class="{ 'is-compact': compact }"
+    :data-tone="effectiveTone"
+    :data-state="resolvedBound.state"
+    :role="ariaRole"
+    :aria-busy="resolvedBound.state === 'loading' ? 'true' : undefined"
+  >
+    <span v-if="!hideIcon" class="sdk-info-banner-icon" aria-hidden="true">
+      <svg v-if="effectiveTone === 'success'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <path d="m9 12 2 2 4-4" />
+      </svg>
+      <svg v-else-if="effectiveTone === 'warning'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+        <path d="M12 9v4" />
+        <path d="M12 17h.01" />
+      </svg>
+      <svg v-else-if="effectiveTone === 'danger'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <path d="m15 9-6 6" />
+        <path d="m9 9 6 6" />
+      </svg>
+      <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 16v-4" />
+        <path d="M12 8h.01" />
+      </svg>
+    </span>
+
+    <div class="sdk-info-banner-content">
+      <strong v-if="resolvedTitle" class="sdk-info-banner-title">{{ resolvedTitle }}</strong>
+      <div class="sdk-info-banner-body">
+        <slot>
+          <span v-if="resolvedBound.state === 'loading'" class="sdk-info-banner-muted">…</span>
+          <span v-else-if="resolvedBound.notice" class="sdk-info-banner-muted">{{ resolvedBound.notice }}</span>
+          <RecordTemplate
+            v-else-if="hasTemplate"
+            :template="template"
+            :template-key="templateKey"
+            :templates="templates"
+            :record="resolvedBound.record"
+            :values="resolvedBound.metricRow"
+            :row-index="rowIndex"
+            :inline="true"
+          />
+          <span v-else-if="bodyText">{{ bodyText }}</span>
+        </slot>
+      </div>
+    </div>
+
+    <div v-if="$slots.actions" class="sdk-info-banner-actions">
+      <slot name="actions" />
+    </div>
+  </aside>
+</template>
+
+<style scoped>
+.sdk-info-banner {
+  container: sdk-info-banner / inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid var(--el-color-primary-light-7, var(--ui-border));
+  border-radius: var(--radius-md);
+  background: var(--el-color-primary-light-9, var(--ui-fill-tertiary));
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.sdk-info-banner.is-compact {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.sdk-info-banner[data-tone="info"] {
+  border-color: var(--el-color-primary-light-7, var(--ui-border));
+  background: var(--el-color-primary-light-9, var(--ui-fill-tertiary));
+}
+
+.sdk-info-banner[data-tone="info"] .sdk-info-banner-icon {
+  color: var(--brand-link, var(--el-color-primary));
+}
+
+.sdk-info-banner[data-tone="success"] {
+  border-color: var(--el-color-success-light-7, var(--ui-border));
+  background: var(--el-color-success-light-9, var(--ui-fill-tertiary));
+}
+
+.sdk-info-banner[data-tone="success"] .sdk-info-banner-icon {
+  color: var(--el-color-success-text, var(--el-color-success));
+}
+
+.sdk-info-banner[data-tone="warning"] {
+  border-color: var(--el-color-warning-light-7, var(--ui-border));
+  background: var(--el-color-warning-light-9, var(--ui-fill-tertiary));
+}
+
+.sdk-info-banner[data-tone="warning"] .sdk-info-banner-icon {
+  color: var(--el-color-warning-text, var(--el-color-warning));
+}
+
+.sdk-info-banner[data-tone="danger"] {
+  border-color: var(--el-color-danger-light-7, var(--ui-border));
+  background: var(--el-color-danger-light-9, var(--ui-fill-tertiary));
+}
+
+.sdk-info-banner[data-tone="danger"] .sdk-info-banner-icon {
+  color: var(--el-color-danger-text, var(--el-color-danger));
+}
+
+.sdk-info-banner-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.sdk-info-banner-content {
+  display: flex;
+  flex: 1 1 180px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sdk-info-banner-title {
+  color: var(--el-text-color-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-sm);
+}
+
+.sdk-info-banner-body {
+  color: var(--el-text-color-regular);
+  overflow-wrap: anywhere;
+}
+
+.sdk-info-banner-muted {
+  color: var(--el-text-color-secondary);
+}
+
+.sdk-info-banner-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-inline-start: auto;
+}
+
+@container sdk-info-banner (max-width: 420px) {
+  .sdk-info-banner-actions {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+  }
+}
+</style>
