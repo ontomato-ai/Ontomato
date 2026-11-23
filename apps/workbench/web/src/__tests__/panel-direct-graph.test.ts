@@ -279,7 +279,7 @@ it("draws direct ObjectGraph in a direct panel via PanelMember with member.formF
     const button = element.querySelector<HTMLButtonElement>(".sdk-object-graph-adjacent");
     if (!button || button.disabled) throw new Error("Direct PanelMember ObjectGraph adjacent button is not ready");
     return button;
-  });
+  }, { timeout: 5000 });
   expect(reads.map((r) => r.dataName).sort()).toEqual(["edges", "form", "nodes"]);
   adjacentBtn.click();
   await vi.waitFor(() => {

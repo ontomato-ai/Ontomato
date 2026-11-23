@@ -73,7 +73,7 @@ const ApplicationDetailPanel = {
 
     const entryTotalOutput = usePanelOutput("entriesList", "total");
     const usedPanelsTotalOutput = usePanelOutput("usedPanelsList", "total");
-    const usedPanelsSelectedLabel = usePanelOutput("usedPanelsList", "activeLabel");
+    const usedPanelsSelectedLabel = usePanelOutput("usedPanelsList", "selectedLabel");
 
     const recordReady = computed(() => recordStatus.value === "ready");
     const canMaintain = computed(() => canMaintainOutput.value === true);
