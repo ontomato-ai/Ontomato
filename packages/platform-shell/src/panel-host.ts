@@ -177,20 +177,12 @@ export interface DirectPanelRun {
   confirmLeaveUnsaved?: () => Promise<boolean>;
 }
 
-/** Options describing the source of an in-place public state update driven by the host. */
-export interface DirectPanelMountStateOptions {
-  /** Updates originate from external entry inputs rather than user edits or live state calls. */
-  external?: boolean;
-  /** External entry fields that were withdrawn and should fall back to saved personal state before defaults. */
-  withdrawn?: readonly string[];
-}
-
 /** A started panel instance, as its host drives it. */
 export interface DirectPanelMount {
   /** The address changed outside the instance (the reader went back, a link was followed): its state follows. */
   address(url: string): void;
   /** Updates any declared public state fields in place (including non-deepLink fields), without reload or writes. */
-  setState?(patch: Readonly<Record<string, RuntimeJsonValue>>, options?: DirectPanelMountStateOptions): void;
+  setState?(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Objects it may show changed: it reads again what it shows of them. */
   refresh(target: PanelObjectIdentity | null, affected?: PanelOperationAffected, operation?: PanelCompletedOperation): void;
   /** Projections it places have newer definitions or changed access: it reads them again. */
@@ -906,7 +898,6 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const panel = source.value.panel;
     const next = entryState(panel, true);
     const patch: Record<string, RuntimeJsonValue> = {};
-    const withdrawn: string[] = [];
     for (const [name, value] of Object.entries(next)) {
       if (!Object.hasOwn(appliedExternalEntry, name) || JSON.stringify(appliedExternalEntry[name]) !== JSON.stringify(value)) {
         patch[name] = value as RuntimeJsonValue;
@@ -915,16 +906,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     for (const name of Object.keys(appliedExternalEntry)) {
       if (!Object.hasOwn(next, name)) {
         const field = panel.manifest.state[name];
-        if (field) {
-          patch[name] = (field.default ?? null) as RuntimeJsonValue;
-          withdrawn.push(name);
-        }
+        if (field) patch[name] = (field.default ?? null) as RuntimeJsonValue;
       }
     }
     appliedExternalEntry = next;
-    if (Object.keys(patch).length) {
-      direct.value.mount.setState?.(patch, { external: true, ...(withdrawn.length ? { withdrawn } : {}) });
-    }
+    if (Object.keys(patch).length) direct.value.mount.setState?.(patch);
   }
 
   function syncAddress(): boolean {

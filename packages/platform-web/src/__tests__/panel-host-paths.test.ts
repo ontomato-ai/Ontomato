@@ -6,7 +6,8 @@ import { installWorkbenchI18n } from "@ontomato/workbench-ui/i18n";
 import publicEn from "@ontomato/workbench-ui/locales/en";
 import en from "element-plus/es/locale/lang/en";
 import { definePanel } from "@ontomato/contracts/panel-manifest";
-import { PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH } from "@ontomato/contracts/panel-host";
+import { PANEL_NESTED_READ_PATH, PANEL_PERSONAL_STATE_PATH, PANEL_PERSONAL_STATE_READ_PATH } from "@ontomato/contracts/panel-host";
+import { PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
 import { usePanelInstance, type PanelHostLabels } from "@ontomato/platform-shell";
 import type { PlatformPreferences } from "@ontomato/platform-admin";
 import { installAppHost } from "../app-host";
@@ -227,7 +228,7 @@ it("backs off consecutive failures, resets on a snapshot, and cancels a pending 
   }
 });
 
-describe("personal state with external-only entry inputs", () => {
+describe("controlled personal state fields", () => {
   beforeEach(() => {
     installAppHost({
       credential: { type: "anonymous" },
@@ -243,61 +244,156 @@ describe("personal state with external-only entry inputs", () => {
     content: { styleOutside: "Style outside" },
     refresh: "Refresh",
   };
-  const use = {
-    id: "use-personal-ext",
-    pageKey: "personal-ext",
+  const wiredUse = {
+    id: "use-personal-ext-wired",
+    pageKey: "personal-ext-wired",
     panelId: "panel-personal-ext",
-    path: "/applications/app-a/personal-ext",
+    path: "/applications/app-a/personal-ext-wired",
+    access: { kind: "domain-member" as const },
+    inputs: { term: { frameState: "term" } },
+  };
+  const unwiredUse = {
+    id: "use-personal-ext-unwired",
+    pageKey: "personal-ext-unwired",
+    panelId: "panel-personal-ext",
+    path: "/applications/app-a/personal-ext-unwired",
     access: { kind: "domain-member" as const },
   };
-  const panelManifest = definePanel({
+  const termAndDensityManifest = definePanel({
     state: {
       term: { type: { kind: "scalar", type: "string" }, external: true, personal: true, deepLink: false, default: "autumn" },
-      campus: { type: { kind: "scalar", type: "string" }, external: true, deepLink: false, default: "north" },
+      density: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "compact" },
     },
     members: {},
   });
+  const termOnlyManifest = definePanel({
+    state: {
+      term: { type: { kind: "scalar", type: "string" }, external: true, personal: true, deepLink: false, default: "autumn" },
+    },
+    members: {},
+  });
+  const nestedChildManifest = definePanel({
+    state: {
+      term: { type: { kind: "scalar", type: "string" }, external: true, personal: true, deepLink: false, default: "autumn" },
+      density: { type: { kind: "scalar", type: "string" }, personal: true, deepLink: false, default: "compact" },
+    },
+    members: {},
+  });
+  const nestedOuterManifest = definePanel({
+    state: {
+      outerTerm: { type: { kind: "scalar", type: "string" }, default: "spring" },
+      childRef: {
+        type: { kind: "object", objectType: PRODUCT_PANEL },
+        default: { className: PRODUCT_PANEL, primaryKey: "panel-nested-child" },
+      },
+    },
+    members: {
+      child: {
+        target: { fromState: "childRef", candidates: { panelIds: ["panel-nested-child"] } },
+        inputs: { term: { state: "outerTerm" } },
+      },
+    },
+  });
 
-  function stubPersonalHostFetch(savedValues: Record<string, unknown>, writes: Record<string, unknown>[]) {
+  function panelRecord(id: string, name: string, manifestDef: ReturnType<typeof definePanel>, module = "") {
+    return {
+      id,
+      revision: 1,
+      name,
+      description: "",
+      visibility: "domain",
+      domainId: "domain-1",
+      ownerId: "owner-1",
+      editable: true,
+      createdAt: "2026-11-24T00:00:00.000Z",
+      updatedAt: "2026-11-24T00:00:00.000Z",
+      content: { html: '<div id="app"><span>panel</span></div>', module },
+      manifest: manifestDef,
+    };
+  }
+
+  function stubPersonalHostFetch(options: {
+    use: typeof wiredUse | typeof unwiredUse;
+    panels: Record<string, ReturnType<typeof panelRecord>>;
+    storage: Record<string, unknown>;
+    reads: { memberPath: unknown[]; fields: string[] }[];
+    writes: { memberPath: unknown[]; values: Record<string, unknown> }[];
+  }) {
+    const controlledForPath = (memberPath: { member: string }[]) => {
+      if (!memberPath.length) {
+        return new Set(Object.keys((options.use as { inputs?: Record<string, unknown> }).inputs ?? {}));
+      }
+      // Resolve the parent manifest along the path (here root outer panel -> child).
+      let current = options.panels[options.use.panelId]!.manifest;
+      for (let i = 0; i < memberPath.length - 1; i++) {
+        const seg = memberPath[i]!;
+        const target = current.members[seg.member]?.target;
+        if (target && "panelId" in target) current = options.panels[target.panelId]!.manifest;
+      }
+      const last = memberPath.at(-1)!;
+      return new Set(Object.keys(current.members[last.member]?.inputs ?? {}));
+    };
+
     vi.stubGlobal("fetch", async (input: string | URL, init?: { method?: string; body?: string }) => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname === `/api${PANEL_PERSONAL_STATE_READ_PATH}`) {
-        return Response.json({ values: savedValues });
+        const body = JSON.parse(init?.body ?? "{}") as { memberPath?: { member: string }[]; fields?: string[] };
+        const memberPath = body.memberPath ?? [];
+        const fields = body.fields ?? [];
+        options.reads.push({ memberPath, fields });
+        const controlled = controlledForPath(memberPath);
+        const offending = fields.find(field => controlled.has(field));
+        if (offending) {
+          return Response.json(
+            { error: { code: "PANEL_STATE_CONTROLLED", message: `State '${offending}' is set by the outer panel` } },
+            { status: 400 },
+          );
+        }
+        const values = Object.fromEntries(
+          fields.filter(field => Object.hasOwn(options.storage, field)).map(field => [field, options.storage[field]]),
+        );
+        return Response.json({ values });
       }
       if (url.pathname === `/api${PANEL_PERSONAL_STATE_PATH}` && init?.method === "PUT") {
-        writes.push(JSON.parse(init.body ?? "{}").values as Record<string, unknown>);
-        return Response.json({ values: savedValues });
+        const body = JSON.parse(init.body ?? "{}") as { memberPath?: { member: string }[]; values?: Record<string, unknown> };
+        const memberPath = body.memberPath ?? [];
+        const values = body.values ?? {};
+        options.writes.push({ memberPath, values });
+        const controlled = controlledForPath(memberPath);
+        const offending = Object.keys(values).find(field => controlled.has(field));
+        if (offending) {
+          return Response.json(
+            { error: { code: "PANEL_STATE_CONTROLLED", message: `State '${offending}' is set by the outer panel` } },
+            { status: 400 },
+          );
+        }
+        Object.assign(options.storage, values);
+        return Response.json({ values });
       }
-      if (url.pathname === panelHostPaths.snapshot(use.panelId)) {
+      if (url.pathname === `/api${PANEL_NESTED_READ_PATH}`) {
+        const body = JSON.parse(init?.body ?? "{}") as {
+          memberPath?: { selection?: { target?: { panelId?: string } } }[];
+        };
+        const targetId = body.memberPath?.at(-1)?.selection?.target?.panelId ?? "panel-nested-child";
+        const { id, revision, content, manifest: panelManifest } = options.panels[targetId]!;
+        return Response.json({ panel: { id, revision, content, manifest: panelManifest } });
+      }
+      if (url.pathname.endsWith("/snapshot")) {
         return Response.json({
-          panel: { id: use.panelId, revision: 1 },
+          panel: { id: options.use.panelId, revision: 1 },
           projections: [],
-          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: options.use.pageKey }, member: null },
         });
       }
-      if (url.pathname === panelHostPaths.pageSkillContext(use.panelId)) {
+      if (url.pathname.endsWith("/page-skill-context")) {
         return Response.json({
-          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: use.pageKey }, member: null },
+          pageSkillContext: { mode: "member", locator: { access: "domain-member", pageKey: options.use.pageKey }, member: null },
         });
       }
-      if (url.pathname === panelHostPaths.panel(use.panelId)) {
-        return Response.json({
-          panel: {
-            id: use.panelId,
-            revision: 1,
-            name: "Personal External",
-            description: "",
-            visibility: "domain",
-            domainId: "domain-1",
-            ownerId: "owner-1",
-            editable: true,
-            createdAt: "2026-11-24T00:00:00.000Z",
-            updatedAt: "2026-11-24T00:00:00.000Z",
-            content: { html: '<div id="app"><span>panel</span></div>', module: "" },
-            manifest: panelManifest,
-          },
-          projections: {},
-        });
+      for (const [id, rec] of Object.entries(options.panels)) {
+        if (url.pathname === panelHostPaths.panel(id)) {
+          return Response.json({ panel: rec, projections: {} });
+        }
       }
       return Response.json({});
     });
@@ -305,116 +401,273 @@ describe("personal state with external-only entry inputs", () => {
 
   function mountedState(view: ReturnType<typeof usePanelInstance>) {
     const mount = view.direct.value?.mount as {
-      instance: { state: { values: { value: Record<string, unknown> }; set(name: string, value: unknown): void } };
+      instance: {
+        state: { values: { value: Record<string, unknown> }; set(name: string, value: unknown): void };
+        placing(member: string): Promise<unknown>;
+      };
     } | undefined;
     return mount!.instance.state;
   }
 
-  it("restores saved personal state instead of declared default and never overwrites personal storage when an external entry value is withdrawn", async () => {
-    const writes: Record<string, unknown>[] = [];
-    stubPersonalHostFetch({ term: "summer" }, writes);
-    vi.useFakeTimers();
-    const inputs = ref<Record<string, string>>({ term: "spring", campus: "south" });
-    const scope = effectScope();
-    try {
-      const port = platformPanelHost("app-a", use, () => {});
-      const view = scope.run(() => usePanelInstance(port, {
-        labels: hostLabels,
-        label: () => "Personal External",
-        address: () => use.path,
-        initial: () => ({}),
-        entryInputs: () => inputs.value,
-        wired: () => ["term", "campus"],
-      }))!;
-      await view.ready;
-      expect(view.error.value).toBe("");
-
-      expect(mountedState(view).values.value).toEqual({ term: "spring", campus: "south" });
-
-      inputs.value = {};
-      await nextTick();
-      await vi.advanceTimersByTimeAsync(1000);
-
-      expect(mountedState(view).values.value).toEqual({ term: "summer", campus: "north" });
-      expect(writes).toEqual([]);
-    } finally {
-      scope.stop();
-      vi.useRealTimers();
-    }
-    expect(writes).toEqual([]);
-  });
-
-  it("ignores external entry overrides in personal-state persistence while still saving explicit user changes", async () => {
-    const writes: Record<string, unknown>[] = [];
-    stubPersonalHostFetch({ term: "summer" }, writes);
-    vi.useFakeTimers();
-    const inputs = ref<Record<string, string>>({});
-    const scope = effectScope();
-    try {
-      const port = platformPanelHost("app-a", use, () => {});
-      const view = scope.run(() => usePanelInstance(port, {
-        labels: hostLabels,
-        label: () => "Personal External",
-        address: () => use.path,
-        initial: () => ({}),
-        entryInputs: () => inputs.value,
-        wired: () => ["term", "campus"],
-      }))!;
-      await view.ready;
-
-      expect(mountedState(view).values.value).toEqual({ term: "summer", campus: "north" });
-
-      inputs.value = { term: "spring", campus: "south" };
-      await nextTick();
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(mountedState(view).values.value).toEqual({ term: "spring", campus: "south" });
-      expect(writes).toEqual([]);
-
-      inputs.value = {};
-      await nextTick();
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(mountedState(view).values.value).toEqual({ term: "summer", campus: "north" });
-      expect(writes).toEqual([]);
-
-      mountedState(view).set("term", "winter");
-      await vi.advanceTimersByTimeAsync(500);
-      expect(writes).toEqual([{ term: "winter" }]);
-    } finally {
-      scope.stop();
-      vi.useRealTimers();
-    }
-  });
-
-  it("falls back to declared default without persisting when no personal value was saved", async () => {
-    const writes: Record<string, unknown>[] = [];
-    stubPersonalHostFetch({}, writes);
+  it("excludes wired entry inputs from personal reads/writes so sibling personal fields still load and save, and withdrawn wired inputs fall back to defaults", async () => {
+    const storage: Record<string, unknown> = { term: "summer", density: "comfortable" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: wiredUse,
+      panels: { [wiredUse.panelId]: panelRecord(wiredUse.panelId, "Personal External", termAndDensityManifest) },
+      storage,
+      reads,
+      writes,
+    });
     vi.useFakeTimers();
     const inputs = ref<Record<string, string>>({ term: "spring" });
     const scope = effectScope();
     try {
-      const port = platformPanelHost("app-a", use, () => {});
+      const port = platformPanelHost("app-a", wiredUse, () => {});
       const view = scope.run(() => usePanelInstance(port, {
         labels: hostLabels,
         label: () => "Personal External",
-        address: () => use.path,
+        address: () => wiredUse.path,
         initial: () => ({}),
         entryInputs: () => inputs.value,
-        wired: () => ["term", "campus"],
+        wired: () => ["term"],
       }))!;
       await view.ready;
+      expect(view.error.value).toBe("");
 
-      expect(mountedState(view).values.value).toEqual({ term: "spring", campus: "north" });
+      expect(reads).toEqual([{ memberPath: [], fields: ["density"] }]);
+      expect(mountedState(view).values.value).toEqual({ term: "spring", density: "comfortable" });
 
+      // Withdrawing the wired external input reverts `term` to its declared default ("autumn"), not saved "summer".
       inputs.value = {};
       await nextTick();
       await vi.advanceTimersByTimeAsync(1000);
+      expect(mountedState(view).values.value).toEqual({ term: "autumn", density: "comfortable" });
+      expect(writes).toEqual([]);
 
-      expect(mountedState(view).values.value).toEqual({ term: "autumn", campus: "north" });
+      // User edits to the wired field inside the panel do not write to personal storage.
+      mountedState(view).set("term", "winter");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(writes).toEqual([]);
+      expect(storage.term).toBe("summer");
+
+      // User edits to the uncontrolled personal field persist only that field.
+      mountedState(view).set("density", "spacious");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(writes).toEqual([{ memberPath: [], values: { density: "spacious" } }]);
+      expect(storage).toEqual({ term: "summer", density: "spacious" });
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses declared default when a wired entry passes no initial value while still reading sibling personal fields", async () => {
+    const storage: Record<string, unknown> = { term: "summer", density: "spacious" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: wiredUse,
+      panels: { [wiredUse.panelId]: panelRecord(wiredUse.panelId, "Personal External", termAndDensityManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", wiredUse, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => wiredUse.path,
+        initial: () => ({}),
+        entryInputs: () => ({}),
+        wired: () => ["term"],
+      }))!;
+      await view.ready;
+
+      expect(reads).toEqual([{ memberPath: [], fields: ["density"] }]);
+      expect(mountedState(view).values.value).toEqual({ term: "autumn", density: "spacious" });
       expect(writes).toEqual([]);
     } finally {
       scope.stop();
       vi.useRealTimers();
     }
-    expect(writes).toEqual([]);
+  });
+
+  it("reads both personal fields when the same panel is opened from an unwired entry", async () => {
+    const storage: Record<string, unknown> = { term: "summer", density: "spacious" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: unwiredUse,
+      panels: { [unwiredUse.panelId]: panelRecord(unwiredUse.panelId, "Personal External", termAndDensityManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", unwiredUse, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal External",
+        address: () => unwiredUse.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+
+      expect(reads).toEqual([{ memberPath: [], fields: ["term", "density"] }]);
+      expect(mountedState(view).values.value).toEqual({ term: "summer", density: "spacious" });
+      expect(writes).toEqual([]);
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("issues zero personal-state reads or writes when every personal field is controlled by entry inputs", async () => {
+    const onlyUse = { ...wiredUse, id: "use-personal-only", pageKey: "personal-only", panelId: "panel-personal-only" };
+    const storage: Record<string, unknown> = { term: "summer" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    stubPersonalHostFetch({
+      use: onlyUse,
+      panels: { [onlyUse.panelId]: panelRecord(onlyUse.panelId, "Personal Only", termOnlyManifest) },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const inputs = ref<Record<string, string>>({ term: "spring" });
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", onlyUse, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Personal Only",
+        address: () => onlyUse.path,
+        initial: () => ({}),
+        entryInputs: () => inputs.value,
+        wired: () => ["term"],
+      }))!;
+      await view.ready;
+      expect(mountedState(view).values.value).toEqual({ term: "spring" });
+
+      inputs.value = { term: "winter" };
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mountedState(view).values.value).toEqual({ term: "winter" });
+
+      inputs.value = {};
+      await nextTick();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mountedState(view).values.value).toEqual({ term: "autumn" });
+
+      mountedState(view).set("term", "fall");
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(reads).toEqual([]);
+      expect(writes).toEqual([]);
+      expect(storage.term).toBe("summer");
+    } finally {
+      scope.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("excludes parent member inputs from personal reads/writes on a nested panel while preserving its other personal fields", async () => {
+    const nestedUse = {
+      id: "use-nested-outer",
+      pageKey: "nested-outer",
+      panelId: "panel-nested-outer",
+      path: "/applications/app-a/nested-outer",
+      access: { kind: "domain-member" as const },
+    };
+    const storage: Record<string, unknown> = { term: "summer", density: "comfortable" };
+    const reads: { memberPath: unknown[]; fields: string[] }[] = [];
+    const writes: { memberPath: unknown[]; values: Record<string, unknown> }[] = [];
+    const childModule = `
+      import { mountPanel, usePanelContext } from "@ontomato/sdk/panel";
+      await mountPanel({
+        setup() {
+          globalThis.__controlledPersonalNestedState = usePanelContext().instance.state;
+          return {};
+        },
+      });
+    `;
+    stubPersonalHostFetch({
+      use: nestedUse,
+      panels: {
+        "panel-nested-outer": panelRecord("panel-nested-outer", "Outer", nestedOuterManifest),
+        "panel-nested-child": panelRecord("panel-nested-child", "Child", nestedChildManifest, childModule),
+      },
+      storage,
+      reads,
+      writes,
+    });
+    vi.useFakeTimers();
+    const scope = effectScope();
+    try {
+      const port = platformPanelHost("app-a", nestedUse, () => {});
+      const view = scope.run(() => usePanelInstance(port, {
+        labels: hostLabels,
+        label: () => "Outer",
+        address: () => nestedUse.path,
+        initial: () => ({}),
+      }))!;
+      await view.ready;
+      const outerMount = view.direct.value?.mount as {
+        instance: { placing(member: string): Promise<unknown> };
+      } | undefined;
+      await outerMount!.instance.placing("child");
+
+      const childState = (globalThis as Record<string, unknown>).__controlledPersonalNestedState as {
+        values: { value: Record<string, unknown> };
+        set(name: string, value: unknown): void;
+      };
+      expect(childState).toBeDefined();
+      expect(reads).toEqual([
+        {
+          memberPath: [{
+            member: "child",
+            selection: {
+              stateValue: { className: PRODUCT_PANEL, primaryKey: "panel-nested-child" },
+              target: { panelId: "panel-nested-child" },
+            },
+          }],
+          fields: ["density"],
+        },
+      ]);
+      expect(childState.values.value).toEqual({ term: "spring", density: "comfortable" });
+
+      childState.set("term", "winter");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(writes).toEqual([]);
+      expect(storage.term).toBe("summer");
+
+      childState.set("density", "spacious");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(writes).toEqual([
+        {
+          memberPath: [{
+            member: "child",
+            selection: {
+              stateValue: { className: PRODUCT_PANEL, primaryKey: "panel-nested-child" },
+              target: { panelId: "panel-nested-child" },
+            },
+          }],
+          values: { density: "spacious" },
+        },
+      ]);
+      expect(storage).toEqual({ term: "summer", density: "spacious" });
+    } finally {
+      delete (globalThis as Record<string, unknown>).__controlledPersonalNestedState;
+      scope.stop();
+      vi.useRealTimers();
+    }
   });
 });
