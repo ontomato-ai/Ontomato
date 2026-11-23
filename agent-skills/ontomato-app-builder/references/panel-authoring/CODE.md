@@ -100,9 +100,12 @@ paths beginning with a single `/` and pass raw JSON once into `URLSearchParams` 
 ## Component vs. panel responsibility
 
 - **Display belongs to universal components.** Components render business fields, graphics, options, and executable
-  operations according to their projection declarations.
+  operations according to their projection declarations. Component formatting only governs how a single value is rendered
+  (such as date or number formatting).
 - **Logic belongs to the capability layer.** Calculations, filtered aggregations, derived judgments, and writes belong
-  to MetricViews (reads), Actions (writes), or platform-owned reads — not panel scripts or templates.
+  to MetricViews (reads), Actions (writes), or platform-owned reads — not panel scripts or templates. Composing
+  multiple business values into a summary sentence (for example "12 total, 3 pending") is a business statistic and also
+  belongs to the capability layer.
 - **Panels only lay out and wire.** Panels arrange projections, own UI layout and public state, wire projection outputs
   into other projections or text slots (titles, tabs, counts, notices), and trigger navigation. Panels do not read
   record fields directly or compute business values; unsaved form drafts do not count as ontology data.
@@ -320,9 +323,10 @@ connect its inputs in `state`. If the card is not yet registered, `panel check` 
 
 ## Open the page composer
 
-Add a `ConversationEntry` member when the page needs a button that opens the composer with a specific agent and an
-optional opening line (`prefill` or multi-locale `prefillKey` in `content.messages`). The reader still sends the
-message.
+A dialog or conversation entry pointing to a specific agent is also a projection (a base component instantiated with an
+ontology entity). Add a `ConversationEntry` member when the page needs a button that opens the composer with a specific
+agent and an optional opening line (`prefill` or multi-locale `prefillKey` in `content.messages`). The reader still
+sends the message.
 
 ## Register and open
 
