@@ -1,7 +1,6 @@
-import { inject, onMounted, reactive, type App, type InjectionKey, type Ref } from "vue";
+import { inject, onMounted, type App, type InjectionKey, type Ref } from "vue";
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { TRIGGER, WORKFLOW } from "@ontomato/contracts/platform-object-types";
 import {
   createManagerClient,
   type ManagerAuthFailureStatus,
@@ -11,7 +10,6 @@ import {
 } from "./api";
 import { metricViewsKey } from "./clients/metric-views";
 import type { MessageKey, SharedKey, TextParams } from "./i18n";
-import { emptyOntologyResourceCounts, type OntologyResourceCountKey, type OntologyResourceCounts } from "./workspace";
 
 export type ManagerTheme = "light" | "dark";
 
@@ -67,97 +65,13 @@ export interface ManagerContext {
   readonly presentation: ManagerPresentation;
 }
 
-/** Resource counts shown next to the ontology and asset navigation entries; null until read. */
-export interface ManagerCounts {
-  readonly values: OntologyResourceCounts;
-  /** Reads the named count (or every started count when omitted) again after a page created, changed or deleted a resource. */
-  refresh(key?: OntologyResourceCountKey): Promise<void>;
-  /** Reads the named count (or every count when omitted) once per page load. */
-  ensure(key?: OntologyResourceCountKey): void;
-  /** Records a count the page just read from its own unfiltered list, avoiding a duplicate request. */
-  set(key: OntologyResourceCountKey, count: number): void;
-  /**
-   * A write changed objects of these types (an owner's `affected.objectTypes`): the counts are read again when one of
-   * them is a type they count, once for the whole write.
-   */
-  changed(objectTypes: readonly string[]): void;
-}
-
-const ALL_COUNT_KEYS: readonly OntologyResourceCountKey[] = ["workflows", "triggers", "products"];
-
-/**
- * The object types whose writes move a native count: workflows and triggers are still native pages; the rest are panel
- * entries counted by their own entries, and the legacy products count has no object type of its own.
- */
-const COUNTED_TYPE_KEYS: Readonly<Record<string, OntologyResourceCountKey>> = {
-  [WORKFLOW]: "workflows",
-  [TRIGGER]: "triggers",
-};
-
 const contextKey: InjectionKey<ManagerContext> = Symbol("ontology-manager-context");
 const clientKey: InjectionKey<ManagerClient> = Symbol("ontology-manager-client");
-const countsKey: InjectionKey<ManagerCounts> = Symbol("ontology-manager-counts");
-/**
- * The counts' one entry for a write a page shows: a panel page hands it what its writes changed and never reads or
- * refreshes the counts itself. Where no Manager is installed there is none (an edition may start without one).
- */
-export const countedTypesChangedKey: InjectionKey<ManagerCounts["changed"]> = Symbol("ontology-manager-counted-types-changed");
-
-function createCounts(client: ManagerClient): ManagerCounts {
-  const values = reactive(emptyOntologyResourceCounts());
-  const started = new Set<OntologyResourceCountKey>();
-  const loaders: Record<OntologyResourceCountKey, () => Promise<number>> = {
-    workflows: async () => (await client.loadWorkflows()).length,
-    triggers: async () => (await client.loadTriggers()).length,
-    products: async () => Object.values(await client.products.counts()).reduce((sum, count) => sum + count, 0),
-  };
-  async function readKeys(keys: readonly OntologyResourceCountKey[]) {
-    for (const key of keys) started.add(key);
-    await Promise.allSettled(
-      keys.map(async (key) => {
-        values[key] = await loaders[key]();
-      })
-    );
-  }
-  async function refresh(key?: OntologyResourceCountKey) {
-    if (key) {
-      await readKeys([key]);
-      return;
-    }
-    await readKeys(started.size ? [...started] : ALL_COUNT_KEYS);
-  }
-  return {
-    values,
-    refresh,
-    ensure: (key?: OntologyResourceCountKey) => {
-      if (key) {
-        if (!started.has(key)) void readKeys([key]);
-        return;
-      }
-      const pending = ALL_COUNT_KEYS.filter((item) => !started.has(item));
-      if (pending.length) void readKeys(pending);
-    },
-    set: (key, count) => {
-      started.add(key);
-      values[key] = count;
-    },
-    changed: (objectTypes) => {
-      const affected = [
-        ...new Set(
-          objectTypes
-            .map((type) => COUNTED_TYPE_KEYS[type])
-            .filter((item): item is OntologyResourceCountKey => item !== undefined && started.has(item))
-        ),
-      ];
-      if (affected.length) void readKeys(affected);
-    },
-  };
-}
 
 /**
- * The Manager's page-wide state for one page load: the context its components read, the one request client and the
- * resource counts. `install` provides them to the whole app, so the shell's navigation and the Manager pages share them,
- * and provides the client's MetricView reads to the `MetricViewData` the object views share with SDK apps.
+ * The Manager's page-wide state for one page load: the context its components read and the one request client.
+ * `install` provides them to the whole app, so the shell's navigation and the Manager pages share them, and provides
+ * the client's MetricView reads to the `MetricViewData` the object views share with SDK apps.
  */
 export function createManager(options: ManagerOptions) {
   const context: ManagerContext = {
@@ -184,16 +98,12 @@ export function createManager(options: ManagerOptions) {
     },
     options.onAuthFailure
   );
-  const counts = createCounts(client);
   return {
     context,
     client,
-    counts,
     install(app: App) {
       app.provide(contextKey, context);
       app.provide(clientKey, client);
-      app.provide(countsKey, counts);
-      app.provide(countedTypesChangedKey, counts.changed);
       app.provide(metricViewsKey, client.metricViews);
     },
   };
@@ -206,8 +116,6 @@ export function provideManager(manager: Manager) {
   return {
     [contextKey as symbol]: manager.context,
     [clientKey as symbol]: manager.client,
-    [countsKey as symbol]: manager.counts,
-    [countedTypesChangedKey as symbol]: manager.counts.changed,
     [metricViewsKey as symbol]: manager.client.metricViews,
   };
 }
@@ -232,10 +140,6 @@ export function useManagerLeaveCheck(check: () => Promise<boolean>) {
     onBeforeRouteLeave(check);
     onBeforeRouteUpdate(check);
   });
-}
-
-export function useManagerCounts() {
-  return injectFromPage(countsKey);
 }
 
 /** The Manager's own words, from the `ontology` entries of the page's vue-i18n tree. */

@@ -189,8 +189,6 @@ interface AppMenuItem {
   label: string;
   /** Optional icon key from the platform's curated icon set or a Vue icon component. */
   icon?: AppMenuIcon;
-  /** Optional directory count shown right-aligned; null or undefined hides the badge. */
-  count?: number | null;
   /** When set, renders the row disabled with this tooltip hint instead of clickable. */
   unavailableHint?: string;
 }

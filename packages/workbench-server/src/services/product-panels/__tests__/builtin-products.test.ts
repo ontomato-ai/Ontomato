@@ -57,6 +57,38 @@ describe("readBuiltinProducts", () => {
       expect(panels.size).toBe(entries.length);
       expect(projections.size).toBeGreaterThan(0);
       expect(panels.has("builtin-product-ontology-actions")).toBe(true);
+
+      const frame = panels.get("builtin-product-ontology-frame");
+      expect(frame).toBeDefined();
+      const countMembers = Object.entries(frame!.manifest.members).filter(([, member]) => "projectionId" in member.target);
+      expect(countMembers).toHaveLength(16);
+
+      const expectedCountReads: Record<string, string> = {
+        objectTypes: "platform:ObjectType",
+        attributes: "platform:Attribute",
+        relationships: "platform:Relationship",
+        actions: "platform:Action",
+        workflows: "platform:Workflow",
+        sdkComponents: "platform:SDKComponent",
+        productAssets: "platform:ProductAsset",
+        agents: "platform:AgentDefinition",
+      };
+      for (const [memberKey, member] of countMembers) {
+        const projectionId = "projectionId" in member.target ? member.target.projectionId : "";
+        const projection = projections.get(projectionId);
+        expect(projection?.componentId).toBe("@ontomato/sdk:ObjectCount");
+        expect(projection?.config).toEqual({ appearance: "badge" });
+        if (Object.hasOwn(expectedCountReads, memberKey)) {
+          expect(projection?.data.rows).toEqual({
+            source: { type: { kind: "PlatformObjectType", id: expectedCountReads[memberKey] } },
+            read: "count",
+            params: {},
+          });
+        } else {
+          expect(projection?.data.rows?.read).toBe("query");
+        }
+      }
+      expect(frame!.content.html).not.toContain(".sdk-object-count");
     } finally {
       await rm(bundle, { recursive: true, force: true });
     }

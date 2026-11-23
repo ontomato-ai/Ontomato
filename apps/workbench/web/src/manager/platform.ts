@@ -26,7 +26,7 @@ export function ossServicePages(app: App, router: Router) {
   manager.install(app);
   installAppHost({ credential, preferences, router, onAuthFailure });
   const client = createPlatformClient({ ...readRuntimeConfig(), credential, locale: () => preferences.locale.value });
-  const navigation = serviceNavigation(manager, platformGroups.platform, ossPlatformPages);
+  const navigation = serviceNavigation(platformGroups.platform, ossPlatformPages);
   const area = installPlatformPages(app, router, {
     navigation, routes: [...managerRoutes(), ...sharedPageRoutes()], home: startPage(),
     themeProperties: profile.presentation.themeProperties,

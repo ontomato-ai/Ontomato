@@ -14,7 +14,7 @@ import {useProductText} from './default-texts';
 import {productCategory} from '@ontomato/contracts/product-graph';
 import type {ProductGraph} from '@ontomato/contracts/product-graph';
 import ProductGraphDialog from './ProductGraphDialog.vue';
-import {useManagerClient,useManagerContext,useManagerCounts,useOntologyText} from '../context';
+import {useManagerClient,useManagerContext,useOntologyText} from '../context';
 const {ot}=useOntologyText();
 const productText=useProductText();
 const identityName=useIdentityNames();
@@ -24,7 +24,6 @@ const props=defineProps<{query:Partial<ProductQuery>}>();
 const emit=defineEmits<{query:[query:Partial<ProductQuery>];open:[id:string];create:[kind:string]}>();
 const client=useManagerClient(),items=ref<ProductSummary[]>([]),total=ref(0),loading=ref(false),error=ref(''),search=ref(props.query.search??'');
 const context=useManagerContext();
-const managerCounts=useManagerCounts();
 const graph=ref<ProductGraph|null>(null),graphLoading=ref(false),graphError=ref('');
 const graphOpen=ref(false);
 const synchronizing=ref(false);
@@ -55,7 +54,6 @@ async function resolveCapabilityNames(rows:ProductSummary[],current:number){
 function capabilityName(row:ProductSummary){return capabilityNames.value[`${capabilityKind(row)}:${row.details.resourceId}`]??ot('productLoadingCapabilityName');}
 function capabilityLabel(row:ProductSummary){return {actions:ot('productCapabilityAction'),metrics:ot('productCapabilityMetric'),definition:ot('productCapabilityDefinition'),'object-type':ot('productTargetObjectType')}[capabilityKind(row)];}
 const typeCounts=ref<Record<string,number>>({});
-watch(typeCounts,counts=>{managerCounts.values.products=Object.values(counts).reduce((sum,count)=>sum+count,0);});
 const typeTabs=computed(()=>catalogTypes.value.map(type=>({id:type.kind,label:`${type.name} ${typeCounts.value[type.kind]??0}`,icon:productIcons[type.kind]})));
 const activeKind=computed(()=>props.query.kind??'application');
 const activeCategory=computed(()=>productCategory(activeKind.value));

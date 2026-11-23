@@ -31,7 +31,7 @@ defineSlots<{
           aria-disabled="true"
           :title="page.unavailableHint"
         >
-          <component v-if="page.icon" :is="resolveIcon(page.icon)" class="page-icon" :size="16" aria-hidden="true" />
+          <component :is="resolveIcon(page.icon)" v-if="page.icon" class="page-icon" :size="16" aria-hidden="true" />
           <span class="page-label">{{ page.label }}</span>
         </span>
         <button
@@ -42,29 +42,40 @@ defineSlots<{
           :aria-current="page.id === activePageId ? 'page' : undefined"
           @click="emit('selectPage', page.id)"
         >
-          <component v-if="page.icon" :is="resolveIcon(page.icon)" class="page-icon" :size="16" aria-hidden="true" />
+          <component :is="resolveIcon(page.icon)" v-if="page.icon" class="page-icon" :size="16" aria-hidden="true" />
           <span class="page-label">{{ page.label }}</span>
-          <template v-if="$slots['item-trailing']">
+          <span v-if="$slots['item-trailing']" class="page-trailing">
             <slot name="item-trailing" :item="page" />
-          </template>
+          </span>
+          <!-- Legacy fallback count strictly for unconverted native pages (PlatformPage.count); removed together with host-built menus once those pages migrate to panels + ObjectCount. Do not add new callers. -->
           <span v-else-if="page.count !== null && page.count !== undefined" class="page-count">{{ page.count }}</span>
         </button>
       </template>
     </section>
     </div>
     <div v-if="foot" class="page-foot">
+      <span
+        v-if="foot.unavailableHint"
+        class="page-row unavailable"
+        aria-disabled="true"
+        :title="foot.unavailableHint"
+      >
+        <component :is="resolveIcon(foot.icon)" v-if="foot.icon" class="page-icon" :size="16" aria-hidden="true" />
+        <span class="page-label">{{ foot.label }}</span>
+      </span>
       <button
+        v-else
         type="button"
         class="page-row"
         :class="{ active: foot.id === activePageId }"
         :aria-current="foot.id === activePageId ? 'page' : undefined"
         @click="emit('selectPage', foot.id)"
       >
-        <component v-if="foot.icon" :is="resolveIcon(foot.icon)" class="page-icon" :size="16" aria-hidden="true" />
+        <component :is="resolveIcon(foot.icon)" v-if="foot.icon" class="page-icon" :size="16" aria-hidden="true" />
         <span class="page-label">{{ foot.label }}</span>
-        <template v-if="$slots['item-trailing']">
+        <span v-if="$slots['item-trailing']" class="page-trailing">
           <slot name="item-trailing" :item="foot" />
-        </template>
+        </span>
       </button>
     </div>
   </div>
@@ -160,12 +171,21 @@ defineSlots<{
 .page-row > :not(.page-label) {
   flex-shrink: 0;
 }
+.page-trailing {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
 .page-count {
   flex-shrink: 0;
   color: var(--el-text-color-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
   font-variant-numeric: tabular-nums;
+}
+.page-trailing:empty,
+.page-trailing:has(> :only-child:empty:not(img, svg, input)) {
+  display: none;
 }
 .page-row:focus-visible {
   outline: 2px solid var(--el-color-primary);

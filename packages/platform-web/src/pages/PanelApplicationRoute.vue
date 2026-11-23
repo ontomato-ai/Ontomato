@@ -17,7 +17,6 @@ import { localizedApplicationText } from "@ontomato/contracts/application-metada
 import { applicationFrameContextOf, type ApplicationEntryResolution, type ApplicationPanelUse } from "@ontomato/contracts/product-panels";
 import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/agent-presentation";
 import { PageComposer, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
-import { countedTypesChangedKey } from "@ontomato/ontology-manager";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
 import { cachedApplicationFrameManifest, framePanelHost, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
@@ -137,20 +136,14 @@ if (props.registerPageController) {
     unregister();
   });
 }
-/** The Manager's counts, where it is installed: told which object types a write changed, they decide whether to re-read. */
-const countedTypesChanged = inject(countedTypesChangedKey, null);
 const platformApplications = inject(platformApplicationsKey, null);
 /**
  * A change to objects the page shows, from the conversation or from a receipt for an operation in the shown frame: the
- * one place either is taken in. The shown instance re-reads what it displays of the target, and the counts hear of the
- * object types the write changed.
+ * one place either is taken in. Both the entry panel and the enclosing application frame re-read what they display.
  */
 function changed(change: PanelObjectChange) {
   host.value?.refresh(change.target, change.affected, change.operation);
   frameHost.value?.refresh(change.target, change.affected, change.operation);
-  if (change.affected) {
-    countedTypesChanged?.(change.affected.objectTypes);
-  }
 }
 watch(() => props.objectRefresh?.seq, () => {
   if (props.objectRefresh) changed(props.objectRefresh);

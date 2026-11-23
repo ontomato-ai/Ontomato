@@ -36,7 +36,7 @@ function createMockPanelContext(options: {
 }
 
 describe("official SDK AppMenu component", () => {
-  it("derives groups, active highlight, counts, icons, and automatic navigation from frame context", async () => {
+  it("derives groups, active highlight, icons, and automatic navigation from frame context", async () => {
     const { context, currentEntry, navigate } = createMockPanelContext({
       currentEntry: {
         applicationId: "app-demo",
@@ -88,7 +88,6 @@ describe("official SDK AppMenu component", () => {
         return () =>
           h(AppMenu, {
             title: "Demo App",
-            counts: { "/applications/app-demo/items": 9 },
             icons: { "/applications/app-demo/overview": "network", "/applications/app-demo/items": "boxes" },
           });
       },
@@ -105,7 +104,6 @@ describe("official SDK AppMenu component", () => {
     expect(rows).toHaveLength(2);
     expect(host.querySelectorAll(".page-row.active")).toHaveLength(1);
     expect(host.querySelector(".page-row.active")?.textContent).toContain("Overview");
-    expect(rows[1]?.querySelector(".page-count")?.textContent).toBe("9");
 
     rows[1]?.click();
     expect(navigate).toHaveBeenCalledWith("/applications/app-demo/items");
@@ -149,7 +147,7 @@ describe("official SDK AppMenu component", () => {
           key: "ontology:governance",
           label: "Governance",
           items: [
-            { id: "/permissions/members", label: "Members", count: 7 },
+            { id: "/permissions/members", label: "Members" },
           ],
         },
       ],
@@ -163,7 +161,6 @@ describe("official SDK AppMenu component", () => {
         return () =>
           h(AppMenu, {
             title: "Ontology manager",
-            counts: { "/ontology/objects": 18 },
             onSelect,
           });
       },
@@ -173,9 +170,6 @@ describe("official SDK AppMenu component", () => {
     await nextTick();
 
     const rows = [...host.querySelectorAll<HTMLButtonElement>(".page-row")];
-    expect(rows.find((row) => row.textContent?.includes("Object types"))?.querySelector(".page-count")?.textContent).toBe("18");
-    expect(rows.find((row) => row.textContent?.includes("Members"))?.querySelector(".page-count")?.textContent).toBe("7");
-
     rows.find((row) => row.textContent?.includes("Members"))?.click();
     expect(onSelect).toHaveBeenCalledWith("/permissions/members");
     expect(navigate).not.toHaveBeenCalled();
@@ -187,7 +181,7 @@ describe("official SDK AppMenu component", () => {
     const install = await prepareTemplateComponents(`<div id="app"><app-menu title="Catalog" /></div>`, baseComponents);
     const host = document.createElement("div");
     document.body.appendChild(host);
-    const app = createApp({ data: () => ({ groups: [{ key: "g", items: [{ id: "/a", label: "Alpha", count: 3 }] }] }), template: `<div id="app"><app-menu title="Catalog" :groups="groups" active-id="/a" /></div>` });
+    const app = createApp({ data: () => ({ groups: [{ key: "g", items: [{ id: "/a", label: "Alpha" }] }] }), template: `<div id="app"><app-menu title="Catalog" :groups="groups" active-id="/a" /></div>` });
     install(app);
     app.use(i18n("en"));
     app.mount(host);
@@ -195,12 +189,11 @@ describe("official SDK AppMenu component", () => {
 
     expect(host.querySelector(".app-menu-title")?.textContent).toBe("Catalog");
     expect(host.querySelector(".page-row.active")?.textContent).toContain("Alpha");
-    expect(host.querySelector(".page-count")?.textContent).toBe("3");
 
     app.unmount();
   });
 
-  it("forwards #item-trailing slot and :item-trailing-text to PlatformAppMenu while preserving :counts fallback", async () => {
+  it("forwards #item-trailing slot and :item-trailing-text to PlatformAppMenu", async () => {
     const { context } = createMockPanelContext({
       currentEntry: {
         applicationId: "ontology",

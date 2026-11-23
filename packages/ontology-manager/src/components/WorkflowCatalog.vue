@@ -24,12 +24,11 @@ import type {
   WorkflowRecord,
   WorkflowStepRecord,
 } from "../api";
-import { useManagerClient, useManagerCounts, useOntologyText } from "../context";
+import { useManagerClient, useOntologyText } from "../context";
 import { useManagerFeedback } from "../feedback";
 
 const { ot } = useOntologyText();
 const { message, confirm } = useManagerFeedback();
-const managerCounts = useManagerCounts();
 const {
   loadWorkflows,
   saveWorkflow,
@@ -98,7 +97,6 @@ async function refresh() {
   loading.value = true;
   try {
     workflows.value = await loadWorkflows();
-    managerCounts.set("workflows", workflows.value.length);
   } catch (error) {
     message.error((error as Error).message);
   } finally {

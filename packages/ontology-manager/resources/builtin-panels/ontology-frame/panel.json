@@ -14,7 +14,7 @@
         "component": "ObjectCount",
         "type": "platform:ObjectType",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -25,7 +25,7 @@
         "component": "ObjectCount",
         "type": "platform:Attribute",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -36,7 +36,7 @@
         "component": "ObjectCount",
         "type": "platform:Relationship",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -101,7 +101,7 @@
         "component": "ObjectCount",
         "type": "platform:Action",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -112,7 +112,7 @@
         "component": "ObjectCount",
         "type": "platform:Workflow",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -159,7 +159,7 @@
         "component": "ObjectCount",
         "type": "platform:SDKComponent",
         "data": {
-          "rows": "catalogue"
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"
@@ -220,11 +220,22 @@
         },
         "id": "builtin-product-om-frame-applications"
       },
+      "productAssets": {
+        "component": "ObjectCount",
+        "type": "platform:ProductAsset",
+        "data": {
+          "rows": "count"
+        },
+        "config": {
+          "appearance": "badge"
+        },
+        "id": "builtin-product-om-frame-products"
+      },
       "agents": {
         "component": "ObjectCount",
         "type": "platform:AgentDefinition",
         "data": {
-          "rows": "list"
+          "rows": "count"
         },
         "config": {
           "appearance": "badge"

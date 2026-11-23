@@ -17,6 +17,7 @@ const COUNT_MEMBERS = {
   "/ontology/projections": "projections",
   "/ontology/panels": "panels",
   "/ontology/applications": "applications",
+  "/ontology/products": "productAssets",
   "/ontology/agents": "agents",
 };
 

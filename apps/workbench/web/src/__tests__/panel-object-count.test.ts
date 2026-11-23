@@ -339,10 +339,39 @@ it("publishes read-only output total across list, paged query, empty, forbidden,
   expect(omittedTotal.instance.outputs.count?.total ?? null).toBeNull();
   resetMount();
 
-  // Empty publishes 0; forbidden and error publish null.
-  const emptyRun = mountCount(queryProjection, () => ({ status: "empty" }));
+  // Paged query receiving top-level empty (without owner total) publishes null and shows "—", never inventing 0.
+  const emptyQueryRun = mountCount(queryProjection, () => ({ status: "empty" }));
   await vi.waitFor(() => {
-    expect(emptyRun.instance.outputs.count?.total).toBe(0);
+    const el = emptyQueryRun.container.querySelector(".sdk-object-count");
+    expect(el?.getAttribute("data-state")).toBe("empty");
+    expect(el?.querySelector(".sdk-object-count-value")?.textContent?.trim()).toBe("—");
+  });
+  expect(emptyQueryRun.instance.outputs.count?.total ?? null).toBeNull();
+  resetMount();
+
+  // Paged query with explicit owner total: 0 publishes 0.
+  const zeroQueryRun = mountCount(queryProjection, () => ready({ rows: [], total: 0 }));
+  await vi.waitFor(() => {
+    expect(zeroQueryRun.instance.outputs.count?.total).toBe(0);
+    expect(zeroQueryRun.container.querySelector(".sdk-object-count-value")?.textContent?.trim()).toBe("0");
+  });
+  resetMount();
+
+  // Complete unpaged list receiving empty still publishes 0.
+  const listProjection: DirectProjection = {
+    ...meta,
+    id: "output-list-count",
+    name: "List count output",
+    componentId: "@ontomato/sdk:ObjectCount",
+    inputs: {},
+    outputs: {},
+    config: { label: "Types" },
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} } },
+  };
+  const emptyListRun = mountCount(listProjection, () => ({ status: "empty" }));
+  await vi.waitFor(() => {
+    expect(emptyListRun.instance.outputs.count?.total).toBe(0);
+    expect(emptyListRun.container.querySelector(".sdk-object-count-value")?.textContent?.trim()).toBe("0");
   });
   resetMount();
 
@@ -389,11 +418,12 @@ it("renders bare numeral in badge appearance and omits DOM nodes while unavailab
   expect(loadingToReady.instance.outputs.count?.total).toBe(19);
   resetMount();
 
-  // Forbidden, error, and omitted total render zero DOM nodes in badge appearance.
+  // Forbidden, error, omitted total, and paged empty without owner total render zero DOM nodes in badge appearance.
   for (const response of [
     { status: "forbidden" } as ProductPanelReadResponse,
     { status: "error", message: "boom" } as ProductPanelReadResponse,
     ready({ rows: [{ primaryKey: "f-1", label: "One", fields: {} }] }),
+    { status: "empty" } as ProductPanelReadResponse,
   ]) {
     const run = mountCount(badgeProjection, () => response);
     await vi.waitFor(() => expect(run.reads).toHaveLength(1));
@@ -404,13 +434,27 @@ it("renders bare numeral in badge appearance and omits DOM nodes while unavailab
     resetMount();
   }
 
-  // Empty still renders compact "0" and publishes 0.
-  const emptyBadge = mountCount(badgeProjection, () => ({ status: "empty" }));
+  // Paged query with explicit total: 0 renders compact "0" and publishes 0.
+  const zeroBadge = mountCount(badgeProjection, () => ready({ rows: [], total: 0 }));
   await vi.waitFor(() => {
-    const el = emptyBadge.container.querySelector(".sdk-object-count-badge");
+    const el = zeroBadge.container.querySelector(".sdk-object-count-badge");
     expect(el?.textContent?.trim()).toBe("0");
   });
-  expect(emptyBadge.instance.outputs.count?.total).toBe(0);
+  expect(zeroBadge.instance.outputs.count?.total).toBe(0);
+  resetMount();
+
+  // Complete unpaged list empty still renders compact "0" and publishes 0.
+  const listBadgeProjection: DirectProjection = {
+    ...badgeProjection,
+    id: "list-badge-count",
+    data: { rows: { source: { type: { kind: "PlatformObjectType", id: OBJECT_TYPE } }, read: "list", params: {} } },
+  };
+  const emptyListBadge = mountCount(listBadgeProjection, () => ({ status: "empty" }));
+  await vi.waitFor(() => {
+    const el = emptyListBadge.container.querySelector(".sdk-object-count-badge");
+    expect(el?.textContent?.trim()).toBe("0");
+  });
+  expect(emptyListBadge.instance.outputs.count?.total).toBe(0);
   resetMount();
 
   // Default appearance with omitWhenUnavailable: true hides while loading, then shows full count strip.

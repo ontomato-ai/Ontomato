@@ -173,11 +173,10 @@ export const applicationPages: readonly PlatformPage[] = [
  * platform administration group, in display order, and the applications' pages beside them.
  */
 export function serviceNavigation(
-  manager: ReturnType<typeof createManager>,
   platformGroup: PlatformGroup,
   platformPages: readonly PlatformPage[]
 ): PlatformNavigation {
-  const ontology = managerNavigation(manager.counts);
+  const ontology = managerNavigation();
   return {
     groups: [...ontology.groups, platformGroup],
     pages: [...ontology.pages, ...platformPages, ...applicationPages],
