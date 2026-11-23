@@ -72,7 +72,7 @@ export async function readCurrentPanel(owner: ProductOwner, credentials: Assista
 
 export async function readCurrentPanelLabel(owner: ProductOwner, credentials: AssistantCredentials, id: string) {
   const record = await readCurrentRecord(owner, credentials, "panel", id, true);
-  const parsed = productPanelInputSchema.pick({ name: true }).safeParse(record);
+  const parsed = productPanelInputSchema.pick({ name: true }).strip().safeParse(record);
   return parsed.success ? parsed.data.name : id;
 }
 export const readCurrentProjectionRecord = readCurrentProjection;

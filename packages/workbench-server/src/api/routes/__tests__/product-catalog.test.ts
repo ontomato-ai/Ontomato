@@ -204,7 +204,10 @@ beforeEach(() => {
           ...(sql.includes('AS "componentId"') ? { componentId: row.definition.componentId } : {}),
           ...(sql.includes("AS binding") ? { binding: row.definition.binding ?? null } : {}),
           // The panel catalogue reads each record's definition to set an unreadable one apart.
-          ...(sql.includes(",definition,") ? { definition: row.definition } : {}),
+          ...(sql.includes(",definition,") ? {
+            definition: row.definition, domainId: row.domainId, createdAt: row.createdAt,
+            template: row.definition.template ?? null,
+          } : {}),
           sortKey: sortByName ? String(row.definition.name).toLowerCase() : row.updatedAt.toISOString(),
         }))
         .filter(row => [row.name, row.description].some(text => text.toLowerCase().includes(query.toLowerCase())));

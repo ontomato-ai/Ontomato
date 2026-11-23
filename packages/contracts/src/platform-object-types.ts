@@ -467,6 +467,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     reads: {
       ...productCatalogueFormReads,
       query: { ...catalogueQuery, params: { ...catalogueQuery.params, template: "productTemplate" }, result: "panelRecordQuery" },
+      unavailable: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
       record: {
         ...catalogueRecord,
         result: "panelRecord",
@@ -479,6 +480,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
           domainShared: { kind: "scalar", type: "boolean" },
           revision: { kind: "scalar", type: "number" },
           hiddenUsedByCount: { kind: "scalar", type: "number" },
+          unavailable: { kind: "scalar", type: "boolean" },
+          unavailableReason: { kind: "scalar", type: "string" },
         },
       },
       usedBy: { ...catalogueRecord, result: "productPanelUsedBy" },
