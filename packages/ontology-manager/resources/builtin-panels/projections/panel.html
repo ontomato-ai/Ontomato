@@ -60,6 +60,12 @@
   .proj-tabs {
     margin-bottom: calc(var(--spacing-xs) * -1);
   }
+  .proj-tab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
 
   .proj-card {
     display: flex;
@@ -174,11 +180,6 @@
     border-radius: var(--radius-md);
     background: var(--sdk-bg-color);
   }
-  .proj-dialog-body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-  }
   .proj-dialog-footer {
     display: flex;
     justify-content: flex-end;
@@ -233,7 +234,7 @@
             <sdk-button size="small" @click="closeFormGuarded">{{ t('action.close') }}</sdk-button>
           </div>
           <div class="proj-form-wrap">
-            <projection slot="form" @saved="onSaved" @discarded="closeForm" @cancel="closeForm"></projection>
+            <projection slot="form" @saved="onSaved" @discarded="onFormDiscarded" @cancel="closeForm"></projection>
           </div>
         </section>
 
@@ -243,9 +244,9 @@
             <projection slot="headerTitle" :fallback-title="selectedKey">
               <template #actions>
                 <sdk-button size="small" @click="openClass">{{ t('action.openClass') }}</sdk-button>
-                <sdk-button v-if="recordReady && canEdit" size="small" @click="startEdit">{{ t('action.edit') }}</sdk-button>
-                <sdk-button v-if="recordReady && canCopy" size="small" @click="openCopy">{{ t('action.copy') }}</sdk-button>
-                <sdk-button v-if="recordReady && canDelete" size="small" type="danger" plain @click="openDelete">{{ t('action.delete') }}</sdk-button>
+                <sdk-button v-if="canStartEdit" size="small" @click="startEdit">{{ t('action.edit') }}</sdk-button>
+                <sdk-button v-if="canOpenCopy" size="small" @click="openCopy">{{ t('action.copy') }}</sdk-button>
+                <projection v-if="canTriggerDelete" slot="deleteProjection" :disabled="deleteRevision == null" @done="onDeleteDone"></projection>
               </template>
             </projection>
           </div>
@@ -273,11 +274,11 @@
               <sdk-tab-pane name="overview" :label="t('tab.overview')"></sdk-tab-pane>
               <sdk-tab-pane name="definition" :label="t('tab.definition')"></sdk-tab-pane>
               <sdk-tab-pane name="usage" :label="t('tab.usage')"></sdk-tab-pane>
-              <sdk-tab-pane v-if="canGrant" name="grants" :label="t('tab.grants')"></sdk-tab-pane>
+              <sdk-tab-pane v-if="canOpenGrant" name="grants" :label="t('tab.grants')"></sdk-tab-pane>
             </sdk-tabs>
 
             <!-- Tab 1: Overview & inline preview -->
-            <template v-if="tabModel === 'overview'">
+            <div v-show="tabModel === 'overview'" class="proj-tab-panel">
               <section class="proj-card">
                 <h3 class="proj-card-title">{{ t('section.summary') }}</h3>
                 <projection slot="summary" @navigate="onNavigateReference"></projection>
@@ -287,10 +288,10 @@
                 <h3 class="proj-card-title">{{ t('section.preview') }}</h3>
                 <projection slot="preview"></projection>
               </section>
-            </template>
+            </div>
 
             <!-- Tab 2: Definition & bindings -->
-            <template v-else-if="tabModel === 'definition'">
+            <div v-show="tabModel === 'definition'" class="proj-tab-panel">
               <section class="proj-card">
                 <h3 class="proj-card-title">{{ t('section.data') }}</h3>
                 <projection slot="dataList" @navigate="onNavigateReference"></projection>
@@ -323,10 +324,10 @@
                   <projection slot="definitionSummary"></projection>
                 </div>
               </details>
-            </template>
+            </div>
 
             <!-- Tab 3: Used by panels -->
-            <template v-else-if="tabModel === 'usage'">
+            <div v-show="tabModel === 'usage'" class="proj-tab-panel">
               <section class="proj-card">
                 <div class="proj-card-head">
                   <h3 class="proj-card-title">{{ t('section.usedBy') }}</h3>
@@ -337,10 +338,10 @@
                   {{ t('usedBy.hiddenHint', { count: hiddenUsedByCount }) }}
                 </p>
               </section>
-            </template>
+            </div>
 
             <!-- Tab 4: Permissions & sharing -->
-            <template v-else-if="tabModel === 'grants' && canGrant">
+            <div v-if="canOpenGrant" v-show="tabModel === 'grants'" class="proj-tab-panel">
               <div class="proj-share-bar">
                 <div class="proj-share-left">
                   <strong class="proj-card-title">{{ t('grants.shareTitle') }}</strong>
@@ -354,7 +355,7 @@
               </div>
 
               <projection slot="grantsList"></projection>
-            </template>
+            </div>
           </template>
         </div>
       </div>
@@ -362,6 +363,7 @@
 
     <!-- Copy projection dialog using bound OperationButton -->
     <sdk-dialog
+      v-if="canOpenCopy"
       v-model="copyDialogOpen"
       :title="t('copy.title')"
       width="440px"
@@ -379,38 +381,14 @@
       <template #footer>
         <div class="proj-dialog-footer">
           <sdk-button @click="copyDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection slot="copySubmit" :disabled="!copyReady" @done="onCopyDone"></projection>
-        </div>
-      </template>
-    </sdk-dialog>
-
-    <!-- Delete confirmation dialog using bound OperationButton -->
-    <sdk-dialog
-      v-model="deleteDialogOpen"
-      :title="t('delete.title')"
-      width="460px"
-      append-to-body
-      destroy-on-close
-    >
-      <div class="proj-dialog-body">
-        <p class="proj-muted">{{ t('delete.confirm', { name: selectedLabel || selectedKey }) }}</p>
-        <sdk-alert
-          v-if="usedByCount > 0"
-          type="warning"
-          :closable="false"
-          :title="t('delete.inUseWarning', { count: usedByCount })"
-        ></sdk-alert>
-      </div>
-      <template #footer>
-        <div class="proj-dialog-footer">
-          <sdk-button @click="deleteDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection slot="deleteSubmit" :disabled="deleteRevision == null" @done="onDeleteDone"></projection>
+          <projection v-if="canOpenCopy && copyDialogOpen" slot="copySubmit" :disabled="!copyReady" @done="onCopyDone"></projection>
         </div>
       </template>
     </sdk-dialog>
 
     <!-- Add grant dialog using official ReferencePicker & bound OperationButton -->
     <sdk-dialog
+      v-if="canOpenGrant"
       v-model="grantDialogOpen"
       :title="t('grants.dialogTitle')"
       width="480px"
@@ -422,8 +400,8 @@
           <sdk-segmented v-model="grantPrincipalKindModel" :options="grantKindOptions" size="default"></sdk-segmented>
         </sdk-form-item>
         <sdk-form-item :label="grantPrincipalKindModel === 'role' ? t('grants.role') : t('grants.principal')">
-          <projection v-if="grantPrincipalKindModel === 'role'" slot="rolePicker"></projection>
-          <projection v-else slot="userPicker"></projection>
+          <projection v-if="canOpenGrant && grantDialogOpen && grantPrincipalKindModel === 'role'" slot="rolePicker"></projection>
+          <projection v-else-if="canOpenGrant && grantDialogOpen" slot="userPicker"></projection>
         </sdk-form-item>
         <sdk-form-item :label="t('grants.verb')">
           <sdk-select v-model="grantVerbModel" style="width: 100%">
@@ -435,7 +413,7 @@
       <template #footer>
         <div class="proj-dialog-footer">
           <sdk-button @click="grantDialogOpen = false">{{ t('action.cancel') }}</sdk-button>
-          <projection slot="grantSubmit" :disabled="!grantPrincipalId" @done="onGrantAdded"></projection>
+          <projection v-if="canOpenGrant && grantDialogOpen" slot="grantSubmit" :disabled="!grantPrincipalId" @done="onGrantAdded"></projection>
         </div>
       </template>
     </sdk-dialog>
