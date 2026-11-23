@@ -119,6 +119,8 @@ export interface PanelInstance {
    * since that may be the form that takes the draft.
    */
   readonly unclaimedDraft: Readonly<Ref<UnclaimedDraft | null>>;
+  /** True while an external address update changing deep-link state is held pending reactivation. */
+  readonly addressPending?: Readonly<Ref<boolean>>;
   register(registration: PanelProjectionRegistration): () => void;
   /** Runs one described operation here, with the reader's own credential. */
   invoke(id: string, input?: Readonly<Record<string, unknown>>): Promise<unknown>;

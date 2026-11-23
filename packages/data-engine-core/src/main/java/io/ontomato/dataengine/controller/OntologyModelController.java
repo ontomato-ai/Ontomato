@@ -1,5 +1,6 @@
 package io.ontomato.dataengine.controller;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -20,7 +21,10 @@ import org.springframework.web.bind.annotation.RestController;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import io.ontomato.dataengine.config.ControllerConst;
+import io.ontomato.dataengine.core.bean.User;
 import io.ontomato.dataengine.schedules.ScheduleJson;
+import io.ontomato.dataengine.service.ExecutionTarget;
+import io.ontomato.dataengine.service.IdentityService;
 import io.ontomato.dataengine.service.OntologyModelException;
 import io.ontomato.dataengine.service.OntologyModelService;
 import io.ontomato.dataengine.service.OntologyModelService.AttributeCreate;
@@ -37,7 +41,11 @@ import io.ontomato.dataengine.service.OntologyModelService.ObjectTypeView;
 import io.ontomato.dataengine.service.OntologyModelService.RelationshipCreate;
 import io.ontomato.dataengine.service.OntologyModelService.RelationshipUpdate;
 import io.ontomato.dataengine.service.OntologyModelService.RelationshipView;
+import io.ontomato.dataengine.service.agent.AgentExecutionScope;
+import io.ontomato.dataengine.service.agent.AgentHttpException;
+import io.ontomato.dataengine.service.sys.bean.permission.UserDataPermission;
 import io.ontomato.dataengine.util.SystemUtils;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * The ontology model's resource interface; every operation is one typed read or one saved rule.
@@ -75,6 +83,15 @@ public class OntologyModelController {
 	public record RelationshipDeleteRequest(String relationship) {
 	}
 
+	private final AgentExecutionScope agentExecutionScope;
+
+	public OntologyModelController(AgentExecutionScope agentExecutionScope) {
+		this.agentExecutionScope = agentExecutionScope;
+	}
+
+	@Autowired
+	private IdentityService identityService;
+
 	@Autowired
 	private OntologyModelService service;
 
@@ -89,6 +106,10 @@ public class OntologyModelController {
 			code = refused.code();
 			message = refused.getMessage();
 			details = refused.details();
+		} else if (error instanceof AgentHttpException refused) {
+			status = refused.status();
+			code = refused.code();
+			message = refused.getMessage();
 		} else if (error instanceof IllegalArgumentException invalid) {
 			// The whole-model primary-key check refuses a write while a stored class breaks the rule.
 			status = 409;
@@ -117,38 +138,82 @@ public class OntologyModelController {
 	}
 
 	@GetMapping("/object-types")
-	public List<ObjectTypeView> objectTypes(@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
-		return service.objectTypes(SystemUtils.getCurUser(), lang);
+	public List<ObjectTypeView> objectTypes(
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
+			HttpServletRequest executionRequest) {
+		User user = SystemUtils.getCurUser();
+		ExecutionTarget target = executionTarget(executionRequest, user);
+		List<ObjectTypeView> types = service.objectTypes(user, lang);
+		if (isClassScoped(target)) {
+			return types.stream().filter(type -> target.classNames().contains(type.className())).toList();
+		}
+		return types;
 	}
 
 	@GetMapping("/object-type")
 	public ObjectTypeView objectType(@RequestParam String className,
-			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
-		return service.objectType(className, SystemUtils.getCurUser(), lang);
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
+			HttpServletRequest executionRequest) {
+		User user = SystemUtils.getCurUser();
+		requireClassScope(executionTarget(executionRequest, user), className);
+		return service.objectType(className, user, lang);
 	}
 
 	@GetMapping("/object-type/deletion-impact")
 	public DeletionImpact deletionImpact(@RequestParam String className,
-			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
-		return service.deletionImpact(className, SystemUtils.getCurUser(), lang);
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
+			HttpServletRequest executionRequest) {
+		User user = SystemUtils.getCurUser();
+		requireClassScope(executionTarget(executionRequest, user), className);
+		return service.deletionImpact(className, user, lang);
 	}
 
 	@GetMapping("/attributes")
 	public List<AttributeView> attributes(@RequestParam(required = false) String className,
-			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
-		return service.attributes(className, SystemUtils.getCurUser(), lang);
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
+			HttpServletRequest executionRequest) {
+		User user = SystemUtils.getCurUser();
+		ExecutionTarget target = executionTarget(executionRequest, user);
+		if (className != null && !className.isBlank()) {
+			requireClassScope(target, className);
+			return service.attributes(className, user, lang);
+		}
+		List<AttributeView> attrs = service.attributes(className, user, lang);
+		if (isClassScoped(target)) {
+			return attrs.stream().filter(attr -> target.classNames().contains(attr.className())).toList();
+		}
+		return attrs;
 	}
 
 	@GetMapping("/relationships")
 	public List<RelationshipView> relationships(@RequestParam(required = false) String className,
-			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
-		return service.relationships(className, SystemUtils.getCurUser(), lang);
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
+			HttpServletRequest executionRequest) {
+		User user = SystemUtils.getCurUser();
+		ExecutionTarget target = executionTarget(executionRequest, user);
+		if (className != null && !className.isBlank()) {
+			requireClassScope(target, className);
+		}
+		List<RelationshipView> relations = service.relationships(className, user, lang);
+		if (isClassScoped(target)) {
+			// A relationship is visible only when both endpoints are inside the caller's class scope.
+			return relations.stream()
+					.filter(rel -> target.classNames().contains(rel.fromclass())
+							&& target.classNames().contains(rel.toclass()))
+					.toList();
+		}
+		return relations;
 	}
 
 	@GetMapping("/relationship")
 	public RelationshipView relationship(@RequestParam String relationship,
-			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
-		return service.relationship(relationship, SystemUtils.getCurUser(), lang);
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
+			HttpServletRequest executionRequest) {
+		User user = SystemUtils.getCurUser();
+		ExecutionTarget target = executionTarget(executionRequest, user);
+		RelationshipView view = service.relationship(relationship, user, lang);
+		requireClassScope(target, view.fromclass(), view.toclass());
+		return view;
 	}
 
 	/** Field labels for catalogs that list model objects; readers get them under the same permission as the lists. */
@@ -231,19 +296,103 @@ public class OntologyModelController {
 
 	@PostMapping("/object-type/form")
 	public FormDescription objectTypeForm(@RequestBody FormRequest body,
-			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
-		return service.objectTypeForm(body, SystemUtils.getCurUser(), lang);
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
+			HttpServletRequest executionRequest) {
+		User user = SystemUtils.getCurUser();
+		ExecutionTarget target = executionTarget(executionRequest, user);
+		if (isClassScoped(target) && body != null) {
+			if (isObjectTarget(body)) {
+				requireClassScope(target, body.target().primaryKey());
+			}
+			requireBodyValueClassScope(target, body.values(), "className");
+		}
+		return service.objectTypeForm(body, user, lang);
 	}
 
 	@PostMapping("/attribute/form")
 	public FormDescription attributeForm(@RequestBody FormRequest body,
-			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
-		return service.attributeForm(body, SystemUtils.getCurUser(), lang);
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
+			HttpServletRequest executionRequest) {
+		User user = SystemUtils.getCurUser();
+		ExecutionTarget target = executionTarget(executionRequest, user);
+		if (isClassScoped(target) && body != null) {
+			if (isObjectTarget(body)) {
+				String ownerClass = attributeTargetClass(body.target().primaryKey());
+				if (ownerClass != null) {
+					requireClassScope(target, ownerClass);
+				}
+			}
+			requireBodyValueClassScope(target, body.values(), "className");
+		}
+		return service.attributeForm(body, user, lang);
 	}
 
 	@PostMapping("/relationship/form")
 	public FormDescription relationshipForm(@RequestBody FormRequest body,
-			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang) {
-		return service.relationshipForm(body, SystemUtils.getCurUser(), lang);
+			@RequestHeader(value = ControllerConst.LANG_HEADER_KEY, required = false) String lang,
+			HttpServletRequest executionRequest) {
+		User user = SystemUtils.getCurUser();
+		ExecutionTarget target = executionTarget(executionRequest, user);
+		if (isClassScoped(target) && body != null) {
+			if (isObjectTarget(body) && body.target().primaryKey() != null && !body.target().primaryKey().isBlank()) {
+				RelationshipView existing = service.relationship(body.target().primaryKey().trim(), user, lang);
+				requireClassScope(target, existing.fromclass(), existing.toclass());
+			}
+			requireBodyValueClassScope(target, body.values(), "fromclass");
+			requireBodyValueClassScope(target, body.values(), "toclass");
+		}
+		return service.relationshipForm(body, user, lang);
+	}
+
+	private ExecutionTarget executionTarget(HttpServletRequest executionRequest, User user) {
+		if (executionRequest == null || executionRequest.getHeader("X-Ontomato-Retrieval-Caller-Id") == null) {
+			return ExecutionTarget.LIVE;
+		}
+		UserDataPermission permission = identityService == null ? null : identityService.getCurrentUserDataPermission();
+		return agentExecutionScope.target(executionRequest, user, permission, ExecutionTarget.LIVE);
+	}
+
+	private static boolean isClassScoped(ExecutionTarget target) {
+		return target.testing() || !target.classNames().isEmpty();
+	}
+
+	private static boolean isObjectTarget(FormRequest body) {
+		return body.target() != null && "object".equals(body.target().kind());
+	}
+
+	private static String attributeTargetClass(String primaryKey) {
+		if (primaryKey == null || primaryKey.isBlank()) {
+			return null;
+		}
+		try {
+			JsonNode node = ScheduleJson.JSON.readTree(primaryKey);
+			if (node.isArray() && node.size() == 2 && node.get(0).isTextual() && node.get(1).isTextual()) {
+				return node.get(0).asText();
+			}
+		} catch (Exception ignored) {
+			// Let the service report malformed keys as 400.
+		}
+		return null;
+	}
+
+	private static void requireBodyValueClassScope(ExecutionTarget target, Map<String, Object> values, String key) {
+		if (values != null && values.get(key) instanceof String className && !className.isBlank()) {
+			requireClassScope(target, className.trim());
+		}
+	}
+
+	private static void requireClassScope(ExecutionTarget target, String... classNames) {
+		if (!isClassScoped(target)) {
+			return;
+		}
+		List<String> requested = new ArrayList<>(classNames.length);
+		for (String name : classNames) {
+			if (name == null || name.isBlank()) {
+				target.requireClasses(List.of());
+				return;
+			}
+			requested.add(name);
+		}
+		target.requireClasses(requested);
 	}
 }

@@ -165,6 +165,7 @@
                         <configuration>
                             <includes>
                                 <include>**/AgentContractBoundaryTest.java</include>
+                                <include>**/AgentClassScopeReadBoundaryTest.java</include>
                                 <include>**/SandboxSampleInputTest.java</include>
                                 <include>**/SandboxConnectionBindingTest.java</include>
                                 <include>**/JacksonAgentBoundaryTest.java</include>

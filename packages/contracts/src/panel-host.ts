@@ -5,8 +5,9 @@ import { pageContextSchema } from "./page-context";
 import { pageDraftLinkSchema } from "./page-draft";
 import { panelUseRefSchema } from "./panel-agent";
 import {
-  matchesDirectPanelValue, panelMemberPathSchema, panelMemberPathSegmentSchema, panelObjectIdentitySchema, panelObjectRefSchema,
-  panelOpenRequestSchema, panelOperationSchema, panelOperationUnavailableSchema, type PanelDeepLinkStateValue, type PanelManifest, type PanelObjectIdentity,
+  matchesDirectPanelValue, panelDeepLinkStateValueSchema, panelMemberPathSchema, panelMemberPathSegmentSchema,
+  panelObjectIdentitySchema, panelObjectRefSchema, panelOpenRequestSchema, panelOperationSchema,
+  panelOperationUnavailableSchema, type PanelDeepLinkStateValue, type PanelManifest, type PanelObjectIdentity,
 } from "./panel-manifest";
 import { domainComponentIdSchema, domainComponentRuntimeSchema } from "./domain-component-runtime";
 import { panelOwnerOperationDescriptorSchema } from "./panel-operations";
@@ -349,8 +350,25 @@ export function panelAddress(path: string, state: Record<string, unknown>): stri
   return rest ? `${route}?${rest}` : route!;
 }
 
-/** The state an address restores, or none. The host checks it against the panel's declaration before using it. */
+/**
+ * The state an address restores, or none. Malformed JSON or entries that cannot cross the deep-link boundary are
+ * safely ignored so a hand-edited or stale URL never crashes the route; the host further normalizes and validates
+ * remaining entries against the panel's manifest.
+ */
 export function panelAddressState(address: string): Record<string, PanelDeepLinkStateValue> {
-  const value = new URL(address, "http://page.invalid").searchParams.get("state");
-  return value === null ? {} : panelOpenRequestSchema.shape.state.parse(JSON.parse(value));
+  const raw = new URL(address, "http://page.invalid").searchParams.get("state");
+  if (raw === null) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const result: Record<string, PanelDeepLinkStateValue> = {};
+  for (const [name, value] of Object.entries(parsed)) {
+    const entry = panelDeepLinkStateValueSchema.safeParse(value);
+    if (entry.success) result[name] = entry.data;
+  }
+  return result;
 }

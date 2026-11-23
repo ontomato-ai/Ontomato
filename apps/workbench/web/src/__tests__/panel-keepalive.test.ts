@@ -42,6 +42,8 @@ const secondTask = { ...task, id: "ac186b00-a3dd-46d2-b404-72065d877a34", title:
 
 /** Holds P's definition check until the test lets it answer. */
 let snapshotGate: Promise<void> | null = null;
+/** Holds reads for a specific object key until the test lets them answer. */
+let readGate: { primaryKey: string; promise: Promise<void> } | null = null;
 /** The reader's answer to the platform's unsaved-changes question. */
 let leaveAnswer = true;
 const asked = vi.fn(async () => leaveAnswer);
@@ -57,7 +59,10 @@ function read(request: Sent) {
   if (dataName === "operation")
     return { handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" }, inputSchema: {}, resultSchema: {}, batch: false };
   return {
-    fields: [field("/name", "Name")], values: { name: "Nightly" }, errors: [], revision: 3,
+    fields: [field("/name", "Name")],
+    values: { name: inputs.task?.primaryKey === secondTask.id ? "Second form" : "Nightly" },
+    errors: [],
+    revision: 3,
     save: { method: "PUT" as const, path: "/tasks/:id", bodySchema: {}, draftOperation: `${SCHEDULED_TASK}.save` },
   };
 }
@@ -77,7 +82,13 @@ function answer(request: Sent) {
   if (request.path === `/api/product-panels/${q.id}/snapshot`) return panelSnapshot(q, projections, request);
   const projection = Object.values(projections).find(one => request.path === `/api/product-projections/${one.id}`);
   if (projection) return Response.json({ projection });
-  if (request.path === "/api/product-panels/read") return Response.json({ status: "ready", value: read(request) });
+  if (request.path === "/api/product-panels/read") {
+    const body = request.body as Read;
+    if (readGate && body.inputs.task?.primaryKey === readGate.primaryKey) {
+      return readGate.promise.then(() => Response.json({ status: "ready", value: read(request) }));
+    }
+    return Response.json({ status: "ready", value: read(request) });
+  }
   return nothingAt(request);
 }
 
@@ -118,6 +129,7 @@ const reads = (sent: Sent[], dataName?: string) => sent.filter(request => reques
 
 afterEach(() => {
   snapshotGate = null;
+  readGate = null;
   leaveAnswer = true;
   asked.mockClear();
   uses = allUses;
@@ -349,5 +361,77 @@ it("takes a kept author page's targets out of the document's stream, and puts th
   } finally {
     page.app.unmount();
     visible.mockRestore();
+  }
+});
+
+it("normalizes string shorthand object state in URL and never poisons the kept page for subsequent navigation", async () => {
+  const shorthandUrl = `${at("tasks")}?state=${encodeURIComponent(JSON.stringify({ selectedTask: "nonexistent_acceptance_check" }))}`;
+  const { app, element, router } = await openApplication(shorthandUrl);
+  try {
+    const tasks = await shownPanel(element);
+    expect(element.querySelector(".panel-host-error")).toBeNull();
+    await vi.waitFor(() =>
+      expect(panelAddressState(router.currentRoute.value.fullPath)).toEqual({
+        selectedTask: { className: SCHEDULED_TASK, primaryKey: "nonexistent_acceptance_check" },
+      }),
+    );
+
+    // Leave to summary, then navigate back with a valid ObjectRef: kept page switches cleanly without error.
+    await router.push(at("summary"));
+    await shownPanel(element, tasks);
+    await router.push(panelAddress(at("tasks"), deepState));
+    await vi.waitFor(() => expect(shown(tasks)).toBe(true));
+    expect(element.querySelector(".panel-host-error")).toBeNull();
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBe(task.title));
+    await vi.waitFor(() =>
+      expect(tasks.querySelector<HTMLInputElement>("[data-member='form'] [data-field='/name'] input")?.value).toBe("Nightly"),
+    );
+  } finally {
+    app.unmount();
+  }
+});
+
+it("hides the previous target's form and summary immediately while reopening a kept page for a different target", async () => {
+  const { app, element, router } = await openApplication(panelAddress(at("tasks"), deepState));
+  try {
+    const tasks = await shownPanel(element);
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBe(task.title));
+    await vi.waitFor(() =>
+      expect(tasks.querySelector<HTMLInputElement>("[data-member='form'] [data-field='/name'] input")?.value).toBe("Nightly"),
+    );
+
+    // Leave to summary, then return to tasks for a DIFFERENT target while both reopen and reads are in flight.
+    await router.push(at("summary"));
+    await shownPanel(element, tasks);
+
+    let releaseSnapshot!: () => void;
+    snapshotGate = new Promise<void>(resolve => (releaseSnapshot = resolve));
+    let releaseRead!: () => void;
+    readGate = { primaryKey: secondTask.id, promise: new Promise<void>(resolve => (releaseRead = resolve)) };
+
+    await router.push(panelAddress(at("tasks"), { selectedTask: { className: SCHEDULED_TASK, primaryKey: secondTask.id } }));
+    await vi.waitFor(() => expect(shown(tasks)).toBe(true));
+
+    // Even before reopen's snapshot check resolves, the previous target's editable form and summary must not flash.
+    await vi.waitFor(() => {
+      expect(tasks.querySelector("[data-member='form'] [data-field='/name'] input")).toBeNull();
+      expect(summaryTitle(tasks)).toBeUndefined();
+    });
+
+    // After reopen completes and the new target's read is still pending, keep showing loading (never previous record).
+    releaseSnapshot();
+    await nextTick();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(tasks.querySelector("[data-member='form'] [data-field='/name'] input")).toBeNull();
+    expect(summaryTitle(tasks)).toBeUndefined();
+
+    // Once the new target's read resolves, display the new record.
+    releaseRead();
+    await vi.waitFor(() => expect(summaryTitle(tasks)).toBe(secondTask.title));
+    await vi.waitFor(() =>
+      expect(tasks.querySelector<HTMLInputElement>("[data-member='form'] [data-field='/name'] input")?.value).toBe("Second form"),
+    );
+  } finally {
+    app.unmount();
   }
 });

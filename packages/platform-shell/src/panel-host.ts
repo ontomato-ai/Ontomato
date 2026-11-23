@@ -18,7 +18,7 @@ import {
   type PanelHostMessage,
   type PanelRefreshPort,
 } from "@ontomato/contracts/panel-host";
-import type { PanelObjectIdentity, PanelOperation, PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
+import { normalizeExternalPanelState, type PanelObjectIdentity, type PanelOperation, type PanelThemeOverrides } from "@ontomato/contracts/panel-manifest";
 import type { PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { adoptPanelStyle, PanelStyleOutsideError, scopedPanelStyle, splitCodedPanelHtml } from "./panel-content";
 import type { PanelUseRef } from "@ontomato/contracts/panel-agent";
@@ -792,6 +792,11 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
         options.withdrawn?.();
         return;
       }
+      // Recover a kept instance whose previous mount failed instead of leaving it permanently poisoned.
+      if ((error.value !== "" || displayLoad.value.status === "error") && !direct.value && !document.value) {
+        await adopt(shown);
+        if (!active || !shownToReader()) return;
+      }
       openBridge(true);
       options.reopened?.();
       follow(shown);
@@ -806,6 +811,9 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
     const shown = source.value;
     if (!shown) return;
     if (now) {
+      // Deliver any new external address immediately so the kept instance can enter loading state before reopen's
+      // permission/snapshot check finishes instead of flashing the previously viewed record.
+      syncAddress();
       void reopen(shown);
       return;
     }
@@ -835,12 +843,28 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   function requestedState(panel: HostedPanelSource["panel"]) {
-    return Object.fromEntries(Object.entries(options.initial()).filter(([name]) => panel.manifest.state[name]?.deepLink));
+    return normalizeExternalPanelState(panel.manifest, options.initial());
   }
 
   function syncAddress(): boolean {
-    if (!frameReady || !source.value) return false;
-    const requested = panelAddress(pageAddress(), requestedState(source.value.panel));
+    const shown = source.value;
+    if (!shown) return false;
+    const requested = panelAddress(pageAddress(), requestedState(shown.panel));
+    if (error.value !== "" || displayLoad.value.status === "error") {
+      if (requested === address.value) return false;
+      if (!direct.value && !document.value) {
+        void adopt(shown).catch(failure => {
+          if (active) reportPanelUnavailable(failure);
+        });
+        return true;
+      }
+      error.value = "";
+      displayLoad.value = { status: "ready" };
+      frameReady = true;
+      tellAddress(requested);
+      return true;
+    }
+    if (!frameReady) return false;
     if (requested === address.value) return false;
     tellAddress(requested);
     return true;
