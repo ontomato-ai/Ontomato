@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter, RouterView } from "vue-router";
 import { appsSdkComponentCatalogEntrySchema } from "@ontomato/contracts/apps-sdk";
 import { expandPanelAuthoringMember } from "@ontomato/contracts/panel-authoring-expansion";
 import { panelAuthoringManifestSchema } from "@ontomato/contracts/panel-authoring";
-import { definePanel } from "@ontomato/contracts/panel-manifest";
+import { definePanel, type PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import { panelAddress, type ProductPanelReadRequest } from "@ontomato/contracts/panel-host";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { ATTRIBUTE, OBJECT_TYPE, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
@@ -120,6 +120,7 @@ interface FixtureAttribute {
   classNameLabel: string;
   name: string;
   label: string;
+  attrDesc?: string;
   type: string;
   primaryKeyFlag: boolean;
   businessKey: boolean;
@@ -143,7 +144,7 @@ function toAttributeRecord(item: FixtureAttribute) {
       },
       name: item.name,
       type: item.type,
-      attrDesc: `${item.label} description`,
+      attrDesc: item.attrDesc ?? `${item.label} description`,
       enable: item.enable,
       businessKey: item.businessKey,
       primaryKey: item.primaryKeyFlag,
@@ -202,6 +203,7 @@ function createAttributeForm() {
 }
 
 function editAttributeForm(item: FixtureAttribute) {
+  const attrDesc = item.attrDesc ?? `${item.label} description`;
   return {
     fields: [
       {
@@ -210,14 +212,41 @@ function editAttributeForm(item: FixtureAttribute) {
         control: { kind: "text" },
         valueSchema: {},
         required: true,
+        readOnly: true,
+      },
+      {
+        path: "/showName",
+        label: "Display name",
+        control: { kind: "text" },
+        valueSchema: {},
+        required: true,
+        readOnly: false,
+      },
+      {
+        path: "/attrDesc",
+        label: "Description",
+        control: { kind: "text" },
+        valueSchema: {},
+        required: false,
         readOnly: false,
       },
     ],
-    values: { name: item.name },
+    values: { name: item.name, showName: item.label, attrDesc },
     errors: [],
     revision: 1,
     save: { method: "PUT", path: `/ontology/model/attribute/${item.primaryKey}`, bodySchema: {}, draftOperation: `${ATTRIBUTE}.save` },
   };
+}
+
+async function clickDialogButton(text: string) {
+  await vi.waitFor(() => {
+    const boxes = [...document.querySelectorAll<HTMLElement>(".el-message-box")];
+    const open = boxes.find((box) => box.closest<HTMLElement>(".el-overlay")?.style.display !== "none");
+    expect(open).toBeDefined();
+    const button = [...open!.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === text);
+    expect(button).toBeDefined();
+    button!.click();
+  });
 }
 
 type DataReadRequest = Extract<ProductPanelReadRequest, { dataName: string }>;
@@ -226,7 +255,7 @@ function mountAttributesRoute(options: {
   initialState?: Record<string, unknown>;
   attributes: FixtureAttribute[];
   onRecordRead?: (key: string, defaultResponse: () => Response) => Response | Promise<Response>;
-  onOperation?: (operationId: string, targetKey: string) => unknown;
+  onOperation?: (operationId: string, targetKey: string, call: PanelOperationCall) => unknown;
 }) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -239,7 +268,7 @@ function mountAttributesRoute(options: {
   const intents = humanIntents(
     (operationId, call) => {
       const targetKey = call.target?.kind === "object" ? call.target.primaryKey : "";
-      if (options.onOperation) return options.onOperation(operationId, targetKey);
+      if (options.onOperation) return options.onOperation(operationId, targetKey, call);
       return {
         kind: "success",
         data: {},
@@ -584,6 +613,129 @@ describe("ontology-attributes builtin panel", () => {
         expect(element.querySelector(".attrs-detail")).toBeNull();
         expect(element.querySelector(".attrs-catalog")).not.toBeNull();
         expect(route.router.currentRoute.value.query.selected).toBeUndefined();
+      });
+    } finally {
+      app.unmount();
+    }
+  });
+
+  it("renders page-header Save and Discard controls while editing an existing attribute, submits platform:Attribute.save, and restores on Discard", async () => {
+    const fixture: FixtureAttribute[] = [
+      {
+        primaryKey: "Order.amount",
+        className: "Order",
+        classNameLabel: "Order",
+        name: "amount",
+        label: "Amount",
+        attrDesc: "Order total amount",
+        type: "number",
+        primaryKeyFlag: false,
+        businessKey: false,
+        enable: true,
+      },
+    ];
+
+    const formProjection = projections.get("builtin-product-296cb589-24bc-4ea4-b615-6e0e6b111092");
+    expect(formProjection?.operations?.save?.operation).toEqual({
+      kind: "PlatformOperation",
+      id: `${ATTRIBUTE}.save`,
+    });
+
+    const saveCalls: Array<{ operationId: string; targetKey: string; values: Record<string, unknown> }> = [];
+    const route = mountAttributesRoute({
+      initialState: { selected: { className: ATTRIBUTE, primaryKey: "Order.amount" } },
+      attributes: fixture,
+      onOperation: (operationId, targetKey, call) => {
+        if (operationId === "form.save") {
+          const values = ((call.input as { values?: Record<string, unknown> } | undefined)?.values ?? {});
+          saveCalls.push({ operationId, targetKey, values });
+          const target = fixture.find((item) => item.primaryKey === targetKey);
+          if (target) {
+            if (typeof values.showName === "string") target.label = values.showName;
+            if (typeof values.attrDesc === "string") target.attrDesc = values.attrDesc;
+          }
+          return {
+            kind: "success",
+            data: { primaryKey: targetKey, className: ATTRIBUTE },
+            affected: {
+              objects: [{ objectType: ATTRIBUTE, primaryKey: targetKey }],
+              objectTypes: [ATTRIBUTE],
+            },
+          };
+        }
+        return { kind: "success", data: {} };
+      },
+    });
+
+    const { app, element } = await route.open();
+
+    try {
+      const saveBtn = () => element.querySelector<HTMLButtonElement>(".attrs-detail .sdk-page-header button.primary");
+      const discardBtn = () => element.querySelector<HTMLButtonElement>(".attrs-detail .sdk-page-header button.secondary");
+      const unsavedNotice = () =>
+        element.querySelector<HTMLElement>(".attrs-detail .sdk-page-header .sdk-page-header-unsaved")?.textContent?.trim() ?? null;
+      const showNameInput = () =>
+        element.querySelector<HTMLInputElement>('.attrs-form-wrap [data-field="/showName"] input');
+      const attrDescInput = () =>
+        element.querySelector<HTMLInputElement>('.attrs-form-wrap [data-field="/attrDesc"] input');
+
+      // 1. Once detail is ready, PageHeader renders Save in a disabled clean state with no Discard button.
+      await vi.waitFor(() => {
+        expect(showNameInput()).not.toBeNull();
+        expect(showNameInput()!.value).toBe("Amount");
+        expect(saveBtn()).not.toBeNull();
+        expect(saveBtn()!.textContent?.trim()).toBe("Save");
+        expect(saveBtn()!.disabled).toBe(true);
+        expect(discardBtn()).toBeNull();
+        expect(unsavedNotice()).toBeNull();
+      });
+
+      // 2. Editing an editable field makes the form dirty -> Discard appears and Save becomes enabled.
+      const input = showNameInput()!;
+      input.value = "Total amount";
+      input.dispatchEvent(new Event("input"));
+
+      await vi.waitFor(() => {
+        expect(saveBtn()!.disabled).toBe(false);
+        expect(discardBtn()).not.toBeNull();
+        expect(discardBtn()!.textContent?.trim()).toBe("Discard");
+        expect(unsavedNotice()).toBe("Unsaved changes");
+      });
+
+      // 3. Clicking header Save dispatches owner save and settles the form back to clean state.
+      saveBtn()!.click();
+
+      await vi.waitFor(() => {
+        expect(saveCalls).toHaveLength(1);
+        expect(saveCalls[0]).toEqual({
+          operationId: "form.save",
+          targetKey: "Order.amount",
+          values: { name: "amount", showName: "Total amount", attrDesc: "Order total amount" },
+        });
+        expect(saveBtn()!.disabled).toBe(true);
+        expect(discardBtn()).toBeNull();
+        expect(unsavedNotice()).toBeNull();
+      });
+      expect(showNameInput()!.value).toBe("Total amount");
+
+      // 4. Editing again and clicking Discard confirms via dialog and restores the last saved values.
+      const desc = attrDescInput()!;
+      desc.value = "Temporary unsaved description";
+      desc.dispatchEvent(new Event("input"));
+
+      await vi.waitFor(() => {
+        expect(saveBtn()!.disabled).toBe(false);
+        expect(discardBtn()).not.toBeNull();
+      });
+
+      discardBtn()!.click();
+      await clickDialogButton("Discard");
+
+      await vi.waitFor(() => {
+        expect(attrDescInput()!.value).toBe("Order total amount");
+        expect(saveBtn()!.disabled).toBe(true);
+        expect(discardBtn()).toBeNull();
+        expect(unsavedNotice()).toBeNull();
       });
     } finally {
       app.unmount();

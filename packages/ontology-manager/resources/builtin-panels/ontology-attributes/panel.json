@@ -111,7 +111,7 @@
             {
               "key": "businessKey",
               "labelKey": "attr.colBizKey",
-              "width": 92,
+              "width": 112,
               "valueMap": {
                 "true": {
                   "labelKey": "attr.yes",
@@ -125,7 +125,7 @@
             {
               "key": "primaryKey",
               "labelKey": "attr.colPrimaryKey",
-              "width": 92,
+              "width": 112,
               "valueMap": {
                 "true": {
                   "labelKey": "attr.yes",
