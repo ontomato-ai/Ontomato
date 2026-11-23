@@ -183,6 +183,8 @@
         "target": "checked",
         "config": {
           "size": "small",
+          "text": true,
+          "showBatchCount": false,
           "icon": "check"
         },
         "id": "builtin-product-5bbc892f-1e45-47db-a991-23e7af1246dd"
@@ -195,6 +197,7 @@
         "config": {
           "type": "danger",
           "size": "small",
+          "showBatchCount": false,
           "icon": "trash"
         },
         "id": "builtin-product-ef4e17ed-f3a4-4fb8-bcf3-d9d285772c6b"

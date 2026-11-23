@@ -12,8 +12,10 @@ import {
   APPROVE_KNOWLEDGE,
   BUSINESS_KNOWLEDGE,
   DASHBOARD_CARD,
+  DEFINITION,
   DELETE_AGENT,
   DELETE_KNOWLEDGE,
+  DELETE_ROLE,
   ONTOLOGY_TYPE,
   PRODUCT_PANEL,
   PRODUCT_PROJECTION,
@@ -326,8 +328,12 @@ describe("platform-ontology composite query", () => {
     expect(sdkComponent?.operations).toBeUndefined();
 
     const role = byId.get(ROLE);
-    expect(Object.keys(role?.reads ?? {}).sort()).toEqual(["options", "resolve"]);
-    expect(role?.operations).toBeUndefined();
+    expect(Object.keys(role?.reads ?? {}).sort()).toEqual(["createForm", "form", "options", "query", "record", "resolve"]);
+    expect(role?.operations?.map((op) => op.id)).toEqual([`${ROLE}.save`, DELETE_ROLE]);
+
+    const definition = byId.get(DEFINITION);
+    expect(definition?.reads).toBeUndefined();
+    expect(definition?.operations).toBeUndefined();
   });
 
   it("coalesces shared owners in counts and separates ok, refused, and failed statuses across all four layers", async () => {
