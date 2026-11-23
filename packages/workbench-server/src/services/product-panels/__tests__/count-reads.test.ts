@@ -112,7 +112,7 @@ describe("platform count reads", () => {
     { type: ACTION, path: "/action/queryList", rows: [{ id: "a", name: "Approve" }], post: true },
     { type: WORKFLOW, path: "/workflow/query", rows: [{ id: "w", name: "Restock" }], post: true },
   ])("$type counts only the records returned to the current viewer", async ({ type, path, rows, post }) => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: NonNullable<Parameters<typeof fetch>[1]>) => {
       expect(new URL(url).pathname).toBe(path);
       expect(init.method).toBe(post ? "POST" : "GET");
       if (post) expect(init.body).toBe("{}");
