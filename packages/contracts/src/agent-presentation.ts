@@ -26,15 +26,10 @@ function hasStateQuery(address: string): boolean {
 export const presentRequestSchema = z.object({
   target: z.union([outputPathSchema, pageAddressSchema]),
   state: runtimeJsonObjectSchema.optional(),
-  /** Explicitly allow replacing unsaved edits in the target form after the user confirms. */
-  overwriteUnsavedDraft: z.boolean().optional(),
 }).strict().refine(
   ({ target, state }) => state === undefined ||
     (target.startsWith("/") && !hasStateQuery(target)),
   { path: ["state"], message: "State requires a page address that provides no state query" },
-).refine(
-  ({ target, overwriteUnsavedDraft }) => overwriteUnsavedDraft === undefined || target.startsWith("/"),
-  { path: ["overwriteUnsavedDraft"], message: "overwriteUnsavedDraft applies only to a page address" },
 );
 export type PresentRequest = z.infer<typeof presentRequestSchema>;
 
@@ -375,7 +370,6 @@ export const presentationFrameSchema = z.object({
       kind: z.literal("page"),
       address: pageAddressSchema,
       state: runtimeJsonObjectSchema.optional(),
-      overwriteUnsavedDraft: z.boolean().optional(),
     }).strict(),
     z.object({ kind: z.literal("observe") }).strict(),
     z.object({

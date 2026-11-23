@@ -24,11 +24,9 @@ const declaration = props.instance.direct.members[props.member];
 if (!declaration) throw new Error(`The panel declares no member '${props.member}'`);
 const listRowSlot = useListRowSlot();
 const isScoped = props.inputs !== undefined || listRowSlot !== null;
-const stopDrawn = isScoped ? () => {} : props.instance.markDrawn(props.member);
 let disposeScoped: (() => void) | undefined;
 onBeforeUnmount(() => {
   disposeScoped?.();
-  stopDrawn();
 });
 const failure = shallowRef<Error | null>(null);
 const loaded = shallowRef<{ component: Component; slot: ProjectionSlot; member: PanelMemberContext } | null>(null);
@@ -74,7 +72,6 @@ if (isScoped) {
       loaded.value = { component, slot: { slot: props.member, projection: member.projection, get inputs() { return member.inputs.value; } }, member };
     }
   }).catch((reason: unknown) => {
-    stopDrawn();
     failure.value = reason instanceof Error ? reason : new Error(String(reason));
   });
 }

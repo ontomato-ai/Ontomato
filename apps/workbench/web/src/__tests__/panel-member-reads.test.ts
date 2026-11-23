@@ -61,7 +61,7 @@ it("reads nothing for a datum whose required parameter has no value, in the plat
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "map", url: () => "/map", label: () => "Map", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async () => typeObjects,
     read: async (request) => {
       reads.push(request);
@@ -97,7 +97,7 @@ it("reads nothing for a required parameter the projection leaves unmapped or the
       members: { tabs: { target: { projectionId: projection.id }, inputs: { by: { state: "by" } } } },
     }), {
       pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: {},
-      text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+      text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
       readProjection: async () => projection,
       read: async (request) => {
         reads.push(request);
@@ -132,8 +132,7 @@ it("answers the ontology's reads in a code panel's frame as the platform's reads
   };
   platformOntologyAdapters(requests).forEach(registerPlatformObjectAdapter);
   const instance = createPanelInstance(definePanel({ state: {}, members: {} }), {
-    text: (key) => key, pageKey: "map", url: () => "/map", label: () => "Map", initial: {}, ...noOperations,
-    recordDraftCreated: async () => {}, readProjection: async () => { throw new Error("unused"); },
+    text: (key) => key, pageKey: "map", url: () => "/map", label: () => "Map", initial: {}, ...noOperations, readProjection: async () => { throw new Error("unused"); },
   });
 
   const graphData = frameMemberData(graph, "graph", instance, () => ({ node: null }), noPlatformRead);
@@ -168,8 +167,7 @@ it("reads a reference's choices and held values, and a type's create form, as a 
   const describe = vi.fn(async () => description);
   registerPlatformObjectAdapter({ objectType: AGENT_DEFINITION, forms: { describe, save: vi.fn() } });
   const instance = createPanelInstance(definePanel({ state: {}, members: {} }), {
-    text: (key) => key, pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: {}, ...noOperations,
-    recordDraftCreated: async () => {}, readProjection: async () => { throw new Error("unused"); },
+    text: (key) => key, pageKey: "agents", url: () => "/agents", label: () => "Agents", initial: {}, ...noOperations, readProjection: async () => { throw new Error("unused"); },
   });
   const picker: DirectProjection = {
     ...record, id: "model", name: "Model", componentId: "@ontomato/sdk:ReferencePicker",

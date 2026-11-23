@@ -8,12 +8,11 @@ it is on, its avatar, instructions, model, skills, execution identity, data scop
 `selected` is the shown `platform:AgentDefinition`; `mode` is `list`, `edit` or `create`. Both travel in the
 address. Opening with no state selects the first agent, as the original page's bare address did.
 
-## Drafting a change
+## Editing or creating an agent
 
-For the agent definition form, follow the page skill's draft format. Use `agent.update` for an existing agent and
-`agent.create` for a new one. Read the owner's form for the intended target first — `save.draftOperation`
-says the same operation. Publish the draft as a run artifact and hand the reader the draft link on this page's
-address. The reader opens it and saves.
+Open the target agent with `present` (`selected` + `mode: "edit"`, or `selected: null` + `mode: "create"` for a new
+agent), fill the changed fields in the mounted `form` via `fill_form` (which marks modified fields and keeps the form
+unsaved), and either leave saving to the reader or call `page_action` on the form's save operation when requested.
 
 ## Deleting
 

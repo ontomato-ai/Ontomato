@@ -20,19 +20,12 @@ import { HttpError } from "../../utils/errors";
 import type { AssistantCredentials } from "../../utils/assistant-credentials";
 export type { AssistantCredentials } from "../../utils/assistant-credentials";
 
-/**
- * A change a page skill covers is a draft the reader saves, not a write of the agent's: the page's own form is what the
- * draft fills, and the page's Save is what stores it. Only a run whose effective skills hold a registered page skill
- * receives this rule; every other change keeps its own execution mechanism.
- */
-const PLATFORM_DRAFT_RULE = [
+/** Guidance for runs that load a registered page skill. */
+const PAGE_CONTROL_RULE = [
   "Page operations:",
-  "A loaded panel skill offers three entrances: read through the owner's API, draft an unsaved form, or call its declared operation through ONTOMATO_PANEL_OPERATIONS_URL.",
-  "Panel operate returns a draft by default for form.save; an action may return confirmation-required and intentId immediately. Do not wait or poll for a person in a tool call. Continue your work or finish the round.",
-  "A later genuine user agent-answer wakes this session. Call the declared dispatch(intentId) in that current run; text agreement or a parent agent's answer never grants approval. The coordinator owns session automatic mode and permissions.",
-  "For hand-written page skills that do not declare a coordinator operation, a change goes through that page's draft: write the draft file the skill's draft",
-  "command asks for, then link the reader to the page with it. The page fills its form, marks what changed and stays",
-  "unsaved; the reader reviews and saves there, and saying 'save' in the conversation does not save it for them.",
+  "A loaded panel skill works through two layers: read persisted data via `$ONTOMATO_PANEL_OPERATIONS_URL/read` (and `/nested`), and control the displayed page beside the conversation via the live display tools (`observe_display`, `present`, `fill_form`, `page_action`).",
+  "Use `present` to open a page or update declared public state in place, `fill_form` to edit fields directly in a mounted form (keeping it unsaved and marking changed fields), and `page_action` to invoke declared operations (including form save, button actions, row actions, batch actions, refresh, and discard) through the exact same UI entry a human clicks.",
+  "Use `fill_form` for edits and let the page supply its current form values when saving. In default confirmation mode, `page_action` prepares the intent and returns `awaiting_confirmation` immediately while the confirmation prompt appears in the conversation; do not wait or poll. When the user confirms in the conversation, the page verifies that the instance, target, and form contents have not changed before dispatching. In full-auto sessions, `page_action` executes immediately.",
   "Everything else — reading, retrieval, charts, reports, and data no page skill covers — keeps its own commands.",
 ].join("\n");
 export function userSkillEnvironment(credentials: AssistantCredentials): RuntimeEnvironment {
@@ -53,11 +46,11 @@ export function runDefinition(
   skills: RuntimeStartRunRequest["definition"]["skills"],
   locale?: string,
   externalMcp: RuntimeStartRunRequest["definition"]["externalMcp"] = [],
-  /** The run loaded a registered page skill, so a change it covers is a draft the reader saves. */
-  pageDrafts = false,
+  /** The run loaded a registered page skill. */
+  pageControl = false,
 ): RuntimeStartRunRequest["definition"] {
   return {
-    systemPrompt: [systemPrompt, pageDrafts ? PLATFORM_DRAFT_RULE : "", getOutputLanguageInstruction(resolveLocale(locale))]
+    systemPrompt: [systemPrompt, pageControl ? PAGE_CONTROL_RULE : "", getOutputLanguageInstruction(resolveLocale(locale))]
       .filter(Boolean).join("\n\n"),
     modelId,
     skills,

@@ -36,8 +36,7 @@ definitions are prepared in this conversation, tested here, and drafted into the
    member — `definition.test` (`metricViews.test`, Markdown output) and `definition.testExecute`
    (`metricViews.testExecute`, raw JSON output with truncation metadata) — with `{ draft, parameters }`. Neither saves
    anything. Treat a truncated result as partial, never as the complete numbers.
-4. **Draft into the form and leave saving to the reader.** How to write the draft is in this page's generated skill;
-   the reader reviews it in the `definition` form and saves or discards it.
+4. **Fill the live form and save through confirmation.** Use `present` to open the metric's `definition` form (or `creating: true` for a new metric), `fill_form` to enter the fields directly on screen, and `page_action({ operation: "definition.save" })` when ready to save (confirmed in conversation by default).
 
 ## Owner rules this page shows and never rejudges
 

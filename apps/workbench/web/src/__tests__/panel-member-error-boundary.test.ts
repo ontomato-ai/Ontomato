@@ -269,7 +269,6 @@ it("contains a projection component error inside Projection without bubbling to 
     text,
     readProjection: async () => brokenForm,
     ...noOperations,
-    recordDraftCreated: async () => {},
   });
   const context: PanelContext = {
     get panel(): never { throw new Error("unused"); },
@@ -280,7 +279,6 @@ it("contains a projection component error inside Projection without bubbling to 
     projection: async () => brokenForm,
     invoke: async () => null,
     projectionsChanged: () => () => {},
-    draft: instance.draft,
     holdUnsaved: () => () => {},
     t: text,
     resources: async () => {},

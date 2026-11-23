@@ -13,9 +13,7 @@ import type {
 } from "@ontomato/contracts/agent-presentation";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PageContext } from "@ontomato/contracts/page-context";
-import { pageDraftLink } from "@ontomato/contracts/page-draft";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import type { PanelFormEditedTarget } from "@ontomato/contracts/panel-agent";
 import { panelStateValueSchema, type PanelObjectIdentity } from "@ontomato/contracts/panel-manifest";
 import type { PanelCompletedOperation, PanelOperationAffected } from "@ontomato/contracts/panel-operations";
 import { fileName } from "./artifacts";
@@ -67,7 +65,6 @@ export interface DisplayStateUpdate {
 /** In-place controls exposed by a currently mounted panel page to its display controller. */
 export interface DisplayPageController {
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
-  applyAddress?(url: string, options?: { overwriteUnsavedDraft?: boolean }): void;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
 }
@@ -151,7 +148,6 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
   const liveState = shallowRef<DisplayStateUpdate | null>(null);
   const controllers = new Map<string, DisplayPageController>();
   const pendingStates = new Map<string, Record<string, RuntimeJsonValue>>();
-  const formEditedListeners = new Set<(target: PanelFormEditedTarget) => void>();
   function refreshObjects(change: DisplayObjectChange) {
     objectRefresh.value = { seq: (objectRefresh.value?.seq ?? 0) + 1, ...change };
   }
@@ -242,10 +238,6 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
 
   function notOpened(reason: NotOpenedReason, error?: { code: string; message: string }): DisplayPresentationResult {
     return { status: "not_opened", reason, current: snapshot(), ...(error ? { error } : {}) };
-  }
-
-  function hasDraftQuery(address: string): boolean {
-    return pageDraftLink(Object.fromEntries(new URLSearchParams(address.split("?")[1] ?? ""))) !== null;
   }
 
   function validateStatePatch(state: Record<string, RuntimeJsonValue>): { ok: true } | { ok: false; error: { code: string; message: string } } {
@@ -442,14 +434,6 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
         if (controllers.get(instance) === controller) controllers.delete(instance);
       };
     },
-    /** A mounted panel form reports that the user manually edited an unsaved form field. */
-    formEdited(target: PanelFormEditedTarget) {
-      for (const listener of formEditedListeners) listener(target);
-    },
-    onFormEdited(listener: (target: PanelFormEditedTarget) => void): () => void {
-      formEditedListeners.add(listener);
-      return () => formEditedListeners.delete(listener);
-    },
 
     /** The outlet drawing the side reports where it sits; it takes the report back when it goes. */
     placed(probe: DisplayPlacementProbe): () => void {
@@ -474,8 +458,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
      * - Pages perform a real navigation written into the browser address (restored on reload) without changing the
      *   user's chosen side-by-side or full-page layout (opening side-by-side only when no page is currently open).
      * - Declared public state patches (including non-deepLink fields) apply in place without reloading or writing.
-     * - Draft links never silently overwrite unsaved form edits; they return `blocked_unsaved` unless the agent
-     *   re-issues the call with `overwriteUnsavedDraft: true` after explicit user confirmation.
+     * - Live fills use the mounted form controller, which checks for unsaved edits.
      * - Unauthorized entries are rejected before opening, returning the refusal reason in the receipt.
      */
     present: (frame: PresentationFrame, verifyActive?: () => "view_unavailable" | "not_viewing_session" | null) =>
@@ -632,7 +615,7 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
             : { status: "opened", reason: "target_selected", current: shownNow };
         }
 
-        const { address: rawAddress, state: rawState, overwriteUnsavedDraft } = frame.target;
+        const { address: rawAddress, state: rawState } = frame.target;
         if (rawState !== undefined) {
           const valid = validateStatePatch(rawState);
           if (!valid.ok) return notOpened("unsupported_target", valid.error);
@@ -651,7 +634,6 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
         if (!resolved) return notOpened("unsupported_target");
 
         const nextTarget: DisplayTarget = { kind: "page", ...resolved };
-        const hasDraft = hasDraftQuery(resolved.address);
         if (!sameInstance) {
           if (dropsUnsaved(nextTarget)) {
             return notOpened("blocked_unsaved", {
@@ -659,11 +641,6 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
               message: "The current page has unsaved changes. Ask the user to save or discard them before navigating away.",
             });
           }
-        } else if (hasDraft && (unsaved || host.leave.leaves(null)) && !overwriteUnsavedDraft) {
-          return notOpened("blocked_unsaved", {
-            code: "UNSAVED_FORM_CONFLICT",
-            message: "The current form has unsaved edits from the user. Do not overwrite them silently; ask the user whether to keep their edits or replace them with your draft, and only call present again with overwriteUnsavedDraft: true after the user confirms.",
-          });
         }
 
         // Preserve the user's chosen side-by-side or full-page layout; open side-by-side when no page is open.
@@ -692,9 +669,6 @@ export function useConversationDisplay(host: ConversationDisplayHost) {
                 patch: merged,
               };
             }
-          }
-          if (hasDraft && overwriteUnsavedDraft && controller?.applyAddress) {
-            controller.applyAddress(resolved.address, { overwriteUnsavedDraft: true });
           }
           const updatedTarget: DisplayTarget = {
             kind: "page",

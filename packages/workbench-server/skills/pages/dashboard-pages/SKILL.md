@@ -1,6 +1,6 @@
 ---
 name: dashboard-pages
-description: Take the reader to a saved dashboard or card. Always run link when asked for its page link. Explain current MetricView results and draft dashboard changes.
+description: Take the reader to a saved dashboard or card. Always run link when asked for its page link. Explain current MetricView results and update saved dashboards.
 compatibility: Requires Node.js 24 or newer. API commands use ONTOMATO_WORKBENCH_URL and the current user's ONTOMATO_TK or ONTOMATO_API_KEY.
 metadata:
   ontomato.title: Dashboard pages
@@ -9,7 +9,7 @@ metadata:
 # Dashboard pages
 
 Run `node <this-skill>/scripts/dashboard-pages.mjs <command> [options]`.
-API commands use `ONTOMATO_WORKBENCH_URL` before `/api`, the supplied `ONTOMATO_TK` or `ONTOMATO_API_KEY`, and optional `ONTOMATO_LANGUAGE`. Draft links use the supplied `ONTOMATO_SESSION_ID` and `ONTOMATO_RUN_ID`.
+API commands use `ONTOMATO_WORKBENCH_URL` before `/api`, the supplied `ONTOMATO_TK` or `ONTOMATO_API_KEY`, and optional `ONTOMATO_LANGUAGE`.
 
 | Command | Result |
 | --- | --- |
@@ -18,16 +18,15 @@ API commands use `ONTOMATO_WORKBENCH_URL` before `/api`, the supplied `ONTOMATO_
 | `read --dashboard-id ID` | Read the dashboard, groups and saved card identities. |
 | `card --dashboard-id ID --card-id ID` | Read the saved query, drawing, current columns/rows, MetricView description and truncation. |
 | `parameters --dashboard-id ID --card-id ID` | Read parameter fields, current values, readonly keys and revision. |
-| `draft --operation OP --form work/form.json --out outputs/drafts/name.page-draft.json` | Validate the save body, write a PageDraft and print its dashboard link. |
-| `save --operation OP --form work/form.json` | Send the same validated body to the original save API; available for direct use outside the platform. |
+| `save --operation OP --form work/form.json` | Validate and send the dashboard update to the save API under the current user's permissions. |
 
 ## Dashboard links in replies
 
-Dashboard links come from these commands. Run `link` to open a saved dashboard or card and `draft` to show proposed edits. Paste the command's printed `link` as clickable Markdown with its target intact. You may translate the label. Do not build a dashboard address yourself, including from an `ONTOMATO_*_URL`, link to the `.page-draft.json` file, or put the link in a code block.
+Dashboard links come from `link`. When `present` is available, open `/dashboards?dashboardId=<id>` beside the conversation immediately in the same round. Paste the command's printed `link` as clickable Markdown with its target intact when referencing it in your reply. You may translate the label. Do not build a dashboard address yourself from an `ONTOMATO_*_URL`, or put the link in a code block.
 
 ## Link to a saved dashboard or card
 
-Use the selected IDs if the page supplied them. Otherwise use `list` to find the dashboard and `read` to identify a requested card. Run `link` with the saved IDs even if an earlier reply included a draft.
+Use the selected IDs if the page supplied them. Otherwise use `list` to find the dashboard and `read` to identify a requested card. Run `link` with the saved IDs.
 
 ## Find what the reader selected
 
@@ -39,9 +38,9 @@ Read the card and its parameters. Use the returned columns, actual rows and expl
 
 The `file.name` returned by `card` names the drawing inside the saved card, outside this conversation's workspace. Do not embed, reference or link to that name in your answer, including by adding `outputs/`. To show the chart, link to the saved card or use the chart skill to generate a conversation artifact and reference the path it prints.
 
-## Prepare a page edit
+## Update a dashboard
 
-A card's title is its `name`. To change the title, set that card's `name` in the draft. Put the changes from one request in one draft. Use `dashboard.layout` to change a card's name, drawing and layout together. Put the `link` printed by `draft` in the reply so the reader can review all changes and save them on the page.
+A card's title is its `name`. Use `dashboard.layout` to change a card's name, drawing and layout together. Validate and save the change with `save --operation <OP> --form work/form.json` after confirming the user's intent, then open the dashboard with `present` (or include `link`) so the reader sees the updated board.
 
 | Operation | Save body |
 | --- | --- |

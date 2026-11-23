@@ -8,7 +8,7 @@ import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-op
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import ObjectForm from "../../../apps-sdk/src/base/ObjectForm.vue";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
-import { PanelFormAdapters, type ReceivedPanelDraft } from "../../../apps-sdk/src/panel/draft";
+import { PanelFormAdapters } from "../../../apps-sdk/src/panel/forms";
 import type { PanelInstance, PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
 import type { MemberOperationsState } from "../../../apps-sdk/src/panel/member-operations";
@@ -114,23 +114,20 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
   const state = createPanelState(manifest, { campus: "North" });
   const forms = new PanelFormAdapters();
   const selectedRead = deferred<PanelFormDescription>();
-  const draft = shallowRef<ReceivedPanelDraft<Record<string, unknown>> | null>(null);
   const read: PanelMemberContext["data"]["read"] = async name => ({
     status: "ready", value: name === "createForm" ? createForm : await selectedRead.promise,
   });
   const write = vi.fn<Parameters<PanelInstance["writeOperation"]>, ReturnType<PanelInstance["writeOperation"]>>()
     .mockResolvedValue(receipt());
   const instance = {
-    state, forms, draft, writeOperation: write,
-    settleDraft: vi.fn(async () => { draft.value = null; }),
+    state, forms, writeOperation: write,
     onObjectChanged: () => () => {},
     onOperationCompleted: () => () => {},
     operationIdOf: (slot, name) => `${slot}.${name}`,
     registerActionHandler: () => () => {},
-    notifyFormEdited: () => {},
     objectName: () => null,
-  } satisfies Pick<PanelInstance, "state" | "forms" | "draft" | "writeOperation" | "settleDraft" | "onObjectChanged"
-    | "onOperationCompleted" | "operationIdOf" | "registerActionHandler" | "notifyFormEdited" | "objectName">;
+  } satisfies Pick<PanelInstance, "state" | "forms" | "writeOperation" | "onObjectChanged"
+    | "onOperationCompleted" | "operationIdOf" | "registerActionHandler" | "objectName">;
   const notify = vi.fn();
   const panel = { instance, manifest, notify } satisfies Pick<PanelContext, "manifest" | "notify"> & { instance: typeof instance };
   const operations = shallowRef<MemberOperationsState>({
@@ -158,7 +155,7 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
       },
     },
   });
-  return { wrapper, state, write, selectedRead, notify, draft, operations, settleDraft: instance.settleDraft, form: forms.handle("form")! };
+  return { wrapper, state, write, selectedRead, notify, operations, form: forms.handle("form")! };
 }
 
 describe("ObjectForm save", () => {
@@ -185,15 +182,10 @@ describe("ObjectForm save", () => {
     wrapper.unmount();
   });
 
-  it("settles the submitted draft without changing the selection after unmount", async () => {
-    const { wrapper, form, state, write, draft, settleDraft } = openForm();
+  it("finishes saving without changing the selection after unmount", async () => {
+    const { wrapper, form, state, write, notify } = openForm();
     await flushPromises();
     form.set("/name", "New customer");
-    draft.value = {
-      slot: "form", target: { objectType: customerType }, operation: "save-customer",
-      changed: new Set(["/name"]), form: { name: "New customer" },
-      link: { sessionId: "session", runId: "run", path: "outputs/drafts/customer.page-draft.json" },
-    };
     const pending = deferred<PanelWriteResult>();
     write.mockReturnValueOnce(pending.promise);
     const saving = form.submit();
@@ -202,7 +194,7 @@ describe("ObjectForm save", () => {
     pending.resolve(receipt("new-customer"));
     await expect(saving).resolves.toMatchObject({ primaryKey: "new-customer" });
     expect(state.values.value.selected).toBeNull();
-    expect(settleDraft).toHaveBeenCalledWith("form", "new-customer");
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "success" }));
   });
 
   it.each([

@@ -89,7 +89,6 @@ function mountDirect(
     url: () => "/schedules",
     label: () => "Schedules",
     initial: options.initial as never,
-    recordDraftCreated: async () => {},
     text: createPanelText(options.messages ?? {}, ref("en"), "en"),
     ...noOperations,
     readProjection: async (id) => projections[id]!,

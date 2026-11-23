@@ -234,7 +234,7 @@ export const ontologyModelServerOperations = [
     resultSchema: objectTypeViewSchema,
     draftOperation: (target: PanelOperationTarget) => (target.kind === "draft" ? "objectType.create" : "objectType.update"),
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions: "Read the object type's form for the intended target. Use its fields and option sources, save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.",
+
     create: {
       draftValues: (values: unknown, _domainId: string) => formValues.parse(values),
       createdObject: (data: unknown) => ({ objectType: OBJECT_TYPE, primaryKey: objectTypeViewSchema.parse(data).className }),
@@ -288,7 +288,7 @@ export const ontologyModelServerOperations = [
     resultSchema: attributeViewSchema,
     draftOperation: (target: PanelOperationTarget) => (target.kind === "draft" ? "attribute.create" : "attribute.update"),
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions: "Read the attribute's form for the intended target. Use its fields and option sources, save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.",
+
     create: {
       draftValues: (values: unknown, _domainId: string) => formValues.parse(values),
       createdObject: (data: unknown) => attributeIdentity(attributeViewSchema.parse(data)),
@@ -365,7 +365,7 @@ export const ontologyModelServerOperations = [
     resultSchema: relationshipViewSchema,
     draftOperation: (target: PanelOperationTarget) => (target.kind === "draft" ? "relationship.create" : "relationship.update"),
     draftInput: (input: Record<string, unknown>) => saveInputSchema.parse(input).values,
-    formInstructions: "Read the relationship's form for the intended target. Use its fields and the options its ends offer, save.bodySchema for the values, and save.draftOperation for the draft. Carry the complete form values in call.input.",
+
     create: {
       draftValues: (values: unknown, _domainId: string) => formValues.parse(values),
       createdObject: (data: unknown) => ({ objectType: RELATIONSHIP, primaryKey: relationshipViewSchema.parse(data).relationship }),

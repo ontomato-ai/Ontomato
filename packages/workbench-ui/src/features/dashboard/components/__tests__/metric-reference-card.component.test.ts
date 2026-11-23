@@ -225,26 +225,12 @@ describe("metric-reference cards on a dashboard", () => {
     expect(mask).toContain(truncation.truncationHint);
     expect(mask).not.toContain(t("common.noData"));
   });
-
-  it("draws a draft's chart file over this card's output and names both names", async () => {
-    const group = await load();
-    const draftFile = { name: "draft.chart.json", content: { ...group.charts[0].chartFile.content, title: { text: "Draft" } } };
-    const card = mount(ChartCard, {
-      props: { chart: group.charts[0], previewFile: draftFile, previewName: "Revenue by province", draft: true },
-      global: { plugins, stubs: { EChart: true } },
-    });
-    const drawn = card.findComponent({ name: "MetricChart" });
-    expect(drawn.props("file")).toEqual(draftFile.content);
-    expect(drawn.props("metric")).toMatchObject({ rows: group.charts[0].rows });
-    expect(card.find(".chart-original-name").text()).toBe("Revenue by region");
-    expect(card.find(".chart-draft-badge").text()).toBe(t("dashboard.draft.chartChanged"));
-  });
 });
 
 describe("the card parameter form", () => {
-  async function openDialog(draft?: { revision: string; values: Record<string, unknown> }) {
+  async function openDialog() {
     const wrapper = mount(CardParameterDialog, {
-      props: { modelValue: false, dashboardId: "d1", card: { id: "c-new", name: "Revenue by region" }, draft },
+      props: { modelValue: false, dashboardId: "d1", card: { id: "c-new", name: "Revenue by region" } },
       global: { plugins, stubs: { transition: false } },
     });
     await wrapper.setProps({ modelValue: true });
@@ -286,21 +272,32 @@ describe("the card parameter form", () => {
     wrapper.unmount();
   });
 
-  it("fills a draft's values against its own revision and shows each change's original value", async () => {
-    const wrapper = await openDialog({ revision: "r1", values: { year: "2024" } });
+  it("fills live values through fillValues, keeps them unsaved until saveFromAction, and blocks read-only or unsaved overwrites", async () => {
+    const wrapper = await openDialog();
+    const vm = wrapper.vm as unknown as {
+      fillValues: (values: Record<string, unknown>, overwriteUnsaved?: boolean) => Promise<unknown>;
+      saveFromAction: (operation: string) => Promise<unknown>;
+    };
+    const filled = await vm.fillValues({ year: "2024", owner: "someone" });
+    await flushPromises();
+    expect(filled).toEqual({
+      ok: true,
+      member: "card.parameters",
+      filledFields: ["year"],
+      rejectedFields: [{ path: "owner", reason: "read_only", message: "Parameter 'owner' is read-only." }],
+    });
     expect(document.querySelector<HTMLInputElement>("[data-field='year'] input")!.value).toBe("2024");
     expect(document.body.textContent).toContain("2026");
     expect(document.body.textContent).toContain("2024");
-    document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!.click();
-    await flushPromises();
-    expect(api.saved).toEqual([{ dashboardId: "d1", cardId: "c-new", revision: "r1", values: { year: "2024" } }]);
-    wrapper.unmount();
-  });
+    expect(api.saved).toEqual([]);
 
-  it("does not save a draft written against another revision", async () => {
-    const wrapper = await openDialog({ revision: "r0", values: { year: "2024" } });
-    expect(document.body.textContent).toContain(t("dashboard.draft.revisionChanged"));
-    expect(document.querySelector<HTMLButtonElement>(".el-dialog__footer .el-button--primary")!.disabled).toBe(true);
+    const blocked = await vm.fillValues({ year: "2023" });
+    expect(blocked).toMatchObject({ ok: false, reason: "blocked_unsaved", member: "card.parameters" });
+
+    const saved = await vm.saveFromAction("card.parameters.save");
+    await flushPromises();
+    expect(saved).toEqual({ ok: true, kind: "executed", operation: "card.parameters.save" });
+    expect(api.saved).toEqual([{ dashboardId: "d1", cardId: "c-new", revision: "r1", values: { year: "2024" } }]);
     wrapper.unmount();
   });
 });

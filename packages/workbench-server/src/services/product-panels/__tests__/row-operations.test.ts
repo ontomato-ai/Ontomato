@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
-  isPanelHumanOperationIntent, type CreatePanelHumanOperationIntentRequest, type CreatePanelOperationIntentRequest,
+  type CreatePanelHumanOperationIntentRequest,
   type PanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
 import { APPLICATION, BUSINESS_KNOWLEDGE, PRODUCT_PANEL, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
@@ -135,7 +135,7 @@ vi.mock("../component-catalogue", async importOriginal => {
 });
 
 import {
-  dispatchHumanPanelOperation, dispatchPanel, operatePanel as realOperatePanel, prepareHumanPanelOperation,
+  dispatchHumanPanelOperation, prepareHumanPanelOperation,
   readPanelOperation,
 } from "../operations";
 import { readProductPanelData } from "../data-reads";
@@ -166,10 +166,6 @@ const credentials = { token: "U-token", locale: "en" };
 const session = { providerId: "workbench", sessionId: uuid(1) };
 const rootSession = { providerId: "ontology", sessionId: uuid(2) };
 const skill = { namespace: { kind: "domain" as const, domainId: "d" }, name: "row-ops-skill" };
-const operatePanel = (
-  runId: string,
-  input: CreatePanelOperationIntentRequest,
-) => realOperatePanel(owner, credentials, runId, input, "Alice");
 
 const now = new Date("2026-11-22T00:00:00.000Z");
 type FixtureProduct = { kind: CurrentProductKind; row: CurrentProductRow };
@@ -222,18 +218,6 @@ let currentFramePanelId: string | undefined;
 
 function setProduct({ kind, row }: FixtureProduct) {
   products.set(`${kind}:${row.id}`, row);
-}
-
-function approveAgentIntent(intentId: string) {
-  const intent = intents.get(intentId)!;
-  if (isPanelHumanOperationIntent(intent)) throw new Error("Expected agent intent");
-  humanAnswer = {
-    role: "notification",
-    kind: "agent-answer",
-    replyTo: intent.questionId,
-    source: { kind: "user" },
-    answerId: uuid(11),
-  };
 }
 
 function registerMockOp(map: Record<string, serverOperations.PanelServerOperation>) {
@@ -322,16 +306,7 @@ beforeEach(() => {
         recipient: { session: rootSession, actor: { id: uuid(4), domainId: "d" } },
       };
     }
-    const intent = [...intents.values()].find(item => !isPanelHumanOperationIntent(item));
-    return {
-      questionId: intent && !isPanelHumanOperationIntent(intent) ? intent.questionId : uuid(99),
-      answerId: uuid(11),
-      source: { kind: "user" },
-      respondent: { id: uuid(12), domainId: "d" },
-      recipientSession: rootSession,
-      selectedOption: 1,
-      text: "Execute",
-    };
+    throw new Error(`Unexpected runtime request: ${path}`);
   });
   mocks.query.mockImplementation(async (sql: string, args: unknown[]) => {
     if (sql.startsWith("SELECT confirm_before")) {
@@ -593,8 +568,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
     })).rejects.toMatchObject({ code: "TARGET_ID_MISMATCH" });
 
     // 4. Agent channel succeeds with confirmation and server-injected literal param.
-    const agentIntent = await operatePanel(currentRun.id, {
-      intentId: uuid(104),
+    const agentIntent = await prepareHumanPanelOperation(owner, credentials, {
+      agentRun: { runId: currentRun.id, sessionId: currentRun.sessionId, toolCallId: "remove-task" },
       applicationId: "A",
       useId: "tasks",
       operationId: "tasks.remove",
@@ -603,9 +578,8 @@ describe("list row-scoped operations, batch availability, and server-pinned inje
         input: { note: "0 0 * * *" },
       },
     });
-    expect(agentIntent.kind).toBe("confirmation-required");
-    approveAgentIntent(uuid(104));
-    const agentDone = await dispatchPanel(owner, credentials, currentRun.id, uuid(104));
+    expect(intents.get(agentIntent.intentId)?.source.kind).toBe("agent-page");
+    const agentDone = await dispatchHumanPanelOperation(owner, credentials, agentIntent.intentId);
     expect(agentDone.kind).toBe("dispatched");
     if (agentDone.kind === "dispatched") expect(agentDone.outcome?.kind).toBe("success");
     expect(executed[1]).toEqual({

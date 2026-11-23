@@ -8,7 +8,7 @@
 | `/agents/settings/<id>` | One agent, whose definition ID is `<id>`. |
 | `/agents/settings/new` | A new agent; nothing is selected yet. |
 
-Write a link in an answer as the page's path, for example `[Customer assistant](/agents/settings/<id>)`. The platform opens it beside the conversation. A draft link is different: it is the exact line `draft-link` prints (see [forms](forms.md)).
+Write a link in an answer as the page's path, for example `[Customer assistant](/agents/settings/<id>)`. The platform opens it beside the conversation.
 
 ## Reading
 

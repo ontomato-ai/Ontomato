@@ -1,18 +1,15 @@
 import type { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { draftTarget } from "@ontomato/contracts/page-draft";
 import type { AgentSessionRef } from "@ontomato/contracts/agent-channel";
-import { agentQuestionAnswerReceiptSchema, agentUserQuestionReceiptSchema } from "@ontomato/contracts/agent-user-questions";
 import type { ApplicationPanelUse, ProductPanel } from "@ontomato/contracts/product-panels";
 import {
-  PANEL_CONFIRMATION_EXPIRED, PANEL_FORM_CONFIRMATION_STALE, isPanelHumanOperationIntent, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
+  PANEL_CONFIRMATION_EXPIRED, isPanelHumanOperationIntent, panelHumanOperationPreparationSchema, panelOperationOutcomeSchema,
   type inspectPanelOperationImpactRequestSchema,
-  type CreatePanelHumanOperationIntentRequest, type CreatePanelOperationIntentRequest, type PanelAgentOperationIntent,
-  type PanelFormEditedNotification,
+  type CreatePanelHumanOperationIntentRequest,
   type PanelHumanOperationConfirmation, type PanelHumanOperationDispatchResponse, type PanelHumanOperationIntent,
   type PanelHumanOperationPreparation,
-  type PanelOperationIntent, type PanelOperateResponse, type PanelOperationRef, type ReadPanelOperationRequest,
+  type PanelOperationIntent, type PanelOperationRef, type ReadPanelOperationRequest,
   type PanelUseRef, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
@@ -22,13 +19,12 @@ import {
 } from "@ontomato/contracts/panel-upload";
 import type { PanelMemberPath, PanelObjectIdentity, PanelOperationCall } from "@ontomato/contracts/panel-manifest";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
-import { assistantService } from "../assistant/service";
 import { RuntimeClient } from "../../infrastructure/agent-runtime/client";
 import { HttpError } from "../../utils/errors";
 import { tForLocale } from "../../i18n";
 import { requireFormFieldNames } from "../../utils/form-field-names";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
-import { credentialsForRun, runForOwner } from "../assistant/execution";
+import { runForOwner } from "../assistant/execution";
 import { loadedPageSkillVersion, readAssistantSkillView, resolvePageSkillSource, type AssistantSkillView } from "../assistant/skills";
 import type { AssistantOwner } from "../assistant/store";
 import { restoreAgentCaller, readAgentSessionActor } from "../agent-host/caller";
@@ -44,15 +40,11 @@ import {
   type PanelWriteServerOperation, type PanelOperationHost, type PanelOperationTarget, type PanelRecordTarget, type PanelImpactInspector,
 } from "./server-operations";
 import { panelConfirmation } from "./confirmation";
-import { publishObjectChanged } from "../agent-host/presentation";
 import { operationHost } from "./operation-host";
 import { panelOperationStore as store } from "./operation-store";
 import { panelUploadStore as uploads } from "./upload-store";
 
 type PanelRun = Awaited<ReturnType<typeof runForOwner>>;
-type SingleIntent = Extract<PanelAgentOperationIntent, { call: PanelOperationCall }>;
-type AgentRecord = Exclude<StoredPanelOperationIntent, { kind: "current" }> | { kind: "current"; intent: PanelAgentOperationIntent };
-type ReadableAgentIntent = Extract<AgentRecord, { intent: unknown }>["intent"];
 
 export async function requirePanelSkillForRun(owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
   ref: PanelUseRef & Pick<PanelOperationRef, "root">) {
@@ -69,18 +61,6 @@ export async function requirePanelSkillForRun(owner: AssistantOwner, credentials
   if (!skill || !loadedPageSkillVersion(skill, run.resolvedSkills))
     throw new HttpError(403,"This run does not have this panel's skill","FORBIDDEN");
   return { use, framePanelId, view };
-}
-
-async function admitted(
-  owner: AssistantOwner, credentials: AssistantCredentials, run: PanelRun,
-  ref: PanelOperationRef, target: PanelOperationCall["target"] | undefined,
-  options?: DeclaredDirectOperationOptions,
-) {
-  const { use, framePanelId, view } = await requirePanelSkillForRun(owner, credentials, run, ref);
-  return {
-    ...writeOperation(await declaredOperation(owner, credentials, use, ref, target, undefined, { framePanelId, ...options })),
-    view,
-  };
 }
 
 async function declaredOperation(
@@ -110,7 +90,7 @@ async function operationForUse(
 }
 
 function invocationTarget(
-  input: PanelOperationInvocation | CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest,
+  input: PanelOperationInvocation | CreatePanelHumanOperationIntentRequest,
 ) {
   return "call" in input ? input.call.target : undefined;
 }
@@ -174,7 +154,7 @@ function mergeWriteInput(
 
 /** Shared server-side materialization for both human and agent write operations. */
 function materializeWriteInvocation(
-  input: CreatePanelOperationIntentRequest | CreatePanelHumanOperationIntentRequest | z.infer<typeof inspectPanelOperationImpactRequestSchema>,
+  input: CreatePanelHumanOperationIntentRequest | z.infer<typeof inspectPanelOperationImpactRequestSchema>,
   resolved: Pick<ReturnType<typeof writeOperation>, "boundParams" | "bindingParams" | "handler" | "descriptor">,
 ): PanelOperationInvocation {
   const rejectParamMismatch = (key: string): never => {
@@ -246,66 +226,14 @@ function validateCall(handler: PanelWriteServerOperation, call: PanelOperationCa
     if (!target) throw new HttpError(400, "A form save requires a target", "INVALID_REQUEST");
     handler.draftInput(call.input, target);
   }
-  if (call.draft && (handler.kind !== "form.save" || !handler.create || target?.kind !== "draft"))
-    throw new HttpError(400, "A creation draft requires a create target", "INVALID_REQUEST");
   return target;
 }
-async function verifyCreationDraft(intent: SingleIntent, handler: PanelWriteServerOperation, pageKey: string) {
-  const link = intent.call.draft;
-  if (!link || handler.kind !== "form.save" || !handler.create || intent.call.target?.kind !== "draft") return;
-  const draft = await assistantService.pageDraft(link.sessionId, link.runId, link.path, intent.initiator);
-  const target = draftTarget(draft);
-  if (target.kind !== "create" || target.objectType !== handler.targetType || draft.pageKey !== pageKey ||
-    draft.operation !== handler.draftOperation(intent.call.target) ||
-    !isDeepStrictEqual(
-      handler.create.draftValues(draft.form, intent.initiator.domainId),
-      handler.create.draftValues(handler.draftInput(intent.call.input, intent.call.target), intent.initiator.domainId),
-    ))
-    throw new HttpError(409, "Draft does not match the current form or has already been created", "PAGE_DRAFT_MISMATCH");
-  return link;
-}
-const rootOf = (run: PanelRun) => run.channel!.userRecipient?.session;
-function agentRecord(record: StoredPanelOperationIntent): AgentRecord {
-  if (record.kind !== "current") return record;
-  if (isPanelHumanOperationIntent(record.intent)) throw new HttpError(403, "This intent requires human dispatch", "FORBIDDEN");
-  return { kind: "current", intent: record.intent };
-}
-
-function sourceMatches(intent: ReadableAgentIntent, session: AgentSessionRef) {
-  if (!isDeepStrictEqual(intent.source.session,session)) throw new HttpError(403,"Intent belongs to another questioning session","FORBIDDEN");
-}
-function matchingInvocation(
-  intent: ReadableAgentIntent,
-  request: CreatePanelOperationIntentRequest,
-  session: AgentSessionRef,
-  executionUserId: string | null,
-  concrete?: PanelOperationInvocation,
-) {
-  sourceMatches(intent, session);
-  const scopeMatches = isDeepStrictEqual(intent.use, { applicationId: request.applicationId, useId: request.useId }) &&
-    intent.operation.id === request.operationId &&
-    intent.root === request.root &&
-    isDeepStrictEqual(intent.operation.memberPath, request.memberPath) &&
-    intent.executionUserId === executionUserId;
-  if (!scopeMatches) {
-    throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
-  }
-  if (concrete !== undefined) {
-    if (!isDeepStrictEqual(invocationOf(intent), invocationOf(concrete))) {
-      throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
-    }
-    return;
-  }
-  if (!isDeepStrictEqual(invocationOf(intent), invocationOf(request))) {
-    throw new HttpError(409, "Changed call or executor requires a new intent", "INTENT_CHANGED");
-  }
-}
 async function presentOutcome(
-  intent: Pick<ReadableAgentIntent, "operation" | "outcome">, owner: AssistantOwner, credentials: AssistantCredentials,
+  intent: { operation: { handlerRef?: string }; outcome: PanelOperationOutcome | null }, owner: AssistantOwner, credentials: AssistantCredentials,
   view?: AssistantSkillView,
 ) {
   const { outcome } = intent;
-  if (outcome?.kind !== "success") return outcome;
+  if (outcome?.kind !== "success" || intent.operation.handlerRef === undefined) return outcome;
   const project = panelResultProjection(intent.operation.handlerRef);
   if (!project) return outcome;
   const current = view ?? await readAssistantSkillView(owner.domainId, credentials);
@@ -441,11 +369,8 @@ export async function projectPanelOperationIntent(owner: AssistantOwner, id: str
     if (record.intent.dispatched) throw new HttpError(409, "This operation was already dispatched", "INTENT_ALREADY_DISPATCHED");
     return humanPreparation(record.intent);
   }
-  if (record.kind === "current" && isPanelHumanOperationIntent(record.intent) && record.intent.source.kind === "agent-page") {
-    return { ...record.intent, outcome: await presentOutcome(record.intent, owner, credentials) };
-  }
-  const agent = agentRecord(record);
-  return agent.kind === "confirmation-expired" ? agent : { ...agent.intent, outcome: await presentOutcome(agent.intent, owner, credentials) };
+  if (record.kind === "confirmation-expired") return record;
+  return { ...record.intent, outcome: await presentOutcome(record.intent, owner, credentials) };
 }
 
 async function humanConfirmation(
@@ -478,7 +403,7 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
     const run = await runForOwner(owner, input.agentRun.runId);
     if (!run.channel || run.status !== "running") throw new HttpError(409, "Execution is closed", "RUN_CLOSED");
     if (run.sessionId !== input.agentRun.sessionId) throw new HttpError(403, "Run session mismatch", "FORBIDDEN");
-    const root = rootOf(run);
+    const root = run.channel.userRecipient?.session;
     if (!root) throw new HttpError(409, "Execution has no authenticated human session", "USER_SESSION_UNAVAILABLE");
     if (run.channel.authority.executionKind !== "live")
       throw new HttpError(422, "Management operations do not support test data", "BUILD_TEST_UNSUPPORTED");
@@ -503,10 +428,10 @@ export async function prepareHumanPanelOperation(owner: AssistantOwner, credenti
         : confirmation.kind === "batch"
           ? confirmation.impact
           : undefined;
-      const target = confirmation.kind === "batch"
-        ? namedTargets(confirmation.targets.objects.map((object) => object.label), confirmation.targets.total, credentials.locale)
-        : impact
-          ? namedTargets(impact.objects.map((object) => object.label), impact.total, credentials.locale)
+      const target = impact
+        ? namedTargets(impact.objects.map((object) => object.label), impact.total, credentials.locale)
+        : confirmation.kind === "batch"
+          ? namedTargets(confirmation.targets.objects.map((object) => object.label), confirmation.targets.total, credentials.locale)
           : await confirmationTarget(handler, host, prepared, current.operation.label);
       const impactSummary = impact?.summary ?? confirmationInputSummary(handler, prepared);
       const questionPrompt = await panelConfirmation(credentials, {
@@ -632,66 +557,6 @@ function batchOutcome(value: unknown, calls: PanelBatchCalls): PanelOperationOut
   const objectTypes = new Set(successes.flatMap(affected => affected.objectTypes));
   return { kind: "batch", items, affected: { objects, objectTypes: [...objectTypes], ...(removed.length && { removed }) } };
 }
-export async function operatePanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, input: CreatePanelOperationIntentRequest, initiatorName: string): Promise<PanelOperateResponse> {
-  const run = await runForOwner(owner,runId);
-  const source = {session:{providerId:run.channel!.agent.providerId,sessionId:run.sessionId},runId};
-  const stored = await store.find(owner,input.intentId);
-  let record = stored && agentRecord(stored);
-  if (record?.kind === "confirmation-expired") return replay(record, owner, credentials);
-  if (record && (record.kind === "historical" || record.intent.dispatched)) {
-    matchingInvocation(record.intent, input, source.session, run.executionUserId ?? null);
-    return replay(record, owner, credentials);
-  }
-  const { use, framePanelId, view } = await requirePanelSkillForRun(owner, credentials, run, input);
-  const current = {
-    ...writeOperation(await declaredOperation(owner, credentials, use, input, invocationTarget(input), undefined, {
-      mode: "prepare",
-      framePanelId,
-    })),
-    view,
-  };
-  refuseAgentUpload(current.handler, credentials.locale);
-  const executor = await credentialsForRun(owner,runId,credentials,run.sessionId);
-  const root = rootOf(run);
-  if (!root) throw new HttpError(409,"Execution has no authenticated human session","USER_SESSION_UNAVAILABLE");
-  if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
-  const concrete = materializeWriteInvocation(input, current);
-  const prepared = validateInvocation(current.handler, concrete, current.fixedTarget);
-  if (!record) {
-    const settings = await store.settings(owner,root);
-    record = agentRecord(await store.insert(owner,{
-      intentId:input.intentId,source,rootSession:root,use:{applicationId:input.applicationId,useId:input.useId},
-      panelId:current.rootPanelId,projectionId:current.projection.id,binding:current.projection.binding,
-      operation:current.operation,...invocationOf(concrete),initiator:owner,executionUserId:executor.executionUserId,
-      confirmation:settings.confirmBeforeExecute?"required":"automatic",
-      questionId:settings.confirmBeforeExecute ? randomUUID() : null,
-      answer:null,dispatched:false,outcome:null,
-    }));
-  }
-  if (record.kind === "confirmation-expired") return replay(record, owner, credentials);
-  const { intent } = record;
-  // A concurrent submission must resolve to the same immutable invocation before any question or write.
-  matchingInvocation(intent, input, source.session, executor.executionUserId, concrete);
-  if (record.kind === "historical" || intent.dispatched) return replay(record, owner, credentials);
-  if (intent.invalidated) return { kind: "not-dispatched", intentId: intent.intentId, code: intent.invalidated.code, message: intent.invalidated.message };
-  if (record.intent.operation.action) requireFrozenOperation(record.intent, current);
-  if (intent.confirmation === "automatic") return dispatchPanel(owner,credentials,runId,intent.intentId);
-  const handler = "calls" in prepared ? prepared.owner : current.handler;
-  const host = operationHost({ owner, credentials });
-  const impact = handler.inspectImpact && await ownerImpact(handler.inspectImpact, host, prepared);
-  const target = impact
-    ? namedTargets(impact.objects.map(object => object.label), impact.total, credentials.locale)
-    : await confirmationTarget(handler, host, prepared, intent.operation.label);
-  const impactSummary = impact?.summary ?? confirmationInputSummary(handler, prepared);
-  const confirmation = await panelConfirmation(credentials, {
-    operation: intent.operation.label, target, impactSummary,
-    executionUserId: intent.executionUserId, initiatorName,
-  });
-  const question = agentUserQuestionReceiptSchema.parse(await new RuntimeClient(owner.domainId,undefined,owner.userId).request("/v1/channel/user-questions","POST",{
-    source:intent.source, ...confirmation,
-  },intent.questionId!));
-  return {kind:"confirmation-required",intentId:intent.intentId,question};
-}
 function confirmationInputSummary(handler: PanelWriteServerOperation, invocation: CheckedInvocation): string | undefined {
   if (handler.kind !== "action" || handler.handlerRef !== EXECUTE_OBJECT_ACTION || handler.targetLabel || !("call" in invocation)) return undefined;
   const values = invocation.call.input.values;
@@ -730,71 +595,8 @@ async function confirmationTarget(handler: PanelWriteServerOperation,
   return namedTargets(labels, invocation.calls.length, host.locale);
 }
 
-export async function dispatchPanel(owner: AssistantOwner, credentials: AssistantCredentials, runId: string, id: string): Promise<PanelOperateResponse> {
-  const record = agentRecord(await store.get(owner,id));
-  const run = await runForOwner(owner,runId);
-  if (record.kind === "confirmation-expired") return replay(record, owner, credentials);
-  sourceMatches(record.intent,{providerId:run.channel!.agent.providerId,sessionId:run.sessionId});
-  if (record.kind === "historical" || record.intent.dispatched) return replay(record, owner, credentials);
-  let intent = record.intent;
-  if (intent.invalidated) {
-    return { kind: "not-dispatched", intentId: id, code: intent.invalidated.code, message: intent.invalidated.message };
-  }
-  const executor = await credentialsForRun(owner,runId,credentials,intent.source.session.sessionId);
-  if (executor.executionUserId !== intent.executionUserId) throw new HttpError(409,"Executor changed; create a new intent","INTENT_CHANGED");
-  if (run.channel!.authority.executionKind !== "live") throw new HttpError(422,"Management operations do not support test data","BUILD_TEST_UNSUPPORTED");
-  const current = await admitted(owner, credentials, run,
-    { ...intent.use, root: intent.root, operationId: intent.operation.id, memberPath: intent.operation.memberPath }, invocationTarget(intent), { mode: "dispatch" });
-  requireFrozenOperation(intent, current);
-  const client = new RuntimeClient(owner.domainId,undefined,owner.userId);
-  if (intent.confirmation === "required") {
-    if (!intent.questionId) return {kind:"not-dispatched",intentId:id,code:"DRAFT_REQUIRES_SAVE",message:"The reader saves this draft in its form."};
-    const messages = (await client.session(run.sessionId)).messages;
-    const message = messages.find(row => row.message.role === "notification" && row.message.kind === "agent-answer" &&
-      row.message.replyTo === intent.questionId && "kind" in row.message.source && row.message.source.kind === "user" && row.message.answerId)?.message;
-    if (!message || message.role !== "notification") return {kind:"not-dispatched",intentId:id,code:"CONFIRMATION_REQUIRED",message:"Await the initiating human's selected option."};
-    const answer = agentQuestionAnswerReceiptSchema.parse(await client.request(`/v1/channel/user-questions/${intent.questionId}/answers/${message.answerId}`));
-    const respondent = await restoreAgentCaller(answer.respondent,owner.domainId,true);
-    if (!("kind" in answer.source) || answer.source.kind !== "user" || answer.selectedOption !== 1 ||
-      !isDeepStrictEqual(answer.recipientSession,intent.rootSession) || !isDeepStrictEqual(respondent.owner,intent.initiator))
-      return {kind:"not-dispatched",intentId:id,code:"NOT_APPROVED",message:"The initiating human did not select execution."};
-    const {text:_text,...provenance} = answer;
-    intent = {...intent,answer:provenance};
-  }
-  const prepared = validateInvocation(current.handler, intent, current.fixedTarget);
-  const draft = "call" in intent ? await verifyCreationDraft(intent, current.handler, current.use.pageKey) : undefined;
-  const actor = { owner: { domainId: owner.domainId, userId: executor.executionUserId ?? owner.userId }, credentials: executor.credentials };
-  const host = operationHost({ owner, credentials }, current.view, actor);
-  const result = await claimAndExecutePanel(owner, host, intent, current.handler, prepared, draft);
-  if (!result) return replay(await store.get(owner,id), owner, credentials);
-  const { outcome } = result;
-  if ("affected" in outcome && outcome.affected) {
-    const { affected } = outcome;
-    const target = "call" in intent && affected.objects.length === 1 ? affected.objects[0]! : null;
-    const operation = outcome.kind === "success" && "call" in prepared && current.handler.handlerRef === EXECUTE_OBJECT_ACTION
-      ? {
-          operationId: intent.operation.id,
-          panelId: intent.panelId,
-          target: prepared.target?.kind === "object"
-            ? { objectType: prepared.target.objectType, primaryKey: prepared.target.primaryKey }
-            : null,
-          ...(outcome.message ? { message: outcome.message } : {}),
-        }
-      : undefined;
-    publishObjectChanged({
-      domainId: intent.initiator.domainId,
-      initiator: intent.initiator.userId,
-      rootSession: intent.rootSession,
-      target,
-      affected,
-      ...(operation ? { operation } : {}),
-    });
-  }
-  return { kind: "dispatched", intentId: id, outcome: await presentOutcome({ operation: intent.operation, outcome }, owner, credentials, current.view) };
-}
-
 async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationHost, intent: PanelOperationIntent,
-  handler: PanelWriteServerOperation, prepared: CheckedInvocation, draft?: Awaited<ReturnType<typeof verifyCreationDraft>>,
+  handler: PanelWriteServerOperation, prepared: CheckedInvocation,
 ) {
   // The name the owner's completion sentence gives, read while the target is still there; a target that cannot be read
   // fails here, before anything is claimed or written.
@@ -810,83 +612,13 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
     } else {
       outcome = await executeOwner(handler, host, prepared.target, prepared.call.input, id);
       if (done !== undefined && outcome.kind === "success" && outcome.message === undefined) outcome = { ...outcome, message: done };
-      if (prepared.target?.kind === "draft" && handler.kind === "form.save" && outcome.kind === "success") {
-        const created = handler.create!.createdObject(outcome.data);
-        if (draft) await assistantService.recordPageDraftCreated(draft.sessionId, draft.runId, draft.path, created.primaryKey, owner);
-      }
     }
   } catch (error) {
     // An uncertain owner call never releases the irreversible claim.
     outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
   }
   await store.outcome(owner,id,outcome);
-  const staleSavedReason = {
-    code: PANEL_FORM_CONFIRMATION_STALE,
-    message: "The form was already saved after confirmation was requested. This confirmation is no longer valid; re-read the form and request a new confirmation if further changes are needed.",
-  };
-  if (outcome.kind === "success" && "call" in prepared) {
-    if (handler.kind === "form.save" && prepared.target) {
-      await store.invalidatePendingFormSaves?.(
-        owner,
-        {
-          targetType: handler.targetType,
-          primaryKey: prepared.target.kind === "object" ? prepared.target.primaryKey : null,
-          slot: intent.operation.slot,
-          panelId: intent.panelId,
-        },
-        staleSavedReason,
-      );
-    } else if (handler.handlerRef === EXECUTE_OBJECT_ACTION) {
-      if (prepared.target?.kind === "object") {
-        await store.invalidatePendingFormSaves?.(
-          owner,
-          {
-            targetType: prepared.target.objectType,
-            primaryKey: prepared.target.primaryKey,
-            slot: intent.operation.slot,
-            panelId: intent.panelId,
-            actionId: intent.operation.action?.actionId,
-          },
-          staleSavedReason,
-        );
-      } else if (prepared.target === null) {
-        const affectedTypes = [...new Set([
-          ...(outcome.affected?.objectTypes ?? []),
-          ...(intent.operation.action?.affects ?? []),
-        ])];
-        await store.invalidatePendingFormSaves?.(
-          owner,
-          {
-            targetType: affectedTypes[0],
-            affectedTypes,
-            primaryKey: null,
-            slot: intent.operation.slot,
-            panelId: intent.panelId,
-            actionId: intent.operation.action?.actionId,
-          },
-          staleSavedReason,
-        );
-      }
-    }
-  }
   return { outcome };
-}
-/** Invalidates pending agent form confirmations when the initiating user edits that form in the browser. */
-export async function invalidateFormConfirmations(owner: AssistantOwner, notification: PanelFormEditedNotification) {
-  const invalidated = await store.invalidatePendingFormSaves(
-    owner,
-    {
-      rootSession: notification.rootSession,
-      targetType: notification.target.objectType,
-      primaryKey: notification.target.kind === "object" ? notification.target.primaryKey : null,
-      ...(notification.target.slot ? { slot: notification.target.slot } : {}),
-    },
-    {
-      code: PANEL_FORM_CONFIRMATION_STALE,
-      message: "The form content changed after confirmation was requested. This confirmation is no longer valid; let the user save on the page or re-read the form and request a new confirmation.",
-    },
-  );
-  return { invalidated };
 }
 /** The checked target was parsed by this handler's own target schema, so it is the one its `execute` takes. */
 function executeOwner(handler: PanelWriteServerOperation, host: PanelOperationHost, target: PanelOperationTarget | null,

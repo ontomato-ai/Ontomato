@@ -43,7 +43,7 @@ it("reads a list's rows once while the selection changes, and the selected recor
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
       reads.push(request);
@@ -80,7 +80,7 @@ it("keeps a shown datum on screen while it is read again, and shows its new answ
   let reads = 0;
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
       if (++reads === 2) await held;

@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { runtimeSessionRunFrameSchema } from "@ontomato/contracts/agent-runtime-events";
-import { agentHostSessionLiveFrameSchema, agentHostSessionRunFrameSchema } from "@ontomato/contracts/agent-host";
+import { agentHostSessionRunFrameSchema } from "@ontomato/contracts/agent-host";
 import { presentationFrameSchema, type PresentationResult } from "@ontomato/contracts/agent-presentation";
 import type {
   AgentHostService,
@@ -15,7 +15,6 @@ import { installWorkbenchIdentity } from "../../../identity/installed";
 import type { AuthenticatedRequest } from "../../../utils/request-identity";
 import { HttpError } from "../../../utils/errors";
 import { createAgentHostRouter } from "../agent-host";
-import { publishObjectChanged } from "../../../services/agent-host/presentation";
 import { callbackCredential, unwrapCallbackCredential } from "../../../services/agent-runtime/callback-credential";
 
 const owner: AgentHostOwner = { domainId: "domain-a", userId: "alice" };
@@ -454,38 +453,6 @@ it("drops offline calls and routes later calls of the same run only to the remou
     expect((await receipt("after-return", returned.connectionId)).status).toBe(204);
     expect(await (await next).json()).toEqual(result);
     expect(await refreshed.finish()).toBe("");
-  } finally {
-    liveRunStreams = false;
-    for (const stream of upstreamStreams) stream.end();
-  }
-});
-
-it("sends object invalidations only to the initiator's active views in the root session host and domain", async () => {
-  liveRunStreams = true;
-  try {
-    const own = await openPresentationStream(), another = await openPresentationStream();
-    const differentUser = await openPresentationStream(randomUUID(), url, { ...auth, "fixture-auth": "bob" });
-    const differentDomain = await openPresentationStream(randomUUID(), url, { ...auth, "fixture-domain": "domain-b" });
-    const differentHost = await openPresentationStream(randomUUID(), observeUrl);
-    const rootSession = { providerId: "workbench", sessionId: secondSessionId };
-    const target = { objectType: "platform:ScheduledTask", primaryKey: "job-1" };
-    publishObjectChanged({ domainId: owner.domainId, initiator: owner.userId, rootSession, target });
-    const affected = { objects: [target], objectTypes: [target.objectType, "platform:MetricView"] };
-    publishObjectChanged({ domainId: owner.domainId, initiator: owner.userId, rootSession, target: null, affected });
-
-    for (const stream of [own, another]) {
-      const frame = await stream.nextFrame();
-      expect(frame.event).toBe("object-changed");
-      expect(agentHostSessionLiveFrameSchema.parse(frame.data)).toEqual({ type: "object-changed", session: rootSession, target });
-      const batch = await stream.nextFrame();
-      expect(batch.event).toBe("object-changed");
-      expect(agentHostSessionLiveFrameSchema.parse(batch.data)).toEqual({
-        type: "object-changed", session: rootSession, target: null, affected,
-      });
-    }
-    for (const stream of [differentUser, differentDomain, differentHost]) {
-      expect(await stream.finish()).toBe("");
-    }
   } finally {
     liveRunStreams = false;
     for (const stream of upstreamStreams) stream.end();

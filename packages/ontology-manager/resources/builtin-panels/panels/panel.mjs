@@ -1,6 +1,5 @@
 import { computed, watch } from "vue";
 import {
-  draftTarget,
   mountPanel,
   panelAddress,
   usePanelBack,
@@ -340,25 +339,6 @@ const PanelsDirectory = {
       active: isFormMode,
       onBack: cancelForm,
     });
-
-    // Route incoming assistant drafts to either create mode or edit mode on the target panel.
-    watch(
-      instance.draft,
-      (draft) => {
-        if (!draft) return;
-        const target = draftTarget(draft);
-        if (target.kind === "create") {
-          state.setState({ selected: null, creating: true, detailMode: "view" });
-        } else if (target.id) {
-          state.setState({
-            selected: { className: PANEL_TYPE, primaryKey: target.id },
-            creating: null,
-            detailMode: "edit",
-          });
-        }
-      },
-      { immediate: true },
-    );
 
     async function openAddress(address) {
       if (!address) return;

@@ -48,7 +48,7 @@ function mount(projection: DirectProjection, inputs: Record<string, RuntimeJsonV
     state: {}, members: { reader: { target: { projectionId: projection.id }, inputs: Object.fromEntries(Object.entries(inputs).map(([name, literal]) => [name, { literal }])) } },
   }), {
     pageKey: "p", url: () => "/p", label: () => "P", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => {
       reads.push(request);
@@ -138,7 +138,7 @@ it("opens the source the page writes, in the reader its anchor names, and reads 
     },
   }), {
     pageKey: "p", url: () => "/p", label: () => "P", initial: {},
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async (id) => projections[id]!,
     read: async (request) => {
       reads.push(request);

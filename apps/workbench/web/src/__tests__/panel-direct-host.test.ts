@@ -92,8 +92,6 @@ function answer(request: Sent) {
     if (operations) return Response.json({ status: "ready", value: !inputs.task ? {} : memberPath[0].member === "run" ? { runNow } : { save } });
     return Response.json({ status: "ready", value: form(inputs.values?.name ?? `Task ${inputs.task!.primaryKey}`) });
   }
-  if (request.path === "/api/assistant/sessions/session-1/runs/run-1/page-draft")
-    return Response.json({ pageKey: use.pageKey, operation: `${SCHEDULED_TASK}.save`, target: { objectType: SCHEDULED_TASK, id: "t-1" }, form: { name: "Drafted by an agent" } });
   if (request.path === "/api/panel-operations/intents")
     return Response.json({ intentId: INTENT, operationId: "run.runNow", label: "Run now", confirmation: { kind: "none" } });
   if (request.path === `/api/panel-operation-intents/${INTENT}`)
@@ -189,20 +187,6 @@ it("follows another chosen task in the same instance, reading the form for it", 
     // The same instance: its element stays in place and its members' projections are not read again.
     expect(element.querySelector(".tasks-page")).toBe(page);
     expect(sent.filter(request => request.path.startsWith("/api/product-projections/")).length).toBe(projectionReads);
-  } finally {
-    app.unmount();
-  }
-});
-
-it("takes the draft its address links into the member's form, as a frame's form does", async () => {
-  const draft = new URLSearchParams({ draftSessionId: "session-1", draftRunId: "run-1", draftPath: "outputs/drafts/task.page-draft.json" });
-  const { app, element, sent } = await open(panelAddress(`${use.path}?${draft}`, { selectedTask: task("t-1") }));
-  try {
-    await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-member="form"] [data-field="/name"] input')?.value)
-      .toBe("Drafted by an agent"));
-    expect(sent.find(request => request.path.endsWith("/page-draft"))).toMatchObject({
-      method: "GET", search: `?${new URLSearchParams({ path: "outputs/drafts/task.page-draft.json" })}`, credential: READER,
-    });
   } finally {
     app.unmount();
   }

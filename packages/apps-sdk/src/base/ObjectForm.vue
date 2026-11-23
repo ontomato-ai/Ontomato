@@ -16,7 +16,7 @@ import {
   type PanelFormValues,
 } from "@ontomato/contracts/panel-projection";
 import { slotInputState, usePanelContext, useProjectionForm, useProjectionObjectRefresh, useProjectionSlot } from "../panel/context";
-import type { FormSubmitOverride } from "../panel/draft";
+import type { FormSubmitOverride } from "../panel/forms";
 import type { PanelFieldValue } from "../panel/state";
 import { PlatformObjectRefusal, selectedKey } from "../panel/platform-objects";
 import { jsonValuesEqual, movedPath, valueAt, withValueAt, withoutValueAt } from "../panel/form-values";
@@ -31,18 +31,15 @@ import {
   applyActionSaveReadOnly,
   editedInput,
   emptyActionSaveWiring,
-  evaluateMemberFormDraft,
   formSave,
   formTargetKey,
   isCustomerActionForm,
-  itemKeysEqual,
   memberFormSource,
   MemberDataUnavailable,
   resolveActionSaveWiring,
   resolveFormSaveAnswer,
   type FormSource,
   type FormSaveResult,
-  type HeldMemberDraft,
 } from "../panel/member-forms";
 import { formControlsKey } from "./form-controls";
 import FormAdvancedSection from "./FormAdvancedSection.vue";
@@ -69,11 +66,10 @@ import { useDataStateLabels } from "./data-state-labels";
  * the owner's to judge when it is saved; the panel then holds the object the owner created. The save is the one operation of its
  * projection the owner describes as a form's save, whatever the projection calls it. A header "new" is an event that empties that state.
  * A field another projection draws (a reference chosen from its own catalogue, a data scope on a graph) is edited there,
- * through this form's field port, and is this form's value, dirty state and draft all the same.
+ * through this form's field port, and is this form's value and dirty state all the same.
  *
- * A draft an agent wrote reaches the form whose owner names the draft's operation for its target; the owner checks the
- * whole draft (one it refuses is refused whole, with the fields and the reasons) and the form shows it, the changed
- * fields marked and nothing written, until the reader saves or discards.
+ * An assistant edits this form live through `fill_form` (which calls its editing entry directly, marks the changed
+ * fields, and leaves them unsaved) and submits it through `page_action` using the same save entry as the reader.
  *
  * A page that opens the form under a parent (an attribute created in its class, a relationship from its two ends) fixes
  * the fields that parent decides, through `fixedFields`: the form shows each with the page's value, read-only, and
@@ -147,8 +143,6 @@ const emit = defineEmits<{
   discarded: [];
   /** The reader cancelled creating a new object. */
   cancel: [];
-  /** The owner refused an incoming agent draft; the form is showing the refusal banner. */
-  "draft-refused": [];
   /** Emitted when the active tab or step changes in `"tabs"` or `"steps"` presentation. */
   "update:activeGroup": [groupKey: string];
 }>();
@@ -385,15 +379,8 @@ const dirty = computed(() => prunedOpenedValues.value !== null
 const submitted = shallowRef<ReadonlySet<string>>(new Set());
 /** Exact field JSON Pointers edited by the reader (including nested paths set or removed), kept off the `form.save` wire. */
 const editedPaths = shallowRef<ReadonlySet<string>>(new Set());
-/** Whether the panel instance's active received draft belongs to this form (and this exact row when row-attached). */
-const hasActiveDraft = computed(() => {
-  const active = panel.instance.draft.value;
-  if (!active || active.slot !== slot.slot) return false;
-  if (member.rowItemKey === undefined) return active.target.itemKey === undefined;
-  return active.target.itemKey !== undefined && itemKeysEqual(member.rowItemKey, active.target.itemKey);
-});
-/** Whether the form has something to save or discard: changed values, a received draft, or fields set on purpose. */
-const canSettle = computed(() => dirty.value || hasActiveDraft.value || submitted.value.size > 0);
+/** Whether the form has something to save or discard: changed values or fields set on purpose. */
+const canSettle = computed(() => dirty.value || submitted.value.size > 0);
 /** Whether the form is creating a new object (`createForm`, no existing object selected). */
 const isCreate = computed(() => target.value?.kind === "draft");
 /** Whether every non-hidden field in the owner's form description is read-only. */
@@ -420,10 +407,6 @@ const canSubmit = computed(() =>
   !failure.value && !loading.value && description.value !== null && canSettle.value && !saving.value && !asking.value && !saveUnavailable.value,
 );
 
-/** A draft this form took, for the target it addresses, shown once the form is on that target. */
-let held: HeldMemberDraft | null = null;
-/** A draft refusal received while this form was unmounted, shown on its baseline once mounted. */
-let heldRefusal: { target: string; baseline: PanelFormDescription; reason: unknown } | null = null;
 /** Whether this form component has mounted and performed its initial load. */
 let mounted = false;
 /** The target the form was last read for, so one change of target is one read. */
@@ -433,16 +416,12 @@ let loaded: string | null = null;
 const fieldMessages = (list: readonly { field: string; message: string }[]) =>
   Object.fromEntries(list.map(({ field, message }) => [field, message]));
 
-/** Whether the reader has manually edited any field since the current baseline or received draft was adopted. */
-const userEdited = ref(false);
-
 function adopt(
   baseline: PanelFormDescription,
   shown: PanelFormDescription = baseline,
   marked: ReadonlySet<string> = new Set(),
   written: ReadonlySet<string> = new Set(),
 ) {
-  userEdited.value = false;
   submitted.value = written;
   editedPaths.value = new Set();
   ownerOpened.value = baseline;
@@ -478,22 +457,11 @@ function load(next: PanelFormTarget | null) {
     loading.value = false;
     return;
   }
-  if (held?.target === nextKey) {
-    adopt(held.baseline, held.checked, held.changed, held.submitted);
-    return;
-  }
-  if (heldRefusal?.target === nextKey) {
-    const refused = heldRefusal;
-    heldRefusal = null;
-    adopt(refused.baseline);
-    showRefusal(refused.reason);
-    return;
-  }
   description.value = opened.value = ownerShown.value = ownerOpened.value = null;
   values.value = {};
   loading.value = true;
   void forms.describe({ target: next, changedField: null }).then(
-    (answer) => { if (reading === latestRead && held?.target !== nextKey) adopt(answer); },
+    (answer) => { if (reading === latestRead) adopt(answer); },
     (reason: unknown) => { if (reading === latestRead) fail(reason, () => load(next)); },
   );
 }
@@ -550,11 +518,6 @@ watch(admittedSave, (save) => {
 }, { immediate: true });
 let pendingRefresh = false;
 /**
- * The form is moving itself to show a draft it just took: what it held before is that earlier draft's, not the reader's,
- * so only changes the reader made themselves are asked about.
- */
-let movingForDraft = false;
-/**
  * The panel moved the form to another object (or to a new one) while it held the reader's unsaved changes: the reader is
  * asked first, as the platform asks before leaving a page. Keeping them puts the panel back on the object being edited;
  * discarding them is the form's own discard, and the form then shows where the panel moved.
@@ -562,10 +525,8 @@ let movingForDraft = false;
 watch(target, async (next, previous) => {
   if (unmounted) return;
   pendingRefresh = false;
-  const forDraft = movingForDraft;
-  movingForDraft = false;
   if (targetKey(next) === loaded) return;
-  if ((forDraft ? dirty.value : canSettle.value) && !saving.value && previous !== null && targetKey(previous) === loaded) {
+  if (canSettle.value && !saving.value && previous !== null && targetKey(previous) === loaded) {
     const leave = panel.confirmLeaveUnsaved
       ? await panel.confirmLeaveUnsaved()
       : await confirmDanger(t("platform.formLeaveUnsaved"), t("platform.unsavedChanges"), {
@@ -594,13 +555,12 @@ function refreshWhenClean() {
  */
 function reread() {
   const current = target.value;
-  const currentKey = targetKey(current);
-  if (current === null || held?.target === currentKey || !description.value) return load(current);
+  if (current === null || !description.value) return load(current);
   const reading = ++latestRead;
   failure.value = null;
   void forms.describe({ target: current, changedField: null }).then(
     (answer) => {
-      if (reading !== latestRead || held?.target === currentKey) return;
+      if (reading !== latestRead) return;
       if (canSettle.value || saving.value) {
         pendingRefresh = true;
         return;
@@ -632,23 +592,6 @@ onBeforeUnmount(panel.instance.onOperationCompleted(async ({ operation, affected
 }));
 
 useProjectionObjectRefresh((id) => id === key.value, () => {
-  if (hasActiveDraft.value && !userEdited.value && !saving.value && target.value) {
-    const current = target.value;
-    const reading = ++latestRead;
-    void forms.describe({ target: current, changedField: null }).then((answer) => {
-      if (reading !== latestRead || userEdited.value || saving.value) return;
-      if (jsonValuesEqual(pruneInactivePanelFormVariants(answer.fields, answer.values), pruneInactivePanelFormVariants(fields.value, values.value))) {
-        held = null;
-        adopt(answer);
-        void panel.instance.settleDraft(slot.slot).catch(showRefusal);
-      } else {
-        pendingRefresh = true;
-      }
-    }, () => {
-      pendingRefresh = true;
-    });
-    return;
-  }
   pendingRefresh = true;
   refreshWhenClean();
 });
@@ -677,15 +620,6 @@ function set(path: string, value: RuntimeJsonValue) {
 function remove(path: string) {
   edit(path, withoutValueAt(values.value, path));
 }
-function notifyFormChanged() {
-  const currentTarget = target.value;
-  if (!currentTarget) return;
-  panel.instance.notifyFormEdited(
-    currentTarget.kind === "object"
-      ? { kind: "object", objectType: currentTarget.objectType, primaryKey: currentTarget.primaryKey, slot: slot.slot }
-      : { kind: "draft", objectType, slot: slot.slot },
-  );
-}
 
 /** The reader's edit of one field, as the values it leaves: submitted, and the owner asked again where it says so. */
 function edit(path: string, next: PanelFormValues) {
@@ -695,9 +629,7 @@ function edit(path: string, next: PanelFormValues) {
   if (described) submitted.value = new Set([...submitted.value, described.path]);
   editedPaths.value = new Set([...editedPaths.value, path]);
   values.value = next;
-  userEdited.value = true;
   editedAt.set(path, ++edits);
-  notifyFormChanged();
   const field = activeFieldAt(fields.value, next, path);
   if (field?.refreshOnChange) askOwner(path);
 }
@@ -1062,32 +994,6 @@ useMemberOutput("label", () => (description.value ? formObjectLabel.value : null
 useMemberOutput("dirty", () => dirty.value);
 useMemberOutput("draft", () => (description.value ? prunedValues.value : null));
 
-function consumePendingDraft() {
-  const pending = member.formDraft?.takePending();
-  if (!pending) return;
-  if (pending.kind === "accepted") {
-    heldRefusal = null;
-    held = pending.held;
-    if (!mounted) return;
-    if (targetKey(target.value) === pending.held.target) load(target.value);
-    else {
-      movingForDraft = true;
-      moveTo(pending.into);
-    }
-    return;
-  }
-  held = null;
-  if (!mounted) {
-    heldRefusal = { target: pending.target, baseline: pending.baseline, reason: pending.reason };
-    return;
-  }
-  latestRead += 1;
-  if (ownerOpened.value === null) adopt(pending.baseline);
-  showRefusal(pending.reason);
-  emit("draft-refused");
-}
-if (member.formDraft) watch(() => member.formDraft!.pending.value, consumePendingDraft, { immediate: true });
-
 useProjectionForm({
   handle: {
     fields,
@@ -1106,23 +1012,6 @@ useProjectionForm({
       discard();
       return true;
     },
-  },
-  async receive(draft) {
-    const evaluated = await evaluateMemberFormDraft(member, panel.instance, forms, draft);
-    if (!evaluated) return null;
-    if (evaluated.refusal !== null) {
-      showRefusal(evaluated.refusal);
-      emit("draft-refused");
-      return new Set();
-    }
-    heldRefusal = null;
-    held = evaluated.held;
-    if (targetKey(target.value) === targetKey(evaluated.into)) load(evaluated.into);
-    else {
-      movingForDraft = true;
-      moveTo(evaluated.into);
-    }
-    return evaluated.marked;
   },
   async fill(rawValues, options) {
     if (!mounted || unmounted || !target.value || !opened.value || loading.value || saving.value || failure.value) {
@@ -1260,12 +1149,8 @@ function resetDraft(reopenWhenUnfieldedRefusal: boolean) {
   const refused = refusal.value;
   const reopen = reopenWhenUnfieldedRefusal && refused instanceof PlatformObjectRefusal &&
     Object.keys(refused.fields).length === 0 && Object.keys(refused.savedFields).length === 0;
-  held = null;
-  heldRefusal = null;
   if (ownerOpened.value) adopt(ownerOpened.value);
   if (reopen) load(target.value);
-  if (hasActiveDraft.value) void panel.instance.settleDraft(slot.slot).catch(showRefusal);
-  notifyFormChanged();
 }
 
 function discard() {
@@ -1397,7 +1282,6 @@ function takeSavedFields(receipt: PlatformObjectRefusal) {
     ![...savedPaths].some((savedPath) => path === savedPath || path.startsWith(`${savedPath}/`))
     || [...stillChanged].some((changedPath) => path === changedPath || path.startsWith(`${changedPath}/`)),
   ));
-  if (held) held = { ...held, baseline, submitted: submitted.value, changed: changed.value };
 }
 
 function saveInput(payloadValues: PanelFormValues) {
@@ -1423,16 +1307,12 @@ function saveContext() {
   };
 }
 
-/** Finish the save for the target and draft it started with. */
+/** Finish the save for the target it started with, whether the page button or the agent requested it. */
 function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
-  const draft = hasActiveDraft.value ? panel.instance.draft.value : null;
-  const savedHeld = held;
   return async (saved: FormSaveResult) => {
-    if (held === savedHeld) held = null;
     const createdWithoutKey = into.kind === "draft" && saved.primaryKey === null;
     const stillShowingTarget = !unmounted && target.value === into;
     if (stillShowingTarget) {
-      heldRefusal = null;
       if (createdWithoutKey) {
         adopt(ownerOpened.value!);
       } else {
@@ -1444,9 +1324,6 @@ function settleSave(into: PanelFormTarget, payloadValues: PanelFormValues) {
       panel.notify({ kind: "success", text: saved.message ?? t("platform.operationDone") });
     }
     emit("saved", { className: objectType, primaryKey: saved.primaryKey });
-    if (draft && panel.instance.draft.value === draft) {
-      await panel.instance.settleDraft(slot.slot, into.kind === "draft" ? saved.primaryKey ?? undefined : undefined);
-    }
   };
 }
 
@@ -1594,7 +1471,7 @@ const showActionBar = computed(() => {
   return canSettle.value;
 });
 
-/** The fields a received draft changed, by the owner's labels, in the form's order — those other slots draw included. */
+/** The fields an assistant filled, by the owner's labels, in the form's order — those other slots draw included. */
 const changedLabels = computed(() => fields.value.filter((field) => changed.value.has(field.path)).map((field) => field.label).join(", "));
 
 const prevStepLabel = computed(() => (te("platform.formPrevStep") ? t("platform.formPrevStep") : "Previous"));

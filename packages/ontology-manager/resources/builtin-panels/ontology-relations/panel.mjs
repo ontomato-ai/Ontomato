@@ -1,4 +1,4 @@
-import { computed, watch } from "vue";
+import { computed } from "vue";
 import { mountPanel, panelAddress, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 const DETAIL_PATH = "/ontology/relations/detail";
@@ -52,14 +52,6 @@ await mountPanel({
     function onDiscarded() {
       setCreating(false);
     }
-
-    // A create draft from the assistant opens the create dialog directly.
-    watch(instance.draft, (draft) => {
-      if (!draft) return;
-      if (!draft.target || !draft.target.id) {
-        setCreating(true);
-      }
-    }, { immediate: true });
 
     return {
       countText, search, creating, createDialog,

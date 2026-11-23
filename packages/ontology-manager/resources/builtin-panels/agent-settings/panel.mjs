@@ -17,16 +17,12 @@ await mountPanel({
       else if (state.values.value.mode === "edit") state.set("mode", "list");
     }, { immediate: true });
 
-    watch(instance.draft, (draft) => {
-      if (draft && !state.values.value.selected) state.set("mode", "create");
-    });
-
     watch(rows, (result) => {
       if (result.status !== "ready") return;
       const agents = result.value ?? [];
       const current = state.values.value.selected;
       if (!current) {
-        if (state.values.value.mode == null && !instance.draft.value && agents.length) {
+        if (state.values.value.mode == null && agents.length) {
           state.set("selected", { className: AGENT, primaryKey: agents[0].primaryKey });
         }
         return;

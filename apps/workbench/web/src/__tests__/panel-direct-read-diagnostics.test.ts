@@ -80,7 +80,7 @@ function answer(request: PanelMemberReadRequest, none: boolean): ProductPanelRea
 function open(members: string[], none = false, incompatible?: string) {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "p", url: () => "/p", label: () => "P", initial: { agent },
-    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations,
     readProjection: async (id) => {
       if (id === incompatible) throw new Error("field 'data.form' is not declared by the current SDK component");
       return projections[id]!;

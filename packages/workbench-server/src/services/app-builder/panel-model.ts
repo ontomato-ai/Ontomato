@@ -241,7 +241,7 @@ export const builderModelOperations = [{
     if (target.primaryKey === BUILDER_MODELS_FORM_KEY) return submittedBatchValues(input);
     return modelSelectionWrite.parse(saveInput.parse(input).values);
   },
-  formInstructions: "For a new builder agent, submit its name; it starts on the domain default model. For the domain form ('all'), submit only changed agent IDs to a chat model reference or '@default'. For a single agent, select a chat model or null to return to the domain default.",
+
   create: {
     draftValues: values => createValues.parse(values),
     createdObject: data => ({ objectType: BUILDER_AGENT, primaryKey: result.parse(data).id }),

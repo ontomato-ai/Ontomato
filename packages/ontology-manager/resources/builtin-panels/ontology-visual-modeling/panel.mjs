@@ -1,26 +1,11 @@
 import { computed, ref, watch } from "vue";
 import {
-  draftTarget,
   mountPanel,
   usePanelBack,
   usePanelContext,
   usePanelNarrow,
   usePanelOutput,
 } from "@ontomato/sdk/panel";
-
-const OBJECT_TYPE = "platform:ObjectType";
-const RELATIONSHIP = "platform:Relationship";
-const ATTRIBUTE = "platform:Attribute";
-
-/** Extracts the owning class name from a platform:Attribute composite key JSON tuple `[className, attrName]`. */
-function attributeClass(primaryKey) {
-  try {
-    const parsed = JSON.parse(primaryKey ?? "");
-    return Array.isArray(parsed) && typeof parsed[0] === "string" ? parsed[0] : null;
-  } catch {
-    return null;
-  }
-}
 
 await mountPanel({
   setup() {
@@ -63,7 +48,7 @@ await mountPanel({
       });
     };
 
-    // Keep the plain `className` parameter synced with `selectedNode`; preserve a deep-linked or draft-selected
+    // Keep the plain `className` parameter synced with `selectedNode`; preserve a deep-linked
     // attribute on initial mount or atomic state patch, and clear it when switching to another node.
     watch(
       () => selectedNode.value?.primaryKey ?? null,
@@ -137,59 +122,6 @@ await mountPanel({
         if (!value && dialog.value === "relation") void dialogBack.back();
       },
     });
-
-    // Open the matching create dialog or side inspector when an assistant draft targets any form on this page.
-    watch(
-      instance.draft,
-      draft => {
-        if (!draft) return;
-        const target = draftTarget(draft);
-        if (draft.slot === "classCreate" || (target.kind === "create" && target.objectType === OBJECT_TYPE)) {
-          if (dialog.value !== "class") instance.state.set("dialog", "class");
-          return;
-        }
-        if (draft.slot === "relationCreate" || (target.kind === "create" && target.objectType === RELATIONSHIP)) {
-          if (dialog.value !== "relation") instance.state.set("dialog", "relation");
-          return;
-        }
-        if (target.kind === "update" && target.objectType === OBJECT_TYPE) {
-          instance.state.setState({
-            dialog: null,
-            selectedEdge: null,
-            selectedNode: { className: OBJECT_TYPE, primaryKey: target.id },
-            className: target.id,
-          });
-          return;
-        }
-        if (target.kind === "update" && target.objectType === RELATIONSHIP) {
-          instance.state.setState({
-            dialog: null,
-            selectedNode: null,
-            selectedAttribute: null,
-            className: null,
-            selectedEdge: { className: RELATIONSHIP, primaryKey: target.id },
-          });
-          return;
-        }
-        if (target.objectType === ATTRIBUTE) {
-          const ownerClass = target.kind === "update"
-            ? attributeClass(target.id)
-            : (typeof draft.form?.className === "string" ? draft.form.className : selectedNode.value?.primaryKey ?? null);
-          if (ownerClass) {
-            instance.state.setState({
-              dialog: null,
-              selectedEdge: null,
-              selectedNode: { className: OBJECT_TYPE, primaryKey: ownerClass },
-              className: ownerClass,
-              selectedAttribute: target.kind === "update"
-                ? { className: ATTRIBUTE, primaryKey: target.id }
-                : null,
-            });
-          }
-        }
-      },
-      { immediate: true },
-    );
 
     const newAttribute = () => instance.state.set("selectedAttribute", null);
     const requestCloseSide = () => void selectionBack.back();

@@ -2,7 +2,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { HttpError } from "../../../utils/errors";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
-const mocks=vi.hoisted(()=>({query:vi.fn(),agent:vi.fn(),session:vi.fn(),turn:vi.fn(),turns:vi.fn(),create:vi.fn(),reserve:vi.fn(),admitted:vi.fn(),settled:vi.fn(),close:vi.fn(),closeAuthoring:vi.fn(),callback:vi.fn(),skills:vi.fn(),request:vi.fn(),run:vi.fn(),open:vi.fn(),links:vi.fn(),scope:vi.fn(),scopeClose:vi.fn(),status:vi.fn(),overview:vi.fn(),record:vi.fn(),recordWindow:vi.fn()}));
+const mocks=vi.hoisted(()=>({resolveExecution:vi.fn(),query:vi.fn(),agent:vi.fn(),session:vi.fn(),turn:vi.fn(),turns:vi.fn(),create:vi.fn(),reserve:vi.fn(),admitted:vi.fn(),settled:vi.fn(),close:vi.fn(),closeAuthoring:vi.fn(),callback:vi.fn(),skills:vi.fn(),request:vi.fn(),run:vi.fn(),open:vi.fn(),links:vi.fn(),scope:vi.fn(),scopeClose:vi.fn(),status:vi.fn(),overview:vi.fn(),record:vi.fn(),recordWindow:vi.fn()}));
+vi.mock("../execution-setting",()=>({resolveAgentExecution:mocks.resolveExecution}));
 vi.mock("../store",()=>({assistantStore:{agent:mocks.agent,session:mocks.session,turn:mocks.turn,turns:mocks.turns,create:mocks.create,reserve:mocks.reserve,admitted:mocks.admitted,settled:mocks.settled,recordRetrievalScope:mocks.scope,governanceWindow:mocks.record,recordGovernanceWindow:mocks.recordWindow,isBuilderRun:async()=>false}}));
 vi.mock("../governance",()=>({closeGovernanceWindow:mocks.close}));
 vi.mock("../authoring",()=>({closeAuthoringRun:mocks.closeAuthoring}));
@@ -39,7 +40,7 @@ beforeEach(()=>{
   const turn={id:runId,session_id:sessionId,created_at:new Date(),retrieval_scope_id:null,governance_record_id:null,class_names:[]};
   mocks.session.mockResolvedValue(session);mocks.turn.mockResolvedValue(turn);mocks.turns.mockResolvedValue([]);
   mocks.create.mockResolvedValue({row:session});mocks.reserve.mockResolvedValue({row:turn});
-  mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue({skills:[{skill,digest}],pageDrafts:false});mocks.overview.mockResolvedValue("overview");
+  mocks.query.mockResolvedValue({rows:[{session_id:sessionId}]});mocks.skills.mockResolvedValue({skills:[{skill,digest}],pageControl:false});mocks.overview.mockResolvedValue("overview");
   mocks.status.mockResolvedValue({resolvedSkills:[{skill}]});mocks.open.mockResolvedValue({id:runId});mocks.links.mockResolvedValue([]);mocks.record.mockResolvedValue(null);
   mocks.callback.mockReturnValue({value:"callback"});
   mocks.close.mockResolvedValue(undefined);mocks.admitted.mockResolvedValue(undefined);mocks.settled.mockResolvedValue(undefined);
@@ -73,7 +74,7 @@ it("carries the displayed member into human preparation and prompts with the che
   const [, , request] = mocks.request.mock.calls[1];
   expect(request.context).toEqual({ pageSkillContext });
   const prepare = { ...preparation(), ...request.channel, input: request.input, context: request.context };
-  mocks.skills.mockResolvedValueOnce({ skills: [{ skill: member.ref, digest }], pageDrafts: true, currentPage });
+  mocks.skills.mockResolvedValueOnce({ skills: [{ skill: member.ref, digest }], pageControl: true, currentPage });
   const result = await assistantService.prepare(prepare, owner, credentials);
   expect(mocks.skills).toHaveBeenCalledWith(owner.domainId, expect.anything(), credentials, pageSkillContext);
   expect(result.definition.systemPrompt).toContain(JSON.stringify(currentPage));
@@ -81,16 +82,34 @@ it("carries the displayed member into human preparation and prompts with the che
   expect(mocks.skills).toHaveBeenLastCalledWith(owner.domainId, expect.anything(), credentials, undefined);
   expect(resumed.definition.systemPrompt).not.toContain(currentPage.path);
 });
+it.each(["interactive", "automation", "older automation"] as const)("uses the expected identity for %s preparation", async mode => {
+  const agent = await mocks.agent();
+  const defaultUser = "automation-user";
+  mocks.agent.mockResolvedValue({ ...agent, execution_user_id: defaultUser });
+  mocks.resolveExecution.mockResolvedValue({ credentials: { apiKey: "automation-key" } });
+  const request = preparation();
+  if (mode === "interactive") request.userRecipient = { session: request.root.session, actor: request.actor };
+  if (mode === "automation") request.userRecipient = null;
+
+  const credentials = { token: "logged-in-user" };
+  const prepared = await assistantService.prepare(request, owner, credentials);
+  const executionUserId = mode === "interactive" ? null : defaultUser;
+  expect(prepared.executionActor).toEqual(executionUserId === null ? null : { userId: defaultUser, domainId: owner.domainId });
+  expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({ executionUserId }), credentials);
+  if (mode === "interactive") expect(mocks.resolveExecution).not.toHaveBeenCalled();
+  else expect(mocks.resolveExecution).toHaveBeenCalledWith({ id: agent.id, execution_user_id: defaultUser }, owner, credentials);
+});
+
 it("the selected query skill opens and records its actual scope regardless of preset kind",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
-  const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageDrafts:false});
+  const agent=await mocks.agent();mocks.agent.mockResolvedValue({...agent,kind:"knowledge-governance",skills:[querySkill]});mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageControl:false});
   const prepared=await assistantService.prepare(preparation(),owner,{token:"user"});
   expect(mocks.overview).toHaveBeenCalled();expect(mocks.scope).toHaveBeenCalledWith(runId,owner,runId);
   expect(prepared.environment.values.ONTOMATO_RETRIEVAL_CALLER_ID).toBe(runId);
 });
 it("a failed scope opening never records an opened scope",async()=>{
   const querySkill={namespace:{kind:"provider",provider:"ontology"},name:"ontomato-analyst-assistant"};
-  mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageDrafts:false});mocks.open.mockRejectedValue(new Error("admission failed"));
+  mocks.skills.mockResolvedValue({skills:[{skill:querySkill,digest}],pageControl:false});mocks.open.mockRejectedValue(new Error("admission failed"));
   await expect(assistantService.prepare(preparation(),owner,{token:"user"})).rejects.toThrow("admission failed");
   expect(mocks.scope).not.toHaveBeenCalled();
 });

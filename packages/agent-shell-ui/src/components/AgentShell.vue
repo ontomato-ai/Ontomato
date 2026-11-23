@@ -239,7 +239,6 @@ provide(shellContextKey, {
     return {
       ...base,
       async answer(requestId, answer, selectedOption) {
-        await pendingFormEditFlush;
         const bound = display.takePendingActionConfirmation(requestId);
         if (bound) {
           if (selectedOption === 1) {
@@ -285,17 +284,6 @@ provide(shellContextKey, {
     };
   })(),
 });
-
-/** Tracks in-flight form-edited notifications so answering a pending confirmation waits for invalidation to land. */
-let pendingFormEditFlush: Promise<void> = Promise.resolve();
-onBeforeUnmount(
-  display.onFormEdited((target) => {
-    const id = conversation.state.sessionId;
-    if (!id || !props.panelOperations?.notifyFormEdited) return;
-    const notify = props.panelOperations.notifyFormEdited(id, target).catch(() => undefined);
-    pendingFormEditFlush = pendingFormEditFlush.then(() => notify);
-  }),
-);
 
 /**
  * The open conversation's choice whether agents ask before a panel operation, once the host told it; null for a new

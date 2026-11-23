@@ -152,6 +152,6 @@ export const generalSettingsOperations = [{
   targetSchema: z.object({ kind: z.literal("object"), objectType: z.literal(GENERAL_SETTINGS), primaryKey: z.literal(key) }).strict(),
   inputSchema, resultSchema: valuesSchema,
   draftOperation: () => operation, draftInput: submittedValues,
-  formInstructions: "Submit the changed general settings. Enter the DSL timeout in whole seconds and choose a language from this edition's form.",
+
   execute: (host, _target, input) => saveGeneralSettings(host, host.executor, submittedValues(input)),
 }] satisfies readonly PanelServerOperation[];

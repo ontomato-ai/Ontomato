@@ -194,7 +194,7 @@ function productOperations(kind: "panel" | "projection", type: string, collectio
     resultSchema: savedId,
     draftOperation: target => target.kind === "draft" ? `${kind}.create` : `${kind}.update`,
     draftInput: input => panelFormSaveInputSchema.parse(input).values,
-    formInstructions: "Read the owner form. For edits, send the current revision and the JSON Pointers of the fields you changed.",
+
     create: {
       draftValues: values => panelFormValuesSchema.parse(values),
       createdObject: data => ({ objectType: type, primaryKey: savedId.parse(data).id }),
@@ -322,7 +322,7 @@ const applicationSave: PanelWriteServerOperation = {
   resultSchema: savedId,
   draftOperation: target => target.kind === "draft" ? "create" : "saveIdentity",
   draftInput: input => panelFormSaveInputSchema.parse(input).values,
-  formInstructions: "Read the application owner's form for the required section and send the JSON Pointers of the fields you changed.",
+
   create: {
     draftValues: values => panelFormValuesSchema.parse(values),
     createdObject: data => ({ objectType: APPLICATION, primaryKey: savedId.parse(data).id }),

@@ -38,7 +38,7 @@ await mountPanel({
     });
     const schedulePage = ref(null);
     const editPane = ref(null);
-    // Draft links use the page state to open the owner's form before it checks the draft.
+    // Assistants use page state (`compose: "new"` or `compose: "edit"`) to open the owner's form before calling `fill_form`.
     const mode = computed(() => {
       if (values.value.compose === "new") return appsProblem.value ? "view" : "create";
       return values.value.compose === "edit" && selected.value ? "edit" : "view";
@@ -404,11 +404,6 @@ await mountPanel({
       cancelForm();
       void nextTick(() => schedulePage.value?.querySelector(".card.is-selected .card-select")?.focus());
     }
-    // A draft an agent prepared opens in the form that took it; the reader saves or discards it there.
-    watch(instance.draft, (draft) => {
-      if (!draft) return;
-      setMode(draft.slot === "newForm" ? "create" : "edit");
-    }, { immediate: true });
 
     const selectedRow = computed(() => rows.value.find((row) => row.primaryKey === selectedId.value) ?? detailRow.value);
 

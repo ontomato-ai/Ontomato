@@ -72,7 +72,6 @@ function mountPanel(options: {
     url: () => "/panels/tasks",
     label: () => "Tasks",
     initial: options.initial as never,
-    recordDraftCreated: async () => {},
     text: createPanelText(options.messages ?? {}, ref("en"), "en"),
     ...noOperations,
     operations: {
