@@ -367,7 +367,9 @@ asks to expand it. Analysis and comparison never authorize a write; mutations st
 
 Markdown renderer slots own answer spacing: 12px between paragraphs, lists, datasets and charts; 24px before a new
 heading and 8px from a heading to its content; no outer gap on the first or last block. List items use 4px separation.
-Report tables also clear the renderer's internal table margin: heading-to-table is 8px, ordinary blocks 12px,
+Report titles, sections and subsections use 22px/30px, 18px/26px and 16px/24px respectively. Progress, elapsed time
+and result coverage warnings use the shared `body-sm` role. Report tables clear the renderer's internal table margin:
+heading-to-table is 8px, ordinary blocks 12px,
 major sections 24px, subsections 20px, and the report title-to-introduction gap is 16px. Table cells use 8px vertical
 and 12px horizontal padding with 13px/20px text. Code, diagrams and callouts do not add a second outer margin to slots.
 Embedded artifacts own their internal caption, table and footer spacing; prose margins must not cascade into

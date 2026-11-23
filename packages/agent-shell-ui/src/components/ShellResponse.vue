@@ -268,10 +268,10 @@ async function submit(value: ShellFeedbackValue) {
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  line-height: var(--leading-xs);
-  color: var(--el-text-color-tertiary);
+  color: var(--el-text-color-secondary);
   font: inherit;
-  font-size: var(--text-xs, 12px);
+  font-size: var(--text-sm, 13px);
+  line-height: var(--leading-sm, 20px);
   font-variant-numeric: tabular-nums;
 }
 button.process-toggle {

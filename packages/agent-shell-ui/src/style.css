@@ -115,6 +115,18 @@
   margin-top: var(--spacing-xs);
 }
 /* Report sections have a reading hierarchy independent of the compact conversation process. */
+.agent-shell .report-reading .shell-markdown h1 {
+  font-size: var(--text-report-title);
+  line-height: var(--leading-report-title);
+}
+.agent-shell .report-reading .shell-markdown h2 {
+  font-size: var(--text-report-section);
+  line-height: var(--leading-report-section);
+}
+.agent-shell .report-reading .shell-markdown h3 {
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+}
 .agent-shell .markdown-renderer-file .shell-markdown > .node-slot:not(:first-child):has(> .node-content > :is(h3, h4, h5, h6)) {
   margin-top: calc(var(--spacing-lg-xl) - var(--conversation-block-gap));
 }
