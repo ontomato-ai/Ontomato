@@ -32,7 +32,7 @@ const classAttributes: Record<string, typeof personAttributes> = {
   log: logAttributes,
 };
 const personRelationships = [
-  { relationship: "person_to_org", fromclass: "person", toclass: "org", desc: "", fromField: "person_id", toField: "org_id" },
+  { relationship: "person_to_org", fromclass: "person", toclass: "org", desc: "Belongs to", fromShowName: "Person", toShowName: "Organization", fromField: "person_id", toField: "org_id" },
   { relationship: "person_to_person", fromclass: "person", toclass: "person", desc: "", fromField: "from_id", toField: "to_id" },
 ];
 
@@ -239,16 +239,17 @@ it("reads an outgoing relationship's neighbors with the anchor's key, one row ov
   expect(dslCalls[0].answer.steps[0].output.limit).toEqual({ count: 51, offset: 0 });
   expect(dslCalls[0].answer.steps[0].output.sort).toEqual({ fields: [{ variable: "target", field: "id", order: "asc" }] });
 
-  expect(result.node).toEqual({ className: "person", primaryKey: "p1", label: "Alice", layer: "fact" });
+  expect(result.node).toEqual({ className: "person", primaryKey: "p1", label: "Alice", typeLabel: "Person", layer: "fact" });
+  expect(result.edges.map(edge => edge.label)).toEqual(["Belongs to", "Belongs to"]);
   expect(result.edges.map(edge => [edge.id, edge.from, edge.to, edge.direction])).toEqual([
     ["person_to_org:outgoing:p1:o1", anchor, { className: "org", primaryKey: "o1" }, "outgoing"],
     ["person_to_org:outgoing:p1:o2", anchor, { className: "org", primaryKey: "o2" }, "outgoing"],
   ]);
   expect(result.neighbors).toEqual([
-    { className: "org", primaryKey: "o1", label: "Acme", layer: "fact" },
-    { className: "org", primaryKey: "o2", label: "Globex", layer: "fact" },
+    { className: "org", primaryKey: "o1", label: "Acme", typeLabel: "Organization", layer: "fact" },
+    { className: "org", primaryKey: "o2", label: "Globex", typeLabel: "Organization", layer: "fact" },
   ]);
-  expect(result.relations).toEqual([{ relationKind: "person_to_org", status: "ok", edgeCount: 2, truncated: false }]);
+  expect(result.relations).toEqual([{ relationKind: "person_to_org", label: "Belongs to", status: "ok", edgeCount: 2, truncated: false }]);
 });
 
 it("reads both directions of a self-loop and keeps a neighbor reached twice as one", async () => {
@@ -265,8 +266,8 @@ it("reads both directions of a self-loop and keeps a neighbor reached twice as o
   // An incoming edge keeps the relationship's own direction: the neighbor is its from end.
   expect(result.edges.map(edge => [edge.direction, edge.from.primaryKey, edge.to.primaryKey]))
     .toEqual([["outgoing", "p1", "p2"], ["incoming", "p2", "p1"]]);
-  expect(result.neighbors).toEqual([{ className: "person", primaryKey: "p2", label: "Bob", layer: "fact" }]);
-  expect(result.relations).toEqual([{ relationKind: "person_to_person", status: "ok", edgeCount: 2, truncated: false }]);
+  expect(result.neighbors).toEqual([{ className: "person", primaryKey: "p2", label: "Bob", typeLabel: "Person", layer: "fact" }]);
+  expect(result.relations).toEqual([{ relationKind: "person_to_person", label: "person_to_person", status: "ok", edgeCount: 2, truncated: false }]);
 });
 
 it("refuses relationKinds that point the read at another relationship", async () => {
@@ -276,7 +277,7 @@ it("refuses relationKinds that point the read at another relationship", async ()
   await expect(reads.neighbors("person_to_org", { node: anchor, relationKinds: ["person_to_person"] }))
     .rejects.toMatchObject({ status: 400 });
   await expect(reads.neighbors("person_to_org", { node: anchor, relationKinds: ["person_to_org"] }))
-    .resolves.toMatchObject({ relations: [{ relationKind: "person_to_org", status: "ok" }] });
+    .resolves.toMatchObject({ relations: [{ relationKind: "person_to_org", label: "Belongs to", status: "ok" }] });
 });
 
 it("fails a relationship the anchor's class does not have, without querying it", async () => {
@@ -298,7 +299,7 @@ it("reports the viewer's refusal on the relationship as refused, with the owner'
   const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor });
 
   expect(result.relations).toEqual([{
-    relationKind: "person_to_org", status: "refused", edgeCount: 0, truncated: false, reason: "Class is outside the authorized scope",
+    relationKind: "person_to_org", label: "Belongs to", status: "refused", edgeCount: 0, truncated: false, reason: "Class is outside the authorized scope",
   }]);
   expect(result.edges).toEqual([]);
 });
@@ -309,7 +310,7 @@ it("marks the relationship failed when the owner's execution fails, with its rea
   const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor });
 
   expect(result.relations).toEqual([{
-    relationKind: "person_to_org", status: "failed", edgeCount: 0, truncated: false, reason: "upstream adapter failed",
+    relationKind: "person_to_org", label: "Belongs to", status: "failed", edgeCount: 0, truncated: false, reason: "upstream adapter failed",
   }]);
 });
 
@@ -318,7 +319,7 @@ it("caps the returned rows at the limit and reports the relationship as truncate
 
   const result = await createCustomerOntologyReadAdapter(owner, viewer).neighbors("person_to_org", { node: anchor, limit: 2 });
 
-  expect(result.relations).toEqual([{ relationKind: "person_to_org", status: "ok", edgeCount: 2, truncated: true }]);
+  expect(result.relations).toEqual([{ relationKind: "person_to_org", label: "Belongs to", status: "ok", edgeCount: 2, truncated: true }]);
   expect(result.neighbors.map(neighbor => neighbor.primaryKey)).toEqual(["o1", "o2"]);
 });
 

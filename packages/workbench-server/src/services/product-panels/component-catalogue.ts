@@ -62,10 +62,17 @@ async function requireSdkComponentEntry(
   return entry;
 }
 
-function formatSdkPortType(type: DirectPanelPortType, locale: string | undefined): string {
+function formatSdkPortType(
+  type: DirectPanelPortType,
+  locale: string | undefined,
+  componentId?: string,
+  name?: string,
+): string {
   const word = (key: string, params?: Record<string, unknown>) => tForLocale(locale, `panels.sdkComponent.${key}`, params);
+  if (componentId === "@ontomato/sdk:ObjectRelations" && name === "visibleRelationKinds") return word("portRelationKinds");
   switch (type.kind) {
     case "object":
+      if (type.objectType === "@any") return word("portAnyOntologyObject");
       return type.objectType === "@binding"
         ? word("portBinding")
         : word("portObject", { type: type.objectType });
@@ -234,7 +241,7 @@ export async function readSdkComponentInputRows(
     label: name,
     fields: {
       kind: word("kindInput"),
-      type: formatSdkPortType(portType, locale),
+      type: formatSdkPortType(portType, locale, componentId, name),
       description: word("inputDeclared"),
     },
     tones: { kind: "info" },
@@ -271,7 +278,7 @@ export async function readSdkComponentOutputRows(
     label: name,
     fields: {
       kind: word("kindOutput"),
-      type: formatSdkPortType(portType, locale),
+      type: formatSdkPortType(portType, locale, componentId, name),
       description: word("outputDeclared"),
     },
     tones: { kind: "info" },

@@ -448,19 +448,19 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectRelations",
     role: "control",
     meaning:
-      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction, stored/derived line semantics, and optional edge binding details (`reads`, `operations`, `viaInput`). Supports filtering by relation kind (`visibleRelationKinds` and optional `showRelationFilter` multi-select), optional header summary (`showSummary`) and empty-group collapsing (`collapseEmptyGroups`), moving selection to a clicked peer node (`selected`), and promoting a peer node as graph start (`allowSetStart` / `start`). Exposes `status`, `edgeCount`, and `label` as read-only outputs.",
+      "Lists one-hop relations of the selected node from the bound resource's graph neighbors port, grouped by relation kind with distinct no-neighbors, owner-refused, read-failed and unavailable states, showing edge direction, stored/derived line semantics, and optional edge binding details (`reads`, `operations`, `viaInput`). Supports filtering by relation kind (`visibleRelationKinds` and optional `showRelationFilter` multi-select), optional header summary (`showSummary`) and empty-group collapsing (`collapseEmptyGroups`), moving selection to a clicked peer node (`selected`), and promoting a peer node as graph start (`allowSetStart` / `start`). Exposes `status`, `edgeCount`, and `label` as read-only outputs. `edgeCount` is null when the result is truncated. For a customer relationship, set `data.neighbors.type` to the relationship ID.",
     effects: "Reads the bound graph source's one-hop neighbors as the reader; writes only the panel's own selection, start, and visible relation kinds state.",
-    bindsElement: ["PlatformObjectType:*", "ObjectType:*"],
+    bindsElement: ["PlatformObjectType:*", "ObjectType:*", "Relationship:*"],
     // The node a reader moved to, when no state the author bound holds it.
     data: { neighbors: { results: ["panelGraphNeighbors", "panelRelationNeighbors"], required: true, runtimeParams: ["node"] } },
     inputs: {
-      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
+      selected: { kind: "object", objectType: "@any" },
+      visibleRelationKinds: { kind: "list", items: { kind: "scalar", type: "string" } },
     },
     outputs: {
-      selected: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      start: { kind: "object-union", layers: ["fact", "capability", "governance", "product"], objectTypes: ["platform:OntologyType"] },
-      visibleRelationKinds: { kind: "list", items: { kind: "object", objectType: "platform:OntologyRelationKind" } },
+      selected: { kind: "object", objectType: "@any" },
+      start: { kind: "object", objectType: "@any" },
+      visibleRelationKinds: { kind: "list", items: { kind: "scalar", type: "string" } },
     },
     readOnlyOutputs: {
       status: { kind: "scalar", type: "string" },
@@ -660,7 +660,7 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "AnnotatedCode",
     role: "presentation",
     meaning:
-      "Displays line-numbered source code alongside hierarchical line-range annotation segments from its `content` (`annotatedCode`) datum, with bidirectional line/segment highlighting and scrolling, a deduplicated kind legend, expandable structured detail rows with clickable reference buttons (`refKey`), an optional outdated-code notice when the `currentCode` input differs from `content.code`, and optional summary blocks. Emits `select-ref` and `select-segment`, accepts optional `currentCode` and `activeSegmentId` inputs (with `activeSegmentId` also writable to bound panel state), and exposes `status`, `activeSegmentId`, and `selectedRef` as read-only outputs.",
+      "Displays line-numbered source code alongside hierarchical line-range annotation segments from its `content` (`annotatedCode`) datum, with bidirectional line/segment highlighting and scrolling (including automatically scrolling both panes when `activeSegmentId` changes externally and clearing highlights when it is cleared to `null`), a deduplicated kind legend, expandable structured detail rows with clickable reference buttons (`refKey`), an optional outdated-code notice when the `currentCode` input differs from `content.code`, and optional summary blocks. Emits `select-ref` and `select-segment`, accepts optional `currentCode` and `activeSegmentId` inputs (with `activeSegmentId` also writable to bound panel state), and exposes `status`, `activeSegmentId`, and `selectedRef` as read-only outputs.",
     effects: "Reads the bound object's annotatedCode datum as the reader; writes only the panel's own segment selection state and read-only outputs.",
     bindsElement: ["PlatformObjectType:*"],
     data: {
