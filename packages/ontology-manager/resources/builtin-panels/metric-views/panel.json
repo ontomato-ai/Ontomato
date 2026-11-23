@@ -31,6 +31,13 @@
           "type": "boolean"
         },
         "default": false
+      },
+      "batchStatus": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "PUBLISHED"
       }
     },
     "members": {
@@ -80,14 +87,17 @@
         "description": "按名称和描述搜索的指标目录，显示名称、描述、关联函数、来源、状态、创建人、审核人与更新时间。",
         "id": "builtin-product-37b7a15d-5e96-4375-a4b5-9515b99e7a9f"
       },
-      "record": {
-        "component": "PanelData",
+      "header": {
+        "component": "ObjectHeader",
         "target": "selected",
         "data": {
           "record": "record"
         },
-        "name": "当前指标摘要",
-        "description": "选中指标的标题和存在状态。",
+        "config": {
+          "subtitle": ""
+        },
+        "name": "当前指标标题",
+        "description": "选中指标的标题和读取状态。",
         "id": "builtin-product-70685f91-0d45-4ee3-aa69-26a9aef2eeda"
       },
       "definition": {
@@ -114,10 +124,21 @@
         "id": "builtin-product-de1377ff-5e28-476a-a2fb-3bdaf9a9bbd1"
       },
       "publishStatus": {
-        "component": "PanelData",
+        "component": "OperationButton",
         "type": "platform:MetricView",
         "target": "checked",
         "operation": "metricViews.setStatus",
+        "operationParams": {
+          "status": {
+            "state": "batchStatus"
+          }
+        },
+        "config": {
+          "type": "primary",
+          "size": "small",
+          "showBatchCount": false,
+          "labelKey": "metricViews.batchApply"
+        },
         "name": "批量改发布状态",
         "description": "把勾选的指标一次改成待审核、已发布或未使用。",
         "id": "builtin-product-6193e673-ac00-48a5-88e7-7fe7312f7256"
@@ -143,6 +164,9 @@
   "content": {
     "messages": {
       "en": {
+        "metricViews.title": "Metric Views",
+        "metricViews.description": "Maintain business metric definitions, parameter bindings, and draft tests",
+        "metricViews.refresh": "Refresh",
         "metricViews.new": "New Metric View",
         "metricViews.back": "Back to Metric Views",
         "metricViews.empty": "No metric views found",
@@ -151,10 +175,6 @@
         "metricViews.batchStatus": "Set publication status",
         "metricViews.batchApply": "Update status",
         "metricViews.batchDone": "{done} of {total} updated",
-        "metricViews.batchRefused": "The owner refused: {message}",
-        "metricViews.batchCancelled": "Nothing was changed: confirmation was cancelled.",
-        "metricViews.batchUnknown": "The result is unknown: {message}",
-        "metricViews.result": "Updated",
         "metricViews.status.PENDING_REVIEW": "Pending review",
         "metricViews.status.PUBLISHED": "Published",
         "metricViews.status.UNUSED": "Unused",
@@ -183,6 +203,9 @@
         "metricViews.close": "Close"
       },
       "zh-CN": {
+        "metricViews.title": "指标视图",
+        "metricViews.description": "维护业务指标定义、参数绑定与测试",
+        "metricViews.refresh": "刷新",
         "metricViews.new": "新建指标视图",
         "metricViews.back": "返回指标视图",
         "metricViews.empty": "未找到指标视图",
@@ -191,10 +214,6 @@
         "metricViews.batchStatus": "目标发布状态",
         "metricViews.batchApply": "批量修改状态",
         "metricViews.batchDone": "{total} 项中已修改 {done} 项",
-        "metricViews.batchRefused": "属主拒绝：{message}",
-        "metricViews.batchCancelled": "未做修改：已取消确认。",
-        "metricViews.batchUnknown": "结果不明：{message}",
-        "metricViews.result": "已修改",
         "metricViews.status.PENDING_REVIEW": "待审核",
         "metricViews.status.PUBLISHED": "已发布",
         "metricViews.status.UNUSED": "未使用",
