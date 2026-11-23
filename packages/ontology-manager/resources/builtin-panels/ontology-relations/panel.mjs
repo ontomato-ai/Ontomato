@@ -1,5 +1,5 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelContext, usePanelData } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelContext, usePanelOutput } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:Relationship";
 const DETAIL_PATH = "/ontology/relations/detail";
@@ -12,29 +12,9 @@ await mountPanel({
       set: (value) => instance.state.set("search", value),
     });
 
-    const catalogue = usePanelData("catalogue", "rows");
-    const types = usePanelData("types", "rows");
-
-    const typeLabels = computed(() => {
-      const rows = types.value.status === "ready" ? types.value.value : [];
-      return Object.fromEntries(rows.map((row) => [row.primaryKey, row.label || row.primaryKey]));
-    });
-    const typeLabel = (className) => (!className ? "" : typeLabels.value[className] ?? className);
-
-    const allRows = computed(() => (catalogue.value.status === "ready" ? catalogue.value.value : []));
-    const rows = computed(() => {
-      const term = search.value.trim().toLowerCase();
-      if (!term) return allRows.value;
-      return allRows.value.filter((row) =>
-        [row.primaryKey, row.label, row.fields.desc, row.fields.fromclass, row.fields.toclass,
-          typeLabel(row.fields.fromclass), typeLabel(row.fields.toclass)]
-          .filter(Boolean).join(" ").toLowerCase().includes(term));
-    });
-    // Match the original catalog count format (`14 项`, and `0 项` when no rows match the filter).
-    const countText = computed(() => {
-      if (catalogue.value.status !== "ready") return "";
-      return `${rows.value.length} 项`;
-    });
+    // Format the ObjectList projection's declared filteredCount read-only output (`14 项` / `0 项`).
+    const filteredCount = usePanelOutput("catalogue", "filteredCount");
+    const countText = computed(() => (filteredCount.value === null ? "" : `${filteredCount.value} 项`));
 
     const creating = computed(() => instance.state.values.value.creating === true);
     const setCreating = (value) => instance.state.set("creating", value ? true : null);
@@ -44,10 +24,10 @@ await mountPanel({
       return `${DETAIL_PATH}?${new globalThis.URLSearchParams({ state })}`;
     }
 
-    function open(row) {
-      if (!row?.primaryKey) return;
+    function open(ref) {
+      if (!ref?.primaryKey) return;
       if (creating.value) setCreating(false);
-      void navigate(detailAddress(row.primaryKey)).catch(() => undefined);
+      void navigate(detailAddress(ref.primaryKey)).catch(() => undefined);
     }
 
     function startCreate() {
@@ -84,8 +64,8 @@ await mountPanel({
     }, { immediate: true });
 
     return {
-      catalogue, types, allRows, rows, countText, search, creating, createDialog,
-      typeLabel, open, startCreate, cancelCreate, onSaved, onDiscarded,
+      countText, search, creating, createDialog,
+      open, startCreate, cancelCreate, onSaved, onDiscarded,
       refresh: () => instance.refreshObjects(),
     };
   },

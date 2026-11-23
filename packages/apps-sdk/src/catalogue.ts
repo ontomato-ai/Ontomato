@@ -254,12 +254,13 @@ export const components: readonly ComponentMetadata[] = [
     exportName: "ObjectHeader",
     role: "presentation",
     meaning:
-      "Draws a detail header with object name (`record.label` or `title`), one-line subtitle (`subtitleField` or `subtitle`), status badge (`statusField` paired with `record.tones`, or `status` + `statusTone`), and right-side actions. When mounted as a projection member with declared `operations`, exposes up to `maxVisibleOperations` (default 2, configurable without upper cap) operations inline via `OperationButton` in declared order (styling destructive operations as plain danger buttons inline when within the visible limit) and moves remaining overflow operations into an SDK dropdown More menu (whose accessible name automatically includes the current record title) using the shared operation dispatch, parameter dialog, and confirmation path. Also works standalone with `title`/`subtitle` and `#actions` (such as create-mode headers). Exposes `label` as a read-only output.",
+      "Draws a detail header with object name (`record.label` or `title`), one-line subtitle (`subtitleField` or `subtitle`), status badge (`statusField` paired with `record.tones`, or `status` + `statusTone`), and right-side actions. When mounted as a projection member with declared `operations`, exposes up to `maxVisibleOperations` (default 2, configurable without upper cap) operations inline via `OperationButton` in declared order (styling destructive operations as plain danger buttons inline when within the visible limit) and moves remaining overflow operations into an SDK dropdown More menu (whose accessible name automatically includes the current record title) using the shared operation dispatch, parameter dialog, and confirmation path. Also works standalone with `title`/`subtitle` and `#actions` (such as create-mode headers). Exposes `label` and `status` as read-only outputs.",
     effects: "Reads the bound object's `record` datum when declared and runs projection operations through the platform coordinator.",
     bindsElement: ["PlatformObjectType:*"],
     data: { record: { results: ["panelRecord"], required: false } },
     readOnlyOutputs: {
       label: { kind: "scalar", type: "string" },
+      status: { kind: "scalar", type: "string" },
     },
   }),
   defineComponentMeta({

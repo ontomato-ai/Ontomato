@@ -1,12 +1,11 @@
 # 关系类型详情页的常见做法
 
-这一页展示一条关系类型的详情：顶部单行页头包含返回、关系名称（由 `headerTitle` 投影绘制）、删除按钮与保存/放弃草稿条；下方两栏分别是「基本信息」编辑表单和「对象连接」端点卡片。
+这一页展示一条关系类型的详情：顶部单行页头包含返回、关系名称（由 `headerTitle` 投影绘制）、删除按钮与保存/放弃草稿条；下方两栏分别是「基本信息」编辑表单和「对象连接」两端对象卡片（由 `fromCard` / `toCard` 两个 `ObjectRefCard` 投影绘制）。
 
 ## 看页面现在是什么
 
 - 状态 `selected` 是当前打开的关系类型（`{"className":"platform:Relationship","primaryKey":"<关系名>"}`）。
-- `detail` 成员的 `record` 是选中关系类型的记录，读不到时页面显示「关系类型不存在或已删除」。
-- `types` 成员的 `rows` 是本体的类，用来把 `fromclass` / `toclass` 显示成类的中文名。
+- `headerTitle`（`ObjectHeader`）、`fromCard` / `toCard`（`ObjectRefCard`）均绑定选中关系类型的 `record`；读不到时页面显示「关系类型不存在或已删除」。
 
 ## 修改关系类型：起草，由人保存
 

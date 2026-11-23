@@ -138,6 +138,8 @@ function relationshipRecord(view: RelationshipView): Omit<PanelRecord, "fieldLab
     fields: {
       fromclass: view.fromclass,
       toclass: view.toclass,
+      fromclassLabel: fromLabel,
+      toclassLabel: toLabel,
       ...(view.fromclass && {
         fromObject: { kind: "reference" as const, className: OBJECT_TYPE, primaryKey: view.fromclass, label: fromLabel },
       }),
@@ -205,9 +207,11 @@ export function createOntologyModelReadAdapter(
   /** Labels the fields a record has; derived summary fields have no owner label and stay unlabelled. */
   function labelled(record: Omit<PanelRecord, "fieldLabels">, labels: Record<string, string>): PanelRecord {
     const fieldLabels = Object.fromEntries(Object.entries(labels).filter(([key]) => key in record.fields));
-    // Endpoint reference fields share the owner's labels for `fromclass` and `toclass`.
+    // Endpoint reference and display-label fields share the owner's labels for `fromclass` and `toclass`.
     if ("fromObject" in record.fields && labels.fromclass) fieldLabels.fromObject = labels.fromclass;
     if ("toObject" in record.fields && labels.toclass) fieldLabels.toObject = labels.toclass;
+    if ("fromclassLabel" in record.fields && labels.fromclass) fieldLabels.fromclassLabel = labels.fromclass;
+    if ("toclassLabel" in record.fields && labels.toclass) fieldLabels.toclassLabel = labels.toclass;
     return { ...record, fieldLabels };
   }
 

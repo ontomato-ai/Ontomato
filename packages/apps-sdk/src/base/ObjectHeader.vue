@@ -251,6 +251,7 @@ watch(
 
 if (member.value) {
   useMemberOutput("label", () => resolvedTitle.value || null);
+  useMemberOutput("status", () => recordData.value?.status ?? null);
 }
 
 function handleMoreCommand(command: string | number | Record<string, unknown>) {
