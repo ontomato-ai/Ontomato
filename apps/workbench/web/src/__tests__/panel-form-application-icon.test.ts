@@ -39,6 +39,16 @@ const description = {
   save: { method: "PUT", path: "/applications/:id", bodySchema: {}, draftOperation: "application.save" },
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
+const saveDescriptor = {
+  kind: "form.save",
+  handlerRef: `${FUNCTION}.save`,
+  label: "Save",
+  effect: "write",
+  target: { source: "input", input: "app" },
+  inputSchema: {},
+  resultSchema: {},
+  batch: false,
+};
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -49,7 +59,7 @@ it("shows the icons available to a domain application and keeps the key the read
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app: target },
     text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
     readProjection: async () => projection,
-    read: async (request) => (request.operations ? ready({}) : ready(description)),
+    read: async (request) => (request.operations ? ready({ save: saveDescriptor }) : ready(description)),
   });
   const element = document.createElement("div");
   document.body.append(element);
