@@ -192,9 +192,15 @@ it("mounts ObjectForm on an ordinary customer ObjectType and saves edits through
     },
   ]);
 
-  // Clearing selection switches seamlessly to the customer createForm.
+  // Clearing selection switches seamlessly to the customer createForm; since no create Action is bound,
+  // createForm fields stay read-only until an admitted create Action is declared.
   instance.state.set("selected", null);
-  await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/id"] input')?.disabled).toBe(false));
+  await vi.waitFor(() => {
+    expect(element.querySelector<HTMLInputElement>('[data-field="/id"] input')?.value).toBe("");
+    expect(element.querySelector('[data-field="/credits"]')).toBeNull();
+  });
+  expect(element.querySelector<HTMLInputElement>('[data-field="/id"] input')?.disabled).toBe(true);
+  expect(element.querySelector<HTMLInputElement>('[data-field="/studentName"] input')?.disabled).toBe(true);
   unmount();
 });
 

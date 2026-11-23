@@ -28,7 +28,7 @@ import {
   evaluateMemberFormDraft,
   formSave,
   formTargetKey,
-  hasDeclaredCustomerActionSave,
+  isCustomerActionForm,
   itemKeysEqual,
   memberFormSource,
   MemberDataUnavailable,
@@ -266,28 +266,18 @@ const actionFieldReadOnlyReason = computed(() => (
     ? t("platform.formFieldNotSavedByAction")
     : "Not modified by the current save action"
 ));
-/**
- * Active customer Action save wiring governing field editability on this form: only the form's own named save
- * operation (`formSave`) determines which fields are editable; other operations on the same form are never unioned or
- * intersected. Null for platform `form.save` forms.
- */
-const actionSaveWiring = computed<ActionSaveWiring | null>(() => {
+const isCustomerForm = isCustomerActionForm(member.projection, objectType);
+const admittedSave = computed(() => {
   const currentTarget = target.value;
-  if (!currentTarget) return null;
-  const opsState = member.operations.value;
-  if (opsState.status !== "ready") return null;
-  const save = formSave(opsState, currentTarget);
-  if (save) {
-    if (save.descriptor.kind === "form.save") return null;
-    if (currentTarget.kind === "draft" && save.descriptor.target.source !== "none" && save.descriptor.target.source !== "draft") {
-      return null;
-    }
-    return resolveActionSaveWiring(save.descriptor, member.projection.operations?.[save.name]);
-  }
-  if (currentTarget.kind === "object" && hasDeclaredCustomerActionSave(member.projection)) {
-    return emptyActionSaveWiring();
-  }
-  return null;
+  return currentTarget ? formSave(member.operations.value, currentTarget, member.projection.operations) : null;
+});
+const customerSaveUnavailable = computed(() => isCustomerForm && admittedSave.value === null);
+
+/** Only the form's save Action supplies field wiring. */
+const actionSaveWiring = computed<ActionSaveWiring | null>(() => {
+  const save = admittedSave.value;
+  if (!save) return customerSaveUnavailable.value ? emptyActionSaveWiring() : null;
+  return resolveActionSaveWiring(save.descriptor, member.projection.operations?.[save.name]);
 });
 
 /** Whether a path is a fixed field or inside one. */
@@ -373,6 +363,8 @@ const dirty = computed(() => prunedOpenedValues.value !== null
  * value ended where it began does not matter: a field set back to the value shown is still submitted, and can be saved.
  */
 const submitted = shallowRef<ReadonlySet<string>>(new Set());
+/** Exact field JSON Pointers edited by the reader (including nested paths set or removed), kept off the `form.save` wire. */
+const editedPaths = shallowRef<ReadonlySet<string>>(new Set());
 /** Whether the panel instance's active received draft belongs to this form (and this exact row when row-attached). */
 const hasActiveDraft = computed(() => {
   const active = panel.instance.draft.value;
@@ -405,7 +397,7 @@ const dirtyFields = computed<ReadonlySet<string>>(() => {
 const changedCount = computed(() => (dirtyFields.value.size > 0 ? dirtyFields.value.size : (canSettle.value ? 1 : 0)));
 /** Whether the form is ready and currently able to submit unsaved edits. */
 const canSubmit = computed(() =>
-  !failure.value && !loading.value && description.value !== null && canSettle.value && !saving.value && !asking.value,
+  !failure.value && !loading.value && description.value !== null && canSettle.value && !saving.value && !asking.value && !customerSaveUnavailable.value,
 );
 
 /** A draft this form took, for the target it addresses, shown once the form is on that target. */
@@ -432,6 +424,7 @@ function adopt(
 ) {
   userEdited.value = false;
   submitted.value = written;
+  editedPaths.value = new Set();
   ownerOpened.value = baseline;
   ownerShown.value = shown;
   opened.value = fixDescription(baseline);
@@ -619,6 +612,7 @@ function edit(path: string, next: PanelFormValues) {
   // The described field the edit is in: a row's or an object's field submits the array or object it belongs to.
   const described = fields.value.find((item) => path === item.path || path.startsWith(`${item.path}/`));
   if (described) submitted.value = new Set([...submitted.value, described.path]);
+  editedPaths.value = new Set([...editedPaths.value, path]);
   values.value = next;
   userEdited.value = true;
   editedAt.set(path, ++edits);
@@ -1173,6 +1167,10 @@ function takeSavedFields(receipt: PlatformObjectRefusal) {
   const keep = (path: string) => !savedPaths.has(path) || stillChanged.has(path);
   submitted.value = new Set([...submitted.value].filter(keep));
   changed.value = new Set([...changed.value].filter(keep));
+  editedPaths.value = new Set([...editedPaths.value].filter((path) =>
+    ![...savedPaths].some((savedPath) => path === savedPath || path.startsWith(`${savedPath}/`))
+    || [...stillChanged].some((changedPath) => path === changedPath || path.startsWith(`${changedPath}/`)),
+  ));
   if (held) held = { ...held, baseline, submitted: submitted.value, changed: changed.value };
 }
 
@@ -1198,7 +1196,7 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
       values: payloadValues, submittedFields: [...new Set([...submitted.value, ...Object.keys(fixedValues.value)])],
       ...(revision === undefined ? {} : { revision }),
     }, override, {
-      changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value])],
+      changedFields: [...new Set([...changed.value, ...effectiveChangedPaths.value, ...editedPaths.value])],
       baselineValues: opened.value?.values,
       formatUnwiredFieldRefusal: (paths) => ({
         message: te("platform.formActionUnwiredFields")
@@ -1208,6 +1206,7 @@ async function write(override?: FormSubmitOverride): Promise<unknown> {
       }),
     });
     submitted.value = new Set();
+    editedPaths.value = new Set();
     held = null;
     if (into.kind === "draft" && saved.primaryKey === null) {
       // A create Action that does not report a single new primary key settles cleanly back to the initial create form,
@@ -1585,11 +1584,11 @@ const slotScope = computed<ObjectFormSlotScope>(() => ({
           </span>
           <template v-if="isCreate">
             <el-button text :disabled="saving" @click="cancelCreate">{{ t("platform.cancel") }}</el-button>
-            <el-button type="primary" :disabled="asking" :loading="saving" @click="saveFromForm">{{ t("platform.create") }}</el-button>
+            <el-button type="primary" :disabled="asking || customerSaveUnavailable" :loading="saving" @click="saveFromForm">{{ t("platform.create") }}</el-button>
           </template>
           <template v-else>
             <el-button :disabled="saving || !canSettle" @click="confirmDiscard">{{ t("platform.discard") }}</el-button>
-            <el-button type="primary" :disabled="!canSettle || asking" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
+            <el-button type="primary" :disabled="!canSettle || asking || customerSaveUnavailable" :loading="saving" @click="saveFromForm">{{ t("platform.save") }}</el-button>
           </template>
         </slot>
       </div>

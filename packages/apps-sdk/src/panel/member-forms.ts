@@ -71,23 +71,32 @@ export function editedInput(projection: ProductProjection): string | undefined {
  */
 export function formSave(
   state: MemberOperationsState,
-  target?: PanelFormTarget,
+  target: PanelFormTarget,
+  projectionOperations: ProductProjection["operations"],
 ): { name: string; descriptor: PanelOwnerOperationDescriptor } | null {
   if (state.status !== "ready") return null;
   const saves = Object.entries(state.value).filter(([, descriptor]) => descriptor.kind === "form.save");
   if (saves.length > 1) throw new Error(`A form saves through one operation; its projection names ${saves.map(([name]) => name).join(", ")}`);
   if (saves.length === 1) return { name: saves[0]![0], descriptor: saves[0]![1] };
-  // Customer object forms have no platform `form.save`; they save through a bound customer write Action.
-  const actions = Object.entries(state.value).filter(([, descriptor]) =>
-    descriptor.kind === "action" && descriptor.effect === "write" && descriptor.handlerRef === "actions.execute");
-  const matched = target
-    ? actions.filter(([, descriptor]) =>
-        target.kind === "draft" ? descriptor.target.source === "none" : descriptor.target.source !== "none")
-    : actions;
-  const candidates = matched.length > 0 ? matched : actions;
-  if (candidates.length === 1) return { name: candidates[0]![0], descriptor: candidates[0]![1] };
-  const namedSave = candidates.find(([name]) => name === "save");
-  return namedSave ? { name: namedSave[0], descriptor: namedSave[1] } : null;
+
+  const declared = Object.entries(projectionOperations ?? {});
+  if (declared.some(([, binding]) => binding.operation.kind === "PlatformOperation")) return null;
+  const actions = declared.filter(([, binding]) => binding.operation.kind === "Action");
+  const creating = target.kind === "draft";
+  const matchesTarget = (binding: ProjectionOperationBinding) => creating === (binding.target === undefined);
+  // Choose from the declaration before checking admission so another action cannot take the place of save.
+  const names = creating ? ["create", "save"] : ["save"];
+  const name = actions.length === 1
+    ? actions.find(([, binding]) => matchesTarget(binding))?.[0]
+    : names.find((expected) => actions.some(([key, binding]) => key === expected && matchesTarget(binding)));
+  if (name === undefined) return null;
+
+  const descriptor = state.value[name];
+  if (!descriptor || descriptor.kind !== "action" || descriptor.effect !== "write" || descriptor.handlerRef !== "actions.execute") {
+    return null;
+  }
+  const targetless = descriptor.target.source === "none" || descriptor.target.source === "draft";
+  return creating === targetless ? { name, descriptor } : null;
 }
 
 /** A datum the owner did not answer with a value: no permission, or the reason it could not be read. */
@@ -263,17 +272,17 @@ export interface ActionSaveWiring {
   readonly wiredPaths: ReadonlySet<string>;
 }
 
-/** Empty wiring for a customer edit form whose declared save Action was not admitted for the current caller. */
+/** Empty wiring for a customer form that currently has no admitted, target-matching save Action. */
 export function emptyActionSaveWiring(): ActionSaveWiring {
   return { params: {}, wiredPaths: new Set() };
 }
 
-/** Whether the projection statically declares a customer write Action as its form save operation. */
-export function hasDeclaredCustomerActionSave(projection: Pick<ProductProjection, "operations">): boolean {
+/** Whether a customer-class form relies on an Action for saving. */
+export function isCustomerActionForm(projection: Pick<ProductProjection, "operations">, objectType: string): boolean {
   const entries = Object.entries(projection.operations ?? {});
   if (entries.some(([, binding]) => binding.operation.kind === "PlatformOperation")) return false;
   const actions = entries.filter(([, binding]) => binding.operation.kind === "Action");
-  return actions.length === 1 || actions.some(([name]) => name === "save");
+  return !objectType.startsWith("platform:") || actions.length === 1 || actions.some(([name]) => name === "save" || name === "create");
 }
 
 function isPlainRecord(value: unknown): value is Record<string, RuntimeJsonValue> {
@@ -389,15 +398,44 @@ function collectUnwiredObjectDiffs(
 ): void {
   if (isFormPathWired(path, wiredPaths)) return;
   if (jsonValuesEqual(before, after)) return;
-  if (!hasWiredDescendant(path, wiredPaths) || !isPlainRecord(before) || !isPlainRecord(after)) {
+  const beforeRecord = isPlainRecord(before) ? before : undefined;
+  const afterRecord = isPlainRecord(after) ? after : undefined;
+  const bothObjectLike =
+    (beforeRecord !== undefined || before === undefined || before === null)
+    && (afterRecord !== undefined || after === undefined || after === null)
+    && (beforeRecord !== undefined || afterRecord !== undefined);
+  if (!hasWiredDescendant(path, wiredPaths) || !bothObjectLike) {
     unwired.add(path);
     return;
   }
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  const keys = new Set([...Object.keys(beforeRecord ?? {}), ...Object.keys(afterRecord ?? {})]);
   for (const key of keys) {
     const childPath = `${path}/${escapePointerSegment(key)}`;
-    collectUnwiredObjectDiffs(childPath, before[key], after[key], wiredPaths, unwired);
+    collectUnwiredObjectDiffs(childPath, beforeRecord?.[key], afterRecord?.[key], wiredPaths, unwired);
   }
+}
+
+function isAncestorModified(
+  path: string,
+  modifiedSet: ReadonlySet<string>,
+): boolean {
+  let slash = path.lastIndexOf("/");
+  while (slash > 0) {
+    const ancestor = path.slice(0, slash);
+    if (modifiedSet.has(ancestor)) return true;
+    slash = ancestor.lastIndexOf("/");
+  }
+  return false;
+}
+
+function isFieldCleared(
+  path: string,
+  modifiedSet: ReadonlySet<string>,
+  baselineValues?: PanelFormValues,
+): boolean {
+  if (modifiedSet.has(path)) return true;
+  return isAncestorModified(path, modifiedSet)
+    && (baselineValues === undefined || valueAt(baselineValues, path) !== undefined);
 }
 
 /** Returns every modified or submitted field JSON Pointer that has no destination in the Action save wiring. */
@@ -489,7 +527,7 @@ export function buildActionSaveInput(
     if (source.kind === "field") {
       const raw = valueAt(formValues, source.path);
       if (raw === undefined) {
-        if (modifiedSet.has(source.path)) {
+        if (isFieldCleared(source.path, modifiedSet, options.baselineValues)) {
           serialized[param] = serializeActionParamValue(null, source.isJson);
         }
         continue;
@@ -501,7 +539,7 @@ export function buildActionSaveInput(
         const raw = valueAt(formValues, fieldPointer);
         if (raw !== undefined) {
           packed[key] = raw;
-        } else if (modifiedSet.has(fieldPointer)) {
+        } else if (isFieldCleared(fieldPointer, modifiedSet, options.baselineValues)) {
           packed[key] = null;
         }
       }
@@ -550,7 +588,7 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
         descriptor = override.descriptor;
         binding = override.binding;
       } else {
-        const save = formSave(member.operations.value, target);
+        const save = formSave(member.operations.value, target, projection.operations);
         if (!save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
         operationId = instance.operationIdOf(member.key, save.name);
         descriptor = save.descriptor;
