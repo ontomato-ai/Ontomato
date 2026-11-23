@@ -423,14 +423,17 @@ const applicationOperations: readonly PanelWriteServerOperation[] = [
     async ({ credentials }, id) => applicationCatalogueClient(credentials).remove(id),
     {
       async unavailable(host, { primaryKey }) {
+        const locale = host.locale ?? host.initiator.credentials.locale;
         try {
           const detail = await applicationCatalogueClient(host.initiator.credentials).record(primaryKey);
           if (!detail.canMaintain) {
-            return { reason: tForLocale(host.locale ?? host.initiator.credentials.locale, "panels.productCatalog.application.readOnly") };
+            return { reason: tForLocale(locale, "panels.productCatalog.application.readOnly") };
           }
           return undefined;
         } catch {
-          return undefined;
+          // Fail closed: an unreadable record must never report delete as available,
+          // while isolating sibling operations on the same projection from this failure.
+          return { reason: tForLocale(locale, "panels.productCatalog.application.availabilityUnavailable") };
         }
       },
     },

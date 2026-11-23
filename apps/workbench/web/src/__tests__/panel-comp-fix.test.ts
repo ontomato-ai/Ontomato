@@ -510,4 +510,117 @@ describe("official component generality fixes (Items 1-4)", () => {
     container.querySelector<HTMLButtonElement>(".sdk-object-list-row-actions button")!.click();
     expect(rowActionsFired).toEqual([{ id: "edit", ref: { className: RELATIONSHIP, primaryKey: "entry-1" }, index: 0 }]);
   });
+
+  it("OperationButton fail-closes on operations error: hides when hideWhenUnavailable=true, stays non-clickable when false, and renders no header buttons", async () => {
+    const deleteHiddenProjection: DirectProjection = {
+      ...meta,
+      id: "app-delete-hidden",
+      name: "Delete App (Hidden)",
+      componentId: "@ontomato/sdk:OperationButton",
+      inputs: { target: { kind: "object", objectType: APPLICATION } },
+      outputs: {},
+      config: { operation: "delete", hideWhenUnavailable: true, type: "danger" },
+      data: {},
+      operations: { delete: { operation: { kind: "PlatformOperation", id: "applications.delete" }, target: { input: "target" } } },
+    };
+    const deleteVisibleProjection: DirectProjection = {
+      ...meta,
+      id: "app-delete-visible",
+      name: "Delete App (Visible)",
+      componentId: "@ontomato/sdk:OperationButton",
+      inputs: { target: { kind: "object", objectType: APPLICATION } },
+      outputs: {},
+      config: { operation: "delete", hideWhenUnavailable: false, type: "danger" },
+      data: {},
+      operations: { delete: { operation: { kind: "PlatformOperation", id: "applications.delete" }, target: { input: "target" } } },
+    };
+    const headerProjection: DirectProjection = {
+      ...meta,
+      id: "app-header-ops",
+      name: "App Header",
+      componentId: "@ontomato/sdk:ObjectHeader",
+      inputs: { target: { kind: "object", objectType: APPLICATION } },
+      outputs: {},
+      config: { fallbackTitle: "App" },
+      data: { record: { source: { object: { input: "target" } }, read: "record", params: {} } },
+      operations: { delete: { operation: { kind: "PlatformOperation", id: "applications.delete" }, target: { input: "target" } } },
+    };
+    const manifest: DirectPanelManifest = {
+      state: { selected: { type: { kind: "object", objectType: APPLICATION }, personal: false, deepLink: true, external: false } },
+      members: {
+        header: { target: { projectionId: "app-header-ops" }, inputs: { target: { state: "selected" } } },
+        deleteHidden: { target: { projectionId: "app-delete-hidden" }, inputs: { target: { state: "selected" } } },
+        deleteVisible: { target: { projectionId: "app-delete-visible" }, inputs: { target: { state: "selected" } } },
+      },
+    };
+
+    const { container } = mountTestPanel({
+      manifest,
+      projections: {
+        "app-header-ops": headerProjection,
+        "app-delete-hidden": deleteHiddenProjection,
+        "app-delete-visible": deleteVisibleProjection,
+      },
+      members: ["header", "deleteHidden", "deleteVisible"],
+      initial: { selected: { className: APPLICATION, primaryKey: "app-1" } },
+      answer(request) {
+        if (request.operations) {
+          return { status: "error", message: "Availability read failed" };
+        }
+        return ready({
+          primaryKey: "app-1",
+          className: APPLICATION,
+          label: "Ontology",
+          fields: { id: "app-1" },
+        });
+      },
+    });
+
+    // Wait for the visible (hideWhenUnavailable=false) button member to settle into its error DataState.
+    await vi.waitFor(() => {
+      const rendered = container.querySelectorAll(".sdk-operation-button");
+      expect(rendered).toHaveLength(1);
+      expect(rendered[0]!.textContent).toContain("Availability read failed");
+    });
+
+    // Only the hideWhenUnavailable=false instance renders (in error DataState with no clickable button);
+    // hideWhenUnavailable=true hides completely, and ObjectHeader renders no inline or overflow operation buttons.
+    const renderedButtons = container.querySelectorAll(".sdk-operation-button");
+    expect(renderedButtons).toHaveLength(1);
+    expect(renderedButtons[0]!.querySelector("button")).toBeNull();
+    expect(container.querySelector(".sdk-object-header-actions")).toBeNull();
+    expect(container.querySelector(".sdk-object-header-more")).toBeNull();
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+
+    // When the owner read is ready and admits the operation as available, hideWhenUnavailable=true renders the enabled button.
+    cleanup?.();
+    const { container: readyContainer } = mountTestPanel({
+      manifest: {
+        state: { selected: { type: { kind: "object", objectType: APPLICATION }, personal: false, deepLink: true, external: false } },
+        members: { deleteHidden: { target: { projectionId: "app-delete-hidden" }, inputs: { target: { state: "selected" } } } },
+      },
+      projections: { "app-delete-hidden": deleteHiddenProjection },
+      members: ["deleteHidden"],
+      initial: { selected: { className: APPLICATION, primaryKey: "app-1" } },
+      answer() {
+        return ready({
+          delete: {
+            kind: "action",
+            handlerRef: "applications.delete",
+            label: "Delete",
+            effect: "write",
+            target: { source: "input", input: "target" },
+            inputSchema: {},
+            resultSchema: {},
+            batch: false,
+          },
+        });
+      },
+    });
+    await vi.waitFor(() => {
+      const btn = readyContainer.querySelector<HTMLButtonElement>(".sdk-operation-button button");
+      expect(btn).not.toBeNull();
+      expect(btn!.disabled).toBe(false);
+    });
+  });
 });
