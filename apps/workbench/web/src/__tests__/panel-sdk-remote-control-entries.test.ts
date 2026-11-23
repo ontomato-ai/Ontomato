@@ -271,7 +271,10 @@ describe("Item 2.1 & 3.1: ObjectList row action conditions and busy rejection", 
       read: async (req) => (req.operations ? ready({ remove: removeDescriptor }) : ready(rowsPayload)),
     });
     try {
-      await vi.waitFor(() => expect(harness.element.textContent).toContain("Active row"));
+      await vi.waitFor(() => {
+        expect(harness.element.textContent).toContain("Active row");
+        expect(harness.element.textContent).toContain("Remove");
+      });
 
       const hiddenResult = await harness.instance.executeAction({
         operation: "entries.remove",
@@ -316,7 +319,10 @@ describe("Item 2.1 & 3.1: ObjectList row action conditions and busy rejection", 
       },
     });
     try {
-      await vi.waitFor(() => expect(harness.element.textContent).toContain("Second active row"));
+      await vi.waitFor(() => {
+        expect(harness.element.textContent).toContain("Second active row");
+        expect(harness.element.textContent).toContain("Remove");
+      });
 
       const inFlight = harness.instance.executeAction({
         operation: "entries.remove",
@@ -714,7 +720,11 @@ describe("Item 2.3: Agent input cannot override form, fixed literal, or state-wi
       },
     });
     try {
-      await vi.waitFor(() => expect(harness.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Alice"));
+      await vi.waitFor(() => {
+        expect(harness.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Alice");
+        expect(harness.element.textContent).toContain("Submit customer");
+        expect(harness.element.textContent).toContain("Approve");
+      });
 
       await harness.instance.fillForm({ member: "customerForm", values: { "/name": "Alice Screen" } });
 
