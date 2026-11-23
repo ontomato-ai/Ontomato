@@ -33,6 +33,12 @@
           "kind": "scalar",
           "type": "boolean"
         }
+      },
+      "creatingAttribute": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        }
       }
     },
     "members": {
@@ -235,12 +241,12 @@
             {
               "key": "type",
               "labelKey": "ot.colDataType",
-              "width": 92
+              "width": 96
             },
             {
               "key": "businessKey",
               "labelKey": "ot.colBusinessKey",
-              "width": 84,
+              "width": 112,
               "valueMap": {
                 "true": {
                   "labelKey": "ot.yes",
@@ -254,7 +260,7 @@
             {
               "key": "primaryKey",
               "labelKey": "ot.colPrimaryKey",
-              "width": 84,
+              "width": 112,
               "valueMap": {
                 "true": {
                   "labelKey": "ot.yes",

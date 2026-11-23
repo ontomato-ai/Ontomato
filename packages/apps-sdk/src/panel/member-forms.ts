@@ -11,7 +11,7 @@ import type {
   ProjectionOperationBinding,
 } from "@ontomato/contracts/panel-projection";
 import type { MemberDataState } from "./direct";
-import type { PanelInstance } from "./instance";
+import type { PanelAgentActionContext, PanelInstance } from "./instance";
 import type { PanelMemberContext } from "./member";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import { PlatformObjectRefusal } from "./platform-objects";
@@ -32,6 +32,7 @@ export interface FormSaveContext {
   readonly fixedFieldPaths?: readonly string[];
   readonly changedFields?: readonly string[];
   readonly baselineValues?: PanelFormValues;
+  readonly agentContext?: PanelAgentActionContext;
   readonly formatUnwiredFieldRefusal?: (paths: readonly string[]) => {
     readonly message: string;
     readonly fieldMessage: (path: string) => string;
@@ -335,14 +336,13 @@ function prepareActionSaveInput(
     readonly submittedFields?: readonly string[];
     readonly changedFields?: readonly string[];
     readonly baselineValues?: PanelFormValues;
-    readonly extraInput?: Readonly<Record<string, unknown>>;
     readonly memberInputs?: Readonly<Record<string, unknown>>;
     readonly formatUnwiredFieldRefusal?: FormSaveContext["formatUnwiredFieldRefusal"];
   } = {},
 ): { input: Record<string, unknown> } | { refusal: PlatformObjectRefusal } {
   const wiring = resolveActionSaveWiring(descriptor, options.binding);
   if (!wiring) {
-    return { input: { ...formValues, ...(options.extraInput ?? {}) } };
+    return { input: { ...formValues } };
   }
 
   const modifiedSet = new Set<string>([
@@ -361,28 +361,8 @@ function prepareActionSaveInput(
     return { refusal: new PlatformObjectRefusal(message, fieldErrors) };
   }
 
-  const extraValues = (
-    options.extraInput
-    && typeof options.extraInput.values === "object"
-    && options.extraInput.values !== null
-    && !Array.isArray(options.extraInput.values)
-  )
-    ? (options.extraInput.values as Record<string, unknown>)
-    : undefined;
-
   const serialized: Record<string, string> = {};
   for (const [param, source] of Object.entries(wiring.params)) {
-    if (extraValues && Object.hasOwn(extraValues, param)) {
-      const extra = extraValues[param];
-      if (extra !== undefined) {
-        // `extraInput.values` from operation dispatch is already serialized into action form strings;
-        // preserve strings as-is to avoid double-encoding JSON-typed parameters.
-        serialized[param] = typeof extra === "string"
-          ? extra
-          : serializeActionParamValue(extra, source.isJson);
-      }
-      continue;
-    }
     if (source.kind === "field") {
       const raw = valueAt(formValues, source.path);
       if (raw === undefined) {
@@ -464,15 +444,14 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
     binding: ProjectionOperationBinding | undefined,
     input: PanelFormSaveInput,
     context?: FormSaveContext,
-    extraInput?: Readonly<Record<string, unknown>>,
+    memberInputs: Readonly<Record<string, unknown>> = member.inputs.value,
   ) {
     return prepareActionSaveInput(descriptor, input.values, {
       binding,
       submittedFields: input.submittedFields,
       changedFields: context?.changedFields,
       baselineValues: context?.baselineValues,
-      extraInput,
-      memberInputs: member.inputs.value,
+      memberInputs,
       formatUnwiredFieldRefusal: context?.formatUnwiredFieldRefusal,
     });
   }
@@ -505,10 +484,13 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
         ? { input: fixedPaths?.length
             ? { ...input, submittedFields: [...new Set([...(input.submittedFields ?? []), ...fixedPaths])] }
             : input }
-        : actionSaveInput(descriptor, binding, input, context, override?.extraInput);
+        : actionSaveInput(descriptor, binding, input, context, override?.memberInputs ?? member.inputs.value);
       if ("refusal" in prepared) throw prepared.refusal;
       const callTarget = descriptor.target.source === "none" ? null : target;
-      const answer = await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } });
+      const agentContext = context?.agentContext ?? override?.agentContext;
+      const answer = agentContext
+        ? await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } }, { agentContext })
+        : await instance.writeOperation(operationId, { call: { target: callTarget, input: prepared.input } });
       const { type } = target.kind === "object" ? { type: target.objectType } : formRead(target, undefined, null);
       return resolveFormSaveAnswer(answer, target, descriptor.kind, type);
     },

@@ -4,6 +4,7 @@ import {
   panelAddress,
   usePanelBack,
   usePanelContext,
+  usePanelFormDraft,
   usePanelNarrow,
   usePanelOutput,
 } from "@ontomato/sdk/panel";
@@ -59,6 +60,10 @@ await mountPanel({
     });
     const isPrimaryKeyOutput = usePanelOutput("detail", "isPrimaryKey");
     const isPrimaryKey = computed(() => isPrimaryKeyOutput.value === true);
+
+    const formDraft = usePanelFormDraft("form", {
+      when: () => Boolean(selectedKey.value) && detailStatus.value === "ready",
+    });
 
     function closeDetail() {
       instance.state.setState({ selected: null, createIn: null, creating: false });
@@ -135,6 +140,7 @@ await mountPanel({
       countText,
       creating,
       createDialog,
+      formDraft,
       back,
       onChoose,
       openOwner,

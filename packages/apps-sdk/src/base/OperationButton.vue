@@ -6,9 +6,11 @@ import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-op
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMember, useMemberOperations } from "../panel/member";
+import { missingOperationDescriptorResult } from "../panel/member-operations";
 import { useDataStateLabels } from "./data-state-labels";
 import { readConfigString } from "./localized-text";
 import {
+  filterAllowedOperationInput,
   formatOperationLabel,
   isOperationReady,
   resolveOperationInputFields,
@@ -182,12 +184,16 @@ function onTriggerClick() {
 
 const unregisterAction = panel.instance.registerActionHandler(
   panel.instance.operationIdOf(slot.slot, props.operation),
-  async ({ input }) => {
-    if (hiddenByAvailability.value) {
-      return { ok: false, reason: "action_unavailable", message: `Operation '${props.operation}' is currently hidden or unavailable.` };
-    }
+  async ({ input, agentContext }) => {
     if (!descriptor.value) {
-      return { ok: false, reason: "action_not_ready", message: `Operation '${props.operation}' is not ready yet.` };
+      return missingOperationDescriptorResult(operations.value, props.operation);
+    }
+    if (hiddenByAvailability.value) {
+      return {
+        ok: false,
+        reason: "action_unavailable",
+        message: descriptor.value.unavailable?.reason ?? `Operation '${props.operation}' is currently hidden or unavailable.`,
+      };
     }
     if (!ready.value) {
       return {
@@ -196,9 +202,9 @@ const unregisterAction = panel.instance.registerActionHandler(
         message: descriptor.value.unavailable?.reason ?? `Operation '${props.operation}' is currently disabled.`,
       };
     }
-    const providedInput = input ?? {};
+    const filteredInput = filterAllowedOperationInput(input, inputFields.value);
     const missing = inputFields.value
-      .filter((field) => field.required && !(field.name in providedInput))
+      .filter((field) => field.required && !(field.name in filteredInput))
       .map((field) => field.name);
     if (missing.length > 0) {
       return {
@@ -207,9 +213,15 @@ const unregisterAction = panel.instance.registerActionHandler(
         message: `Operation '${props.operation}' requires input fields: ${missing.join(", ")}.`,
       };
     }
-    await run(props.operation, descriptor.value, { ...providedInput });
+    const status = await run(props.operation, descriptor.value, filteredInput, agentContext);
     if (failure.value) {
       return { ok: false, reason: "failed", message: failure.value.message };
+    }
+    if (status === "cancelled") {
+      return { ok: false, reason: "cancelled", message: `Operation '${props.operation}' was cancelled.` };
+    }
+    if (status === "skipped") {
+      return { ok: false, reason: "action_unavailable", message: `Operation '${props.operation}' is currently busy.` };
     }
     if (read.value) {
       return { ok: true, outcome: read.value };

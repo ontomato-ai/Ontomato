@@ -9,7 +9,6 @@ import {
 import type {
   FormFillOutcome,
   FormFillRequestInput,
-  PageActionConfirmedDispatchResult,
   PageActionOutcome,
   PageActionRequestInput,
   PendingPageActionConfirmation,
@@ -73,11 +72,22 @@ export interface PanelInstanceOptions {
 /** A path that names at least one member: a nested publisher's, as the platform finds its operations by. */
 export type PublisherPath = [PanelMemberPath[number], ...PanelMemberPath];
 
-/** Explicit overrides for write operations (`memberPath` and lifecycle hooks). */
+/** Per-invocation agent context passed explicitly down a single `page_action` call chain. */
+export interface PanelAgentActionContext {
+  readonly agentRun: PanelAgentRunRef;
+  completed?: {
+    readonly intentId: string;
+    readonly response: PanelHumanOperationDispatchResponse;
+  };
+}
+
+/** Explicit overrides for write operations (`memberPath`, lifecycle hooks, and per-call agent context). */
 export interface PanelWriteOperationOptions {
   memberPath?: PanelMemberPath;
   /** Called right after confirmation passes (or immediately when no confirmation is required), before dispatch begins. */
   onConfirmed?: () => void;
+  /** Present only when this write was initiated by an agent `page_action` call. */
+  agentContext?: PanelAgentActionContext;
 }
 
 /** Thrown internally by `writeOperation` when an agent-initiated write awaits default conversation confirmation. */
@@ -132,6 +142,7 @@ export type PanelMountedActionResult =
 export type PanelMountedActionHandler = (request: {
   readonly rowKey?: string;
   readonly input?: Readonly<Record<string, RuntimeJsonValue>>;
+  readonly agentContext?: PanelAgentActionContext;
 }) => Promise<PanelMountedActionResult>;
 
 /** Formats a concise human/agent summary of a dispatched panel operation response. */
@@ -310,11 +321,6 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
   function operationPath(operationId: string): PanelMemberPath | undefined {
     return operations.value.find((operation) => operation.id === operationId)?.memberPath;
   }
-  interface ActiveAgentActionScope {
-    readonly agentRun: PanelAgentRunRef;
-    completed?: { readonly intentId: string; readonly response: PanelHumanOperationDispatchResponse };
-  }
-  let activeAgentAction: ActiveAgentActionScope | null = null;
   const actionHandlers = new Map<string, { scope: "default" | "row"; handler: PanelMountedActionHandler }[]>();
 
   function registerActionHandler(
@@ -344,7 +350,7 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
     // What the owner reports the write changed reaches the instance through the host's one refresh port, as an agent's
     // write does, and is read again from there; the receipt itself rereads nothing.
     const path = writeOptions?.memberPath ?? operationPath(operationId);
-    const agentScope = activeAgentAction;
+    const agentScope = writeOptions?.agentContext;
     const preparation = agentScope?.agentRun
       ? await options.operations.prepare(operationId, invocation, path, agentScope.agentRun)
       : await options.operations.prepare(operationId, invocation, path);
@@ -481,68 +487,50 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       entries.find((entry) => entry.scope === preferredScope)?.handler
       ?? (request.rowKey === undefined ? entries[0]?.handler : undefined);
 
-    const scope: ActiveAgentActionScope = { agentRun: request.agentRun };
-    const previousScope = activeAgentAction;
-    activeAgentAction = scope;
+    if (!matchedHandler) {
+      return {
+        ok: false,
+        reason: "action_not_found",
+        operation: request.operation,
+        message: request.rowKey !== undefined
+          ? `Row action '${request.operation}' is not mounted on a list member.`
+          : `The currently displayed page offers no mounted action '${request.operation}'.`,
+      };
+    }
+
+    const agentContext: PanelAgentActionContext = { agentRun: request.agentRun };
     try {
-      if (matchedHandler) {
-        const result = await matchedHandler({
-          ...(request.rowKey !== undefined ? { rowKey: request.rowKey } : {}),
-          ...(request.input !== undefined ? { input: request.input } : {}),
-        });
-        if (!result.ok) {
-          return {
-            ok: false,
-            reason: result.reason,
-            operation: request.operation,
-            ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
-            ...(result.message ? { message: result.message } : {}),
-          };
-        }
-        if ("confirmation" in result) {
-          return {
-            ok: true,
-            kind: "awaiting_confirmation",
-            operation: request.operation,
-            intentId: result.confirmation.intentId,
-            questionId: result.confirmation.questionId,
-            label: result.confirmation.label,
-            confirmation: result.confirmation,
-          };
-        }
+      const result = await matchedHandler({
+        ...(request.rowKey !== undefined ? { rowKey: request.rowKey } : {}),
+        ...(request.input !== undefined ? { input: request.input } : {}),
+        agentContext,
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          reason: result.reason,
+          operation: request.operation,
+          ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+          ...(result.message ? { message: result.message } : {}),
+        };
+      }
+      if ("confirmation" in result) {
         return {
           ok: true,
-          kind: "executed",
+          kind: "awaiting_confirmation",
           operation: request.operation,
-          ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
-          outcome: result.outcome ?? (scope.completed?.response.kind === "dispatched" ? scope.completed.response.outcome : scope.completed?.response),
+          intentId: result.confirmation.intentId,
+          questionId: result.confirmation.questionId,
+          label: result.confirmation.label,
+          confirmation: result.confirmation,
         };
       }
-
-      const binding = operations.value.find((op) => op.id === fullOperationId || op.id === request.operation);
-      if (!binding) {
-        return {
-          ok: false,
-          reason: "action_not_found",
-          operation: request.operation,
-          message: `The currently displayed page offers no mounted action '${request.operation}'.`,
-        };
-      }
-      if (request.rowKey !== undefined) {
-        return {
-          ok: false,
-          reason: "action_not_found",
-          operation: request.operation,
-          message: `Row action '${request.operation}' is not mounted on a list member.`,
-        };
-      }
-      const outcome = await binding.invoke(request.input);
       return {
         ok: true,
         kind: "executed",
         operation: request.operation,
-        ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
-        outcome: scope.completed?.response.kind === "dispatched" ? scope.completed.response.outcome : outcome,
+        ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
+        outcome: result.outcome ?? (agentContext.completed?.response.kind === "dispatched" ? agentContext.completed.response.outcome : agentContext.completed?.response),
       };
     } catch (error) {
       if (error instanceof PanelConfirmationDeferred) {
@@ -557,59 +545,13 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
           confirmation,
         };
       }
-      if (error instanceof PanelOperationDeferred) {
-        const { preparation, dispatchNow, cancelNow } = error;
-        const confirmation: PendingPageActionConfirmation = {
-          intentId: preparation.intentId,
-          questionId: preparation.questionId!,
-          operationId: preparation.operationId,
-          label: preparation.label,
-          isStillValid: () => ({ ok: true }),
-          async dispatch(): Promise<PageActionConfirmedDispatchResult> {
-            try {
-              const confirmed = await dispatchNow();
-              if (confirmed.decision !== "confirm") {
-                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: "Operation was cancelled." };
-              }
-              if (confirmed.response.kind === "not-dispatched") {
-                return { ok: false, intentId: preparation.intentId, reason: "not_dispatched", message: confirmed.response.message };
-              }
-              return {
-                ok: true,
-                intentId: preparation.intentId,
-                outcome: confirmed.response.outcome,
-                summary: summarizeDispatchResponse(confirmed.response),
-              };
-            } catch (dispatchError) {
-              return {
-                ok: false,
-                intentId: preparation.intentId,
-                reason: "failed",
-                message: dispatchError instanceof Error ? dispatchError.message : String(dispatchError),
-              };
-            }
-          },
-          cancel: cancelNow,
-        };
-        return {
-          ok: true,
-          kind: "awaiting_confirmation",
-          operation: request.operation,
-          intentId: preparation.intentId,
-          questionId: preparation.questionId!,
-          label: preparation.label,
-          confirmation,
-        };
-      }
       return {
         ok: false,
         reason: "failed",
         operation: request.operation,
-        ...(scope.completed ? { intentId: scope.completed.intentId } : {}),
+        ...(agentContext.completed ? { intentId: agentContext.completed.intentId } : {}),
         message: error instanceof Error ? error.message : String(error),
       };
-    } finally {
-      activeAgentAction = previousScope;
     }
   }
   const topLevelMemberKeys = Object.keys(manifest.members);

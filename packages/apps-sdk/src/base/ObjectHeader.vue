@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, watch } from "vue";
+import { computed, inject, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElDropdown, ElDropdownItem, ElDropdownMenu } from "element-plus/es/components/dropdown/index";
 import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-operations";
@@ -7,12 +7,15 @@ import { panelRecordObjectRef } from "@ontomato/contracts/panel-projection";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
 import { panelContextKey, projectionKey } from "../panel/context";
 import { panelMemberKey, readerDataState, useMemberOutput } from "../panel/member";
+import { missingOperationDescriptorResult } from "../panel/member-operations";
 import type { PlatformObjectRecord } from "../panel/platform-objects";
 import { projectionElement } from "../panel/projection-element";
 import { useDataStateLabels } from "./data-state-labels";
 import {
+  filterAllowedOperationInput,
   formatOperationLabel,
   isOperationReady,
+  resolveOperationInputFields,
   resolveOperationTarget,
   useOperationRunner,
   type OperationOutcome,
@@ -195,6 +198,7 @@ const {
   nameOf,
   trigger: triggerMoreOperation,
   confirmInput: confirmMoreInput,
+  run: runMoreOperation,
   reset: resetMoreRunner,
 } = useOperationRunner({
   panel: () => panel,
@@ -266,6 +270,83 @@ function handleMoreCommand(command: string | number | Record<string, unknown>) {
   if (!item || item.disabled || moreRunning.value) return;
   triggerMoreOperation(item.name, item.descriptor);
 }
+
+const headerOperationSpecs = computed<readonly string[]>(() => {
+  if (!slot) return [];
+  return props.operations
+    ? props.operations.map((entry) => (typeof entry === "string" ? entry : entry.name))
+    : Object.keys(slot.projection.operations ?? {});
+});
+
+// Operations rendered inline already register via their child `<OperationButton>`; register the remaining
+// header operations (overflow "More" menu items and declared operations while loading/unadmitted) here.
+const headerOwnedOperationNames = computed<readonly string[]>(() => {
+  const inlineSet = new Set(inlineOperations.value.map((item) => item.name));
+  return headerOperationSpecs.value.filter((name) => !inlineSet.has(name));
+});
+
+let unregisterHeaderActions: (() => void)[] = [];
+function clearHeaderActionHandlers() {
+  for (const unregister of unregisterHeaderActions) unregister();
+  unregisterHeaderActions = [];
+}
+watch(
+  headerOwnedOperationNames,
+  (names) => {
+    clearHeaderActionHandlers();
+    if (!panel || !slot) return;
+    unregisterHeaderActions = names.map((operationName) =>
+      panel.instance.registerActionHandler(
+        panel.instance.operationIdOf(slot.slot, operationName),
+        async ({ input, agentContext }) => {
+          const currentMember = member.value;
+          if (!currentMember) {
+            return { ok: false, reason: "action_not_ready", message: `Operation '${operationName}' is not ready yet.` };
+          }
+          const item = moreOperations.value.find((entry) => entry.name === operationName);
+          if (!item) {
+            return missingOperationDescriptorResult(currentMember.operations.value, operationName);
+          }
+          if (item.disabled || moreRunning.value) {
+            return {
+              ok: false,
+              reason: "action_unavailable",
+              message: item.descriptor.unavailable?.reason ?? `Operation '${operationName}' is currently disabled.`,
+            };
+          }
+          const inputFields = resolveOperationInputFields(panel, slot, operationName, item.descriptor);
+          const filteredInput = filterAllowedOperationInput(input, inputFields);
+          const missing = inputFields
+            .filter((field) => field.required && !(field.name in filteredInput))
+            .map((field) => field.name);
+          if (missing.length > 0) {
+            return {
+              ok: false,
+              reason: "input_required",
+              message: `Operation '${operationName}' requires input fields: ${missing.join(", ")}.`,
+            };
+          }
+          const status = await runMoreOperation(operationName, item.descriptor, filteredInput, agentContext);
+          if (moreFailure.value) {
+            return { ok: false, reason: "failed", message: moreFailure.value.message };
+          }
+          if (status === "cancelled") {
+            return { ok: false, reason: "cancelled", message: `Operation '${operationName}' was cancelled.` };
+          }
+          if (status === "skipped") {
+            return { ok: false, reason: "action_unavailable", message: `Operation '${operationName}' is currently busy.` };
+          }
+          if (moreRead.value) {
+            return { ok: true, outcome: moreRead.value };
+          }
+          return { ok: true, outcome: moreOutcome.value ?? moreReceipt.value ?? undefined };
+        },
+      ),
+    );
+  },
+  { immediate: true },
+);
+onBeforeUnmount(clearHeaderActionHandlers);
 </script>
 
 <template>

@@ -28,6 +28,53 @@ export function admittedOperations(state: MemberOperationsState): MemberOperatio
   return state.status === "ready" ? state.value : {};
 }
 
+/**
+ * Classifies why a declared operation has no admitted descriptor:
+ * - `"loading"` reports `action_not_ready` ("not ready yet").
+ * - `"forbidden"` or `"ready"` with a missing descriptor (not admitted/permitted by the owner) reports
+ *   `action_unavailable` with an explicit permission/admission reason rather than a misleading "not ready yet".
+ * - `"error"` reports `failed` with the read error message.
+ * - `"empty"` reports `action_unavailable`.
+ */
+export function missingOperationDescriptorResult(
+  state: MemberOperationsState,
+  operationName: string,
+): { readonly ok: false; readonly reason: "action_not_ready" | "action_unavailable" | "failed"; readonly message: string } {
+  if (state.status === "loading") {
+    return {
+      ok: false,
+      reason: "action_not_ready",
+      message: `Operation '${operationName}' is not ready yet.`,
+    };
+  }
+  if (state.status === "forbidden") {
+    return {
+      ok: false,
+      reason: "action_unavailable",
+      message: state.reason ?? `Operation '${operationName}' is not permitted for the current user.`,
+    };
+  }
+  if (state.status === "error") {
+    return {
+      ok: false,
+      reason: "failed",
+      message: state.message,
+    };
+  }
+  if (state.status === "empty") {
+    return {
+      ok: false,
+      reason: "action_unavailable",
+      message: `Operation '${operationName}' is not currently available.`,
+    };
+  }
+  return {
+    ok: false,
+    reason: "action_unavailable",
+    message: `Operation '${operationName}' is not permitted or admitted by its owner.`,
+  };
+}
+
 /** What an operations read sends: the projection's own inputs, as the member's placement fills them now. */
 function operationInputs(projection: DirectProjection, inputs: MemberInputs): MemberInputs {
   return Object.fromEntries(Object.keys(projection.inputs).filter((name) => Object.hasOwn(inputs, name)).map((name) => [name, inputs[name]!]));
