@@ -317,7 +317,10 @@ describe("platform-ontology composite query", () => {
 
     const projection = byId.get(PRODUCT_PROJECTION);
     expect(projection?.definition).toBe(platformTypeDetails[PRODUCT_PROJECTION]?.definition);
-    expect(Object.keys(projection?.reads ?? {}).sort()).toEqual(["createForm", "form", "grants", "query", "record", "usedBy"]);
+    expect(Object.keys(projection?.reads ?? {}).sort()).toEqual([
+      "configRows", "createForm", "dataRows", "form", "grantRows", "grants",
+      "inputRows", "operationRows", "outputRows", "query", "record", "usedBy", "usedByRows",
+    ]);
     expect(projection?.operations?.map((op) => op.id)).toContain(`${PRODUCT_PROJECTION}.save`);
 
     const panel = byId.get(PRODUCT_PANEL);

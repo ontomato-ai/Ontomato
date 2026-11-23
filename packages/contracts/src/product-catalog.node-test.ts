@@ -230,7 +230,16 @@ test("declares typed catalogue reads that reuse the current product records and 
   const { panelReadParameterSchemas } = await import("./panel-projection");
   const { currentPanelRecordSchema, currentProjectionRecordSchema } = await import("./product-panels");
 
-  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.query.result, "productProjectionList");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.query.result, "panelRecordQuery");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.record.result, "panelRecord");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.usedByRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.usedByRows.rowType, PRODUCT_PANEL);
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.grantRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.dataRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.configRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.inputRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.outputRows.result, "panelRecordList");
+  assert.equal(platformObjectTypes[PRODUCT_PROJECTION].reads?.operationRows.result, "panelRecordList");
   assert.equal(platformObjectTypes[PRODUCT_PANEL].reads?.usedBy.result, "productPanelUsedBy");
   assert.equal(platformObjectTypes[APPLICATION].reads?.form.result, "panelFormDescription");
   assert.equal(platformObjectTypes[APPLICATION].reads?.query.result, "panelRecordQuery");
