@@ -47,7 +47,7 @@ afterEach(() => {
 it("shows the icons available to a domain application and keeps the key the reader picks", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app: target },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => (request.operations ? ready({}) : ready(description)),
   });

@@ -26,6 +26,7 @@ import { noOperations } from "./panel-frame";
 const AGENT_RUN = {
   sessionId: "11111111-1111-4111-8111-111111111111",
   runId: "22222222-2222-4222-8222-222222222222",
+  toolCallId: "tool-call-1",
 };
 
 const baseRecord = {
@@ -117,7 +118,7 @@ function mountLiveForm(options: {
       intentId,
       operationId,
       label: "Save task",
-      confirmation: { kind: "confirm", title: "Save task" },
+      confirmation: { kind: "none" },
       autoMode: options.autoMode,
       ...(options.autoMode ? {} : { questionId: `question-${intentSeq}` }),
     };

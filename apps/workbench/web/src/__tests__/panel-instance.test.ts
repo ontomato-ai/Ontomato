@@ -131,7 +131,6 @@ describe("a panel's instance", () => {
         kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
         inputSchema: {}, resultSchema: {}, batch: false,
       } },
-      takesDrafts: false,
     });
     const [operation] = panelInstance.operations.value.filter((candidate) => candidate.slot === "runTask");
     await panelInstance.invoke(operation!.id);

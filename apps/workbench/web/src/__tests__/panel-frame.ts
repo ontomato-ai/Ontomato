@@ -765,8 +765,8 @@ export function humanIntents(
  */
 export function directRun(given: Pick<DirectPanelRun, "pageKey" | "url" | "label" | "initial"> & Partial<DirectPanelRun>): DirectPanelRun {
   return {
-    state: () => {}, context: () => {}, operations: () => {}, dirty: () => {}, draftSettled: () => {}, draftRefused: () => {},
-    draftOpened: () => {}, failed: (reason) => { throw reason; },
+    state: () => {}, context: () => {}, operations: () => {}, dirty: () => {},
+    failed: (reason) => { throw reason; },
     ...given,
   };
 }

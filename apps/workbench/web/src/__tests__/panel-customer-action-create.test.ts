@@ -259,7 +259,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
 
       const executed = await harness.instance.executeAction({
         operation: "orderForm.save",
-        agentRun: { sessionId: "11111111-1111-4111-8111-111111111111", runId: "22222222-2222-4222-8222-222222222222" },
+        agentRun: { sessionId: "11111111-1111-4111-8111-111111111111", runId: "22222222-2222-4222-8222-222222222222", toolCallId: "call-create-1" },
       });
       expect(executed).toMatchObject({ ok: true, kind: "executed", operation: "orderForm.save" });
       await vi.waitFor(() => expect(harness.savedEvents).toEqual([{ className: ORDER, primaryKey: "ord-99" }]));
@@ -339,7 +339,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
       });
       const executed = await harness.instance.executeAction({
         operation: "orderForm.save",
-        agentRun: { sessionId: "11111111-1111-4111-8111-111111111111", runId: "22222222-2222-4222-8222-222222222223" },
+        agentRun: { sessionId: "11111111-1111-4111-8111-111111111111", runId: "22222222-2222-4222-8222-222222222223", toolCallId: "call-edit-1" },
       });
       expect(executed).toMatchObject({ ok: true, kind: "executed", operation: "orderForm.save" });
 

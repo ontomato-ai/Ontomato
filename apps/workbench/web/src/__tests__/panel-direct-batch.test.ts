@@ -65,7 +65,6 @@ function open() {
         { target: { objectType: BUSINESS_KNOWLEDGE, primaryKey: "k-2" }, outcome: { kind: "refusal", code: "IN_USE", message: "Still cited" } },
       ],
     } } }),
-    recordDraftCreated: async () => {},
     readProjection: async () => removeAll,
     // The owner admits deleting the checked items; the button reads no datum.
     read: async (request) => ({ status: "ready", value: (request.operations ? { delete: deleteKnowledge } : null) as never }),

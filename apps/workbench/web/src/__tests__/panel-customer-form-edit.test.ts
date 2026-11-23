@@ -157,8 +157,6 @@ function mountCustomerForm(options: {
         },
       },
     }),
-    recordDraftCreated: async () => {},
-    reportDraftError: () => {},
     readProjection: async (id) => projections[id]!,
     read: async (request: PanelMemberReadRequest) => {
       if (request.operations) {

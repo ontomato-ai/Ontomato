@@ -52,7 +52,7 @@ it("says in the reader's language that a list could not be read, and reads it ag
   const { state, read } = port();
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "relations", url: () => "/relations", label: () => "Relations", initial: {},
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async (id) => (id === relations.id ? relations : relationData), read,
   });
   const element = document.createElement("div");

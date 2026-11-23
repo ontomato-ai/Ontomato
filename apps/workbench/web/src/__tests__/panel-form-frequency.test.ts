@@ -65,7 +65,7 @@ async function pick(scope: Element, list: string, label: string) {
 it("edits an owner's frequency as the scheduled task page does, each kind with its own values", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "schedules", url: () => "/schedules", label: () => "Schedules", initial: { task },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => (request.operations ? ready({}) : ready(description)),
   });

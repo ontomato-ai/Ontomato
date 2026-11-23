@@ -67,7 +67,6 @@ function mountPanel(
     url: () => "/picker",
     label: () => "Picker",
     initial: options.initial as never,
-    recordDraftCreated: async () => {},
     text: createPanelText(options.messages ?? {}, localeRef, "en"),
     ...noOperations,
     readProjection: async (id) => projections[id]!,

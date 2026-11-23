@@ -91,7 +91,6 @@ describe("a panel's projection", () => {
         kind: "action", handlerRef: "schedules.runNow", label: "Run now", effect: "write", target: { source: "input", input: "task" },
         inputSchema: {}, resultSchema: {}, batch: false,
       } },
-      takesDrafts: false,
     });
     await first.invoke("run.runNow");
     expect(prepare).toHaveBeenCalledWith("run.runNow", { call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "task-1" }, input: {} } }, undefined);
@@ -149,7 +148,6 @@ describe("a panel instance", () => {
       url: () => "/applications/app-panels-trial-b/summary",
       label: () => "panels-trial-b-summary",
       initial: { selectedTask: task("task-7") },
-      recordDraftCreated: async () => {},
       readProjection: async (id) => records.get(id)!,
     });
     p.state.set("selectedTask", task("task-9"));

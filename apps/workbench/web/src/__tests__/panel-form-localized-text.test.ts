@@ -56,7 +56,7 @@ afterEach(() => {
 it("edits a text in the languages the owner keeps: the reader's first, the rest on demand, as the owner stores it", async () => {
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => (request.operations ? ready({}) : ready(description)),
   });
@@ -113,7 +113,7 @@ it("leaves an optional text out of the values once every language of it is empti
   const optional = { ...names, path: "/note", label: "Note", required: false, control: { ...names.control, requiredLocales: undefined } };
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => (request.operations ? ready({}) : ready({ ...description, fields: [optional], values: { note: { "zh-CN": "备注" } }, errors: [] })),
   });
@@ -138,7 +138,7 @@ it("leaves out an optional text that requires a language once no language of it 
   const optional = { ...names, path: "/note", label: "Note", required: false };
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "applications", url: () => "/applications", label: () => "Applications", initial: { app },
-    text: createPanelText({}, ref("en"), "en"), ...noOperations, recordDraftCreated: async () => {},
+    text: createPanelText({}, ref("en"), "en"), ...noOperations,
     readProjection: async () => projection,
     read: async (request) => (request.operations ? ready({}) : ready({ ...description, fields: [optional], values: { note: { en: "Note", "zh-CN": "备注" } }, errors: [] })),
   });

@@ -59,7 +59,6 @@ function open() {
     },
     expandPageComposer: noOperations.expandPageComposer, navigate: noOperations.navigate, nested: noOperations.nested,
     confirmOperation: async ({ intentId }) => ({ decision: "confirm", response: { kind: "dispatched", intentId, outcome: done } }),
-    recordDraftCreated: async () => {},
     readProjection: async () => remove,
     read: async (request) => ({ status: "ready", value: (request.operations ? { delete: deleteKnowledge } : null) as never }),
   });
