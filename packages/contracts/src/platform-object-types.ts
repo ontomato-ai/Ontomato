@@ -547,6 +547,18 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
 };
 
+/** Platform operation IDs whose server handler is a `form.save` rather than an action. */
+export const platformFormSaveOperations: ReadonlySet<string> = new Set(
+  Object.entries(platformObjectTypes).flatMap(([typeId, declaration]) =>
+    (declaration.operations ?? []).filter(id => id === `${typeId}.save` || id === CREATE_SCHEDULED_TASK),
+  ),
+);
+
+/** Whether a `PlatformOperation` ID is a registered platform `form.save` operation. */
+export function isPlatformFormSaveOperation(operationId: string): boolean {
+  return platformFormSaveOperations.has(operationId);
+}
+
 /** These families apply to the class or relationship identified by the current domain catalogue. */
 export const customerOntologyReads: Readonly<Record<string, PlatformReadDeclaration>> = {
   query: { source: "type", parameterMode: "fixed", params: { search: "keyword", page: "page" }, result: "panelRecordQuery" },

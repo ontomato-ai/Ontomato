@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { AGENT_DEFINITION } from "@ontomato/contracts/platform-object-types";
+import { AGENT_DEFINITION, isPlatformFormSaveOperation, platformFormSaveOperations, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { configureI18n } from "../../../i18n";
 import { en, enLocaleMeta } from "../../../i18n/locales/en";
 
@@ -66,5 +66,16 @@ describe("server-operations schema caching", () => {
     expect(zodToJsonSchemaSpy).toHaveBeenCalledTimes(callsAfterFirstDescribe);
     expect(firstDescription.resultSchema).toEqual(expectedResultSchema);
     expect(secondDescription).toEqual(firstDescription);
+  });
+
+  it("matches platformFormSaveOperations 1-to-1 with registered form.save server operations", () => {
+    const declaredOps = Object.values(platformObjectTypes).flatMap(entry => entry.operations ?? []);
+    const registeredSaves = declaredOps.filter(id => registeredPanelOperation(id)?.handler.kind === "form.save");
+    expect(registeredSaves.length).toBeGreaterThan(0);
+    expect(new Set(registeredSaves)).toEqual(platformFormSaveOperations);
+    for (const id of declaredOps) {
+      const reg = registeredPanelOperation(id);
+      if (reg) expect(reg.handler.kind === "form.save").toBe(isPlatformFormSaveOperation(id));
+    }
   });
 });

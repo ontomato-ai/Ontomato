@@ -14,7 +14,7 @@ import {
   platformOntologyObjectsRequestSchema, platformOntologyRelationStatusSchema,
 } from "./platform-ontology-data";
 import type { PanelOperationDeclaration, PanelOwnerOperationDescriptor } from "./panel-operations";
-import { customerOntologyReads, customerRelationReads, platformObjectTypes, type PanelReadParameterId, type PlatformReadDeclaration } from "./platform-object-types";
+import { customerOntologyReads, customerRelationReads, isPlatformFormSaveOperation, platformObjectTypes, type PanelReadParameterId, type PlatformReadDeclaration } from "./platform-object-types";
 
 /** Nested JSON in the owner's value shape. Field pointers address this object, including values filled by projections. */
 export const panelFormValuesSchema = runtimeJsonObjectSchema;
@@ -169,11 +169,21 @@ export const projectionOperationBindingSchema = z.object({
 }).strict();
 export type ProjectionOperationBinding = z.infer<typeof projectionOperationBindingSchema>;
 
+/** Whether a projection declares a platform `form.save` operation, regardless of the current viewer's permissions. */
+export function hasDeclaredPlatformFormSave(
+  operations: Readonly<Record<string, ProjectionOperationBinding>> | undefined,
+): boolean {
+  return Object.values(operations ?? {}).some(
+    binding => binding.operation.kind === "PlatformOperation" && isPlatformFormSaveOperation(binding.operation.id),
+  );
+}
+
 /** Choose the declared customer form save before checking which operations the owner admits. */
 export function declaredCustomerFormSaveName(
   operations: Readonly<Record<string, ProjectionOperationBinding>> | undefined,
   creating: boolean,
 ): string | undefined {
+  if (hasDeclaredPlatformFormSave(operations)) return undefined;
   const actions = Object.entries(operations ?? {}).filter(([, binding]) => binding.operation.kind === "Action");
   const matchesTarget = (binding: ProjectionOperationBinding) => creating === (binding.target === undefined);
   if (actions.length === 1) return actions.find(([, binding]) => matchesTarget(binding))?.[0];
