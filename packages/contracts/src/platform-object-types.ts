@@ -653,10 +653,13 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
   },
 };
 
+/** Form saves that create a new object rather than edit the selected one's `${typeId}.save`. */
+const platformCreateFormSaves: ReadonlySet<string> = new Set([CREATE_SCHEDULED_TASK, ADD_MODEL_ENTRY]);
+
 /** Platform operation IDs whose server handler is a `form.save` rather than an action. */
 export const platformFormSaveOperations: ReadonlySet<string> = new Set(
   Object.entries(platformObjectTypes).flatMap(([typeId, declaration]) =>
-    (declaration.operations ?? []).filter(id => id === `${typeId}.save` || id === CREATE_SCHEDULED_TASK),
+    (declaration.operations ?? []).filter(id => id === `${typeId}.save` || platformCreateFormSaves.has(id)),
   ),
 );
 
