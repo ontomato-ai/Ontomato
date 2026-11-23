@@ -48,6 +48,16 @@ describe("default assistant prompts", () => {
     expect(effectiveSystemPrompt({kind,system_prompt:customized})).toBe(customized);
   });
 
+  it("distinguishes substantive analysis reports from direct answers and preserves evidence inside the report", () => {
+    const analysis = getPromptTemplate("assistant.analysis.system");
+    expect(analysis).toContain("create a report with `assistant-report` by default");
+    expect(analysis).toContain("simple figures, definitions and short follow-ups directly");
+    expect(analysis).toContain("current active population");
+    expect(analysis).toContain("Do not append all retrieved datasets to the chat");
+    expect(analysis).toContain("not a confidence interval");
+    expect(getPromptTemplate("assistant.regular.system")).toMatch(/only when the user requests them/i);
+  });
+
   it("the product analyst skill starts retrieval and metric recall concurrently, reuses a fitting metric and rests while the retriever works", () => {
     const skill=readFileSync(path.resolve("../../agent-skills/ontomato-analyst-assistant/SKILL.md"),"utf8");
     expect(skill).toContain('op: "read"');expect(skill).toContain('op: "send"');

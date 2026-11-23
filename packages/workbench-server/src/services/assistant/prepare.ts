@@ -95,7 +95,7 @@ export async function prepareAnalystRun({ a, session, turn, input, inputId, onto
     ARTIFACT_MARKDOWN_PROMPT,
     reader ? agentVisibilityPrompt(reader) : "",
     retrieval && input.role === "notification" && input.kind === "agent-result"
-      ? "Read the delegated result with agent read and files:true. When downloaded[].dataset supplies the needed rows and scope, answer directly and cite downloaded[].path. Read the file separately only when evidence is missing."
+      ? "Read the delegated result with agent read and files:true. When downloaded[].dataset supplies the needed rows and scope, reuse it without another file read. Follow the host's delivery mode: for reports, cite downloaded[].path inside the report and link the report in chat; otherwise answer directly and cite downloaded[].path. Read the file separately only when evidence is missing."
       : "",
   ].filter(Boolean).join("\n\n");
   return {
