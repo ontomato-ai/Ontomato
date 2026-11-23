@@ -33,7 +33,6 @@ const tasks: ProductProjection = {
 const panel = definePanel({
   state: { status: { type: { kind: "scalar", type: "string" } } },
   members: { list: { target: { projectionId: knowledge.id }, inputs: { status: { state: "status" } } }, tasks: { target: { projectionId: tasks.id } } },
-  commands: {},
 });
 const instance = () => createPanelInstance(panel, {
   text: (key) => key, pageKey: "knowledge", url: () => "/knowledge", label: () => "Knowledge", initial: { status: "pending" }, ...noOperations,

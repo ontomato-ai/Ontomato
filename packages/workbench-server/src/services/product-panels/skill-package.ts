@@ -5,8 +5,8 @@ import { z } from "zod";
 import { skillCatalogDiagnosticsSchema } from "@ontomato/contracts/skills";
 import { type RuntimeSkillRef, type StandardSkillFrontmatter } from "@ontomato/contracts/agent-runtime-skills";
 import {
-  panelManifestSchema, panelOperationId, type PanelCommand, type PanelListColumnRef, type PanelListRowDetailRef,
-  type PanelManifest, type PanelMemberInput,
+  panelManifestSchema, panelOperationId, type PanelListColumnRef, type PanelListRowDetailRef,
+  type PanelMemberInput,
 } from "@ontomato/contracts/panel-manifest";
 import { draftTarget, PAGE_DRAFT_QUERY_KEYS, type PageDraftObjectRef } from "@ontomato/contracts/page-draft";
 import type { PageSkillEntrance } from "@ontomato/contracts/page-skills";
@@ -18,7 +18,7 @@ import {
 } from "@ontomato/contracts/product-panels";
 import { isBuiltinProductId } from "@ontomato/contracts/product-record-id";
 import { SkillSourceRecordError, type ProtectedSkillOffering, type SkillSourceFailure } from "../../core/skills/providers";
-import { getDefaultLocale, getLocale, resolveLocale } from "../../i18n";
+import { getLocale, resolveLocale } from "../../i18n";
 import { findCurrentProduct, type CurrentProductRow } from "../../infrastructure/product-current";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { cachedZodToJsonSchemaString } from "../../utils/zod-json-schema";
@@ -42,7 +42,7 @@ function panelSkillManifest(skill: RuntimeSkillRef, panel: PanelDescription, sou
     ...(panel.reads ? ["read current data"] : []),
     "open the panel",
     ...(panel.forms.length ? ["draft changes"] : []),
-    ...(panel.operations.length || Object.keys(panel.commands).length ? ["review declared operations"] : []),
+    ...(panel.operations.length ? ["review declared operations"] : []),
   ];
   const actionText = verbs.format(actions);
   return {
@@ -61,11 +61,20 @@ function safeField(path: (string | number)[]): string | undefined {
   return parts.length ? parts.join(".") : undefined;
 }
 
+function stripLegacyPanelCommands(definition: unknown): unknown {
+  if (!definition || typeof definition !== "object" || Array.isArray(definition)) return definition;
+  const record = definition as Record<string, unknown>;
+  const manifest = record.manifest;
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest) || !("commands" in manifest)) return definition;
+  const { commands: _removed, ...restManifest } = manifest as Record<string, unknown>;
+  return { ...record, manifest: restManifest };
+}
+
 function parseDefinition<T>(
   schema: z.ZodType<T, z.ZodTypeDef, unknown>, row: CurrentProductRow | undefined, resourceId: string, panelTitle?: string,
 ): T {
   if (!row) throw new SkillSourceRecordError({ resourceId, ...(panelTitle && { title: panelTitle }), reason: "record_missing" });
-  const parsed = schema.safeParse(row.definition);
+  const parsed = schema.safeParse(stripLegacyPanelCommands(row.definition));
   if (parsed.success) return parsed.data;
   let issue = parsed.error.issues[0]!;
   if (issue.code === z.ZodIssueCode.invalid_union && issue.path.length === 0) {
@@ -165,20 +174,18 @@ export async function panelSkillSources(
         return panelSkillManifest(skill, description, fingerprint);
       },
       async provide(skill, context) {
-        let { description, markdown, fingerprint: sourceFingerprint } = await read();
-        if (context) {
-          const bound = new Set(context.entryInputKeys);
-          const commands = Object.entries(description.commands);
-          const visible = commands.filter(([, { do: action }]) =>
-            !("set" in action && Object.keys(action.set.fields).some(field => bound.has(field))));
-          if (visible.length !== commands.length) {
-            description = { ...description, commands: Object.fromEntries(visible) };
-            markdown = describeSkill(description);
-            sourceFingerprint = fingerprint([sourceFingerprint, Object.keys(description.commands)]);
-          }
+        const { description, markdown, fingerprint: sourceFingerprint } = await read();
+        const fixedKeys = (context?.entryInputKeys ?? []).filter(key => Object.hasOwn(description.state, key));
+        if (!fixedKeys.length) {
+          const manifest = panelSkillManifest(skill, description, sourceFingerprint);
+          return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${markdown}\n` }] };
         }
-        const manifest = panelSkillManifest(skill, description, sourceFingerprint);
-        return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${markdown}\n` }] };
+        const fixed = new Set(fixedKeys);
+        const scopedState = Object.fromEntries(Object.entries(description.state).filter(([key]) => !fixed.has(key)));
+        const scoped = { ...description, state: scopedState };
+        const scopedFingerprint = fingerprint([sourceFingerprint, [...fixed].sort()]);
+        const manifest = panelSkillManifest(skill, scoped, scopedFingerprint);
+        return { skill, files: [{ path: "SKILL.md", content: `---\n${stringify(manifest)}---\n\n${describeSkill(scoped)}\n` }] };
       },
     };
   }));
@@ -260,7 +267,6 @@ function describePanel(
     description: panel.description,
     state: manifest.state,
     members: manifest.members,
-    commands: manifest.commands,
     content: panel.content,
     projections,
     operations,
@@ -270,44 +276,8 @@ function describePanel(
   };
 }
 
-function describePanelCommand(command: PanelCommand, members: PanelManifest["members"]): string {
-  const action = command.do;
-  const value = (source: PanelMemberInput) => {
-    if ("literal" in source) return `\`${JSON.stringify(source.literal)}\``;
-    if ("state" in source) return `the current value of state field \`${source.state}\``;
-    return "the item selected in the current page context";
-  };
-  const assignments = (values: Record<string, PanelMemberInput>) =>
-    Object.entries(values).map(([field, source]) => `\`${field}\` = ${value(source)}`).join(", ");
-
-  if ("set" in action) {
-    return `Open the current panel's canonical address. Set ${assignments(action.set.fields)} in the URL-encoded JSON \`state\` query parameter. Keep the existing values of other deep-linkable fields and other query parameters.`;
-  }
-  if ("invoke" in action) {
-    const { member, operation, inputs } = action.invoke;
-    const input = assignments(inputs);
-    return `Invoke \`${panelOperationId(member, operation)}\` as specified under Declared operations.${input ? ` Resolve these input bindings using its target and input schema. ${input}.` : ""}`;
-  }
-
-  const open = action.open;
-  const input = assignments(open.inputs ?? {});
-  const carryState = input ? ` For the destination's deep-linkable fields, put these values in its URL-encoded JSON \`state\` parameter. ${input}.` : "";
-  if (open.mode === "entry") {
-    return `Resolve the entry reference using ${value(open.entry)}. Use its \`primaryKey\` as the use ID in \`GET /api/data-query/platform/applications/resolve-entry?applicationId=<current applicationId>&useId=<entry primaryKey>\`. Open the returned \`data.use.path\`.${carryState}`;
-  }
-  const target = members[open.member].target;
-  if ("projectionId" in target) return `Open the current panel's canonical address to reach its embedded member \`${open.member}\`.`;
-  const panel = "panelId" in target ? `panel \`${target.panelId}\``
-    : "fromState" in target ? `the panel selected for member \`${open.member}\` by state field \`${target.fromState}\``
-      : `the panel used by member \`${open.member}\``;
-  return `Find the admitted entry for ${panel} in \`GET /api/data-query/platform/applications/<current applicationId>/panel-uses\`. Open that entry's \`path\` when available. Use the current panel's canonical address for embedded content.${carryState}`;
-}
-
-function describeSkill({ name, description, content, state, members, commands, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription): string {
-  const { recipes, messages } = content;
-  const resolveLabel = (key: string) => messages?.[getDefaultLocale()]?.[key] ?? key;
-  const declaredCommands = Object.entries(commands).map(([id, command]) =>
-    `- ${resolveLabel(command.labelKey)} (${id}). ${describePanelCommand(command, members)}`);
+function describeSkill({ name, description, content, state, projections, operations, forms, reads, hasPlacedMembers }: PanelDescription): string {
+  const { recipes } = content;
   return [
     `## ${name}`,
     description,
@@ -324,11 +294,6 @@ function describeSkill({ name, description, content, state, members, commands, p
       "Use the canonical path from the current page context. To restore a selection, set the `state` query parameter to URL-encoded JSON containing only fields marked deepLink. Object references carry className and primaryKey.",
     ].join("\n"),
     describeDraft(forms),
-    ...(declaredCommands.length ? [[
-      "### Panel commands",
-      "Follow the address or operation given for each command. The `/operate` endpoint accepts only IDs from Declared operations.",
-      ...declaredCommands,
-    ].join("\n")] : []),
     [
       "### Declared operations",
       ...operations.map(describeOperation),

@@ -153,7 +153,6 @@ it("renders awaiting without throwing when ObjectForm has no bound input state",
       ok: { target: { projectionId: "ok-member" } },
       preview: { target: { fromState: "selected", candidates: { rule: "usable" } } },
     },
-    commands: {},
   };
   const { module, mount, element, reads, failed } = mountCodedPanel(
     manifest,
@@ -180,7 +179,6 @@ it("reads the object from slot.inputs when ObjectForm binds a literal input inst
         inputs: { cls: { literal: { className: OBJECT_TYPE, primaryKey: "person" } } },
       },
     },
-    commands: {},
   };
   const { module, mount, element, failed } = mountCodedPanel(
     manifest,
@@ -217,7 +215,6 @@ it("contains a member component error thrown in setup inside PanelMember without
       ok: { target: { projectionId: "ok-member" } },
       broken: { target: { projectionId: "broken-setup" } },
     },
-    commands: {},
   };
   const { module, mount, element, failed } = mountCodedPanel(
     manifest,
@@ -240,7 +237,6 @@ it("contains a member component error thrown in onMounted inside PanelMember wit
       ok: { target: { projectionId: "ok-member" } },
       broken: { target: { projectionId: "broken-mount" } },
     },
-    commands: {},
   };
   const { module, mount, element, failed } = mountCodedPanel(
     manifest,
@@ -266,7 +262,6 @@ it("contains a projection component error inside Projection without bubbling to 
   const manifest: DirectPanelManifest = {
     state: {},
     members: { broken: { target: { projectionId: brokenForm.id } } },
-    commands: {},
   };
   const text = createPanelText({}, ref("en"), "en");
   const instance = createPanelInstance(manifest, {

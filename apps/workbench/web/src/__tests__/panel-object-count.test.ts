@@ -55,7 +55,6 @@ function mountCount(
     members: {
       count: { target: { projectionId: projection.id } },
     },
-    commands: {},
   };
   const reads: PanelMemberReadRequest[] = [];
   const instance = createDirectPanelInstance(manifest, {

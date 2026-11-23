@@ -86,7 +86,6 @@ function makePanel(id = "panel-1"): ProductPanel {
         nestedFixed: { target: { panelId: "panel-child" } },
         dynamicMember: { target: { fromState: "tab", candidates: { projectionIds: ["proj-dynamic"] } } },
       },
-      commands: {},
     },
   } as ProductPanel;
 }

@@ -7,7 +7,6 @@ import {
   type PanelOperationRowContext, type PanelStateValue,
 } from "@ontomato/contracts/panel-manifest";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
-import { createPanelCommands } from "./commands";
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import {
   childObjectNameKey, createPanelState, objectNameKey, panelSelection, stateObject, stateObjects, type PanelInitialState, type PanelObjectRef,
@@ -243,15 +242,8 @@ export function createPanelInstance(manifest: PanelManifest, options: PanelInsta
       : await options.confirmOperation(preparation);
     return { ...confirmed, named: namedTargets(preparation.confirmation) };
   }
-  const commands = createPanelCommands(manifest, {
-    state,
-    invokeMember: (member, operation, input) => invoke(operationIdOf(member, operation), input),
-    // Another member placed in a mode and an application entry are a later stage's; this release opens neither.
-    open: (request) => Promise.reject(new Error(`This SDK release opens no ${request.mode === "entry" ? "application entry" : "member"} from a command`)),
-    text: options.text,
-  });
   const operations = computed<PanelOperationBinding[]>(() => [
-    ...panelOperations(manifest, registrations.value, state, forms, commands, writeOperation,
+    ...panelOperations(manifest, registrations.value, state, forms, writeOperation,
       (operationId, call) => options.operations.read(operationId, call, operationPath(operationId)),
       (member, name) => ({ id: operationIdOf(member, name), memberPath: publisherPath(member) })),
     // A placed panel's operations are published under their own full paths and run by that panel.

@@ -204,7 +204,6 @@ it("validates object-union state via contracts and formats panelSelection with t
       explicit: { type: { kind: "object-union", objectTypes: [USER, ACTION] }, deepLink: false },
     },
     members: {},
-    commands: {},
   });
 
   // Accepts declared types and preserves full { className, primaryKey }
@@ -245,7 +244,7 @@ it("keeps graph coordinates as personal state even when node keys resemble objec
   const { createPanelState, stateObject, stateChildObject } = await import("../../../../../packages/apps-sdk/src/panel/state");
   const manifest = definePanel({
     state: { positions: { type: { kind: "node-positions" }, personal: true } },
-    members: {}, commands: {},
+    members: {},
   });
   const state = createPanelState(manifest);
   const coordinates = { className: { x: 4, y: 5 }, parent: { x: -2, y: 0 } };
@@ -281,7 +280,6 @@ it("renders type mode in four-layer columns with count statuses, internal layer 
         },
       },
     },
-    commands: {},
   });
   const panel = panelRecord("panel-cap-type", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
@@ -409,7 +407,6 @@ it("runs instance mode with default start, incremental neighbor expand, full obj
         },
       },
     },
-    commands: {},
   });
   const panel = panelRecord("panel-cap-instance", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
@@ -584,7 +581,6 @@ it("separates no-neighbors, owner-refused and read-failed states without collaps
         outputs: { selectedNode: { state: "selected" } },
       },
     },
-    commands: {},
   });
   const panel = panelRecord("panel-cap-states", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;
@@ -674,7 +670,6 @@ it("fits the view when the canvas first appears, so a graph shown after an empty
         outputs: { selectedNode: { state: "selected" } },
       },
     },
-    commands: {},
   });
   const panel = panelRecord("panel-cap-single", "Capability Map", manifest);
   panel.content.html = `<div id="app"><Projection slot="graph"></Projection></div>`;

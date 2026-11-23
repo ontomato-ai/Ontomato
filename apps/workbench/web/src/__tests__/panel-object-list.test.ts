@@ -205,7 +205,6 @@ it("pairs zero-config SegmentedControl ordered counts with ObjectList flat statu
         inputs: { item: { state: "selectedKnowledge" }, search: { state: "keyword" } },
       },
     },
-    commands: {},
   });
 
   const entries = [
@@ -353,7 +352,6 @@ it("keeps SegmentedControl interactive with static fallback options when its cou
     members: {
       tabs: { target: { projectionId: "status-tabs" }, outputs: { value: { state: "status" } } },
     },
-    commands: {},
   });
 
   const { instance, element } = mountDirect(
@@ -411,12 +409,6 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
       list: { target: { projectionId: "labeled-list" }, outputs: { selected: { state: "selectedTask" } } },
       summary: { target: { projectionId: "labeled-summary" }, inputs: { item: { state: "selectedTask" } } },
     },
-    commands: {
-      clearSelection: {
-        labelKey: "ops.clear",
-        do: { set: { fields: { selectedTask: { literal: null } } } },
-      },
-    },
   });
   const record = {
     primaryKey: "t-1",
@@ -424,13 +416,13 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
     fields: { source: "Q&A", comment: "", rawCode: "E-100" },
     fieldLabels: { source: "Task source", comment: "Owner comment" },
   };
-  const { instance, element } = mountDirect(
+  const { element } = mountDirect(
     manifest,
     projections,
     (request) => (request.dataName === "rows" ? ready([record]) : ready(record)),
     {
       messages: {
-        en: { "cols.notes": "Reviewer notes", "cols.noNotes": "No notes", "ops.clear": "Clear selection" },
+        en: { "cols.notes": "Reviewer notes", "cols.noNotes": "No notes" },
       },
     },
   );
@@ -440,15 +432,11 @@ it("resolves column labelKey/emptyKey via panel.t, falls back to owner fieldLabe
   expect(headers).toEqual(["Task source", "Reviewer notes", "rawCode"]);
   const cells = [...element.querySelectorAll("tbody tr td")].map((td) => td.textContent?.trim());
   expect(cells).toEqual(["Q&A", "No notes", "E-100"]);
-  expect(instance.operations.value.find((op) => op.id === "clearSelection")?.label).toBe("Clear selection");
 
   element.querySelector<HTMLTableRowElement>("tbody tr")!.click();
   await vi.waitFor(() => expect(element.querySelectorAll(".sdk-object-summary dt").length).toBe(2));
   const summaryLabels = [...element.querySelectorAll(".sdk-object-summary dt")].map((dt) => dt.textContent?.trim());
   expect(summaryLabels).toEqual(["Task source", "rawCode"]);
-
-  await instance.invoke("clearSelection");
-  expect(instance.state.values.value.selectedTask).toBeNull();
 });
 
 it("infers cursor pagination and runtime search from query signature, resetting to page 1 in a single read", async () => {
@@ -483,7 +471,6 @@ it("infers cursor pagination and runtime search from query signature, resetting 
     members: {
       list: { target: { projectionId: "knowledge-table" }, outputs: { selected: { state: "selectedKnowledge" } } },
     },
-    commands: {},
   });
 
   const allItems = [
@@ -580,7 +567,6 @@ it("single-binds ObjectList search via outputs.search to deepLink panel state wi
         outputs: { selected: { state: "selectedKnowledge" }, search: { state: "keyword" } },
       },
     },
-    commands: {},
   });
 
   const { instance, element, reads } = mountDirect(
@@ -660,7 +646,6 @@ it("infers checkboxes from outputs.checked, freezes visible rows on select-all, 
         outputs: { selected: { state: "selectedKnowledge" }, checked: { state: "checkedKnowledge" } },
       },
     },
-    commands: {},
   });
 
   const allItems = [
@@ -763,7 +748,6 @@ it("selects a row without touching the checked list, and supports explicit toggl
         outputs: { selected: { state: "selectedKnowledge" }, checked: { state: "checkedKnowledge" } },
       },
     },
-    commands: {},
   });
 
   const { instance, element } = mountDirect(
@@ -821,7 +805,6 @@ it("supports dynamic type queries via data.objects (panelOntologyObjects) with s
         outputs: { selected: { state: "start" } },
       },
     },
-    commands: {},
   });
 
   const { instance, element, reads } = mountDirect(
@@ -981,7 +964,6 @@ it("draws a declared ObjectList with data.objects in a frame via <Projection> an
         outputs: { selected: { state: "selectedNode" } },
       },
     },
-    commands: {},
   });
   const instance = createPanelInstance(manifest, {
     text: (key) => key,
@@ -1046,7 +1028,6 @@ it("keeps short columns on one line, ends long text in an ellipsis, and wraps on
   const manifest = definePanel({
     state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
     members: { list: { target: { projectionId: "feedback-list" }, outputs: { selected: { state: "selectedTask" } } } },
-    commands: {},
   });
   const question = "How many contract staff joined the faculty of engineering after the 2024 reorganisation?";
   const record = { primaryKey: "f-1", label: "Feedback 1", fields: { source: "问答", question, answer: "A long answer the reader reads whole." } };
@@ -1089,7 +1070,6 @@ it("shows a time column so neighbouring times keep their order, the whole time i
     const manifest = definePanel({
       state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
       members: { list: { target: { projectionId: "feedback-list" }, outputs: { selected: { state: "selectedTask" } } } },
-      commands: {},
     });
     const today = new Date(2026, 10, 22, 6, 14, 46);
     const yesterday = new Date(2026, 10, 21, 6, 14, 42);
@@ -1131,7 +1111,6 @@ it("tells an empty list from a search that matched nothing", async () => {
   const manifest = definePanel({
     state: { selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE } } },
     members: { list: { target: { projectionId: "functions-table" }, outputs: { selected: { state: "selected" } } } },
-    commands: {},
   });
   let items: { primaryKey: string; label: string; fields: Record<string, string> }[] = [];
   const { element } = mountDirect(manifest, projections, (request) => {
@@ -1190,7 +1169,6 @@ it("activates table rows from the keyboard without colliding with inner checkbox
         outputs: { selected: { state: "selected" }, checked: { state: "checked" } },
       },
     },
-    commands: {},
   });
   const rows = [
     { primaryKey: "k-1", label: "First rule", fields: { owner: "Alice" } },
@@ -1288,7 +1266,6 @@ it("outputs listed references for the current batch (current page when paged, al
         outputs: { selected: { state: "selected" }, listed: { state: "listed" }, search: { state: "keyword" } },
       },
     },
-    commands: {},
   });
 
   const allRows = [
@@ -1379,7 +1356,6 @@ it("outputs all matching references when the list read does not page", async () 
         outputs: { listed: { state: "listedTasks" } },
       },
     },
-    commands: {},
   });
   const rows = [
     { primaryKey: "t-1", label: "Daily sync", fields: {} },
@@ -1457,7 +1433,6 @@ it("renders all 6 PanelRecordFieldValue types in ObjectList and ObjectSummary wi
         },
       },
     },
-    commands: {},
   });
   const universalRecord = {
     primaryKey: "k-uni",
@@ -1582,7 +1557,6 @@ it("resolves heterogeneous className row identity via panelRecordObjectRef and r
         outputs: { selected: { state: "selected" } },
       },
     },
-    commands: {},
   });
   const rows = [
     {
@@ -1668,7 +1642,6 @@ it("renders layout='cards' with columns, status, tags, selection, keyboard activ
         outputs: { selected: { state: "selected" }, checked: { state: "checked" }, navigate: { state: "navigated" } },
       },
     },
-    commands: {},
   });
   const ts = "2026-11-18T09:15:30.000Z";
   const rows = [
@@ -1760,7 +1733,6 @@ it("formats kind='time' columns according to timeFormat ('datetime' and 'date') 
   const manifest = definePanel({
     state: {},
     members: { list: { target: { projectionId: "time-table" } } },
-    commands: {},
   });
   const stamp = "2026-11-22T06:05:09.000Z";
   const rows = [
@@ -1816,7 +1788,6 @@ it("renders total count, clickable numeric page jump buttons, and ellipsis foldi
         inputs: { type: { state: "selectedType" } },
       },
     },
-    commands: {},
   });
 
   const { element, reads } = mountDirect(
@@ -1905,7 +1876,6 @@ it("applies single-line vs two-line list row density, fixed table height tokens,
       single: { target: { projectionId: "single-line-list" }, outputs: { selected: { state: "a" } } },
       twoLine: { target: { projectionId: "two-line-list" }, outputs: { selected: { state: "b" } } },
     },
-    commands: {},
   });
 
   const { element } = mountDirect(manifest, projections, () => ready({
@@ -1955,7 +1925,6 @@ it("scrolls the selected row into view when primaryKey changes and tolerates env
   const manifest = definePanel({
     state: { selected: { type: { kind: "object", objectType: BUSINESS_KNOWLEDGE }, deepLink: true } },
     members: { list: { target: { projectionId: "scroll-list" }, outputs: { selected: { state: "selected" } } } },
-    commands: {},
   });
 
   const { instance, element } = mountDirect(manifest, projections, () => ready({
@@ -2017,7 +1986,6 @@ it("clears search and optional filter parameters back to page 1 from the narrowe
         outputs: { selected: { state: "selected" } },
       },
     },
-    commands: {},
   });
 
   let mode: "empty" | "normal" | "forbidden-reason" | "forbidden-default" = "empty";
@@ -2102,7 +2070,6 @@ it("renders #filters, #batch-actions, #toolbar-actions, and #create-row inline c
         outputs: { selected: { state: "selected" }, checked: { state: "checked" } },
       },
     },
-    commands: {},
   });
 
   const showCreate = ref(false);
@@ -2191,7 +2158,6 @@ it("enforces exact fallbackToFirst semantics across initial load, filter change,
         outputs: { selected: { state: "selected" } },
       },
     },
-    commands: {},
   });
 
   const allEntries = [
@@ -2276,7 +2242,6 @@ it("does not auto-select on subsequent refresh when initial list load was empty"
         outputs: { selected: { state: "selected" } },
       },
     },
-    commands: {},
   });
 
   let rows: Array<{ primaryKey: string; label: string; fields: Record<string, never> }> = [];
@@ -2320,7 +2285,6 @@ it("scrolls the list scroll container back to top when switching pages", async (
         inputs: { type: { state: "selectedType" } },
       },
     },
-    commands: {},
   });
 
   const { element } = mountDirect(
@@ -2384,7 +2348,6 @@ it("performs zero-request local search across nested/array fields, updates liste
         },
       },
     },
-    commands: {},
   });
 
   const allRows = [
@@ -2504,7 +2467,6 @@ it("applies zero-request local field equality filters and panel-shared search wi
         outputs: { selected: { state: "selected" }, listed: { state: "listed" } },
       },
     },
-    commands: {},
   });
 
   const rows = [
@@ -2581,7 +2543,6 @@ it("groups rows by groupBy with live filtered counts, omits zero-count groups, s
         target: { projectionId: "grouped-table" },
       },
     },
-    commands: {},
   });
 
   const rows = [
@@ -2652,7 +2613,6 @@ it("virtualizes large unpaged lists (> 60 rows) with jsdom zero-height fallback,
         outputs: { selected: { state: "selected" } },
       },
     },
-    commands: {},
   });
 
   const totalRows = VIRTUAL_ROW_THRESHOLD + 60; // 120 rows
@@ -2774,7 +2734,6 @@ it("shows ObjectSummary title by default and hides the h3 heading when config.sh
         outputs: { navigate: { state: "navigated" } },
       },
     },
-    commands: {},
   });
   const record = {
     primaryKey: "k-rel-1",

@@ -292,7 +292,6 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
           },
         },
       },
-      commands: {},
     });
 
     const { instance, element, reads, readProjection } = mountDirectTest({
@@ -411,7 +410,6 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
           inputs: { target: { item: true } },
         },
       },
-      commands: {},
     });
 
     // Verify mountDirectPanel does NOT eagerly place listColumn/listRowDetail members.
@@ -519,7 +517,6 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
             inputs: { target: { item: true } },
           },
         },
-        commands: {},
       });
 
       const { instance, element, reads } = mountDirectTest({
@@ -685,7 +682,6 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
             },
           },
         },
-        commands: {},
       });
 
       const { instance, element, reads, preparedCalls } = mountDirectTest({
@@ -904,7 +900,6 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
           },
         },
       },
-      commands: {},
     });
 
     const ancestorPath: PanelMemberPath = [
@@ -1038,7 +1033,6 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
           inputs: { target: { item: true } },
         },
       },
-      commands: {},
     });
 
     const { instance, element, preparedCalls } = mountDirectTest({
@@ -1161,7 +1155,6 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
             inputs: { target: { item: true } },
           },
         },
-        commands: {},
       });
 
       const { element } = mountDirectTest({
@@ -1260,7 +1253,6 @@ describe("A3 listColumn, listRowDetail, row input isolation and row operations",
           inputs: { row: { item: true } },
         },
       },
-      commands: {},
     });
 
     const { element } = mountDirectTest({

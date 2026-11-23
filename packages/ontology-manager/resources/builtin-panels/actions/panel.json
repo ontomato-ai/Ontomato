@@ -106,8 +106,7 @@
         "description": "Open this page's agent input with an opening line, without sending it.",
         "id": "builtin-product-7001c601-ae24-400e-9097-ae661589c402"
       }
-    },
-    "commands": {}
+    }
   },
   "content": {
     "messages": {

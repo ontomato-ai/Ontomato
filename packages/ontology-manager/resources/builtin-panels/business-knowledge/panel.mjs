@@ -271,6 +271,8 @@ await mountPanel({
       formBusy,
       t,
       onUserSelect,
+      openCreate: () => instance.state.set("mode", "create"),
+      refresh: () => instance.refreshObjects(),
       openEdit,
       cancelEdit,
       backToList,

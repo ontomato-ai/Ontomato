@@ -69,28 +69,9 @@
           "type": "danger",
           "plain": true,
           "icon": "trash",
-          "placement": "header"
+          "label": "删除"
         },
         "id": "builtin-product-655a5639-5fd3-4e29-9192-096597b6a77d"
-      }
-    },
-    "commands": {
-      "create": {
-        "labelKey": "relations.command.create",
-        "primary": true,
-        "icon": "plus",
-        "do": {
-          "set": {
-            "fields": {
-              "creating": {
-                "literal": true
-              },
-              "selected": {
-                "literal": null
-              }
-            }
-          }
-        }
       }
     }
   },

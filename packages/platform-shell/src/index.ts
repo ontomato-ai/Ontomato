@@ -56,8 +56,6 @@ export {
   type DirectPanelMount,
   type DirectPanelRun,
   type HostedPanelSource,
-  type PanelDetailHeader,
-  type PanelDetailHeaderAction,
   type PanelHostState,
   type PanelSdkRelease,
   type PanelHostLabels,

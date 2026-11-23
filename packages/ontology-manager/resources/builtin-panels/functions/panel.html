@@ -1,6 +1,6 @@
 <!--
   函数页：左边是函数目录（名称、说明、操作类型，可按名称和说明搜索），右边是选中那一条的详情与编辑；
-  新建、保存、删除都走属主自己的接口，页面不另写业务规则。「新建函数」是页头命令（manifest.commands.newFunction），
+  新建、保存、删除都走属主自己的接口，页面不另写业务规则。「新建函数」是 <page-header> 里的按钮，
   由宿主画成主按钮：它清空 selected、把 creating 设为 true，打开属主的空白表单。
 
   - list：platform:Function 的 query 读，搜索词和选中的那一条都是本面板声明的状态。
@@ -13,12 +13,20 @@
 -->
 <style>
   [v-cloak] { display: none; }
-  .fn { display: flex; flex-direction: column; gap: var(--spacing-md); }
+  .fn { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px); }
   .fn-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-sm); line-height: 1.6; }
   .fn-detail { display: flex; flex-direction: column; gap: var(--spacing-md); min-width: 0; }
   .fn-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--spacing-sm); }
 </style>
 <div id="app" v-cloak>
+  <page-header title="函数" description="维护读函数的查询逻辑包与写函数的参数与代码">
+    <template #actions>
+      <sdk-button text aria-label="刷新" title="刷新" @click="refresh">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+      </sdk-button>
+      <sdk-button type="primary" :disabled="creating && !selected" @click="startCreate">{{ t("newFunction") }}</sdk-button>
+    </template>
+  </page-header>
   <section class="fn">
     <two-pane-layout>
       <template #aside>

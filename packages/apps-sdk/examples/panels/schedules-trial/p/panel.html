@@ -6,19 +6,22 @@
 -->
 <style>
   [v-cloak] { display: none; }
-  .trial { display: flex; flex-wrap: wrap; gap: var(--spacing-sm, 8px); }
+  .trial-body { display: flex; flex-wrap: wrap; gap: var(--spacing-sm, 8px); padding: var(--spacing-md) var(--page-gutter); }
   .tasks { flex: 1 1 18rem; min-width: 0; }
   .task { flex: 2 1 24rem; min-width: 0; display: flex; flex-direction: column; gap: var(--spacing-sm, 8px); }
 </style>
 <div id="app" class="trial" v-cloak>
-  <div class="tasks">
-    <projection slot="tasks"></projection>
+  <page-header title="Scheduled tasks"></page-header>
+  <div class="trial-body">
+    <div class="tasks">
+      <projection slot="tasks"></projection>
+    </div>
+    <section class="task">
+      <projection slot="summary"></projection>
+      <template v-if="chosen">
+        <projection slot="form"></projection>
+        <projection slot="run"></projection>
+      </template>
+    </section>
   </div>
-  <section class="task">
-    <projection slot="summary"></projection>
-    <template v-if="chosen">
-      <projection slot="form"></projection>
-      <projection slot="run"></projection>
-    </template>
-  </section>
 </div>

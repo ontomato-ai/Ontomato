@@ -402,7 +402,6 @@ describe("ObjectHeader", () => {
       members: {
         header: { target: { projectionId: "knowledge-header" }, inputs: { entry: { state: "selected" } } },
       },
-      commands: {},
     });
     const panel = panelRecord("panel-object-header", "Object header test", manifest);
     panel.content.html = `<div id="app"><Projection slot="header" /></div>`;
@@ -598,7 +597,6 @@ describe("ObjectHeader", () => {
       members: {
         header: { target: { projectionId: "knowledge-header-4" }, inputs: { entry: { state: "selected" } } },
       },
-      commands: {},
     });
     const panel = panelRecord("panel-object-header-4", "Object header limit test", manifest);
     panel.content.html = `<div id="app"><Projection slot="header" /></div>`;
@@ -653,6 +651,102 @@ describe("ObjectHeader", () => {
 
     const moreBtn = document.querySelector<HTMLButtonElement>(".sdk-object-header-more-btn")!;
     expect(moreBtn.getAttribute("aria-label")).toBe("More actions");
+  });
+
+  it("renders danger operations inline as plain danger buttons when within maxVisibleOperations", async () => {
+    const APPLICATION = "app-header-inline-danger";
+    const entryType = { kind: "object", objectType: BUSINESS_KNOWLEDGE } as const;
+    const headerProjection: ProductProjection = {
+      domainId: "domain-1",
+      ownerId: "owner-1",
+      revision: 1,
+      createdAt: "2026-11-22T00:00:00.000Z",
+      updatedAt: "2026-11-22T00:00:00.000Z",
+      editable: false,
+      visibility: "domain",
+      id: "knowledge-header-danger-inline",
+      name: "Knowledge header inline danger",
+      description: "",
+      componentId: "@ontomato/sdk:ObjectHeader",
+      inputs: { entry: entryType },
+      outputs: {},
+      config: {
+        operations: [
+          { name: "wipe", label: "Delete" },
+          { name: "publish", primary: true },
+        ],
+      },
+      data: {
+        record: {
+          source: { object: { input: "entry" } },
+          read: "record",
+          params: {},
+        },
+      },
+      operations: {
+        wipe: { operation: { kind: "PlatformOperation", id: DELETE_KNOWLEDGE }, target: { input: "entry" } },
+        publish: { operation: { kind: "PlatformOperation", id: "knowledge.publish" }, target: { input: "entry" } },
+      },
+    };
+
+    const manifest = definePanel({
+      state: { selected: { type: entryType } },
+      members: {
+        header: { target: { projectionId: "knowledge-header-danger-inline" }, inputs: { entry: { state: "selected" } } },
+      },
+    });
+    const panel = panelRecord("panel-object-header-danger", "Object header inline danger", manifest);
+    panel.content.html = `<div id="app"><Projection slot="header" /></div>`;
+    const use = panelUse("use-header-danger", "object-header-danger", panel.id, `/applications/${APPLICATION}/header-danger`);
+
+    const opDescriptors: Record<string, PanelOperationDescriptor> = {
+      wipe: {
+        kind: "action", handlerRef: DELETE_KNOWLEDGE, label: "Purge Knowledge", effect: "write",
+        target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
+        inspectImpact: { handlerRef: "knowledge.wipe.impact" },
+      },
+      publish: {
+        kind: "action", handlerRef: "knowledge.publish", label: "Publish", effect: "write",
+        target: { source: "input", input: "entry" }, inputSchema: {}, resultSchema: {}, batch: false,
+      },
+    };
+
+    installPlatform((request: Sent): Response => {
+      if (request.path === "/api/product-projections/knowledge-header-danger-inline") {
+        return Response.json({ projection: headerProjection });
+      }
+      if (request.method === "POST" && request.path === "/api/product-panels/read") {
+        const body = request.body as { operations?: boolean; dataName?: string };
+        if (body.operations) return Response.json({ status: "ready", value: opDescriptors });
+        if (body.dataName === "record") {
+          return Response.json({
+            status: "ready",
+            value: { primaryKey: "k-3", label: "Policy", fields: {} },
+          });
+        }
+      }
+      return Response.json({ error: `unexpected ${request.method} ${request.path}` }, { status: 404 });
+    });
+
+    const frame = panelFrame();
+    const host = platformPanelHost(APPLICATION, use, () => {});
+    host.frame(frame, registered(APPLICATION, use, panel), true);
+    writePanelDocument(registered(APPLICATION, use, panel), `/applications/${APPLICATION}/header-danger`, {
+      selected: { className: BUSINESS_KNOWLEDGE, primaryKey: "k-3" },
+    });
+    inside(frame);
+
+    const { mountPanel } = await import("../../../../../packages/apps-sdk/src/panel/mount");
+    await mountPanel({});
+
+    await vi.waitFor(() => {
+      expect(document.querySelectorAll(".sdk-object-header-actions .sdk-operation-button button").length).toBe(2);
+    });
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>(".sdk-object-header-actions .sdk-operation-button button")];
+    expect(buttons.map((btn) => btn.textContent?.trim())).toEqual(["Delete", "Publish"]);
+    expect(buttons[0]!.classList.contains("el-button--danger")).toBe(true);
+    expect(buttons[0]!.classList.contains("is-plain")).toBe(true);
+    expect(document.querySelector(".sdk-object-header-more-btn")).toBeNull();
   });
 });
 

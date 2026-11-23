@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 
@@ -18,11 +18,6 @@ const props = withDefaults(
     type?: "primary" | "default";
     /** Optional leading icon on the button (`book-open` for knowledge/guide entries). */
     icon?: "book-open";
-    /**
-     * Where the button is rendered: `inline` (default) draws the button in place; `header` hands the action to the
-     * enclosing platform page header (falling back to inline when no header host is present).
-     */
-    placement?: "inline" | "header";
     /** Disables the entry button. */
     disabled?: boolean;
   }>(),
@@ -30,7 +25,6 @@ const props = withDefaults(
     labelKey: undefined,
     type: "default",
     icon: undefined,
-    placement: "inline",
     disabled: false,
   },
 );
@@ -85,27 +79,11 @@ async function openComposer() {
     opening.value = false;
   }
 }
-
-const usesHeaderPlacement = computed(() => props.placement === "header" && panel.registerHeaderAction !== undefined);
-watch(usesHeaderPlacement, (inHeader, _previous, onCleanup) => {
-  if (!inHeader || !panel.registerHeaderAction) return;
-  const stop = panel.registerHeaderAction(slot.slot, () => ({
-    id: slot.slot,
-    label: buttonLabel.value,
-    icon: props.icon,
-    primary: props.type === "primary",
-    disabled: props.disabled || opening.value,
-    loading: opening.value,
-    onClick: () => { void openComposer(); },
-  }));
-  onCleanup(stop);
-}, { immediate: true });
 </script>
 
 <template>
-  <div class="sdk-conversation-entry" :class="{ 'sdk-conversation-entry-hosted': usesHeaderPlacement && !failure }">
+  <div class="sdk-conversation-entry">
     <button
-      v-if="!usesHeaderPlacement"
       type="button"
       class="sdk-conversation-entry-btn"
       :class="{ primary: type === 'primary' }"
@@ -141,9 +119,6 @@ watch(usesHeaderPlacement, (inHeader, _previous, onCleanup) => {
   display: inline-flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-}
-.sdk-conversation-entry-hosted {
-  display: none;
 }
 .sdk-conversation-entry-btn {
   align-items: center;

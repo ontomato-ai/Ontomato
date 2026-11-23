@@ -35,7 +35,6 @@ vi.mock("../../services/product-panels/current", () => ({
     manifest: {
       state: { task: { type: { kind: "object", objectType } } },
       members: { run: { target: { projectionId: "run" }, inputs: { task: { state: "task" } } } },
-      commands: {},
     },
   }),
   requireDirectPanelMember: async () => ({

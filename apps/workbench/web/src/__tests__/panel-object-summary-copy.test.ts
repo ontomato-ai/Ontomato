@@ -41,7 +41,6 @@ const manifest: DirectPanelManifest = {
   members: {
     summary: { target: { projectionId: "app-summary" }, inputs: { app: { state: "selected" } } },
   },
-  commands: {},
 };
 
 const mounted: ReturnType<typeof createApp>[] = [];

@@ -556,6 +556,8 @@ const PanelsDirectory = {
       pick, pickById, startEdit, cancelMode, startCopy, startSaveAsTemplate, startFromTemplate,
       draftId, draftName, copyPanel, createFromTemplate, templateSource,
       remove, grantKind, grantId, grantVerb, changeGrant, share, openAddress,
+      startCreate: () => instance.state.setState({ selected: null, creating: true }),
+      refresh: () => instance.refreshObjects(),
     };
   },
 };

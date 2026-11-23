@@ -123,7 +123,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       json("panel/registration.json", { panels: [{ id: "example", mode: "create",
         input: { name: "Badge", description: "", visibility: "domain" } }] });
       const objectType = "platform:ScheduledTask";
-      json("panel/panel.json", { manifest: { state: {}, commands: {},
+      json("panel/panel.json", { manifest: { state: {},
         members: { badge: { component: badge.componentId, type: objectType,
           data: { rows: "list" }, config: { caption: "Ready" } } } } });
       write("panel/panel.html", '<div id="app"><projection slot="badge"></projection></div>');
@@ -144,7 +144,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       const editor = { component: "ObjectForm", type: "platform:MetricView", data: { createForm: "createForm" } };
       const trial = { component: "OperationButton", operation: "metricViews.test" };
       const descriptor = join(workspace, "panel.json");
-      const document = { manifest: { state: {}, commands: {}, members: { metricEditor: editor, preview: trial } } };
+      const document = { manifest: { state: {}, members: { metricEditor: editor, preview: trial } } };
       const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
       const check = () => execFileSync(process.execPath, [
         cli, "panel", "check", workspace, "--builtin", "--sdk-dir", join(out, version),
@@ -228,7 +228,12 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     assert.match(formLayout?.type ?? "", /rows/);
     const formActions = declared.get("ObjectForm").config.find(prop => prop.name === "actions");
     assert.equal(formActions?.required, false);
-    assert.match(formActions?.type ?? "", /header/);
+    assert.match(formActions?.type ?? "", /create-only/);
+    assert.doesNotMatch(formActions?.type ?? "", /header/);
+    const opLabel = declared.get("OperationButton").config.find(prop => prop.name === "label");
+    assert.equal(opLabel?.required, false);
+    assert.match(opLabel?.type ?? "", /string/);
+    assert.equal(declared.get("OperationButton").config.find(prop => prop.name === "placement"), undefined);
     const subtitleLines = declared.get("ObjectList").config.find(prop => prop.name === "subtitle-lines");
     assert.equal(subtitleLines?.required, false);
     assert.match(subtitleLines?.type ?? "", /number/);

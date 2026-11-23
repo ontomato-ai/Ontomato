@@ -362,7 +362,7 @@ async function registerChartPanel(year: number) {
       module: `import { mountPanel } from "@ontomato/sdk/panel";
 await mountPanel({});`,
     },
-    manifest: { state: {}, commands: {}, members: {
+    manifest: { state: {}, members: {
       chart: { target: { projectionId: projection.id }, inputs: { year: { literal: year } } },
     } },
   });

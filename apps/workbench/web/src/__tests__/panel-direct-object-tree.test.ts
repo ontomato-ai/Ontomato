@@ -34,7 +34,6 @@ function mount(config: Record<string, RuntimeJsonValue>, initial: Record<string,
   const instance = createDirectPanelInstance(definePanel({
     state: { skill: { type: { kind: "object", objectType: SKILL } }, file: { type: { kind: "scalar", type: "string" } } },
     members: { tree: { target: { projectionId: tree.id }, inputs: { skill: { state: "skill" } }, outputs: { selected: { state: "file" } } } },
-    commands: {},
   }), {
     pageKey: "p", url: () => "/p", label: () => "P", initial: { skill, ...initial },
     text: createPanelText({}, { value: "en" } as never, "en"), ...noOperations, recordDraftCreated: async () => {},

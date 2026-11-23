@@ -52,7 +52,7 @@ async function checkPanelAuthoringSources({
 export async function checkBuiltinPanelSource(
   directory,
   checks,
-  { assignIds = false, builtinEntryIds } = {},
+  { assignIds = false } = {},
 ) {
   if (!checks.builtinProductIdSchema) throw new Error("Use an SDK release that supports platform product IDs");
   const registrationFile = resolve(directory, "registration.json");
@@ -70,16 +70,6 @@ export async function checkBuiltinPanelSource(
   const document = parseJson(file, source);
   const parsed = checks.panelAuthoringManifestSchema.safeParse(document?.manifest);
   if (!parsed.success) throw new Error(`${file}: ${parsed.error.message}`);
-  if (builtinEntryIds) {
-    for (const [command, { do: action }] of Object.entries(parsed.data.commands)) {
-      const open = action.open;
-      if (open?.mode !== "entry" || !("literal" in open.entry)) continue;
-      const useId = open.entry.literal.primaryKey;
-      if (!builtinEntryIds.has(useId)) {
-        throw new Error(`${file}: manifest.commands.${command}.do.open.entry: entry '${useId}' is missing from the release`);
-      }
-    }
-  }
   for (const [member, declaration] of Object.entries(parsed.data.members)) {
     if (!("component" in declaration) || declaration.operation === undefined) continue;
     if (!Array.isArray(checks.draftReadOperationIds)) {

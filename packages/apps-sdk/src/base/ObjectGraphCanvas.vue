@@ -95,7 +95,7 @@ const saved = computed<Positions>(() => {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as unknown as Positions : {};
 });
 /** The clear space kept around the graph when it is fitted to the canvas. */
-const FIT_PADDING = 36;
+const FIT_PADDING = 56;
 /**
  * The room the graph is laid out for: the canvas, less the space a fit keeps clear. Measured once the canvas's box is
  * there and again whenever the canvas takes a new size, so the graph's parts are laid out to the room it is shown in.
@@ -675,7 +675,7 @@ async function download() {
   border-radius: 50%;
   background: var(--el-color-success);
 }
-@container (max-width: 420px) {
+@container (max-width: 480px) {
   .sdk-object-graph-canvas-op-hint {
     display: none;
   }

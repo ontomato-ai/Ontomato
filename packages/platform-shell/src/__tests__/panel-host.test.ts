@@ -45,14 +45,12 @@ const panelP = definePanel({
     tasks: { target: { projectionId: "projection-x" } },
     taskForm: { target: { projectionId: "projection-task-form" }, inputs: { task: { state: "selectedTask" } } },
   },
-  commands: {},
 });
 
 /** Panel Q: the same projection X and nothing of P. */
 const panelQ = definePanel({
   state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
   members: { summary: { target: { projectionId: "projection-x" }, inputs: { task: { state: "selectedTask" } } } },
-  commands: {},
 });
 
 function record(id: string, name: string, manifest: ProductPanel["manifest"]): ProductPanel {
@@ -232,7 +230,7 @@ describe("the panel host", () => {
     const panels = new Map([
       ["panel-p", record("panel-p", "Scheduled tasks", panelP)],
       ["panel-q", record("panel-q", "Task summary", panelQ)],
-      ["panel-r", record("panel-r", "Application only", definePanel({ state: {}, members: { form: { target: { projectionId: "projection-other" } } }, commands: {} }))],
+      ["panel-r", record("panel-r", "Application only", definePanel({ state: {}, members: { form: { target: { projectionId: "projection-other" } } } }))],
     ]);
     const port = platform({
       panels,

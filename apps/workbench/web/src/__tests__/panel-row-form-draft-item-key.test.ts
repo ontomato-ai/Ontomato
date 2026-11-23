@@ -242,7 +242,6 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
           inputs: { app: { state: "application" }, entryId: { item: "primaryKey" } },
         },
       },
-      commands: {},
     });
 
     const entryLabels: Record<string, string> = {
@@ -392,7 +391,6 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
         },
         addEntryForm: { target: { projectionId: "app-add-entry-form" }, inputs: { app: { state: "application" } } },
       },
-      commands: {},
     });
 
     const { instance, element } = mountPanel({
@@ -485,7 +483,6 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
           inputs: { app: { state: "application" } },
         },
       },
-      commands: {},
     });
 
     const { instance, element } = mountPanel({
@@ -581,7 +578,6 @@ describe("row-attached ObjectForm draft itemKey matching and isolation", () => {
       members: {
         parentForm: { target: { projectionId: "app-settings-form" }, inputs: { app: { state: "application" } } },
       },
-      commands: {},
     });
 
     const { instance, element } = mountPanel({

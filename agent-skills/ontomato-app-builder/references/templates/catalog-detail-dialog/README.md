@@ -2,14 +2,12 @@
 
 Derived from the verified Ontology Relations page pattern:
 
-- **Catalog view**: full-width `ObjectList` with outer page gutter (`--page-gutter`), bottom scroll room for the
-  floating composer (`calc(var(--page-content-gap) + 56px)`), and a primary `+ New …` page-header command
-  (`manifest.commands.create` with `icon: "plus"`, automatically disabled while `creating` is `true`).
-- **Detail view**: clicking a row hides the catalog and switches the enclosing platform page header into one unified
-  detail bar (`← Back | <Object title> | [Delete] [Save]`) via `usePanelDetailHeader` and `usePanelBack` (browser Back,
-  Escape, and unified unsaved-changes guard), with a local fallback bar for headerless previews. Content renders
+- **Catalog view**: `<page-header>` with a primary `+ New …` button (`@click="startCreate"`), full-width
+  `ObjectList` with outer page gutter (`--page-gutter`), and bottom scroll room for the floating composer
+  (`calc(var(--page-content-gap) + 56px)`).
+- **Detail view**: clicking a row hides the catalog and renders a `<page-header>` detail bar (`← Back | <Object title> | [Delete] [Save]`) wired to `usePanelBack` (browser Back, Escape, and unified unsaved-changes guard). Content renders
   equal-height rounded white cards in a two-column `@container` grid that collapses to one column below `850px`.
-- **Create dialog**: clicking the header's primary `+ New …` command sets public state `creating: true, selected: null`
+- **Create dialog**: clicking the header's primary `+ New …` button sets public state `creating: true, selected: null`
   and opens a centered `<sdk-dialog>` hosting the same `ObjectForm` member (`config.actions: "create-only"` shows
   Cancel/Create in the dialog while edit mode saves from the detail header).
 
@@ -30,16 +28,15 @@ Open `/applications/app-template-catalog-detail/manage` (or generate a customize
    `objectType` / `type` / `data` / `operation` in `panel.json`, and IDs/paths in `registration.json`.
 2. **Configure table columns**: add `config.columns` on the `list` `ObjectList` member for multi-column tables (see
    `CODE.md#configure-an-official-list-or-summary`).
-3. **Add a header Delete button**: declare a `remove` member on `manifest.members` and mount `<projection slot="remove">`
-   in both the fallback titlebar and `.detail-header-op-host` (so its confirmation dialog and error feedback stay mounted
-   while the platform header draws the button):
+3. **Add a header Delete button**: declare a `remove` member on `manifest.members` and place `<projection slot="remove">`
+   inside the detail `<page-header>`'s `#actions` slot:
 
    ```json
    "remove": {
      "component": "OperationButton",
      "operation": "<owner.delete>",
      "target": "selected",
-     "config": { "type": "danger", "plain": true, "icon": "trash", "placement": "header" }
+     "config": { "type": "danger", "plain": true, "icon": "trash" }
    }
    ```
 

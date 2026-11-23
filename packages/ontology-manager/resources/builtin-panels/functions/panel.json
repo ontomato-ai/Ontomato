@@ -67,24 +67,6 @@
         "description": "删除选中的函数，平台先请读者确认；被指标、动作或写任务引用的函数由属主拒绝。",
         "id": "builtin-product-6c49c425-f3cc-4d7c-a623-19134c7b92a0"
       }
-    },
-    "commands": {
-      "newFunction": {
-        "labelKey": "newFunction",
-        "primary": true,
-        "do": {
-          "set": {
-            "fields": {
-              "selected": {
-                "literal": null
-              },
-              "creating": {
-                "literal": true
-              }
-            }
-          }
-        }
-      }
     }
   },
   "content": {

@@ -410,10 +410,6 @@ it("validates every projection and the capability-map panel input against contra
   const enMessages = panel.content.messages?.en ?? {};
   const zhMessages = panel.content.messages?.["zh-CN"] ?? {};
   expect(Object.keys(zhMessages).sort()).toEqual(Object.keys(enMessages).sort());
-  for (const command of Object.values(panel.manifest.commands)) {
-    expect(enMessages[command.labelKey]).toBeTruthy();
-    expect(zhMessages[command.labelKey]).toBeTruthy();
-  }
 });
 
 it("runs instance exploration, relations inspection, user switching, highlight query, and type-to-instance object picking end-to-end", { timeout: 30000 }, async () => {

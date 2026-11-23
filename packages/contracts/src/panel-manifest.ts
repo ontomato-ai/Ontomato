@@ -8,7 +8,7 @@ import {
   type PanelMemberItemKey,
   type PanelObjectRef,
 } from "./panel-object-ref";
-import { APPLICATION_PANEL_USE, PRODUCT_PANEL, PRODUCT_PROJECTION, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
+import { PRODUCT_PANEL, PRODUCT_PROJECTION, platformHasChildCollection, platformObjectTypes, platformOntologyLayers } from "./platform-object-types";
 
 export {
   panelMemberItemKeySchema,
@@ -503,75 +503,10 @@ export function panelTemplatePlacedMemberKeys(manifest: Pick<PanelManifest, "mem
     .map(([memberKey]) => memberKey);
 }
 
-const commandInputs = z.record(key, commandInputSchema);
-const openMember = z.object({
-  mode: z.enum(["replace", "drawer", "dialog"]),
-  member: key,
-  inputs: commandInputs.optional(),
-}).strict();
-const openEntry = z.object({
-  mode: z.literal("entry"),
-  entry: z.union([
-    z.object({ literal: panelObjectRefSchema.extend({ className: z.literal(APPLICATION_PANEL_USE) }) }).strict(),
-    panelStateRefSchema, itemValue,
-  ]),
-  inputs: commandInputs.optional(),
-}).strict();
-export const panelCommandSchema = z.object({
-  labelKey: panelMessageKeySchema,
-  /** The primary button among this panel's header commands. */
-  primary: z.literal(true).optional(),
-  /** Optional leading icon rendered on the command's header button. */
-  icon: z.enum(["plus"]).optional(),
-  do: z.union([
-    z.object({ set: z.object({ fields: commandInputs.refine(fields => Object.keys(fields).length > 0, "Set at least one state field") }).strict() }).strict(),
-    z.object({ invoke: z.object({ member: key, operation: key, inputs: commandInputs }).strict() }).strict(),
-    z.object({ open: z.union([openMember, openEntry]) }).strict(),
-  ]),
-}).strict();
-export type PanelCommand = z.infer<typeof panelCommandSchema>;
-
-const panelCommandsSchema = z.record(key, panelCommandSchema).superRefine((commands, ctx) => {
-  let primary: string | undefined;
-  for (const [name, command] of Object.entries(commands)) {
-    if (!command.primary) continue;
-    if (primary !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom, path: [name, "primary"], message: `Command '${primary}' is already primary`,
-      });
-    } else {
-      primary = name;
-    }
-  }
-});
-
-/** Header state changes must be reproducible by opening the panel's address. */
-export function validatePanelCommandAddresses(
-  { state, commands }: { state: PanelState; commands: Record<string, PanelCommand> },
-  ctx: z.RefinementCtx,
-) {
-  for (const [name, command] of Object.entries(commands)) {
-    if (!("set" in command.do)) continue;
-    for (const field of Object.keys(command.do.set.fields)) {
-      const path = ["commands", name, "do", "set", "fields", field];
-      if (!Object.hasOwn(state, field)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: `Undeclared reference '${field}'` });
-      } else if (!state[field].deepLink) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom, path,
-          message: `Header command '${name}' changes state '${field}', which the assistant cannot set by address. Mark it deepLink.`,
-        });
-      }
-    }
-  }
-}
-
 export const panelManifestSchema = z.object({
   state: panelStateSchema,
   members: z.record(key, panelMemberSchema),
-  commands: panelCommandsSchema,
-}).strict().superRefine(({ state, members, commands }, ctx) => {
-  validatePanelCommandAddresses({ state, commands }, ctx);
+}).strict().superRefine(({ state, members }, ctx) => {
   function issue(path: string[], message: string) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
   }
@@ -674,30 +609,6 @@ export const panelManifestSchema = z.object({
         const target = [...path, "readOperationInputs", operation, ...parameter];
         if ("state" in ref) requireName(state, ref.state, [...target, "state"]);
         else requireName(members, ref.formField.slot, [...target, "formField", "slot"]);
-      }
-    }
-  }
-  for (const [name, command] of Object.entries(commands)) {
-    const path = ["commands", name];
-    const action = command.do;
-    const [operation, values] = "set" in action ? ["set", action.set.fields] as const
-      : "invoke" in action ? ["invoke", action.invoke.inputs] as const
-      : ["open", action.open.inputs ?? {}] as const;
-    if ("invoke" in action) requireName(members, action.invoke.member, [...path, "do", "invoke", "member"]);
-    if ("open" in action && "member" in action.open) requireName(members, action.open.member, [...path, "do", "open", "member"]);
-    if ("open" in action && action.open.mode === "entry") {
-      const entry = action.open.entry;
-      if ("state" in entry) requireName(state, entry.state, [...path, "do", "open", "entry", "state"]);
-    }
-    for (const [field, value] of Object.entries(values)) {
-      const valuePath = [...path, "do", operation, operation === "set" ? "fields" : "inputs", field];
-      if ("state" in value) requireName(state, value.state, [...valuePath, "state"]);
-      if (operation === "set" && Object.hasOwn(state, field)) {
-        const target = state[field].type;
-        if ("literal" in value && !matchesDirectPanelValue(target, value.literal))
-          issue([...valuePath, "literal"], "The value does not match the target state type");
-        if ("state" in value && Object.hasOwn(state, value.state) && !panelPortAccepts(target, state[value.state].type))
-          issue([...valuePath, "state"], "The source state type does not match the target state type");
       }
     }
   }

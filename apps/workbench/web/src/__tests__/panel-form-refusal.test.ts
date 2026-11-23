@@ -35,7 +35,6 @@ const panel = panelRecord(
   definePanel({
     state: { selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true } },
     members: { form: { target: { projectionId: formProjection.id }, inputs: { task: { state: "selectedTask" } } } },
-    commands: {},
   }),
 );
 const use = panelUse("use-trial-a-tasks", "panels-trial-a-tasks", panel.id, "/applications/app-panels-trial-a/tasks");

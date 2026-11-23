@@ -126,11 +126,10 @@ function mountFormHarness(options: {
     },
   };
   const manifest: DirectPanelManifest = createMode
-    ? { state: {}, members: { form: { target: { projectionId: projection.id } } }, commands: {} }
+    ? { state: {}, members: { form: { target: { projectionId: projection.id } } } }
     : {
         state: { item: { type: fnType, personal: false, deepLink: true, external: false } },
         members: { form: { target: { projectionId: projection.id }, inputs: { item: { state: "item" } } } },
-        commands: {},
       };
 
   const intentId = randomId();
@@ -408,12 +407,10 @@ function mountOperationHarness(options: {
         members: {
           action: { target: { projectionId: projection.id }, inputs: { item: { state: "item" } } },
         },
-        commands: {},
       }
     : {
         state: {},
         members: { action: { target: { projectionId: projection.id } } },
-        commands: {},
       };
 
   const intentId = randomId();

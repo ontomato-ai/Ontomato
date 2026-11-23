@@ -99,7 +99,6 @@ it("runs a read operation the panel offers as a read, never as a write intent", 
   const manifest = definePanel({
     state: { picked: { type: { kind: "object", objectType: SCHEDULED_TASK } } },
     members: { list: { target: { projectionId: "tasks" }, inputs: { task: { state: "picked" } } } },
-    commands: {},
   });
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "tasks", url: () => "/tasks", label: () => "Tasks", initial: {},

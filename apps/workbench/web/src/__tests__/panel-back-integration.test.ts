@@ -78,7 +78,6 @@ const panel = panelRecord(
     members: {
       detailForm: { target: { projectionId: formProjection.id }, inputs: { item: { state: "selected" } } },
     },
-    commands: {},
   }),
 );
 panel.content = {

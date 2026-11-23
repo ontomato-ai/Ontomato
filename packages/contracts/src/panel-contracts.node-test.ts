@@ -180,7 +180,7 @@ test("the checker accepts short data and operation members with reusable project
     search: { type: { kind: "scalar", type: "string" } },
   };
   const reused = { target: { projectionId: "registered-summary" } };
-  const manifest = { state, members: { list, approve, reused }, commands: {} };
+  const manifest = { state, members: { list, approve, reused } };
   const parsed = panelAuthoringManifestSchema.parse(manifest);
   assert.deepEqual(parsed.members, manifest.members);
   assert.equal(panelAuthoringManifestSchema.safeParse({
@@ -695,7 +695,7 @@ test("panel registration and current reads require a module", async () => {
     module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
   };
   const manifest = {
-    state: {}, members: { tasks: { target: { projectionId: "projection-schedules-tasks" } } }, commands: {},
+    state: {}, members: { tasks: { target: { projectionId: "projection-schedules-tasks" } } },
   };
   const body = { name: "Scheduled tasks", description: "", visibility: "domain", revision: 0, content, manifest };
   const current = {
@@ -716,7 +716,7 @@ test("panel registration and current reads require a module", async () => {
   }
 });
 
-test("a panel manifest validates commands, state and placements", () => {
+test("a panel manifest validates state and placements", () => {
   const agent = { kind: "object", objectType: AGENT_DEFINITION };
   const input = {
     state: {
@@ -729,64 +729,15 @@ test("a panel manifest validates commands, state and placements", () => {
       row: { target: { panelId: "agent-detail" }, inputs: { agent: { item: true } } },
       details: { target: { fromState: "agent", candidates: { rule: "objectDetail" } } },
     },
-    commands: { create: {
-      labelKey: "agent.create", do: { set: { fields: { agent: { literal: null }, mode: { literal: "create" } } } },
-    } },
   };
   const manifest = panelManifestSchema.parse(input);
-  assert.deepEqual(manifest.commands.create, input.commands.create);
-  assert.equal(panelManifestSchema.safeParse({
-    ...input, commands: { bad: { do: { set: { fields: { agent: { literal: null } } } } } },
-  }).success, false);
-  assert.equal(panelManifestSchema.safeParse({
-    ...input, commands: { bad: {
-      labelKey: "agent.create",
-      do: { set: { fields: { agent: { event: true } } } },
-    } },
-  }).success, false);
+  assert.deepEqual(Object.keys(manifest.members), ["row", "details"]);
   assert.equal(panelManifestSchema.safeParse({
     ...input, state: { selected: { type: { kind: "objects", objectType: AGENT_DEFINITION } } },
   }).success, false);
-  const follow = {
-    labelKey: "agent.follow",
-    do: { open: { mode: "entry", entry: { literal: { className: "platform:ApplicationPanelUse", primaryKey: "tasks" } } } },
-  };
-  assert.deepEqual(panelManifestSchema.parse({ ...input, commands: { follow } }).commands.follow, follow);
   assert.equal(panelManifestSchema.safeParse({
-    ...input, commands: { follow: { ...follow, do: { open: { mode: "entry", applicationId: "app", useId: "tasks" } } } },
+    ...input, commands: {},
   }).success, false);
-});
-
-test("one named header command can be primary in saved and authoring manifests", async () => {
-  const { panelAuthoringManifestSchema } = await import("./panel-authoring");
-  const manifest = {
-    state: { editing: { type: { kind: "scalar", type: "boolean" }, deepLink: true } },
-    members: { row: { target: { projectionId: "row" } } },
-  };
-  const create = { labelKey: "create", primary: true, do: { set: { fields: { editing: { literal: true } } } } };
-  const close = { labelKey: "close", do: { set: { fields: { editing: { literal: false } } } } };
-  const valid = { ...manifest, commands: { create, close } };
-
-  for (const schema of [panelManifestSchema, panelAuthoringManifestSchema]) {
-    assert.deepEqual(schema.parse(valid).commands, valid.commands);
-    assert.equal(schema.safeParse({ ...manifest, events: valid.commands }).success, false);
-    const localState = schema.safeParse({ ...valid, state: { editing: { ...manifest.state.editing, deepLink: false } } });
-    assert.equal(localState.success, false);
-    if (!localState.success) {
-      assert.deepEqual(localState.error.issues[0]?.path, ["commands", "create", "do", "set", "fields", "editing"]);
-      assert.match(localState.error.issues[0]!.message, /command 'create'.*state 'editing'.*deepLink/);
-    }
-    for (const [commands, path] of [
-      [{ create, close: { ...close, primary: true } }, ["commands", "close", "primary"]],
-      [{ create: { ...create, on: { member: "row", output: "activated" } } }, ["commands", "create"]],
-      [{ create: { ...create, labelKey: undefined } }, ["commands", "create", "labelKey"]],
-      [{ create: { ...create, primary: false } }, ["commands", "create", "primary"]],
-    ] as const) {
-      const result = schema.safeParse({ ...manifest, commands });
-      assert.equal(result.success, false);
-      if (!result.success) assert.deepEqual(result.error.issues[0]?.path, path);
-    }
-  }
 });
 
 test("application addresses carry independent frame and entry state while preserving draft parameters", async () => {
@@ -807,7 +758,7 @@ test("application addresses carry independent frame and entry state while preser
       mode: { type: { kind: "scalar", type: "string" }, deepLink: true },
       privateSelection: { type: { kind: "scalar", type: "string" } },
     },
-    members: {}, commands: {},
+    members: {},
   });
   assert.deepEqual(validateApplicationPanelAddressState("frame", frame, manifest), frame);
   assert.deepEqual(validateApplicationPanelAddressState("state", state, manifest, ["term"]), { mode: "list" });
@@ -843,7 +794,7 @@ test("current entry is supplied from the resolved use and its slot cannot overri
   assert.equal(Object.isFrozen(frameContext.currentEntry), true);
   assert.equal(applicationFrameSourceSchema.safeParse({ kind: "frame", applicationId, useId, panelId: "another" }).success, false);
   const content = { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } };
-  const manifest = { state: {}, members: { content }, commands: {} };
+  const manifest = { state: {}, members: { content } };
   assert.deepEqual(panelManifestSchema.parse(manifest).members.content, content);
   assert.equal(panelManifestSchema.safeParse({
     ...manifest, members: { content: { ...content, inputs: { term: { literal: "B" } } } },
@@ -1017,16 +968,16 @@ test("a dispatched success carries the owner's message alongside the result data
 test("the field port refers to another slot in the same manifest", () => {
   const picker = { target: { projectionId: "skill-picker" }, formField: { slot: "definition", path: "/skills" } };
   const members = { definition: { target: { projectionId: "definition-form" } }, picker };
-  assert.deepEqual(panelManifestSchema.parse({ state: {}, members, commands: {} }).members.picker?.formField, picker.formField);
-  assert.equal(panelManifestSchema.safeParse({ state: {}, members: { picker }, commands: {} }).success, false);
+  assert.deepEqual(panelManifestSchema.parse({ state: {}, members }).members.picker?.formField, picker.formField);
+  assert.equal(panelManifestSchema.safeParse({ state: {}, members: { picker } }).success, false);
 });
 
 test("a row reference port identifies the array and a field relative to each row", () => {
   const formField = { slot: "workflow", path: "/steps", itemPath: "/actionId" };
   const members = { workflow: { target: { projectionId: "workflow-form" } }, picker: { target: { projectionId: "action-picker" }, formField } };
-  assert.deepEqual(panelManifestSchema.parse({ state: {}, members, commands: {} }).members.picker?.formField, formField);
+  assert.deepEqual(panelManifestSchema.parse({ state: {}, members }).members.picker?.formField, formField);
   const invalid = { ...members, picker: { ...members.picker, formField: { ...formField, itemPath: "actionId" } } };
-  assert.equal(panelManifestSchema.safeParse({ state: {}, members: invalid, commands: {} }).success, false);
+  assert.equal(panelManifestSchema.safeParse({ state: {}, members: invalid }).success, false);
 });
 
 test("time controls and schedule frequencies accept local times at minute precision", () => {
@@ -1063,7 +1014,6 @@ test("explicit operation bindings use the owner's type and the admitted member t
     members: {
       list: { target: { projectionId: "tasks" }, inputs: { record: { state: "selectedTask" } } },
     },
-    commands: {},
   });
   const description = {
     handlerRef: RUN_NOW, effect: "write", kind: "action", label: "Run now", batch: false,
@@ -1104,7 +1054,6 @@ test("read operations can bind a draft, parameters and a binding ID in this pane
       execution: { target: { projectionId: "runtime-form" } },
       trial: { target: { projectionId: "trial" }, readOperationInputs: { testExecute: { draft, parameters, bindingId } } },
     },
-    commands: {},
   };
   assert.deepEqual(panelManifestSchema.parse(manifest).members.trial?.readOperationInputs?.testExecute, { draft, parameters, bindingId });
   assert.equal(panelManifestSchema.safeParse({ ...manifest, state: {} }).success, false);
@@ -1169,7 +1118,7 @@ const binding = [bindingKey({ kind: "PlatformOperation", id: operation })];
 });
 
 test("a frame boots with the exact use identity or an explicit candidate null", () => {
-  const panel = { content: { html: "", module: "" }, manifest: { state: {}, members: {}, commands: {} } };
+  const panel = { content: { html: "", module: "" }, manifest: { state: {}, members: {} } };
   const message = { kind: "panel-host-message", panel, pageKey: "tasks", url: "/tasks", label: "Tasks", state: {} };
   const use = { applicationId: "workbench", useId: "tasks" };
   assert.deepEqual(panelHostMessageSchema.parse({ ...message, use }).use, use);
@@ -1355,7 +1304,7 @@ test("nested controls keep relative field metadata and the existing absolute ref
   const path = "/steps/0/actionId";
   const formField = { slot: "definition", path };
   const manifest = panelManifestSchema.parse({
-    state: {}, commands: {},
+    state: {},
     members: { definition: { target: { projectionId: "workflow-form" } }, picker: { target: { projectionId: "action-picker" }, formField } },
   });
   assert.deepEqual(manifest.members.picker?.formField, formField);
@@ -1443,7 +1392,7 @@ test("current panel reads can carry a page skill member for the verified entranc
     createdAt: "2026-11-19T00:00:00Z", updatedAt: "2026-11-19T00:00:00Z", editable: false,
     name: "Agent settings", description: "", visibility: "domain",
     content: { html: "<main></main>", module: "export {}" },
-    manifest: { members: {}, state: {}, commands: {} },
+    manifest: { members: {}, state: {} },
   };
   const pageSkillContext = {
     mode: "member",
@@ -1462,7 +1411,7 @@ test("current panel reads can carry a page skill member for the verified entranc
       html: '<div id="app"><projection slot="tasks"></projection></div>',
       module: 'import { mountPanel } from "@ontomato/sdk/panel";\nawait mountPanel({});',
     },
-    manifest: { state: {}, members: { tasks: { target: { projectionId: "task-list" } } }, commands: {} },
+    manifest: { state: {}, members: { tasks: { target: { projectionId: "task-list" } } } },
   };
   assert.deepEqual(productPanelResponseSchema.parse({ panel: directPanel }), { panel: directPanel });
   assert.deepEqual(productPanelResponseSchema.parse({ panel: directPanel, pageSkillContext }), { panel: directPanel, pageSkillContext });
@@ -1506,7 +1455,7 @@ test("a graph has two admitted sources and can use either a form field or separa
   assert.deepEqual(projectionPorts(projection).outputs, projection.outputs);
 
   const range = panelManifestSchema.parse({
-    state: {}, commands: {},
+    state: {},
     members: {
       definition: { target: { projectionId: "definition-form" } },
       range: { target: { projectionId: "data-scope" }, formField: { slot: "definition", path: "/classNames" } },
@@ -1515,7 +1464,7 @@ test("a graph has two admitted sources and can use either a form field or separa
   assert.equal(range.members.range?.formField?.path, "/classNames");
   const state = { node: { type: { kind: "object", objectType: OBJECT_TYPE } }, edge: { type: { kind: "object", objectType: RELATIONSHIP } } };
   const outputs = { selectedNode: { state: "node" }, selectedEdge: { state: "edge" } };
-  const graph = { members: { graph: { target: { projectionId: "ontology-model" }, outputs } }, commands: {} };
+  const graph = { members: { graph: { target: { projectionId: "ontology-model" }, outputs } } };
   assert.deepEqual(panelManifestSchema.parse({ ...graph, state }).members.graph?.outputs, outputs);
   assert.equal(panelManifestSchema.safeParse({ ...graph, state: { node: state.node } }).success, false);
 });
@@ -1556,7 +1505,7 @@ test("candidate source needs only workspace identity, content and build-test con
   const candidate = {
     kind: "candidate",
     workspace: { id: "5931a639-a70d-4dae-96db-6b8a4460d228", ref: "a".repeat(40) },
-    panel: { content: { html: "", module: "" }, manifest: { state: {}, members: {}, commands: {} } },
+    panel: { content: { html: "", module: "" }, manifest: { state: {}, members: {} } },
     previewContext: { kind: "build-test", test: null },
   };
   assert.ok(candidatePanelSourceSchema.safeParse(candidate).success);
@@ -1907,7 +1856,6 @@ test("live operation availability preserves the owner's reason without putting i
   const manifest = panelManifestSchema.parse({
     state: { selected: { type: { kind: "object", objectType: FUNCTION } } },
     members: { remove: { target: { projectionId: "delete-function" }, inputs: { function: { state: "selected" } } } },
-    commands: {},
   });
   const placed = projectionOperation(manifest, "remove", "delete", described);
   assert.deepEqual(panelOperationSchema.parse(placed).unavailable, unavailable);
@@ -2028,7 +1976,7 @@ test("mixed graphs declare selected node types separately from the read bindings
   assert.deepEqual(projection.inputs.start, nodeIdentity);
   const manifest = panelManifestSchema.parse({
     state: { selected: { type: nodeIdentity } },
-    members: { graph: { target: { projectionId: "mixed" }, outputs: { selectedNode: { state: "selected" } } } }, commands: {},
+    members: { graph: { target: { projectionId: "mixed" }, outputs: { selectedNode: { state: "selected" } } } },
   });
   assert.deepEqual(manifest.state.selected, { type: nodeIdentity, deepLink: false, personal: false, external: false });
   const user = panelStateValueSchema.parse({ className: ONTOLOGY_USER, primaryKey: "shared-key" });
@@ -2036,7 +1984,7 @@ test("mixed graphs declare selected node types separately from the read bindings
   assert.notDeepEqual(user, definition);
 });
 
-test("node positions form a personal layout outside addresses, commands and read parameters", async () => {
+test("node positions form a personal layout outside addresses and read parameters", async () => {
   const { panelDeepLinkStateValueSchema, matchesDirectPanelValue, panelPortAccepts } = await import("./panel-manifest");
   const { directProjectionInputAccepts, panelReadInputMatches } = await import("./panel-projection");
   const type = { kind: "node-positions" } as const;
@@ -2055,11 +2003,6 @@ test("node positions form a personal layout outside addresses, commands and read
   assert.equal(directProjectionInputAccepts({ kind: "json" }, type), false);
   assert.equal(panelReadInputMatches("ontologyParameter", type), false);
   assert.equal(panelReadInputMatches("sort", type), false);
-  assert.equal(panelManifestSchema.safeParse({
-    state: { positions: field }, members: {}, commands: {
-      reset: { labelKey: "Reset", do: { set: { fields: { positions: { literal: null } } } } },
-    },
-  }).success, false);
 });
 
 test("object unions combine current layers and explicit types without duplicates", () => {
@@ -2353,7 +2296,7 @@ test("a state placement selects a product's kind and carries the complete nested
   const { pageContextSchema } = await import("./page-context");
   const selected = { type: { kind: "object", objectType: "platform:ProductProjection" } };
   const manifest = (candidates: object, state = selected) => ({
-    state: { selected: state }, members: { detail: { target: { fromState: "selected", candidates } } }, commands: {},
+    state: { selected: state }, members: { detail: { target: { fromState: "selected", candidates } } },
   });
   assert.equal(panelManifestSchema.safeParse(manifest({ projectionIds: ["approve-card"] })).success, true);
   assert.equal(panelManifestSchema.safeParse(manifest({ rule: "usable" })).success, true);
@@ -2397,7 +2340,7 @@ test("a state placement selects a product's kind and carries the complete nested
   const nested = {
     panel: {
       id: "detail-panel", revision: 1, content: { html: "", module: "" },
-      manifest: { state: {}, members: {}, commands: {} },
+      manifest: { state: {}, members: {} },
     },
   };
   assert.deepEqual(productPanelNestedReadResponseSchema.parse(nested), nested);
@@ -2569,7 +2512,6 @@ test("listColumn and listRowDetail members enforce attachment mutual exclusion, 
         inputs: { target: { item: true }, payload: { itemField: "schema" } },
       },
     },
-    commands: {},
   };
   const parsed = panelManifestSchema.parse(validManifest);
   assert.equal(isHostMountedPanelMember(parsed.members.list!), false);
@@ -2608,7 +2550,6 @@ test("listColumn and listRowDetail members enforce attachment mutual exclusion, 
         nestedPanel: { target: { panelId: "sub-panel" } },
         bad: invalidMember,
       },
-      commands: {},
     }).success, false);
   }
 
@@ -2620,7 +2561,6 @@ test("listColumn and listRowDetail members enforce attachment mutual exclusion, 
       col1: { target: { projectionId: "c1" }, listColumn: { slot: "list", column: "status" } },
       col2: { target: { projectionId: "c2" }, listColumn: { slot: "list", column: "status" } },
     },
-    commands: {},
   }).success, false);
   assert.equal(panelManifestSchema.safeParse({
     state: baseState,
@@ -2629,14 +2569,6 @@ test("listColumn and listRowDetail members enforce attachment mutual exclusion, 
       d1: { target: { projectionId: "p1" }, listRowDetail: { slot: "list" } },
       d2: { target: { projectionId: "p2" }, listRowDetail: { slot: "list" } },
     },
-    commands: {},
-  }).success, false);
-
-  // Header commands reject row scalar and itemField inputs.
-  assert.equal(panelManifestSchema.safeParse({
-    state: baseState,
-    members: { list: { target: { projectionId: "tasks-list" } } },
-    commands: { run: { labelKey: "run", do: { invoke: { member: "list", operation: "go", inputs: { a: { itemField: "x" } } } } } },
   }).success, false);
 });
 

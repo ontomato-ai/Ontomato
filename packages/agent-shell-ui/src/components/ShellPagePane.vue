@@ -72,13 +72,11 @@ const paneStyle = computed(() => ({
     :aria-label="feature?.label"
   >
     <div v-if="view === 'side'" class="pane-resize" role="separator" aria-orientation="vertical" @pointerdown.prevent="startResize" />
-    <header v-if="paired" class="pane-header platform-page-gutter" :class="{ custom: slots.header }">
+    <header v-if="paired" class="pane-header platform-page-gutter" :class="{ custom: slots.header, compact: !slots.header }">
       <button v-if="view === 'full'" type="button" class="pane-button pane-menu" :aria-label="labels.menu" @click="emit('menu')">
         <Menu :size="18" />
       </button>
-      <slot name="header"><h1 class="pane-title">{{ feature?.label }}</h1></slot>
-      <!-- The page's own commands, where its title is: the host hands them over and draws them for this width. -->
-      <slot name="actions" />
+      <slot name="header"><span class="pane-spacer" aria-hidden="true" /></slot>
       <ActionTooltip :content="layoutLabel">
         <button type="button" class="pane-button pane-layout" :aria-label="layoutLabel" @click="toggleLayout">
           <Columns2 v-if="view === 'full'" :size="16" aria-hidden="true" />
@@ -165,17 +163,14 @@ const paneStyle = computed(() => ({
 .pane-header.custom > .pane-button {
   align-self: center;
 }
-.pane-title {
+.pane-header.compact {
+  min-height: 36px;
+  padding-block: var(--spacing-xs);
+  border-bottom-color: var(--ui-divider);
+}
+.pane-spacer {
   flex: 1;
   min-width: 0;
-  margin: 0;
-  font-size: var(--text-lg);
-  line-height: var(--leading-sm);
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .pane-button {
   display: grid;

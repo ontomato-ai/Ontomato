@@ -30,7 +30,7 @@ it.each([PRODUCT_PROJECTION, PRODUCT_PANEL, APPLICATION])("describes %s save in 
     operations: { save: { operation: { kind: "PlatformOperation", id: `${type}.save` } } },
   });
   const member = { target: { projectionId: projection.id } };
-  const placement = { projection, member, slot: "form", panel: { manifest: { members: { form: member }, state: {}, commands: {} } } };
+  const placement = { projection, member, slot: "form", panel: { manifest: { members: { form: member }, state: {} } } };
 
   const describe = (locale: string) => readAdmittedProjectionOperations({ owner, credentials: { locale } }, placement, {});
   expect(await describe("en")).toMatchObject({ save: { label: "Save" } });

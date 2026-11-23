@@ -448,6 +448,7 @@ const ActionsCatalog = {
       explanationRead, explanationStale, hasExplanation, codeLines, segments, activeSegmentId, activeRange,
       pickLine, pickSegment, meaning, codeBox,
       presentKinds, kindColor, segmentOpen, toggleSegment, segmentDetails,
+      refresh: () => instance.refreshObjects(),
     };
   },
 };

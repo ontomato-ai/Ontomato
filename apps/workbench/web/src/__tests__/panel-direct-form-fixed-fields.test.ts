@@ -45,7 +45,6 @@ const manifest: DirectPanelManifest = {
     objectType: { type: { kind: "object", objectType: OBJECT_TYPE }, personal: false, deepLink: true, external: false },
   },
   members: { form: { target: { projectionId: projection.id }, inputs: { attribute: { state: "attribute" } } } },
-  commands: {},
 };
 const choice = (value: string) => ({ value, label: value, description: null, disabled: false, disabledReason: null });
 const classes = [choice("Device"), choice("Site")];

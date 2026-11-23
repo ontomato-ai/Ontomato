@@ -89,12 +89,11 @@ const manifest = definePanel({
       formField: { slot: "definition", path: "/function/parameters", itemPath: "/skills" },
     },
   },
-  commands: {},
 });
 const panel = panelRecord("panel-row-references", "Row references", manifest);
 /** The same form in a panel that declares no projection for the rows' skills. */
 const bare = panelRecord("panel-row-references-bare", "Row references", definePanel({
-  state: manifest.state, members: { definition: manifest.members.definition! }, commands: {},
+  state: manifest.state, members: { definition: manifest.members.definition! },
 }));
 
 async function open(slots: string[], shown = panel) {

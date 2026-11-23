@@ -7,6 +7,7 @@ import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-st
 import { usePanelContext, useProjectionSlot } from "../panel/context";
 import { useMember, useMemberOperations } from "../panel/member";
 import { useDataStateLabels } from "./data-state-labels";
+import { readConfigString } from "./localized-text";
 import {
   formatOperationLabel,
   isOperationReady,
@@ -59,16 +60,12 @@ const props = withDefaults(
     showBatchCount?: boolean;
     /** Optional leading icon on the button (`trash` for destructive removal, `check` for approval). */
     icon?: "trash" | "check";
+    /** Optional custom surface label for the button; defaults to the owner's formal operation label (confirmation dialogs and agent operation catalogs always keep the owner's formal label). */
+    label?: string;
     /** Button size: `default` or compact `small` (for example in inline batch-action toolbars). */
     size?: "small" | "default";
-    /**
-     * Where the button is rendered: `inline` (default) draws the button in place; `header` hands the action to the
-     * enclosing platform page header (falling back to inline when no header host is present) while keeping dialogs and
-     * error/result feedback mounted here.
-     */
-    placement?: "inline" | "header";
   }>(),
-  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, size: "default", placement: "inline" },
+  { type: "default", plain: false, text: false, showBatchCount: true, icon: undefined, label: undefined, size: "default" },
 );
 
 const emit = defineEmits<{
@@ -127,13 +124,21 @@ const targetInfo = computed(() =>
   resolveOperationTarget(panel, slot, member, descriptor.value, values.value),
 );
 
+const rawConfig = computed<Readonly<Record<string, unknown>> | undefined>(() => {
+  const cfg = member.projection.config;
+  return cfg && typeof cfg === "object" && !Array.isArray(cfg) ? (cfg as Record<string, unknown>) : undefined;
+});
+
 /**
- * The button shows only once its description is read, so the owner's name, in the reader's language, is there. A batch
- * button also says how many objects it acts on, so it never reads as the single one beside it.
+ * The button shows only once its description is read. When the panel specifies a custom `label` (prop or projection
+ * `config.label`), that concise wording is shown on the button surface while confirmation dialogs and agent catalogs
+ * continue to use the owner's formal operation name.
  */
-const label = computed(() =>
-  props.showBatchCount ? formatOperationLabel(descriptor.value!, targetInfo.value, t) : descriptor.value!.label,
-);
+const label = computed(() => {
+  const custom = (props.label ?? readConfigString(rawConfig.value, "label"))?.trim();
+  if (custom) return custom;
+  return props.showBatchCount ? formatOperationLabel(descriptor.value!, targetInfo.value, t) : descriptor.value!.label;
+});
 
 const targetKey = computed(() => (
   rowOperation
@@ -159,35 +164,14 @@ function onTriggerClick() {
   if (!descriptor.value || !ready.value) return;
   trigger(props.operation, descriptor.value);
 }
-
-const usesHeaderPlacement = computed(() => props.placement === "header" && panel.registerHeaderAction !== undefined);
-watch(usesHeaderPlacement, (inHeader, _previous, onCleanup) => {
-  if (!inHeader || !panel.registerHeaderAction) return;
-  const stop = panel.registerHeaderAction(slot.slot, () => (
-    !pending.value && descriptor.value
-      ? {
-          id: slot.slot,
-          label: label.value,
-          icon: props.icon === "trash" ? "trash" : undefined,
-          primary: props.type === "primary",
-          danger: props.type === "danger",
-          inline: props.plain,
-          disabled: !ready.value,
-          loading: dispatching.value,
-          onClick: onTriggerClick,
-        }
-      : null
-  ));
-  onCleanup(stop);
-}, { immediate: true });
 </script>
 
 <template>
   <div class="sdk-operation-button">
-    <data-state v-if="!usesHeaderPlacement && pending" :result="pending" :labels="labels"></data-state>
+    <data-state v-if="pending" :result="pending" :labels="labels"></data-state>
     <!-- A removal is drawn quiet unless `plain` requests a tinted bordered button; the owner still decides and confirms it. -->
     <el-button
-      v-else-if="!usesHeaderPlacement"
+      v-else
       :type="type"
       :size="size"
       :plain="plain"

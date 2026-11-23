@@ -55,7 +55,6 @@ const manifest: DirectPanelManifest = {
     form: { target: { projectionId: "agent-form" }, inputs: { agent: { state: "agent" } } },
     skills: { target: { projectionId: "agent-skills" }, formField: { slot: "form", path: "/skills" } },
   },
-  commands: {},
 };
 const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", value: value as never });
 const option = (name: string, more = {}) => ({ primaryKey: name, value: skill(name), label: name, ...more });

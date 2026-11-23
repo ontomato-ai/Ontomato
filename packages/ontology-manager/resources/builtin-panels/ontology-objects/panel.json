@@ -141,28 +141,6 @@
         },
         "id": "builtin-product-f3b27777-738b-4413-a40f-d80fb86c9ba1"
       }
-    },
-    "commands": {
-      "create": {
-        "labelKey": "ot.command.create",
-        "primary": true,
-        "icon": "plus",
-        "do": {
-          "set": {
-            "fields": {
-              "creating": {
-                "literal": true
-              },
-              "selected": {
-                "literal": null
-              },
-              "selectedAttribute": {
-                "literal": null
-              }
-            }
-          }
-        }
-      }
     }
   },
   "content": {

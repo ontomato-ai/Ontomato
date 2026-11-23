@@ -5,7 +5,7 @@ import {
   usePanelBack,
   usePanelContext,
   usePanelData,
-  usePanelDetailHeader,
+  usePanelFormDraft,
 } from "@ontomato/sdk/panel";
 
 const APPLICATION = "platform:Application";
@@ -164,59 +164,12 @@ const ApplicationsPanel = {
       if (mode.value === "create") return t("action.create");
       return app.value?.label || selectedKey.value;
     });
-
-    const hasHeaderHost = usePanelDetailHeader(() => {
-      if (mode.value === "list") return null;
-      if (mode.value === "create") {
-        return {
-          backLabel: t("action.back"),
-          title: t("action.create"),
-          onBack: () => void back.back(),
-          actions: [
-            {
-              id: "cancel-create",
-              label: t("action.cancel"),
-              disabled: savingForm.value,
-              onClick: () => cancelCreate(),
-            },
-            {
-              id: "confirm-create",
-              label: t("action.confirmCreate"),
-              primary: true,
-              loading: savingForm.value,
-              disabled: !saveHandle.value || savingForm.value,
-              onClick: () => void submitSaveForm(),
-            },
-          ],
-        };
-      }
-      const actions = [];
-      if (showIdentitySave.value) {
-        if (saveDirty.value) {
-          actions.push({
-            id: "discard-identity",
-            label: t("action.discard"),
-            disabled: savingForm.value,
-            onClick: () => discardSaveForm(),
-          });
-        }
-        actions.push({
-          id: "save-identity",
-          label: t("action.save"),
-          icon: "save",
-          primary: true,
-          disabled: !saveDirty.value || savingForm.value,
-          loading: savingForm.value,
-          onClick: () => void submitSaveForm(),
-        });
-      }
-      return {
-        backLabel: t("action.back"),
-        title: detailTitle.value,
-        onBack: () => void back.back(),
-        actions,
-      };
+    const identityDraft = usePanelFormDraft("save", {
+      when: () => mode.value === "detail" && showIdentitySave.value,
     });
+    function openCreate() {
+      instance.state.setState({ creating: true, selected: null });
+    }
 
     watch(selectedKey, () => {
       entriesBulkMode.value = false;
@@ -573,7 +526,9 @@ const ApplicationsPanel = {
       t,
       appIcon,
       mode,
-      hasHeaderHost,
+      identityDraft,
+      openCreate,
+      refresh: () => instance.refreshObjects(),
       detailTitle,
       scopeModel,
       scopeOptions,

@@ -1,11 +1,11 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelBack, usePanelContext, usePanelDetailHeader } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelBack, usePanelContext } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:AgentDefinition";
 
 await mountPanel({
   setup() {
-    const { instance, t } = usePanelContext();
+    const { instance } = usePanelContext();
     const selected = computed(() => instance.state.values.value.selected);
     const selectedKey = computed(() => (selected.value ? selected.value.primaryKey : ""));
     const selectedTitle = computed(() => {
@@ -21,6 +21,9 @@ await mountPanel({
         if (!value && creating.value) cancelCreate();
       },
     });
+    function startCreate() {
+      instance.state.setState({ creating: true, selected: null });
+    }
     function stopCreating() {
       if (creating.value) instance.state.set("creating", false);
     }
@@ -58,24 +61,6 @@ await mountPanel({
       instance.state.setState({ selected: null, creating: false });
     }
     const { back } = usePanelBack(() => Boolean(selectedKey.value), backToCatalog, { pushHistory: true });
-    const hasHeaderHost = usePanelDetailHeader(() => (
-      selectedKey.value
-        ? {
-            backLabel: t("detail.back"),
-            title: selectedTitle.value,
-            onBack: () => void back(),
-            actions: [{
-              id: "save",
-              label: t("detail.save"),
-              icon: "save",
-              primary: true,
-              disabled: !canSave.value,
-              loading: saving.value,
-              onClick: () => void saveDetail(),
-            }],
-          }
-        : null
-    ));
-    return { selectedKey, selectedTitle, hasHeaderHost, back, createDialog, stopCreating, cancelCreate, saving, canSave, saveDetail, onSaved, onDiscarded };
+    return { selectedKey, selectedTitle, back, creating, createDialog, startCreate, stopCreating, cancelCreate, saving, canSave, saveDetail, onSaved, onDiscarded };
   },
 });

@@ -78,11 +78,10 @@ const props = withDefaults(defineProps<{
   layout?: "stacked" | "rows";
   /**
    * Where Save, Discard and the unsaved marker live: `footer` (default) keeps them at the foot of the form;
-   * `header` hands the form's draft to the enclosing page header and hides the form's own action bar, falling back to
-   * the footer when no page header host is present; `create-only` shows Cancel/Create in create mode and lets the panel
-   * place its own Save trigger in edit mode; `none` hides the form's action bar in both modes.
+   * `create-only` shows Cancel/Create in create mode and lets the panel wire edit Save/Discard into its own
+   * `<page-header>` via `usePanelFormDraft`; `none` hides the form's action bar in both modes.
    */
-  actions?: "footer" | "header" | "create-only" | "none";
+  actions?: "footer" | "create-only" | "none";
 }>(), { fixedFields: () => ({}), layout: "stacked", actions: "footer" });
 const emit = defineEmits<{
   /** The owner saved the form: the object it saved, or the one it created. */
@@ -815,35 +814,13 @@ const shown = computed<DataStateResult<PanelFormDescription>>(() => {
 const labels = useDataStateLabels();
 
 /**
- * When `actions: "header"` is configured and the enclosing host draws a page header, hand the form's Save/Discard draft
- * to the page header and hide the form's own footer bar; otherwise keep the footer bar so the form stays usable in
- * nested panels, headerless previews, and sandboxed frames.
- */
-const usesHeaderActions = computed(() => props.actions === "header" && panel.registerHeaderDraft !== undefined);
-watch(usesHeaderActions, (inHeader, _previous, onCleanup) => {
-  if (!inHeader || !panel.registerHeaderDraft) return;
-  const stop = panel.registerHeaderDraft(slot.slot, () => (
-    shown.value.status === "ready"
-      ? {
-          dirty: canSettle.value,
-          saving: saving.value,
-          save: () => { if (!asking.value) void saveFromForm(); },
-          discard: () => { void confirmDiscard(); },
-        }
-      : null
-  ));
-  onCleanup(stop);
-}, { immediate: true });
-
-/**
  * Bottom action bar visibility:
- * - Hidden when the enclosing page header carries the draft (`actions: "header"`).
  * - Always pinned in create mode (`Cancel` / `Create`).
  * - Never shown on an all-read-only edit form with no pending changes.
  * - On an edit form, appears only once there are changes to settle (`Discard` / `Save`).
  */
 const showActionBar = computed(() => {
-  if (props.actions === "none" || usesHeaderActions.value) return false;
+  if (props.actions === "none") return false;
   if (isCreate.value) return true;
   if (props.actions === "create-only") return false;
   if (allReadOnly.value && !canSettle.value) return false;

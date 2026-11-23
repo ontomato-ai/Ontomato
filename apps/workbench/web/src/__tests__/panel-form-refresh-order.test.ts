@@ -28,7 +28,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { entry: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { entry: { state: "entry" } } } },
-  commands: {},
 };
 const fields = [
   { path: "/code", label: "Code", required: false, readOnly: false, valueSchema: {}, control: { kind: "text" }, refreshOnChange: true },

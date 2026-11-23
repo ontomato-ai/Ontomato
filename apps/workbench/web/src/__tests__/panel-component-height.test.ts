@@ -234,7 +234,6 @@ it("forwards reactive class and style on <Projection> and <CurrentEntry> onto [d
       list: { target: { projectionId: listProj.id } },
       content: { target: { fromPlatform: "currentEntry", candidates: { rule: "applicationEntry" } } },
     },
-    commands: {},
   });
   const active = ref(false);
   const nestedEl = document.createElement("div");
@@ -296,7 +295,6 @@ it("wraps frame <Projection> in .sdk-panel-member and forwards class and style",
   const panel = definePanel({
     state: { selected: { type: { kind: "object", objectType: SCHEDULED_TASK } } },
     members: { summary: { target: { projectionId: summaryProj.id }, inputs: { task: { state: "selected" } } } },
-    commands: {},
   });
   const instance = createPanelInstance(panel, {
     text: (key) => key,
@@ -380,7 +378,6 @@ it("re-measures and re-fits ObjectGraph and OntologyGraph when their container s
       obj: { target: { projectionId: objectGraphProj.id } },
       onto: { target: { projectionId: ontologyGraphProj.id } },
     },
-    commands: {},
   });
 
   const { element } = mountDirect(
@@ -455,7 +452,6 @@ it("passes height='100%' from SDK MetricChart to the inner chart view instead of
   const manifest = definePanel({
     state: {},
     members: { chart: { target: { projectionId: chartProj.id } } },
-    commands: {},
   });
   const { element } = mountDirect(
     manifest,
@@ -507,7 +503,6 @@ it("renders ObjectForm with a scrollable body and sibling pinned actions bar", a
   const manifest = definePanel({
     state: { selected: { type: { kind: "object", objectType: SCHEDULED_TASK } } },
     members: { form: { target: { projectionId: formProj.id }, inputs: { task: { state: "selected" } } } },
-    commands: {},
   });
   const instance = createDirectPanelInstance(manifest, {
     pageKey: "form-height",

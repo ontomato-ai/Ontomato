@@ -40,7 +40,6 @@ const panel = definePanel({
     form: { target: { projectionId: "task-form" }, inputs: { task: { state: "selectedTask" } } },
     run: { target: { projectionId: "task-run" }, inputs: { task: { state: "selectedTask" } } },
   },
-  commands: {},
 });
 const description = {
   fields: [{ path: "/name", label: "Name", control: { kind: "text" as const }, valueSchema: {}, required: false, readOnly: false }],

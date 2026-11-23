@@ -147,7 +147,6 @@ it("keeps form field mode intact when formField is declared and renders nothing 
       form: { target: { projectionId: formProjection.id }, inputs: { agent: { state: "agent" } } },
       model: { target: { projectionId: pickerProjection.id }, inputs: {}, formField: { slot: "form", path: "/model" } },
     },
-    commands: {},
   };
 
   const fields = [
@@ -224,7 +223,6 @@ it("inline rows mode selects, clears, echoes controlled state, and filters local
         outputs: { selected: { state: "startType" } },
       },
     },
-    commands: {},
   };
 
   const rows = [
@@ -331,7 +329,6 @@ it("inline options mode supports remote search, resolves held unavailable items,
         outputs: { selected: { state: "owner" } },
       },
     },
-    commands: {},
   };
 
   const alice = { primaryKey: "u-alice", value: "u-alice", label: "Alice Chen" };
@@ -443,7 +440,6 @@ it("disables inline picker with readable tooltip when rows or options data is fo
         outputs: { selected: { state: "picked" } },
       },
     },
-    commands: {},
   };
 
   // Rows forbidden
@@ -480,7 +476,6 @@ it("disables inline picker with readable tooltip when rows or options data is fo
         outputs: { selected: { state: "picked" } },
       },
     },
-    commands: {},
   };
 
   const second = mountPanel(

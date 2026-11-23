@@ -32,7 +32,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { app: { type: { kind: "object", objectType: FUNCTION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { app: { state: "app" } } } },
-  commands: {},
 };
 const names = {
   path: "/names", label: "Name", valueSchema: {}, required: true, readOnly: false,

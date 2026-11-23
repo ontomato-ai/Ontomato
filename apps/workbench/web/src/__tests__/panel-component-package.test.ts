@@ -40,7 +40,7 @@ const projection: DirectProjection = {
   ...record, id: "package-example", name: "Example", componentId: `${name}:Example`,
   inputs: {}, outputs: {}, config: {}, data: {},
 };
-const manifest: DirectPanelManifest = { state: {}, members: { example: { target: { projectionId: projection.id } } }, commands: {} };
+const manifest: DirectPanelManifest = { state: {}, members: { example: { target: { projectionId: projection.id } } } };
 
 afterEach(() => {
   vi.unstubAllGlobals();

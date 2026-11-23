@@ -64,6 +64,6 @@ await mountPanel({
       }
     }
 
-    return { selected, record, skill, onImported, onDeleted };
+    return { selected, record, skill, onImported, onDeleted, refresh: () => instance.refreshObjects() };
   },
 });

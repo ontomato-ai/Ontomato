@@ -1,5 +1,5 @@
 import { computed, watch } from "vue";
-import { mountPanel, usePanelBack, usePanelContext, usePanelData, usePanelDetailHeader } from "@ontomato/sdk/panel";
+import { mountPanel, usePanelBack, usePanelContext, usePanelData, usePanelFormDraft } from "@ontomato/sdk/panel";
 
 const TYPE = "platform:Relationship";
 
@@ -72,26 +72,15 @@ await mountPanel({
       backToCatalog,
       { pushHistory: true },
     );
-    const hasHeaderHost = usePanelDetailHeader(() => (
-      selectedKey.value
-        ? {
-            backLabel: "返回关系类型",
-            title: title.value,
-            onBack: () => void back.back(),
-            actions: detail.value.status === "ready"
-              ? [{
-                  id: "save",
-                  label: "保存",
-                  icon: "save",
-                  primary: true,
-                  disabled: !canSave.value,
-                  loading: saving.value,
-                  onClick: () => void saveDetail(),
-                }]
-              : [],
-          }
-        : null
-    ));
+    const detailDraft = usePanelFormDraft("form", {
+      when: () => Boolean(selectedKey.value) && detail.value.status === "ready",
+    });
+    function startCreate() {
+      instance.state.setState({ creating: true, selected: null });
+    }
+    function goBack() {
+      void back.back();
+    }
     function cancelCreate() {
       instance.state.setState({ creating: false, selected: null });
     }
@@ -141,7 +130,8 @@ await mountPanel({
 
     return {
       catalogue, detail, types, allRows, rows, countText, selectedKey, search, creating, createDialog, title,
-      saving, canSave, hasHeaderHost, typeLabel, open, backToCatalog, cancelCreate, saveDetail, onSaved, onDiscarded, openType,
+      saving, canSave, detailDraft, typeLabel, open, backToCatalog, goBack, startCreate, cancelCreate, saveDetail, onSaved, onDiscarded, openType,
+      refresh: () => instance.refreshObjects(),
     };
   },
 });

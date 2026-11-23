@@ -127,7 +127,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
       module: 'import {mountPanel} from "@ontomato/sdk/panel"; await mountPanel({});',
       messages: { en: { "settings.title": "Settings for {name}" } },
     },
-    manifest: { members: {}, state: {}, commands: {} },
+    manifest: { members: {}, state: {} },
   };
   const source = {
     kind: "candidate", workspace: { id: workspaceId, ref }, panel,
@@ -442,7 +442,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     })), error => error.stderr.includes("409 Revision conflict"));
     assert.deepEqual(requests.splice(0).filter(([method]) => method === "PUT").map(([, url]) => url), [panelPath]);
 
-    const manifest = { members: { tasks: { target: { projectionId: "tasks" } } }, state: {}, commands: {} };
+    const manifest = { members: { tasks: { target: { projectionId: "tasks" } } }, state: {} };
     await writeFile(join(directory, "panel.json"), JSON.stringify({ manifest }));
     const layout = join(directory, "panel.html");
     const tasksTemplate = '<div id="app"><projection slot="tasks"></projection></div>';
@@ -591,7 +591,7 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     assert.equal(reviewManifest.members.tabs.state.value, "status");
     assert.equal(reviewManifest.members.detail.state.search, "search");
     assert.deepEqual(reviewManifest.members.action1, {
-      component: "OperationButton", operation: "reviews.approve", target: "selected", config: { placement: "header" },
+      component: "OperationButton", operation: "reviews.approve", target: "selected",
     });
     assert.deepEqual(reviewManifest.members.batch2, { component: "OperationButton", operation: "reviews.approve", target: "checked" });
     const reviewLayout = await readFile(join(review, "panel.html"), "utf8");
@@ -742,7 +742,6 @@ test("the app-builder CLI checks a workspace and registers with the current SDK"
     const chartPanel = JSON.stringify({ manifest: {
       state: { window: { type: { kind: "scalar", type: "string" } } },
       members: { chart: { component: "MetricChart", sourceCard: chartSource, state: { range: "window" } } },
-      commands: {},
     } });
     await writeFile(descriptor, chartPanel);
     await writeFile(layout, '<div id="app"><projection slot="chart"></projection></div>');

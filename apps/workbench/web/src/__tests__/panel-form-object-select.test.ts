@@ -27,7 +27,6 @@ const projection: DirectProjection = {
 const manifest: DirectPanelManifest = {
   state: { entry: { type: { kind: "object", objectType: APPLICATION }, personal: false, deepLink: true, external: false } },
   members: { form: { target: { projectionId: projection.id }, inputs: { entry: { state: "entry" } } } },
-  commands: {},
 };
 const option = (value: Record<string, string>, label: string) => ({ value, label, description: null, disabled: false, disabledReason: null });
 const field = {

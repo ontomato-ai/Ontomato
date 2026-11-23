@@ -58,7 +58,6 @@
         "prefillKey": "panel.governancePrefill",
         "config": {
           "labelKey": "panel.governance",
-          "placement": "header",
           "icon": "book-open"
         },
         "id": "builtin-product-6fbcf139-2ed6-46d3-919f-f06e4ed7bb58"
@@ -220,28 +219,14 @@
         },
         "id": "builtin-product-caeb4407-6da9-4ce6-922c-1ab4129bd431"
       }
-    },
-    "commands": {
-      "create": {
-        "labelKey": "panel.add",
-        "primary": true,
-        "icon": "plus",
-        "do": {
-          "set": {
-            "fields": {
-              "mode": {
-                "literal": "create"
-              }
-            }
-          }
-        }
-      }
     }
   },
   "content": {
     "messages": {
       "zh-CN": {
         "panel.name": "业务知识",
+        "panel.description": "维护业务规则与术语，审核待确认的知识",
+        "panel.refresh": "刷新",
         "panel.governance": "业务知识治理",
         "panel.governancePrefill": "请帮我治理当前的业务知识，先从待审核的条目开始。",
         "panel.add": "添加知识",
@@ -258,6 +243,8 @@
       },
       "en": {
         "panel.name": "Business knowledge",
+        "panel.description": "Maintain business rules and terminology, and review pending knowledge",
+        "panel.refresh": "Refresh",
         "panel.governance": "Knowledge Governance",
         "panel.governancePrefill": "Help me govern the business knowledge on this page, starting with the entries pending review.",
         "panel.add": "Add Knowledge",

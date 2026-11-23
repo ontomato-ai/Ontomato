@@ -49,7 +49,6 @@ const panelManifest = definePanel({
     listA: { target: { projectionId: PROJ_A_ID } },
     listB: { target: { projectionId: PROJ_B_ID } },
   },
-  commands: {},
 });
 
 function makePanel(revision = 1, banner = "Panel v1"): ProductPanel {
