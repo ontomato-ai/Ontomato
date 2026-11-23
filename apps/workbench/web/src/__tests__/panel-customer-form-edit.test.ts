@@ -34,6 +34,7 @@ const ready = (value: unknown): ProductPanelReadResponse => ({ status: "ready", 
 function actionDescriptor(
   label: string,
   params: Record<string, { contentMediaType?: string }>,
+  target: PanelOwnerOperationDescriptor["target"] = { source: "input", input: "target" },
 ): PanelOwnerOperationDescriptor {
   return {
     kind: "action",
@@ -41,7 +42,7 @@ function actionDescriptor(
     label,
     effect: "write",
     batch: false,
-    target: { source: "input", input: "target" },
+    target,
     inputSchema: {
       type: "object",
       properties: {
@@ -66,15 +67,16 @@ function mountCustomerForm(options: {
   operations: Record<string, ProjectionOperationBinding>;
   admittedOperations:
     | Record<string, PanelOwnerOperationDescriptor>
-    | (() => Promise<Record<string, PanelOwnerOperationDescriptor>>);
+    | ((request: PanelMemberReadRequest) => ProductPanelReadResponse | Promise<ProductPanelReadResponse>);
   extraMembers?: DirectPanelManifest["members"];
   extraProjections?: Record<string, DirectProjection>;
   objectType?: string;
-  primaryKey?: string;
+  primaryKey?: string | null;
+  includeCreateForm?: boolean;
   draftOperation?: string;
 }) {
   const objectType = options.objectType ?? CUSTOMER;
-  const primaryKey = options.primaryKey ?? "cust-1";
+  const primaryKey = options.primaryKey === undefined ? "cust-1" : options.primaryKey;
   const projections: Record<string, DirectProjection> = {
     "customer-form": {
       ...baseRecord,
@@ -94,6 +96,15 @@ function mountCustomerForm(options: {
           read: "form",
           params: { values: { input: "values" }, changedField: { input: "changedField" } },
         },
+        ...(options.includeCreateForm
+          ? {
+              createForm: {
+                source: { type: { kind: "ObjectType", id: objectType } },
+                read: "createForm",
+                params: { values: { input: "values" }, changedField: { input: "changedField" } },
+              },
+            }
+          : {}),
       },
       operations: options.operations,
     },
@@ -126,7 +137,7 @@ function mountCustomerForm(options: {
     pageKey: "customer-edit",
     url: () => "/customer-edit",
     label: () => "Customer Edit",
-    initial: { selected: { className: objectType, primaryKey } } as never,
+    initial: (primaryKey === null ? { selected: null } : { selected: { className: objectType, primaryKey } }) as never,
     text: createPanelText({}, ref("en"), "en"),
     operations: { ...noOperations.operations, prepare },
     expandPageComposer: noOperations.expandPageComposer,
@@ -140,7 +151,10 @@ function mountCustomerForm(options: {
         outcome: {
           kind: "success" as const,
           data: { result: "{}", affects: [objectType] },
-          affected: { objects: [{ objectType, primaryKey }], objectTypes: [objectType] },
+          affected: {
+            objects: primaryKey === null ? [] : [{ objectType, primaryKey }],
+            objectTypes: [objectType],
+          },
         },
       },
     }),
@@ -149,10 +163,10 @@ function mountCustomerForm(options: {
     readProjection: async (id) => projections[id]!,
     read: async (request: PanelMemberReadRequest) => {
       if (request.operations) {
-        const admitted = typeof options.admittedOperations === "function"
-          ? await options.admittedOperations()
-          : options.admittedOperations;
-        return ready(admitted);
+        if (typeof options.admittedOperations === "function") {
+          return await options.admittedOperations(request);
+        }
+        return ready(options.admittedOperations);
       }
       const submittedValues = (request.inputs?.values as PanelFormValues | undefined) ?? undefined;
       return ready({
@@ -198,13 +212,13 @@ afterEach(() => {
 });
 
 describe("Customer ObjectForm editability, wiring, and submit completeness", () => {
-  it("renders fields without a submit destination as read-only with a clear reason, even when operations load after form", async () => {
-    let releaseOps!: (ops: Record<string, PanelOwnerOperationDescriptor>) => void;
-    const opsPromise = new Promise<Record<string, PanelOwnerOperationDescriptor>>((resolve) => {
+  it("keeps all fields read-only while operations are loading, then opens only save-wired fields once admitted", async () => {
+    let releaseOps!: (ops: ProductPanelReadResponse) => void;
+    const opsPromise = new Promise<ProductPanelReadResponse>((resolve) => {
       releaseOps = resolve;
     });
 
-    const { element, unmount } = mountCustomerForm({
+    const { element, instance, prepared, unmount } = mountCustomerForm({
       fields: baseFields,
       values: { id: "cust-1", name: "Alice", grade: "A", phone: "13800001111" },
       operations: {
@@ -215,17 +229,24 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
 
     await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Alice"));
 
+    // While operations are still loading, all fields must stay read-only and save cannot proceed.
+    expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/grade"] input')?.disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/phone"] input')?.disabled).toBe(true);
+    await expect(instance.forms.submit("customerForm")).rejects.toThrow("admits no save");
+    expect(prepared).toHaveLength(0);
+
     // Resolve operations after the form description is already mounted.
-    releaseOps({
+    releaseOps(ready({
       save: actionDescriptor("Update customer", { name: {}, grade: {} }),
-    });
+    }));
 
     await vi.waitFor(() => {
-      expect(element.querySelector<HTMLInputElement>('[data-field="/phone"] input')?.disabled).toBe(true);
+      expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(false);
     });
 
-    expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(false);
     expect(element.querySelector<HTMLInputElement>('[data-field="/grade"] input')?.disabled).toBe(false);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/phone"] input')?.disabled).toBe(true);
     expect(element.querySelector('[data-field="/phone"]')?.classList.contains("is-readonly")).toBe(true);
     expect(element.querySelector('[data-field="/phone"]')?.textContent).toContain(
       publicEn.platform.formFieldNotSavedByAction,
@@ -576,5 +597,274 @@ describe("Customer ObjectForm editability, wiring, and submit completeness", () 
       },
     ]);
     platform.unmount();
+  });
+
+  it("never falls back to submitReview when save permission is absent on a multi-action customer form", async () => {
+    const fields: PanelFormField[] = [
+      ...baseFields,
+      { path: "/reviewComment", label: "Review Comment", valueSchema: { type: "string" }, required: false, readOnly: false, control: { kind: "text" } },
+    ];
+    const { instance, element, prepared, unmount } = mountCustomerForm({
+      fields,
+      values: { id: "cust-1", name: "Alice", grade: "A", phone: "13800001111", reviewComment: "" },
+      operations: {
+        save: { operation: { kind: "Action", id: "action-save" }, target: { input: "target" } },
+        submitReview: { operation: { kind: "Action", id: "action-review" }, target: { input: "target" } },
+      },
+      // Reader lacks permission for `save`; server only admits `submitReview`.
+      admittedOperations: {
+        submitReview: actionDescriptor("Submit review", { phone: {}, reviewComment: {} }),
+      },
+    });
+
+    await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Alice"));
+    await nextTick();
+
+    // Every non-hidden field must be read-only — never opened by `submitReview`.
+    expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/grade"] input')?.disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/phone"] input')?.disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/reviewComment"] input')?.disabled).toBe(true);
+    expect(instance.forms.handle("customerForm")!.canSubmit.value).toBe(false);
+
+    // Submitting must refuse rather than invoking `submitReview`.
+    await expect(instance.forms.submit("customerForm")).rejects.toThrow("admits no save");
+    expect(prepared).toHaveLength(0);
+
+    unmount();
+  });
+
+  it("stays all read-only in edit mode when only a targetless create Action is declared/admitted", async () => {
+    const { instance, element, prepared, unmount } = mountCustomerForm({
+      fields: baseFields,
+      values: { id: "cust-1", name: "Alice", grade: "A", phone: "13800001111" },
+      operations: {
+        create: { operation: { kind: "Action", id: "action-create-customer" } },
+      },
+      admittedOperations: {
+        create: actionDescriptor("Create customer", { name: {}, grade: {} }, { source: "none" }),
+      },
+    });
+
+    await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.value).toBe("Alice"));
+    await nextTick();
+
+    // Edit mode (`target.kind === "object"`) must never fall back to a targetless create Action.
+    expect(element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/grade"] input')?.disabled).toBe(true);
+    expect(element.querySelector<HTMLInputElement>('[data-field="/phone"] input')?.disabled).toBe(true);
+    expect(instance.forms.handle("customerForm")!.canSubmit.value).toBe(false);
+
+    await expect(instance.forms.submit("customerForm")).rejects.toThrow("admits no save");
+    expect(prepared).toHaveLength(0);
+
+    unmount();
+  });
+
+  it("stays all read-only in create mode when no targetless create Action is admitted", async () => {
+    // The reader can edit an existing customer but cannot create one.
+    const denied = mountCustomerForm({
+      fields: [
+        { path: "/name", label: "Name", valueSchema: { type: "string" }, required: true, readOnly: false, control: { kind: "text" } },
+        { path: "/grade", label: "Grade", valueSchema: { type: ["string", "null"] }, required: false, readOnly: false, control: { kind: "text" } },
+      ],
+      values: { name: "", grade: null },
+      primaryKey: null,
+      includeCreateForm: true,
+      operations: {
+        create: { operation: { kind: "Action", id: "action-create-customer" } },
+        save: { operation: { kind: "Action", id: "action-update-customer" }, target: { input: "target" } },
+      },
+      admittedOperations: {
+        save: actionDescriptor("Save", { grade: {} }),
+      },
+    });
+
+    await vi.waitFor(() => expect(denied.element.querySelector<HTMLInputElement>('[data-field="/name"] input')).not.toBeNull());
+    await nextTick();
+
+    expect(denied.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(true);
+    expect(denied.element.querySelector<HTMLInputElement>('[data-field="/grade"] input')?.disabled).toBe(true);
+    const createBtn = [...denied.element.querySelectorAll<HTMLButtonElement>(".sdk-owner-form-actions button")]
+      .find((button) => button.textContent?.trim() === "Create")!;
+    expect(createBtn.disabled).toBe(true);
+    await expect(denied.instance.forms.submit("customerForm")).rejects.toThrow("admits no save");
+    expect(denied.prepared).toHaveLength(0);
+    denied.unmount();
+
+    // 2. Projection declares both targeted `save` and targetless `create`; create mode picks `create`, edit mode picks `save`.
+    const dual = mountCustomerForm({
+      fields: [
+        { path: "/name", label: "Name", valueSchema: { type: "string" }, required: true, readOnly: false, control: { kind: "text" } },
+        { path: "/grade", label: "Grade", valueSchema: { type: ["string", "null"] }, required: false, readOnly: false, control: { kind: "text" } },
+        { path: "/phone", label: "Phone", valueSchema: { type: ["string", "null"] }, required: false, readOnly: false, control: { kind: "text" } },
+      ],
+      values: { name: "New", grade: "A", phone: "138" },
+      primaryKey: null,
+      includeCreateForm: true,
+      operations: {
+        save: { operation: { kind: "Action", id: "action-update-customer" }, target: { input: "target" } },
+        create: { operation: { kind: "Action", id: "action-create-customer" } },
+      },
+      admittedOperations: (request) => {
+        const hasTarget = request.inputs?.target != null;
+        return ready({
+          ...(hasTarget ? { save: actionDescriptor("Save", { grade: {} }) } : {}),
+          create: actionDescriptor("Create", { name: {} }, { source: "none" }),
+        });
+      },
+    });
+
+    await vi.waitFor(() => expect(dual.element.querySelector<HTMLInputElement>('[data-field="/name"] input')?.disabled).toBe(false));
+    expect(dual.element.querySelector<HTMLInputElement>('[data-field="/grade"] input')?.disabled).toBe(true);
+    expect(dual.element.querySelector<HTMLInputElement>('[data-field="/phone"] input')?.disabled).toBe(true);
+
+    dual.instance.forms.handle("customerForm")!.set("/name", "Created Customer");
+    await nextTick();
+    await dual.instance.forms.submit("customerForm");
+    expect(dual.prepared).toHaveLength(1);
+    expect(dual.prepared[0]).toEqual([
+      "customerForm.create",
+      { call: { target: null, input: { values: { name: "Created Customer" } } } },
+    ]);
+    dual.unmount();
+  });
+
+  it("explicitly emits null in packed formFields and single formField when a nested key is removed from its parent object", async () => {
+    const fields: PanelFormField[] = [
+      { path: "/id", label: "ID", valueSchema: { type: "string" }, required: true, readOnly: true, control: { kind: "text" } },
+      {
+        path: "/profile",
+        label: "Profile",
+        valueSchema: { type: "object" },
+        required: false,
+        readOnly: false,
+        control: {
+          kind: "object",
+          fields: [
+            { path: "/phone", label: "Phone", valueSchema: { type: ["string", "null"] }, required: false, readOnly: false, control: { kind: "text" } },
+            { path: "/city", label: "City", valueSchema: { type: ["string", "null"] }, required: false, readOnly: false, control: { kind: "text" } },
+            { path: "/note", label: "Note", valueSchema: { type: ["string", "null"] }, required: false, readOnly: false, control: { kind: "text" } },
+            { path: "/zip", label: "Zip", valueSchema: { type: ["string", "null"] }, required: false, readOnly: false, control: { kind: "text" } },
+          ],
+        },
+      },
+    ];
+
+    const { instance, element, prepared, unmount } = mountCustomerForm({
+      fields,
+      values: {
+        id: "cust-1",
+        profile: { phone: "13800001111", city: "Shanghai", note: "VIP", zip: "200000" },
+      },
+      operations: {
+        save: {
+          operation: { kind: "Action", id: "action-update-profile" },
+          target: { input: "target" },
+          params: {
+            contact: { formFields: { phone: "/profile/phone", city: "/profile/city" } },
+            note: { formField: "/profile/note" },
+          },
+        },
+      },
+      admittedOperations: {
+        save: actionDescriptor("Update profile", {
+          contact: { contentMediaType: "application/json" },
+          note: {},
+        }),
+      },
+    });
+
+    await vi.waitFor(() => expect(element.querySelector<HTMLInputElement>('[data-field="/profile/phone"] input')?.disabled).toBe(false));
+    expect(element.querySelector<HTMLInputElement>('[data-field="/profile/zip"] input')?.disabled).toBe(true);
+
+    const form = instance.forms.handle("customerForm")!;
+    // Remove `phone` and `note` keys by replacing the parent `/profile` object (only `/profile` is modified).
+    form.set("/profile", { city: "Beijing", zip: "200000" });
+    await nextTick();
+
+    await instance.forms.submit("customerForm");
+
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]).toEqual([
+      "customerForm.save",
+      {
+        call: {
+          target: { kind: "object", objectType: CUSTOMER, primaryKey: "cust-1" },
+          input: {
+            values: {
+              contact: JSON.stringify({ phone: null, city: "Beijing" }),
+              note: "",
+            },
+          },
+        },
+      },
+    ]);
+
+    // Removing an unwired nested key (`/profile/zip`) from `/profile` must be caught and refused before writing.
+    form.set("/profile", { city: "Beijing" });
+    await nextTick();
+    await expect(instance.forms.submit("customerForm")).rejects.toMatchObject({
+      fields: { "/profile/zip": publicEn.platform.formFieldNotSavedByAction },
+    });
+    expect(prepared).toHaveLength(1);
+
+    // Explicitly touching an unwired nested leaf even with its current baseline value is also caught.
+    await form.reset();
+    await nextTick();
+    form.set("/profile/zip", "200000");
+    await nextTick();
+    await expect(instance.forms.submit("customerForm")).rejects.toMatchObject({
+      fields: { "/profile/zip": publicEn.platform.formFieldNotSavedByAction },
+    });
+    expect(prepared).toHaveLength(1);
+
+    unmount();
+
+    // Initializing a wired nested child when baseline parent object is null must succeed without false parent refusal.
+    const fromNull = mountCustomerForm({
+      fields,
+      values: { id: "cust-2", profile: null },
+      operations: {
+        save: {
+          operation: { kind: "Action", id: "action-update-profile" },
+          target: { input: "target" },
+          params: {
+            contact: { formFields: { phone: "/profile/phone", city: "/profile/city" } },
+          },
+        },
+      },
+      admittedOperations: {
+        save: actionDescriptor("Update profile", {
+          contact: { contentMediaType: "application/json" },
+        }),
+      },
+    });
+    await vi.waitFor(() => {
+      const profileField = fromNull.instance.forms.handle("customerForm")?.fields.value.find((f) => f.path === "/profile");
+      expect(profileField?.control.kind).toBe("object");
+      const cityField = profileField?.control.kind === "object"
+        ? profileField.control.fields.find((f) => f.path === "/city")
+        : undefined;
+      expect(cityField?.readOnly).toBe(false);
+    });
+    fromNull.instance.forms.handle("customerForm")!.set("/profile/city", "Shenzhen");
+    await nextTick();
+    await fromNull.instance.forms.submit("customerForm");
+    expect(fromNull.prepared).toHaveLength(1);
+    expect(fromNull.prepared[0]).toEqual([
+      "customerForm.save",
+      {
+        call: {
+          target: { kind: "object", objectType: CUSTOMER, primaryKey: "cust-1" },
+          input: {
+            values: {
+              contact: JSON.stringify({ city: "Shenzhen" }),
+            },
+          },
+        },
+      },
+    ]);
+    fromNull.unmount();
   });
 });
