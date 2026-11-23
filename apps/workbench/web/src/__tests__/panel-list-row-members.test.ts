@@ -7,7 +7,7 @@ import { definePanel, type PanelManifest, type PanelMemberPath } from "@ontomato
 import type { ProductPanelReadResponse } from "@ontomato/contracts/panel-host";
 import { panelRowOperationKey } from "@ontomato/contracts/panel-projection";
 import type { DirectProjection } from "@ontomato/contracts/product-panels";
-import { APPLICATION, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, PRODUCT_PANEL, SCHEDULED_TASK } from "@ontomato/contracts/platform-object-types";
 import {
   createDirectPanelInstance,
   type DirectPanelInstance,
@@ -597,5 +597,306 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
 
     instance.state.set("selected", { className: APPLICATION, primaryKey: "forbidden" });
     await vi.waitFor(() => expect(instance.outputs.header?.status).toBe("forbidden"));
+  });
+
+  it("blocks extraInput and input-dialog overrides of bound row operation params and ignores undeclared keys", async () => {
+    const rows = [
+      { primaryKey: "t-1", label: "Daily Sync", fields: { schedule: "0 0 * * *" } },
+    ];
+    let capturedRunOperation:
+      | ((operationName: string, extraInput?: Readonly<Record<string, unknown>>) => Promise<void>)
+      | null = null;
+
+    const listProjection: DirectProjection = {
+      ...meta,
+      id: "tasks-extra-input",
+      name: "Tasks",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        env: { kind: "scalar", type: "string" },
+      },
+      outputs: {},
+      config: {
+        columns: [{ key: "label", labelKey: "col.name" }],
+      },
+      data: {
+        rows: { source: { type: { kind: "PlatformObjectType", id: SCHEDULED_TASK } }, read: "list", params: {} },
+      },
+      operations: {
+        triggerOne: {
+          operation: { kind: "PlatformOperation", id: "schedules.triggerOne" },
+          target: { row: true },
+          params: {
+            source: { literal: "table-row" },
+            env: { input: "env" },
+            taskId: { row: "primaryKey" },
+            schedule: { rowField: "schedule" },
+            missingBoundField: { rowField: "nonexistentField" },
+          },
+        },
+        triggerWithDialog: {
+          operation: { kind: "PlatformOperation", id: "schedules.triggerWithDialog" },
+          target: { row: true },
+          params: {
+            source: { literal: "table-row" },
+            schedule: { rowField: "schedule" },
+          },
+        },
+      },
+    };
+
+    const manifest = definePanel({
+      state: {},
+      members: {
+        tasks: {
+          target: { projectionId: "tasks-extra-input" },
+          inputs: { env: { literal: "prod" } },
+        },
+      },
+    });
+
+    const { element, preparedCalls } = mountPanel({
+      manifest,
+      projections: { "tasks-extra-input": listProjection },
+      members: ["tasks"],
+      messages: { en: { "col.name": "Task" } },
+      memberSlots: () => ({
+        tasks: {
+          actions: (scope: Record<string, unknown>) => {
+            capturedRunOperation = scope.runOperation as typeof capturedRunOperation;
+            return h("span", { class: "custom-actions-slot" }, "Actions");
+          },
+        },
+      }),
+      answer(request) {
+        if (request.operations) {
+          return ready({
+            triggerOne: {
+              kind: "action",
+              handlerRef: "schedules.triggerOne",
+              label: "Trigger",
+              effect: "write",
+              target: { source: "input", input: "task" },
+              inputSchema: {
+                type: "object",
+                properties: {
+                  source: { type: "string" },
+                  env: { type: "string" },
+                  taskId: { type: "string" },
+                  schedule: { type: "string" },
+                  missingBoundField: { type: "string" },
+                  reason: { type: "string", title: "Reason" },
+                },
+                required: ["reason"],
+              },
+              resultSchema: {},
+              batch: false,
+            },
+            triggerWithDialog: {
+              kind: "action",
+              handlerRef: "schedules.triggerWithDialog",
+              label: "Trigger with Note",
+              effect: "write",
+              target: { source: "input", input: "task" },
+              inputSchema: {
+                type: "object",
+                properties: {
+                  source: { type: "string" },
+                  schedule: { type: "string" },
+                  reason: { type: "string", title: "Reason" },
+                  note: { type: "string", title: "Note" },
+                },
+                required: ["reason", "note"],
+              },
+              resultSchema: {},
+              batch: false,
+            },
+          });
+        }
+        return ready(rows, {
+          [panelRowOperationKey(rows[0]!, SCHEDULED_TASK)]: {
+            triggerOne: { available: true },
+            triggerWithDialog: { available: true },
+          },
+        });
+      },
+    });
+
+    await vi.waitFor(() => expect(capturedRunOperation).not.toBeNull());
+
+    // 1. Attempt to overwrite every kind of declared bound param and inject an undeclared key via extraInput.
+    await capturedRunOperation!("triggerOne", {
+      source: "evil-literal",
+      env: "evil-env",
+      taskId: "evil-pk",
+      schedule: "evil-schedule",
+      missingBoundField: "sneaky-fill-of-declared-bound-param",
+      undeclaredSecret: "should-be-dropped",
+      reason: "manual-run",
+    });
+
+    await vi.waitFor(() => expect(preparedCalls).toHaveLength(1));
+    expect(preparedCalls[0]).toMatchObject({
+      operationId: "tasks.triggerOne",
+      invocation: {
+        call: {
+          target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" },
+          input: {
+            source: "table-row",
+            env: "prod",
+            taskId: "t-1",
+            schedule: "0 0 * * *",
+            reason: "manual-run",
+          },
+        },
+      },
+    });
+    expect("missingBoundField" in (preparedCalls[0]!.invocation as { call: { input: Record<string, unknown> } }).call.input).toBe(false);
+    expect("undeclaredSecret" in (preparedCalls[0]!.invocation as { call: { input: Record<string, unknown> } }).call.input).toBe(false);
+
+    // 2. When an owner-declared editable field (`note`) is still missing, the dialog prompts only for `note`,
+    //    preserves `reason` from extraInput, and keeps bound params untouched on confirmation.
+    await capturedRunOperation!("triggerWithDialog", {
+      source: "evil-override",
+      schedule: "evil-override",
+      undeclaredExtra: "dropped",
+      reason: "preset-reason",
+    });
+
+    await vi.waitFor(() => expect(document.querySelector('[data-input-field="note"]')).not.toBeNull());
+    // Bound params and pre-supplied `reason` must not appear as editable dialog fields.
+    expect(document.querySelector('[data-input-field="source"]')).toBeNull();
+    expect(document.querySelector('[data-input-field="schedule"]')).toBeNull();
+    expect(document.querySelector('[data-input-field="reason"]')).toBeNull();
+
+    const noteInput = document.querySelector<HTMLInputElement>('[data-input-field="note"] input')!;
+    noteInput.value = "operator-confirmed";
+    noteInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const dialogConfirm = document.querySelector<HTMLButtonElement>(".sdk-operation-input-dialog .el-button--primary")!;
+    dialogConfirm.click();
+
+    await vi.waitFor(() => expect(preparedCalls).toHaveLength(2));
+    expect(preparedCalls[1]).toMatchObject({
+      operationId: "tasks.triggerWithDialog",
+      invocation: {
+        call: {
+          target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" },
+          input: {
+            source: "table-row",
+            schedule: "0 0 * * *",
+            reason: "preset-reason",
+            note: "operator-confirmed",
+          },
+        },
+      },
+    });
+    expect("undeclaredExtra" in (preparedCalls[1]!.invocation as { call: { input: Record<string, unknown> } }).call.input).toBe(false);
+    expect(element.querySelectorAll("tbody tr")).toHaveLength(1);
+  });
+
+  it("matches cross-type rowType rowOperations keys and disabled reasons for rows omitting className", async () => {
+    // Rows intentionally omit `className` to match cross-type `platform:Application.usedPanels` (rowType: ProductPanel).
+    const rows = [
+      { primaryKey: "panel-1", label: "Overview Panel", fields: {} },
+      { primaryKey: "panel-2", label: "System Panel", fields: {} },
+    ];
+
+    const usedPanelsProjection: DirectProjection = {
+      ...meta,
+      id: "app-used-panels",
+      name: "Used Panels",
+      componentId: "@ontomato/sdk:ObjectList",
+      inputs: {
+        app: { kind: "object", objectType: APPLICATION },
+      },
+      outputs: {},
+      config: {
+        columns: [{ key: "label", labelKey: "col.panel" }],
+        rowActions: {
+          items: [{ kind: "operation", operation: "deletePanel", danger: true }],
+        },
+      },
+      data: {
+        rows: {
+          source: { object: { input: "app" } },
+          read: "usedPanels",
+          params: {},
+        },
+      },
+      operations: {
+        deletePanel: {
+          operation: { kind: "PlatformOperation", id: "productPanels.delete" },
+          target: { row: true },
+        },
+      },
+    };
+
+    const manifest = definePanel({
+      state: {
+        app: { type: { kind: "object", objectType: APPLICATION } },
+      },
+      members: {
+        panels: {
+          target: { projectionId: "app-used-panels" },
+          inputs: { app: { state: "app" } },
+        },
+      },
+    });
+
+    const rowOps = {
+      [panelRowOperationKey(rows[0]!, PRODUCT_PANEL)]: {
+        deletePanel: { available: true },
+      },
+      [panelRowOperationKey(rows[1]!, PRODUCT_PANEL)]: {
+        deletePanel: { available: false, unavailable: { reason: "Built-in panel cannot be deleted" } },
+      },
+    };
+
+    const { element, preparedCalls } = mountPanel({
+      manifest,
+      projections: { "app-used-panels": usedPanelsProjection },
+      members: ["panels"],
+      initial: { app: { className: APPLICATION, primaryKey: "app-1" } },
+      messages: { en: { "col.panel": "Panel" } },
+      answer(request) {
+        if (request.operations) {
+          return ready({
+            deletePanel: {
+              kind: "action",
+              handlerRef: "productPanels.delete",
+              label: "Delete",
+              effect: "write",
+              target: { source: "input", input: "panel" },
+              inputSchema: {},
+              resultSchema: {},
+              batch: false,
+            },
+          });
+        }
+        return ready(rows, rowOps);
+      },
+    });
+
+    await vi.waitFor(() => expect(element.querySelectorAll("tbody tr")).toHaveLength(2));
+    const tableRows = [...element.querySelectorAll<HTMLElement>("tbody tr")];
+    const row0Delete = tableRows[0]!.querySelector<HTMLButtonElement>(".sdk-object-list-row-actions button")!;
+    const row1Delete = tableRows[1]!.querySelector<HTMLButtonElement>(".sdk-object-list-row-actions button")!;
+
+    expect(row0Delete.disabled).toBe(false);
+    expect(row1Delete.disabled).toBe(true);
+    expect(row1Delete.title).toBe("Built-in panel cannot be deleted");
+
+    row0Delete.click();
+    await vi.waitFor(() => expect(preparedCalls).toHaveLength(1));
+    expect(preparedCalls[0]).toMatchObject({
+      operationId: "panels.deletePanel",
+      invocation: {
+        call: {
+          target: { kind: "object", objectType: PRODUCT_PANEL, primaryKey: "panel-1" },
+          input: {},
+        },
+      },
+    });
   });
 });

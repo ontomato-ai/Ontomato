@@ -545,15 +545,18 @@ export async function readProductPanelData(
     ) {
       const datum = projection.data[request.dataName];
       const inputs = effectiveInputs(projection, member, request.inputs);
-      const fallbackClassName = datum
-        ? ("type" in datum.source
-            ? datum.source.type.id
-            : ("literal" in datum.source.object
-                ? datum.source.object.literal.className
-                : (projection.inputs[datum.source.object.input]?.kind === "object"
-                    ? (projection.inputs[datum.source.object.input] as { kind: "object"; objectType: string }).objectType
-                    : undefined)))
-        : undefined;
+      // Prefer the read declaration's explicit cross-type `rowType` so server rowOperations keys and
+      // row targets align with ObjectList's `directReadRowType` fallback for records without `row.className`.
+      const fallbackClassName = outcome.declaration.rowType
+        ?? (datum
+          ? ("type" in datum.source
+              ? datum.source.type.id
+              : ("literal" in datum.source.object
+                  ? datum.source.object.literal.className
+                  : (projection.inputs[datum.source.object.input]?.kind === "object"
+                      ? (projection.inputs[datum.source.object.input] as { kind: "object"; objectType: string }).objectType
+                      : undefined)))
+          : undefined);
       const rows = outcome.declaration.result === "panelRecordList"
         ? (outcome.value as import("@ontomato/contracts/panel-projection").PanelRecord[])
         : outcome.declaration.result === "panelRecordQuery"
