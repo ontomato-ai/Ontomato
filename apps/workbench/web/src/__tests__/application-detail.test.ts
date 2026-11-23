@@ -232,8 +232,8 @@ afterEach(() => {
 
 describe("application-detail panel regressions (#2 nullable totals, #4 cross-app address restore)", () => {
   it("does not display fake 0 when entriesList or usedPanelsList total is null (bulk edit unmount / loading), while showing real 0 accurately", async () => {
-    const entriesGate = deferred<Response>();
-    const panelsGate = deferred<Response>();
+    const entriesGate = deferred<unknown>();
+    const panelsGate = deferred<unknown>();
 
     const entriesByApp: Record<string, Array<{ primaryKey: string; label: string; fields: Record<string, unknown> }>> = {
       "app-editable": [
@@ -266,14 +266,14 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
           });
         }
         if (member === "entriesList" && body.dataName === "rows") {
-          if (targetKey === "app-non-panel") return entriesGate.promise;
+          if (targetKey === "app-non-panel") return entriesGate.promise.then((payload) => Response.json(payload));
           return Response.json({ status: "ready", value: entriesByApp[targetKey] ?? [] });
         }
         if (member === "entriesForm" && body.dataName === "form") {
           return Response.json({ status: "ready", value: emptyForm(targetKey) });
         }
         if (member === "usedPanelsList" && body.dataName === "rows") {
-          if (targetKey === "app-editable") return panelsGate.promise;
+          if (targetKey === "app-editable") return panelsGate.promise.then((payload) => Response.json(payload));
           return Response.json({ status: "empty" });
         }
         return Response.json({ status: "empty" });
@@ -312,7 +312,7 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
 
       // 4. Resolve non-panel app entriesList as empty (real total === 0):
       //    Now shows "0 entries" AND the empty-entries InfoBanner.
-      entriesGate.resolve(Response.json({ status: "empty" }));
+      entriesGate.resolve({ status: "empty" });
       await vi.waitFor(() => {
         expect(element.querySelector(".apps-table-bar .apps-muted")?.textContent?.trim()).toBe("0 entries");
         expect(element.textContent).toContain("not a panel application");
@@ -327,15 +327,13 @@ describe("application-detail panel regressions (#2 nullable totals, #4 cross-app
       });
 
       // 6. Resolve usedPanelsList with 2 panels -> heading updates to "Used panels (2)".
-      panelsGate.resolve(
-        Response.json({
-          status: "ready",
-          value: [
-            { primaryKey: "panel-1", className: PRODUCT_PANEL, label: "Panel One", fields: {} },
-            { primaryKey: "panel-2", className: PRODUCT_PANEL, label: "Panel Two", fields: {} },
-          ],
-        }),
-      );
+      panelsGate.resolve({
+        status: "ready",
+        value: [
+          { primaryKey: "panel-1", className: PRODUCT_PANEL, label: "Panel One", fields: {} },
+          { primaryKey: "panel-2", className: PRODUCT_PANEL, label: "Panel Two", fields: {} },
+        ],
+      });
       await vi.waitFor(() => {
         const heading = element.querySelector(".apps-assets-grid .apps-card-title")?.textContent?.trim();
         expect(heading).toBe("Used panels (2)");
