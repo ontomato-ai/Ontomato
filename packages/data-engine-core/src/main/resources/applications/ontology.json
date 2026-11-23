@@ -58,6 +58,9 @@
       "names": {"en": "Relation types", "zh-CN": "关系类型"}, "groupKey": "facts",
       "count": {"member": "catalogue", "data": "rows"}
     }, {
+      "id": "ontology-relation-detail", "pageKey": "ontology-relation-detail", "panelId": "builtin-product-ontology-relation-detail",
+      "path": "/ontology/relations/detail", "access": {"permissionCode": "ontology-modeling"}
+    }, {
       "id": "ontology-visual-modeling", "pageKey": "ontology-visual-modeling", "panelId": "builtin-product-ontology-visual-modeling",
       "path": "/ontology/visual-modeling", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Edit this domain's object types, attributes and relations on one canvas: drag the layout, draw a relation between two types, select to edit or delete.", "zh-CN": "在一张画布上编辑本域的对象类型、属性与关系：拖动布局、连线建关系、选中编辑与删除。"},

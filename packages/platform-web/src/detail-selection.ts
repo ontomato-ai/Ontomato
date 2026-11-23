@@ -50,8 +50,21 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
   })),
   {
     path: platformRoutes.relation.path,
-    use: platformRoutes.relations.path,
-    state: ({ relationship }) => ({ selected: { className: RELATIONSHIP, primaryKey: relationship! } }),
+    use: `${platformRoutes.relations.path}/detail`,
+    state: ({ relationship }) => relationship === "detail"
+      ? null
+      : { selected: { className: RELATIONSHIP, primaryKey: relationship! } },
+  },
+  // Legacy catalog links carrying `selected` in state forward straight to the non-menu relation detail entry.
+  {
+    path: platformRoutes.relations.path,
+    use: `${platformRoutes.relations.path}/detail`,
+    state: (_params, query): Record<string, PanelStateValue> | null => {
+      const state = panelAddressState(`${platformRoutes.relations.path}?${query}`);
+      const selected = state.selected;
+      if (!selected || typeof selected !== "object" || Array.isArray(selected) || !("primaryKey" in selected)) return null;
+      return { selected };
+    },
   },
   {
     path: platformRoutes.schedules.path,
