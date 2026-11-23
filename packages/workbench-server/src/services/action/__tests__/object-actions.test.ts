@@ -7,7 +7,7 @@ import { createCustomerOntologyReadAdapter } from "../../ontology-model/customer
 import type { PanelOperationHost } from "../../product-panels/server-operations";
 import {
   ACTIONS_EXECUTE, OBJECT_ACTION_TARGET, describeObjectAction, objectActionDeclaration, objectActionOperation,
-  resolveObjectAction, type ResolvedObjectAction,
+  resolveObjectAction, type ResolvedTargetedObjectAction, type ResolvedUntargetedObjectAction,
 } from "../object-actions";
 
 /*
@@ -65,9 +65,9 @@ const openedForm = {
 const ok = (data: unknown) => () => Response.json({ success: true, data });
 const refused = (code: string, message: string) => () => Response.json({ success: false, code, message });
 
-const resolved: ResolvedObjectAction = {
+const resolved: ResolvedTargetedObjectAction = {
   actionId: "approve-order", codeHash: "hash-1", name: "Approve order", keyParameter: "order_id", object: order,
-  declaration,
+  affects: [], declaration,
 };
 
 async function rejection(promise: Promise<unknown>): Promise<HttpError> {
@@ -98,14 +98,81 @@ describe("resolving an action on a customer object", () => {
     expect(sent).toHaveLength(1);
   });
 
-  it("refuses an action without a target and a missing action", async () => {
+  it("refuses an action without a target when given an object, refuses a targeted action without an object, and refuses a missing action", async () => {
     const untargeted = hostWith({ "/api/data-query/action/queryById": ok({ ...stored, target: null }) });
     const noTarget = await rejection(resolveObjectAction(untargeted.host, { actionId: "approve-order", object: order }));
     expect([noTarget.status, noTarget.code]).toEqual([409, "ACTION_NOT_OBJECT_ACTION"]);
 
+    const needsTarget = hostWith({ "/api/data-query/action/queryById": ok(stored) });
+    const missingObject = await rejection(resolveObjectAction(needsTarget.host, { actionId: "approve-order" }));
+    expect([missingObject.status, missingObject.code]).toEqual([409, "ACTION_TARGET_REQUIRED"]);
+    expect(needsTarget.sent).toHaveLength(1);
+
     const absent = hostWith({ "/api/data-query/action/queryById": ok(null) });
     const missing = await rejection(resolveObjectAction(absent.host, { actionId: "approve-order", object: order }));
     expect([missing.status, missing.code]).toEqual([404, "ACTION_NOT_FOUND"]);
+  });
+
+  it("resolves a targetless action without an object and opens /action/form with empty parameters", async () => {
+    const createStored = {
+      id: "create-order", name: "Create order", status: "PUBLISHED", codeHash: "hash-create",
+      target: null,
+      definition: { affects: ["Order", "Order", "AuditLog"] },
+      function: {
+        name: "create_order", code: "# ontomato-python:2",
+        parameters: [
+          { name: "customer", type: "TYPE_STRING", description: "Customer name" },
+          { name: "amount", type: "TYPE_NUMBER", description: null },
+        ],
+      },
+    };
+    const createDeclaration = objectActionDeclaration(createStored);
+    expect(createDeclaration).toEqual({
+      id: "create-order",
+      kind: "action",
+      effect: "write",
+      target: { source: "none" },
+      batch: false,
+      inputSchema: {
+        type: "object",
+        properties: {
+          values: {
+            type: "object",
+            properties: {
+              customer: { type: "string", title: "customer", description: "Customer name" },
+              amount: { type: "string", title: "amount", contentMediaType: "application/json" },
+            },
+            additionalProperties: false,
+          },
+        },
+        required: ["values"],
+        additionalProperties: false,
+      },
+    });
+
+    const { host, sent } = hostWith({
+      "/api/data-query/action/queryById": ok(createStored),
+      "/api/data-query/action/form": ok({ fields: [], values: {}, errors: [], parameters: null }),
+    });
+    const resolvedCreate = await resolveObjectAction(host, { actionId: "create-order" });
+    expect(resolvedCreate).toEqual({
+      actionId: "create-order",
+      codeHash: "hash-create",
+      name: "Create order",
+      keyParameter: null,
+      object: null,
+      affects: ["Order", "AuditLog"],
+      declaration: createDeclaration,
+    } satisfies ResolvedUntargetedObjectAction);
+    expect(JSON.parse(String(sent[1]?.init.body))).toEqual({
+      id: "create-order", parameters: {}, readOnlyParameters: [],
+    });
+
+    const descriptor = describeObjectAction(resolvedCreate);
+    expect(panelOwnerOperationDescriptorSchema.parse(descriptor)).toMatchObject({
+      handlerRef: ACTIONS_EXECUTE, label: "Create order", effect: "write", batch: false,
+      target: { source: "none" }, inputSchema: createDeclaration.inputSchema,
+    });
   });
 
   it("answers the form's refusals in the owner's words: ungranted is forbidden, missing is not found, the rest conflict", async () => {
@@ -189,13 +256,13 @@ describe("executing an action on a customer object", () => {
     vi.mocked(createCustomerOntologyReadAdapter).mockReturnValue({ record } as never);
     const { host } = hostWith({});
 
-    expect(await operation.targetLabel(host)).toBe("Order 00123 · ACME");
+    expect(await operation.targetLabel(host, target)).toBe("Order 00123 · ACME");
     expect(createCustomerOntologyReadAdapter).toHaveBeenCalledWith(host.initiator.owner, host.initiator.credentials);
     expect(record).toHaveBeenCalledWith("Order", "00123");
 
     const refusal = new HttpError(403, "No permission to read this object", "CUSTOMER_DATA_PERMISSION");
     record.mockRejectedValueOnce(refusal);
-    await expect(operation.targetLabel(host)).rejects.toBe(refusal);
+    await expect(operation.targetLabel(host, target)).rejects.toBe(refusal);
   });
 
   it("checks the values through the owner's form, then executes its typed parameters", async () => {
@@ -209,7 +276,7 @@ describe("executing an action on a customer object", () => {
       }),
     });
 
-    const outcome = await operation.execute(host, target, { values: { amount: "12.5" } });
+    const outcome = await operation.execute(host, target, { values: { amount: "12.5" } }, "intent-1");
 
     expect(outcome).toEqual({
       kind: "success", data: { result: "{\"answer\":true}", affects: ["Order", "Payment"] },
@@ -236,7 +303,7 @@ describe("executing an action on a customer object", () => {
       }),
     });
 
-    const outcome = await operation.execute(host, target, { values: { note: "", amount: "null" } });
+    const outcome = await operation.execute(host, target, { values: { note: "", amount: "null" } }, "intent-1");
 
     expect(outcome).toEqual({
       kind: "success",
@@ -257,7 +324,7 @@ describe("executing an action on a customer object", () => {
     const errors = [{ field: "/values/amount", code: "required", message: "Amount is required" }];
     const { host, sent } = hostWith({ "/api/data-query/action/form": ok({ ...openedForm, errors }) });
 
-    expect(await operation.execute(host, target, { values: {} }))
+    expect(await operation.execute(host, target, { values: {} }, "intent-1"))
       .toEqual({ kind: "refusal", code: "ACTION_INPUT_INVALID", message: "Amount is required", errors });
     expect(sent).toHaveLength(1);
   });
@@ -269,12 +336,12 @@ describe("executing an action on a customer object", () => {
     });
 
     const precondition = answers(refused("ACTION_PRECONDITION_FAILED", "Preconditions are not met: still open"));
-    expect(await operation.execute(precondition.host, target, { values: {} })).toEqual({
+    expect(await operation.execute(precondition.host, target, { values: {} }, "intent-1")).toEqual({
       kind: "refusal", code: "ACTION_PRECONDITION_FAILED", message: "Preconditions are not met: still open",
     });
 
     const crashed = answers(() => Response.json({ success: false, message: "Traceback: ZeroDivisionError" }));
-    expect(await operation.execute(crashed.host, target, { values: {} })).toEqual({
+    expect(await operation.execute(crashed.host, target, { values: {} }, "intent-1")).toEqual({
       kind: "failure", code: "ACTION_EXECUTE_FAILED", message: "Traceback: ZeroDivisionError",
     });
   });
@@ -285,7 +352,56 @@ describe("executing an action on a customer object", () => {
       "/api/data-query/action/execute": () => new Response("Bad gateway", { status: 502 }),
     });
 
-    const error = await rejection(operation.execute(host, target, { values: {} }));
+    const error = await rejection(operation.execute(host, target, { values: {} }, "intent-1"));
     expect([error.status, error.code]).toEqual([502, "OWNER_UNAVAILABLE"]);
+  });
+});
+
+describe("executing a targetless customer action", () => {
+  const createStored = {
+    id: "create-order", name: "Create order", status: "PUBLISHED", codeHash: "hash-create",
+    target: null,
+    function: {
+      name: "create_order", code: "# ontomato-python:2",
+      parameters: [
+        { name: "customer", type: "TYPE_STRING", description: "Customer name" },
+        { name: "amount", type: "TYPE_NUMBER", description: null },
+      ],
+    },
+  };
+  const resolvedCreate: ResolvedUntargetedObjectAction = {
+    actionId: "create-order", codeHash: "hash-create", name: "Create order", keyParameter: null, object: null,
+    affects: ["Order"], declaration: objectActionDeclaration(createStored),
+  };
+  const operation = objectActionOperation(resolvedCreate);
+
+  it("accepts only target: null and executes with empty bound parameters returning affected.objectTypes", async () => {
+    expect(operation.targetSchema.safeParse(null).success).toBe(true);
+    expect(operation.targetSchema.safeParse({ kind: "object", ...order }).success).toBe(false);
+    expect(operation.targetSchema.safeParse({ kind: "draft" }).success).toBe(false);
+
+    const { host, sent } = hostWith({
+      "/api/data-query/action/form": ok({
+        fields: [field("customer", "Customer", true), field("amount", "Amount", true)],
+        values: { customer: "ACME", amount: "42" }, errors: [],
+        parameters: { customer: "ACME", amount: 42 },
+      }),
+      "/api/data-query/action/execute": ok({
+        result: "{\"ok\":true}", error: null, spendTime: 2, affects: ["Order", "Order", "Payment"], partialQuery: null,
+      }),
+    });
+
+    const outcome = await operation.execute(host, null, { values: { customer: "ACME", amount: "42" } }, "intent-create");
+    expect(outcome).toEqual({
+      kind: "success",
+      data: { result: "{\"ok\":true}", affects: ["Order", "Order", "Payment"] },
+      affected: { objects: [], objectTypes: ["Order", "Payment"] },
+    });
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({
+      id: "create-order", parameters: {}, readOnlyParameters: [], values: { customer: "ACME", amount: "42" },
+    });
+    const body = sent[1]?.init.body as FormData;
+    expect(body.get("id")).toBe("create-order");
+    expect(JSON.parse(String(body.get("param")))).toEqual({ customer: "ACME", amount: 42 });
   });
 });

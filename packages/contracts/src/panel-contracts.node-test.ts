@@ -3070,3 +3070,65 @@ test("operationDrafts validates target form member and directs projectionOperati
   });
   assert.deepEqual(metricOut.sourceObjectTypes, ["Student"]);
 });
+
+test("targetless customer Actions live in top-level type table operations and omit object on action snapshots", async () => {
+  const { platformTypeTableResponseSchema } = await import("./platform-type-table");
+  const { panelWriteOperationSnapshotSchema, panelFormEditedTargetSchema } = await import("./panel-agent");
+  const { EXECUTE_OBJECT_ACTION } = await import("./platform-object-types");
+
+  const createOrder = {
+    id: "create-order",
+    kind: "action" as const,
+    effect: "write" as const,
+    target: { source: "none" as const },
+    inputSchema: {
+      type: "object",
+      properties: { values: { type: "object", properties: { customer: { type: "string" } }, additionalProperties: false } },
+      required: ["values"],
+      additionalProperties: false,
+    },
+    batch: false,
+    affects: ["Order", "AuditLog"],
+  };
+
+  const parsedTable = platformTypeTableResponseSchema.parse({
+    objectTypes: { Order: {} },
+    operations: [createOrder],
+    resultSchemas: {},
+  });
+  assert.deepEqual(parsedTable.operations, [createOrder]);
+
+  // Duplicate top-level operation IDs are rejected.
+  assert.equal(platformTypeTableResponseSchema.safeParse({
+    objectTypes: { Order: {} },
+    operations: [createOrder, createOrder],
+    resultSchemas: {},
+  }).success, false);
+
+  // Targetless actions.execute snapshot omits action.object and optionally records affects.
+  const snapshot = panelWriteOperationSnapshotSchema.parse({
+    id: "createForm.save",
+    slot: "createForm",
+    kind: "action",
+    effect: "write",
+    handlerRef: EXECUTE_OBJECT_ACTION,
+    label: "Create order",
+    target: { source: "none" },
+    inputSchema: createOrder.inputSchema,
+    resultSchema: {},
+    batch: false,
+    action: {
+      actionId: "create-order",
+      codeHash: "a".repeat(64),
+      affects: ["Order"],
+    },
+  });
+  assert.equal(snapshot.action?.object, undefined);
+  assert.deepEqual(snapshot.action?.affects, ["Order"]);
+
+  // Form edit notifications accept optional slot for both object and draft targets.
+  assert.deepEqual(
+    panelFormEditedTargetSchema.parse({ kind: "draft", objectType: "Order", slot: "orderForm" }),
+    { kind: "draft", objectType: "Order", slot: "orderForm" },
+  );
+});

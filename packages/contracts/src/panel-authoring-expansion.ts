@@ -37,7 +37,7 @@ export function expandPanelAuthoringMember(
   { state, components, typeTable }: {
     state: PanelManifest["state"];
     components: readonly AuthoringComponent[];
-    typeTable: Pick<PlatformTypeTableResponse, "objectTypes" | "unavailableActions">;
+    typeTable: Pick<PlatformTypeTableResponse, "objectTypes" | "operations" | "unavailableActions">;
   },
 ): {
   projection: DirectProjectionPorts;
@@ -80,7 +80,7 @@ export function expandPanelAuthoringMember(
   if (targetType !== undefined && member.type !== undefined && targetType !== member.type)
     return fail("type", `'${member.type}' does not match target state type '${targetType}'`);
 
-  const { objectTypes, unavailableActions } = typeTable;
+  const { objectTypes, operations: topLevelOperations, unavailableActions } = typeTable;
   let typeId = member.type ?? targetType;
   if (typeId !== undefined && !Object.hasOwn(objectTypes, typeId))
     return fail("type", `Type '${typeId}' is absent from the author type table`);
@@ -89,8 +89,12 @@ export function expandPanelAuthoringMember(
     if (preferredType !== undefined && !Object.hasOwn(objectTypes, preferredType))
       fail(fieldPath, `Type '${preferredType}' is absent from the author type table`);
     const candidates = preferredType === undefined ? Object.entries(objectTypes) : [[preferredType, objectTypes[preferredType]]] as const;
-    const matches = candidates.flatMap(([type, entry]) =>
-      (entry.operations ?? []).filter(operation => operation.id === operationId).map(operation => ({ type, operation })));
+    const typedMatches = candidates.flatMap(([type, entry]) =>
+      (entry.operations ?? []).filter(operation => operation.id === operationId).map(operation => ({ type: type as string | undefined, operation })));
+    const globalMatches = (topLevelOperations ?? [])
+      .filter(operation => operation.id === operationId)
+      .map(operation => ({ type: undefined as string | undefined, operation }));
+    const matches = [...typedMatches, ...globalMatches];
     if (matches.length > 1) return fail(fieldPath, `'${operationId}' is ambiguous. Declare its owner type`);
     if (!matches.length) {
       const unavailable = unavailableActions?.find(action => action.id === operationId &&
@@ -347,7 +351,8 @@ export function expandPanelAuthoringMember(
     let target: ProjectionOperationBinding["target"];
     if (operation.target.source !== "none") {
       if (targetIsFromSlot) {
-        inputTypes.set(targetPort, { kind: "object", objectType: ownerType });
+        const resolvedOwnerType = ownerType ?? fail("target", `Operation '${operation.id}' requires a declared owner type`);
+        inputTypes.set(targetPort, { kind: "object", objectType: resolvedOwnerType });
         target = { input: targetPort };
       } else if (targetStateName !== undefined) {
         target = bindInput(targetPort, targetStateName, "target");
@@ -357,12 +362,14 @@ export function expandPanelAuthoringMember(
     }
     const opParams = expandOperationParams(member.operationParams, "operationParams");
     const binding: ProjectionOperationBinding = {
-      operation: { kind: ownerType.startsWith("platform:") ? "PlatformOperation" : "Action", id: operation.id },
+      operation: { kind: ownerType?.startsWith("platform:") ? "PlatformOperation" : "Action", id: operation.id },
       ...(target && { target }),
       ...(opParams && { params: opParams }),
     };
     if (!projectionOperationTargetMatches({ inputs: Object.fromEntries(inputTypes) }, binding, operation, ownerType))
-      fail("target", `Operation '${operation.id}' requires a compatible target of type '${ownerType}'`);
+      fail("target", ownerType
+        ? `Operation '${operation.id}' requires a compatible target of type '${ownerType}'`
+        : `Operation '${operation.id}' takes no target`);
     const localName = panelLocalOperationNameSchema.safeParse(operation.id.split(".").at(-1));
     if (!localName.success) return fail("operation", `'${operation.id}' has no usable local operation name`);
     const name = localName.data;
@@ -407,7 +414,8 @@ export function expandPanelAuthoringMember(
       } else if (componentId === "@ontomato/sdk:ObjectList") {
         target = { row: true };
       } else if (targetIsFromSlot) {
-        inputTypes.set(opTargetPort, { kind: "object", objectType: ownerType });
+        const resolvedOwnerType = ownerType ?? fail(`${opPath}.target`, `Operation '${operation.id}' requires a declared owner type`);
+        inputTypes.set(opTargetPort, { kind: "object", objectType: resolvedOwnerType });
         target = { input: opTargetPort };
       } else if (targetStateName !== undefined) {
         target = bindInput(opTargetPort, targetStateName, `${opPath}.target`);
@@ -417,12 +425,14 @@ export function expandPanelAuthoringMember(
     }
     const opParams = expandOperationParams(normalized.params, `${opPath}.params`);
     const binding: ProjectionOperationBinding = {
-      operation: { kind: ownerType.startsWith("platform:") ? "PlatformOperation" : "Action", id: operation.id },
+      operation: { kind: ownerType?.startsWith("platform:") ? "PlatformOperation" : "Action", id: operation.id },
       ...(target && { target }),
       ...(opParams && { params: opParams }),
     };
     if (!projectionOperationTargetMatches({ inputs: Object.fromEntries(inputTypes) }, binding, operation, ownerType))
-      fail(`${opPath}.target`, `Operation '${operation.id}' requires a compatible target of type '${ownerType}'`);
+      fail(`${opPath}.target`, ownerType
+        ? `Operation '${operation.id}' requires a compatible target of type '${ownerType}'`
+        : `Operation '${operation.id}' takes no target`);
     if (normalized.draft !== undefined) {
       if (operation.effect === "read" && operation.target.source === "draft") {
         readOperationInputs = {

@@ -41,6 +41,12 @@ export interface FormSaveContext {
   };
 }
 
+/** Outcome returned by a form save: the saved/created object primary key (or null when an action did not report one). */
+export interface FormSaveResult {
+  readonly primaryKey: string | null;
+  readonly message?: string;
+}
+
 /** What an owner form asks of where it reads and saves. */
 export interface FormSource {
   describe(request: PanelFormRequest): Promise<PanelFormDescription>;
@@ -49,7 +55,7 @@ export interface FormSource {
     input: PanelFormSaveInput,
     override?: FormSubmitOverride,
     context?: FormSaveContext,
-  ): Promise<{ primaryKey: string }>;
+  ): Promise<FormSaveResult>;
 }
 
 /** The input a form's `form` datum reads its object from: the panel state the edited object is held in. */
@@ -63,7 +69,10 @@ export function editedInput(projection: ProductProjection): string | undefined {
  * form's save, under the projection's name for it, with the target the owner admits — the edited object, or a new one.
  * None while the operations are read, or while the owner admits no save (nothing chosen, and nothing to create).
  */
-export function formSave(state: MemberOperationsState): { name: string; descriptor: PanelOwnerOperationDescriptor } | null {
+export function formSave(
+  state: MemberOperationsState,
+  target?: PanelFormTarget,
+): { name: string; descriptor: PanelOwnerOperationDescriptor } | null {
   if (state.status !== "ready") return null;
   const saves = Object.entries(state.value).filter(([, descriptor]) => descriptor.kind === "form.save");
   if (saves.length > 1) throw new Error(`A form saves through one operation; its projection names ${saves.map(([name]) => name).join(", ")}`);
@@ -71,8 +80,13 @@ export function formSave(state: MemberOperationsState): { name: string; descript
   // Customer object forms have no platform `form.save`; they save through a bound customer write Action.
   const actions = Object.entries(state.value).filter(([, descriptor]) =>
     descriptor.kind === "action" && descriptor.effect === "write" && descriptor.handlerRef === "actions.execute");
-  if (actions.length === 1) return { name: actions[0]![0], descriptor: actions[0]![1] };
-  const namedSave = actions.find(([name]) => name === "save");
+  const matched = target
+    ? actions.filter(([, descriptor]) =>
+        target.kind === "draft" ? descriptor.target.source === "none" : descriptor.target.source !== "none")
+    : actions;
+  const candidates = matched.length > 0 ? matched : actions;
+  if (candidates.length === 1) return { name: candidates[0]![0], descriptor: candidates[0]![1] };
+  const namedSave = candidates.find(([name]) => name === "save");
   return namedSave ? { name: namedSave[0], descriptor: namedSave[1] } : null;
 }
 
@@ -536,7 +550,7 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
         descriptor = override.descriptor;
         binding = override.binding;
       } else {
-        const save = formSave(member.operations.value);
+        const save = formSave(member.operations.value, target);
         if (!save) throw new Error(`The owner admits no save for the form in member '${member.key}' now`);
         operationId = instance.operationIdOf(member.key, save.name);
         descriptor = save.descriptor;
@@ -553,19 +567,22 @@ export function memberFormSource(member: PanelMemberContext, instance: PanelInst
             memberInputs: member.inputs.value,
             formatUnwiredFieldRefusal: context?.formatUnwiredFieldRefusal,
           });
-      const answer = await instance.writeOperation(operationId, { call: { target, input: payload } });
+      const callTarget = descriptor.target.source === "none" ? null : target;
+      const answer = await instance.writeOperation(operationId, { call: { target: callTarget, input: payload } });
       if (answer.decision === "cancel") throw new Error("The save was cancelled");
       const { response } = answer;
       if (response.kind === "not-dispatched") throw new Error(response.message);
       const outcome = response.outcome;
       if (outcome === null) throw new Error("Whether the owner saved is not known");
       if (outcome.kind === "success") {
-        if (target.kind === "object") return { primaryKey: target.primaryKey };
+        if (target.kind === "object") return { primaryKey: target.primaryKey, message: outcome.message };
         // A new object is the one of the form's type the owner reports it created.
         const { type } = formRead(target, undefined, null);
         const created = (outcome.affected?.objects ?? []).filter((object) => object.objectType === type);
-        if (created.length !== 1) throw new Error("The owner did not report the one object it created");
-        return { primaryKey: created[0]!.primaryKey };
+        if (created.length === 1) return { primaryKey: created[0]!.primaryKey, message: outcome.message };
+        // A customer Action (such as a targetless create Action) may succeed without reporting a single new primary key.
+        if (descriptor.kind === "action") return { primaryKey: null, message: outcome.message };
+        throw new Error("The owner did not report the one object it created");
       }
       if (outcome.kind === "refusal" || outcome.kind === "failure") {
         // The owner names each refused field by its JSON Pointer.

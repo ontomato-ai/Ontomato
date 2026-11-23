@@ -16,6 +16,7 @@ import {
   type PanelUseRef, type PanelOperationOutcome, type StoredPanelOperationIntent,
 } from "@ontomato/contracts/panel-agent";
 import { panelOperationImpactSchema } from "@ontomato/contracts/panel-operations";
+import { EXECUTE_OBJECT_ACTION } from "@ontomato/contracts/platform-object-types";
 import {
   AGENT_UPLOAD_UNSUPPORTED, panelFileInputSchema, panelUploadAccepted, panelUploadFileSchema, type PanelUploadFile, type PanelUploadReceipt,
 } from "@ontomato/contracts/panel-upload";
@@ -529,8 +530,9 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   const target = impact
     ? namedTargets(impact.objects.map(object => object.label), impact.total, credentials.locale)
     : await confirmationTarget(handler, host, prepared, intent.operation.label);
+  const impactSummary = impact?.summary ?? confirmationInputSummary(handler, prepared);
   const confirmation = await panelConfirmation(credentials, {
-    operation: intent.operation.label, target, impactSummary: impact?.summary,
+    operation: intent.operation.label, target, impactSummary,
     executionUserId: intent.executionUserId, initiatorName,
   });
   const question = agentUserQuestionReceiptSchema.parse(await new RuntimeClient(owner.domainId,undefined,owner.userId).request("/v1/channel/user-questions","POST",{
@@ -538,6 +540,20 @@ export async function operatePanel(owner: AssistantOwner, credentials: Assistant
   },intent.questionId!));
   return {kind:"confirmation-required",intentId:intent.intentId,question};
 }
+function confirmationInputSummary(handler: PanelWriteServerOperation, invocation: CheckedInvocation): string | undefined {
+  if (handler.kind !== "action" || handler.handlerRef !== EXECUTE_OBJECT_ACTION || handler.targetLabel || !("call" in invocation)) return undefined;
+  const values = invocation.call.input.values;
+  if (!values || typeof values !== "object" || Array.isArray(values)) return undefined;
+  const entries = Object.entries(values as Record<string, unknown>)
+    .filter(([, value]) => typeof value === "string" && value.trim().length > 0)
+    .slice(0, 6)
+    .map(([param, value]) => {
+      const text = String(value).trim();
+      return `${param}: ${text.length > 60 ? `${text.slice(0, 57)}...` : text}`;
+    });
+  return entries.length > 0 ? entries.join(", ") : undefined;
+}
+
 async function confirmationTarget(handler: PanelWriteServerOperation,
   host: PanelOperationHost, invocation: CheckedInvocation, operationLabel: string,
 ) {
@@ -641,22 +657,58 @@ async function claimAndExecutePanel(owner: AssistantOwner, host: PanelOperationH
     outcome = {kind:"unknown",message:error instanceof Error?error.message:String(error)};
   }
   await store.outcome(owner,id,outcome);
-  if (handler.kind === "form.save" && outcome.kind === "success" && "call" in prepared && prepared.target) {
-    await store.invalidatePendingFormSaves?.(
-      owner,
-      {
-        targetType: handler.targetType,
-        primaryKey: prepared.target.kind === "object" ? prepared.target.primaryKey : null,
-      },
-      {
-        code: PANEL_FORM_CONFIRMATION_STALE,
-        message: "The form was already saved after confirmation was requested. This confirmation is no longer valid; re-read the form and request a new confirmation if further changes are needed.",
-      },
-    );
+  const staleSavedReason = {
+    code: PANEL_FORM_CONFIRMATION_STALE,
+    message: "The form was already saved after confirmation was requested. This confirmation is no longer valid; re-read the form and request a new confirmation if further changes are needed.",
+  };
+  if (outcome.kind === "success" && "call" in prepared) {
+    if (handler.kind === "form.save" && prepared.target) {
+      await store.invalidatePendingFormSaves?.(
+        owner,
+        {
+          targetType: handler.targetType,
+          primaryKey: prepared.target.kind === "object" ? prepared.target.primaryKey : null,
+          slot: intent.operation.slot,
+          panelId: intent.panelId,
+        },
+        staleSavedReason,
+      );
+    } else if (handler.handlerRef === EXECUTE_OBJECT_ACTION) {
+      if (prepared.target?.kind === "object") {
+        await store.invalidatePendingFormSaves?.(
+          owner,
+          {
+            targetType: prepared.target.objectType,
+            primaryKey: prepared.target.primaryKey,
+            slot: intent.operation.slot,
+            panelId: intent.panelId,
+            actionId: intent.operation.action?.actionId,
+          },
+          staleSavedReason,
+        );
+      } else if (prepared.target === null) {
+        const affectedTypes = [...new Set([
+          ...(outcome.affected?.objectTypes ?? []),
+          ...(intent.operation.action?.affects ?? []),
+        ])];
+        await store.invalidatePendingFormSaves?.(
+          owner,
+          {
+            targetType: affectedTypes[0],
+            affectedTypes,
+            primaryKey: null,
+            slot: intent.operation.slot,
+            panelId: intent.panelId,
+            actionId: intent.operation.action?.actionId,
+          },
+          staleSavedReason,
+        );
+      }
+    }
   }
   return { outcome };
 }
-/** Invalidates pending agent form.save confirmations when the initiating user edits that form in the browser. */
+/** Invalidates pending agent form confirmations when the initiating user edits that form in the browser. */
 export async function invalidateFormConfirmations(owner: AssistantOwner, notification: PanelFormEditedNotification) {
   const invalidated = await store.invalidatePendingFormSaves(
     owner,
@@ -664,6 +716,7 @@ export async function invalidateFormConfirmations(owner: AssistantOwner, notific
       rootSession: notification.rootSession,
       targetType: notification.target.objectType,
       primaryKey: notification.target.kind === "object" ? notification.target.primaryKey : null,
+      ...(notification.target.slot ? { slot: notification.target.slot } : {}),
     },
     {
       code: PANEL_FORM_CONFIRMATION_STALE,

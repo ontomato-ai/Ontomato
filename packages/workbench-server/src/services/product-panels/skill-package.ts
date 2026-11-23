@@ -310,7 +310,12 @@ function describeOperation({ id, label, binding, owner, draft, rowScoped }: Oper
     ? ` Bound params: ${JSON.stringify(binding.params)}.`
     : "";
   const suffix = `${rowScope}${boundParams}`;
-  if (!owner) return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}.${suffix} Read the admitted description for the actual selected object with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it.`;
+  if (!owner) {
+    if (!binding.target) {
+      return `- ${label} (${id}), Action ${binding.operation.id}, target null.${suffix} No object selection is required. Read the admitted description with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it with \`call: { target: null, input: { values: { ... } } }\`.`;
+    }
+    return `- ${label} (${id}), Action ${binding.operation.id}, target ${target}.${suffix} Read the admitted description for the actual selected object with operations:true on \`$ONTOMATO_PANEL_OPERATIONS_URL/read\` before invoking it.`;
+  }
   const { handler, declaration } = owner;
   const summary = `- ${label} (${id}), kind ${handler.kind}, handlerRef ${handler.handlerRef}, target ${target}.${suffix}`;
   if (declaration.upload) {

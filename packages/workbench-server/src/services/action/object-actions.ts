@@ -11,7 +11,9 @@ import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-re
 import {
   affected, ownerEnvelopeSchema, ownerPost, ownerWriteFailure, type DataQueryOperationHost as Host,
 } from "../product-panels/data-query-operations";
-import type { PanelWriteServerOperation, SinglePanelOperationOutcome } from "../product-panels/server-operations";
+import type {
+  PanelOperationHost, PanelWriteServerOperation, SinglePanelOperationOutcome,
+} from "../product-panels/server-operations";
 
 /*
  * A published business Action executed on one customer object. Every Action shares the `actions.execute` handler; the
@@ -29,18 +31,31 @@ export const OBJECT_ACTION_TARGET = "target";
 
 export interface ObjectActionSelection {
   actionId: string;
-  object: PanelObjectIdentity;
+  object?: PanelObjectIdentity;
 }
 
-export interface ResolvedObjectAction {
+export interface ResolvedTargetedObjectAction {
   actionId: string;
   codeHash: string;
   name: string;
   /** The Action parameter that carries the target object's primary key. */
   keyParameter: string;
   object: PanelObjectIdentity;
+  affects: string[];
   declaration: PanelOperationDeclaration;
 }
+
+export interface ResolvedUntargetedObjectAction {
+  actionId: string;
+  codeHash: string;
+  name: string;
+  keyParameter: null;
+  object: null;
+  affects: string[];
+  declaration: PanelOperationDeclaration;
+}
+
+export type ResolvedObjectAction = ResolvedTargetedObjectAction | ResolvedUntargetedObjectAction;
 
 type OwnerEnvelope = z.infer<typeof ownerEnvelopeSchema>;
 
@@ -51,6 +66,9 @@ export const storedObjectActionSchema = z.object({
   name: z.string().regex(/\S/, "The action has no name"),
   codeHash: z.string().min(1),
   target: z.object({ className: z.string().min(1), keyParameter: z.string().min(1) }).passthrough().nullable(),
+  definition: z.object({
+    affects: z.array(z.string().min(1)).optional(),
+  }).passthrough().nullish(),
   function: z.object({
     parameters: z.array(z.object({
       name: z.string().min(1), type: z.string().min(1), description: z.string().nullish(),
@@ -58,7 +76,6 @@ export const storedObjectActionSchema = z.object({
   }).passthrough(),
 }).passthrough();
 type StoredObjectAction = z.infer<typeof storedObjectActionSchema>;
-type ObjectTarget = NonNullable<StoredObjectAction["target"]>;
 
 /** Parameter types the owner's form takes as typed text rather than as JSON. */
 const TEXT_PARAMETER_TYPES = new Set(["TYPE_STRING", "TYPE_TIME"]);
@@ -90,13 +107,22 @@ export function readRefusal(envelope: OwnerEnvelope, failureCode: string, fallba
   return new HttpError(outcome.kind === "failure" ? 500 : readStatus(outcome.code), outcome.message, outcome.code);
 }
 
-/** The opening form, or with values the owner's field errors or typed parameters, for the bound object. */
-async function actionForm(host: Host, resolved: Pick<ResolvedObjectAction, "actionId" | "keyParameter" | "object">,
-  values?: Record<string, string>) {
+/** The opening form, or with values the owner's field errors or typed parameters, for the bound object (or none). */
+async function actionForm(
+  host: Host,
+  resolved: Pick<ResolvedObjectAction, "actionId" | "keyParameter" | "object">,
+  values?: Record<string, string>,
+) {
+  const parameters = resolved.object !== null && resolved.keyParameter !== null
+    ? { [resolved.keyParameter]: resolved.object.primaryKey }
+    : {};
+  const readOnlyParameters = resolved.object !== null && resolved.keyParameter !== null
+    ? [resolved.keyParameter]
+    : [];
   return ownerPost(host, "/action/form", {
     id: resolved.actionId,
-    parameters: { [resolved.keyParameter]: resolved.object.primaryKey },
-    readOnlyParameters: [resolved.keyParameter],
+    parameters,
+    readOnlyParameters,
     ...(values && { values }),
   }, ownerEnvelopeSchema);
 }
@@ -107,8 +133,20 @@ export async function resolveObjectAction(host: Host, selection: ObjectActionSel
   if (stored.data == null) throw new HttpError(404, "The action does not exist", "ACTION_NOT_FOUND");
   const action = storedObjectActionSchema.parse(stored.data);
   const { target } = action;
-  if (target === null)
-    throw new HttpError(409, "This action does not act on an object", "ACTION_NOT_OBJECT_ACTION");
+  const affects = [...new Set(action.definition?.affects ?? [])];
+  if (target === null) {
+    if (selection.object !== undefined)
+      throw new HttpError(409, "This action does not act on an object", "ACTION_NOT_OBJECT_ACTION");
+    const located = { actionId: selection.actionId, keyParameter: null, object: null } as const;
+    const opened = await actionForm(host, located);
+    if (!opened.success) throw readRefusal(opened, "ACTION_FORM_FAILED", "The owner could not open the action form");
+    return {
+      ...located, codeHash: action.codeHash, name: action.name, affects,
+      declaration: objectActionDeclaration(action),
+    };
+  }
+  if (selection.object === undefined)
+    throw new HttpError(409, "This action requires a target object", "ACTION_TARGET_REQUIRED");
   if (target.className !== selection.object.objectType)
     throw new HttpError(409, "This action acts on another object type", "ACTION_TARGET_MISMATCH");
   const located = { actionId: selection.actionId, keyParameter: target.keyParameter, object: selection.object };
@@ -116,24 +154,28 @@ export async function resolveObjectAction(host: Host, selection: ObjectActionSel
   const opened = await actionForm(host, located);
   if (!opened.success) throw readRefusal(opened, "ACTION_FORM_FAILED", "The owner could not open the action form");
   return {
-    ...located, codeHash: action.codeHash, name: action.name, declaration: objectActionDeclaration({ ...action, target }),
+    ...located, codeHash: action.codeHash, name: action.name, affects,
+    declaration: objectActionDeclaration(action),
   };
 }
 
 /**
- * The static operation an object Action declares, from its stored definition alone: one text value per parameter other
- * than the key the target binds, JSON text for a non-text type, none required (the owner's form marks none). Nothing in
- * it depends on an object, a caller's grants or the code; the owner judges the values when they are submitted.
+ * The static operation a customer Action declares, from its stored definition alone: one text value per parameter
+ * (excluding the bound key parameter when targeted, or keeping every parameter when `target` is null), JSON text for a
+ * non-text type, none required (the owner's form marks none). Nothing in it depends on an object, a caller's grants or
+ * the code; the owner judges the values when they are submitted.
  */
 export function objectActionDeclaration(
-  action: Pick<StoredObjectAction, "id" | "function"> & { target: ObjectTarget },
+  action: Pick<StoredObjectAction, "id" | "function" | "target">,
 ): PanelOperationDeclaration {
-  const parameters = action.function.parameters.filter(parameter => parameter.name !== action.target.keyParameter);
+  const parameters = action.target === null
+    ? action.function.parameters
+    : action.function.parameters.filter(parameter => parameter.name !== action.target!.keyParameter);
   return {
     id: action.id,
     kind: "action",
     effect: "write",
-    target: { source: "input", input: OBJECT_ACTION_TARGET },
+    target: action.target === null ? { source: "none" } : { source: "input", input: OBJECT_ACTION_TARGET },
     batch: false,
     inputSchema: {
       type: "object",
@@ -179,6 +221,13 @@ async function execute(host: Host, resolved: ResolvedObjectAction, values: Recor
   const envelope = ownerEnvelopeSchema.parse(await response.json());
   if (!envelope.success) return ownerWriteFailure(envelope, "ACTION_EXECUTE_FAILED", "The owner could not execute the action");
   const executed = executedSchema.parse(envelope.data);
+  if (resolved.object === null) {
+    return {
+      kind: "success",
+      data: { result: executed.result, affects: executed.affects },
+      affected: { objects: [], objectTypes: [...new Set(executed.affects)] },
+    };
+  }
   const { objectType, primaryKey } = resolved.object;
   return {
     kind: "success",
@@ -187,9 +236,33 @@ async function execute(host: Host, resolved: ResolvedObjectAction, values: Recor
   };
 }
 
-export function objectActionOperation(resolved: ResolvedObjectAction) {
+type TargetedObjectActionOperation = Extract<PanelWriteServerOperation, { kind: "action"; batch: false; targetInput: string }>;
+type UntargetedObjectActionOperation = Extract<PanelWriteServerOperation, { kind: "action"; batch: false; targetInput?: undefined }>;
+type ObjectActionOperationFor<T extends ResolvedObjectAction> =
+  T extends ResolvedTargetedObjectAction
+    ? TargetedObjectActionOperation
+    : T extends ResolvedUntargetedObjectAction
+      ? UntargetedObjectActionOperation
+      : TargetedObjectActionOperation | UntargetedObjectActionOperation;
+
+export function objectActionOperation<T extends ResolvedObjectAction>(resolved: T): ObjectActionOperationFor<T> {
+  if (resolved.object === null) {
+    const operation = {
+      handlerRef: ACTIONS_EXECUTE,
+      binding: { kind: "Action", id: resolved.actionId },
+      kind: "action",
+      effect: "write",
+      batch: false,
+      targetSchema: z.null(),
+      inputSchema: objectActionInputSchema,
+      resultSchema: objectActionResultSchema,
+      execute: (host: PanelOperationHost, _target: null, input: Record<string, unknown>) =>
+        execute(host, resolved, objectActionInputSchema.parse(input).values),
+    } satisfies UntargetedObjectActionOperation;
+    return operation as unknown as ObjectActionOperationFor<T>;
+  }
   const { objectType, primaryKey } = resolved.object;
-  return {
+  const operation = {
     handlerRef: ACTIONS_EXECUTE,
     binding: { kind: "Action", id: resolved.actionId },
     kind: "action",
@@ -203,8 +276,10 @@ export function objectActionOperation(resolved: ResolvedObjectAction) {
     inputSchema: objectActionInputSchema,
     resultSchema: objectActionResultSchema,
     // The object's name as the confirming person reads it; the customer ontology owner answers a refusal or a missing one.
-    targetLabel: async host =>
+    targetLabel: async (host: PanelOperationHost) =>
       (await createCustomerOntologyReadAdapter(host.initiator.owner, host.initiator.credentials).record(objectType, primaryKey)).label,
-    execute: (host, _target, input) => execute(host, resolved, objectActionInputSchema.parse(input).values),
-  } satisfies PanelWriteServerOperation;
+    execute: (host: PanelOperationHost, _target: { kind: "object"; objectType: string; primaryKey: string }, input: Record<string, unknown>) =>
+      execute(host, resolved, objectActionInputSchema.parse(input).values),
+  } satisfies TargetedObjectActionOperation;
+  return operation as unknown as ObjectActionOperationFor<T>;
 }

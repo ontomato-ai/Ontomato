@@ -160,7 +160,10 @@ export type PanelOperationOutcome = z.infer<typeof panelOperationOutcomeSchema>;
 export const panelObjectActionSnapshotSchema = z.object({
   actionId: key,
   codeHash: z.string().regex(/^[a-f0-9]{64}$/u),
-  object: panelObjectIdentitySchema,
+  /** Omitted for a targetless Action (`target: null`). */
+  object: panelObjectIdentitySchema.optional(),
+  /** Customer object types affected by a targetless Action, used for stale confirmation matching. */
+  affects: z.array(runtimeKeySchema).optional(),
 }).strict();
 export type PanelObjectActionSnapshot = z.infer<typeof panelObjectActionSnapshotSchema>;
 
@@ -244,10 +247,10 @@ const legacyStoredIntentSchema = intentFactsSchema.extend({
 export const PANEL_CONFIRMATION_EXPIRED = "PANEL_CONFIRMATION_EXPIRED";
 export const PANEL_FORM_CONFIRMATION_STALE = "FORM_CONFIRMATION_STALE";
 
-/** Human browser notification that an unsaved form was edited, invalidating any pending form.save confirmation for it. */
+/** Human browser notification that an unsaved form was edited, invalidating any pending form confirmation for it. */
 export const panelFormEditedTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("object"), objectType: key, primaryKey: z.string().min(1).max(1000) }).strict(),
-  z.object({ kind: z.literal("draft"), objectType: key }).strict(),
+  z.object({ kind: z.literal("object"), objectType: key, primaryKey: z.string().min(1).max(1000), slot: key.optional() }).strict(),
+  z.object({ kind: z.literal("draft"), objectType: key, slot: key.optional() }).strict(),
 ]);
 export type PanelFormEditedTarget = z.infer<typeof panelFormEditedTargetSchema>;
 

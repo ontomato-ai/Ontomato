@@ -8,7 +8,7 @@ import type { PanelWriteResult } from "../panel/instance";
 import type { PanelMemberContext } from "../panel/member";
 import { readOperationInput } from "../panel/read-operation-input";
 import { stateObject, stateObjects, type PanelFieldValue } from "../panel/state";
-import { operationInputFields, type OperationInputField } from "./operation-input-schema";
+import { isActionValuesEnvelope, operationInputFields, type OperationInputField } from "./operation-input-schema";
 
 export type OperationOutcome = NonNullable<
   Extract<PanelHumanOperationDispatchResponse, { kind: "dispatched" }>["outcome"]
@@ -250,7 +250,25 @@ export function useOperationRunner(options: {
     receipt.value = null;
     try {
       const boundInput = resolveBoundOperationParams(slot, member, operationName);
-      const effectiveInput = { ...boundInput, ...providedInput };
+      let effectiveInput: Record<string, RuntimeJsonValue>;
+      if (isActionValuesEnvelope(descriptor.inputSchema)) {
+        const values: Record<string, string> = {};
+        const boundValues = boundInput.values && typeof boundInput.values === "object" && !Array.isArray(boundInput.values)
+          ? (boundInput.values as Record<string, unknown>)
+          : boundInput;
+        for (const [key, raw] of Object.entries(boundValues)) {
+          if (key === "values" && boundValues === boundInput) continue;
+          if (raw === undefined || raw === null) continue;
+          values[key] = typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+        }
+        for (const [key, raw] of Object.entries(providedInput)) {
+          if (raw === undefined || raw === null) continue;
+          values[key] = typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+        }
+        effectiveInput = { values };
+      } else {
+        effectiveInput = { ...boundInput, ...providedInput };
+      }
 
       if (descriptor.effect === "read") {
         const { target: owned } = descriptor;

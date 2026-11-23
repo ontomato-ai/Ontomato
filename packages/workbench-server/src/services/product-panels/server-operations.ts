@@ -69,18 +69,19 @@ interface ServerOperation {
     host: PanelOperationHost,
     targets: readonly { target: PanelRecordTarget; rowKey: string }[],
   ): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>>;
-  targetType: string;
   inputSchema: z.ZodType<Record<string, unknown>>;
   resultSchema: z.ZodTypeAny;
   projectResult?(data: Record<string, RuntimeJsonValue>, view: AssistantSkillView): Record<string, RuntimeJsonValue>;
 }
 /** The input was checked against `inputSchema`. */
 interface TargetedExecution {
+  targetType: string;
   targetSchema: z.ZodType<PanelOperationTarget>;
   execute(host: PanelOperationHost, target: PanelOperationTarget, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
 }
 /** A declared upload input holds the staged `PanelUploadedFile`, which is discarded once the call succeeds. */
 interface UntargetedExecution {
+  targetType?: string;
   targetSchema: z.ZodType<null>;
   execute(host: PanelOperationHost, target: null, input: Record<string, unknown>, intentId: string): Promise<SinglePanelOperationOutcome>;
 }

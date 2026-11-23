@@ -49,11 +49,13 @@ const listedActionSchema = storedObjectActionSchema.pick({ id: true }).extend({
 });
 const listedTargetSchema = storedObjectActionSchema.shape.target.unwrap().pick({ className: true });
 
-/** One object Action for an author's type table: the object type it runs on, its stored name and its static declaration. */
+/** One published Action for an author's type table: its target object type (or null when targetless), name, and declaration. */
 export interface ObjectActionEntry {
-  className: string;
+  className: string | null;
   name: string;
   declaration: PanelOperationDeclaration;
+  /** Customer object types declared in `definition.affects`, when present. */
+  affects?: string[];
 }
 
 /** The stored fields of one action its explanation is read from; the data engine names each segment's kind. */
@@ -130,8 +132,6 @@ export async function readObjectActions(viewer: AssistantCredentials, objectType
       unavailableActions.push({ ...identity, reason: "The stored function definition is missing." });
       continue;
     }
-    // A healthy action with no target is outside the object-action catalogue.
-    if (target === null) continue;
     const stored = storedObjectActionSchema.safeParse(raw);
     if (!stored.success) {
       const issue = stored.error.issues[0]!;
@@ -140,11 +140,13 @@ export async function readObjectActions(viewer: AssistantCredentials, objectType
       continue;
     }
     const action = stored.data;
-    if (action.target !== null)
-      actions.push({
-        className: action.target.className, name: action.name,
-        declaration: objectActionDeclaration({ ...action, target: action.target }),
-      });
+    const affects = [...new Set(action.definition?.affects ?? [])];
+    actions.push({
+      className: action.target?.className ?? null,
+      name: action.name,
+      declaration: objectActionDeclaration(action),
+      ...(affects.length > 0 && { affects }),
+    });
   }
   return { actions, unavailableActions };
 }

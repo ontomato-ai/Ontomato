@@ -2,7 +2,7 @@ import type { PanelMember } from "@ontomato/contracts/panel-manifest";
 import { projectionOperationTargetMatches } from "@ontomato/contracts/panel-projection";
 import { customerOntologyReads, platformObjectTypes } from "@ontomato/contracts/platform-object-types";
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
-import { platformTypeTableResponseSchema } from "@ontomato/contracts/platform-type-table";
+import { platformTypeTableResponseSchema, type PlatformTypeTableOperation } from "@ontomato/contracts/platform-type-table";
 import type { ProductProjectionInput } from "@ontomato/contracts/product-panels";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
 import { createActionReadAdapter } from "../action/panel-reads";
@@ -45,7 +45,15 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
       if (!objectTypes.has(primaryKey)) objectTypes.set(primaryKey, { reads: customerOntologyReads, operations: undefined });
     }
   }
-  for (const { className, declaration } of actions) {
+  const untargetedOperations: PlatformTypeTableOperation[] = [];
+  for (const { className, declaration, affects } of actions) {
+    if (className === null) {
+      untargetedOperations.push({
+        ...declaration,
+        ...(affects && affects.length > 0 && { affects }),
+      });
+      continue;
+    }
     const entry = objectTypes.get(className);
     if (entry) (entry.operations ??= []).push(declaration);
     else objectTypes.set(className, { operations: [declaration] });
@@ -53,7 +61,9 @@ export async function readPanelTypeTable(owner: ProductOwner, viewer: AssistantC
   const resultIds = new Set([...objectTypes.values()].flatMap(entry => Object.values(entry.reads ?? {}).map(read => read.result)));
   const resultSchemas = Object.fromEntries([...resultIds].map(id => [id, cachedZodToJsonSchema(panelReadResultSchemas[id])]));
   return platformTypeTableResponseSchema.parse({
-    objectTypes: Object.fromEntries(objectTypes), resultSchemas,
+    objectTypes: Object.fromEntries(objectTypes),
+    ...(untargetedOperations.length > 0 && { operations: untargetedOperations }),
+    resultSchemas,
     ...(unavailableActions.length > 0 && { unavailableActions }),
     ...("unavailable" in catalogue && { customerTypesUnavailable: catalogue.unavailable }),
   });
@@ -72,10 +82,12 @@ function operationTargetCheck(loadActions?: () => ReturnType<ReturnType<typeof c
         const unavailable = catalog?.unavailableActions.find(action => action.id === ref.id);
         return `operation '${name}' refers to unavailable owner operation '${ref.id}'${unavailable ? `: ${unavailable.reason}` : ""}`;
       }
-      const type = "className" in operation ? operation.className : operation.targetType;
+      const type = "className" in operation ? (operation.className ?? undefined) : operation.targetType;
       const { target } = binding;
       if (!projectionOperationTargetMatches(projection, binding, operation.declaration, type))
-        return `operation '${name}' takes a target of type '${type}'`;
+        return type
+          ? `operation '${name}' takes a target of type '${type}'`
+          : `operation '${name}' takes no target`;
       const hasDraftSlot = Boolean(wiring?.operationDrafts?.[name]?.slot);
       if (!target && platform?.handler.kind === "form.save" && !allowsOperationDraft(projection, platform.handler) && !(platform.handler.create && hasDraftSlot))
         return `operation '${name}' needs an edit target or the owner's create form`;

@@ -203,19 +203,39 @@ async function admitBoundOperation(
   const { descriptor, fixed, selected } = resolveTarget(placement, bound, selection, pinnedInputs, actor.credentials.locale);
   const id = panelOperationId(placement.nested?.memberPath.map(segment => segment.member) ?? slot, bound.name);
   if (binding.operation.kind === "Action") {
-    if (selected?.kind !== "object") return undefined;
-    const { objectType, primaryKey } = selected;
-    const resolved = await resolveObjectAction(operationHost(actor), { actionId: binding.operation.id, object: { objectType, primaryKey } });
+    if (selected?.kind === "object") {
+      const { objectType, primaryKey } = selected;
+      const resolved = await resolveObjectAction(operationHost(actor), { actionId: binding.operation.id, object: { objectType, primaryKey } });
+      const handler: PanelWriteServerOperation = objectActionOperation(resolved);
+      const described = { ...describeObjectAction(resolved), target: descriptor };
+      const operation = panelWriteOperationSnapshotSchema.parse({
+        ...described,
+        ...placement.nested,
+        id,
+        slot,
+        action: { actionId: resolved.actionId, codeHash: resolved.codeHash, object: resolved.object! },
+      });
+      return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: selected, selected };
+    }
+    if (binding.target !== undefined) return undefined;
+    const resolved = await resolveObjectAction(operationHost(actor), { actionId: binding.operation.id });
     const handler: PanelWriteServerOperation = objectActionOperation(resolved);
     const described = { ...describeObjectAction(resolved), target: descriptor };
+    const createFormTypes = Object.values(projection.data).flatMap(datum =>
+      datum.read === "createForm" && "type" in datum.source ? [datum.source.type.id] : []);
+    const affects = [...new Set([...resolved.affects, ...createFormTypes])];
     const operation = panelWriteOperationSnapshotSchema.parse({
       ...described,
       ...placement.nested,
       id,
       slot,
-      action: { actionId: resolved.actionId, codeHash: resolved.codeHash, object: resolved.object },
+      action: {
+        actionId: resolved.actionId,
+        codeHash: resolved.codeHash,
+        ...(affects.length > 0 && { affects }),
+      },
     });
-    return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: selected, selected };
+    return { effect: "write" as const, handler, operation, descriptor: described, fixedTarget: null, selected: null };
   }
   if (!owner) throw new HttpError(422, `Operation '${binding.operation.id}' has no server owner client`, "OPERATION_UNAVAILABLE");
   const { handler } = owner;

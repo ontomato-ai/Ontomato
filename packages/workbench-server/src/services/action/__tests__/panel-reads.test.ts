@@ -159,16 +159,23 @@ describe("action catalog reads", () => {
     expect([(failed as HttpError).status, (failed as HttpError).code]).toEqual([500, "ACTION_READ_FAILED"]);
   });
 
-  it("declares the published object Actions for an author's type table, by the object type each stored target names, under their stored names", async () => {
+  it("declares published targeted and targetless Actions for an author's type table, preserving affects and per-type filtering", async () => {
     const objectAction = (id: string, className: string) => ({
       ...approve, id, codeHash: `hash-${id}`, target: { className, keyParameter: "key" },
       function: { name: id, parameters: [{ name: "key", type: "TYPE_STRING" }, { name: "note", type: "TYPE_STRING" }] },
     });
     const approveOrder = objectAction("approve-order", "Order");
     const closeInvoice = objectAction("close-invoice", "Invoice");
+    const importOrders = {
+      ...objectAction("import-orders", "Order"),
+      name: "Import orders",
+      target: null,
+      definition: { affects: ["Order", "Invoice", "Order"] },
+    };
     const sent = ownerAnswering({
       "/action/queryList": ok([
-        approveOrder, { ...objectAction("import-orders", "Order"), target: null },
+        approveOrder,
+        importOrders,
         { ...objectAction("broken-invoice", "Invoice"), function: { parameters: [{ name: null, type: "TYPE_STRING" }] } },
         { ...objectAction("unnamed-invoice", "Invoice"), name: "  " },
         { ...closeInvoice, name: "Close invoice" },
@@ -179,6 +186,7 @@ describe("action catalog reads", () => {
     const { actions, unavailableActions } = await adapter.objectActions();
     expect(actions).toEqual([
       { className: "Order", name: "Approve order", declaration: objectActionDeclaration(approveOrder) },
+      { className: null, name: "Import orders", declaration: objectActionDeclaration(importOrders), affects: ["Order", "Invoice"] },
       { className: "Invoice", name: "Close invoice", declaration: objectActionDeclaration(closeInvoice) },
     ]);
     // An action a person and an agent could not call by name is unavailable, said item by item like any invalid one.

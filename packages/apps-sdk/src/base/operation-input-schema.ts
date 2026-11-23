@@ -67,6 +67,21 @@ function resolveKind(schema: RawSchema): { kind: OperationInputFieldKind; option
 }
 
 /**
+ * Customer Actions (`actions.execute`) wrap all parameter inputs inside a single top-level `values` object schema
+ * (`{ type: "object", properties: { values: { type: "object", properties: { ... } } }, required: ["values"] }`).
+ */
+export function isActionValuesEnvelope(inputSchema: Record<string, RuntimeJsonValue>): boolean {
+  const root = inputSchema as RawSchema;
+  if (!isObjectRecord(root.properties)) return false;
+  const keys = Object.keys(root.properties);
+  if (keys.length !== 1 || keys[0] !== "values") return false;
+  const valuesSchema = root.properties.values;
+  return isObjectRecord(valuesSchema)
+    && primaryType((valuesSchema as RawSchema).type) === "object"
+    && isObjectRecord((valuesSchema as RawSchema).properties);
+}
+
+/**
  * Extracts editable parameter fields from an owner operation's JSON Schema `inputSchema`.
  * Excludes any keys already bound by the projection (`operation.params`) so the dialog never prompts for them.
  */
@@ -74,7 +89,9 @@ export function operationInputFields(
   inputSchema: Record<string, RuntimeJsonValue>,
   excludeKeys: ReadonlySet<string> = new Set(),
 ): readonly OperationInputField[] {
-  const root = inputSchema as RawSchema;
+  const root = (isActionValuesEnvelope(inputSchema)
+    ? ((inputSchema as RawSchema).properties as Record<string, unknown>).values
+    : inputSchema) as RawSchema;
   if (!isObjectRecord(root.properties)) return [];
   const required = new Set(
     Array.isArray(root.required) ? root.required.filter((item): item is string => typeof item === "string") : [],
