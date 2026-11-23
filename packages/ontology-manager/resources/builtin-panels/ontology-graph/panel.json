@@ -23,6 +23,14 @@
         "deepLink": true,
         "default": ""
       },
+      "filter": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true,
+        "default": "all"
+      },
       "positions": {
         "type": {
           "kind": "json"
@@ -61,29 +69,88 @@
       }
     },
     "members": {
-      "objectTypes": {
-        "component": "PanelData",
+      "objectStats": {
+        "component": "ObjectCount",
         "type": "platform:ObjectType",
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-5b62b06c-8063-4692-bb5c-9483a593cda9"
+        "config": {
+          "items": [
+            {
+              "label": "对象类型"
+            },
+            {
+              "label": "属性",
+              "sumField": "attributeCount"
+            }
+          ]
+        },
+        "id": "builtin-product-7040c92e-9a3b-49ad-87a4-5ef4582abf2a"
       },
-      "relations": {
-        "component": "PanelData",
+      "relationStats": {
+        "component": "ObjectCount",
         "type": "platform:Relationship",
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-c94f4166-6043-4ba2-bc01-36cf0736ee2d"
+        "config": {
+          "label": "关系类型"
+        },
+        "id": "builtin-product-cd13e0f3-ab1f-497f-87bd-be1733fadb2a"
       },
-      "attributes": {
-        "component": "PanelData",
-        "type": "platform:Attribute",
+      "objectList": {
+        "component": "ObjectList",
+        "type": "platform:ObjectType",
         "data": {
           "rows": "list"
         },
-        "id": "builtin-product-aeef6b97-7fa9-4527-ad62-94ba087c06fb"
+        "state": {
+          "selected": "objectType",
+          "search": "search"
+        },
+        "config": {
+          "layout": "list",
+          "subtitleField": "className",
+          "searchable": false,
+          "showFooter": false,
+          "showChevron": true,
+          "searchFields": [
+            "label",
+            "primaryKey",
+            "className",
+            "showName",
+            "classDesc",
+            "searchableAttributes"
+          ],
+          "emptyText": ""
+        },
+        "id": "builtin-product-26d935eb-01ee-44ba-a389-b5c4f9277740"
+      },
+      "relationList": {
+        "component": "ObjectList",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "relation",
+          "search": "search"
+        },
+        "config": {
+          "layout": "list",
+          "subtitleField": "",
+          "searchable": false,
+          "showFooter": false,
+          "showChevron": true,
+          "searchFields": [
+            "label",
+            "primaryKey",
+            "desc"
+          ],
+          "emptyText": ""
+        },
+        "id": "builtin-product-9dc2abcb-1a64-4e1a-b919-0b8f69a02b65"
       },
       "graph": {
         "component": "ObjectGraph",
@@ -120,6 +187,181 @@
           "hint": "单击节点查看详情，拖动可调整布局"
         },
         "id": "builtin-product-b24e84c6-ca27-4ed9-8479-79b076b0f378"
+      },
+      "pathFromPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "pathFrom"
+        },
+        "config": {
+          "placeholder": "来源对象",
+          "size": "default",
+          "clearable": true
+        },
+        "id": "builtin-product-2e8cd535-4d3c-4851-88a4-840db0692aef"
+      },
+      "pathToPicker": {
+        "component": "ReferencePicker",
+        "type": "platform:ObjectType",
+        "data": {
+          "rows": "list"
+        },
+        "state": {
+          "selected": "pathTo"
+        },
+        "config": {
+          "placeholder": "目标对象",
+          "size": "default",
+          "clearable": true
+        },
+        "id": "builtin-product-bcac70a2-e318-41b5-8d33-63014541076e"
+      },
+      "objectHeader": {
+        "component": "ObjectHeader",
+        "target": "objectType",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitleField": "className"
+        },
+        "id": "builtin-product-d900ed11-4e30-4d7c-821a-4d08e964e39d"
+      },
+      "objectDesc": {
+        "component": "TypedValue",
+        "target": "objectType",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "classDesc",
+          "emptyText": ""
+        },
+        "id": "builtin-product-ce68a32e-2c46-4b9a-a5ad-dd009a90594f"
+      },
+      "objectAttributes": {
+        "component": "ObjectList",
+        "type": "platform:Attribute",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "fromSlot": true
+              }
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "showHeader": false,
+          "showFooter": false,
+          "searchable": false,
+          "emptyText": "暂无属性",
+          "columns": [
+            {
+              "key": "label",
+              "subtitleKey": "name"
+            },
+            {
+              "key": "type",
+              "kind": "tag",
+              "width": "96px",
+              "align": "right"
+            }
+          ]
+        },
+        "id": "builtin-product-0e433496-05dc-41a6-8d22-696811abb84d"
+      },
+      "objectRelations": {
+        "component": "ObjectList",
+        "type": "platform:Relationship",
+        "data": {
+          "rows": {
+            "read": "list",
+            "params": {
+              "className": {
+                "fromSlot": true
+              }
+            }
+          }
+        },
+        "state": {
+          "selected": "relation"
+        },
+        "config": {
+          "layout": "list",
+          "showFooter": false,
+          "searchable": false,
+          "showChevron": true,
+          "emptyText": "暂无关联关系"
+        },
+        "id": "builtin-product-47e75f93-efeb-4227-9079-b312605fbc00"
+      },
+      "relationHeader": {
+        "component": "ObjectHeader",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitle": ""
+        },
+        "id": "builtin-product-a19a8a6e-cc18-41b7-bc42-a32cf61b3b6c"
+      },
+      "relationFrom": {
+        "component": "ObjectRefCard",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "fromObject",
+          "caption": "来源对象",
+          "compact": true
+        },
+        "id": "builtin-product-e8bef137-dffe-47a0-a9f6-ed8645b8a2ad"
+      },
+      "relationName": {
+        "component": "TypedValue",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "label",
+          "emptyText": ""
+        },
+        "id": "builtin-product-cc69b26b-9bc4-49e0-9400-66c5584e7606"
+      },
+      "relationTo": {
+        "component": "ObjectRefCard",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "toObject",
+          "caption": "目标对象",
+          "compact": true
+        },
+        "id": "builtin-product-9067cae3-cf39-4263-bbea-61f92c6af4f9"
+      },
+      "relationDesc": {
+        "component": "TypedValue",
+        "target": "relation",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "field": "desc",
+          "emptyText": ""
+        },
+        "id": "builtin-product-dfacb93c-eff8-402a-ba08-e1aa68c83cf1"
       }
     }
   },

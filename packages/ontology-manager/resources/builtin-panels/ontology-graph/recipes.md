@@ -1,22 +1,23 @@
 # 本体图谱页的常见做法
 
-这一页用平台的共用图谱画布画属主的对象类型（点）和关系类型（边），人在图上浏览、选中、找路径，选中一个就能看它的属性和关系。画布工具在画布右上角：适应画布、重新布局、下载 PNG；放大缩小用滚轮。
+这一页全部由平台官方投影组装：页头统计（`ObjectCount`）、左栏资源列表（`ObjectList`）、中间共用图谱画布（`ObjectGraph`）、右栏路径选择器（`ReferencePicker`）与元素详情（`ObjectHeader`、`TypedValue`、`ObjectRefCard`、`ObjectList`）。画布工具条在画布左下角：放大、缩小、适应画布、重新布局、下载 PNG；也支持滚轮缩放。
 
 ## 看页面上是什么
 
-- `search` 是页面顶部的搜索词：命中的对象类型和关系类型在图上标出来，其余的淡出；搜索不动选中。
+- `search` 是左栏顶部的搜索词：命中的对象类型（含名称、API 名、描述与属性名）和关系类型在图上标出来，其余的淡出；搜索不动选中。
+- `filter` 是左栏的类型筛选分段：`all`（全部）、`objects`（仅对象类型）、`relations`（仅关系类型）。
 - `objectType` 是选中的对象类型（主键是类的 API 名），`relation` 是选中的关系类型（主键是关系名）。地址里带 `state={"objectType":{"className":"platform:ObjectType","primaryKey":"<类>"}}` 就是直接打开并选中那个类。
 - `highlightedNodes`、`highlightedEdges` 是搜索或类型筛选命中的对象和关系；只是画面，不是选中。
-- `pathFrom`、`pathTo` 是路径查找的起点和终点对象类型；两者都填好后画布原生按有向最短路径标出经过的点和边。
-- 回答“这页现在是什么样”时，先说选中了什么（没有就说没有），再说搜索词和是否在展示一条路径；要某个类的字段，用 `objectTypes` 的 `rows` 找它那一行，`attributes` 的 `rows` 里 `className` 等于这个类的就是它的属性，`relations` 的 `rows` 里两端任一是这个类的就是它的关系。
+- `pathFrom`、`pathTo` 是路径查找的起点和终点对象类型；两者都填好后画布原生按有向最短路径标出经过的点和边，并汇报路径状态与跳数。
+- 回答“这页现在是什么样”时，先说选中了什么（没有就说没有），再说搜索词、筛选范围（`filter`）和是否在展示一条路径；要某个类的属性和关联关系，看右栏的 `objectAttributes` 与 `objectRelations` 投影即可。
 
 ## 找路径
 
-右栏上方选起点和终点对象类型，点「查找路径」：页面把 `pathFrom` 和 `pathTo` 写入状态，由共用画布按关系方向找最短的一条并以路径样式标出经过的点和边。
+右栏上方选起点（`pathFrom`）和终点（`pathTo`）对象类型，点「查找路径」：共用画布按关系方向计算最短路径并以路径样式标出经过的点和边，同时弹出跳数提示。
 
 ## 跳转
 
 - 选中一个类或一条关系后可「去建模」：打开可视化建模并定位到它（`/ontology/visual-modeling?focus=object|relation&id=<主键>&back=playground`）。
-- 要看关系类型的详情用关系类型页 `/ontology/relations`，`state` 里带 `selected`。
+- 选中关系类型后，点右栏「来源对象」或「目标对象」卡片可直接切到对应对象类型。
 
 写操作：这一页只读，没有要读者确认的操作。
