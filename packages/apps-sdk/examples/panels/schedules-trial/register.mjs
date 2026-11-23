@@ -6,7 +6,7 @@ import {
   productProjectionInputSchema,
   registerApplicationPanelUsesRequestSchema,
 } from "@ontomato/contracts/product-panels";
-import { panelRegistrationClient } from "../../../../../agent-skills/ontomato-app-builder/panel-registration.mjs";
+import { panelRegistrationClient } from "../../../../../agent-skills/ontomato-app-builder/scripts/panel-registration.mjs";
 import { panelContent, panels, projections, applications } from "./definitions.mjs";
 
 async function main() {

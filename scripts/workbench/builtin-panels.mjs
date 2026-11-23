@@ -63,7 +63,7 @@ export async function stageBuiltinPanels({ directory, members, applications, che
 export async function prepareBuiltinPanels(root, sharedRoot, members, javaApplications) {
   const server = members.find(member => member.name === "@ontomato/workbench-server");
   const { workbenchApplications } = await import(pathToFileURL(join(server.absolute, "src/services/applications/builtins.ts")).href);
-  const skill = join(sharedRoot, "agent-skills/ontomato-app-builder");
+  const skill = join(sharedRoot, "agent-skills/ontomato-app-builder/scripts");
   const { installedPanelSdk } = await import(pathToFileURL(join(skill, "current-sdk.mjs")).href);
   const { checkBuiltinPanelSource } = await import(pathToFileURL(join(skill, "panel-check.mjs")).href);
   const sdkPath = join(root, "dist/apps-sdk");

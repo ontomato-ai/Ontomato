@@ -7,7 +7,7 @@ bring an existing application onto the platform, use the [application decomposit
 
 ## Connection and workspace
 
-Run `node <skill>/ontomato.mjs <command>`. JSON arguments accept inline JSON or `@file`; use `--lang <tag>` for the response language.
+Run `node <skill>/scripts/ontomato.mjs <command>`. JSON arguments accept inline JSON or `@file`; use `--lang <tag>` for the response language.
 
 - Inside the platform, the runtime provides `ONTOMATO_WORKBENCH_URL`, `ONTOMATO_ONTOLOGY_URL`, the current credentials and `ONTOMATO_WORKSPACE_ID`. Edit the mounted `work/` directory directly. Do not import this directory back into itself, execute `git commit`, or write credentials into it. The runtime makes one commit after a changed run, using the first line of the user request; an unchanged run produces no commit.
 - Outside the platform, set `ONTOMATO_URL` to the browser entry, including any deployment prefix. The public edition is anonymous. The enterprise adapter accepts `ONTOMATO_TK` or `ONTOMATO_API_KEY`, or the login configured in `application.yml`. Edit a complete local source tree, create a workspace, then import the tree with an explicit commit message.
@@ -69,7 +69,7 @@ registered `target.projectionId`.
 ### Custom components
 
 Use official SDK components and `config` first. When a dedicated custom component is truly needed, register a single
-domain component with `node "$SKILL/ontomato.mjs" component register <directory>` (which assigns
+domain component with `node "$SKILL/scripts/ontomato.mjs" component register <directory>` (which assigns
 `domain-component:<uuid>` into `component.json`, inspectable via `component list` / `component read <id>`). Third-party
 component package installation is not currently available to authors (`sdk package <name>` is read-only inspection only;
 there is no author package upload endpoint).
@@ -126,8 +126,8 @@ The command submits projections, panels and uses in that order. It prints each c
 Delete a trial application first to remove its entry references. Then delete a panel by its exact registered ID.
 
 ```sh
-node "$SKILL/ontomato.mjs" panel delete application <application-id>
-node "$SKILL/ontomato.mjs" panel delete panel <panel-id>
+node "$SKILL/scripts/ontomato.mjs" panel delete application <application-id>
+node "$SKILL/scripts/ontomato.mjs" panel delete panel <panel-id>
 ```
 
 The panel owner also removes editable projections used only by that panel and reports their IDs. A referenced panel
@@ -181,7 +181,7 @@ A definition without an ID creates an asset; with an ID it updates that asset. U
 
 ## Agent delegation
 
-In a platform conversation, use the native `agent` tool or `node "$SKILL/ontomato.mjs" agent <command>`.
+In a platform conversation, use the native `agent` tool or `node "$SKILL/scripts/ontomato.mjs" agent <command>`.
 The script uses the current run's authority, with the same build-test restrictions as the native tool.
 
 ## Build-test vector operations

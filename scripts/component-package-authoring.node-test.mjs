@@ -59,7 +59,7 @@ test("offline panel check expands a qualified component from its package declara
   ]);
 
   const check = () => run(process.execPath, [
-    "--import", "./packages/contracts/node_modules/tsx/dist/loader.mjs", "agent-skills/ontomato-app-builder/ontomato.mjs",
+    "--import", "./packages/contracts/node_modules/tsx/dist/loader.mjs", "agent-skills/ontomato-app-builder/scripts/ontomato.mjs",
     "panel", "check", workspace, "--sdk-dir", sdk, "--component-package", release, "--type-table", join(root, "types.json"),
   ], { cwd: repo, env: { ...process.env, ONTOMATO_WORKBENCH_URL: "http://127.0.0.1:1" } });
   assert.deepEqual(JSON.parse((await check()).stdout), { status: "valid", version, unchecked: [] });
