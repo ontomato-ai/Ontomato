@@ -44,6 +44,16 @@ const DECLARED_DATA = {
   ObjectCount: { rows: ["panelRecordList", "panelRecordQuery"], objects: ["panelOntologyObjects"] },
   ObjectSummary: { record: ["panelRecord"] },
   ObjectHeader: { record: ["panelRecord"] },
+  TypedValue: { record: ["panelRecord"], result: ["metricOutput"] },
+  RecordTemplate: { record: ["panelRecord"], result: ["metricOutput"] },
+  InfoBanner: { record: ["panelRecord"], result: ["metricOutput"] },
+  ObjectRefCard: { record: ["panelRecord"], result: ["metricOutput"] },
+  MetricCard: {
+    result: ["metricOutput"],
+    record: ["panelRecord"],
+    rows: ["panelRecordList", "panelRecordQuery"],
+    objects: ["panelOntologyObjects"],
+  },
   ObjectForm: { form: ["panelFormDescription"], createForm: ["panelFormDescription"] },
   OperationButton: {},
   FileUploadControl: {},
@@ -132,7 +142,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
         [objectType]: { reads: { list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" } },
           operations: [] },
       }, resultSchemas: { panelRecordList: { type: "array" } } });
-      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
+      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
       const checked = exec([cli, "panel", "check", "panel", "--sdk-dir", sdk, "--component-package", author, "--type-table", "types.json"]);
       assert.deepEqual(JSON.parse(checked), { status: "valid", version, unchecked: [] });
     });
@@ -145,7 +155,7 @@ test("the built SDK's components.json is the catalogue its contract declares", (
       const trial = { component: "OperationButton", operation: "metricViews.test" };
       const descriptor = join(workspace, "panel.json");
       const document = { manifest: { state: {}, members: { metricEditor: editor, preview: trial } } };
-      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/ontomato.mjs");
+      const cli = join(HERE, "../../agent-skills/ontomato-app-builder/scripts/ontomato.mjs");
       const check = () => execFileSync(process.execPath, [
         cli, "panel", "check", workspace, "--builtin", "--sdk-dir", join(out, version),
       ], { encoding: "utf8", stdio: "pipe" });
@@ -241,6 +251,16 @@ test("the built SDK's components.json is the catalogue its contract declares", (
     const countItems = declared.get("ObjectCount").config.find(prop => prop.name === "items");
     assert.equal(countItems?.required, false);
     assert.match(countItems?.type ?? "", /ObjectCountItem/);
+    const metricCardItems = declared.get("MetricCard").config.find(prop => prop.name === "items");
+    assert.equal(metricCardItems?.required, false);
+    assert.match(metricCardItems?.type ?? "", /MetricCardItem/);
+    const formPresentation = declared.get("ObjectForm").config.find(prop => prop.name === "presentation");
+    assert.equal(formPresentation?.required, false);
+    assert.match(formPresentation?.type ?? "", /ObjectFormPresentation/);
+    const formGroups = declared.get("ObjectForm").config.find(prop => prop.name === "groups");
+    assert.equal(formGroups?.required, false);
+    assert.match(formGroups?.type ?? "", /ObjectFormGroup/);
+    assert.ok(declared.has("ObjectFormFields"), "ObjectFormFields is published in the catalogue");
     const pickerPlaceholder = declared.get("ReferencePicker").config.find(prop => prop.name === "placeholder");
     assert.equal(pickerPlaceholder?.required, false);
     assert.equal(declared.get("ReferencePicker").config.find(prop => prop.name === "clearable")?.required, false);

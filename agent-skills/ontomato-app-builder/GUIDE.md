@@ -7,7 +7,7 @@ bring an existing application onto the platform, use the [application decomposit
 
 ## Connection and workspace
 
-Run `node <skill>/ontomato.mjs <command>`. JSON arguments accept inline JSON or `@file`; use `--lang <tag>` for the response language.
+Run `node <skill>/scripts/ontomato.mjs <command>`. JSON arguments accept inline JSON or `@file`; use `--lang <tag>` for the response language.
 
 - Inside the platform, the runtime provides `ONTOMATO_WORKBENCH_URL`, `ONTOMATO_ONTOLOGY_URL`, the current credentials and `ONTOMATO_WORKSPACE_ID`. Edit the mounted `work/` directory directly. Do not import this directory back into itself, execute `git commit`, or write credentials into it. The runtime makes one commit after a changed run, using the first line of the user request; an unchanged run produces no commit.
 - Outside the platform, set `ONTOMATO_URL` to the browser entry, including any deployment prefix. The public edition is anonymous. The enterprise adapter accepts `ONTOMATO_TK` or `ONTOMATO_API_KEY`, or the login configured in `application.yml`. Edit a complete local source tree, create a workspace, then import the tree with an explicit commit message.
@@ -16,23 +16,43 @@ A workspace is the application source tree. Business definitions remain in Java;
 
 ## Panels and application uses
 
-For a management page, pick a [page template](references/templates/README.md), read the [management page wiring recipes](references/management-pages.md), or run `panel scaffold`.
+For a management page, pick a [page template](references/templates/README.md) (prefer
+[two-entry-catalog-detail](references/templates/two-entry-catalog-detail/README.md) for multi-column catalogs with
+full-width detail), read the [management page wiring recipes](references/management-pages.md), or run `panel scaffold`.
 
-1. Inspect the owner's reads and operations with `panel type <type-id>` and compare their result shapes with the official component data ports in `sdk read docs/components.md`. If an owner read does not match the component's data port, address that gap on the owner or shared-record side rather than rendering business fields in the panel.
-2. Follow the lookup order: start with the official component's default rendering, add `config` for common variations (such as `ObjectList` `config.rowActions` and column widths, `ObjectForm` `config.actions: "footer"|"header"|"create-only"|"none"`, `ObjectSummary` `config.showTitle`, or `OperationButton` `config.placement: "header"`), and use standard Vue slots (`#cell-<key>`, `#actions`, `#row-detail`, `#card`, `#field-<dotPath>`, `#toolbar`, `#overlay`, `#option`) with a focused author-registered component (declared in `manifest.components`) or nested `<projection>` only when a specific cell, row detail, or form field still cannot be configured. Write layout in the Vue panel using normal HTML, CSS, and Vue (not layout components), with typed public state in `panel.json` (`{manifest, content?, theme?, template?}`), visibility, navigation, `recipes.md`, and optional `content.messages`. Use `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` theme tokens, `usePanelOutput` / `usePanelOutputs` for read-only component outputs, and `usePanelContext().notify()` for panel chrome; use `<page-header>` for page headers, `usePanelBack` for browser Back / Escape / unsaved-changes confirmation, and `usePanelNarrow` / `@container` for container-width adaptation. Do not render business fields from a data port (`PanelData` / `usePanelData` or inline `defineComponent`) in `panel.html` / `panel.mjs`, and never write `el-*` tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
-3. Run `panel check <workspace directory>` to validate the panel source, declarations and references.
-4. Submit the selected projections, panels and application uses with `panel register`, then open the application's declared entry. Use an application ID and route you control.
+1. **Discover read functions and operations.** Run `panel type <type-id>` and compare result shapes with official
+   component data ports in `sdk read docs/components.md`.
+   - For customer ontology classes (e.g. `Student`), projections only bind read and write functions: bind the platform's
+     generic read functions parameterized by class (list objects of a class / get one object by ID, shown under
+     `panel type <class>`), MetricViews for filtered/calculated reads, and Actions for writes.
+   - For `platform:*` types, bind their built-in platform reads and management operations.
+2. **Respect boundaries and lookup order.**
+   - **Hierarchy**: platform sidebar → default application menu (do not hand-author custom frame panels yet) → current
+     entry panel → nested panels and components.
+   - **Components first**: start with official component defaults, then `config` (such as `ObjectList` `config.columns`
+     with column widths and `config.rowActions`, `ObjectSummary` `config.fields` / `showTitle` / `copyableFields`,
+     `ObjectForm` `config.presentation` / `groups` / `actions: "footer" | "header" | "create-only" | "none"` /
+     `fixedFields`, or `OperationButton` `config.label` / `type` / `plain` / `icon`), and use standard Vue slots
+     (`#cell-<key>`, `#actions`, `#row-detail`, `#card`, `#field-<dotPath>`, `#toolbar`, `#overlay`, `#option`) with a
+     focused domain component (declared in `manifest.components`) or nested `<projection>` only when a specific piece
+     still cannot be configured. Legacy `listColumn` / `listRowDetail` / `formField` bindings are removed.
+   - **Panels lay out and wire**: write layout in normal HTML, CSS (`@container`), and Vue (no layout components). Place
+     pure presentational `<page-header>` at the top of `panel.html` when needed and wire edit Save/Discard with
+     `usePanelFormDraft("form")`. Use `<sdk-*>` tags, `v-sdk-*` directives, `--sdk-*` tokens, `usePanelOutput` /
+     `usePanelOutputs` for read-only component outputs, and `usePanelContext().notify()`. Never read business record
+     fields directly in the panel, never compute business calculations in panel/component code, and never write `el-*`
+     tags, `--el-*` tokens, `v-loading`, or `element-plus` imports.
+3. Run `panel check <workspace directory>` to validate the panel source, declarations, and references.
+4. Submit projections, panels, and application uses with `panel register`, then open the application's declared entry.
 
-When converting a platform page that needs a new owner read, operation or official component, use the [platform development examples](references/platform-development.md).
-
-Create short members from the reads listed by `panel type`. For customer ontology views backed by an existing projection, reuse its registered ID. Use the corresponding form and save operation for types that publish those declarations.
+Create short members from the reads listed by `panel type`. For views backed by an existing projection, reuse its
+registered `target.projectionId`.
 
 | Command | Result |
 | --- | --- |
-| `sdk read docs/components.md` | Current SDK component guide with data, configuration (including expanded structs such as `ObjectListColumn`), outputs, events, `<sdk-*>` UI primitives, `v-sdk-*` directives and `--sdk-*` theme tokens |
+| `sdk read docs/components.md` | Current SDK component guide with data, configuration (including `ObjectListColumn`, `ObjectSummary`, `ObjectForm`, `OperationButton`, `PageHeader`), outputs, events, `<sdk-*>` UI primitives, `v-sdk-*` directives and `--sdk-*` theme tokens |
 | `sdk read components.json` | The same current SDK's machine-readable component, UI primitive (`uiPrimitives`, `uiDirectives`) and theme token (`themeTokens`) catalogue |
-| `sdk icons` | Icon choices for domain applications from the current SDK |
-| `sdk package <name>` | Read-only lookup of a deployment-installed component package's release and component declarations |
+| `sdk icons` | Icon choices for applications from the current SDK |
 | `component list` | List visible domain-registered components in the current domain |
 | `component read <id>` | Read one domain-registered component's declaration, source and current revision |
 | `component register <directory> [--revision <number>]` | Register (create) or update (with `--revision`) a single domain component from `component.json`, `component.html` and optional `component.mjs` |
@@ -46,40 +66,15 @@ Create short members from the reads listed by `panel type`. For customer ontolog
 | `panel register <directory> [--material <file>]` | Register a panel from its workspace sources, including its inline projections |
 | `panel register <JSON or @file>` | Register selected current definitions and application uses under the author's permissions |
 
-### Domain components vs. installed component packages
+### Custom components
 
-Custom components come from two distinct paths — do not confuse them:
-
-- **Domain-registered single components (author-managed).** When official components plus `config` still cannot cover a single cell, row detail, or field, authors register a small component in the current domain with `node "$SKILL/ontomato.mjs" component register <directory>` (and inspect or list with `component read <id>` and `component list`). Registration assigns `domain-component:<uuid>` and writes it back into `component.json`. Declare it under `manifest.components` in `panel.json` and place it directly inside an official component's Vue slot. See the [end-to-end Vue slots, built-in row actions, and domain component example](references/panel-authoring/CODE.md#custom-list-columns-row-detail-and-per-row-operations).
-- **Deployment component packages (operator-installed only).** Versioned packages such as `@example/tools` are installed at the deployment level by deployment maintainers. **There is no author-side package upload CLI or HTTP endpoint.** `sdk package <name>` is read-only inspection of an already-installed package; do not probe internal package endpoints or bundled checker scripts looking for an upload route.
-
-### Use an installed component package
-
-Look up an already-installed package before writing a member that references it. Use its installed declaration for the exact component ID, data
-names and accepted results, settings, ports and declared operations. For example:
-
-```sh
-node "$SKILL/ontomato.mjs" sdk package @example/tools
-```
-
-If the declaration lists `@example/tools:RecordCard`, use that string in the member's `component` field.
-Bind owner reads and operations from the type table as with official components. The lookup reports the current
-version and digest. The deployment selects one release of each package, and the component ID uses the package
-name and component name.
-
-For an offline check, provide the matching SDK release and a local package release directory with its root
-`package.json` and the JSON declaration at `ontomato.components`. Use one release directory for each package.
-Save the target deployment's visible type table while connected if the panel has new short members:
-
-```sh
-node "$SKILL/ontomato.mjs" panel type --all > author-type-table.json
-node "$SKILL/ontomato.mjs" panel check "$PANEL_DIR" --sdk-dir "$SDK_RELEASE" \
-  --component-package "$PACKAGE_RELEASE" --type-table author-type-table.json
-```
-
-Repeat `--component-package` for other packages. Offline checks read declarations and report unresolved
-deployment references in `unchecked`. Registration uses the target deployment's current package selection,
-owner declarations and permissions.
+Use official SDK components and `config` first. When a dedicated custom component is truly needed, register a single
+domain component with `node "$SKILL/scripts/ontomato.mjs" component register <directory>` (which assigns
+`domain-component:<uuid>` into `component.json`, inspectable via `component list` / `component read <id>`). Declare it
+under `manifest.components` in `panel.json` and place it directly inside an official component's Vue slot (see the
+[end-to-end Vue slots, built-in row actions, and domain component example](references/panel-authoring/CODE.md#custom-list-columns-row-detail-and-per-row-operations)).
+Third-party component package installation is not currently available to authors (`sdk package <name>` is read-only
+inspection only; there is no author package upload endpoint).
 
 ### Write projections inside the panel
 
@@ -124,52 +119,17 @@ For workspace registration, keep the panel definition in `panel.json`, `panel.ht
 `recipes.md`. The tool sends the expanded projection and panel records.
 
 - Projection and panel updates carry the owner-returned current `revision` on the item alongside `mode`. Creation omits it. Only the chosen records should appear in the material. Updating a shared definition affects every use of that record.
-- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses`. Create with an ID starting with `app-`, plus `declaration` and `entryAccess`. For a domain-member application, use `entryAccess: ["domain-member"]` and `access: {kind: "domain-member"}` on a use open to the domain. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` and `defaultAgent`. Domain app paths start with `/applications/<applicationId>/`. Use the application's real `{permissionCode}` for a restricted use. Omit `defaultAgent` to use the general assistant. To choose a default, use `defaultAgent: {kind: "id", id}` or `{kind: "preset", agentKind}` after that agent has selected the panel’s skill. An update replaces the use set, so preserve the uses required by the app. In `mode: "update"`, include `input.declaration` with any changed `names`, `descriptions` or `icon`. Registration reads the existing identity and writes it through the owner only when it differs. Omit identity fields to keep their current values. If you supply a localized map, supply its full set of translations. The platform owns built-in paths and derives skills from use access.
+- Application `input` contains `entry: {path, renderer: "panels"}` and `panelUses` (plus optional `allowStandalone: true` to enable external `standalone=1` links from the sidebar app menu or app properties). Create with an ID starting with `app-`, plus `declaration` and `entryAccess`. For a domain-member application, use `entryAccess: ["domain-member"]` and `access: {kind: "domain-member"}` on each use open to the domain. Each use has `id`, `pageKey`, `panelId`, `path` and `access`, with optional localized `names` (include `names` to show the entry in the menu; omit `names` for a detail entry opened via navigation or deep link) and optional `defaultAgent`. Domain app paths start with `/applications/<applicationId>/`. Use the application's real `{permissionCode}` for a restricted use. Omit `defaultAgent` to use the general assistant. An update replaces the use set, so preserve the uses required by the app. In `mode: "update"`, include `input.declaration` with any changed `names`, `descriptions` or `icon`. Registration reads the existing identity and writes it through the owner only when it differs. Omit identity fields to keep their current values. If you supply a localized map, supply its full set of translations. The platform derives page skills from use access.
 
 The command submits projections, panels and uses in that order. It prints each completed item and exits nonzero at the first failure. On a stale revision, compare the owner's current definition with the requested change before preparing a new update. After re-running `panel register` or `component register <dir> --revision <n>` to update an existing panel, projection, or domain component, hard-reload any already-open browser tab (or reopen the entry) so the browser loads the new revision and freshly compiled module instead of a cached version.
-
-### Replace a built-in page
-
-1. **Move the panel source.** Put `panel.json`, `panel.html`, `panel.mjs` and any `recipes.md` from the tested
-   trial in the original page's owning package under `resources/builtin-panels/<directory>`. Keep one panel
-   item in `registration.json` with a stable `builtin-product-` ID and its `input.name` and
-   `input.description`. Application entries belong in the owning application's declaration.
-   Remove trial projection IDs from inline members in the copied `panel.json` so the checker can allocate
-   platform IDs. For reused projections, use a packaged projection ID or supply an inline definition
-   backed by platform types and owner reads. Pass domain objects through the panel's runtime state.
-   Use formal built-in addresses for internal links in `panel.html`, `panel.mjs` and `recipes.md`. The checker
-   reports the file, line and column of any `/applications/app-…` address.
-2. **Assign the projection IDs.** Point `SDK_RELEASE` to the installed SDK version directory containing
-   `sdk.json`, and run the local check with the copied panel directory as `PANEL_DIR`:
-
-   ```sh
-   node "$SKILL/ontomato.mjs" panel check "$PANEL_DIR" --builtin --sdk-dir "$SDK_RELEASE"
-   ```
-
-   Commit the IDs written to `panel.json`. Preserve those IDs on later edits. The Workbench image build
-   checks the built-in application entries against the bundled panels. Node registers the platform records
-   from the bundle on startup.
-3. **Switch the original entry and remove the old page in one change.** Add the use to
-   `declaration.panelUses` in the owning app's declaration. Find Java-owned apps in the Java package's
-   `src/main/resources/applications/` directory and Workbench-owned apps in
-   `packages/workbench-server/src/services/applications/builtins.ts`. Keep the original `path` and
-   `access.permissionCode`. Give the use its stable `id` and `pageKey`, and set `panelId` to the packaged panel ID.
-   Carry over its menu name and default agent where present. Remove the old route registration, renderer
-   and any page component and imports with no remaining callers. The panel use serves the original address.
-   Keep the owner reads, operations and permissions used by the panel or by other entries.
-4. **Verify and clean up the trial.** On 128 after deployment, open the original address with its existing
-   permission and verify that the panel and its page skill work. With an account lacking the original
-   permission, check that the entry denies access and that the owners deny reads and operations when the
-   panel is used from another entry the account can open. Then delete the exact trial application and its
-   trial panel using the commands below.
 
 ### Delete a trial application or panel
 
 Delete a trial application first to remove its entry references. Then delete a panel by its exact registered ID.
 
 ```sh
-node "$SKILL/ontomato.mjs" panel delete application <application-id>
-node "$SKILL/ontomato.mjs" panel delete panel <panel-id>
+node "$SKILL/scripts/ontomato.mjs" panel delete application <application-id>
+node "$SKILL/scripts/ontomato.mjs" panel delete panel <panel-id>
 ```
 
 The panel owner also removes editable projections used only by that panel and reports their IDs. A referenced panel
@@ -180,8 +140,7 @@ is protected by the owner's in-use check. Released or shared definitions stay un
 Run `panel check <directory>` before registering. It reads `registration.json` in that directory by default.
 Use `--material <file>` to select a different file. The online check uses the current component catalogue and
 owner type table to expand new projections. It looks for references in the material first, then in the domain.
-With `--sdk-dir`, local material can be checked offline. Supply `--type-table` for new short members
-and `--component-package` for their [local package declarations](#use-an-installed-component-package).
+With `--sdk-dir`, local material can be checked offline (supply `--type-table` for new short members).
 Unresolved registered references appear in `unchecked`.
 
 - **404 `PRODUCT_UNAVAILABLE`** names a panel or projection that is missing in the current domain. When a
@@ -224,7 +183,7 @@ A definition without an ID creates an asset; with an ID it updates that asset. U
 
 ## Agent delegation
 
-In a platform conversation, use the native `agent` tool or `node "$SKILL/ontomato.mjs" agent <command>`.
+In a platform conversation, use the native `agent` tool or `node "$SKILL/scripts/ontomato.mjs" agent <command>`.
 The script uses the current run's authority, with the same build-test restrictions as the native tool.
 
 ## Build-test vector operations

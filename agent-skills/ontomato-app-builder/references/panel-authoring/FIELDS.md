@@ -16,7 +16,7 @@ Top-level fields accepted in `panel.json`. Workspace files supply `panel.html`, 
 | `theme` | No | Optional `{ light?, dark? }` map of overridable `--sdk-*` theme token values (never `--el-*`). |
 | `template` | No | Optional boolean marking whether this panel is a reusable template. |
 
-Minimal complete `panel.json` for a read-only stateless page (empty `state` and `commands` objects are required):
+Minimal complete `panel.json` for a read-only stateless page (empty `state` and `members` objects are required when unused):
 
 ```json
 {

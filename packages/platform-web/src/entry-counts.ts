@@ -15,6 +15,12 @@ import { nodeApiRequest } from "@ontomato/workbench-ui";
 const values = reactive(new Map<string, number | null>());
 /** The entries whose reads this page load has asked for, with what they declare. */
 const asked = new Map<string, { applicationId: string; use: ApplicationPanelUse }>();
+/** Limit concurrent menu count reads so the sidebar never saturates connections ahead of the open page's own reads. */
+const MAX_CONCURRENT = 4;
+const inFlight = new Set<string>();
+const queued = new Set<string>();
+const queue: string[] = [];
+const pendingRefresh = new Set<string>();
 
 const keyOf = (applicationId: string, use: ApplicationPanelUse) => `${applicationId}/${use.id}`;
 
@@ -35,8 +41,32 @@ async function read(applicationId: string, use: ApplicationPanelUse): Promise<nu
   return typeof total === "number" && Number.isFinite(total) ? total : null;
 }
 
-function readInto(key: string, applicationId: string, use: ApplicationPanelUse) {
-  void read(applicationId, use).then((count) => values.set(key, count), () => values.set(key, null));
+function drain() {
+  while (inFlight.size < MAX_CONCURRENT && queue.length > 0) {
+    const key = queue.shift()!;
+    queued.delete(key);
+    const entry = asked.get(key);
+    if (!entry) continue;
+    inFlight.add(key);
+    void read(entry.applicationId, entry.use)
+      .then((count) => values.set(key, count), () => values.set(key, null))
+      .finally(() => {
+        inFlight.delete(key);
+        if (pendingRefresh.delete(key)) schedule(key);
+        drain();
+      });
+  }
+}
+
+function schedule(key: string) {
+  if (inFlight.has(key)) {
+    pendingRefresh.add(key);
+    return;
+  }
+  if (queued.has(key)) return;
+  queued.add(key);
+  queue.push(key);
+  drain();
 }
 
 /** The count an entry's menu row shows now, read once per page load; null while unknown or for an entry declaring none. */
@@ -45,12 +75,12 @@ export function entryCount(applicationId: string, use: ApplicationPanelUse): num
   const key = keyOf(applicationId, use);
   if (!asked.has(key)) {
     asked.set(key, { applicationId, use });
-    readInto(key, applicationId, use);
+    schedule(key);
   }
   return values.get(key) ?? null;
 }
 
 /** A page's write changed objects its owner names: every declared count is read again, the shown numbers kept meanwhile. */
 export function entryCountsChanged() {
-  for (const [key, { applicationId, use }] of asked) readInto(key, applicationId, use);
+  for (const key of asked.keys()) schedule(key);
 }

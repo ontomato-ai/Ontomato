@@ -1,6 +1,6 @@
 # Maintain an existing hosted application
 
-Use the application builder CLI at `agent-skills/ontomato-app-builder/ontomato.mjs` with the deployed application's
+Use the application builder CLI at `agent-skills/ontomato-app-builder/scripts/ontomato.mjs` with the deployed application's
 current workspace and authorized identity. Its [connection instructions](../agent-skills/ontomato-app-builder/GUIDE.md#connection-and-workspace)
 apply to this CLI as well. Read the existing application's source, asset IDs and release records before changing it.
 

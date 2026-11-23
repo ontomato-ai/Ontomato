@@ -1,0 +1,42 @@
+<style>
+  .ontology-frame {
+    display: flex;
+    flex: 1;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .ontology-frame-content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .ontology-frame-content > .sdk-current-entry-slot {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  @media (max-width: 600px) {
+    .ontology-frame {
+      flex-direction: column;
+    }
+  }
+</style>
+
+<div id="app" class="ontology-frame">
+  <app-menu
+    :title="t('frame.title')"
+    :counts="counts"
+    :icons="icons"
+    @select="openEntry"
+  />
+  <div class="ontology-frame-content">
+    <current-entry member="content" />
+  </div>
+</div>

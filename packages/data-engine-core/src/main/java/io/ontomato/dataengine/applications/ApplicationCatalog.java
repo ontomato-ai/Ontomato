@@ -54,10 +54,16 @@ public class ApplicationCatalog {
     }
     public record Builtin(String id, String kind, String rail, String category, int sort, JSONObject entry,
                           List<String> entryAccess, String scheduleAdapter, Declaration declaration,
-                          Boolean allowStandalone) {
+                          Boolean allowStandalone, String framePanelId) {
         public Builtin(String id, String kind, String rail, String category, int sort, JSONObject entry,
                        List<String> entryAccess, String scheduleAdapter, Declaration declaration) {
-            this(id, kind, rail, category, sort, entry, entryAccess, scheduleAdapter, declaration, null);
+            this(id, kind, rail, category, sort, entry, entryAccess, scheduleAdapter, declaration, null, null);
+        }
+
+        public Builtin(String id, String kind, String rail, String category, int sort, JSONObject entry,
+                       List<String> entryAccess, String scheduleAdapter, Declaration declaration,
+                       Boolean allowStandalone) {
+            this(id, kind, rail, category, sort, entry, entryAccess, scheduleAdapter, declaration, allowStandalone, null);
         }
 
         public boolean allowsStandalone() {
@@ -337,6 +343,11 @@ public class ApplicationCatalog {
         } else {
             var usedGroups = new HashSet<>(uses.stream().map(ApplicationPanelUse::groupKey).toList());
             result.put("groups", groups.stream().filter(group -> usedGroups.contains(group.key())).toList());
+            var settings = app.getJSONObject("panelSettings");
+            if (settings != null && settings.containsKey("framePanelId")) {
+                var framePanelId = settings.getString("framePanelId");
+                if (panelManaged(app) || BuiltinProductIds.isValid(framePanelId)) result.put("framePanelId", framePanelId);
+            }
         }
         return result;
     }
@@ -467,7 +478,12 @@ public class ApplicationCatalog {
         result.put("entry", publicEntry(app));
         result.put("allowStandalone", allowsStandalone(app));
         result.remove("permissions");
+        var settings = app.getJSONObject("panelSettings");
         result.remove("panelSettings");
+        if (settings != null && settings.containsKey("framePanelId")) {
+            var framePanelId = settings.getString("framePanelId");
+            if (panelManaged(app) || BuiltinProductIds.isValid(framePanelId)) result.put("framePanelId", framePanelId);
+        }
         if (panelManaged(app)) result.put("panelUses", visiblePanelUses(app, user, pageKeys));
         else if (hasPanelUseRegistration(app))
             result.put("panelUses", canEnter(app, user) ? visiblePanelUses(app, user, pageKeys) : List.of());
@@ -509,6 +525,8 @@ public class ApplicationCatalog {
                 for (var use : declaration.panelUses())
                     if (!BuiltinProductIds.isValid(use.panelId()))
                         throw bad("Built-in application entry " + use.pageKey() + " must reference a platform panel: " + use.panelId());
+                if (d.framePanelId() != null && !BuiltinProductIds.isValid(d.framePanelId()))
+                    throw bad("Built-in application " + d.id() + " framePanelId must reference a platform panel: " + d.framePanelId());
                 var root = builtinPanelRoot(d.entry());
                 if ((root != null && inAssignedSpace(root)) || declaration.panelUses().stream().anyMatch(use -> inAssignedSpace(use.path())))
                     throw bad("Built-in applications cannot occupy the assigned application space");
@@ -530,7 +548,8 @@ public class ApplicationCatalog {
                 }
                 validateBuiltinPermissionOwnership(d.id(), claimed, ownedCodes);
                 validateMappings(d.id(), null, d.entry(), declaration.pageSkills(), declaration.panelUses());
-                save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, declaration, new JSONObject(), d.allowsStandalone());
+                var panelSettings = d.framePanelId() != null ? JSONObject.of("framePanelId", d.framePanelId()) : new JSONObject();
+                save(d.id(), null, service, null, d.kind(), d.rail(), d.category(), d.sort(), d.entry(), d.entryAccess(), d.scheduleAdapter(), null, declaration, panelSettings, d.allowsStandalone());
                 access.declare(require(d.id()), declaration, old.isEmpty());
             }
             var apps = all();
@@ -826,10 +845,13 @@ public class ApplicationCatalog {
             .sorted(Comparator.comparingInt(Group::sort)).toList();
         var result = JSONObject.of("applicationId", app.getString("id"), "use", panels ? use : use.withoutInputs(),
             "menu", new EntryMenu(groups, named));
-        if (!panels) return result;
         var settings = app.getJSONObject("panelSettings");
-        if (settings.containsKey("framePanelId")) result.put("framePanelId", settings.getString("framePanelId"));
-        if (settings.containsKey("theme")) result.put("theme", settings.getJSONObject("theme"));
+        if (settings != null && settings.containsKey("framePanelId")) {
+            var framePanelId = settings.getString("framePanelId");
+            if (panels || BuiltinProductIds.isValid(framePanelId)) result.put("framePanelId", framePanelId);
+        }
+        if (!panels) return result;
+        if (settings != null && settings.containsKey("theme")) result.put("theme", settings.getJSONObject("theme"));
         return result;
     }
 

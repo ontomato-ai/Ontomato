@@ -64,7 +64,7 @@ const contents = [
   "| --- | --- | --- |",
   ...descriptorRows,
   "",
-  "Minimal complete `panel.json` for a read-only stateless page (empty `state` and `commands` objects are required):",
+  "Minimal complete `panel.json` for a read-only stateless page (empty `state` and `members` objects are required when unused):",
   "",
   "```json",
   JSON.stringify(minimalReadOnlyPanel, null, 2),

@@ -35,6 +35,12 @@ export async function stageBuiltinPanels({ directory, members, applications, che
   }
 
   for (const application of applications) {
+    if (application.framePanelId !== undefined) {
+      const label = `Built-in application ${application.id}, frame panel ${application.framePanelId}`;
+      const result = checks.builtinProductIdSchema.safeParse(application.framePanelId);
+      if (!result.success) throw new Error(`${label}: ${result.error.message}`);
+      if (!panels.has(application.framePanelId)) throw new Error(`${label}: panel is missing from the release`);
+    }
     for (const use of application.declaration?.panelUses ?? []) {
       const label = `Built-in application ${application.id}, entry ${use.id} (${use.path}), panel ${use.panelId}`;
       const result = checks.builtinApplicationPanelUseSchema.safeParse(use);
@@ -57,7 +63,7 @@ export async function stageBuiltinPanels({ directory, members, applications, che
 export async function prepareBuiltinPanels(root, sharedRoot, members, javaApplications) {
   const server = members.find(member => member.name === "@ontomato/workbench-server");
   const { workbenchApplications } = await import(pathToFileURL(join(server.absolute, "src/services/applications/builtins.ts")).href);
-  const skill = join(sharedRoot, "agent-skills/ontomato-app-builder");
+  const skill = join(sharedRoot, "agent-skills/ontomato-app-builder/scripts");
   const { installedPanelSdk } = await import(pathToFileURL(join(skill, "current-sdk.mjs")).href);
   const { checkBuiltinPanelSource } = await import(pathToFileURL(join(skill, "panel-check.mjs")).href);
   const sdkPath = join(root, "dist/apps-sdk");

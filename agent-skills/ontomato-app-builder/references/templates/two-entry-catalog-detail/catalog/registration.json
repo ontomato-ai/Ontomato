@@ -1,0 +1,13 @@
+{
+  "panels": [
+    {
+      "id": "template-two-entry-catalog",
+      "mode": "create",
+      "input": {
+        "name": "Agent Definitions (Catalog)",
+        "description": "Catalog entry template with centered create dialog",
+        "visibility": "domain"
+      }
+    }
+  ]
+}

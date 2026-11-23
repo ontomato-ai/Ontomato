@@ -124,6 +124,38 @@ it("gives a panel entry's row the count its entry declares, and keeps a native p
   const ontology = catalogPartition(catalog, "zh-CN", {}, read).find(app => app.id === "ontology")!;
   expect(ontology.entries?.get("/ontology/assets/functions")).toMatchObject({ count: 63 });
   // An entry that declares nothing carries no count of its own: the row it stands in keeps the page's.
-  const knowledge = ontology.entries?.get("/ontology/knowledge");
-  expect(knowledge && "count" in knowledge).toBe(false);
+  const graph = ontology.entries?.get("/ontology/playground");
+  expect(graph && "count" in graph).toBe(false);
+});
+
+it("skips reading native page counts for applications whose menu is not active", () => {
+  let called = 0;
+  const base = generatedNavigation();
+  const navigation = {
+    ...base,
+    pages: [
+      ...base.pages,
+      {
+        path: "/ontology/assets/workflows",
+        titleKey: "nav.workflowManagement",
+        permissions: ["action-management"],
+        group: "ontology",
+        ownHeader: true,
+        count: () => {
+          called += 1;
+          return 4;
+        },
+      },
+    ],
+  };
+  const access = closedAccess(["ontology-modeling", "action-management"]);
+  const inactive = appDeclarations(navigation, access, catalogPartition(catalogFixture(), "en"), t, () => false);
+  expect(called).toBe(0);
+  expect(inactive.find((app) => app.id === "ontology")!.groups!.flatMap((g) => g.pages)
+    .find((p) => p.id === "/ontology/assets/workflows")?.count).toBeNull();
+
+  const active = appDeclarations(navigation, access, catalogPartition(catalogFixture(), "en"), t, (id) => id === "ontology");
+  expect(called).toBe(1);
+  expect(active.find((app) => app.id === "ontology")!.groups!.flatMap((g) => g.pages)
+    .find((p) => p.id === "/ontology/assets/workflows")?.count).toBe(4);
 });

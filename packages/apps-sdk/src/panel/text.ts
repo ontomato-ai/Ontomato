@@ -14,6 +14,17 @@ import type { PanelMessages } from "@ontomato/contracts/product-panels";
 /** Reads one of the panel's words in the current language, with the values its text names. */
 export type PanelText = (key: string, params?: Readonly<Record<string, unknown>>) => string;
 
+const rawLookups = new WeakMap<PanelText, (key: string) => string | undefined>();
+
+/**
+ * Reads an uninterpolated template string from a `PanelText` created by `createPanelText` so declarative `{fieldKey}`
+ * placeholders (for example in `RecordTemplate` or `InfoBanner`) are preserved intact instead of being stripped by
+ * `vue-i18n` interpolation.
+ */
+export function rawPanelText(text: PanelText | undefined, key: string): string | undefined {
+  return text ? rawLookups.get(text)?.(key) : undefined;
+}
+
 /**
  * The panel's `t`: its words in `locale`, which follows the platform, falling back to `defaultLocale` and then to the key.
  * A template that calls it draws again when the language changes.
@@ -36,5 +47,13 @@ export function createPanelText(messages: PanelMessages, locale: Readonly<Ref<st
   watch(locale, (next) => {
     i18n.global.locale.value = next;
   }, { flush: "sync" });
-  return (key, params) => i18n.global.t(key, { ...params });
+  const lookup: PanelText = (key, params) => i18n.global.t(key, { ...params });
+  rawLookups.set(lookup, (key) => {
+    const active = messages[locale.value];
+    if (active && typeof active[key] === "string") return active[key];
+    const fallback = messages[defaultLocale];
+    if (fallback && typeof fallback[key] === "string") return fallback[key];
+    return undefined;
+  });
+  return lookup;
 }

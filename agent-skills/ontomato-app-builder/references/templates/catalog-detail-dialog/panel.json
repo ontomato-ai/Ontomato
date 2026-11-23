@@ -59,7 +59,6 @@
         "command.new": "New Agent Definition",
         "dialog.createTitle": "New Agent Definition",
         "detail.back": "Back to Agent Definition",
-        "detail.save": "Save",
         "detail.basicInfo": "Basic information",
         "detail.overview": "Overview"
       }

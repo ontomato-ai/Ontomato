@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, h, nextTick, type App } from "vue";
-import { PlatformShell, PlatformRail, PlatformAccountMenu, AppPanelPages } from "..";
+import { PlatformShell, PlatformRail, PlatformAccountMenu, AppMenu, AppPanelPages } from "..";
 import type { PlatformAccount, PlatformApp, PlatformPreferences, PlatformShellLabels } from "../types";
 
 const labels: PlatformShellLabels = {
@@ -302,6 +302,95 @@ describe("the menu of an application whose pages are its own menu", () => {
     const row = root.querySelector(".page-row.unavailable");
     expect(row?.getAttribute("aria-disabled")).toBe("true");
     expect(row?.getAttribute("title")).toBe("Moving here");
+  });
+
+  it("renders AppMenu with title, overlaid counts/icons, mobile select, and strictly single active item", async () => {
+    const onSelect = vi.fn();
+    const root = await mount(AppMenu, {
+      title: "Ontology manager",
+      groups: [
+        {
+          key: "facts",
+          label: "Facts",
+          items: [
+            { id: "/ontology/playground", label: "Ontology graph" },
+            { id: "/ontology/objects", label: "Object types" },
+            { id: "/ontology/knowledge", label: "Business knowledge" },
+          ],
+        },
+        {
+          key: "capabilities",
+          label: "Capabilities",
+          items: [
+            { id: "/ontology/assets/actions", label: "Actions", count: 5 },
+          ],
+        },
+      ],
+      counts: {
+        "/ontology/objects": 18,
+        "/ontology/knowledge": 42,
+        "/ontology/assets/actions": 21,
+      },
+      icons: {
+        "/ontology/playground": "network",
+        "/ontology/objects": "boxes",
+        "/ontology/knowledge": "book-open",
+        "/ontology/assets/actions": "mouse-pointer-click",
+      },
+      activeId: "/ontology/playground",
+      ariaLabel: "Pages",
+      onSelect,
+    });
+
+    expect(root.querySelector(".app-menu-title")?.textContent).toBe("Ontology manager");
+    const activeRows = root.querySelectorAll(".page-row.active");
+    expect(activeRows).toHaveLength(1);
+    expect(activeRows[0]?.getAttribute("aria-current")).toBe("page");
+    expect(activeRows[0]?.textContent).toContain("Ontology graph");
+
+    const rows = [...root.querySelectorAll<HTMLButtonElement>(".page-row")];
+    expect(rows.find((row) => row.textContent?.includes("Ontology graph"))?.querySelector(".page-count")).toBeNull();
+    expect(rows.find((row) => row.textContent?.includes("Object types"))?.querySelector(".page-count")?.textContent).toBe("18");
+    expect(rows.find((row) => row.textContent?.includes("Business knowledge"))?.querySelector(".page-count")?.textContent).toBe("42");
+    expect(rows.find((row) => row.textContent?.includes("Actions"))?.querySelector(".page-count")?.textContent).toBe("21");
+
+    rows.find((row) => row.textContent?.includes("Business knowledge"))?.click();
+    expect(onSelect).toHaveBeenCalledWith("/ontology/knowledge");
+
+    const select = root.querySelector<HTMLSelectElement>(".mobile-page-select");
+    expect(select?.value).toBe("/ontology/playground");
+  });
+
+  it("highlights the parent menu entry for hidden child entry routes without false sibling prefix matches", async () => {
+    const groups = [
+      {
+        key: "facts",
+        label: "Facts",
+        items: [
+          { id: "/ontology/objects", label: "Object types" },
+          { id: "/ontology/relations", label: "Relation types" },
+        ],
+      },
+    ];
+    const childRoot = await mount(AppMenu, {
+      title: "Ontology manager",
+      groups,
+      activeId: "/ontology/relations/detail",
+      ariaLabel: "Pages",
+    });
+    const activeRows = childRoot.querySelectorAll(".page-row.active");
+    expect(activeRows).toHaveLength(1);
+    expect(activeRows[0]?.textContent).toContain("Relation types");
+    expect(childRoot.querySelector<HTMLSelectElement>(".mobile-page-select")?.value).toBe("/ontology/relations");
+    app?.unmount();
+
+    const siblingRoot = await mount(AppMenu, {
+      title: "Ontology manager",
+      groups,
+      activeId: "/ontology/relations-extra",
+      ariaLabel: "Pages",
+    });
+    expect(siblingRoot.querySelectorAll(".page-row.active")).toHaveLength(0);
   });
 });
 

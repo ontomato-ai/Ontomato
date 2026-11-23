@@ -190,12 +190,13 @@ beforeEach(() => {
         .sort((a, b) => a.id.localeCompare(b.id))
         .map(({ id, definition }) => ({ id, definition })) };
     }
-    if (sql.includes('AS "sortKey"')) {
-      const [domain, usable, scope, caller, query, key, position, limit] =
-        values as [string, string[], string, string, string, string | null, string | null, number];
+    if (sql.includes('AS "sortKey"') || sql.startsWith("SELECT COUNT(*)::int AS total")) {
+      const [domain, usable, scope, caller, query, template, _panelCatalog, key, position, limit] =
+        values as [string, string[], string, string, string, boolean | null, boolean, string | null, string | null, number];
       const sortByName = sql.includes("ORDER BY lower");
       const order = sortByName ? 1 : -1;
       const rows = [...collection.values()].filter(row => row.domainId === domain && usable.includes(row.id))
+        .filter(row => template === null || Boolean(row.definition.template) === template)
         .filter(row => scope === "all" || (scope === "mine") === (row.ownerId === caller))
         .map(row => ({
           id: row.id, ownerId: row.ownerId, revision: row.revision, updatedAt: row.updatedAt,
@@ -207,6 +208,7 @@ beforeEach(() => {
           sortKey: sortByName ? String(row.definition.name).toLowerCase() : row.updatedAt.toISOString(),
         }))
         .filter(row => [row.name, row.description].some(text => text.toLowerCase().includes(query.toLowerCase())));
+      if (sql.startsWith("SELECT COUNT(*)::int AS total")) return { rows: [{ total: rows.length }] };
       return { rows: rows
         .filter(row => key === null || order * (row.sortKey.localeCompare(key) || row.id.localeCompare(position!)) > 0)
         .sort((a, b) => order * (a.sortKey.localeCompare(b.sortKey) || a.id.localeCompare(b.id))).slice(0, limit) };
@@ -246,13 +248,17 @@ it("lists only use grants across mine/shared/all and follows a stable cursor thr
   expect((await list("scope=shared")).items.map(item => [item.id, item.editable])).toEqual([["b", false]]);
   const first = await list("scope=all&sort=name&limit=1&q=sales");
   expect(first.items.map(item => item.id)).toEqual(["a"]);
+  expect(first.total).toBe(2);
   const second = await list("scope=all&sort=name&limit=1&q=sales&cursor=" + first.nextCursor);
   expect(second.items.map(item => item.id)).toEqual(["b"]);
+  expect(second.total).toBe(2);
   expect(second.nextCursor).toBeNull();
 
   seed("product_panels", "panel", "alice", panelDefinition());
   const panels = await request("product-panels?scope=mine");
-  expect(productPanelListResponseSchema.parse(await panels.json()).items.map(item => item.id)).toEqual(["panel"]);
+  const panelList = productPanelListResponseSchema.parse(await panels.json());
+  expect(panelList.items.map(item => item.id)).toEqual(["panel"]);
+  expect(panelList.total).toBe(1);
 });
 
 it("rejects delete and lists only the projection's readable using panels, counting the others", async () => {

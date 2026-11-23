@@ -1,0 +1,48 @@
+{
+  "manifest": {
+    "state": {
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": true
+      }
+    },
+    "members": {
+      "list": {
+        "component": "ObjectList",
+        "type": "platform:AgentDefinition",
+        "data": {
+          "rows": "list"
+        }
+      },
+      "createForm": {
+        "component": "ObjectForm",
+        "type": "platform:AgentDefinition",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:AgentDefinition.save",
+        "config": {
+          "actions": "create-only"
+        }
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Agent Definitions",
+        "command.new": "New Agent Definition",
+        "dialog.createTitle": "New Agent Definition"
+      },
+      "zh-CN": {
+        "panel.name": "智能体定义",
+        "command.new": "新建智能体定义",
+        "dialog.createTitle": "新建智能体定义"
+      }
+    }
+  }
+}
