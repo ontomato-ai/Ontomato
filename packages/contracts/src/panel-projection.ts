@@ -1183,7 +1183,7 @@ export function projectionOperation(
   const draftSlot = manifest.members[member]?.operationDrafts?.[name]?.slot;
   let placed: PanelOperation["target"];
   if (kind === "form.save") placed = { source: "draft", slot: draftSlot ?? member };
-  else if (target.source === "literal" || target.source === "none") placed = target;
+  else if (target.source === "literal" || target.source === "none" || target.source === "draft") placed = target;
   else if (target.source === "input") {
     const binding = manifest.members[member]?.inputs?.[target.input];
     if (binding && "state" in binding) placed = { source: "state", state: binding.state };
