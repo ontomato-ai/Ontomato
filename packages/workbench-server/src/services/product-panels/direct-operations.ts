@@ -294,15 +294,45 @@ export async function readAdmittedProjectionOperations(
       continue;
     }
     if (!result) continue;
-    const isRowTarget = bound.binding.target !== undefined && ("row" in bound.binding.target || "rowField" in bound.binding.target);
-    const unavailableReason = !isRowTarget && result.effect === "write" && result.selected?.kind === "object"
-      ? await result.handler.unavailable?.(operationHost(actor), result.selected)
-      : undefined;
+    const unavailableReason = await resolveAdmittedOperationUnavailable(actor, bound, result, inputs, pinnedInputs);
     const descriptor = unavailableReason === undefined ? result.descriptor
       : { ...result.descriptor, unavailable: panelOperationUnavailableSchema.parse(unavailableReason) };
     descriptions.push([bound.name, descriptor]);
   }
   return Object.fromEntries(descriptions);
+}
+
+/** Resolve availability for a single target or a list-input batch target (unavailable only when every item is unavailable). */
+async function resolveAdmittedOperationUnavailable(
+  actor: PanelOperationActor,
+  bound: BoundProjectionOperation,
+  result: NonNullable<Awaited<ReturnType<typeof admitBoundOperation>>>,
+  inputs: Readonly<Record<string, unknown>>,
+  pinnedInputs: ReadonlyMap<string, unknown>,
+): Promise<PanelOwnerOperationDescriptor["unavailable"]> {
+  const isRowTarget = bound.binding.target !== undefined && ("row" in bound.binding.target || "rowField" in bound.binding.target);
+  if (isRowTarget || result.effect !== "write") return undefined;
+  if (result.selected?.kind === "object") {
+    return result.handler.unavailable?.(operationHost(actor), result.selected);
+  }
+  const targetInput = bound.binding.target && "input" in bound.binding.target ? bound.binding.target.input : undefined;
+  if (targetInput === undefined || (!result.handler.unavailableBatch && !result.handler.unavailable)) {
+    return undefined;
+  }
+  const rawInput = pinnedInputs.has(targetInput) ? pinnedInputs.get(targetInput) : inputs[targetInput];
+  if (!Array.isArray(rawInput) || rawInput.length === 0) return undefined;
+
+  const targets = rawInput.map((item, index) => ({
+    target: placedObject(panelObjectRefSchema.parse(item)),
+    rowKey: String(index),
+  }));
+  const reasons = await resolveBatchUnavailableReasons(operationHost(actor), result.handler, targets);
+  let unavailableCount = 0;
+  for (const { rowKey } of targets) {
+    if (reasons.get(rowKey) !== undefined) unavailableCount++;
+  }
+  // Mixed selections stay available because executeBatch processes items independently and reports per-item outcomes.
+  return unavailableCount === targets.length ? reasons.get(targets[0]!.rowKey) : undefined;
 }
 
 function rowTargetForBinding(
@@ -348,6 +378,33 @@ async function runWithConcurrency<T>(items: readonly T[], limit: number, work: (
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
 }
 
+async function resolveBatchUnavailableReasons(
+  host: ReturnType<typeof operationHost>,
+  handler: PanelWriteServerOperation,
+  targets: readonly { rowKey: string; target: PanelRecordTarget }[],
+): Promise<ReadonlyMap<string, PanelOwnerOperationDescriptor["unavailable"]>> {
+  if (targets.length === 0) return new Map();
+  if (handler.unavailableBatch) {
+    return handler.unavailableBatch(host, targets);
+  }
+  // Deduplicate identical targets (e.g. outer parent target shared across all 50 rows -> 1 check instead of 50).
+  const uniqueTargets = new Map<string, PanelRecordTarget>();
+  for (const { target } of targets) {
+    uniqueTargets.set(`${target.objectType}\u0000${target.primaryKey}`, target);
+  }
+  const reasonsByTarget = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
+  await runWithConcurrency([...uniqueTargets.entries()], ROW_AVAILABILITY_CONCURRENCY, async ([targetKey, target]) => {
+    const reason = await handler.unavailable?.(host, target);
+    if (reason !== undefined) reasonsByTarget.set(targetKey, reason);
+  });
+  const reasonsByRowKey = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
+  for (const { rowKey, target } of targets) {
+    const reason = reasonsByTarget.get(`${target.objectType}\u0000${target.primaryKey}`);
+    if (reason !== undefined) reasonsByRowKey.set(rowKey, reason);
+  }
+  return reasonsByRowKey;
+}
+
 /**
  * Compute per-row availability for every declared operation on a list projection in a single batch alongside
  * the list read response, eliminating per-row N+1 client requests.
@@ -391,32 +448,10 @@ export async function describeRowOperationsForRows(
     const validTargets = rowEntries.filter((entry): entry is { rowKey: string; target: PanelRecordTarget } =>
       entry.target !== undefined && entry.target !== null);
 
-    if (handler.unavailableBatch && validTargets.length > 0) {
-      const batchReasons = await handler.unavailableBatch(host, validTargets);
-      for (const { rowKey, target } of rowEntries) {
-        if (target === undefined) continue;
-        const reason = target === null ? undefined : batchReasons.get(rowKey);
-        (result[rowKey] ??= {})[bound.name] = reason
-          ? { available: false, unavailable: panelOperationUnavailableSchema.parse(reason) }
-          : { available: true };
-      }
-      continue;
-    }
-
-    // Deduplicate identical targets (e.g. outer parent target shared across all 50 rows -> 1 check instead of 50).
-    const uniqueTargets = new Map<string, PanelRecordTarget>();
-    for (const { target } of validTargets) {
-      uniqueTargets.set(`${target.objectType}\u0000${target.primaryKey}`, target);
-    }
-    const reasonsByTarget = new Map<string, PanelOwnerOperationDescriptor["unavailable"]>();
-    await runWithConcurrency([...uniqueTargets.entries()], ROW_AVAILABILITY_CONCURRENCY, async ([targetKey, target]) => {
-      const reason = await handler.unavailable?.(host, target);
-      if (reason !== undefined) reasonsByTarget.set(targetKey, reason);
-    });
-
+    const reasonsByRowKey = await resolveBatchUnavailableReasons(host, handler, validTargets);
     for (const { rowKey, target } of rowEntries) {
       if (target === undefined) continue;
-      const reason = target === null ? undefined : reasonsByTarget.get(`${target.objectType}\u0000${target.primaryKey}`);
+      const reason = target === null ? undefined : reasonsByRowKey.get(rowKey);
       (result[rowKey] ??= {})[bound.name] = reason
         ? { available: false, unavailable: panelOperationUnavailableSchema.parse(reason) }
         : { available: true };
