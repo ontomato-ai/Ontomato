@@ -372,10 +372,10 @@ describe("standard runtime real HTTP/PG/processes", () => {
     base = `http://127.0.0.1:${(fake.address() as any).port}`;
     await startProcess();
     const saved = await api("/v1/models/settings", {
-      providers: { fixture: { api: "openai-completions", baseUrl: base + "/v1", apiKey: "sk-fixture-key-1234",
-        models: [{ id: "deepseek-chat", type: "chat", maxTokens: 4096, contextWindow: 16000 }] } },
-      defaultModelId: "fixture/deepseek-chat", embeddingModelId: null,
-      retry: { provider: { timeoutMs: 300000, maxRetries: 3, maxRetryDelayMs: 60000 } },
+      connections: { fixture: { provider: "custom_openai", apiBase: base + "/v1", apiKey: "sk-fixture-key-1234" } },
+      models: { "deepseek-chat": { connection: "fixture", model: "deepseek-chat", type: "chat",
+        maxOutputTokens: 4096, contextWindow: 16000 } },
+      defaultModel: "deepseek-chat", embeddingModel: null,
     }, {}, "PUT");
     expect(saved.status).toBe(200);
 
