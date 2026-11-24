@@ -59,7 +59,7 @@ const DECLARED_DATA = {
   FileUploadControl: {},
   ReferencePicker: {
     options: ["panelOptionList"],
-    selected: ["panelOptionList"],
+    selected: ["panelOptionList", "panelRecord"],
     rows: ["panelRecordList", "panelRecordQuery"],
   },
   ObjectGraph: { nodes: ["panelRecordList"], edges: ["panelRecordList"] },
@@ -322,8 +322,9 @@ test("the built SDK's components.json is the catalogue its contract declares", (
 
     // Official components declare read-only outputs separately from writable public state.
     assert.deepEqual(Object.keys(declared.get("ObjectList").readOnlyOutputs ?? {}).sort(), [
-      "activeLabel", "checkedCount", "filteredCount", "loadedCount", "selectedLabel", "status", "total",
+      "activeLabel", "checkedCount", "filteredCount", "listed", "loadedCount", "selectedLabel", "status", "total",
     ]);
+    assert.deepEqual(declared.get("ObjectList").readOnlyOutputs.listed, declared.get("ObjectList").outputs.listed);
     assert.deepEqual(declared.get("ObjectCount").readOnlyOutputs, {
       total: { kind: "scalar", type: "number" },
     });

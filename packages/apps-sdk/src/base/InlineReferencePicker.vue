@@ -8,6 +8,7 @@ import {
   directReadDeclaration,
   panelRecordObjectRef,
   type PanelOptionList,
+  type PanelRecord,
   type PanelRecordQuery,
 } from "@ontomato/contracts/panel-projection";
 import { usePanelContext, useProjectionSlot } from "../panel/context";
@@ -61,7 +62,6 @@ const member = useMember();
 
 const hasRows = "rows" in member.projection.data;
 const hasOptions = "options" in member.projection.data;
-const hasSelected = "selected" in member.projection.data;
 if (!hasRows && !hasOptions) {
   throw new Error(`Projection ${member.projection.id} declares neither 'rows' nor 'options' datum`);
 }
@@ -135,6 +135,20 @@ const rowsData = dataMode === "rows" ? useMemberData("rows") : null;
 const localQuery = ref("");
 const lastRemoteRowsQuery = ref("");
 
+function toRowOption(row: PlatformObjectRecord): InlineOption {
+  const object = panelRecordObjectRef(row, defaultClassName);
+  const groupField = groupByKey.value;
+  const group = groupField
+    ? resolveGroupForRecord(row, groupField, defaultClassName, locale.value, localized, "")
+    : null;
+  return {
+    ...object,
+    label: row.label || object.primaryKey,
+    description: row.subtitle,
+    ...(group && !group.isEmpty ? { groupKey: group.key, groupLabel: group.label } : {}),
+  };
+}
+
 const allRowOptions = computed<readonly InlineOption[]>(() => {
   if (!rowsData || rowsData.value.status !== "ready") return [];
   const raw = rowsData.value.value;
@@ -143,22 +157,7 @@ const allRowOptions = computed<readonly InlineOption[]>(() => {
     : Array.isArray((raw as unknown as PanelRecordQuery)?.rows)
       ? ((raw as unknown as PanelRecordQuery).rows as unknown as readonly PlatformObjectRecord[])
       : [];
-  const groupField = groupByKey.value;
-  return rows.map((row) => {
-    const ref = panelRecordObjectRef(row, defaultClassName);
-    const resolvedGroup = groupField
-      ? resolveGroupForRecord(row, groupField, defaultClassName, locale.value, localized, "")
-      : null;
-    return {
-      primaryKey: ref.primaryKey,
-      className: ref.className,
-      label: row.label || ref.primaryKey,
-      description: row.subtitle,
-      ...(resolvedGroup && !resolvedGroup.isEmpty
-        ? { groupKey: resolvedGroup.key, groupLabel: resolvedGroup.label }
-        : {}),
-    };
-  });
+  return rows.map(toRowOption);
 });
 
 if (dataMode === "rows") {
@@ -172,7 +171,7 @@ function searchRows(keyword = "") {
   rowsSearchParam.set(trimmed ? trimmed : null);
 }
 
-// ---- Options mode (`panelOptionList`, optional `selected`): remote or local search + resolved unavailable items ----
+// ---- Options mode (`panelOptionList`): remote or local search ----
 const optionsDatum = member.projection.data.options;
 const optionsDeclaration = optionsDatum ? directReadDeclaration(member.projection, optionsDatum) : undefined;
 const supportsOptionsRemoteSearch = dataMode === "options"
@@ -181,11 +180,9 @@ const supportsRemoteSearch = supportsOptionsRemoteSearch || supportsRowsRemoteSe
 const canFilter = dataMode === "options" || !isPagedRows || supportsRowsRemoteSearch;
 
 const readOptions = dataMode === "options" ? useMemberRead("options") : null;
-const readSelected = dataMode === "options" && hasSelected ? useMemberRead("selected") : null;
 
 const offeredOptions = shallowRef<readonly InlineOption[]>([]);
-const heldOptions = shallowRef<readonly InlineOption[]>([]);
-const searchingOptions = ref(false);
+const searchingOptions = ref(dataMode === "options");
 const optionsUnavailable = shallowRef<{ status: "forbidden" | "error" | "awaiting"; message: string } | null>(null);
 const optionDiagnostics = shallowRef<readonly string[]>([]);
 
@@ -249,39 +246,34 @@ const selectedRef = computed<PanelObjectRef | null>(() =>
 );
 const currentKey = computed<string>(() => selectedRef.value?.primaryKey ?? "");
 
-let resolveGeneration = 0;
-if (dataMode === "options") {
-  if (readSelected) {
-    watch(
-      currentKey,
-      (key) => {
-        const generation = ++resolveGeneration;
-        if (!key) {
-          heldOptions.value = [];
-          return;
-        }
-        void readSelected({ values: [key] }).then((result) => {
-          if (generation !== resolveGeneration) return;
-          if (result.status === "ready") {
-            const list = result.value as unknown as PanelOptionList;
-            const mapped = list.options.map(toInlineOption);
-            rememberOptions(mapped);
-            heldOptions.value = mapped;
-            return;
-          }
-          if (result.status === "empty") {
-            heldOptions.value = [];
-          }
-        });
-      },
-      { immediate: true },
-    );
-  }
-  onMounted(() => searchOptions(""));
+if (readOptions) onMounted(() => searchOptions());
+
+const selectedDatum = member.projection.data.selected;
+if (selectedDatum) {
+  const readSelected = useMemberRead("selected");
+  const readsRecord = directReadDeclaration(member.projection, selectedDatum)?.result === "panelRecord";
+  const unresolvedKey = computed(() => {
+    const pageLoaded = rowsData
+      ? rowsData.value.status === "ready" || rowsData.value.status === "empty"
+      : !searchingOptions.value && !optionsUnavailable.value;
+    const key = currentKey.value;
+    return pageLoaded && key && !knownOptions.value.has(key) ? key : null;
+  });
+  watch(unresolvedKey, (key, _, onCleanup) => {
+    if (!key) return;
+    let current = true;
+    onCleanup(() => { current = false; });
+    void readSelected(readsRecord ? {} : { values: [key] }).then((result) => {
+      if (!current || key !== unresolvedKey.value || result.status !== "ready") return;
+      const resolved = readsRecord
+        ? [toRowOption(result.value as unknown as PanelRecord)]
+        : (result.value as unknown as PanelOptionList).options.map(toInlineOption);
+      rememberOptions(resolved.filter((option) => option.primaryKey === key));
+    });
+  }, { immediate: true });
 }
 
 const effectiveHeldOptions = computed<readonly InlineOption[]>(() => {
-  if (readSelected) return heldOptions.value;
   const key = currentKey.value;
   if (!key) return [];
   const found = knownOptions.value.get(key);
@@ -314,10 +306,10 @@ const isLoading = computed(() =>
 const isDisabled = computed(() => props.disabled || unavailableNotice.value !== undefined);
 
 const mergedOptions = computed<readonly InlineOption[]>(() => {
-  if (dataMode === "rows" && !isPagedRows) return allRowOptions.value;
+  if (dataMode === "rows" && !isPagedRows && !selectedDatum) return allRowOptions.value;
   const source = dataMode === "rows" ? allRowOptions.value : offeredOptions.value;
-  const heldKeys = new Set(effectiveHeldOptions.value.map((option) => option.primaryKey));
-  return [...effectiveHeldOptions.value, ...source.filter((option) => !heldKeys.has(option.primaryKey))];
+  const held = effectiveHeldOptions.value[0];
+  return held && !source.some((option) => option.primaryKey === held.primaryKey) ? [held, ...source] : source;
 });
 
 const shownOptions = computed<readonly InlineOption[]>(() => {
