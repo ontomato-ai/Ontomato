@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-metric-view-detail",
+      "input": {
+        "name": "指标视图详情",
+        "description": "维护单条业务指标的定义、查询逻辑、参数绑定、在线试跑与删除，以及新建指标视图"
+      }
+    }
+  ]
+}

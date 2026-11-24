@@ -1,0 +1,161 @@
+<!--
+  Metric view detail panel: single-row <page-header> (back, official ObjectHeader or create title, Test button, owner
+  delete OperationButton, and header Save/Discard draft controls wired to ObjectForm), full-width definition form with
+  parameter bindings, in-place status handling, and unsaved-draft test dialog.
+-->
+<style>
+  [v-cloak] { display: none; }
+  .mv-detail-page {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    container: metric-view-detail-page / inline-size;
+  }
+  .mv-detail-title {
+    margin: 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mv-detail-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--component-gap, var(--spacing-sm));
+  }
+  .mv-detail-remove {
+    display: inline-flex;
+    align-items: center;
+  }
+  .mv-detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+  }
+  .mv-state-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-2xl) var(--page-gutter);
+    text-align: center;
+  }
+  .mv-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+  }
+  .mv-note {
+    margin: 0;
+    padding: var(--spacing-lg) var(--page-gutter);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+  .mv-failure {
+    color: var(--sdk-color-danger-text);
+  }
+  .mv-test-body { display: flex; flex-direction: column; gap: var(--spacing-md); }
+  .mv-test-source { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
+  .mv-test-select { width: 18rem; max-width: 100%; }
+  .mv-test-params { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0 var(--spacing-md); }
+  .mv-hint { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); line-height: var(--leading-sm); }
+</style>
+<div id="app" v-cloak>
+  <section class="mv-detail-page">
+    <page-header
+      :back-label="t('metricViews.back')"
+      :draft="detailDraft"
+      @back="goBack"
+    >
+      <template #title>
+        <projection v-if="selectedKey" slot="header" :fallback-title="selectedKey"></projection>
+        <h1 v-else class="mv-detail-title">{{ isCreateMode ? createTitle : t("metricViews.title") }}</h1>
+      </template>
+      <template #actions>
+        <div v-show="formMounted" class="mv-detail-actions">
+          <sdk-button @click="openTest">{{ t("metricViews.test") }}</sdk-button>
+          <span v-show="detailReady" class="mv-detail-remove">
+            <projection slot="remove" @done="onRemoveDone"></projection>
+          </span>
+        </div>
+      </template>
+    </page-header>
+
+    <div v-if="recordStatus === 'missing' || recordStatus === 'empty'" class="mv-state-box">
+      <sdk-empty :description="t('metricViews.missing')"></sdk-empty>
+      <sdk-button @click="goBack">{{ t("metricViews.back") }}</sdk-button>
+    </div>
+    <p v-else-if="recordStatus === 'loading' || recordStatus === 'awaiting'" class="mv-note" role="status">
+      {{ t("metricViews.loading") }}
+    </p>
+    <div v-else-if="recordStatus === 'forbidden'" class="mv-state-box" role="alert">
+      <p class="mv-note mv-failure">{{ t("metricViews.forbidden") }}</p>
+      <sdk-button @click="goBack">{{ t("metricViews.back") }}</sdk-button>
+    </div>
+    <div v-else-if="recordStatus === 'error'" class="mv-state-box" role="alert">
+      <p class="mv-note mv-failure">{{ headerError || t("metricViews.loadError") }}</p>
+      <div class="mv-state-actions">
+        <sdk-button @click="refresh">{{ t("metricViews.retry") }}</sdk-button>
+        <sdk-button @click="goBack">{{ t("metricViews.back") }}</sdk-button>
+      </div>
+    </div>
+    <div v-else-if="formMounted" class="mv-detail-body">
+      <projection slot="definition" @saved="onSaved" @discarded="onDiscarded"></projection>
+    </div>
+
+    <sdk-dialog v-model="dialogOpen" :title="t('metricViews.testTitle')" width="min(920px, calc(100% - 24px))">
+      <div v-if="formMounted && testOpen" class="mv-test-body">
+        <sdk-alert type="info" :closable="false" :title="t('metricViews.testHint')"></sdk-alert>
+        <sdk-alert v-if="!hasFunctionDraft" type="warning" :closable="false" :title="t('metricViews.testNoDraft')"></sdk-alert>
+        <div class="mv-test-source">
+          <sdk-select v-model="testSource" class="mv-test-select" :aria-label="t('metricViews.testSource')">
+            <sdk-option value="explicit" :label="t('metricViews.testExplicit')"></sdk-option>
+            <sdk-option
+              v-for="(row, index) in bindingRows"
+              :key="row.id || index"
+              :value="bindingSourceValue(index)"
+              :label="bindingLabel(row, index)"
+            ></sdk-option>
+          </sdk-select>
+          <p class="mv-hint">{{ t("metricViews.testJsonHint") }}</p>
+        </div>
+
+        <sdk-form v-if="testSource === 'explicit' && parameterDefs.length" label-position="top" class="mv-test-params">
+          <sdk-form-item
+            v-for="parameter in parameterDefs"
+            :key="parameter.name"
+            :label="parameterLabel(parameter)"
+            :error="testErrors[parameter.name] || ''"
+          >
+            <sdk-input
+              :model-value="testValues[parameter.name] ?? ''"
+              :placeholder="parameter.description || ''"
+              @update:model-value="(value) => onParamInput(parameter.name, value)"
+            ></sdk-input>
+          </sdk-form-item>
+        </sdk-form>
+        <p v-else-if="testSource === 'explicit'" class="mv-hint">{{ t("metricViews.testNoParameters") }}</p>
+
+        <sdk-tabs v-model="testTab">
+          <sdk-tab-pane :label="t('metricViews.testMarkdownTab')" name="markdown">
+            <projection slot="testMarkdown" :disabled="trialDisabled" @read="onMarkdownRead"></projection>
+          </sdk-tab-pane>
+          <sdk-tab-pane :label="t('metricViews.testJsonTab')" name="json">
+            <projection slot="testJson" :disabled="trialDisabled" @read="onJsonRead"></projection>
+          </sdk-tab-pane>
+        </sdk-tabs>
+      </div>
+      <template #footer>
+        <sdk-button @click="testOpen = false">{{ t("metricViews.close") }}</sdk-button>
+      </template>
+    </sdk-dialog>
+  </section>
+</div>

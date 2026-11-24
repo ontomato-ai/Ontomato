@@ -73,6 +73,9 @@
       "descriptions": {"en": "Define business metrics and the queries used to calculate them", "zh-CN": "定义业务指标及其计算查询"},
       "names": {"en": "Metric Views", "zh-CN": "指标视图"}, "groupKey": "capabilities"
     }, {
+      "id": "ontology-metric-view-detail", "pageKey": "metric-view-detail", "panelId": "builtin-product-ontology-metric-view-detail",
+      "path": "/ontology/assets/metrics/detail", "access": {"permissionCode": "ontology-modeling"}
+    }, {
       "id": "ontology-functions", "pageKey": "ontology-functions", "panelId": "builtin-product-ontology-functions",
       "path": "/ontology/assets/functions", "access": {"permissionCode": "ontology-modeling"},
       "descriptions": {"en": "Read functions keep a query package and column labels; write functions keep parameters and Python code. A name is edited once, here.", "zh-CN": "读函数维护查询逻辑包和列标签，写函数维护参数和 Python 代码；名称只在这里编辑一次。"},

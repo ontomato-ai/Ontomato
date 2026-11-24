@@ -1,7 +1,7 @@
 import type { RouteLocation } from "vue-router";
 import { panelAddress } from "@ontomato/contracts/panel-host";
 import type { PanelStateValue } from "@ontomato/contracts/panel-manifest";
-import { ACTION, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
+import { ACTION, METRIC_VIEW, RELATIONSHIP } from "@ontomato/contracts/platform-object-types";
 import { platformRoutes } from "@ontomato/platform-shell/routes";
 
 /*
@@ -127,12 +127,31 @@ export const DETAIL_SELECTIONS: readonly DetailSelection[] = [
     state: ({ id }): Record<string, PanelStateValue> =>
       id === "new" ? {} : { selected: id! },
   },
-  // The metric views page: a metric's detail selects it; the old page's `new` opens the catalog (creating is not deep-linked).
+  // The metric views page: `/new` opens the non-menu detail entry in create mode, `:id` selects a metric (exempting
+  // `detail` and `new`), and legacy catalog links carrying `selected` forward straight to the detail entry.
+  {
+    path: `${platformRoutes.metrics.path}/new`,
+    use: `${platformRoutes.metrics.path}/detail`,
+    state: (): Record<string, PanelStateValue> => ({ mode: "create" }),
+  },
   {
     path: platformRoutes.metric.path,
-    use: platformRoutes.metrics.path,
-    state: ({ id }): Record<string, PanelStateValue> =>
-      id === "new" ? {} : { selected: id! },
+    use: `${platformRoutes.metrics.path}/detail`,
+    state: ({ id }): Record<string, PanelStateValue> | null => {
+      if (id === "detail" || id === "new") return null;
+      return { selected: id! };
+    },
+  },
+  {
+    path: platformRoutes.metrics.path,
+    use: `${platformRoutes.metrics.path}/detail`,
+    state: (_params, query): Record<string, PanelStateValue> | null => {
+      const selected = query.get("selected");
+      if (!selected || !selected.trim()) return null;
+      const prefix = `${METRIC_VIEW}~`;
+      const primaryKey = selected.startsWith(prefix) ? selected.slice(prefix.length) : selected;
+      return primaryKey.trim() ? { selected: primaryKey } : null;
+    },
   },
   // The skill library: a skill's detail address opens the library with that skill selected.
   {

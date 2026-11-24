@@ -41,12 +41,27 @@ it("opens a function's detail address as the functions panel with the function s
   expect(open("/ontology/assets/functions")).toBeNull();
 });
 
-it("opens a metric view's detail address as the metric views panel with that metric selected, and the old creation address as the catalog", () => {
+it("opens metric view detail, creation, and legacy selected catalog links at the non-menu detail entry", () => {
   expect(open("/ontology/assets/metrics/mv%201?back=products")).toEqual({
-    path: "/ontology/assets/metrics", state: { selected: "mv 1" },
+    path: "/ontology/assets/metrics/detail", state: { selected: "mv 1" },
   });
-  expect(open("/ontology/assets/metrics/new")).toEqual({ path: "/ontology/assets/metrics", state: {} });
+  expect(open("/ontology/assets/metrics/new")).toEqual({
+    path: "/ontology/assets/metrics/detail", state: { mode: "create" },
+  });
+  expect(open("/ontology/assets/metrics?selected=mv%201")).toEqual({
+    path: "/ontology/assets/metrics/detail", state: { selected: "mv 1" },
+  });
+  expect(open("/ontology/assets/metrics?selected=platform%3AMetricView~mv-1")).toEqual({
+    path: "/ontology/assets/metrics/detail", state: { selected: "mv-1" },
+  });
+  expect(open("/ontology/assets/metrics?selected=platform%3AMetricView~")).toBeNull();
+
+  // The catalog itself (bare or searching) and the detail entry itself are not redirected.
   expect(open("/ontology/assets/metrics")).toBeNull();
+  expect(open("/ontology/assets/metrics?search=revenue")).toBeNull();
+  expect(open("/ontology/assets/metrics/detail")).toBeNull();
+  expect(open("/ontology/assets/metrics/detail?selected=mv-1")).toBeNull();
+  expect(open("/ontology/assets/metrics/detail?mode=create")).toBeNull();
 });
 
 
