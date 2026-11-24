@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-ontology-workflows",
+      "input": {
+        "name": "Workflows",
+        "description": "List domain workflows, inspect read-only workflow definitions and effective capability grants, create workflow drafts, and activate, deactivate, or delete workflows."
+      }
+    }
+  ]
+}

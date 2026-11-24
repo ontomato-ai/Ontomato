@@ -85,6 +85,7 @@ describe("readBuiltinProducts", () => {
       expect(triggersPanel!.manifest.state.editing?.deepLink).toBe(false);
       expect(triggersPanel!.content.html).not.toMatch(/<el-|--el-/);
       expect(triggersPanel!.content.module).not.toContain("usePanelData");
+      expect(panels.has("builtin-product-ontology-workflows")).toBe(true);
 
       const frame = panels.get("builtin-product-ontology-frame");
       expect(frame).toBeDefined();

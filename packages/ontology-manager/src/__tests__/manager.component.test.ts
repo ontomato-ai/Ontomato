@@ -337,7 +337,7 @@ const base: HostOptions = {
   credential: { type: "apiKey", apiKey: "key-a" },
   ...english,
   theme: "light",
-  view: "/ontology/assets/workflows",
+  view: "/browser/data/Order",
   dataFallbacks: hostFallbacks,
   presentation,
 };
@@ -649,7 +649,7 @@ describe("Manager pages in the service router", () => {
     mountHost(base);
     await settle();
 
-    expect(paths()).toEqual(expect.arrayContaining(["/workflow/query"]));
+    expect(paths()).toEqual(expect.arrayContaining(["/admin/getMetas"]));
     expect(paths()).not.toContain("/tenant-a/api/product-assets/counts");
     for (const request of requests) {
       expect(request.url.startsWith("/tenant-a/api/data-query/")).toBe(true);
@@ -675,11 +675,11 @@ describe("Manager pages in the service router", () => {
     expect(row.classList.contains("current-row")).toBe(true);
 
     // The navigation entry (a bare /data) returns to the object type last on show.
-    host.view = "/ontology/assets/workflows";
+    host.view = "/browser/views/Order?key=1";
     await settle();
     host.view = "/browser/data/Order";
     await settle();
-    host.view = "/ontology/assets/workflows";
+    host.view = "/browser/views/Order?key=1";
     await settle();
     host.view = "/browser/data";
     await settle();
@@ -767,7 +767,7 @@ describe("Manager pages in the service router", () => {
     expect(root().textContent).not.toContain("[de] ");
     expect(requests).toEqual([]);
 
-    host.view = "/ontology/assets/workflows";
+    host.view = "/browser/views/Order?key=1";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
@@ -775,16 +775,16 @@ describe("Manager pages in the service router", () => {
 
   it("401/402 only notify the page; after 402 the credential is kept and later requests still carry it", async () => {
     statusFor = (path) =>
-      path === "/workflow/query" ? 402 : path === "/admin/getMetas" ? 401 : 200;
-    const { host, failures } = mountHost({ ...base, view: "/ontology/assets/workflows" });
+      path === "/admin/getMetas" ? 402 : path === "/data/queryInfoByNode" ? 401 : 200;
+    const { host, failures } = mountHost({ ...base, view: "/browser/data/Order" });
     await settle();
-    host.view = "/browser/data/Order";
+    host.view = "/browser/views/Order?key=1";
     await settle();
     expect([...new Set(failures)].sort()).toEqual([401, 402]);
 
     requests = [];
     statusFor = () => 200;
-    host.view = "/ontology/assets/workflows";
+    host.view = "/browser/data/Order";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["x-api-key"] === "key-a")).toBe(true);
@@ -816,7 +816,7 @@ describe("Manager pages in the service router", () => {
     expect(metaRequests.every((request) => request.headers["Accept-Language"] === "en")).toBe(true);
 
     requests = [];
-    host.view = "/ontology/assets/workflows";
+    host.view = "/browser/views/Order?key=1";
     await settle();
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.headers["Accept-Language"] === "de")).toBe(true);

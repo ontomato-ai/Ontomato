@@ -1,0 +1,403 @@
+{
+  "manifest": {
+    "state": {
+      "search": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "default": "",
+        "deepLink": true
+      },
+      "viewing": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Workflow"
+        },
+        "deepLink": false
+      },
+      "creating": {
+        "type": {
+          "kind": "scalar",
+          "type": "boolean"
+        },
+        "default": false,
+        "deepLink": false
+      },
+      "inspectingGrants": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:Workflow"
+        },
+        "deepLink": false
+      }
+    },
+    "members": {
+      "catalog": {
+        "component": "ObjectList",
+        "type": "platform:Workflow",
+        "data": {
+          "rows": "query"
+        },
+        "state": {
+          "search": "search"
+        },
+        "operations": {
+          "activate": {
+            "operation": "workflows.activate",
+            "target": {
+              "row": true
+            }
+          },
+          "deactivate": {
+            "operation": "workflows.deactivate",
+            "target": {
+              "row": true
+            }
+          },
+          "delete": {
+            "operation": "workflows.delete",
+            "target": {
+              "row": true
+            }
+          }
+        },
+        "config": {
+          "layout": "table",
+          "searchable": true,
+          "searchPlaceholder": "searchPlaceholder",
+          "emptyText": "empty",
+          "noMatchText": "noMatch",
+          "fallbackToFirst": false,
+          "columns": [
+            {
+              "key": "label",
+              "labelKey": "col.name",
+              "subtitleKey": "subtitle",
+              "minWidth": 160
+            },
+            {
+              "key": "status",
+              "kind": "tag",
+              "width": 82
+            },
+            {
+              "key": "version",
+              "subtitleKey": "hasDraftLabel",
+              "width": 68
+            },
+            {
+              "key": "stepsSummary",
+              "minWidth": 160
+            },
+            {
+              "key": "grantsSummary",
+              "width": 150
+            },
+            {
+              "key": "createdBy",
+              "width": 84
+            },
+            {
+              "key": "reviewedBy",
+              "width": 96
+            }
+          ],
+          "rowActions": {
+            "labelKey": "col.actions",
+            "width": 140,
+            "minWidth": 132,
+            "maxVisible": 2,
+            "fixed": false,
+            "items": [
+              {
+                "kind": "local",
+                "id": "view",
+                "labelKey": "action.view"
+              },
+              {
+                "kind": "local",
+                "id": "grants",
+                "labelKey": "action.grants"
+              },
+              {
+                "kind": "operation",
+                "operation": "activate",
+                "labelKey": "action.activate",
+                "when": {
+                  "field": "canActivate",
+                  "equals": true
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "deactivate",
+                "labelKey": "action.deactivate",
+                "when": {
+                  "field": "canDeactivate",
+                  "equals": true
+                }
+              },
+              {
+                "kind": "operation",
+                "operation": "delete",
+                "labelKey": "action.delete",
+                "danger": true,
+                "disabledWhen": {
+                  "field": "statusCode",
+                  "equals": "ACTIVE"
+                }
+              }
+            ]
+          }
+        },
+        "name": "Workflow catalog",
+        "description": "Searchable table of domain workflows with status, version, step summary, grant summary, provenance, and row actions.",
+        "id": "builtin-product-ontology-workflows-catalog"
+      },
+      "viewForm": {
+        "component": "ObjectForm",
+        "type": "platform:Workflow",
+        "target": "viewing",
+        "data": {
+          "form": "form"
+        },
+        "config": {
+          "actions": "none"
+        },
+        "name": "Workflow read-only details",
+        "description": "Read-only form displaying an existing workflow definition, case object mapping, and steps.",
+        "id": "builtin-product-ontology-workflows-view-form"
+      },
+      "createForm": {
+        "component": "ObjectForm",
+        "type": "platform:Workflow",
+        "data": {
+          "createForm": "createForm"
+        },
+        "operation": "platform:Workflow.save",
+        "config": {
+          "actions": "none"
+        },
+        "name": "Create workflow draft form",
+        "description": "Form for authoring and saving a new workflow draft through platform:Workflow.save.",
+        "id": "builtin-product-ontology-workflows-create-form"
+      },
+      "grantsHeader": {
+        "component": "ObjectHeader",
+        "type": "platform:Workflow",
+        "target": "inspectingGrants",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "subtitleField": "version",
+          "statusField": "status"
+        },
+        "name": "Inspected workflow header",
+        "description": "Displays the name, version, and status of the workflow whose effective grants are being inspected.",
+        "id": "builtin-product-ontology-workflows-grants-header"
+      },
+      "grantCaseScopedSteps": {
+        "component": "ObjectList",
+        "type": "platform:Workflow",
+        "target": "inspectingGrants",
+        "data": {
+          "rows": "grantCaseScopedSteps"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "grants.emptyCaseScoped",
+          "columns": [
+            {
+              "key": "roleCode",
+              "width": 160
+            },
+            {
+              "key": "stepName",
+              "minWidth": 160
+            },
+            {
+              "key": "actionName",
+              "minWidth": 160
+            }
+          ]
+        },
+        "name": "Case-scoped workflow steps",
+        "description": "Steps authorized per run for the current assignee without writing role-level grants.",
+        "id": "builtin-product-ontology-workflows-grants-case-scoped"
+      },
+      "grantInForce": {
+        "component": "ObjectList",
+        "type": "platform:Workflow",
+        "target": "inspectingGrants",
+        "data": {
+          "rows": "grantInForce"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "grants.emptyInForce",
+          "columns": [
+            {
+              "key": "roleCode",
+              "width": 180
+            },
+            {
+              "key": "capabilities",
+              "kind": "tags",
+              "wrap": true,
+              "minWidth": 260
+            }
+          ]
+        },
+        "name": "Effective grants in force",
+        "description": "Role capability grants currently in force for this workflow's active revision.",
+        "id": "builtin-product-ontology-workflows-grants-in-force"
+      },
+      "grantSuperseded": {
+        "component": "ObjectList",
+        "type": "platform:Workflow",
+        "target": "inspectingGrants",
+        "data": {
+          "rows": "grantSuperseded"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "grants.emptySuperseded",
+          "columns": [
+            {
+              "key": "roleCode",
+              "width": 180
+            },
+            {
+              "key": "capabilities",
+              "kind": "tags",
+              "wrap": true,
+              "minWidth": 260
+            }
+          ]
+        },
+        "name": "Superseded historical grants",
+        "description": "Stored grant rows left by earlier revisions of this workflow that are no longer granted.",
+        "id": "builtin-product-ontology-workflows-grants-superseded"
+      },
+      "grantDirect": {
+        "component": "ObjectList",
+        "type": "platform:Workflow",
+        "target": "inspectingGrants",
+        "data": {
+          "rows": "grantDirect"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "emptyText": "grants.emptyDirect",
+          "columns": [
+            {
+              "key": "roleCode",
+              "width": 180
+            },
+            {
+              "key": "capabilities",
+              "kind": "tags",
+              "wrap": true,
+              "minWidth": 260
+            }
+          ]
+        },
+        "name": "Direct domain grants",
+        "description": "Capability grants created directly in this domain without a workflow owner.",
+        "id": "builtin-product-ontology-workflows-grants-direct"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "pageTitle": "Workflows",
+        "pageDescription": "Define workflow steps, execution roles, and case record permissions",
+        "searchPlaceholder": "Search by workflow name, description, steps, or owner",
+        "empty": "No workflows yet.",
+        "noMatch": "No matching workflows.",
+        "col.name": "Workflow",
+        "col.actions": "Actions",
+        "action.refresh": "Refresh",
+        "action.newWorkflow": "New workflow",
+        "action.view": "View",
+        "action.grants": "Grants",
+        "action.activate": "Activate",
+        "action.deactivate": "Deactivate",
+        "action.delete": "Delete",
+        "action.close": "Close",
+        "action.cancel": "Cancel",
+        "action.saveDraft": "Save draft",
+        "view.title": "Workflow details",
+        "view.titleNamed": "Workflow details — {name}",
+        "create.title": "New workflow",
+        "grants.title": "Authority in force",
+        "grants.titleNamed": "Authority in force — {name}",
+        "grants.desc": "What this workflow's active revision actually lets roles run. The executor asks only whether a subject may run an action, so this records what an activation approved.",
+        "grants.caseScopedTitle": "Case-scoped steps",
+        "grants.caseScopedHint": "These steps are authorized per run for the current assignee. Activation intentionally writes no role-level grant.",
+        "grants.emptyCaseScoped": "No case-scoped steps in this workflow.",
+        "grants.inForceTitle": "Current revision grants in force",
+        "grants.inForceHint": "Capabilities currently granted to roles by this workflow's active revision.",
+        "grants.emptyInForce": "This workflow currently grants no role-level permissions.",
+        "grants.supersededTitle": "Stored but no longer granted",
+        "grants.supersededHint": "Left by an earlier revision. The executor accepts only the revision in force, so these rows convey no authority.",
+        "grants.emptySuperseded": "No superseded historical grants for this workflow.",
+        "grants.directTitle": "Granted directly in this domain",
+        "grants.directHint": "Not written by any workflow. They stand on their own, so deactivating a workflow never withdraws them.",
+        "grants.emptyDirect": "No direct grants in this domain.",
+        "grants.refresh": "Refresh authority",
+        "notify.saved": "Workflow draft saved."
+      },
+      "zh-CN": {
+        "pageTitle": "工作流",
+        "pageDescription": "定义流程步骤、执行角色与单据权限",
+        "searchPlaceholder": "按工作流名称、说明、步骤或负责人搜索",
+        "empty": "暂无工作流",
+        "noMatch": "无匹配结果",
+        "col.name": "名称",
+        "col.actions": "操作",
+        "action.refresh": "刷新",
+        "action.newWorkflow": "新建工作流",
+        "action.view": "查看",
+        "action.grants": "授权",
+        "action.activate": "激活",
+        "action.deactivate": "失效",
+        "action.delete": "删除",
+        "action.close": "关闭",
+        "action.cancel": "取消",
+        "action.saveDraft": "保存草稿",
+        "view.title": "查看工作流",
+        "view.titleNamed": "查看工作流 — {name}",
+        "create.title": "新建工作流",
+        "grants.title": "生效中授权",
+        "grants.titleNamed": "生效中授权 — {name}",
+        "grants.desc": "本流程当前生效版本实际允许各角色执行的能力清单。执行器只判定某主体能否运行动作，此处完整呈现激活后落地的权限记录。",
+        "grants.caseScopedTitle": "按实例授权步骤",
+        "grants.caseScopedHint": "这些步骤按运行实例动态授予当前处理人，激活时不会写入角色级固定授权。",
+        "grants.emptyCaseScoped": "当前流程没有按实例授权的步骤。",
+        "grants.inForceTitle": "本流程当前生效授权",
+        "grants.inForceHint": "本流程当前生效版本向各角色授予的能力权限。",
+        "grants.emptyInForce": "本流程当前未授予任何角色级权限。",
+        "grants.supersededTitle": "本流程已失效的历史修订授权",
+        "grants.supersededHint": "由更早修订版本留下的历史记录；执行器仅认可当前生效版本，这些记录不再授予权限。",
+        "grants.emptySuperseded": "当前流程没有已失效的历史修订授权。",
+        "grants.directTitle": "本域直接授权",
+        "grants.directHint": "不归属于任何流程的手动直接授权；流程失效时不会撤回这些权限。",
+        "grants.emptyDirect": "本域当前没有直接授权。",
+        "grants.refresh": "刷新授权",
+        "notify.saved": "已保存工作流草稿"
+      }
+    }
+  }
+}

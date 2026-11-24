@@ -136,14 +136,19 @@ it("skips reading legacy native page counts for inactive apps and never attaches
       },
     ],
   };
+  const catalog = catalogFixture().map((app) =>
+    app.id === "ontology" && app.panelUses
+      ? { ...app, panelUses: app.panelUses.filter((use) => use.path !== "/ontology/assets/workflows") }
+      : app,
+  );
   const access = closedAccess(["ontology-modeling", "action-management"]);
-  const inactive = appDeclarations(navigation, access, catalogPartition(catalogFixture(), "en"), t, () => false);
+  const inactive = appDeclarations(navigation, access, catalogPartition(catalog, "en"), t, () => false);
   expect(nativeCalled).toBe(0);
   expect(entryCalled).toBe(0);
   expect(inactive.find((app) => app.id === "ontology")!.groups!.flatMap((g) => g.pages)
     .find((p) => p.id === "/ontology/assets/workflows")?.count).toBeUndefined();
 
-  const active = appDeclarations(navigation, access, catalogPartition(catalogFixture(), "en"), t, (id) => id === "ontology");
+  const active = appDeclarations(navigation, access, catalogPartition(catalog, "en"), t, (id) => id === "ontology");
   expect(nativeCalled).toBe(1);
   expect(entryCalled).toBe(0);
   const ontologyPages = active.find((app) => app.id === "ontology")!.groups!.flatMap((g) => g.pages);

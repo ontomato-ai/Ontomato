@@ -92,6 +92,11 @@
       "id": "ontology-action-detail", "pageKey": "action-detail", "panelId": "builtin-product-ontology-action-detail",
       "path": "/ontology/assets/actions/detail", "access": {"permissionCode": "action-management"}
     }, {
+      "id": "ontology-workflows", "pageKey": "ontology-workflows", "panelId": "builtin-product-ontology-workflows",
+      "path": "/ontology/assets/workflows", "access": {"permissionCode": "action-management"},
+      "descriptions": {"en": "Define workflow steps, execution roles, and case record permissions", "zh-CN": "定义流程步骤、执行角色与单据权限"},
+      "names": {"en": "Workflows", "zh-CN": "工作流"}, "groupKey": "capabilities"
+    }, {
       "id": "ontology-triggers", "pageKey": "ontology-triggers", "panelId": "builtin-product-ontology-triggers",
       "path": "/ontology/assets/triggers", "access": {"permissionCode": "action-management"},
       "descriptions": {"en": "Define when workflows start", "zh-CN": "配置流程的启动时机"},
