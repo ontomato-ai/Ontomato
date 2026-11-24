@@ -610,6 +610,9 @@ async function handleDiscardAction(
     if (unmounted || !mounted || panel.instance.isDisposed()) {
       return { ok: false, message: "The form was closed or unmounted." };
     }
+    if (formContextChanged()) {
+      return { ok: false, message: "The form target or fixed values changed." };
+    }
     if (!target.value || !opened.value || loading.value || asking.value || failure.value) {
       return { ok: false, message: "The form is no longer ready." };
     }
@@ -803,8 +806,9 @@ watch([requestedTarget, requestedFixedValues, memberInputKey], async () => {
     }
     return;
   }
-  if (canSettle.value && panel.instance.forms.probing) return;
-  const shouldDiscard = canSettle.value && !saving.value;
+  const probing = panel.instance.forms.probing;
+  if (probing && dirty.value) return;
+  const shouldDiscard = !probing && canSettle.value && !saving.value;
   if (shouldDiscard) {
     confirmingSwitch = true;
     let leave: boolean;
@@ -1510,7 +1514,7 @@ useProjectionForm({
     };
   },
   submit: (override) => write(override),
-  dirty: () => canSettle.value,
+  dirty: () => dirty.value,
   discard,
   draft: {
     identity: draftIdentity,
@@ -1774,6 +1778,9 @@ async function write(override?: FormSubmitOverride, agentContext?: PanelAgentAct
   const evaluateSaveSubmission: SubmissionEvaluator = (phase: SubmissionCheckPhase) => {
     if (unmounted || !mounted || panel.instance.isDisposed()) {
       return { ok: false, message: "The form was closed or unmounted." };
+    }
+    if (formContextChanged()) {
+      return { ok: false, message: "The form target or fixed values changed." };
     }
     if (!target.value || !opened.value) {
       return { ok: false, message: "The form no longer has an active target." };
