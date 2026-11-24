@@ -15,6 +15,7 @@ await mountPanel({
     const narrow = usePanelNarrow(rootRef);
 
     const selectedNode = computed(() => values.value.selectedNode ?? null);
+    const selectedNodeKey = computed(() => selectedNode.value?.primaryKey ?? "");
     const selectedEdge = computed(() => values.value.selectedEdge ?? null);
     const selectedAttribute = computed(() => values.value.selectedAttribute ?? null);
     const dialog = computed(() => values.value.dialog ?? null);
@@ -24,7 +25,12 @@ await mountPanel({
     const nodeHeaderLabel = usePanelOutput("nodeHeader", "label");
     const edgeHeaderStatus = usePanelOutput("edgeHeader", "status");
     const edgeHeaderLabel = usePanelOutput("edgeHeader", "label");
-    const attributesTotal = usePanelOutput("attributes", "total");
+    const attributesOutputTotal = usePanelOutput("attributes", "total");
+    const attributesListedCount = ref(null);
+    const attributesTotal = computed(() => attributesOutputTotal.value ?? attributesListedCount.value);
+    const onAttributesListed = (refs) => {
+      attributesListedCount.value = Array.isArray(refs) ? refs.length : null;
+    };
 
     const selectedNodeLabel = computed(() =>
       (typeof nodeHeaderLabel.value === "string" && nodeHeaderLabel.value) || selectedNode.value?.primaryKey || "",
@@ -38,51 +44,97 @@ await mountPanel({
     const edgeMissing = computed(() =>
       Boolean(selectedEdge.value) && (edgeHeaderStatus.value === "error" || edgeHeaderStatus.value === "forbidden"),
     );
+    const nodeEverReady = ref(false);
+    const edgeEverReady = ref(false);
 
     const clearSelection = () => {
       instance.state.setState({
         selectedNode: null,
         selectedEdge: null,
         selectedAttribute: null,
-        className: null,
       });
     };
 
-    // Keep the plain `className` parameter synced with `selectedNode`; preserve a deep-linked
-    // attribute on initial mount or atomic state patch, and clear it when switching to another node.
+    // Keep node/edge selection mutually exclusive (latest patched wins), reset ready tracking on target switch,
+    // and clear selectedAttribute unless preserved on initial mount or supplied in the same atomic patch.
     watch(
-      () => selectedNode.value?.primaryKey ?? null,
-      (nextKey, prevKey) => {
-        const explicitAttr = instance.state.lastPatchedKeys.has("selectedAttribute");
-        const clearAttr = !nextKey || (prevKey !== undefined && nextKey !== prevKey && !explicitAttr);
-        const patch = { className: nextKey };
-        if (clearAttr && selectedAttribute.value !== null) patch.selectedAttribute = null;
-        if (values.value.className !== nextKey || "selectedAttribute" in patch) {
+      [() => selectedNode.value?.primaryKey ?? null, () => selectedEdge.value?.primaryKey ?? null],
+      ([nextNodeKey, nextEdgeKey], prev) => {
+        const [prevNodeKey, prevEdgeKey] = prev ?? [undefined, undefined];
+        const patched = instance.state.lastPatchedKeys;
+
+        if (nextNodeKey !== prevNodeKey) {
+          nodeEverReady.value = false;
+          attributesListedCount.value = null;
+        }
+        if (nextEdgeKey !== prevEdgeKey) edgeEverReady.value = false;
+
+        const patch = {};
+        let effectiveNodeKey = nextNodeKey;
+
+        if (nextNodeKey && nextEdgeKey) {
+          if (patched.has("selectedEdge") && !patched.has("selectedNode")) {
+            patch.selectedNode = null;
+            effectiveNodeKey = null;
+            if (selectedAttribute.value !== null) patch.selectedAttribute = null;
+          } else {
+            patch.selectedEdge = null;
+          }
+        }
+
+        const explicitAttr = patched.has("selectedAttribute");
+        const nodeSwitched = prevNodeKey !== undefined && effectiveNodeKey !== prevNodeKey;
+        const clearAttr = !effectiveNodeKey || (nodeSwitched && !explicitAttr);
+        if (clearAttr && selectedAttribute.value !== null) {
+          patch.selectedAttribute = null;
+        }
+
+        if (Object.keys(patch).length > 0) {
           instance.state.setState(patch);
         }
       },
       { immediate: true },
     );
 
-    // Clear selection when a previously loaded object type or relationship disappears (for example deleted via agent).
-    watch(nodeHeaderStatus, (next, prev) => {
-      if (prev === "ready" && (next === "error" || next === "empty") && selectedNode.value) {
-        clearSelection();
-      }
-    });
-    watch(edgeHeaderStatus, (next, prev) => {
-      if (prev === "ready" && (next === "error" || next === "empty") && selectedEdge.value) {
-        clearSelection();
-      }
-    });
+    // Record once a selected target loads successfully so transient refresh read failures keep forms mounted in place.
+    watch(
+      nodeHeaderStatus,
+      (status) => {
+        if (status === "ready" && selectedNode.value) nodeEverReady.value = true;
+      },
+      { immediate: true },
+    );
+    watch(
+      edgeHeaderStatus,
+      (status) => {
+        if (status === "ready" && selectedEdge.value) edgeEverReady.value = true;
+      },
+      { immediate: true },
+    );
 
     // Shift-dragging from one node to another populates connectFrom/connectTo; open the create-relation dialog with them.
     watch(
-      () => [values.value.connectFrom, values.value.connectTo],
+      [() => values.value.connectFrom, () => values.value.connectTo],
       ([from, to]) => {
-        if (from && to && values.value.dialog !== "relation") instance.state.set("dialog", "relation");
+        if (from && to && values.value.dialog !== "relation") {
+          instance.state.setState({ dialog: "relation", connectFrom: from, connectTo: to });
+        }
       },
     );
+
+    // Clear stale Shift-connect endpoints when the dialog closes or opens cleanly without explicit connect endpoints.
+    watch(dialog, (next) => {
+      const hasStaleConnect = values.value.connectFrom !== null || values.value.connectTo !== null;
+      if (!hasStaleConnect) return;
+      if (next !== "relation") {
+        instance.state.setState({ connectFrom: null, connectTo: null });
+        return;
+      }
+      const patched = instance.state.lastPatchedKeys;
+      if (!patched.has("connectFrom") && !patched.has("connectTo")) {
+        instance.state.setState({ connectFrom: null, connectTo: null });
+      }
+    });
 
     const openClassDialog = () => instance.state.set("dialog", "class");
     const openRelationDialog = () => {
@@ -110,18 +162,11 @@ await mountPanel({
       },
     );
 
-    const classDialog = computed({
-      get: () => dialog.value === "class",
-      set: value => {
-        if (!value && dialog.value === "class") void dialogBack.back();
-      },
-    });
-    const relationDialog = computed({
-      get: () => dialog.value === "relation",
-      set: value => {
-        if (!value && dialog.value === "relation") void dialogBack.back();
-      },
-    });
+    const classDialog = computed(() => dialog.value === "class");
+    const relationDialog = computed(() => dialog.value === "relation");
+    async function handleDialogClose(done) {
+      if (await dialogBack.back()) done();
+    }
 
     const newAttribute = () => instance.state.set("selectedAttribute", null);
     const requestCloseSide = () => void selectionBack.back();
@@ -144,15 +189,20 @@ await mountPanel({
       rootRef,
       narrow,
       selectedNode,
+      selectedNodeKey,
       selectedEdge,
       selectedNodeLabel,
       selectedEdgeLabel,
       nodeMissing,
       edgeMissing,
+      nodeEverReady,
+      edgeEverReady,
       selectedAttribute,
       attributesTotal,
+      onAttributesListed,
       classDialog,
       relationDialog,
+      handleDialogClose,
       openClassDialog,
       openRelationDialog,
       closeDialog,

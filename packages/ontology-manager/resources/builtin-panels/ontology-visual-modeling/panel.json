@@ -22,12 +22,6 @@
         },
         "deepLink": true
       },
-      "className": {
-        "type": {
-          "kind": "scalar",
-          "type": "string"
-        }
-      },
       "dialog": {
         "type": {
           "kind": "scalar",
@@ -183,7 +177,7 @@
             "read": "list",
             "params": {
               "className": {
-                "state": "className"
+                "fromSlot": true
               }
             }
           }
@@ -192,34 +186,64 @@
           "selected": "selectedAttribute"
         },
         "config": {
-          "layout": "table",
-          "showHeader": false,
+          "layout": "cards",
           "showFooter": false,
           "searchable": false,
-          "toggleable": true,
           "emptyText": "visualModeling.noAttributes",
           "columns": [
             {
-              "key": "label",
-              "subtitleKey": "name"
+              "key": "name",
+              "labelKey": "visualModeling.attrApiName"
             },
             {
               "key": "type",
-              "kind": "tag",
-              "width": "84px",
-              "align": "right"
+              "labelKey": "visualModeling.attrType",
+              "kind": "tag"
+            },
+            {
+              "key": "attrDesc",
+              "labelKey": "visualModeling.attrDesc",
+              "emptyKey": "visualModeling.dash",
+              "wrap": true
             },
             {
               "key": "primaryKey",
-              "width": "58px",
-              "align": "right",
+              "labelKey": "visualModeling.attrPrimaryKey",
               "valueMap": {
                 "true": {
-                  "labelKey": "visualModeling.attributePrimaryKeyBadge",
+                  "labelKey": "visualModeling.yes",
                   "tone": "success"
                 },
                 "false": {
-                  "label": "—"
+                  "labelKey": "visualModeling.no"
+                }
+              }
+            },
+            {
+              "key": "businessKey",
+              "labelKey": "visualModeling.attrBusinessKey",
+              "valueMap": {
+                "true": {
+                  "labelKey": "visualModeling.yes",
+                  "tone": "info"
+                },
+                "false": {
+                  "labelKey": "visualModeling.no"
+                }
+              }
+            },
+            {
+              "key": "enable",
+              "labelKey": "visualModeling.attrEnable",
+              "kind": "tag",
+              "valueMap": {
+                "true": {
+                  "labelKey": "visualModeling.enabled",
+                  "tone": "success"
+                },
+                "false": {
+                  "labelKey": "visualModeling.disabled",
+                  "tone": "warning"
                 }
               }
             }
@@ -283,7 +307,17 @@
         "visualModeling.newAttribute": "新建属性",
         "visualModeling.editAttribute": "属性详情",
         "visualModeling.close": "关闭",
-        "visualModeling.attributePrimaryKeyBadge": "主键",
+        "visualModeling.attrApiName": "API 名",
+        "visualModeling.attrType": "数据类型",
+        "visualModeling.attrDesc": "说明",
+        "visualModeling.attrPrimaryKey": "主键",
+        "visualModeling.attrBusinessKey": "业务键",
+        "visualModeling.attrEnable": "启用",
+        "visualModeling.yes": "是",
+        "visualModeling.no": "否",
+        "visualModeling.enabled": "启用",
+        "visualModeling.disabled": "停用",
+        "visualModeling.dash": "—",
         "visualModeling.createClassTitle": "添加对象类型",
         "visualModeling.createRelationTitle": "添加关系类型",
         "visualModeling.openData": "浏览数据"
@@ -303,7 +337,17 @@
         "visualModeling.newAttribute": "New attribute",
         "visualModeling.editAttribute": "Attribute details",
         "visualModeling.close": "Close",
-        "visualModeling.attributePrimaryKeyBadge": "PK",
+        "visualModeling.attrApiName": "API name",
+        "visualModeling.attrType": "Data type",
+        "visualModeling.attrDesc": "Description",
+        "visualModeling.attrPrimaryKey": "Primary key",
+        "visualModeling.attrBusinessKey": "Business key",
+        "visualModeling.attrEnable": "Enabled",
+        "visualModeling.yes": "Yes",
+        "visualModeling.no": "No",
+        "visualModeling.enabled": "Enabled",
+        "visualModeling.disabled": "Disabled",
+        "visualModeling.dash": "—",
         "visualModeling.createClassTitle": "Add object type",
         "visualModeling.createRelationTitle": "Add relation type",
         "visualModeling.openData": "Browse data"
