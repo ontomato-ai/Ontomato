@@ -1,9 +1,13 @@
 import express from "express";
+import { spawn } from "node:child_process";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { runtimeStartRunRequestSchema } from "@ontomato/contracts/agent-runtime";
 import { runtimeBusinessCallbacksSchema, type RuntimeBusinessCallbacks } from "@ontomato/contracts/agent-runtime-business-callbacks";
+import { workbenchServerResourceRoot } from "../../../content/resources";
 
 const mocks = vi.hoisted(() => ({
   profile: vi.fn(),
@@ -134,9 +138,14 @@ function assertCleanEnvironment(env: { values: Record<string, string>; secrets: 
   }
 }
 
-async function callWithCredential(path: string, credential: string, header: "X-Ontomato-Callback-Credential" | "tk" = "X-Ontomato-Callback-Credential") {
+async function callWithCredential(
+  path: string,
+  credential: string,
+  header: "X-Ontomato-Callback-Credential" | "tk" = "X-Ontomato-Callback-Credential",
+  method = "POST",
+) {
   return fetch(`${baseUrl}${path}`, {
-    method: "POST",
+    method,
     headers: { [header]: credential, "X-Ontomato-Run-Id": runId },
   });
 }
@@ -270,4 +279,96 @@ it("supports authoringOnly callback scoping narrowed strictly to authoring/", as
   await assertNarrowedCallbacks(callbacks);
   const workbenchDenied = await callWithCredential(`/api/assistant/executions/${runId}/workbench/api/dashboards`, callbacks.authoring!.credential);
   expect(workbenchDenied.status).toBe(401);
+});
+
+it("keeps platform-mode URLs from page.mjs, dashboard-skill and app-builder inside declared prefixes", async () => {
+  const prep = basePreparation(null);
+  const analystRun = runtimeStartRunRequestSchema.parse(await prepareAnalystRun(prep));
+  prep.a.kind = "app-builder:variant";
+  const builderRun = runtimeStartRunRequestSchema.parse(await prepareAppBuilderRun(prep));
+
+  const seen: { kind: string; method: string; targetPath: string; tk: unknown }[] = [];
+  const relay = express();
+  relay.use(express.json());
+  relay.all("/session/business/:kind/*", async (req, res) => {
+    const kind = req.params.kind as "workbench" | "ontology";
+    const callbacks = kind === "workbench" ? builderRun.businessCallbacks! : analystRun.businessCallbacks!;
+    const declaration = callbacks[kind]!;
+    const suffix = (req.params as Record<string, string>)[0] ?? "";
+    const targetPath = new URL(declaration.baseUrl).pathname + "/" + suffix;
+    expect(targetPath.startsWith(new URL(declaration.baseUrl).pathname + "/")).toBe(true);
+    seen.push({ kind, method: req.method, targetPath, tk: req.header("tk") });
+    const unwrapped = await callWithCredential(targetPath, declaration.credential, "X-Ontomato-Callback-Credential", req.method);
+    expect(unwrapped.status).toBe(200);
+    if (kind === "ontology" && suffix.startsWith("model-options")) {
+      res.json({ data: [] });
+      return;
+    }
+    if (kind === "workbench" && suffix.startsWith("api/dashboards")) {
+      res.json({ data: suffix === "api/dashboards" ? [] : { id: "d1", name: "Board", groups: [] } });
+      return;
+    }
+    res.json({ data: [] });
+  });
+  const relayServer = relay.listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => relayServer.once("listening", resolve));
+  const relayBase = `http://127.0.0.1:${(relayServer.address() as AddressInfo).port}/session`;
+
+  const runNodeScript = (scriptPath: string, args: string[], env: Record<string, string>) =>
+    new Promise<void>((resolve, reject) => {
+      const child = spawn(process.execPath, [scriptPath, ...args], { env });
+      let stderr = "";
+      child.stderr.on("data", chunk => { stderr += chunk; });
+      child.on("error", reject);
+      child.on("close", code => code === 0 ? resolve() : reject(new Error(`${scriptPath} ${args.join(" ")} exited ${code}: ${stderr}`)));
+    });
+
+  try {
+    const sessionEnv = {
+      PATH: process.env.PATH ?? "",
+      ONTOMATO_SKILL_SCENARIO: "platform",
+      ONTOMATO_WORKBENCH_URL: `${relayBase}/business/workbench`,
+      ONTOMATO_ONTOLOGY_URL: `${relayBase}/business/ontology`,
+      ONTOMATO_TK: "session-placeholder-token",
+    };
+
+    const pageScript = path.resolve(workbenchServerResourceRoot, "resources/runtime-skills/ontomato-agent-builder/scripts/page.mjs");
+    await runNodeScript(pageScript, ["list"], sessionEnv);
+    await runNodeScript(pageScript, ["skills"], sessionEnv);
+    await runNodeScript(pageScript, ["models"], sessionEnv);
+    await runNodeScript(pageScript, ["execution-users"], sessionEnv);
+
+    const dashboardScript = path.resolve(workbenchServerResourceRoot, "skills/pages/dashboard-pages/scripts/dashboard-pages.mjs");
+    await runNodeScript(dashboardScript, ["list"], sessionEnv);
+    await runNodeScript(dashboardScript, ["read", "--dashboard-id", "d1"], sessionEnv);
+
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../..");
+    const { currentSdkClient } = await import(path.join(repoRoot, "agent-skills/ontomato-app-builder/scripts/current-sdk.mjs"));
+    const { panelRegistrationClient } = await import(path.join(repoRoot, "agent-skills/ontomato-app-builder/scripts/panel-registration.mjs"));
+    const sdk = currentSdkClient({ workbenchUrl: sessionEnv.ONTOMATO_WORKBENCH_URL, headers: { tk: sessionEnv.ONTOMATO_TK } });
+    await sdk.current();
+    await sdk.read({ publicBasePath: "", sdkBasePath: "/apps-sdk/current" }, "sdk.json");
+    const registration = panelRegistrationClient({
+      workbenchUrl: sessionEnv.ONTOMATO_WORKBENCH_URL,
+      ontologyUrl: sessionEnv.ONTOMATO_ONTOLOGY_URL,
+      headers: { tk: sessionEnv.ONTOMATO_TK },
+    });
+    await registration.deletePanel("panel-1");
+    await registration.deleteApplication("app-1");
+
+    expect(seen).toEqual([
+      { kind: "workbench", method: "GET", targetPath: `/api/assistant/executions/${runId}/workbench/api/assistant/agent-definitions`, tk: "session-placeholder-token" },
+      { kind: "workbench", method: "GET", targetPath: `/api/assistant/executions/${runId}/workbench/api/assistant/agent-skills`, tk: "session-placeholder-token" },
+      { kind: "ontology", method: "GET", targetPath: `/api/assistant/executions/${runId}/ontology/model-options`, tk: "session-placeholder-token" },
+      { kind: "ontology", method: "GET", targetPath: `/api/assistant/executions/${runId}/ontology/platform/agent-execution/options`, tk: "session-placeholder-token" },
+      { kind: "workbench", method: "GET", targetPath: `/api/assistant/executions/${runId}/workbench/api/dashboards`, tk: "session-placeholder-token" },
+      { kind: "workbench", method: "GET", targetPath: `/api/assistant/executions/${runId}/workbench/api/dashboards/d1`, tk: "session-placeholder-token" },
+      { kind: "workbench", method: "GET", targetPath: `/api/assistant/executions/${runId}/workbench/api/apps-sdk/current`, tk: "session-placeholder-token" },
+      { kind: "workbench", method: "GET", targetPath: `/api/assistant/executions/${runId}/workbench/apps-sdk/current/sdk.json`, tk: "session-placeholder-token" },
+      { kind: "workbench", method: "DELETE", targetPath: `/api/assistant/executions/${runId}/workbench/api/product-panels/panel-1`, tk: "session-placeholder-token" },
+      { kind: "ontology", method: "DELETE", targetPath: `/api/assistant/executions/${runId}/ontology/platform/applications/app-1`, tk: "session-placeholder-token" },
+    ]);
+  } finally {
+    await new Promise<void>((resolve, reject) => relayServer.close(err => err ? reject(err) : resolve()));
+  }
 });

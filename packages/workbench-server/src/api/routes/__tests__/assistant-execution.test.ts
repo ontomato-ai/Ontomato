@@ -41,8 +41,6 @@ it('restores the initiator before resolving the executor and forwards only ordin
 it.each([
  'ontology/ontology/ai/generation/gates',
  'ontology/ontology/ai/generation/platform/action/test',
- 'ontology/action/save',
- 'ontology/metricView/save',
  'ontology/action/generateFromNatureLanguage',
  'ontology/metricView/generateFromNatureLanguage',
  'ontology/ontology/retrievals/skill-runs','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other,'ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs/'+other+'/content','ontology/ontology/retrievals/'+run+'/skill-runs/'+run+'/close','ontology/ontology/retrievals/'+run+'/runs/'+run+'/outputs','ontology/platform/agent-channel/commands','ontology/internal/agent-execution/resolve','ontology/agent-principals/execution','ontology/https%3A%2F%2Fevil.test','workbench/internal/agent-channel/prepare'])('refuses an out-of-scope path %s before resolving any key',async path=>{
@@ -54,10 +52,11 @@ it('keeps an existing query Grant separate from callback authentication',async()
  expect((await call('ontology/ontology/ai/knowledge-governance/record/runs/'+run+'/actions/read_work_record',{tk:'oq.existing.grant'})).status).toBe(200);
  expect((upstream.mock.calls[0] as unknown as [string,NonNullable<Parameters<typeof fetch>[1]>])[1].headers).toMatchObject({tk:'oq.existing.grant'});
 });
-it('keeps path, run and expiry checks while accepting only GET and POST',async()=>{
+it('keeps path, run, expiry and HTTP method checks at the callback boundary',async()=>{
  const upstream=vi.fn(async()=>Response.json({ok:true}));vi.stubGlobal('fetch',upstream);
- expect((await call('workbench/api/assistant/agents',{},'PUT')).status).toBe(401);
- expect((await call('workbench/api/assistant/agents',{},'DELETE')).status).toBe(401);
+ expect((await call('workbench/api/assistant/agents',{},'PUT')).status).toBe(403);
+ expect((await call('workbench/api/assistant/agents',{},'DELETE')).status).toBe(403);
+ expect((await call('workbench/api/assistant/agents',{},'OPTIONS')).status).toBe(401);
  expect((await call('workbench/api/assistant/agents',{},'GET')).status).toBe(200);
  expect((await call('ontology/ontology/query/overview',{'X-Ontomato-Run-Id':other})).status).toBe(401);
  const expired=callbackCredential({pathPrefix:`/api/assistant/executions/${run}/`,runId:run,expiresAt:Date.now()-1,token:'initiator-token',apiKey:''}).value;
@@ -254,22 +253,126 @@ it.each([
   expect(upstream).not.toHaveBeenCalled();
 });
 
-it.each(["PUT", "DELETE"])("rejects %s for a task at the existing callback credential boundary", async method => {
-  expect((await call(`ontology/platform/scheduled-tasks/${other}`, {}, method)).status).toBe(401);
+it.each(["PUT", "DELETE"])("forbids %s for a scheduled task before resolving the executor", async method => {
+  const upstream = vi.fn();
+  vi.stubGlobal("fetch", upstream);
+  expect((await call(`ontology/platform/scheduled-tasks/${other}`, {}, method)).status).toBe(403);
   expect(mocks.restore).not.toHaveBeenCalled();
+  expect(upstream).not.toHaveBeenCalled();
 });
 
 it.each([
   ["GET", "product-projections/chart-sources?dashboardId=board&cardId=card", 200],
   ["GET", "product-projections/projection/chart-source", 200],
-  ["POST", "product-projections/chart-sources", 403],
-  ["PUT", "product-projections/projection/chart-source", 401],
-])("only proxies the declared chart read pairs, %s %s", async (method, path, status) => {
+  ["POST", "product-projections/chart-sources", 200],
+  ["PUT", "product-projections/projection/chart-source", 403],
+])("proxies declared chart operations and rejects undeclared ones, %s %s", async (method, path, status) => {
   const upstream = vi.fn(async (_url: string) => Response.json({}));
   vi.stubGlobal("fetch", upstream);
   expect((await call("workbench/api/" + path, {}, method)).status).toBe(status);
   if (status === 200) expect(upstream).toHaveBeenCalledWith("http://workbench.test/api/" + path, expect.anything());
   else expect(upstream).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["GET", "workbench/apps-sdk/current/sdk.json", "http://workbench.test/apps-sdk/current/sdk.json"],
+  ["GET", "workbench/api/apps-sdk/current", "http://workbench.test/api/apps-sdk/current"],
+  ["GET", "workbench/api/app-builder/type-table", "http://workbench.test/api/app-builder/type-table"],
+  ["GET", "workbench/api/component-packages/my-pkg", "http://workbench.test/api/component-packages/my-pkg"],
+  ["GET", "workbench/api/component-packages/%40scope%2Fpkg", "http://workbench.test/api/component-packages/%40scope%2Fpkg"],
+  ["GET", "workbench/api/domain-components", "http://workbench.test/api/domain-components"],
+  ["POST", "workbench/api/domain-components", "http://workbench.test/api/domain-components"],
+  ["GET", "workbench/api/domain-components/domain-component%3Acard", "http://workbench.test/api/domain-components/domain-component:card"],
+  ["PUT", "workbench/api/domain-components/domain-component%3Acard", "http://workbench.test/api/domain-components/domain-component:card"],
+  ["GET", "workbench/api/workspaces?page=1", "http://workbench.test/api/workspaces?page=1"],
+  ["POST", "workbench/api/workspaces", "http://workbench.test/api/workspaces"],
+  ["GET", `workbench/api/workspaces/${other}`, `http://workbench.test/api/workspaces/${other}`],
+  ["PATCH", `workbench/api/workspaces/${other}`, `http://workbench.test/api/workspaces/${other}`],
+  ["DELETE", `workbench/api/workspaces/${other}`, `http://workbench.test/api/workspaces/${other}`],
+  ["GET", `workbench/api/workspaces/${other}/tree`, `http://workbench.test/api/workspaces/${other}/tree`],
+  ["GET", `workbench/api/workspaces/${other}/files/content?path=panel.json`, `http://workbench.test/api/workspaces/${other}/files/content?path=panel.json`],
+  ["GET", `workbench/api/workspaces/${other}/panel-candidate?ref=working`, `http://workbench.test/api/workspaces/${other}/panel-candidate?ref=working`],
+  ["GET", `workbench/api/workspaces/${other}/build-tests`, `http://workbench.test/api/workspaces/${other}/build-tests`],
+  ["POST", `workbench/api/workspaces/${other}/build-tests`, `http://workbench.test/api/workspaces/${other}/build-tests`],
+  ["DELETE", `workbench/api/workspaces/${other}/build-tests`, `http://workbench.test/api/workspaces/${other}/build-tests`],
+  ["POST", `workbench/api/workspaces/${other}/import`, `http://workbench.test/api/workspaces/${other}/import`],
+  ["POST", `workbench/api/workspaces/${other}/publish`, `http://workbench.test/api/workspaces/${other}/publish`],
+  ["GET", "workbench/api/product-panels/panel-1", "http://workbench.test/api/product-panels/panel-1"],
+  ["PUT", "workbench/api/product-panels/panel-1", "http://workbench.test/api/product-panels/panel-1"],
+  ["DELETE", "workbench/api/product-panels/panel-1", "http://workbench.test/api/product-panels/panel-1"],
+  ["GET", "workbench/api/product-projections/proj-1", "http://workbench.test/api/product-projections/proj-1"],
+  ["PUT", "workbench/api/product-projections/proj-1", "http://workbench.test/api/product-projections/proj-1"],
+  ["GET", "workbench/api/product-projections/proj-1/used-by", "http://workbench.test/api/product-projections/proj-1/used-by"],
+  ["PUT", "workbench/api/product-assets/asset-1", "http://workbench.test/api/product-assets/asset-1"],
+  ["DELETE", "workbench/api/product-assets/asset-1", "http://workbench.test/api/product-assets/asset-1"],
+  ["POST", "workbench/api/dashboards/create", "http://workbench.test/api/dashboards/create"],
+  ["GET", "ontology/admin/getDatasetDesc", "http://ontology.test/admin/getDatasetDesc"],
+  ["GET", "ontology/admin/getAllClassNames", "http://ontology.test/admin/getAllClassNames"],
+  ["POST", "ontology/admin/getSchemaByClassName", "http://ontology.test/admin/getSchemaByClassName"],
+  ["POST", "ontology/admin/getRelationshipByClassNames", "http://ontology.test/admin/getRelationshipByClassNames"],
+  ["POST", "ontology/vectorResource/upload", "http://ontology.test/vectorResource/upload"],
+  ["POST", "ontology/vectorResource/delete", "http://ontology.test/vectorResource/delete"],
+  ["POST", "ontology/action/save", "http://ontology.test/action/save"],
+  ["POST", "ontology/action/delete", "http://ontology.test/action/delete"],
+  ["POST", "ontology/metricView/save", "http://ontology.test/metricView/save"],
+  ["POST", "ontology/metricView/delete", "http://ontology.test/metricView/delete"],
+  ["POST", "ontology/function/save", "http://ontology.test/function/save"],
+  ["POST", "ontology/function/delete", "http://ontology.test/function/delete"],
+  ["GET", "ontology/platform/applications?purpose=navigation", "http://ontology.test/platform/applications?purpose=navigation"],
+  ["GET", "ontology/platform/applications/catalogue/app-1", "http://ontology.test/platform/applications/catalogue/app-1"],
+  ["GET", "ontology/platform/applications/app-1/panel-uses", "http://ontology.test/platform/applications/app-1/panel-uses"],
+  ["PUT", "ontology/platform/applications/app-1/panel-uses", "http://ontology.test/platform/applications/app-1/panel-uses"],
+  ["PUT", "ontology/platform/applications/app-1/identity", "http://ontology.test/platform/applications/app-1/identity"],
+  ["DELETE", "ontology/platform/applications/app-1", "http://ontology.test/platform/applications/app-1"],
+  ["GET", "ontology/user/getCur", "http://ontology.test/user/getCur"],
+  ["POST", "ontology/workflow/subjects", "http://ontology.test/workflow/subjects"],
+  ["POST", "ontology/workflow/grants", "http://ontology.test/workflow/grants"],
+])("forwards registered skill callback %s %s to %s", async (method, path, expectedUrl) => {
+  const upstream = vi.fn(async () => method === "DELETE" ? new Response(null, { status: 204 }) : Response.json({ ok: true }));
+  vi.stubGlobal("fetch", upstream);
+  const response = await call(path, {}, method);
+  expect(response.status).toBe(method === "DELETE" ? 204 : 200);
+  expect(upstream).toHaveBeenCalledWith(expectedUrl, expect.objectContaining({ method, redirect: "error" }));
+});
+
+it.each([
+  ["POST", "workbench/api/component-packages/install"],
+  ["GET", "workbench/api/component-packages/install"],
+  ["GET", "workbench/api/app-builder/bootstrap"],
+  ["GET", "workbench/api/app-builder/agents"],
+  ["GET", `workbench/api/workspaces/applications/app-1/policy`],
+  ["POST", `workbench/api/workspaces/${other}/preview-token`],
+  ["POST", `workbench/api/workspaces/${other}/export`],
+  ["DELETE", "workbench/api/domain-components/domain-component:card"],
+  ["GET", "workbench/api/domain-components/domain-component:card/used-by"],
+  ["PUT", "workbench/api/product-panels/personal-state"],
+  ["DELETE", "workbench/api/product-projections/proj-1"],
+  ["PUT", "workbench/api/product-projections/chart-sources"],
+  ["PUT", "workbench/api/dashboards/board-1"],
+  ["DELETE", "workbench/api/dashboards/board-1"],
+  ["POST", "ontology/admin/unknown"],
+  ["GET", "ontology/action/save"],
+  ["POST", "ontology/platform/applications/app-1/other"],
+  ["DELETE", "ontology/platform/applications/catalogue"],
+])("forbids unlisted skill route or method %s %s", async (method, path) => {
+  const upstream = vi.fn();
+  vi.stubGlobal("fetch", upstream);
+  expect((await call(path, {}, method)).status).toBe(403);
+  expect(upstream).not.toHaveBeenCalled();
+});
+
+it("forwards execution-context and reuse-panel headers when supplied", async () => {
+  const upstream = vi.fn(async (_url: string, _request?: Parameters<typeof fetch>[1]) => Response.json({ ok: true }));
+  vi.stubGlobal("fetch", upstream);
+  const response = await call("workbench/api/product-projections/proj-1", {
+    "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test", contextId: "ctx-1" }),
+    "X-Ontomato-Projection-Reuse-Panel": "panel-1",
+  }, "PUT");
+  expect(response.status).toBe(200);
+  expect(upstream.mock.calls[0]?.[1]?.headers).toMatchObject({
+    "X-Ontomato-Execution-Context": JSON.stringify({ kind: "build-test", contextId: "ctx-1" }),
+    "X-Ontomato-Projection-Reuse-Panel": "panel-1",
+  });
 });
 
 it("accepts author parameters only through the registered method and the run's callback", async () => {
