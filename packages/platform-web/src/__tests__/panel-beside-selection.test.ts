@@ -151,6 +151,7 @@ vi.mock("../panel-host", () => ({
   }),
   readApplicationFrameManifest: vi.fn(),
   platformPanelHost: () => createPort(),
+  onPanelReadDenied: () => () => {},
 }));
 
 const PanelApplicationRoute = (await import("../pages/PanelApplicationRoute.vue")).default;
