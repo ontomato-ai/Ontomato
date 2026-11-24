@@ -93,6 +93,9 @@ const rowActionWhenSchema = z.union([
 const rowActionBaseFields = {
   labelKey: panelMessageKeySchema.optional(),
   label: z.string().min(1).optional(),
+  icon: z.string().min(1).optional(),
+  iconOnly: z.boolean().optional(),
+  active: z.boolean().optional(),
   danger: z.boolean().optional(),
   primary: z.boolean().optional(),
   when: rowActionWhenSchema,
@@ -124,6 +127,7 @@ export const panelObjectListRowActionsSchema = z.object({
   align: z.enum(["left", "center", "right"]).optional(),
   maxVisible: z.number().int().min(0).optional(),
   fixed: z.union([z.literal("right"), z.literal(false)]).optional(),
+  placement: z.enum(["footer", "header"]).optional(),
   items: z.array(panelObjectListRowActionItemSchema),
 }).strict();
 export type PanelObjectListRowActions = z.infer<typeof panelObjectListRowActionsSchema>;
@@ -230,6 +234,8 @@ export const panelReadParameterSchemas = {
   productTemplate: productPanelCatalogQuerySchema.shape.template.unwrap(),
   applicationScope: applicationCatalogueScopeSchema,
   applicationSort: applicationCatalogueSortSchema,
+  applicationGalleryCategory: z.enum(["all", "business", "agents", "build", "admin"]),
+  favoritesOnly: z.boolean(),
   applicationFormSection: applicationFormSectionSchema.exclude(["create"]),
   applicationEntryId: z.string().min(1),
   formValues: formValuesSchema,
@@ -291,10 +297,12 @@ export function panelReadInputMatches(parameter: PanelReadParameterId, input: Re
     case "productSort":
     case "applicationScope":
     case "applicationSort":
+    case "applicationGalleryCategory":
     case "applicationFormSection":
     case "applicationEntryId":
       return input?.kind === "scalar" && input.type === "string";
     case "productTemplate":
+    case "favoritesOnly":
       return input?.kind === "scalar" && input.type === "boolean";
     case "size":
     case "neighborsLimit":

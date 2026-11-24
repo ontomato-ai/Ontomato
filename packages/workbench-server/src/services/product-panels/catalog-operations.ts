@@ -19,7 +19,8 @@ import {
   deleteProductPanelQuerySchema, deleteProductPanelResponseSchema, productCurrentIdParamsSchema,
   registerProductPanelRequestSchema, registerProductProjectionRequestSchema,
 } from "@ontomato/contracts/product-panels";
-import { APPLICATION, APPLICATION_PANEL_USE, OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, APPLICATION_PANEL_USE, FAVORITE_APPLICATION, OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION, UNFAVORITE_APPLICATION } from "@ontomato/contracts/platform-object-types";
+import { addHomeFavorite, removeHomeFavorite } from "../platform-home/service";
 import { HttpError } from "../../utils/errors";
 import { BackendResponseError } from "../../utils/backend-client";
 import { createLogger } from "../../logging/logger";
@@ -505,8 +506,57 @@ async function editEntries(
   await java.saveEntries(id, values);
 }
 
+const GALLERY_EXCLUDED_APP_IDS = new Set(["home", "personal-workspace", "workplace", "application-gallery"]);
+
+function applicationFavoriteOperation(mode: "favorite" | "unfavorite"): PanelWriteServerOperation {
+  const handlerRef = mode === "favorite" ? FAVORITE_APPLICATION : UNFAVORITE_APPLICATION;
+  return {
+    handlerRef,
+    binding: { kind: "PlatformOperation", id: handlerRef },
+    labelKey: `panels.productCatalog.${mode}`,
+    kind: "action",
+    effect: "write",
+    batch: false,
+    targetType: APPLICATION,
+    targetInput: "application",
+    targetSchema: applicationTarget,
+    inputSchema: noData,
+    resultSchema: noData,
+    async targetLabel(host, { primaryKey }) {
+      const locale = host.locale ?? host.initiator.credentials.locale ?? "en";
+      try {
+        const apps = await applicationCatalogueClient(host.initiator.credentials).navigation();
+        const found = apps.find(app => app.id === primaryKey);
+        return found ? (localizedApplicationText(found.names, locale) ?? found.id) : primaryKey;
+      } catch {
+        return primaryKey;
+      }
+    },
+    async execute({ locale, executor }, target) {
+      return write(APPLICATION, async () => {
+        const { primaryKey } = writeInput(applicationTarget, target);
+        if (mode === "favorite") {
+          if (GALLERY_EXCLUDED_APP_IDS.has(primaryKey)) {
+            throw new HttpError(422, "This application cannot be pinned", "APPLICATION_FAVORITE_UNSUPPORTED");
+          }
+          const visible = await applicationCatalogueClient(executor.credentials).navigation();
+          if (!visible.some(app => app.id === primaryKey)) {
+            throw new HttpError(403, "Application is unavailable", "APPLICATION_UNAVAILABLE");
+          }
+          await addHomeFavorite(executor.owner, { kind: "application", id: primaryKey });
+        } else {
+          await removeHomeFavorite(executor.owner, { kind: "application", id: primaryKey });
+        }
+        return { primaryKey, data: {} };
+      }, locale ?? executor.credentials.locale);
+    },
+  };
+}
+
 const applicationOperations: readonly PanelWriteServerOperation[] = [
   applicationSave,
+  applicationFavoriteOperation("favorite"),
+  applicationFavoriteOperation("unfavorite"),
   applicationAction(
     "delete",
     noData,

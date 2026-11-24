@@ -32,6 +32,7 @@ import { providePlatformPageCounter } from "./page-counter";
 import { recentDestination } from "./recent-work";
 import { openApplicationKey, platformApplicationsKey, platformBrandKey, type PlatformAppDeclaration } from "./apps";
 import { useApplicationOpening } from "./application-opening";
+import { installPanelApplicationOpener } from "./panel-navigate";
 import { agentBuilderShortcut } from "./application-shortcuts";
 import { workspaceObjectHostKey } from "@ontomato/contracts/workspace-objects";
 import { createWorkspaceObjectHost } from "./workspace-objects";
@@ -150,6 +151,15 @@ const labels = computed(() => ({
 
 /** The rail's rows and every page inside (the home's cards, the app builder) open applications through this entry. */
 const openApplication = useApplicationOpening(declarations, id => props.standaloneApplications?.includes(id) ?? false);
+const uninstallApplicationOpener = installPanelApplicationOpener((address, { beside }) => {
+  const match = declarations.value.find((app) => app.prefix === address || (Boolean(app.home) && app.home === address));
+  if (!match) return false;
+  const externalOrStandalone = Boolean(match.open || match.href || props.standaloneApplications?.includes(match.id));
+  if (beside && !externalOrStandalone) return false;
+  openApplication(match.id);
+  return true;
+});
+onBeforeUnmount(uninstallApplicationOpener);
 function selectRailApp(id: string) {
   if (id !== "agent-builder") openApplication(id);
   else if (agentBuilder.value?.home) void router.push(agentBuilder.value.home);

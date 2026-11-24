@@ -7,9 +7,11 @@ import {
 import type { PanelFormOption } from "@ontomato/contracts/form-fields";
 import { panelFormDescriptionSchema, panelRecordFieldText, type PanelFormDescription, type PanelFormField, type PanelRecord } from "@ontomato/contracts/panel-projection";
 import { APPLICATION, APPLICATION_PANEL_USE, PRODUCT_PANEL } from "@ontomato/contracts/platform-object-types";
-import { allowsStandalone, applicationRootPath } from "@ontomato/contracts/platform-identity";
+import { allowsStandalone, applicationCatalogSchema, applicationRootPath, isPanelApplication } from "@ontomato/contracts/platform-identity";
+import { localizedApplicationText } from "@ontomato/contracts/application-metadata";
 import { applicationPanelUseSchema } from "@ontomato/contracts/product-panels";
 import { applicationCatalogueScopeSchema, applicationCatalogueSortSchema } from "@ontomato/contracts/product-catalog-query";
+import { readFavorites } from "../platform-home/service";
 import { config } from "../../config/application";
 import { resolveLocale, tForLocale } from "../../i18n";
 import type { AssistantCredentials } from "../../platform/agent-runtime/runtime";
@@ -163,6 +165,9 @@ export function toApplicationPanelRecord(
   };
 }
 
+const GALLERY_EXCLUDED_APP_IDS = new Set(["home", "personal-workspace", "workplace", "application-gallery"]);
+const GALLERY_RAIL_ORDER = ["top", "apps", "bottom"] as const;
+
 export function applicationCatalogueClient(viewer: AssistantCredentials) {
   const options = () => ({
     headers: buildBackendHeaders(viewer.token, undefined, viewer.locale, viewer.apiKey, viewer.headers), retries: 1,
@@ -171,6 +176,10 @@ export function applicationCatalogueClient(viewer: AssistantCredentials) {
   const entryPath = (id: string) => `${applicationPath}/${encodeURIComponent(id)}`;
 
   return {
+    async navigation() {
+      const response = await backendGet("application-navigation", url(`${applicationPath}?purpose=navigation`), options());
+      return ownerData(response.text, applicationCatalogSchema);
+    },
     async query(params: Record<string, unknown>) {
       const query = new URLSearchParams();
       for (const [key, value] of Object.entries(querySchema.parse(params)))
@@ -271,6 +280,46 @@ export function createApplicationReadAdapter(owner: ProductOwner, viewer: Assist
   }
 
   return {
+    async available(params: { category?: string; search?: string; favoritesOnly?: boolean }): Promise<PanelRecord[]> {
+      if (params.category === "agents") return [];
+      const [catalog, favorites] = await Promise.all([
+        client.navigation(),
+        readFavorites(owner),
+      ]);
+      const favoriteIds = favorites.filter(item => item.kind === "application").map(item => item.id);
+      const favoriteSet = new Set(favoriteIds);
+      const visible = catalog.filter(app => !GALLERY_EXCLUDED_APP_IDS.has(app.id));
+      const ordered = params.favoritesOnly
+        ? favoriteIds.flatMap(id => visible.find(app => app.id === id) ?? [])
+        : GALLERY_RAIL_ORDER.flatMap(rail => visible.filter(app => (app.rail ?? "apps") === rail));
+      const queryText = params.search?.trim().toLocaleLowerCase() ?? "";
+      return ordered
+        .filter(app => !params.category || params.category === "all" || app.category === params.category)
+        .flatMap((app): PanelRecord[] => {
+          const label = localizedApplicationText(app.names, language) ?? app.id;
+          const description = localizedApplicationText(app.descriptions, language);
+          if (queryText && !`${label}\n${description ?? ""}`.toLocaleLowerCase().includes(queryText)) {
+            return [];
+          }
+          const openPath = app.entry.path.startsWith("/__external/") || app.kind === "link"
+            ? app.entry.path
+            : isPanelApplication(app) || app.kind === "hosted" || app.kind === "connected"
+              ? applicationRootPath(app.id)
+              : (app.entry.home ?? app.entry.path);
+          return [{
+            primaryKey: app.id,
+            className: APPLICATION,
+            label,
+            ...(description && { subtitle: description }),
+            fields: {
+              category: app.category,
+              icon: app.icon,
+              favorite: favoriteSet.has(app.id),
+            },
+            outputs: { openPath },
+          }];
+        });
+    },
     async query(params: Record<string, unknown>) {
       const { rows, total, nextCursor } = await query(params);
       return {

@@ -15,7 +15,6 @@ import {
   saveHomePanel,
 } from "../../services/platform-home/service";
 import { context, wrap } from "../utils/agent-host";
-import {ensurePlatformAssets} from '../../services/product-assets/platform-assets';
 
 const router: ReturnType<typeof Router> = Router();
 const applicationId = z.string().min(1);
@@ -36,8 +35,7 @@ router.put("/panel", wrap(async (req, res) => {
 router.get(
   "/",
   wrap(async (req, res) => {
-    await ensurePlatformAssets(context(req).owner,context(req).credentials);
-    res.json(await readHome(context(req).owner,context(req).credentials));
+    res.json(await readHome(context(req).owner));
   }),
 );
 
@@ -45,7 +43,7 @@ router.put(
   "/favorites",
   wrap(async (req, res) => {
     const { items } = homeFavoritesSchema.parse(req.body);
-    res.json(await saveFavorites(context(req).owner, items,context(req).credentials));
+    res.json(await saveFavorites(context(req).owner, items));
   }),
 );
 
@@ -53,7 +51,7 @@ router.put(
   "/dashboards",
   wrap(async (req, res) => {
     const { ids } = homeDashboardsSchema.parse(req.body);
-    res.json(await saveDashboards(context(req).owner, ids,context(req).credentials));
+    res.json(await saveDashboards(context(req).owner, ids));
   }),
 );
 

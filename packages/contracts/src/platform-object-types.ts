@@ -93,6 +93,10 @@ const describeType = (name: string, layer?: PlatformObjectTypeDeclaration["layer
 
 export const RUN_NOW = "schedules.runNow";
 export const DELETE_AGENT = "agents.delete";
+export const FAVORITE_AGENT = "agents.favorite";
+export const UNFAVORITE_AGENT = "agents.unfavorite";
+export const FAVORITE_APPLICATION = "applications.favorite";
+export const UNFAVORITE_APPLICATION = "applications.unfavorite";
 export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
 export const SET_TRIGGER_STATUS = "triggers.setStatus";
@@ -552,6 +556,14 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
         params: { search: "keyword", scope: "applicationScope", sort: "applicationSort", cursor: "cursor", size: "size" },
         result: "panelRecordQuery",
       },
+      available: {
+        source: "type", parameterMode: "fixed",
+        params: { category: "applicationGalleryCategory", search: "keyword", favoritesOnly: "favoritesOnly" },
+        result: "panelRecordList",
+        outputs: {
+          openPath: { kind: "scalar", type: "string" },
+        },
+      },
       record: {
         ...catalogueRecord,
         result: "panelRecord",
@@ -577,7 +589,8 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     },
     operations: [
       `${APPLICATION}.save`, "applications.delete", "applications.addEntry", "applications.updateEntry",
-      "applications.deleteEntry", "applications.grant", "applications.share", RENEW_SCHEDULED_TASK_CREDENTIAL,
+      "applications.deleteEntry", "applications.grant", "applications.share",
+      FAVORITE_APPLICATION, UNFAVORITE_APPLICATION, RENEW_SCHEDULED_TASK_CREDENTIAL,
     ],
   },
   [APPLICATION_PANEL_USE]: {
@@ -588,6 +601,14 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("agentDefinition", "product"),
     reads: {
       ...metadataList, count: countRead,
+      available: {
+        source: "type", parameterMode: "fixed",
+        params: { search: "keyword", favoritesOnly: "favoritesOnly" },
+        result: "panelRecordList",
+        outputs: {
+          openPath: { kind: "scalar", type: "string" },
+        },
+      },
       record: {
         ...catalogueRecord, result: "panelRecord",
         outputs: {
@@ -602,7 +623,7 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
     },
-    operations: [`${AGENT_DEFINITION}.save`, DELETE_AGENT, "agents.grant", "agents.revoke", "agents.share"],
+    operations: [`${AGENT_DEFINITION}.save`, DELETE_AGENT, FAVORITE_AGENT, UNFAVORITE_AGENT, "agents.grant", "agents.revoke", "agents.share"],
   },
   [ONTOLOGY_TYPE]: {
     ...describeType("ontologyType"),

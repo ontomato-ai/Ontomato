@@ -1,45 +1,68 @@
-import { flushPromises, mount } from '@vue/test-utils';
-import ElementPlus from 'element-plus';
-import { ref } from 'vue';
-import { createI18n } from 'vue-i18n';
-import { createMemoryHistory, createRouter } from 'vue-router';
-import { expect, it, vi } from 'vitest';
-import { openApplicationKey, platformApplicationsKey, type PlatformAppDeclaration } from '../apps';
-import ApplicationGalleryRoute from '../pages/ApplicationGalleryRoute.vue';
+import { describe, expect, it, vi } from "vitest";
+import { createMemoryHistory, createRouter } from "vue-router";
+import { platformRoutes } from "@ontomato/platform-shell/routes";
+import { installPanelApplicationOpener, panelNavigator } from "../panel-navigate";
+import { catalogPartition } from "../native-layouts";
 
-const requests = vi.hoisted(() => ({ apps: vi.fn(), agents: vi.fn(), favorites: vi.fn() }));
-vi.mock('../catalog', () => ({ useApplicationCatalog: () => ({ refresh: requests.apps, error: { value: null } }) }));
-vi.mock('@ontomato/workbench-ui/features/workbench/assistant-host', () => ({ createAssistantClient: () => ({ listAgents: requests.agents }) }));
-vi.mock('../features/home/api', () => ({ readHomeState: requests.favorites, saveFavorites: vi.fn() }));
-
-it('keeps available apps and filters while retrying just the failed agent list', async () => {
-  requests.apps.mockResolvedValue(undefined);
-  requests.agents.mockRejectedValueOnce(new Error('Agent list unavailable')).mockResolvedValueOnce([]);
-  requests.favorites.mockResolvedValue({ favorites: [{ kind: 'application', id: 'orders' }] });
-  const applications = ref<PlatformAppDeclaration[]>([{ id: 'orders', label: 'Orders', icon: 'pages', category: 'business', prefix: '/orders' }]);
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] });
-  await router.push('/');
-  const wrapper = mount(ApplicationGalleryRoute, {
-    global: {
-      plugins: [router, ElementPlus, createI18n({ legacy: false, locale: 'en', missingWarn: false })],
-      provide: { [platformApplicationsKey as symbol]: applications, [openApplicationKey as symbol]: vi.fn() },
-    },
+describe("application gallery panel entry and host application opener", () => {
+  it("delegates application landing addresses to the installed shell opener", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: "/agents/chat", name: "Chat", component: { render: () => null } },
+        { ...platformRoutes.unknown, component: { render: () => null } },
+      ],
+    });
+    const opened: string[] = [];
+    const uninstall = installPanelApplicationOpener((address, { beside }) => {
+      if (address === "/__external/data-governance" || (!beside && address === "/settings")) {
+        opened.push(address);
+        return true;
+      }
+      return false;
+    });
+    try {
+      const navigate = panelNavigator(router);
+      await navigate("/__external/data-governance");
+      await navigate("/settings");
+      await navigate("/agents/chat?agentId=a1");
+      expect(opened).toEqual(["/__external/data-governance", "/settings"]);
+      expect(router.currentRoute.value.fullPath).toBe("/agents/chat?agentId=a1");
+    } finally {
+      uninstall();
+    }
   });
-  try {
-    await flushPromises();
-    expect(wrapper.get('.home-tile-name').text()).toBe('Orders');
-    expect(wrapper.get('.home-tile-star').attributes('aria-pressed')).toBe('true');
-    expect(wrapper.get('.el-alert').text()).toContain('Agent list unavailable');
-    await wrapper.get('input').setValue('Orders');
-    await wrapper.get('.el-alert button').trigger('click');
-    await flushPromises();
-    expect(wrapper.find('.el-alert').exists()).toBe(false);
-    expect(wrapper.get('input').element.value).toBe('Orders');
-    expect(wrapper.get('.home-tile-name').text()).toBe('Orders');
-    expect(requests.agents).toHaveBeenCalledTimes(2);
-    expect(requests.apps).toHaveBeenCalledTimes(1);
-    expect(requests.favorites).toHaveBeenCalledTimes(1);
-  } finally {
-    wrapper.unmount();
-  }
+
+  it("includes panel-backed application-gallery in catalogPartition without a native layout entry", () => {
+    const partitions = catalogPartition([{
+      id: "application-gallery",
+      kind: "native",
+      rail: "top",
+      category: "business",
+      sort: 2,
+      entry: { path: "/applications", renderer: "application-gallery", home: "/applications" },
+      entryAccess: ["domain-member"],
+      scheduleAdapter: null,
+      releaseId: null,
+      names: { en: "Application gallery", "zh-CN": "应用广场" },
+      descriptions: { en: "Discover apps", "zh-CN": "发现应用" },
+      icon: "gallery",
+      allowStandalone: false,
+      panelUses: [{
+        id: "application-gallery",
+        pageKey: "application-gallery",
+        panelId: "builtin-product-application-gallery",
+        path: "/applications",
+        access: { kind: "domain-member" },
+        names: { en: "Application gallery", "zh-CN": "应用广场" },
+      }],
+    }], "en");
+
+    expect(partitions).toHaveLength(1);
+    expect(partitions[0]).toMatchObject({
+      id: "application-gallery",
+      prefix: "/applications",
+      home: "/applications",
+    });
+  });
 });

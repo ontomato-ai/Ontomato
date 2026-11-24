@@ -3,9 +3,36 @@ import type { BuiltinApplication } from "@ontomato/contracts/platform-identity";
 export const workbenchApplications: BuiltinApplication[] = [
   {
     id: "application-gallery", kind: "native", rail: "top", category: "business", sort: 2,
-    entry: {path:"/applications",renderer:"application-gallery",home:"/applications"},
-    entryAccess:["domain-member"],scheduleAdapter:null,allowStandalone:false,
-    declaration:{names:{en:"Application gallery","zh-CN":"应用广场"},descriptions:{en:"Discover applications and pin shortcuts to your personal workspace","zh-CN":"发现应用，并将常用入口固定到个人工作台"},icon:"gallery",groups:[],permissions:[]},
+    entry: { path: "/applications", renderer: "application-gallery", home: "/applications" },
+    entryAccess: ["domain-member"], scheduleAdapter: null, allowStandalone: false,
+    framePanelId: "builtin-product-platform-frame",
+    declaration: {
+      names: { en: "Application gallery", "zh-CN": "应用广场" },
+      descriptions: { en: "Discover applications and pin shortcuts to your personal workspace", "zh-CN": "发现应用，并将常用入口固定到个人工作台" },
+      icon: "gallery", groups: [], permissions: [],
+      panelUses: [{
+        id: "application-gallery",
+        pageKey: "application-gallery",
+        panelId: "builtin-product-application-gallery",
+        path: "/applications",
+        access: { kind: "domain-member" },
+        icon: "gallery",
+        names: {
+          en: "Application gallery",
+          "zh-CN": "应用广场",
+          "zh-TW": "應用廣場",
+          ja: "アプリギャラリー",
+          de: "Anwendungsgalerie",
+          fr: "Galerie d'applications",
+          it: "Galleria applicazioni",
+          ar: "معرض التطبيقات",
+        },
+        descriptions: {
+          en: "Discover applications and pin shortcuts to your personal workspace",
+          "zh-CN": "发现应用，并将常用入口固定到个人工作台",
+        },
+      }],
+    },
   },
   {
     "id": "home",

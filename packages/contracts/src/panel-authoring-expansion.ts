@@ -372,6 +372,18 @@ export function expandPanelAuthoringMember(
   }
 
   const config = { ...member.config };
+  if (componentId === "@ontomato/sdk:ObjectList" && typeof config.openOutput === "string") {
+    const rowsType = dataTypes.get("rows");
+    const rowsRead = data.rows?.read;
+    const rowsDeclaration = rowsType && rowsRead ? typeTable.objectTypes[rowsType]?.reads?.[rowsRead] : undefined;
+    const outputType = rowsDeclaration?.outputs?.[config.openOutput];
+    if (!outputType || outputType.kind !== "scalar" || outputType.type !== "string") {
+      fail(
+        "config.openOutput",
+        `Read '${rowsRead ?? "rows"}' on '${rowsType ?? "unknown"}' does not declare a string output '${config.openOutput}'`,
+      );
+    }
+  }
   const operationEntries: Record<string, ProjectionOperationBinding> = {};
   let readOperationInputs: PanelMember["readOperationInputs"];
   let operationDrafts: PanelMember["operationDrafts"];

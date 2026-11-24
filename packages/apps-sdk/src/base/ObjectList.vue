@@ -21,6 +21,7 @@ import {
 } from "@ontomato/contracts/panel-projection";
 import type { PlatformOntologyObjectsResponse } from "@ontomato/contracts/platform-ontology";
 import { DataState, type DataStateResult } from "@ontomato/foundation-ui/data-state";
+import { AgentAvatar } from "@ontomato/agent-shell-ui";
 import { appIcon } from "@ontomato/platform-shell";
 import { formatListTime } from "@ontomato/workbench-ui/utils/relative-time";
 import { slotOutputState, usePanelContext, useProjectionSlot } from "../panel/context";
@@ -170,6 +171,9 @@ const RESERVED_MEMBER_INPUTS = new Set([
   "groupEmptyLabel",
   "localFilters",
   "rowActions",
+  "leadingIconField",
+  "leadingIconKind",
+  "openOutput",
 ]);
 
 interface ParsedListData {
@@ -282,6 +286,12 @@ const props = withDefaults(
      * drawers or navigation), overflowing items beyond `maxVisible` (default 2) into a "More" dropdown menu.
      */
     rowActions?: ObjectListRowActionsConfig;
+    /** Optional field key holding a platform icon key or agent avatar token rendered before each card or compact list title. */
+    leadingIconField?: string;
+    /** How `leadingIconField` is drawn: `"application"` (default) resolves a platform application icon; `"agent"` renders an agent avatar. */
+    leadingIconKind?: "application" | "agent";
+    /** Optional owner-declared string output key on each record (`row.outputs[openOutput]`) opened via host navigation when clicking a row or card. */
+    openOutput?: string;
   }>(),
   {
     layout: "auto",
@@ -308,6 +318,9 @@ const props = withDefaults(
     groupEmptyLabel: undefined,
     localFilters: undefined,
     rowActions: undefined,
+    leadingIconField: undefined,
+    leadingIconKind: "application",
+    openOutput: undefined,
   },
 );
 
@@ -471,6 +484,8 @@ const hasUpdateSelectedListener = Boolean(
   vnodeProps && (typeof vnodeProps["onUpdate:selected"] === "function" || Array.isArray(vnodeProps["onUpdate:selected"])),
 );
 const rowSelectable = hasSelectedBinding || hasChooseListener || hasUpdateSelectedListener;
+const rowActivatable = computed(() => rowSelectable || Boolean(props.openOutput));
+const cardHeaderActions = computed(() => isCards.value && props.rowActions?.placement === "header");
 const usesCursorPages = computed(() => pageMode === "cursor" && props.pagination === "pages");
 const activePageSize = ref(props.pageSize > 0 ? props.pageSize : 20);
 watch(() => props.pageSize, (next) => {
@@ -1796,7 +1811,23 @@ watch(chosenIdentity, () => {
   activeRowLabel.value = null;
 });
 
+function rowOpenPath(row: PlatformObjectRecord): string | null {
+  if (!props.openOutput) return null;
+  const value = row.outputs?.[props.openOutput];
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function rowLeadingIcon(row: PlatformObjectRecord): string | null {
+  if (!props.leadingIconField) return null;
+  const raw = rawRecordField(row, props.leadingIconField);
+  return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+}
+
 function choose(row: PlatformObjectRecord) {
+  const openTarget = rowOpenPath(row);
+  if (openTarget) {
+    void panel.navigate(openTarget);
+  }
   if (!rowSelectable) return;
   const identity = rowIdentityKey(row);
   const next = props.toggleable && chosenIdentity.value === identity
@@ -2109,6 +2140,9 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
         kind: "operation",
         operation: item.operation,
         label,
+        icon: item.icon,
+        iconOnly: item.iconOnly,
+        active: item.active,
         danger: item.danger ?? op.danger,
         primary: Boolean(item.primary),
         disabled: disabledByCondition || !op.available,
@@ -2123,6 +2157,9 @@ function resolvedRowActionsFor(row: PlatformObjectRecord): readonly ResolvedRowA
       id: item.id,
       to: item.to,
       label,
+      icon: item.icon,
+      iconOnly: item.iconOnly,
+      active: item.active,
       danger: Boolean(item.danger),
       primary: Boolean(item.primary),
       disabled: disabledByCondition,
@@ -3205,13 +3242,13 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
           <article
             v-else
             :ref="(el) => setRowElement(entry.key, el)"
-            :role="rowSelectable ? 'option' : undefined"
-            :tabindex="rowSelectable ? 0 : undefined"
+            :role="rowSelectable ? 'option' : (rowActivatable ? 'button' : undefined)"
+            :tabindex="rowActivatable ? 0 : undefined"
             class="sdk-object-list-card"
             :aria-selected="rowSelectable ? entry.key === chosenIdentity : undefined"
-            :class="{ chosen: entry.key === chosenIdentity, 'is-non-selectable': !rowSelectable }"
-            @click="rowSelectable ? choose(entry.row) : undefined"
-            @keydown="rowSelectable ? onCardKeydown(entry.row, $event) : undefined"
+            :class="{ chosen: entry.key === chosenIdentity, 'is-non-selectable': !rowActivatable }"
+            @click="rowActivatable ? choose(entry.row) : undefined"
+            @keydown="rowActivatable ? onCardKeydown(entry.row, $event) : undefined"
           >
             <list-row-slot-host
               v-if="slots.card"
@@ -3294,6 +3331,10 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   @click.stop
                   @change="toggleChecked(entry.row, ($event.target as HTMLInputElement).checked)"
                 />
+                <span v-if="leadingIconField" class="sdk-object-list-card-leading" aria-hidden="true">
+                  <AgentAvatar v-if="leadingIconKind === 'agent'" :icon="rowLeadingIcon(entry.row)" :size="22" />
+                  <component :is="appIcon(rowLeadingIcon(entry.row) ?? 'app-window')" v-else :size="16" class="sdk-object-list-card-app-icon" />
+                </span>
                 <span class="sdk-object-list-card-title">
                   <template v-for="(part, index) in textSegmentsFor(entry.row, 'label', entry.row.label)" :key="index">
                     <mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template>
@@ -3304,6 +3345,15 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   class="sdk-object-list-tag"
                   :data-tone="entry.row.tones?.[statusField] ?? 'default'"
                 >{{ fieldValue(entry.row, statusField) }}</span>
+                <div v-if="hasActionColumn && cardHeaderActions" class="sdk-object-list-card-header-actions" @click.stop>
+                  <ObjectListRowActions
+                    :items="resolvedRowActionsFor(entry.row)"
+                    :max-visible="rowActions?.maxVisible ?? 2"
+                    :busy="rowOpRunning"
+                    :row-label="entry.row.label || entry.row.primaryKey"
+                    @trigger="(item) => triggerRowAction(entry.row, entry.rowIndex, item)"
+                  />
+                </div>
               </div>
               <p
                 v-if="fieldValue(entry.row, summaryKey) !== ''"
@@ -3446,7 +3496,7 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
                   <span v-else class="sdk-object-list-tag" data-tone="info">{{ scalarFieldText(item, t) }}</span>
                 </template>
               </div>
-              <div v-if="hasActionColumn" class="sdk-object-list-card-actions" @click.stop>
+              <div v-if="hasActionColumn && !cardHeaderActions" class="sdk-object-list-card-actions" @click.stop>
                 <list-row-slot-host
                   v-if="hasActionsSlot"
                   :list-slot="member.key"
@@ -4445,6 +4495,16 @@ useMemberOutput("activeLabel", () => selectedRowLabel.value ?? activeRowLabel.va
   align-items: center;
   display: flex;
   gap: var(--spacing-sm);
+}
+.sdk-object-list-card-leading {
+  align-items: center;
+  color: var(--sdk-text-color-secondary);
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.sdk-object-list-card-header-actions {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
 }
 .sdk-object-list-card-check {
   flex: 0 0 auto;

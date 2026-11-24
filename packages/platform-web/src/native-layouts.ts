@@ -9,7 +9,6 @@ const layouts: readonly (NativeLayout & { renderer: string })[] = [
   { renderer: "personal-workspace", sections: [] },
   // The platform's home draws its own page: no column, no header of the shell's.
   { renderer: "home", sections: [] },
-  { renderer:"application-gallery",sections:[] },
   // An application whose pages are panels: it has no pages of its own to list, because every one of them is a use
   // relation the panel shows full.
   { renderer: "panels", sections: [] },
@@ -152,6 +151,6 @@ export function catalogPartition(applications: import("@ontomato/contracts/platf
       framePanelId: app.framePanelId,
       built: (app.kind === "hosted" || app.kind === "product") && (!!app.releaseId || panels),
       prefix: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?`/products/${app.id}`:app.entry.path,
-      home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home };
+      home: applicationRoute ? applicationRootPath(app.id) : app.kind==='product'?app.entry.path:app.entry.home ?? layout.home ?? (firstPanelUse ? panelUsePath(firstPanelUse.path) : undefined) };
   });
 }
