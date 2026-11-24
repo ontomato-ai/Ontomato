@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-general-settings",
+      "input": {
+        "name": "General",
+        "description": "Configure knowledge recall count, DSL time limit, and the data engine language"
+      }
+    }
+  ]
+}

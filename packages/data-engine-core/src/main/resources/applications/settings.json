@@ -75,6 +75,53 @@
           "en": "Manage domain provider connections and public chat or embedding models",
           "zh-CN": "维护域内模型服务商连接及公开对话、向量模型"
         }
+      },
+      {
+        "id": "general-settings",
+        "pageKey": "general-settings",
+        "panelId": "builtin-product-general-settings",
+        "path": "/settings/system-config/general",
+        "icon": "settings",
+        "access": { "permissionCode": "system-config" },
+        "inputs": {
+          "settings": { "literal": { "className": "platform:GeneralSettings", "primaryKey": "general" } }
+        },
+        "names": {
+          "en": "General",
+          "zh-CN": "通用",
+          "zh-TW": "通用",
+          "ja": "一般",
+          "de": "Allgemein",
+          "fr": "Général",
+          "it": "Generale",
+          "ar": "عام"
+        },
+        "descriptions": {
+          "en": "Knowledge recall, the DSL time limit and the data engine's language",
+          "zh-CN": "知识召回条数、DSL 时限与数据引擎的语言"
+        }
+      },
+      {
+        "id": "audit-log",
+        "pageKey": "audit-log",
+        "panelId": "builtin-product-audit-log",
+        "path": "/settings/records/audit-log",
+        "icon": "clipboard-list",
+        "access": { "permissionCode": "audit-logs" },
+        "names": {
+          "en": "Audit log",
+          "zh-CN": "审计日志",
+          "zh-TW": "稽核日誌",
+          "ja": "監査ログ",
+          "de": "Audit-Protokolle",
+          "fr": "Journaux d'audit",
+          "it": "Log audit",
+          "ar": "سجلات التدقيق"
+        },
+        "descriptions": {
+          "en": "Sign-ins and changes recorded across the platform",
+          "zh-CN": "平台内的登录与变更记录"
+        }
       }
     ]
   }

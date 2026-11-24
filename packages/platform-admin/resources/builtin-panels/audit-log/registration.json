@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-audit-log",
+      "input": {
+        "name": "Audit log",
+        "description": "Filter and inspect platform audit log records by business type and operation type"
+      }
+    }
+  ]
+}

@@ -48,9 +48,11 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   ...pageRoutes(adminPages, components),
-  // Model usage and connections are served by built-in panel entries at their original paths.
+  // Model usage, connections, general settings and audit log are served by built-in panel entries at their original paths.
   { path: platformRoutes.usage.path, component: page },
   { path: platformRoutes.providers.path, component: page },
+  { path: platformRoutes.general.path, component: page },
+  { path: platformRoutes.audit.path, component: page },
   ...formerParentRoutes,
   { ...platformRoutes.ontology, component: page },
 ];
@@ -86,8 +88,8 @@ describe("one navigation filtered by permission codes", () => {
       "/permissions",
       "/settings/records/system-monitor",
     ]);
-    expect(availableGroups(navigation, access(["audit-logs"])).map(({ key }) => key)).toEqual(["platform"]);
-    expect(availableGroups(navigation, access(["data-browser", "audit-logs"])).map(({ key }) => key)).toEqual([
+    expect(availableGroups(navigation, access(["system-monitoring"])).map(({ key }) => key)).toEqual(["platform"]);
+    expect(availableGroups(navigation, access(["data-browser", "system-monitoring"])).map(({ key }) => key)).toEqual([
       "ontology",
       "platform",
     ]);
@@ -102,27 +104,23 @@ describe("one navigation filtered by permission codes", () => {
 
 describe("the service router", () => {
   it("waits for the permissions before deciding and enters a granted page, its detail pages included", async () => {
-    const account = access(["audit-logs", "ontology-modeling"]);
-    expect(await land("/settings/records/audit-log", account)).toBe("/settings/records/audit-log");
+    const account = access(["system-monitoring", "ontology-modeling"]);
+    expect(await land("/settings/records/system-monitor", account)).toBe("/settings/records/system-monitor");
     expect(account.loads).toBe(1);
     expect(await land("/objects/Order%20A", account)).toBe("/objects/Order%20A");
   });
 
   it("sends a page the account cannot open to the first available page of its group, then of any group", async () => {
-    expect(await land("/settings/records", access(["data-browser", "system-monitoring"]))).toBe(
+    expect(await land("/settings/system-config/data-adapters", access(["data-browser", "system-monitoring"]))).toBe(
       "/settings/records/system-monitor"
     );
-    expect(await land("/objects/Order", access(["data-browser", "audit-logs"]))).toBe("/data");
-    expect(await land("/objects/Order", access(["audit-logs"]))).toBe("/settings/records/audit-log");
+    expect(await land("/objects/Order", access(["data-browser", "system-monitoring"]))).toBe("/data");
+    expect(await land("/objects/Order", access(["system-monitoring"]))).toBe("/settings/records/system-monitor");
   });
 
   it("forwards a former parent's address to its first page, or to a page the account may open", async () => {
     expect(await land("/settings/records", access(["audit-logs", "system-monitoring"]))).toBe("/settings/records/audit-log");
-    expect(await land("/settings/records", access(["system-monitoring"]))).toBe("/settings/records/system-monitor");
     expect(await land("/settings/model-config", access(["system-config"]))).toBe("/settings/model-config/usage");
-    expect(await land("/settings/system-config", access(["authorization-management"]))).toBe(
-      "/settings/system-config/authorization"
-    );
     expect(await land("/settings/system-config", access(["system-config"]))).toBe("/settings/system-config/general");
   });
 
@@ -135,7 +133,7 @@ describe("the service router", () => {
   it("the root lands on the deployment's start page when the account may open it, otherwise on its first page", async () => {
     expect(await land("/", access(["ontology-modeling"]))).toBe("/playground");
     expect(await land("/", access(["data-browser"]), "/data/Order")).toBe("/data/Order");
-    expect(await land("/", access(["audit-logs"]))).toBe("/settings/records/audit-log");
+    expect(await land("/", access(["system-monitoring"]))).toBe("/settings/records/system-monitor");
   });
 
   it("the old platform root opens the first available platform administration page", async () => {
@@ -148,7 +146,7 @@ describe("the service router", () => {
   });
 
   it("lands an account with no page on the root instead of looping", async () => {
-    expect(await land("/settings/records", access([]))).toBe("/ontology");
+    expect(await land("/settings/records/system-monitor", access([]))).toBe("/ontology");
     expect(await land("/admin", access([], "HTTP 402"))).toBe("/ontology");
     expect(await land("/", access([]))).toBe("/ontology");
   });

@@ -1,0 +1,316 @@
+{
+  "manifest": {
+    "state": {
+      "selectedLog": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:AuditLog"
+        },
+        "deepLink": true
+      },
+      "business": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      },
+      "operation": {
+        "type": {
+          "kind": "scalar",
+          "type": "string"
+        },
+        "deepLink": true
+      }
+    },
+    "members": {
+      "logList": {
+        "component": "ObjectList",
+        "type": "platform:AuditLog",
+        "data": {
+          "rows": "query"
+        },
+        "state": {
+          "selected": "selectedLog",
+          "business": "business",
+          "operation": "operation"
+        },
+        "config": {
+          "layout": "table",
+          "searchable": false,
+          "fallbackToFirst": false,
+          "pageSize": 20,
+          "pageSizes": [10, 20, 50],
+          "emptyText": "list.empty",
+          "noMatchText": "list.empty",
+          "columns": [
+            {
+              "key": "operateTime",
+              "labelKey": "col.time",
+              "kind": "time",
+              "timeFormat": "datetime",
+              "width": 180
+            },
+            {
+              "key": "userName",
+              "labelKey": "col.user",
+              "width": 140
+            },
+            {
+              "key": "business",
+              "labelKey": "col.business",
+              "kind": "tag",
+              "width": 140
+            },
+            {
+              "key": "operation",
+              "labelKey": "col.operation",
+              "kind": "tag",
+              "width": 110
+            },
+            {
+              "key": "description",
+              "labelKey": "col.detail",
+              "minWidth": 240
+            }
+          ],
+          "rowActions": {
+            "maxVisible": 1,
+            "width": 96,
+            "items": [
+              {
+                "kind": "local",
+                "id": "detail",
+                "labelKey": "action.detail",
+                "primary": true
+              }
+            ]
+          }
+        },
+        "name": "Audit log entries",
+        "description": "Server-paged audit log table filtered by business type and operation type",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-400000000001"
+      },
+      "logDetail": {
+        "component": "ObjectSummary",
+        "type": "platform:AuditLog",
+        "target": "selectedLog",
+        "data": {
+          "record": "record"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "operateTime",
+            "userName",
+            "userId",
+            "business",
+            "operation",
+            "byAi",
+            "description",
+            "parameters"
+          ]
+        },
+        "name": "Audit log detail",
+        "description": "Full read-only detail of the selected audit log record including description and parameters",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-400000000002"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "Audit log",
+        "panel.description": "Sign-ins and changes recorded across the platform",
+        "action.refresh": "Refresh",
+        "action.detail": "Detail",
+        "action.close": "Close",
+        "filter.business": "Biz Type",
+        "filter.operation": "Operation Type",
+        "business.knowledge": "Knowledge Base",
+        "business.glossary": "Glossary",
+        "business.example": "Example Base",
+        "business.schema": "Schema",
+        "business.analysis": "Analysis Mgmt",
+        "operation.add": "Add",
+        "operation.modify": "Modify",
+        "operation.delete": "Delete",
+        "col.time": "Time",
+        "col.user": "User",
+        "col.business": "Biz Type",
+        "col.operation": "Operation Type",
+        "col.detail": "Detail",
+        "list.empty": "No audit logs match these filters",
+        "detail.title": "Audit log detail"
+      },
+      "zh-CN": {
+        "panel.name": "审计日志",
+        "panel.description": "平台内的登录与变更记录",
+        "action.refresh": "刷新",
+        "action.detail": "详情",
+        "action.close": "关闭",
+        "filter.business": "业务类型",
+        "filter.operation": "操作类型",
+        "business.knowledge": "知识库",
+        "business.glossary": "术语表",
+        "business.example": "示例库",
+        "business.schema": "Schema",
+        "business.analysis": "分析管理",
+        "operation.add": "添加",
+        "operation.modify": "修改",
+        "operation.delete": "删除",
+        "col.time": "时间",
+        "col.user": "用户",
+        "col.business": "业务类型",
+        "col.operation": "操作类型",
+        "col.detail": "详情",
+        "list.empty": "没有符合筛选条件的审计日志",
+        "detail.title": "审计日志详情"
+      },
+      "zh-TW": {
+        "panel.name": "稽核日誌",
+        "panel.description": "平台內的登入與變更紀錄",
+        "action.refresh": "重新整理",
+        "action.detail": "詳細",
+        "action.close": "關閉",
+        "filter.business": "業務類型",
+        "filter.operation": "操作類型",
+        "business.knowledge": "知識庫",
+        "business.glossary": "術語表",
+        "business.example": "範例庫",
+        "business.schema": "Schema",
+        "business.analysis": "分析管理",
+        "operation.add": "新增",
+        "operation.modify": "修改",
+        "operation.delete": "刪除",
+        "col.time": "時間",
+        "col.user": "使用者",
+        "col.business": "業務類型",
+        "col.operation": "操作類型",
+        "col.detail": "詳細",
+        "list.empty": "沒有符合篩選條件的稽核日誌",
+        "detail.title": "稽核日誌詳細"
+      },
+      "ja": {
+        "panel.name": "監査ログ",
+        "panel.description": "プラットフォーム全体のサインインと変更の記録",
+        "action.refresh": "更新",
+        "action.detail": "詳細",
+        "action.close": "閉じる",
+        "filter.business": "業務タイプ",
+        "filter.operation": "操作タイプ",
+        "business.knowledge": "ナレッジベース",
+        "business.glossary": "用語集",
+        "business.example": "サンプルベース",
+        "business.schema": "Schema",
+        "business.analysis": "分析管理",
+        "operation.add": "追加",
+        "operation.modify": "変更",
+        "operation.delete": "削除",
+        "col.time": "時間",
+        "col.user": "ユーザー",
+        "col.business": "業務タイプ",
+        "col.operation": "操作タイプ",
+        "col.detail": "詳細",
+        "list.empty": "この条件に一致する監査ログはありません",
+        "detail.title": "監査ログ詳細"
+      },
+      "de": {
+        "panel.name": "Audit-Protokolle",
+        "panel.description": "Anmeldungen und Änderungen auf der Plattform",
+        "action.refresh": "Aktualisieren",
+        "action.detail": "Detail",
+        "action.close": "Schließen",
+        "filter.business": "Geschäftstyp",
+        "filter.operation": "Operationstyp",
+        "business.knowledge": "Wissensdatenbank",
+        "business.glossary": "Glossar",
+        "business.example": "Beispielbasis",
+        "business.schema": "Schema",
+        "business.analysis": "Analyseverwaltung",
+        "operation.add": "Hinzufügen",
+        "operation.modify": "Ändern",
+        "operation.delete": "Löschen",
+        "col.time": "Zeit",
+        "col.user": "Benutzer",
+        "col.business": "Geschäftstyp",
+        "col.operation": "Operationstyp",
+        "col.detail": "Detail",
+        "list.empty": "Keine Audit-Einträge entsprechen diesen Filtern",
+        "detail.title": "Audit-Protokolldetail"
+      },
+      "fr": {
+        "panel.name": "Journaux d'audit",
+        "panel.description": "Connexions et modifications enregistrées sur la plateforme",
+        "action.refresh": "Actualiser",
+        "action.detail": "Détail",
+        "action.close": "Fermer",
+        "filter.business": "Type métier",
+        "filter.operation": "Type opération",
+        "business.knowledge": "Base connaissances",
+        "business.glossary": "Glossaire",
+        "business.example": "Base exemples",
+        "business.schema": "Schema",
+        "business.analysis": "Gestion analyse",
+        "operation.add": "Ajouter",
+        "operation.modify": "Modifier",
+        "operation.delete": "Supprimer",
+        "col.time": "Heure",
+        "col.user": "Utilisateur",
+        "col.business": "Type métier",
+        "col.operation": "Type opération",
+        "col.detail": "Détail",
+        "list.empty": "Aucun journal d’audit ne correspond à ces filtres",
+        "detail.title": "Détail du journal d'audit"
+      },
+      "it": {
+        "panel.name": "Log audit",
+        "panel.description": "Accessi e modifiche registrati sulla piattaforma",
+        "action.refresh": "Aggiorna",
+        "action.detail": "Dettaglio",
+        "action.close": "Chiudi",
+        "filter.business": "Tipo business",
+        "filter.operation": "Tipo operazione",
+        "business.knowledge": "Base conoscenza",
+        "business.glossary": "Glossario",
+        "business.example": "Base esempi",
+        "business.schema": "Schema",
+        "business.analysis": "Gestione analisi",
+        "operation.add": "Aggiungi",
+        "operation.modify": "Modifica",
+        "operation.delete": "Elimina",
+        "col.time": "Ora",
+        "col.user": "Utente",
+        "col.business": "Tipo business",
+        "col.operation": "Tipo operazione",
+        "col.detail": "Dettaglio",
+        "list.empty": "Nessun registro di audit corrisponde a questi filtri",
+        "detail.title": "Dettaglio log audit"
+      },
+      "ar": {
+        "panel.name": "سجلات التدقيق",
+        "panel.description": "سجلات تسجيل الدخول والتغييرات في المنصة",
+        "action.refresh": "تحديث",
+        "action.detail": "تفاصيل",
+        "action.close": "إغلاق",
+        "filter.business": "نوع العمل",
+        "filter.operation": "نوع العملية",
+        "business.knowledge": "قاعدة المعرفة",
+        "business.glossary": "المسرد",
+        "business.example": "قاعدة الأمثلة",
+        "business.schema": "Schema",
+        "business.analysis": "إدارة التحليل",
+        "operation.add": "إضافة",
+        "operation.modify": "تعديل",
+        "operation.delete": "حذف",
+        "col.time": "الوقت",
+        "col.user": "مستخدم",
+        "col.business": "نوع العمل",
+        "col.operation": "نوع العملية",
+        "col.detail": "تفاصيل",
+        "list.empty": "لا توجد سجلات تدقيق تطابق عوامل التصفية",
+        "detail.title": "تفاصيل سجل التدقيق"
+      }
+    }
+  }
+}

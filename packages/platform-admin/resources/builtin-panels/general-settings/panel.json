@@ -1,0 +1,75 @@
+{
+  "manifest": {
+    "state": {
+      "settings": {
+        "type": {
+          "kind": "object",
+          "objectType": "platform:GeneralSettings"
+        },
+        "external": true
+      }
+    },
+    "members": {
+      "generalForm": {
+        "component": "ObjectForm",
+        "type": "platform:GeneralSettings",
+        "target": "settings",
+        "data": {
+          "form": "form"
+        },
+        "operation": "platform:GeneralSettings.save",
+        "config": {
+          "layout": "rows",
+          "actions": "none"
+        },
+        "name": "General settings",
+        "description": "Configure knowledge recall limit, DSL cooker timeout in seconds, and backend language",
+        "id": "builtin-product-8c7a3f1e-4b2d-4c9a-9e11-300000000001"
+      }
+    }
+  },
+  "content": {
+    "messages": {
+      "en": {
+        "panel.name": "General",
+        "panel.description": "Knowledge recall, the DSL time limit and the data engine's language",
+        "settings.saved": "Configuration saved"
+      },
+      "zh-CN": {
+        "panel.name": "通用",
+        "panel.description": "知识召回条数、DSL 时限与数据引擎的语言",
+        "settings.saved": "配置保存成功"
+      },
+      "zh-TW": {
+        "panel.name": "通用",
+        "panel.description": "知識召回筆數、DSL 時限與資料引擎的語言",
+        "settings.saved": "設定儲存成功"
+      },
+      "ja": {
+        "panel.name": "一般",
+        "panel.description": "ナレッジの取得件数、DSL の制限時間とデータエンジンの言語",
+        "settings.saved": "設定保存成功"
+      },
+      "de": {
+        "panel.name": "Allgemein",
+        "panel.description": "Anzahl der Wissensabrufe, DSL-Zeitlimit und Sprache der Datenengine",
+        "settings.saved": "Konfiguration gespeichert"
+      },
+      "fr": {
+        "panel.name": "Général",
+        "panel.description": "Le nombre de connaissances rappelées, le délai DSL et la langue du moteur de données",
+        "settings.saved": "Configuration sauvegardée"
+      },
+      "it": {
+        "panel.name": "Generale",
+        "panel.description": "Il numero di conoscenze richiamate, il limite di tempo DSL e la lingua del motore dati",
+        "settings.saved": "Configurazione salvata"
+      },
+      "ar": {
+        "panel.name": "عام",
+        "panel.description": "عدد نتائج استرجاع المعرفة ومهلة DSL ولغة محرك البيانات",
+        "settings.saved": "تم حفظ الإعدادات بنجاح"
+      }
+    }
+  }
+}

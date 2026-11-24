@@ -114,6 +114,23 @@ describe("readBuiltinProducts", () => {
       expect(triggersPanel!.content.module).not.toContain("usePanelData");
       expect(panels.has("builtin-product-ontology-workflows")).toBe(true);
 
+      const generalSettings = panels.get("builtin-product-general-settings");
+      expect(generalSettings).toBeDefined();
+      expect(generalSettings!.manifest.state.settings?.external).toBe(true);
+      expect(generalSettings!.manifest.members).toHaveProperty("generalForm");
+      expect(generalSettings!.content.html).not.toMatch(/<el-|--el-/);
+      expect(generalSettings!.content.module).not.toContain("usePanelData");
+
+      const auditLog = panels.get("builtin-product-audit-log");
+      expect(auditLog).toBeDefined();
+      expect(auditLog!.manifest.state.selectedLog?.deepLink).toBe(true);
+      expect(auditLog!.manifest.state.business?.deepLink).toBe(true);
+      expect(auditLog!.manifest.state.operation?.deepLink).toBe(true);
+      expect(auditLog!.manifest.members).toHaveProperty("logList");
+      expect(auditLog!.manifest.members).toHaveProperty("logDetail");
+      expect(auditLog!.content.html).not.toMatch(/<el-|--el-/);
+      expect(auditLog!.content.module).not.toContain("usePanelData");
+
       const frame = panels.get("builtin-product-ontology-frame");
       expect(frame).toBeDefined();
       const countMembers = Object.entries(frame!.manifest.members).filter(([, member]) => "projectionId" in member.target);
