@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { dashboardAgentConfirmRequestSchema } from "@ontomato/contracts/dashboard";
 import type { AgentPrepareRequest } from "@ontomato/contracts/agent-channel";
 
 const mocks = vi.hoisted(() => ({
@@ -172,6 +173,36 @@ describe("prepareDashboardAgentConfirm", () => {
     });
     expect(result.intentId).toBeTruthy();
     expect(mocks.runtimeRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([true, undefined])("honors requireConfirmation=%s for parameter discard in full-auto mode", async (requireConfirmation) => {
+    mocks.settings.mockResolvedValue({
+      rootSession: { providerId: "workbench", sessionId },
+      confirmBeforeExecute: false,
+    });
+    const input = dashboardAgentConfirmRequestSchema.parse({
+      dashboardId: "board-1",
+      operation: "card.parameters.discard",
+      targetLabel: "Revenue",
+      impactSummary: "Fields: Year",
+      ...(requireConfirmation === undefined ? {} : { requireConfirmation }),
+      agentRun: { sessionId, runId, toolCallId: "tc-discard" },
+    });
+
+    const result = await prepareDashboardAgentConfirm(owner, credentials, input);
+
+    if (requireConfirmation) {
+      expect(result).toMatchObject({ autoMode: false, questionId: expect.any(String) });
+      expect(mocks.runtimeRequest).toHaveBeenCalledWith(
+        "/v1/channel/user-questions",
+        "POST",
+        expect.objectContaining({ source: { session: { providerId: "workbench", sessionId }, runId } }),
+        result.questionId,
+      );
+    } else {
+      expect(result).toMatchObject({ autoMode: true, questionId: null });
+      expect(mocks.runtimeRequest).not.toHaveBeenCalled();
+    }
   });
 
   it("rejects mismatched session, closed run, or non-live execution", async () => {

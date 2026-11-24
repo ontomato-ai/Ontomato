@@ -17,6 +17,8 @@ import { ApiRequestError } from "../../../utils/api";
 import { fetchCardParameterForm, prepareDashboardAgentConfirm, saveCardParameters } from "../api";
 import { cardError, cardErrorHeadline, type CardError } from "./utils/metricCard";
 
+type PageActionAgentRun = PageActionRequestInput["agentRun"];
+
 /**
  * Edits one card's parameters through the metric's own form: the fields, values, read-only keys and validation are
  * the metric's; only the keys the reader (or a live agent `fill_form` call) edited are sent, and the metric interprets
@@ -273,18 +275,36 @@ function currentEditedSnapshot(): string {
   return JSON.stringify([...edited.value].sort().map((key) => [key, values.value[key] ?? ""]));
 }
 
-async function saveFromAction(
+function saveFromAction(operation: string, agentRun: PageActionAgentRun): Promise<PageActionOutcome> {
+  return settleFromAction(operation, "card.parameters.save", agentRun);
+}
+
+function discardFromAction(operation: string, agentRun?: PageActionAgentRun): Promise<PageActionOutcome> {
+  return settleFromAction(operation, "card.parameters.discard", agentRun);
+}
+
+async function settleFromAction(
   operation: string,
-  agentRun: PageActionRequestInput["agentRun"],
+  confirmationOperation: "card.parameters.save" | "card.parameters.discard",
+  agentRun?: PageActionAgentRun,
 ): Promise<PageActionOutcome> {
   await waitForLoad();
   if (!isCurrentFormLoaded() || !form.value || !props.card) {
     return { ok: false, reason: "action_not_ready", operation, message: "The card parameter form is not open." };
   }
+  const discarding = confirmationOperation === "card.parameters.discard";
   if (edited.value.size === 0) {
+    if (discarding) {
+      discard();
+      return { ok: true, kind: "executed", operation };
+    }
     return { ok: false, reason: "action_unavailable", operation, message: "There are no parameter changes to save." };
   }
+  if (!agentRun) {
+    return { ok: false, reason: "action_unavailable", operation, message: "Card parameter changes require an active agent run." };
+  }
 
+  const hasHumanUnsavedEdits = userEditedKeys.value.size > 0;
   const capturedDashboardId = props.dashboardId;
   const capturedCardId = props.card.id;
   const capturedCardName = props.card.name || props.card.id;
@@ -300,9 +320,10 @@ async function saveFromAction(
   try {
     prepared = await prepareDashboardAgentConfirm({
       dashboardId: capturedDashboardId,
-      operation: "card.parameters.save",
+      operation: confirmationOperation,
       targetLabel: capturedCardName,
       impactSummary,
+      ...(discarding && hasHumanUnsavedEdits ? { requireConfirmation: true } : {}),
       agentRun,
     });
   } catch (error) {
@@ -310,7 +331,7 @@ async function saveFromAction(
       ok: false,
       reason: "failed",
       operation,
-      message: error instanceof Error ? error.message : "Failed to prepare save confirmation.",
+      message: error instanceof Error ? error.message : "Failed to prepare card parameter confirmation.",
     };
   }
 
@@ -318,8 +339,8 @@ async function saveFromAction(
   let dispatched = false;
   const isStillValid = () => {
     if (unmounted) return { ok: false as const, reason: "stale", message: "The card parameter dialog was closed." };
-    if (cancelled) return { ok: false as const, reason: "stale", message: "The save confirmation was cancelled." };
-    if (dispatched) return { ok: false as const, reason: "stale", message: "The save confirmation was already executed." };
+    if (cancelled) return { ok: false as const, reason: "stale", message: "The card parameter confirmation was cancelled." };
+    if (dispatched) return { ok: false as const, reason: "stale", message: "The card parameter confirmation was already executed." };
     if (!visible.value || !isCurrentFormLoaded() || !form.value) {
       return { ok: false as const, reason: "stale", message: "The card parameter dialog was closed or reloaded." };
     }
@@ -344,6 +365,10 @@ async function saveFromAction(
       return { ok: false, reason: "stale", operation, intentId: prepared.intentId, message: check.message };
     }
     dispatched = true;
+    if (discarding) {
+      discard();
+      return { ok: true, kind: "executed", operation, intentId: prepared.intentId };
+    }
     const ok = await save();
     if (ok) return { ok: true, kind: "executed", operation, intentId: prepared.intentId };
     const fieldMessages = Object.values(fieldErrors.value);
@@ -359,9 +384,11 @@ async function saveFromAction(
     };
   }
 
+  const questionId = prepared.questionId;
+  if (questionId === null) throw new Error("Card parameter confirmation did not return a question ID.");
   const confirmation: PendingPageActionConfirmation = {
     intentId: prepared.intentId,
-    questionId: prepared.questionId!,
+    questionId,
     operationId: operation,
     label: prepared.label,
     isStillValid,
@@ -371,6 +398,10 @@ async function saveFromAction(
         return { ok: false, intentId: prepared.intentId, reason: "stale", message: check.message };
       }
       dispatched = true;
+      if (discarding) {
+        discard();
+        return { ok: true, intentId: prepared.intentId, outcome: { discarded: true }, summary: prepared.label };
+      }
       const ok = await save();
       if (ok) {
         return {
@@ -398,7 +429,7 @@ async function saveFromAction(
     kind: "awaiting_confirmation",
     operation,
     intentId: prepared.intentId,
-    questionId: prepared.questionId!,
+    questionId,
     label: prepared.label,
     confirmation,
   };
@@ -415,7 +446,7 @@ defineExpose({
   waitForLoad,
   fillValues,
   saveFromAction,
-  discard,
+  discardFromAction,
 });
 </script>
 

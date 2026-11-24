@@ -70,6 +70,16 @@ export const panelAgentRunRefSchema = z.object({
 }).strict();
 export type PanelAgentRunRef = z.infer<typeof panelAgentRunRefSchema>;
 
+/** Requests conversation confirmation for a destructive action on the live panel. */
+export const localPanelConfirmationRequestSchema = z.object({
+  agentRun: panelAgentRunRefSchema,
+  operationLabel: z.string().min(1),
+  targetLabel: z.string().min(1),
+  impactSummary: z.string().min(1).optional(),
+  requireConfirmation: z.boolean().optional(),
+}).strict();
+export type PanelLocalConfirmationRequest = z.infer<typeof localPanelConfirmationRequestSchema>;
+
 const panelHumanIntentScopeSchema = panelOperationRefSchema.extend({
   agentRun: panelAgentRunRefSchema.optional(),
 });

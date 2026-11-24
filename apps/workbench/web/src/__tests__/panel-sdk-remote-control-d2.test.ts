@@ -31,6 +31,7 @@ import {
 } from "../../../../../packages/apps-sdk/src/panel/direct";
 import { directMountKey } from "../../../../../packages/apps-sdk/src/panel/direct-projection";
 import PanelMember from "../../../../../packages/apps-sdk/src/panel/PanelMember.vue";
+import { usePanelOperation } from "../../../../../packages/apps-sdk/src/panel/panel-operation";
 import { createPanelText } from "../../../../../packages/apps-sdk/src/panel/text";
 import { useApplicationCatalog } from "../../../../../packages/platform-web/src/catalog";
 import { DETAIL_SELECTIONS, detailSelectionGuard } from "../../../../../packages/platform-web/src/detail-selection";
@@ -278,6 +279,127 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
     }
   }, 15_000);
 
+  it.each(["unchanged", "changed before loading", "changed after loading"] as const)(
+    "binds the Run Now entry when the selected task is %s",
+    async (selection) => {
+      const operation = "opRunNow.runNow";
+      const descriptor: PanelOwnerOperationDescriptor = {
+        kind: "action",
+        handlerRef: "schedules.runNow",
+        label: "Run now",
+        effect: "write",
+        target: { source: "input", input: "task" },
+        batch: false,
+        inputSchema: {},
+        resultSchema: {},
+      };
+      let resolveDescription!: (result: ProductPanelOperationsReadResponse) => void;
+      const description = new Promise<ProductPanelOperationsReadResponse>((resolve) => { resolveDescription = resolve; });
+      const readDescription = vi.fn(() => description);
+      type Prepare = typeof noOperations.operations.prepare;
+      const prepare = vi.fn<Parameters<Prepare>, ReturnType<Prepare>>(async (operationId) => ({
+        operationId,
+        intentId: "6f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d00",
+        label: "Run now",
+        confirmation: { kind: "none" },
+        autoMode: true,
+      }));
+      type Confirm = typeof noOperations.confirmOperation;
+      const confirmOperation = vi.fn<Parameters<Confirm>, ReturnType<Confirm>>(async (prepared, hooks) => {
+        hooks?.onConfirmed?.();
+        await hooks?.beforeDispatch?.();
+        return {
+          decision: "confirm",
+          response: { kind: "dispatched", intentId: prepared.intentId, outcome: { kind: "success", data: {} } },
+        };
+      });
+      const manifest: DirectPanelManifest = {
+        state: {
+          selectedTask: { type: { kind: "object", objectType: SCHEDULED_TASK }, deepLink: true, personal: false, external: false },
+        },
+        members: { opRunNow: { target: { projectionId: "proj-run-now" }, inputs: { task: { state: "selectedTask" } } } },
+      };
+      const projection: DirectProjection = {
+        ...baseProjection,
+        id: "proj-run-now",
+        name: "Run now",
+        componentId: "@ontomato/sdk:OperationButton",
+        inputs: { task: { kind: "object", objectType: SCHEDULED_TASK } },
+        data: {},
+        outputs: {},
+        config: {},
+        operations: { runNow: { operation: { kind: "PlatformOperation", id: "schedules.runNow" }, target: { input: "task" } } },
+      };
+      const instance = createDirectPanelInstance(manifest, {
+        ...noOperations,
+        pageKey: "tasks-d2",
+        url: () => "/tasks-d2",
+        label: () => "Tasks D2",
+        initial: { selectedTask: { className: SCHEDULED_TASK, primaryKey: "t-1" } },
+        text: createPanelText({}, ref("en"), "en"),
+        read: (request) => request.operations ? readDescription() : Promise.resolve(ready(null)),
+        readProjection: async () => projection,
+        operations: { ...noOperations.operations, prepare },
+        confirmOperation,
+      });
+      const container = document.createElement("div");
+      const button = () => container.querySelector("button")!;
+      const Runner = {
+        setup() {
+          const runNow = usePanelOperation("opRunNow", "runNow");
+          return () => h("button", {
+            disabled: runNow.state.value.status !== "ready",
+            onClick: () => runNow.run(),
+          }, "Run now");
+        },
+      };
+      const app = createApp({
+        setup() {
+          provide(panelContextKey, directPanelContext(instance));
+          provide(directMountKey, { instance, member: (member: string) => h(PanelMember, { instance, member }) } as never);
+          return () => h(Runner);
+        },
+      });
+      app.mount(container);
+
+      try {
+        await vi.waitFor(() => expect(readDescription).toHaveBeenCalled());
+        const entryId = instance.entryInstances()[operation];
+        expect(typeof entryId).toBe("string");
+        expect(button().disabled).toBe(true);
+        const executeFromFirstSnapshot = () => instance.executeAction({
+          operation, expectedEntryInstanceId: entryId, agentRun: AGENT_RUN,
+        });
+        const selectOtherTask = () => instance.state.set("selectedTask", { className: SCHEDULED_TASK, primaryKey: "t-2" });
+        if (selection === "changed before loading") {
+          selectOtherTask();
+          expect(instance.entryInstances()[operation]).not.toBe(entryId);
+          expect(await executeFromFirstSnapshot()).toMatchObject({ ok: false, reason: "stale" });
+        }
+
+        resolveDescription(readyOps({ runNow: descriptor }));
+        await vi.waitFor(() => expect(button().disabled).toBe(false));
+
+        if (selection === "unchanged") {
+          expect(instance.entryInstances()[operation]).toBe(entryId);
+          expect(await executeFromFirstSnapshot()).toMatchObject({ ok: true, kind: "executed", operation });
+          expect(prepare.mock.calls[0]?.[1]).toEqual({
+            call: { target: { kind: "object", objectType: SCHEDULED_TASK, primaryKey: "t-1" }, input: {} },
+          });
+          expect(confirmOperation).toHaveBeenCalled();
+        } else {
+          if (selection === "changed after loading") selectOtherTask();
+          expect(instance.entryInstances()[operation]).not.toBe(entryId);
+          expect(await executeFromFirstSnapshot()).toMatchObject({ ok: false, reason: "stale" });
+          expect(prepare).not.toHaveBeenCalled();
+        }
+      } finally {
+        app.unmount();
+        instance.markDisposed();
+      }
+    },
+  );
+
   it("ObjectForm distinguishes user-edited vs agent-filled fields, tracks editGeneration & activeInvalid, supports auto-mode discard, rotates formInstanceId, and preserves partial refusal", async () => {
     let localAutoMode = false;
     let claimResult: { ok: boolean; intentId?: string; message?: string } = { ok: true };
@@ -380,11 +502,12 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
         cancel: async () => {},
         requestLocalConfirmation: async (input) => {
           localConfirmSeq += 1;
+          const autoMode = localAutoMode && input.requireConfirmation !== true;
           return {
             intentId: `7f0c1a2e-6a0b-4f8e-9a51-0c6f3e2b1d0${localConfirmSeq}`,
-            questionId: `local-q-${localConfirmSeq}`,
+            questionId: autoMode ? null : `local-q-${localConfirmSeq}`,
             label: input.operationLabel,
-            autoMode: localAutoMode,
+            autoMode,
           };
         },
         claimLocalConfirmation: async () => claimResult,
@@ -488,12 +611,38 @@ describe("D2 regression suite: unified usePanelOperation, ObjectForm & ObjectLis
       });
       claimResult = { ok: true };
 
-      // 5. Auto-mode discard skips conversation confirmation and executes immediately.
+      // 5. Full-auto mode still asks before discarding a user's changes.
       localAutoMode = true;
-      const autoDiscard = await instance.executeAction({ operation: "form.discard", agentRun: AGENT_RUN });
-      expect(autoDiscard).toMatchObject({ ok: true, kind: "executed", operation: "form.discard" });
-      await vi.waitFor(() => expect(instance.dirty()).toBe(false));
-      expect(textInput("/name").value).toBe("Task A");
+      for (const operation of ["form.discard", "form.reset"]) {
+        textInput("/name").value = "User Name";
+        textInput("/name").dispatchEvent(new Event("input"));
+        await nextTick();
+
+        const pending = await instance.executeAction({ operation, agentRun: AGENT_RUN });
+        if (!pending.ok || pending.kind !== "awaiting_confirmation") throw new Error(`Expected confirmation for ${operation}`);
+        expect(instance.dirty()).toBe(true);
+        expect(textInput("/name").value).toBe("User Name");
+        expect(await pending.confirmation.dispatch()).toMatchObject({ ok: true, outcome: { discarded: true } });
+        await vi.waitFor(() => expect(textInput("/name").value).toBe("Task A"));
+        expect(instance.dirty()).toBe(false);
+      }
+
+      for (const operation of ["form.discard", "form.reset"]) {
+        // A human edit reverted to its original value does not force confirmation for an agent-filled field.
+        textInput("/name").value = "Temporary user edit";
+        textInput("/name").dispatchEvent(new Event("input"));
+        await nextTick();
+        textInput("/name").value = "Task A";
+        textInput("/name").dispatchEvent(new Event("input"));
+        await nextTick();
+        expect(instance.forms.handle("form")!.values.value.name).toBe("Task A");
+        expect(await instance.fillForm({ member: "form", values: { "/note": "Agent note" } })).toMatchObject({ ok: true });
+        expect(await instance.executeAction({ operation, agentRun: AGENT_RUN })).toMatchObject({
+          ok: true, kind: "executed", operation,
+        });
+        await vi.waitFor(() => expect(textInput("/note").value).toBe("Note A"));
+        expect(instance.dirty()).toBe(false);
+      }
       localAutoMode = false;
 
       // 6. Partial refusal with savedFields reports partial with savedFields and owner error code.
