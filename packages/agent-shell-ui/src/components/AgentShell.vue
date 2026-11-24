@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, shallowRef, toRef, useId, useSlots, watch } from "vue";
 import { PanelLeft, PanelRightOpen, X } from "lucide-vue-next";
-import { ElDrawer } from "element-plus";
+import { ElDrawer } from "@ontomato/foundation-ui/overlay";
 import { conversationQuestions, displayPlacementKey, shellContextKey, type ShellContext } from "../context";
 import { entryAgent, servePageComposerKey, type ComposerEntry, type PageComposerExpand } from "../page-composer-entry";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
