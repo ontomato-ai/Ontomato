@@ -3623,3 +3623,51 @@ test("projectionOperation preserves draft targets on read actions so panelOperat
   assert.equal(parsed.id, "definition.test");
   assert.deepEqual(parsed.target, { source: "draft", slot: "definition" });
 });
+
+const controlField = { path: "/field", label: "Field", valueSchema: {}, required: false, readOnly: false };
+const choiceOption = { label: "Read", value: 1, description: null, disabled: false, disabledReason: null };
+const parsesControl = (control: unknown) => panelFormFieldSchema.safeParse({ ...controlField, control }).success;
+
+test("select presentation follows cardinality and presets reference declared values", () => {
+  const value = { kind: "api", id: 1 };
+  const option = { ...choiceOption, value, badge: "GET", groupPath: ["API", "Reports"] };
+  const select = { kind: "select", multiple: true, options: [option] };
+  const presets = [{ label: "Readers", values: [{ id: 1, kind: "api" }] }];
+  for (const presentation of ["dropdown", "checklist", "tree"]) {
+    assert.equal(parsesControl({ ...select, presentation, presets }), true);
+  }
+  assert.equal(parsesControl({ ...select, presentation: "radio" }), false);
+  assert.equal(parsesControl({ ...select, multiple: false, presentation: "radio" }), true);
+  for (const presentation of ["tree", "checklist"]) {
+    assert.equal(parsesControl({ ...select, multiple: false, presentation }), false);
+  }
+  assert.equal(parsesControl({ ...select, multiple: false, presets }), false);
+  assert.equal(parsesControl({ ...select, presets: [{ label: "Unknown", values: [{ id: 2 }] }] }), false);
+  for (const metadata of [{ badge: "" }, { groupPath: [] }, { groupPath: [""] }]) {
+    assert.equal(parsesControl({ ...select, options: [{ ...option, ...metadata }] }), false);
+  }
+});
+
+test("choice matrix requires unique row keys and scalar tiers, and explains disabled rows", () => {
+  const row = { key: "reports", label: "Reports", badge: "API", disabled: false, disabledReason: null };
+  const disabled = { ...row, key: "users", disabled: true, disabledReason: "Managed by the owner" };
+  const matrix = { kind: "choice-matrix", rows: [row, disabled], options: [choiceOption, { ...choiceOption, value: "1" }] };
+  assert.equal(parsesControl(matrix), true);
+  assert.equal(parsesControl({ ...matrix, rows: [row, { ...disabled, key: row.key }] }), false);
+  assert.equal(parsesControl({ ...matrix, rows: [{ ...disabled, disabledReason: null }] }), false);
+  assert.equal(parsesControl({ ...matrix, rows: [{ ...row, disabledReason: "Unexpected" }] }), false);
+  assert.equal(parsesControl({ ...matrix, options: [choiceOption, { ...choiceOption, label: "Duplicate" }] }), false);
+  assert.equal(parsesControl({ ...matrix, options: [{ ...choiceOption, value: { tier: 1 } }] }), false);
+});
+
+test("text variables admit empty groups and require meaningful labels and insertion text", () => {
+  const item = { label: "Name", value: "{{name}}", badge: "Single" };
+  const group = { label: "Context", items: [item] };
+  const text = { kind: "text", variables: [group, { label: "Inputs", emptyHint: "Add an input", items: [] }] };
+  assert.equal(parsesControl(text), true);
+  assert.equal(parsesControl({ ...text, variables: [{ ...group, label: "" }] }), false);
+  assert.equal(parsesControl({ ...text, variables: [{ ...group, emptyHint: "" }] }), false);
+  for (const key of ["label", "value", "badge"]) {
+    assert.equal(parsesControl({ ...text, variables: [{ ...group, items: [{ ...item, [key]: "" }] }] }), false);
+  }
+});

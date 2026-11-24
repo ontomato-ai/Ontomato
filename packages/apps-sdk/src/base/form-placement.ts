@@ -147,7 +147,8 @@ export function resolveActiveField(
 
 /**
  * Validates that a value assigned via `fillForm` respects the same UI restrictions a human control enforces:
- * - Closed `select` controls (and static `valueSchema.enum`) only accept enabled declared options.
+ * - A select can retain unavailable choices already held by the field.
+ * - A choice matrix can retain unavailable tiers and historical rows, and cannot change a disabled row.
  * - Whole-object and whole-array assignments cannot alter nested `fixed`, `readOnly`, or `hidden` child fields,
  *   and nested editable children obey the same option/composite constraints.
  */
@@ -158,54 +159,64 @@ export function validateFormFieldValue(
   currentValues: PanelFormValues,
   fixedValues: Readonly<Record<string, RuntimeJsonValue>>,
 ): FormFieldRejection | null {
+  return validateAssignedValue(field, pointer, value, valueAt(currentValues, pointer), fixedValues);
+}
+
+function validateAssignedValue(
+  field: PanelFormField,
+  pointer: string,
+  value: RuntimeJsonValue,
+  currentValue: RuntimeJsonValue | undefined,
+  fixedValues: Readonly<Record<string, RuntimeJsonValue>>,
+): FormFieldRejection | null {
   const { control } = field;
+  const invalid = (message: string): FormFieldRejection => ({ path: pointer, reason: "invalid_value", message });
   if (control.kind === "select") {
+    const checkChoice = (choice: RuntimeJsonValue): FormFieldRejection | null => {
+      const matched = findPanelFormOption(control.options, choice);
+      if (matched?.disabled) return invalid(matched.disabledReason!);
+      if (!matched && !control.allowCreate)
+        return invalid(`Value ${JSON.stringify(choice)} is not an allowed option for field ${pointer}.`);
+      return null;
+    };
     if (control.multiple) {
-      if (!Array.isArray(value)) {
-        return { path: pointer, reason: "invalid_value", message: `Field ${pointer} expects an array of choices.` };
-      }
+      if (!Array.isArray(value)) return invalid(`Field ${pointer} expects an array of choices.`);
+      const currentChoices = Array.isArray(currentValue) ? currentValue : [];
       for (const item of value) {
-        const matched = findPanelFormOption(control.options, item);
-        if (matched?.disabled) {
-          return {
-            path: pointer,
-            reason: "invalid_value",
-            message: matched.disabledReason ?? `Option ${JSON.stringify(item)} is disabled for field ${pointer}.`,
-          };
-        }
-        if (!matched && !control.allowCreate) {
-          return {
-            path: pointer,
-            reason: "invalid_value",
-            message: `Value ${JSON.stringify(item)} is not an allowed option for field ${pointer}.`,
-          };
-        }
+        if (currentChoices.some(held => jsonValuesEqual(held, item))) continue;
+        const rejection = checkChoice(item);
+        if (rejection) return rejection;
       }
       return null;
     }
+    if (jsonValuesEqual(value, currentValue)) return null;
     if (value === null) {
-      const objectSelect = control.options.some((option) => typeof option.value === "object");
-      if (!field.required && (objectSelect || admitsNull(field.valueSchema))) return null;
-      return {
-        path: pointer,
-        reason: "invalid_value",
-        message: `Field ${pointer} requires choosing one of its allowed options.`,
-      };
+      const objectSelect = control.options.some(option => typeof option.value === "object");
+      return !field.required && (objectSelect || admitsNull(field.valueSchema))
+        ? null
+        : invalid(`Field ${pointer} requires choosing one of its allowed options.`);
     }
-    const matched = findPanelFormOption(control.options, value);
-    if (matched?.disabled) {
-      return {
-        path: pointer,
-        reason: "invalid_value",
-        message: matched.disabledReason ?? `Option ${JSON.stringify(value)} is disabled for field ${pointer}.`,
-      };
+    return checkChoice(value);
+  }
+
+  if (control.kind === "choice-matrix") {
+    if (!isPlainObject(value)) return invalid(`Field ${pointer} expects an object of row choices.`);
+    const currentObj = isPlainObject(currentValue) ? currentValue : {};
+    const rowsByKey = new Map(control.rows.map(row => [row.key, row]));
+    for (const row of control.rows) {
+      if (row.disabled && Object.hasOwn(currentObj, row.key)
+        && (!Object.hasOwn(value, row.key) || !jsonValuesEqual(value[row.key], currentObj[row.key]))) {
+        return invalid(row.disabledReason!);
+      }
     }
-    if (!matched && !control.allowCreate) {
-      return {
-        path: pointer,
-        reason: "invalid_value",
-        message: `Value ${JSON.stringify(value)} is not an allowed option for field ${pointer}.`,
-      };
+    for (const [key, choice] of Object.entries(value)) {
+      if (Object.hasOwn(currentObj, key) && jsonValuesEqual(currentObj[key], choice)) continue;
+      const row = rowsByKey.get(key);
+      if (!row) return invalid(`Row ${JSON.stringify(key)} is not declared for field ${pointer}.`);
+      if (row.disabled) return invalid(row.disabledReason!);
+      const option = findPanelFormOption(control.options, choice);
+      if (!option) return invalid(`Value ${JSON.stringify(choice)} is not an allowed tier for row ${JSON.stringify(key)} of field ${pointer}.`);
+      if (option.disabled) return invalid(option.disabledReason!);
     }
     return null;
   }
@@ -222,7 +233,6 @@ export function validateFormFieldValue(
   }
 
   if (control.kind === "object") {
-    const currentValue = valueAt(currentValues, pointer);
     const currentObj = isPlainObject(currentValue) ? currentValue : undefined;
     const fixedDescendants = Object.keys(fixedValues).filter((fixedPath) => fixedPath.startsWith(`${pointer}/`));
     if (value === null) {
@@ -282,7 +292,7 @@ export function validateFormFieldValue(
         return null;
       }
       if (afterChild !== undefined) {
-        const nestedRejection = validateFormFieldValue(child, childAbsPath, afterChild, currentValues, fixedValues);
+        const nestedRejection = validateAssignedValue(child, childAbsPath, afterChild, beforeChild, fixedValues);
         if (nestedRejection) return { ...nestedRejection, path: pointer };
       }
       return null;
@@ -318,8 +328,7 @@ export function validateFormFieldValue(
         };
       }
     }
-    const currentRows = valueAt(currentValues, pointer);
-    const prevRows = Array.isArray(currentRows) ? currentRows : [];
+    const prevRows = Array.isArray(currentValue) ? currentValue : [];
     const keyPath = control.itemKeyPath;
     for (let index = 0; index < value.length; index++) {
       const row = value[index];
@@ -348,7 +357,7 @@ export function validateFormFieldValue(
           continue;
         }
         if (afterChild !== undefined) {
-          const nestedRejection = validateFormFieldValue(child, childAbsPath, afterChild, currentValues, fixedValues);
+          const nestedRejection = validateAssignedValue(child, childAbsPath, afterChild, prevRow ? beforeChild : undefined, fixedValues);
           if (nestedRejection) return { ...nestedRejection, path: pointer };
         }
       }

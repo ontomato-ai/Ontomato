@@ -22,8 +22,11 @@ const optionAvailabilityMatches = (option: { disabled: boolean; disabledReason: 
 const optionAvailabilityMessage = "A disabled option must explain why it is unavailable";
 
 export const formOptionSchema = formOptionShape.refine(optionAvailabilityMatches, optionAvailabilityMessage);
+export const panelFormOptionValueSchema = z.union([nonempty, z.number().finite(), runtimeJsonObjectSchema]);
 export const panelFormOptionSchema = formOptionShape.extend({
-  value: z.union([nonempty, z.number().finite(), runtimeJsonObjectSchema]),
+  value: panelFormOptionValueSchema,
+  badge: nonempty.optional(),
+  groupPath: z.array(nonempty).min(1).optional(),
 }).refine(optionAvailabilityMatches, optionAvailabilityMessage);
 export type PanelFormOption = z.infer<typeof panelFormOptionSchema>;
 

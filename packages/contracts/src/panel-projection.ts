@@ -4,7 +4,7 @@ import {
 import { z } from "zod";
 import { componentIdSchema } from "./product-record-id";
 import { runtimeIdSchema, runtimeJsonObjectSchema, runtimeJsonValueSchema, type RuntimeJsonValue } from "./agent-runtime-values";
-import { formFieldErrorSchema, formValuesSchema, panelFormOptionSchema } from "./form-fields";
+import { findPanelFormOption, formFieldErrorSchema, formValuesSchema, panelFormOptionSchema, panelFormOptionValueSchema } from "./form-fields";
 import { bindingKey } from "./panel-client-requests";
 import { directPanelPortTypeSchema, matchesObjectType, panelFormTargetSchema, panelMessageKeySchema, panelObjectIdentitySchema, panelObjectRefSchema, panelOperationId, panelPortAccepts, type DirectPanelPortType, type PanelManifest, type PanelMember, type PanelMemberInput, type PanelMemberItemKey, type PanelObjectRef, type PanelOperation, type PanelStateOperation } from "./panel-manifest";
 import { ontologyElementRefSchema, type OntologyElementRef } from "./ontology-element-ref";
@@ -750,6 +750,15 @@ const simpleControls = [
     secret: z.boolean().optional(),
     placeholder: z.string().nullish(), maxLength: z.number().int().positive().optional(),
     rows: positiveInteger.optional(),
+    variables: z.array(z.object({
+      label: z.string().min(1),
+      emptyHint: z.string().min(1).optional(),
+      items: z.array(z.object({
+        label: z.string().min(1),
+        value: z.string().min(1),
+        badge: z.string().min(1).optional(),
+      }).strict()),
+    }).strict()).optional(),
   }).strict(),
   /** Each locale edits a string keyed by locale code in the owner's JSON object. */
   z.object({
@@ -768,8 +777,29 @@ const simpleControls = [
     /** The owner permits adding a value to the selection. */
     allowCreate: z.boolean().optional(),
     placeholder: z.string().nullish(),
-    /** Visual presentation for a single-value select: dropdown (default) or inline radio group. */
-    presentation: z.enum(["dropdown", "radio"]).optional(),
+    /** The kind defines the value and selection rules. Presentation only changes how choices are drawn. */
+    presentation: z.enum(["dropdown", "radio", "checklist", "tree"]).optional(),
+    /** Named selections of declared options, for multiple selection only. */
+    presets: z.array(z.object({
+      label: z.string().min(1),
+      values: z.array(panelFormOptionValueSchema),
+    }).strict()).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("choice-matrix"),
+    /** Shared tier choices for every row; same shape as select options. */
+    options: z.array(panelFormOptionSchema),
+    rows: z.array(z.object({
+      key: z.string().min(1),
+      label: z.string().min(1),
+      description: z.string().nullable().optional(),
+      badge: z.string().min(1).optional(),
+      disabled: z.boolean(),
+      disabledReason: z.string().min(1).nullable(),
+    }).strict().refine(
+      (row) => row.disabled === (row.disabledReason !== null),
+      "A disabled row must explain why it is unavailable",
+    )),
   }).strict(),
   z.object({ kind: z.literal("switch") }).strict(),
   z.object({ kind: z.literal("markdown") }).strict(),
@@ -868,7 +898,37 @@ const controlSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const panelFormFieldSchema = fieldShape.extend({ control: controlSchema }).superRefine(({ control }, ctx) => {
+  if (control.kind === "choice-matrix") {
+    if (new Set(control.rows.map(row => row.key)).size !== control.rows.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "rows"], message: "Row keys must be unique",
+      });
+    if (control.options.some(option => typeof option.value === "object")
+      || new Set(control.options.map(option => option.value)).size !== control.options.length)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "options"], message: "Tier values must be unique strings or numbers",
+      });
+    return;
+  }
   if (control.kind === "select") {
+    const { multiple, presentation, presets } = control;
+    if ((multiple && presentation === "radio")
+      || (!multiple && (presentation === "checklist" || presentation === "tree")))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "presentation"],
+        message: "Radio requires single selection and checklist or tree requires multiple selection",
+      });
+    if (!multiple && presets)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ["control", "presets"], message: "Presets require multiple selection",
+      });
+    presets?.forEach((preset, presetIndex) => preset.values.forEach((value, valueIndex) => {
+      if (!findPanelFormOption(control.options, value))
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom, path: ["control", "presets", presetIndex, "values", valueIndex],
+          message: "Preset values must name declared options",
+        });
+    }));
     if (!control.options.some(option => typeof option.value === "object")) return;
     if (control.allowCreate)
       ctx.addIssue({
