@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
-import { Check, CircleAlert, FilePen, FileText, LoaderCircle, Puzzle, Terminal, Wrench } from "lucide-vue-next";
+import { Check, CircleAlert, CircleHelp, FilePen, FileText, LoaderCircle, Puzzle, Terminal, Wrench } from "lucide-vue-next";
 import { shellContextKey } from "../context";
 import { describeTool } from "../tools";
 import type { ToolStepProps } from "../types";
@@ -25,20 +25,37 @@ const icon = computed(() => {
   }
 });
 const running = computed(() => props.step.status === "running" || props.step.status === "streaming");
+const unknownLabel = computed(() => shell.labels.value.toolOutcomeUnknown ?? "Outcome unknown");
+const unknownHint = computed(() => shell.labels.value.toolOutcomeUnknownHint ?? "");
 const argsText = computed(() => JSON.stringify(props.step.args, null, 2));
 </script>
 
 <template>
-  <button type="button" class="step-row" :aria-expanded="open" @click="open = !open">
+  <button
+    type="button"
+    class="step-row"
+    :class="{ unknown: step.status === 'unknown' }"
+    :data-tool-status="step.status"
+    :aria-expanded="open"
+    @click="open = !open"
+  >
     <component :is="icon" :size="13" class="step-icon" />
     <span class="step-verb">{{ step.toolName ? title.verb : shell.labels.value.preparing }}</span>
     <span v-if="title.subject" class="step-subject">{{ title.subject }}</span>
     <span class="step-detail">{{ title.detail }}</span>
     <LoaderCircle v-if="running" :size="13" class="spin status" />
     <CircleAlert v-else-if="step.status === 'failed'" :size="13" class="status failed" />
+    <span v-else-if="step.status === 'unknown'" class="status-badge unknown" :title="unknownLabel">
+      <CircleHelp :size="12" />
+      <span>{{ unknownLabel }}</span>
+    </span>
     <Check v-else :size="13" class="status done" />
   </button>
   <div v-if="open" class="step-body">
+    <div v-if="step.status === 'unknown' && unknownHint" class="unknown-note">
+      <CircleHelp :size="13" />
+      <span>{{ unknownHint }}</span>
+    </div>
     <div class="body-label">{{ shell.labels.value.toolInput }}</div>
     <pre>{{ argsText }}</pre>
     <template v-if="step.output">
@@ -111,6 +128,35 @@ const argsText = computed(() => JSON.stringify(props.step.args, null, 2));
 }
 .status.failed {
   color: var(--el-color-danger);
+}
+.status-badge.unknown {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--el-color-warning) 35%, transparent);
+  border-radius: var(--radius-xs);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.unknown-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--spacing-sm);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
+  font-size: var(--text-xs, 12px);
+  line-height: 1.4;
+}
+.unknown-note svg {
+  flex-shrink: 0;
 }
 .step-body {
   margin: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm) 29px;

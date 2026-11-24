@@ -1,20 +1,30 @@
+import type { RuntimeRunDetail } from "@ontomato/contracts/agent-runtime-details";
+import type { RuntimeUsageCount } from "@ontomato/contracts/agent-runtime-messages";
 import type { RuntimeJsonValue, RuntimeStopReason } from "@ontomato/contracts/agent-runtime-values";
 import type { AgentTasksSnapshot, QualityResult, QualityTask,ChannelAgentTask } from "@ontomato/contracts/agent-tasks";
-import { orderedMessages, type ConversationState } from "./conversation";
+import { orderedMessages, type ConversationState, type RunDetailEntry } from "./conversation";
 import { skillOfCommand } from "./tools";
 import type { ProcessStepView } from "./types";
 
 export type ProcessStep = ProcessStepView;
 
 /**
- * One piece of a response's process: the agent's text that is not its answer, consecutive thinking and tool steps, or
- * a retrieval the reply delegated, placed after the work that started it.
+ * One piece of a response's process: the agent's text that is not its answer, consecutive thinking and tool steps, a
+ * generic engine process entry, or a retrieval the reply delegated, placed after the work that started it.
  */
 export type ProcessBlock =
   | { kind: "note"; key: string; text: string; final: boolean; runId: string }
   | { kind: "steps"; key: string; steps: ProcessStep[]; active: boolean }
   | { kind: "input"; key: string; messageId: string; text: string; source: "user"; replyTo?: string; runId: string; final: true }
-  | { kind: "task"; key: string; task: ChannelAgentTask };
+  | { kind: "task"; key: string; task: ChannelAgentTask }
+  | { kind: "detail"; key: string; detail: RuntimeRunDetail };
+
+/** Engine-neutral token usage reported for one response: either a standalone usage update or summed assistant messages. */
+export interface ResponseUsage {
+  counts: RuntimeUsageCount;
+  /** Present when a standalone `usage_updated` event reported both a running total and a distinct last-call count. */
+  last?: RuntimeUsageCount;
+}
 
 /** Another party's review of the reply's data: one quality check of the datasets the reply cited from one retrieval. */
 export interface ResponseReview {
@@ -52,6 +62,8 @@ export interface ResponseItem {
   answerText: string;
   /** Quality reviews of the data this reply's answer cited; shown after the answer, never part of it. */
   reviews: ResponseReview[];
+  /** Token usage reported for this run, when any non-zero count is available. */
+  usage?: ResponseUsage | null;
   /** Start of the linked work and stop of this reply, in ms. */
   startedAt: number | null;
   finishedAt: number | null;
@@ -75,6 +87,77 @@ export function toolSummary(args: Record<string, RuntimeJsonValue>): string {
 function userText(content: string | { type: string; text?: string }[]): string {
   if (typeof content === "string") return content;
   return content.map((part) => (part.type === "text" ? (part.text ?? "") : "")).join("");
+}
+
+function hasUsageTokens(counts: RuntimeUsageCount): boolean {
+  return (
+    counts.totalTokens > 0 ||
+    counts.input > 0 ||
+    counts.output > 0 ||
+    counts.cacheRead > 0 ||
+    counts.cacheWrite > 0 ||
+    (counts.reasoning ?? 0) > 0
+  );
+}
+
+function sameUsageCounts(a: RuntimeUsageCount, b: RuntimeUsageCount): boolean {
+  return (
+    a.input === b.input &&
+    a.output === b.output &&
+    a.cacheRead === b.cacheRead &&
+    a.cacheWrite === b.cacheWrite &&
+    (a.reasoning ?? 0) === (b.reasoning ?? 0) &&
+    a.totalTokens === b.totalTokens
+  );
+}
+
+/**
+ * Resolves one run's token usage without engine-specific branching. A standalone `usage_updated` report is used as-is
+ * and never added to assistant-message usage; otherwise settled assistant messages of this run are summed.
+ */
+function runUsage(state: ConversationState, runId: string): ResponseUsage | null {
+  const run = state.runs[runId];
+  if (run?.usageUpdate) {
+    const counts = run.usageUpdate.total ?? run.usageUpdate.last;
+    if (!hasUsageTokens(counts)) return null;
+    const last =
+      run.usageUpdate.total &&
+      hasUsageTokens(run.usageUpdate.last) &&
+      !sameUsageCounts(run.usageUpdate.total, run.usageUpdate.last)
+        ? run.usageUpdate.last
+        : undefined;
+    return last ? { counts, last } : { counts };
+  }
+  let found = false;
+  let input = 0, output = 0, cacheRead = 0, cacheWrite = 0, reasoning = 0, totalTokens = 0;
+  let hasReasoning = false;
+  for (const entry of Object.values(state.messages)) {
+    if (entry.runId !== runId || entry.messageSeq === null) continue;
+    if (entry.message.role !== "assistant" || !entry.message.usage) continue;
+    const usage = entry.message.usage;
+    if (!hasUsageTokens(usage)) continue;
+    found = true;
+    input += usage.input;
+    output += usage.output;
+    cacheRead += usage.cacheRead;
+    cacheWrite += usage.cacheWrite;
+    totalTokens += usage.totalTokens;
+    if (usage.reasoning !== undefined) {
+      hasReasoning = true;
+      reasoning += usage.reasoning;
+    }
+  }
+  if (!found) return null;
+  return {
+    counts: {
+      input,
+      output,
+      cacheRead,
+      cacheWrite,
+      ...(hasReasoning ? { reasoning } : {}),
+      totalTokens,
+    },
+  };
 }
 
 /**
@@ -111,21 +194,42 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       datasets: task.checks.datasets.map((dataset) => ({ id: dataset.id, title: dataset.title ?? dataset.id })),
     }]);
   }
-  /** Places the reply's retrievals that started before `until` (all remaining ones without it). */
+  const pendingDetails = new Map<string, RunDetailEntry[]>();
+  const messageDetails = new Map<string, RunDetailEntry[]>();
+  for (const run of Object.values(state.runs)) {
+    const entries = Object.values(run.details);
+    if (!entries.length) continue;
+    const chronological: RunDetailEntry[] = [];
+    for (const entry of entries) {
+      if (entry.detail.scope === "message" && entry.detail.ref) {
+        const key = `${run.id}:${entry.detail.ref}`;
+        messageDetails.set(key, [...(messageDetails.get(key) ?? []), entry]);
+      } else {
+        chronological.push(entry);
+      }
+    }
+    if (chronological.length) pendingDetails.set(run.id, chronological);
+  }
+  /** Places the reply's retrievals and generic process details that started before `until` (all remaining without it). */
   const place = (response: ResponseItem, until: number | null) => {
     const pending = retrievals.get(response.runId);
     while (pending?.length && (until === null || pending[0]!.createdAt === null || Date.parse(pending[0]!.createdAt) <= until)) {
       const task = pending.shift()!;
       response.process.push({ kind: "task", key: `task:${task.id}`, task });
     }
+    const details = pendingDetails.get(response.runId);
+    while (details?.length && (until === null || (details[0]!.timestamp !== null && details[0]!.timestamp <= until))) {
+      const entry = details.shift()!;
+      response.process.push({ kind: "detail", key: `detail:${response.runId}:${entry.detail.key}`, detail: entry.detail });
+    }
   };
   let response: ResponseItem | null = null;
   const responses=new Map<string,ResponseItem>();
-  const toolResults = new Map<string, string>();
+  const toolResults = new Map<string, { output: string; isError: boolean }>();
   for (const entry of Object.values(state.messages)) {
     const message = entry.message;
     if (message.role === "toolResult")
-      toolResults.set(message.toolCallId, userText(message.content));
+      toolResults.set(message.toolCallId, { output: userText(message.content), isError: message.isError });
   }
 
   const openResponse = (runId: string): ResponseItem => {
@@ -142,6 +246,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       answerMessageId: null,
       answerText: "",
       reviews: reviews.get(runId) ?? [],
+      usage: null,
       startedAt: null,
       finishedAt: null,
     };
@@ -244,6 +349,7 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
         return;
       }
       const tool = block.id ? run?.tools[block.id] : undefined;
+      const result = block.id ? toolResults.get(block.id) : undefined;
       const args = tool?.args ?? block.arguments;
       const toolName = tool?.toolName ?? block.name;
       const command = toolName === "bash" && typeof args.command === "string" ? args.command : "";
@@ -254,12 +360,40 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
         toolName,
         skill: command ? skillOfCommand(command) : null,
         args,
-        status: tool?.status ?? (block.id && toolResults.has(block.id) ? "completed" : "streaming"),
-        output: tool?.output || (block.id ? (toolResults.get(block.id) ?? "") : ""),
+        status:
+          tool?.status ??
+          (result ? (result.isError ? "failed" : "completed") : run?.status === "stopped" ? "unknown" : "streaming"),
+        output: tool?.output || result?.output || "",
       });
     });
+    const attached = messageDetails.get(`${current.runId}:${entry.id}`);
+    if (attached?.length) {
+      messageDetails.delete(`${current.runId}:${entry.id}`);
+      for (const detailEntry of attached) {
+        current.process.push({
+          kind: "detail",
+          key: `detail:${current.runId}:${detailEntry.detail.key}`,
+          detail: detailEntry.detail,
+        });
+      }
+    }
   }
 
+  for (const run of Object.values(state.runs)) {
+    if (!responses.has(run.id) && Object.keys(run.details).length > 0) openResponse(run.id);
+  }
+  for (const [refKey, attached] of messageDetails.entries()) {
+    const runId = refKey.slice(0, refKey.indexOf(":"));
+    const target = responses.get(runId);
+    if (!target) continue;
+    for (const detailEntry of attached) {
+      target.process.push({
+        kind: "detail",
+        key: `detail:${target.runId}:${detailEntry.detail.key}`,
+        detail: detailEntry.detail,
+      });
+    }
+  }
   for (const reply of responses.values()) place(reply, null);
 
   // A failed child's notification can wake the assistant while its replacement is still running.
@@ -315,13 +449,14 @@ export function conversationItems(state: ConversationState, tasks: AgentTasksSna
       else if (pending.some(task => datasetsByRun.has(task.runId))) item.retrievalProgress = "datasetReady";
     }
     item.workspaceCommit = run?.workspaceCommit ?? null;
+    item.usage = runUsage(state, item.runId);
     item.startedAt = startOf(item.runId, new Set());
     item.finishedAt = run?.finishedAt ? Date.parse(run.finishedAt) : null;
     item.end = run && run.status === "stopped"
       ? { stopReason: run.stopReason, errorMessage: run.errorMessage }
       : null;
-    // A step that started a retrieval stays the active one while the retrieval's card follows it.
-    const last = [...item.process].reverse().find((block) => block.kind !== "task");
+    // A step that started a retrieval or received a generic detail stays the active one while it runs.
+    const last = [...item.process].reverse().find((block) => block.kind !== "task" && block.kind !== "detail");
     for (const block of item.process) {
       if (block.kind !== "steps") continue;
       block.active =

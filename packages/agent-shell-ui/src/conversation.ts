@@ -1,8 +1,11 @@
 import type { AgentPendingQuestion } from "@ontomato/contracts/agent-channel";
 import type { AgentHostRunSnapshot, AgentHostSessionHistory } from "@ontomato/contracts/agent-host";
 import type { RuntimeArtifact } from "@ontomato/contracts/agent-runtime-artifacts";
+import type { RuntimeRunDetail } from "@ontomato/contracts/agent-runtime-details";
 import type {
   RuntimeEventEnvelope,
+  RuntimeToolOutcome,
+  RuntimeUsageUpdate,
 } from "@ontomato/contracts/agent-runtime-events";
 import type {
   RuntimeAssistantStreamEvent,
@@ -32,6 +35,12 @@ export interface ToolExecutionView {
   output: string;
 }
 
+export interface RunDetailEntry {
+  detail: RuntimeRunDetail;
+  /** Envelope timestamp in ms when received live, or null when loaded without one. */
+  timestamp: number | null;
+}
+
 export interface RunView {
   id: string;
   status: RuntimeRunStatus;
@@ -46,6 +55,10 @@ export interface RunView {
   cursor: { seq: number; streamId: string } | null;
   artifacts: RuntimeArtifact[];
   tools: Record<string, ToolExecutionView>;
+  /** Generic process entries keyed by `detail.key`; re-emitting a key replaces it in place. */
+  details: Record<string, RunDetailEntry>;
+  /** Standalone usage report from `usage_updated`; a later report replaces the earlier one. */
+  usageUpdate: RuntimeUsageUpdate | null;
 }
 
 export interface ConversationState {
@@ -98,7 +111,19 @@ function ensureRun(state: ConversationState, runId: string): RunView {
     cursor: null,
     artifacts: [],
     tools: {},
+    details: {},
+    usageUpdate: null,
   });
+}
+
+function toolEndStatus(
+  outcome: RuntimeToolOutcome | undefined,
+  isError: boolean,
+): "completed" | "failed" | "unknown" {
+  if (outcome === "unknown") return "unknown";
+  if (outcome === "failure") return "failed";
+  if (outcome === "success") return "completed";
+  return isError ? "failed" : "completed";
 }
 
 function addArtifact(run: RunView, artifact: RuntimeArtifact) {
@@ -294,9 +319,21 @@ export function applyEnvelope(state: ConversationState, envelope: RuntimeEventEn
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         args: run.tools[event.toolCallId]?.args ?? {},
-        status: event.isError ? "failed" : "completed",
+        status: toolEndStatus(event.outcome, event.isError),
         output: toolOutput(event.result.content),
       };
+      break;
+    case "run_detail": {
+      const existing = run.details[event.detail.key];
+      const timestamp = Date.parse(envelope.timestamp);
+      run.details[event.detail.key] = {
+        detail: event.detail,
+        timestamp: existing?.timestamp ?? (Number.isFinite(timestamp) ? timestamp : null),
+      };
+      break;
+    }
+    case "usage_updated":
+      run.usageUpdate = event.usage;
       break;
     case "artifact_registered":
       addArtifact(run, event.artifact);

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
-import { Brain, ChevronRight, LoaderCircle, Wrench } from "lucide-vue-next";
+import { Brain, ChevronRight, CircleHelp, LoaderCircle, Wrench } from "lucide-vue-next";
 import { shellContextKey } from "../context";
 import { activitySummary, describeTool, resolveToolRenderer } from "../tools";
 import type { ProcessStepView } from "../types";
@@ -16,6 +16,7 @@ const open = ref(false);
 
 const current = computed(() => props.steps.at(-1));
 const toolCount = computed(() => props.steps.filter((step) => step.kind === "tool").length);
+const unknownCount = computed(() => props.steps.filter((step) => step.kind === "tool" && step.status === "unknown").length);
 /** While active: what is happening now; afterwards: which actions were taken and how many steps. */
 const summary = computed(() => {
   const labels = shell.labels.value;
@@ -47,6 +48,10 @@ function stepComponent(step: ProcessStepView) {
       <span class="summary-label">{{ summary.label }}</span>
       <span v-if="summary.subject" class="summary-subject">{{ summary.subject }}</span>
       <span v-if="summary.detail" class="summary-detail">{{ summary.detail }}</span>
+      <span v-if="!active && unknownCount" class="summary-unknown">
+        <CircleHelp :size="12" />
+        <span>{{ shell.labels.value.toolOutcomeUnknown ?? "Outcome unknown" }}</span>
+      </span>
       <ChevronRight :size="14" class="chevron" />
     </button>
     <ol v-if="open" class="steps">
@@ -115,6 +120,20 @@ function stepComponent(step: ProcessStepView) {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-xs, 12px);
   color: var(--el-text-color-tertiary);
+}
+.summary-unknown {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--el-color-warning) 35%, transparent);
+  border-radius: var(--radius-xs);
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+  line-height: 1.4;
 }
 .chevron {
   flex-shrink: 0;
