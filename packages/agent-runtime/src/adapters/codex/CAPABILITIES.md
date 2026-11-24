@@ -3,7 +3,7 @@
 The adapter uses experimental stdio app-server JSON-RPC. The R14 fixture is a
 reduced recording of the pinned program with IDs and timestamps normalized.
 The native compatibility test runs in CI with a real program, PostgreSQL and
-a deterministic local Responses endpoint. Deployment acceptance runs separately.
+the LiteLLM gateway and a deterministic local Responses upstream. Deployment acceptance runs separately.
 
 | Capability | State | Evidence and boundary |
 | --- | --- | --- |

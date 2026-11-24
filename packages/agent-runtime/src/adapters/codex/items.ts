@@ -36,9 +36,8 @@ export const command = z.object({
   command: z.string(), cwd: z.string(), status: z.string(), aggregatedOutput: z.string().nullish(),
   exitCode: z.number().nullish(), durationMs: z.number().nullish(),
 });
-export const patch = z.object({
-  status: z.string(), changes: z.array(z.object({
-    path: z.string(), diff: z.string(),
-    kind: z.object({ type: z.enum(["add", "delete", "update"]) }),
-  })),
-});
+export const patches = z.array(z.object({
+  path: z.string(), diff: z.string(),
+  kind: z.object({ type: z.enum(["add", "delete", "update"]) }),
+}));
+export const patch = z.object({ status: z.string(), changes: patches });

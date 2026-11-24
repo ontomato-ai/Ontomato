@@ -15,6 +15,8 @@ import { runtimeRunSnapshotSchema, type RuntimeStartRunRequest } from "@ontomato
 import { createCodexPlugin } from "../adapters/codex";
 import { HarnessRegistry } from "../adapters/registry";
 import { ModelGatewayClient } from "../gateway-client";
+import { ModelGatewayProcess } from "../gateway-process";
+import { RuntimeModelSettings } from "../model-settings";
 import { AgentRuntime } from "../runtime";
 import type { SessionEngineSandboxFactory } from "../session-engines";
 import { RuntimeStore } from "../store";
@@ -56,22 +58,17 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
   const root = await mkdtemp(path.join(tmpdir(), "codex-engine-test-"));
   const schema = "codex_engine_" + randomUUID().replaceAll("-", "");
   const admin = new pg.Pool({ connectionString: database });
-  const leases = new Set<string>();
+  const engineLeases: string[] = [];
+  const upstreamAuthorization: (string | undefined)[] = [];
   const modelRequests: { model: string; input: unknown[]; tools: { name: string }[] }[] = [];
   const toolRequests: { body: unknown; credential: string | string[] | undefined }[] = [];
   const logs: string[] = [];
-  const gateway = createServer(async (req, res) => {
+  const upstream = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const raw = Buffer.concat(chunks).toString();
-    if (req.method === "POST" && req.url === "/leases") {
-      const id = randomUUID();
-      leases.add(id);
-      res.end(JSON.stringify({ id, token: id }));
-    } else if (req.method === "DELETE" && req.url?.startsWith("/leases/")) {
-      leases.delete(req.url.slice("/leases/".length));
-      res.writeHead(204).end();
-    } else if (req.url === "/v1/responses" && leases.has(req.headers.authorization?.slice(7) ?? "")) {
+    if (req.url === "/v1/responses") {
+      upstreamAuthorization.push(req.headers.authorization);
       const body = JSON.parse(raw);
       modelRequests.push(body);
       const n = modelRequests.length;
@@ -83,9 +80,11 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
       res.writeHead(404).end();
     }
   });
-  gateway.listen(0, "127.0.0.1");
-  await once(gateway, "listening");
-  const base = `http://127.0.0.1:${(gateway.address() as AddressInfo).port}`;
+  upstream.listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  const base = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
+  const gateway = await ModelGatewayProcess.start("python3");
+  const { controlUrl, dataUrl } = gateway.addresses;
   const sandbox: SessionEngineSandboxFactory = async ({ sessionDirectory, callback }) => {
     const workspace = path.join(sessionDirectory, "workspace");
     const state = path.join(sessionDirectory, "native");
@@ -93,8 +92,9 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
     let stop = async () => {};
     return {
       directories: { workspace, state, skills: [] }, hostWorkspace: workspace, hostState: state,
-      gatewayBaseUrl: base + "/v1", callbackBaseUrl: `http://${callback.host}:${callback.port}`,
+      gatewayBaseUrl: dataUrl + "/v1", callbackBaseUrl: `http://${callback.host}:${callback.port}`,
       spawn(_command, args, env) {
+        engineLeases.push(env.CODEX_GATEWAY_TOKEN);
         const child = spawn(process.execPath, args, { cwd: workspace,
           env: { PATH: process.env.PATH, TMPDIR: workspace, ...env }, stdio: ["pipe", "pipe", "pipe", "pipe"] });
         child.stderr.setEncoding("utf8").on("data", (data: string) => logs.push(data));
@@ -111,8 +111,7 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
   const registry = new HarnessRegistry([createCodexPlugin(binary, launcher)]);
   const createRuntime = () => new AgentRuntime({
     store: new RuntimeStore(database!, schema), root, hosts: [host], engineRegistry: registry,
-    modelRuntimeToken: "fixture-runtime-token", gateway: new ModelGatewayClient(base, base),
-    modelSeed: { modelName: "fixture-model", baseUrl: base + "/v1", apiKey: "host-only-upstream-key" },
+    modelRuntimeToken: "fixture-runtime-token", gateway: new ModelGatewayClient(controlUrl, dataUrl),
     worker: { development: true, python: "python3" }, channelCommandBaseUrl: base, openEngineSandbox: sandbox,
   });
   const sessionId = randomUUID();
@@ -147,18 +146,30 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
 
   try {
     await runtime.initialize();
+    await new RuntimeModelSettings(runtime.store, "fixture-runtime-token").save(scope.domainId, {
+      connections: { native: { provider: "openai", apiBase: base + "/v1", apiKey: "host-only-upstream-key" } },
+      models: { "fixture-model": { type: "chat", connection: "native", model: "gpt-5.5", maxRetries: 0 } },
+      defaultModel: "fixture-model", embeddingModel: null,
+    });
     await runtime.store.createSession(scope, sessionId);
     await run("First Codex input", "codex");
     const binding = await runtime.store.sessionEngine(scope, sessionId);
     expect(binding).toEqual({ engine: "codex", engineRef: expect.any(String) });
     await runtime.close();
-    expect(leases.size).toBe(0);
+    const revoked = await fetch(dataUrl + "/v1/responses", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + engineLeases[0] },
+      body: JSON.stringify({ model: "fixture-model" }),
+    });
+    expect(revoked.status).toBe(401);
     runtime = createRuntime();
     await runtime.initialize();
     await run("Codex input after restart", "pi");
     expect(await runtime.store.sessionEngine(scope, sessionId)).toEqual(binding);
     expect(modelRequests).toHaveLength(4);
-    expect(modelRequests.every(request => request.model === "fixture-model")).toBe(true);
+    expect(modelRequests.every(request => request.model === "gpt-5.5")).toBe(true);
+    expect(upstreamAuthorization).toEqual(Array.from({ length: 4 }, () => "Bearer host-only-upstream-key"));
+    expect(engineLeases).toHaveLength(2);
+    expect(engineLeases[1]).not.toBe(engineLeases[0]);
     expect(modelRequests.map(request => request.tools.map(tool => tool.name)))
       .toEqual(Array.from({ length: 4 }, () => ["fixture_tool"]));
     expect(JSON.stringify(modelRequests[2].input)).toContain("First Codex input");
@@ -170,8 +181,9 @@ it("uses the runtime session owner, Responses lease and product tool callback ac
     })));
   } finally {
     await runtime.close();
-    gateway.closeAllConnections();
-    await new Promise<void>(resolve => gateway.close(() => resolve()));
+    await gateway.stop();
+    upstream.closeAllConnections();
+    await new Promise<void>(resolve => upstream.close(() => resolve()));
     await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     await admin.end();
     await rm(root, { recursive: true, force: true });

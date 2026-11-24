@@ -109,7 +109,7 @@ jobs:
       - name: Test pinned Codex through the runtime session engine
         run: |
           sh apps/agent-runtime/codex/install.sh amd64 "$RUNNER_TEMP/ontomato-codex"
-          ONTO_TEST_CODEX="$RUNNER_TEMP/ontomato-codex/bin/codex" \
+          LITELLM_LOCAL_MODEL_COST_MAP=true ONTO_TEST_CODEX="$RUNNER_TEMP/ontomato-codex/bin/codex" \
             pnpm --filter @ontomato/agent-runtime exec vitest run --maxWorkers=2 --minWorkers=1 src/__tests__/codex-engine.integration.test.ts
 
       - name: Test workbench server integration

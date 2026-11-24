@@ -6,7 +6,7 @@ import type { RuntimeRunDetail } from "@ontomato/contracts/agent-runtime-details
 import type {
   HarnessAssistantMessageEvent, HarnessToolCallResult, HarnessToolPartialResult, HarnessTurnHost,
 } from "../contract";
-import { command, itemSchema, patch, text, toolRequest } from "./items";
+import { command, itemSchema, patch, patches, text, toolRequest } from "./items";
 import type { CodexNotice } from "./transport";
 
 const str = z.string();
@@ -24,7 +24,6 @@ type Tool = { name: string; args: RuntimeJsonObject; output: string };
 export class CodexEvents {
   private step = false;
   private stepHasTools = false;
-  private stepHasAssistant = false;
   private readonly messages = new Map<string, "text" | "thinking">();
   private readonly tools = new Map<string, Tool>();
   private readonly results = new Map<string, HarnessToolCallResult>();
@@ -45,7 +44,6 @@ export class CodexEvents {
     if (!this.step) return;
     this.step = false;
     this.stepHasTools = false;
-    this.stepHasAssistant = false;
     await this.host.emit({ type: "turn_end" });
   }
 
@@ -73,7 +71,6 @@ export class CodexEvents {
     if (this.messages.has(id)) return;
     if (this.stepHasTools && this.tools.size === 0) await this.end();
     await this.begin();
-    this.stepHasAssistant = true;
     this.messages.set(id, kind);
     await this.host.emit({ type: "message_start", nativeId: id, message: this.assistant("pending") });
     await this.delta(id, { type: kind === "text" ? "text_start" : "thinking_start", contentIndex: 0 });
@@ -94,7 +91,7 @@ export class CodexEvents {
 
   async startTool(id: string, name: string, args: RuntimeJsonObject) {
     if (this.tools.has(id)) return;
-    if (this.stepHasTools && this.tools.size === 0 && !this.stepHasAssistant) await this.end();
+    if (this.stepHasTools && this.tools.size === 0) await this.end();
     await this.begin();
     this.stepHasTools = true;
     const nativeId = `call:${id}`;
@@ -190,14 +187,7 @@ export class CodexEvents {
           await this.finishTool(id, { isError: n.status !== "completed", result: {
             content: n.changes.map(change => text(change.diff)), details: { data: { status: n.status, changes: n.changes } },
           } });
-          for (const change of n.changes) {
-            const relative = path.posix.relative(this.workspace, path.posix.resolve(this.workspace, change.path));
-            if (!relative || relative.startsWith("../")) continue;
-            const operation = { add: "added", delete: "deleted", update: "modified" }[change.kind.type] as
-              "added" | "deleted" | "modified";
-            await this.detail({ category: "file_change", key: `patch:${relative}`, scope: "run", ref: null,
-              path: relative, operation, patch: change.diff, text: `${operation}: ${relative}` });
-          }
+          await this.fileChanges(n.changes);
         }
         break;
       }
@@ -205,14 +195,35 @@ export class CodexEvents {
         await this.detail({ category: "compaction", key: `compaction:${id}`, scope: "run", ref: null,
           status: done ? "completed" : "started", text: done ? "Context compacted" : "Compacting context" });
         break;
-      case "functionCallOutput":
-        if (done) await this.diagnostic("info", `${str.parse(item.name)}: ${str.parse(item.output)}`);
+      case "functionCallOutput": {
+        if (!done) break;
+        const name = str.parse(item.name);
+        const body = z.union([str, z.array(z.object({ type: str, text: str.optional() }))]).parse(item.output);
+        const shown = typeof body === "string" ? body : body.filter(part => part.type === "input_text").map(part => part.text).join("\n");
+        if (shown) await this.diagnostic("info", `${name}: ${shown}`);
         break;
-      case "hookPrompt":
+      }
       case "enteredReviewMode":
-      case "exitedReviewMode":
-        if (done) await this.diagnostic("info", String(item.prompt ?? item.review ?? item.type));
+      case "exitedReviewMode": {
+        const status = item.type === "enteredReviewMode" ? "started" : "completed";
+        if (done) await this.detail({ category: "review", key: "review", scope: "run", ref: null,
+          name: "Review", status, text: str.parse(item.review) || `Review ${status}` });
         break;
+      }
+      case "hookPrompt":
+        if (done) await this.diagnostic("info", "Codex added a hook prompt");
+        break;
+    }
+  }
+
+  private async fileChanges(changes: z.infer<typeof patches>) {
+    const operations = { add: "added", delete: "deleted", update: "modified" } as const;
+    for (const change of changes) {
+      const relative = path.posix.relative(this.workspace, path.posix.resolve(this.workspace, change.path));
+      if (!relative || relative === ".." || relative.startsWith("../")) continue;
+      const operation = operations[change.kind.type];
+      await this.detail({ category: "file_change", key: `patch:${relative}`, scope: "run", ref: null,
+        path: relative, operation, patch: change.diff, text: `${operation}: ${relative}` });
     }
   }
 
@@ -248,6 +259,51 @@ export class CodexEvents {
           tool.output += delta;
           await this.progress(itemId, { text: tool.output });
         }
+        break;
+      }
+      case "item/fileChange/patchUpdated":
+        await this.fileChanges(patches.parse(params.changes));
+        break;
+      case "item/commandExecution/terminalInteraction": {
+        const { itemId, processId } = z.object({ itemId: str, processId: str }).parse(params);
+        await this.diagnostic("info", `Terminal interaction for ${itemId} (process ${processId})`);
+        break;
+      }
+      case "thread/attachment/updated": {
+        const { attachmentId, attachmentType, operation } = z.object({
+          attachmentId: str, attachmentType: str, operation: str,
+        }).parse(params);
+        await this.detail({ category: "attachment", key: `attachment:${attachmentId}`, scope: "run", ref: null,
+          object: attachmentId, operation, text: `${attachmentType} attachment ${operation}` });
+        break;
+      }
+      case "thread/settings/updated":
+        await this.detail({ category: "attachment", key: "thread-settings", scope: "run", ref: null,
+          object: "thread-settings", operation: "updated", text: "Thread settings updated" });
+        break;
+      case "hook/started":
+      case "hook/completed": {
+        const { id, eventName, statusMessage } = z.object({ id: str, eventName: str, statusMessage: str.nullish() }).parse(params.run);
+        const status = method === "hook/started" ? "started" : "completed";
+        await this.detail({ category: "hook", key: `hook:${id}`, scope: "run", ref: null,
+          name: eventName, status, text: statusMessage || `${eventName} hook ${status}` });
+        break;
+      }
+      case "model/verification": {
+        const verifications = z.array(str).parse(params.verifications);
+        if (verifications.length) await this.detail({ category: "model", key: "model-verification", scope: "run", ref: null,
+          model: this.model, text: `Model verification: ${verifications.join(", ")}` });
+        break;
+      }
+      case "turn/moderationMetadata":
+        await this.detail({ category: "moderation", key: "moderation", scope: "run", ref: null,
+          stage: "reported", reason: null, text: "Model moderation reported" });
+        break;
+      case "model/safetyBuffering/updated": {
+        const { showBufferingUi, reasons } = z.object({ showBufferingUi: z.boolean(), reasons: z.array(str) }).parse(params);
+        await this.detail({ category: "moderation", key: "safety-buffer", scope: "run", ref: null,
+          stage: showBufferingUi ? "waiting" : "completed", reason: reasons.join(", ") || null,
+          text: showBufferingUi ? "Model response is waiting for review" : "Model response review wait ended" });
         break;
       }
       case "thread/tokenUsage/updated": {
