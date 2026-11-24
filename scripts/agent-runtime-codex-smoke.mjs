@@ -33,7 +33,7 @@ const upstream = createServer(async (request, response) => {
   if (requests.length === 1) {
     emit({ role: "assistant", tool_calls: [{
       index: 0, id: "native-shell", type: "function",
-      function: { name: "exec_command", arguments: JSON.stringify({ cmd: `printf ${nativeOutput}` }) },
+      function: { name: "exec_command", arguments: JSON.stringify({ cmd: `python3 -c 'print("${nativeOutput}")'; :` }) },
     }] }, null);
     emit({}, "tool_calls");
   } else {
@@ -67,7 +67,7 @@ try {
       gateway: { host: data.hostname, port: Number(data.port) },
       callback: { host: "127.0.0.1", port: upstream.address().port },
     },
-    processCount: limits.processCount, fileBytes: limits.fileBytes,
+    fileBytes: limits.fileBytes,
   });
   const signal = AbortSignal.timeout(30000);
   const engine = await codexPlugin.open({
@@ -97,7 +97,7 @@ try {
   }
   const command = events.find(event => event.type === "tool_execution_end" && event.toolName === "exec_command");
   assert.equal(command.isError, false);
-  assert.deepEqual(command.result.content, [{ type: "text", text: nativeOutput }]);
+  assert.deepEqual(command.result.content, [{ type: "text", text: nativeOutput + "\n" }]);
   assert.ok(JSON.stringify(requests[1].body.messages).includes(nativeOutput));
   assert.ok(JSON.stringify(requests[0].body.messages).includes(prompt));
   const reply = events.find(event => event.type === "message_end" && event.message.role === "assistant" && event.message.phase === "answer");
