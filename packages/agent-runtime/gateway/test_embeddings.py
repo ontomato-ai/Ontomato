@@ -12,14 +12,19 @@ from server import DATA, app
 
 
 class ModelGatewayEmbeddingTest(unittest.IsolatedAsyncioTestCase):
-    async def test_leased_dimensions_reach_dashscope(self):
-        for provider in ("custom_openai", "openai", "dashscope"):
-            with self.subTest(provider=provider):
+    async def test_leased_dimensions_reach_the_provider(self):
+        for provider, model_name in (
+            ("custom_openai", "text-embedding-v4"),
+            ("custom_openai", "custom-embed-v1"),
+            ("openai", "text-embedding-v3"),
+            ("dashscope", "text-embedding-v4"),
+        ):
+            with self.subTest(provider=provider, model=model_name):
                 store = LeaseStore()
                 lease = store.issue({
                     "embedding": Model(
                         litellm_params={
-                            "model": f"{provider}/text-embedding-v4",
+                            "model": f"{provider}/{model_name}",
                             "api_base": "https://dashscope.example/compatible-mode/v1",
                             "api_key": "test-key",
                             "max_retries": 0,
@@ -35,7 +40,7 @@ class ModelGatewayEmbeddingTest(unittest.IsolatedAsyncioTestCase):
                     return httpx.Response(200, json={
                         "object": "list",
                         "data": [{"object": "embedding", "index": 0, "embedding": [0.0] * body.get("dimensions", 1024)}],
-                        "model": "text-embedding-v4",
+                        "model": model_name,
                         "usage": {"prompt_tokens": 1, "total_tokens": 1},
                     })
 

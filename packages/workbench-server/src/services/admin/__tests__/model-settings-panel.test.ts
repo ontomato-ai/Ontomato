@@ -415,6 +415,23 @@ describe("model settings owner writes, impact confirmation, and draft reads", ()
     expect(savedBodies).toEqual([expect.objectContaining({ defaultModel: null, embeddingModel: null })]);
   });
 
+  it("preserves an unsubmitted embedding selection in the impact preview and save", async () => {
+    const saveUsage = writeOp(`${MODEL_USAGE}.save`);
+    const host = makeHost();
+    const target = { kind: "object", objectType: MODEL_USAGE, primaryKey: "domain" } as const;
+    const input = { values: { defaultModel: "claude-sonnet" }, submittedFields: ["/defaultModel"] };
+
+    const fullImpact = await saveUsage.inspectImpact!.inspect(host, [{
+      target,
+      input: { values: { defaultModel: "claude-sonnet", embeddingModel: "embed-3" } },
+    }]);
+    expect(fullImpact).not.toBeNull();
+    expect(await saveUsage.inspectImpact!.inspect(host, [{ target, input }])).toEqual(fullImpact);
+
+    expect((await saveUsage.execute(host, target, input, "intent-partial")).kind).toBe("success");
+    expect(savedBodies).toEqual([expect.objectContaining({ defaultModel: "claude-sonnet", embeddingModel: "embed-3" })]);
+  });
+
   it("confirms default chat/embedding changes and vector rebuild actions", async () => {
     const saveUsage = writeOp(`${MODEL_USAGE}.save`);
     const impact = await saveUsage.inspectImpact!.inspect(makeHost(), [

@@ -128,8 +128,8 @@ def embedding_params(model: Model, body: dict) -> dict:
     params["input"] = body.get("input")
     if model.model_info.get("dimensions") is not None:
         params["dimensions"] = model.model_info["dimensions"]
-        # DashScope's v4 supports dimensions, but LiteLLM's OpenAI path drops it for this model ID.
-        if prefix in ("openai", "custom_openai") and upstream == "text-embedding-v4":
+        # LiteLLM's OpenAI path drops dimensions for arbitrary model IDs unless explicitly allowed.
+        if prefix in ("openai", "custom_openai"):
             params["allowed_openai_params"] = ["dimensions"]
     return params
 

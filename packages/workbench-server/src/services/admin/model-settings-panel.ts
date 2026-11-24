@@ -1034,14 +1034,19 @@ function usageFormValues(settings: ModelSettingsData): z.infer<typeof usageFormV
 function parseUsageDraft(
   raw: Record<string, unknown>,
   settings: ModelSettingsData,
+  submittedFields?: readonly string[],
 ): {
   next?: ModelSettingsWrite;
   errors: FormFieldError[];
 } {
   const checked = modelSettingsWriteSchema.safeParse({
     ...settingsWriteFromData(settings),
-    defaultModel: raw.defaultModel ?? null,
-    embeddingModel: raw.embeddingModel ?? null,
+    defaultModel: submittedFields === undefined || submittedFields.includes("/defaultModel")
+      ? raw.defaultModel ?? null
+      : settings.defaultModel,
+    embeddingModel: submittedFields === undefined || submittedFields.includes("/embeddingModel")
+      ? raw.embeddingModel ?? null
+      : settings.embeddingModel,
   });
   if (!checked.success) {
     return {
@@ -1368,8 +1373,8 @@ const saveUsageImpact: PanelImpactInspector = {
   handlerRef: `${SAVE_USAGE_OP}.inspect-impact`,
   async inspect(host, calls) {
     const settings = await readSettings(host, host.executor.credentials);
-    const { values } = saveInputSchema.parse(calls[0]!.input);
-    const evaluated = parseUsageDraft(values, settings);
+    const { values, submittedFields } = saveInputSchema.parse(calls[0]!.input);
+    const evaluated = parseUsageDraft(values, settings, submittedFields);
     if (!evaluated.next) return null;
     const nextDefault = evaluated.next.defaultModel;
     const nextEmbedding = evaluated.next.embeddingModel;
@@ -1708,8 +1713,8 @@ export const modelSettingsServerOperations: readonly PanelServerOperation[] = [
     inspectImpact: saveUsageImpact,
     async execute(host: PanelOperationHost, _target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
       const settings = await readSettings(host, host.executor.credentials);
-      const { values } = saveInputSchema.parse(input);
-      const evaluated = parseUsageDraft(values, settings);
+      const { values, submittedFields } = saveInputSchema.parse(input);
+      const evaluated = parseUsageDraft(values, settings, submittedFields);
       if (evaluated.errors.length > 0 || !evaluated.next) {
         return {
           kind: "refusal",
