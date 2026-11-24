@@ -201,7 +201,9 @@ export function createCodexPlugin(program = binary, entrypoint = launcher): Harn
     },
     async open(request: HarnessOpenRequest) {
       request.signal.throwIfAborted();
-      if (request.previousContext?.length) throw new Error("Codex requires its native thread to resume existing context");
+      // Runtime status messages remain visible after a failed open. They were never part of a native thread.
+      if (request.previousContext?.some(message => message.role !== "assistant" || message.origin !== "runtime"))
+        throw new Error("Codex requires its native thread to resume existing context");
       const { directories, model, prompt, engineTools, engineRef, tools } = request;
       const { token, baseUrl, contextWindow } = model;
       const access = { baseUrl, contextWindow, model: model.model };
