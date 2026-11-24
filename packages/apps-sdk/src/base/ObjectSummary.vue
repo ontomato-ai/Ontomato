@@ -89,6 +89,7 @@ const record = computed<PlatformObjectRecord | null>(() =>
   recordData.value.status === "ready" ? (recordData.value.value as unknown as PlatformObjectRecord) : null);
 
 useMemberOutput("label", () => record.value?.label ?? null);
+useMemberOutput("status", () => recordData.value.status);
 
 const shown = computed(() => {
   const fields = record.value?.fields ?? {};

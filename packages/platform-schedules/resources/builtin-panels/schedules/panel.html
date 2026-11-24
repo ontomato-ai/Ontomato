@@ -1,276 +1,289 @@
 <style>
-  .schedules { display: flex; flex-direction: column; gap: var(--spacing-lg); padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px); }
-  .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--spacing-md); }
-  .chips { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); }
-  .chip { display: inline-flex; gap: var(--spacing-xs); align-items: center; padding: var(--spacing-xs) var(--spacing-md); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--sdk-text-color-regular); font-size: var(--text-sm); cursor: pointer; }
-  .chip:hover { background: var(--sdk-fill-color-light); }
-  .chip.is-active { background: var(--sdk-bg-color); color: var(--sdk-text-color-primary); font-weight: var(--font-semibold); box-shadow: 0 0 0 1px var(--sdk-border-color-lighter); }
-  .chip .count { color: var(--sdk-text-color-secondary); font-variant-numeric: tabular-nums; }
-  .filter-more { max-width: 100%; }
-  .chevron { border: solid currentColor; border-width: 0 1px 1px 0; width: 5px; height: 5px; rotate: 45deg; }
-  .search { width: 280px; max-width: 100%; }
-  .body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-lg); align-items: start; }
-  .body.with-pane { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
-  @media (max-width: 960px) { .body.with-pane { grid-template-columns: minmax(0, 1fr); } }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: var(--spacing-lg); margin: 0; padding: 0; list-style: none; }
-  .grid > li { min-width: 0; }
-  .card { display: flex; flex-direction: column; gap: var(--spacing-sm); height: 100%; box-sizing: border-box; padding: var(--spacing-lg); border: 1px solid var(--sdk-border-color-lighter); border-radius: var(--radius-lg); background: var(--sdk-bg-color); cursor: pointer; }
-  .card.is-selected { border-color: var(--sdk-color-primary); box-shadow: 0 0 0 1px var(--sdk-color-primary); }
-  .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
-  .card-app > svg { width: 1rem; height: 1rem; }
-  .card-app { display: inline-flex; align-items: center; gap: var(--spacing-xs); font-size: var(--text-xs); color: var(--sdk-text-color-secondary); overflow-wrap: anywhere; }
-  .card-title { margin: 0; font-size: var(--text-base); font-weight: var(--font-semibold); color: var(--sdk-text-color-primary); overflow-wrap: anywhere; }
-  .card-select { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
-  .card-summary { margin: 0; font-size: var(--text-sm); color: var(--sdk-text-color-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-  .card-pause { margin: 0; padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); background: var(--sdk-color-warning-light-9); color: var(--sdk-color-warning-dark-2); font-size: var(--text-xs); overflow-wrap: anywhere; }
-  .pause-controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--spacing-xs) var(--spacing-sm); }
-  .pause-details { flex: 1; min-width: 0; }
-  .pause-details summary { display: inline-flex; align-items: center; gap: var(--spacing-xs); list-style: none; cursor: pointer; }
-  .pause-details summary::-webkit-details-marker { display: none; }
-  .pause-details[open] .chevron { rotate: 225deg; }
-  .pause-details p { margin: var(--spacing-xs) 0 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); overflow-wrap: anywhere; }
-  .card-meta { display: flex; flex-direction: column; gap: 6px; margin-top: auto; padding-top: var(--spacing-md); border-top: 1px solid var(--sdk-border-color-lighter); font-size: var(--text-xs); color: var(--sdk-text-color-regular); }
-  .line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; }
-  .muted { color: var(--sdk-text-color-secondary); }
-  .card-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }
-  .empty { display: grid; justify-items: center; gap: var(--spacing-sm); padding: var(--spacing-3xl) var(--spacing-lg); text-align: center; color: var(--sdk-text-color-secondary); overflow-wrap: anywhere; }
-  .pane { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-lg); border: 1px solid var(--sdk-border-color-lighter); border-radius: var(--radius-lg); background: var(--sdk-bg-color); min-width: 0; }
-  .pane-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--spacing-sm); }
-  .pane-head h2 { margin: 0; font-size: var(--text-lg); overflow-wrap: anywhere; }
-  .pane-head p { margin: var(--spacing-xs) 0 0; font-size: var(--text-xs); color: var(--sdk-text-color-secondary); }
-  .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--spacing-xs) var(--spacing-md); margin: 0; font-size: var(--text-sm); }
-  .facts dt { color: var(--sdk-text-color-secondary); }
-  .facts dd { margin: 0; overflow-wrap: anywhere; }
-  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-sm); }
-  .actions .el-button + .el-button { margin-left: 0; }
-  .section-title { margin: var(--spacing-sm) 0 0; font-size: var(--text-sm); font-weight: var(--font-semibold); }
-  .run-records, .run-group { display: flex; flex-direction: column; gap: var(--spacing-sm); }
-  .group-title { margin: 0; color: var(--sdk-text-color-secondary); font-size: var(--text-xs); }
-  .runs { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--sdk-border-color); border-radius: var(--radius-md); overflow: hidden; }
-  .run { display: flex; flex-direction: column; gap: var(--spacing-xs); padding: var(--spacing-md); font-size: var(--text-sm); }
-  .run + .run { border-top: 1px solid var(--sdk-border-color-lighter); }
-  .run.focused { background: var(--sdk-fill-color-light); }
-  .run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
-  .run-head .result-link { margin-left: auto; }
-  .run p { margin: 0; overflow-wrap: anywhere; }
-  .run .error { color: var(--sdk-color-danger); }
-  .run .sub { font-size: var(--text-xs); color: var(--sdk-text-color-secondary); }
-  .details { display: grid; gap: var(--spacing-xs); margin: var(--spacing-xs) 0 0; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); background: var(--sdk-fill-color); }
-  .details dt { font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--sdk-text-color-secondary); }
-  .details dd { margin: 0 0 var(--spacing-xs); }
-  .details pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--text-xs); }
-  .more { display: flex; justify-content: center; }
-  .task-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
+  [v-cloak] { display: none; }
+  .schedules-shell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    container: schedules-page / inline-size;
+  }
+  .schedules {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-md) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    min-width: 0;
+  }
+  .schedules-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-lg);
+    align-items: start;
+    min-width: 0;
+  }
+  .schedules-body.with-pane {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  }
+  @container schedules-page (max-width: 960px) {
+    .schedules-body.with-pane {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .schedules-list-col {
+    min-width: 0;
+  }
+  .schedules-pane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    border: 1px solid var(--sdk-border-color-lighter);
+    border-radius: var(--radius-lg);
+    background: var(--sdk-bg-color);
+    min-width: 0;
+  }
+  .schedules-pane-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .schedules-pane-head h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+    overflow-wrap: anywhere;
+  }
+  .schedules-pane-head p {
+    margin: var(--spacing-xs) 0 0;
+    font-size: var(--text-sm);
+    color: var(--sdk-text-color-secondary);
+  }
+  .schedules-note {
+    margin: 0;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-md);
+    background: var(--sdk-fill-color-light);
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .schedules-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+  .schedules-section-title {
+    margin: var(--spacing-xs) 0 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .schedules-sub {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--sdk-text-color-secondary);
+  }
+  .schedules-edit-pane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    outline: none;
+  }
+  .schedules-focus {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-color-primary);
+    border-radius: var(--radius-md);
+    background: var(--sdk-fill-color-blank);
+    min-width: 0;
+  }
+  .schedules-focus-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+  }
+  .schedules-focus-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    color: var(--sdk-text-color-primary);
+  }
+  .schedules-focus-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+  .schedules-runs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
 </style>
-<div id="app">
-  <page-header :title="t('panel.name')" description="配置各应用的定时任务，查看执行记录与结果">
+
+<div id="app" v-cloak class="schedules-shell">
+  <page-header :title="t('panel.name')">
     <template #actions>
-      <sdk-button text @click="refresh">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+      <sdk-button text circle :aria-label="$t('common.refresh')" :title="$t('common.refresh')" @click="refresh">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+          <path d="M3 3v5h5" />
+          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+          <path d="M16 16h5v5" />
+        </svg>
       </sdk-button>
       <sdk-button type="primary" :disabled="mode === 'create'" @click="startCreate">{{ t("newTask") }}</sdk-button>
     </template>
   </page-header>
+
   <section ref="schedulePage" class="schedules">
-    <div class="toolbar">
-      <div class="chips" role="group" :aria-label="t('filter.label')">
-        <button v-for="chip in rowChips" :key="chip.id ?? ''" type="button" class="chip"
-          :class="{ 'is-active': chip.id === app }" :aria-pressed="chip.id === app" :data-app="chip.id ?? ''"
-          @click="pickApp(chip.id)">
-          <span>{{ chip.label }}</span><span class="count">{{ chip.count }}</span>
-        </button>
-        <sdk-dropdown v-if="moreChips.length" class="filter-more" trigger="click" @command="pickApp">
-          <button type="button" class="chip" :class="{ 'is-active': chosenMore }" :aria-pressed="!!chosenMore">
-            <span>{{ chosenMore?.label ?? t("filter.more") }}</span>
-            <span v-if="chosenMore" class="count">{{ chosenMore.count }}</span>
-            <span class="chevron" aria-hidden="true"></span>
-          </button>
-          <template #dropdown>
-            <sdk-dropdown-menu>
-              <sdk-dropdown-item v-for="chip in moreChips" :key="chip.id" :command="chip.id"
-                :aria-current="chip.id === app ? 'true' : undefined" style="justify-content:space-between;gap:var(--spacing-lg)">
-                <span>{{ chip.label }}</span><span>{{ chip.count }}</span>
-              </sdk-dropdown-item>
-            </sdk-dropdown-menu>
+    <sdk-alert
+      v-if="renewalProblem"
+      :title="t('notice.credentialRefused', { reason: renewalProblem })"
+      type="warning"
+      :closable="false"
+      show-icon
+    ></sdk-alert>
+
+    <div class="schedules-body" :class="{ 'with-pane': paneOpen }">
+      <div class="schedules-list-col">
+        <projection slot="tasks" @row-action="onTaskRowAction">
+          <template #filters>
+            <projection slot="appFilter"></projection>
           </template>
-        </sdk-dropdown>
-      </div>
-      <sdk-input v-model="search" class="search" clearable :placeholder="t('filter.search')" :aria-label="t('filter.search')"></sdk-input>
-    </div>
-
-    <sdk-alert v-if="renewalProblem" :title="t('notice.credentialRefused', { reason: renewalProblem })" type="warning" :closable="false" show-icon></sdk-alert>
-    <sdk-alert v-if="appsProblem" :title="appsProblem" type="warning" :closable="false" show-icon></sdk-alert>
-
-    <div class="body" :class="{ 'with-pane': paneOpen }">
-      <div>
-        <sdk-skeleton v-if="tasksData.status === 'loading' && rows.length === 0" :rows="4" animated aria-busy="true"></sdk-skeleton>
-        <sdk-alert v-else-if="tasksData.status === 'error' || tasksData.status === 'forbidden'" :title="t('loadFailed')" type="error" :closable="false" show-icon>
-          <div v-if="tasksData.message">{{ tasksData.message }}</div>
-        </sdk-alert>
-        <div v-else-if="shown.length === 0" class="empty" role="status"><p>{{ emptyText }}</p></div>
-        <ul v-else class="grid">
-          <li v-for="row in shown" :key="row.primaryKey">
-            <article class="card" :class="{ 'is-selected': row.primaryKey === selectedId }" :data-task="row.primaryKey"
-              :aria-label="row.label" @click="select(row.primaryKey)">
-              <div class="card-head">
-                <span class="card-app"><component :is="applicationIcon(row.fields.application)" aria-hidden="true"></component>{{ appLabel(row.fields.application) }}</span>
-                <sdk-switch :model-value="taskState(row).kind === 'on'" :loading="busy.has(row.primaryKey)" :disabled="busy.has(row.primaryKey)"
-                  :aria-label="t('card.switch', { title: row.label })" @click.stop
-                  @update:model-value="toggle(row, Boolean($event))"></sdk-switch>
-              </div>
-              <h3 class="card-title">
-                <button type="button" class="card-select" :aria-label="t('card.select', { title: row.label })"
-                  @click.stop="select(row.primaryKey)">{{ row.label }}</button>
-              </h3>
-              <p v-if="row.fields.settings" class="card-summary" :title="row.fields.settings">{{ row.fields.settings }}</p>
-              <div v-if="taskState(row).reason" class="pause-controls" @click.stop>
-                <details class="pause-details">
-                  <summary class="card-pause">{{ t("state.paused") }} <span class="chevron" aria-hidden="true"></span></summary>
-                  <p>{{ taskState(row).reason }}</p>
-                </details>
-                <sdk-button v-if="row.fields.pauseCode === 'definition_changed'" class="pause-review" link type="primary" size="small"
-                  @click="edit(row)">{{ t("card.review") }}</sdk-button>
-              </div>
-              <div class="card-meta">
-                <p class="line">{{ row.fields.frequency }}</p>
-                <p class="line"><span>{{ nextText(row) }}</span></p>
-                <p class="line">
-                  <template v-if="row.fields.lastRun">
-                    <span class="muted">{{ t("card.last") }}</span>
-                    <sdk-tag size="small" :type="row.fields.lastRun === 'failed' ? 'danger' : row.fields.lastRun === 'skipped' ? 'warning' : row.fields.lastRun === 'running' ? 'primary' : 'success'">{{ statusLabel(row.fields.lastRun) }}</sdk-tag>
-                    <span>{{ moment(row.fields.lastRunAt, row.fields.timeZone) }}</span>
-                  </template>
-                  <span v-else class="muted">{{ t("card.neverRun") }}</span>
-                </p>
-                <p v-if="row.fields.lastRunSummary" class="card-summary" :title="resultPreview(row.fields.lastRunSummary)">{{ resultPreview(row.fields.lastRunSummary) }}</p>
-              </div>
-              <div class="card-foot" @click.stop>
-                <sdk-button v-if="row.fields.latestResultPath" link type="primary" size="small" @click="openResult({ path: row.fields.latestResultPath })">{{ t("action.viewResult") }}</sdk-button>
-                <sdk-button link type="primary" size="small" @click="showRecords(row.primaryKey)">{{ t("action.records") }}</sdk-button>
-                <sdk-dropdown trigger="click" placement="bottom-end" :disabled="busy.has(row.primaryKey)" @command="command(row, $event)">
-                  <sdk-button text size="small" :aria-label="t('card.more', { title: row.label })" :disabled="busy.has(row.primaryKey)">···</sdk-button>
-                  <template #dropdown>
-                    <sdk-dropdown-menu>
-                      <sdk-dropdown-item command="runNow">{{ t("action.runNow") }}</sdk-dropdown-item>
-                      <sdk-dropdown-item command="edit">{{ t("action.edit") }}</sdk-dropdown-item>
-                      <sdk-dropdown-item command="records">{{ t("action.records") }}</sdk-dropdown-item>
-                      <sdk-dropdown-item command="remove" divided>{{ t("action.delete") }}</sdk-dropdown-item>
-                    </sdk-dropdown-menu>
-                  </template>
-                </sdk-dropdown>
-              </div>
-            </article>
-          </li>
-        </ul>
+        </projection>
       </div>
 
-      <aside v-show="paneOpen" class="pane" data-pane>
-        <!-- New task: the owner's create form. -->
-        <div v-if="mode === 'create'" class="task-form" data-form="create">
-          <div class="pane-head">
-            <div><h2>{{ t("form.newTitle") }}</h2><p>{{ t("form.subtitle") }}</p></div>
-            <sdk-button text size="small" @click="cancelForm">{{ t("action.close") }}</sdk-button>
+      <aside v-if="paneOpen" class="schedules-pane" aria-live="polite">
+        <template v-if="mode === 'create'">
+          <div class="schedules-pane-head">
+            <div>
+              <h2>{{ t("form.newTitle") }}</h2>
+              <p>{{ t("form.subtitle") }}</p>
+            </div>
+            <sdk-button text size="small" @click="closePane">{{ t("action.close") }}</sdk-button>
           </div>
-          <sdk-alert v-for="option in unavailableApps" :key="option.value" type="info" :closable="false"
-            :title="t('notice.unavailable', { app: appLabel(option.value), reason: option.disabledReason ?? '' })"></sdk-alert>
-          <projection slot="newForm" @saved="created" @discarded="cancelForm"></projection>
-          <sdk-alert :title="t('form.identity')" type="info" :closable="false" show-icon></sdk-alert>
-        </div>
-
-        <!-- Edit: the owner's form for the selected task. -->
-        <div v-if="mode !== 'create'" v-show="mode === 'edit' && selected" ref="editPane" tabindex="-1"
-          class="task-form" data-form="edit" @keydown.esc="closeEditOnEscape">
-          <div class="pane-head">
-            <div><h2>{{ t("form.editTitle") }}</h2><p>{{ selectedRow?.label }} · {{ t("form.conflictHint") }}</p></div>
-            <sdk-button text size="small" @click="cancelForm">{{ t("action.close") }}</sdk-button>
+          <p class="schedules-note">{{ t("form.identity") }}</p>
+          <div data-form="create">
+            <projection slot="newForm" @saved="created" @cancel="cancelForm"></projection>
           </div>
-          <projection slot="editForm" @saved="saved" @discarded="cancelForm"></projection>
-          <sdk-alert :title="t('form.identity')" type="info" :closable="false" show-icon></sdk-alert>
-        </div>
+        </template>
 
-        <!-- The selected task: its settings, actions and run records. -->
-        <template v-if="mode === 'view' && selected">
-          <p v-if="record.status === 'loading' && !detailRow" class="muted" role="status">{{ t("detail.loading") }}</p>
-          <sdk-alert v-else-if="record.status === 'empty'" :title="t('detail.gone')" type="warning" :closable="false" show-icon></sdk-alert>
-          <sdk-alert v-else-if="record.status === 'forbidden'" :title="t('detail.forbidden')" type="warning" :closable="false" show-icon></sdk-alert>
-          <sdk-alert v-else-if="record.status === 'error'" :title="record.message" type="error" :closable="false" show-icon></sdk-alert>
-          <template v-if="detailRow">
-            <div class="pane-head">
+        <template v-else-if="selected">
+          <div
+            v-show="mode === 'edit'"
+            ref="editPane"
+            class="schedules-edit-pane"
+            data-form="edit"
+            tabindex="-1"
+            @keydown.esc="closeEditOnEscape"
+          >
+            <div class="schedules-pane-head">
               <div>
-                <p>{{ appLabel(detailRow.fields.application) }}</p>
-                <h2>{{ detailRow.label }}</h2>
+                <h2>{{ t("form.editTitle") }}</h2>
+                <p>{{ t("form.conflictHint") }}</p>
               </div>
-              <div class="actions">
-                <sdk-switch :model-value="taskState(detailRow).kind === 'on'" :loading="busy.has(detailRow.primaryKey)" :disabled="busy.has(detailRow.primaryKey)"
-                  :active-text="taskState(detailRow).label" :aria-label="t('card.switch', { title: detailRow.label })"
-                  @update:model-value="toggle(detailRow, Boolean($event))"></sdk-switch>
-                <sdk-button text size="small" @click="closePane">{{ t("action.close") }}</sdk-button>
-              </div>
+              <sdk-button text size="small" @click="cancelForm">{{ t("action.close") }}</sdk-button>
             </div>
-            <p v-if="taskState(detailRow).reason" class="card-pause">{{ t("detail.paused", { reason: taskState(detailRow).reason }) }}</p>
-            <dl class="facts">
-              <dt>{{ t("detail.content") }}</dt><dd>{{ detailRow.fields.settings || t("detail.none") }}</dd>
-              <dt>{{ t("detail.frequency") }}</dt><dd>{{ detailRow.fields.frequency }}</dd>
-              <dt>{{ t("detail.timeZone") }}</dt><dd>{{ detailRow.fields.timeZone }}</dd>
-              <dt>{{ detailRow.fieldLabels?.nextRun ?? "" }}</dt><dd>{{ nextText(detailRow) }}</dd>
-              <dt>{{ t("detail.notifyEmail") }}</dt><dd>{{ settings ? (settings.notifyEmail || t("detail.none")) : "…" }}</dd>
-            </dl>
-            <div class="actions">
-              <sdk-button type="primary" size="small" :loading="busy.has(detailRow.primaryKey)" data-action="run-now" @click="runNow(detailRow)">{{ t("action.runNow") }}</sdk-button>
-              <sdk-button size="small" data-action="edit" @click="edit(detailRow)">{{ t("action.edit") }}</sdk-button>
-              <sdk-button size="small" type="danger" plain data-action="delete" @click="askDelete(detailRow)">{{ t("action.delete") }}</sdk-button>
-              <sdk-button v-if="latestResult" link type="primary" size="small" @click="openResult(latestResult.resultLink)">{{ t("action.viewResult") }} →</sdk-button>
-            </div>
+            <p class="schedules-note">{{ t("form.identity") }}</p>
+            <projection slot="editForm" @saved="saved" @discarded="cancelForm" @cancel="cancelForm"></projection>
+          </div>
 
-            <div ref="historyRecords" class="run-records">
-              <h3 class="section-title" data-records>{{ t("runs.title") }}</h3>
-              <section v-for="group in runGroups" :key="group.key" class="run-group">
-                <h4 v-if="group.key === 'linked'" class="group-title">{{ t("runs.linked") }}</h4>
-                <ul v-if="group.runs.length" class="runs">
-                  <li v-for="run in group.runs" :key="run.id" class="run" :class="{ focused: run.id === runId }" :data-run="run.id">
-                    <div class="run-head">
-                      <sdk-tag size="small" :type="run.status === 'failed' ? 'danger' : run.status === 'skipped' ? 'warning' : run.status === 'running' ? 'primary' : 'success'">{{ statusLabel(run.status) }}</sdk-tag>
-                      <span>{{ t(`trigger.${run.trigger}`) }}</span>
-                      <span>{{ moment(run.startedAt, taskZone) }}</span>
-                      <span v-if="run.spendTime !== null">{{ t("runs.took", { time: duration(run.spendTime) }) }}</span>
-                      <sdk-button v-if="run.resultLink" class="result-link" link type="primary" size="small" @click="openResult(run.resultLink)">{{ t("action.viewResult") }} →</sdk-button>
-                    </div>
-                    <p v-if="run.scheduledAt && run.trigger === 'schedule'" class="sub">{{ t("runs.scheduledFor", { time: moment(run.scheduledAt, taskZone) }) }}</p>
-                    <p v-if="run.error" class="error">{{ runError(run.error) }}</p>
-                    <markdown-view v-if="run.resultSummary" :content="run.resultSummary"></markdown-view>
-                    <p v-if="run.status === 'running'" class="sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
-                    <sdk-button v-if="hasDetails(run)" link type="primary" size="small" style="align-self: flex-start" :aria-expanded="expanded.has(run.id)" @click="toggleRun(run.id)">
-                      {{ expanded.has(run.id) ? t("runs.hide") : t("runs.details") }}
-                    </sdk-button>
-                    <dl v-if="expanded.has(run.id) && hasDetails(run)" class="details">
-                      <template v-if="run.snapshot && run.snapshot.summary.length > 0">
-                        <dt>{{ t("runs.content") }}</dt><dd>{{ summaryText(run.snapshot.summary) }}</dd>
-                      </template>
-                      <template v-if="run.result !== null">
-                        <dt>{{ t("runs.result") }}</dt><dd><pre>{{ run.result }}</pre></dd>
-                      </template>
-                      <template v-if="run.executionDetails !== null">
-                        <dt>{{ t("runs.executionDetails") }}</dt><dd><pre>{{ JSON.stringify(run.executionDetails, null, 2) }}</pre></dd>
-                      </template>
-                    </dl>
-                  </li>
-                </ul>
-                <template v-if="group.key === 'history'">
-                  <sdk-skeleton v-if="runsLoading" :rows="3" aria-busy="true"></sdk-skeleton>
-                  <sdk-alert v-else-if="runsFailure" :title="t('runs.loadFailed')" type="error" :closable="false" show-icon>
-                    <sdk-button v-if="runsFailure.retry" text size="small" data-action="retry-history" @click="runsFailure.retry()">{{ t("runs.retry") }}</sdk-button>
-                  </sdk-alert>
-                  <div v-else-if="group.runs.length === 0" class="empty" role="status"><p>{{ t("runs.empty") }}</p></div>
-                  <div v-if="nextCursor && !runsFailure" class="more">
-                    <sdk-button size="small" :loading="loadingMore" data-action="more-history" @click="loadMore">{{ t("runs.loadMore") }}</sdk-button>
+          <template v-if="mode === 'view'">
+            <projection slot="detailHeader">
+              <template #actions>
+                <div class="schedules-actions">
+                  <sdk-switch
+                    v-if="detailReady && detailEnabled !== null"
+                    :model-value="detailEnabled"
+                    :loading="selectedBusy"
+                    :disabled="selectedBusy"
+                    :aria-label="t('action.toggle')"
+                    data-action="toggle-enabled"
+                    @update:model-value="toggleSelected(Boolean($event))"
+                  ></sdk-switch>
+                  <sdk-button
+                    v-if="detailReady"
+                    type="primary"
+                    size="small"
+                    :loading="selectedBusy"
+                    data-action="run-now"
+                    @click="runNowSelected"
+                  >{{ t("action.runNow") }}</sdk-button>
+                  <sdk-button
+                    v-if="detailReady"
+                    size="small"
+                    data-action="edit"
+                    @click="openEdit"
+                  >{{ t("action.edit") }}</sdk-button>
+                  <sdk-button
+                    v-if="detailReady"
+                    size="small"
+                    type="danger"
+                    plain
+                    :loading="selectedBusy"
+                    data-action="delete"
+                    @click="deleteSelected"
+                  >{{ t("action.delete") }}</sdk-button>
+                  <sdk-button
+                    v-if="detailLatestResultPath"
+                    link
+                    type="primary"
+                    size="small"
+                    data-action="latest-result"
+                    @click="openResult(detailLatestResultPath)"
+                  >{{ t("action.viewResult") }} →</sdk-button>
+                  <sdk-button text size="small" data-action="close-pane" @click="closePane">{{ t("action.close") }}</sdk-button>
+                </div>
+              </template>
+            </projection>
+
+            <projection slot="detailPause">
+              <template #actions>
+                <sdk-button
+                  v-if="detailPauseCode === 'definition_changed'"
+                  class="pause-review"
+                  link
+                  type="primary"
+                  size="small"
+                  @click="openEdit"
+                >{{ t("card.review") }}</sdk-button>
+              </template>
+            </projection>
+
+            <projection slot="detailSummary"></projection>
+
+            <div ref="historyRecords" class="schedules-runs">
+              <h3 class="schedules-section-title" data-records>{{ t("runs.title") }}</h3>
+              <p v-if="isRunning" class="schedules-sub" aria-live="polite">{{ t("runs.refreshing") }}</p>
+
+              <section v-if="runId" class="schedules-focus" :data-run="runId">
+                <div class="schedules-focus-head">
+                  <h4 class="schedules-focus-title">{{ t("runs.linked") }}</h4>
+                  <div class="schedules-focus-actions">
+                    <sdk-button
+                      v-if="focusResultPath"
+                      class="result-link"
+                      link
+                      type="primary"
+                      size="small"
+                      @click="openResult(focusResultPath)"
+                    >{{ t("action.viewResult") }} →</sdk-button>
+                    <sdk-button text size="small" data-action="close-focus" @click="closeFocus">{{ t("action.close") }}</sdk-button>
                   </div>
-                </template>
+                </div>
+                <projection slot="focus"></projection>
               </section>
+
+              <projection slot="history" @choose="onChooseRun" @row-action="onRunRowAction"></projection>
             </div>
           </template>
         </template>
       </aside>
     </div>
-
   </section>
 </div>

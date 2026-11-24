@@ -2,10 +2,18 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { runtimeJsonObjectSchema } from "@ontomato/contracts/agent-runtime-values";
 import { formFieldKey, formFieldPointer, type FormField, type FormFieldError, type FormValues } from "@ontomato/contracts/form-fields";
 import { panelOwnerOperationDescriptorSchema } from "@ontomato/contracts/panel-operations";
-import type { PanelFormDescription, PanelFormField, PanelFormValues, PanelRecord } from "@ontomato/contracts/panel-projection";
+import type {
+  PanelFieldTone,
+  PanelFormDescription,
+  PanelFormField,
+  PanelFormValues,
+  PanelGroupCounts,
+  PanelRecord,
+  PanelRecordQuery,
+} from "@ontomato/contracts/panel-projection";
 import {
   PLATFORM_SCHEDULE_TITLE_MAX, platformScheduleTimeZoneSchema, platformTaskFrequencySchema,
-  type PlatformScheduleApplication, type PlatformScheduleForm, type PlatformTask,
+  type PlatformScheduleApplication, type PlatformScheduleForm, type PlatformTask, type PlatformTaskRun,
 } from "@ontomato/contracts/platform-schedules";
 import type { SchedulesApi } from "./api";
 import { scheduledTaskCreateDescription, scheduledTaskSaveDescription } from "./panel-operations";
@@ -29,30 +37,138 @@ interface TaskCreateFormParams extends TaskFormParams {
   defaultAppId?: string;
 }
 
-function taskRecord(task: PlatformTask, locale: string, translate: Translate): PanelRecord {
+function runStatusTone(status: PlatformTaskRun["status"]): PanelFieldTone {
+  if (status === "completed") return "success";
+  if (status === "failed") return "danger";
+  if (status === "skipped") return "warning";
+  return "info";
+}
+
+function formatDuration(ms: number): string {
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${Math.round(seconds * 10) / 10} s`;
+  const whole = Math.round(seconds);
+  if (whole < 3600) return `${Math.floor(whole / 60)} min ${whole % 60} s`;
+  return `${Math.floor(whole / 3600)} h ${Math.floor((whole % 3600) / 60)} min`;
+}
+
+function formatRunError(error: NonNullable<PlatformTaskRun["error"]>, translate: Translate): string {
+  const head = translate(`platformSchedules.runError.${error.code}`);
+  const detail = error.message?.trim();
+  return detail && detail !== head ? `${head}: ${detail}` : head;
+}
+
+function previewMarkdownText(value: string): string {
+  return value.replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+)/gm, "")
+    .replace(/(\*\*|__|`+)(.*?)\1/g, "$2")
+    .replace(/\s+/g, " ").trim();
+}
+
+function taskRecord(
+  task: PlatformTask,
+  locale: string,
+  translate: Translate,
+  appNames?: ReadonlyMap<string, string>,
+): PanelRecord {
+  const stateLabel = task.enabled
+    ? (task.pause === null ? translate("platformSchedules.panelFields.stateOn") : translate("platformSchedules.panelFields.statePaused"))
+    : translate("platformSchedules.panelFields.stateOff");
+  const stateTone: PanelFieldTone = task.enabled ? (task.pause === null ? "success" : "warning") : "info";
+  const lastRunSummaryRaw = task.lastRun?.error?.message ?? task.lastRun?.resultSummary ?? "";
   return {
     primaryKey: task.id,
     label: task.title,
     fieldLabels: {
       ...scheduledTaskFieldLabels(translate),
+      applicationName: translate("platformSchedules.form.app"),
+      stateLabel: translate("platformSchedules.panelFields.state"),
+      pauseReason: translate("platformSchedules.panelFields.pauseReason"),
       frequency: translate("platformSchedules.panelSettings.frequency"),
       timeZone: translate("platformSchedules.panelSettings.timeZone"),
+      notifyEmail: translate("platformSchedules.panelSettings.notifyEmail"),
       lastRunAt: translate("platformSchedules.panelFields.lastRunAt"),
       lastRunSummary: translate("platformSchedules.panelFields.lastRunSummary"),
       latestResultPath: translate("platformSchedules.panelFields.latestResultPath"),
     },
     fields: {
       application: task.appId,
+      applicationName: appNames?.get(task.appId) ?? task.appId,
       settings: task.summary.map(item => `${item.label}: ${item.value}`).join("; "),
       state: task.enabled ? (task.pause === null ? "on" : `paused: ${task.pause.message}`) : "off",
+      stateLabel,
+      enabled: task.enabled,
+      revision: task.revision,
       pauseCode: task.pause?.code ?? "",
+      ...(task.pause ? { pauseReason: task.pause.message } : {}),
       nextRun: task.nextRunAt ?? "",
       lastRun: task.lastRun?.status ?? "",
       frequency: scheduledTaskFrequencyText(task.frequency, locale, translate),
       timeZone: task.timeZone,
+      notifyEmail: task.notifyEmail ?? "",
       lastRunAt: task.lastRun?.startedAt ?? "",
-      lastRunSummary: task.lastRun?.error?.message ?? task.lastRun?.resultSummary ?? "",
+      lastRunSummary: lastRunSummaryRaw ? previewMarkdownText(lastRunSummaryRaw) : "",
       latestResultPath: task.latestResult?.link.path ?? "",
+    },
+    tones: {
+      state: stateTone,
+      stateLabel: stateTone,
+      ...(task.lastRun ? { lastRun: runStatusTone(task.lastRun.status) } : {}),
+    },
+    outputs: {
+      revision: task.revision,
+      enabled: task.enabled,
+      paused: task.pause !== null,
+      pauseCode: task.pause?.code ?? "",
+      latestResultPath: task.latestResult?.link.path ?? "",
+      isRunning: task.activeRunId !== null || task.lastRun?.status === "running",
+    },
+  };
+}
+
+function runRecord(run: PlatformTaskRun, translate: Translate): PanelRecord {
+  const statusLabel = translate(`platformSchedules.runStatus.${run.status}`);
+  const triggerLabel = translate(`platformSchedules.trigger.${run.trigger}`);
+  const errorText = run.error ? formatRunError(run.error, translate) : undefined;
+  const summaryPreview = run.resultSummary ? previewMarkdownText(run.resultSummary) : undefined;
+  const snapshotSummary = run.snapshot.summary.length > 0
+    ? run.snapshot.summary.map(item => `${item.label}: ${item.value}`).join("; ")
+    : undefined;
+  return {
+    primaryKey: run.id,
+    label: `${triggerLabel} · ${statusLabel}`,
+    ...(errorText || summaryPreview ? { subtitle: errorText ?? summaryPreview } : {}),
+    fieldLabels: {
+      status: translate("platformSchedules.runFields.status"),
+      trigger: translate("platformSchedules.runFields.trigger"),
+      startedAt: translate("platformSchedules.runFields.startedAt"),
+      scheduledAt: translate("platformSchedules.runFields.scheduledAt"),
+      duration: translate("platformSchedules.runFields.duration"),
+      error: translate("platformSchedules.runFields.error"),
+      resultSummary: translate("platformSchedules.runFields.resultSummary"),
+      snapshotSummary: translate("platformSchedules.runFields.snapshotSummary"),
+      result: translate("platformSchedules.runFields.result"),
+      executionDetails: translate("platformSchedules.runFields.executionDetails"),
+    },
+    fields: {
+      status: statusLabel,
+      trigger: triggerLabel,
+      startedAt: run.startedAt,
+      ...(run.scheduledAt && run.trigger === "schedule" ? { scheduledAt: run.scheduledAt } : {}),
+      ...(run.spendTime !== null ? { duration: formatDuration(run.spendTime) } : {}),
+      ...(errorText ? { error: errorText } : {}),
+      ...(run.resultSummary ? { resultSummary: run.resultSummary } : {}),
+      ...(snapshotSummary ? { snapshotSummary } : {}),
+      ...(run.result !== null ? { result: run.result } : {}),
+      ...(run.executionDetails !== null ? { executionDetails: { kind: "json" as const, value: run.executionDetails } } : {}),
+    },
+    tones: {
+      status: runStatusTone(run.status),
+    },
+    outputs: {
+      resultPath: run.resultLink?.path ?? "",
+      isRunning: run.status === "running",
     },
   };
 }
@@ -208,12 +324,33 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     };
   }
 
+  async function resolveAppNames(): Promise<ReadonlyMap<string, string>> {
+    try {
+      const apps = await api.applications();
+      return new Map(apps.map(app => [app.id, app.name]));
+    } catch {
+      return new Map();
+    }
+  }
+
   return {
     async list() {
-      return (await api.list()).tasks.map(task => taskRecord(task, locale, translate));
+      const [{ tasks }, appNames] = await Promise.all([api.list(), resolveAppNames()]);
+      return tasks.map(task => taskRecord(task, locale, translate, appNames));
+    },
+    async counts(): Promise<PanelGroupCounts> {
+      const [{ tasks }, appNames] = await Promise.all([api.list(), resolveAppNames()]);
+      const byApp = new Map<string, number>();
+      for (const task of tasks) byApp.set(task.appId, (byApp.get(task.appId) ?? 0) + 1);
+      const orderedIds = [...new Set([...appNames.keys(), ...byApp.keys()])].filter(id => byApp.has(id));
+      return [
+        { key: "", label: translate("platformSchedules.panelFields.allApplications"), count: tasks.length },
+        ...orderedIds.map(id => ({ key: id, label: appNames.get(id) ?? id, count: byApp.get(id) ?? 0 })),
+      ];
     },
     async record(primaryKey: string) {
-      return taskRecord(await api.task(primaryKey), locale, translate);
+      const [task, appNames] = await Promise.all([api.task(primaryKey), resolveAppNames()]);
+      return taskRecord(task, locale, translate, appNames);
     },
     async form(primaryKey: string, params: TaskFormParams) {
       const task = await api.task(primaryKey);
@@ -224,6 +361,16 @@ export function createScheduledTaskReads(api: TaskReadApi, locale: string, trans
     },
     runs: api.runs,
     run: api.run,
+    async runRecords(primaryKey: string, cursor?: string): Promise<PanelRecordQuery> {
+      const page = await api.runs(primaryKey, cursor);
+      return {
+        rows: page.runs.map(run => runRecord(run, translate)),
+        ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+      };
+    },
+    async runRecord(primaryKey: string, runId: string): Promise<PanelRecord> {
+      return runRecord(await api.run(primaryKey, runId), translate);
+    },
     [runNowRead]() {
       return panelOwnerOperationDescriptorSchema.parse({
         ...scheduledTaskRunNowDescription, label: translate("platformSchedules.action.runNow"),

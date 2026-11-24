@@ -184,13 +184,33 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
     ...describeType("scheduledTask", "capability"),
     reads: {
       list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
-      record: { source: "object", parameterMode: "fixed", params: {}, result: "panelRecord" },
+      counts: { source: "type", parameterMode: "fixed", params: { by: "keyword" }, result: "panelGroupCounts" },
+      record: {
+        source: "object", parameterMode: "fixed", params: {}, result: "panelRecord",
+        outputs: {
+          revision: { kind: "scalar", type: "number" },
+          enabled: { kind: "scalar", type: "boolean" },
+          paused: { kind: "scalar", type: "boolean" },
+          pauseCode: { kind: "scalar", type: "string" },
+          latestResultPath: { kind: "scalar", type: "string" },
+          isRunning: { kind: "scalar", type: "boolean" },
+        },
+      },
       form: { source: "object", parameterMode: "fixed", params: definitionFormParams, result: "panelFormDescription" },
       createForm: { source: "type", parameterMode: "fixed", params: { ...definitionFormParams, defaultAppId: "keyword" }, result: "panelFormDescription" },
       runs: { source: "object", parameterMode: "fixed", params: { cursor: "cursor" }, result: "scheduledTaskRunPage" },
       run: {
         source: "object", parameterMode: "fixed", params: { runId: "scheduledRunId" },
         requiredParams: ["runId"], result: "scheduledTaskRun",
+      },
+      runRecords: { source: "object", parameterMode: "fixed", params: { cursor: "cursor" }, result: "panelRecordQuery" },
+      runRecord: {
+        source: "object", parameterMode: "fixed", params: { runId: "scheduledRunId" },
+        requiredParams: ["runId"], result: "panelRecord",
+        outputs: {
+          resultPath: { kind: "scalar", type: "string" },
+          isRunning: { kind: "scalar", type: "boolean" },
+        },
       },
     },
     operations: [`${SCHEDULED_TASK}.save`, RUN_NOW, CREATE_SCHEDULED_TASK, SET_SCHEDULED_TASK_ENABLED, DELETE_SCHEDULED_TASK],

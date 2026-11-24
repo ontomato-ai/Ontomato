@@ -1249,7 +1249,10 @@ it("reads the SDK component catalogue, record, detail tables, and definition fro
   expect(await read("components", "configRows", { component })).toEqual({ status: "empty" });
   expect(await read("components", "outputRows", { component })).toMatchObject({
     status: "ready",
-    value: [expect.objectContaining({ primaryKey: "readOnlyOutput:label", label: "label" })],
+    value: [
+      expect.objectContaining({ primaryKey: "readOnlyOutput:label", label: "label" }),
+      expect.objectContaining({ primaryKey: "readOnlyOutput:status", label: "status" }),
+    ],
   });
   expect(await read("components", "operationRows", { component })).toEqual({ status: "empty" });
   expect(await read("components", "definition", { component: { ...component, primaryKey: "@ontomato/sdk:Missing" } })).toMatchObject({

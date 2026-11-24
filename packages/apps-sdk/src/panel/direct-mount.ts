@@ -138,10 +138,10 @@ export function mountDirectPanel(options: DirectPanelMountOptions): DirectPanelM
         failed: run.failed,
       },
     });
-    // Every member the panel declares is held from the start, drawn or not: its operations are listed and the panel's
-    // own code reads its data, whether or not a layout or a template places it.
-    // A member that cannot be read is that member's failure, not the panel's: whoever draws it (`<Projection>`) or reads
-    // it (`usePanelData`) shows the reason in its place, from this same hold; the rest of the panel goes on.
+    // Every member the panel declares is held from the start, drawn or not: its operations are listed and its
+    // read-only outputs are available, whether or not a layout or a template places it.
+    // A member that cannot be read is that member's failure, not the panel's: whoever draws it (`<Projection>`)
+    // shows the reason in its place, from this same hold; the rest of the panel goes on.
     const declaredMembers = Object.keys(options.manifest.members);
     if (declaredMembers.length) {
       void Promise.allSettled(declaredMembers.map((member) => instance.placing(member)));
