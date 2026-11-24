@@ -297,7 +297,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     expect(instance.outputs.tasks?.activeLabel).toBe("Daily Sync");
   });
 
-  it("renders #cell-<key>, #row-detail nested projection, and ObjectForm/ObjectSummary read-only outputs", async () => {
+  it("renders projections in row and form field slots and publishes ObjectForm/ObjectSummary outputs", async () => {
     const listProjection: DirectProjection = {
       ...meta,
       id: "apps-list",
@@ -354,6 +354,7 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
       members: {
         apps: { target: { projectionId: "apps-list" } },
         detail: { target: { projectionId: "app-summary" } },
+        fieldDetail: { target: { projectionId: "app-summary" } },
         topSummary: { target: { projectionId: "app-summary" }, inputs: { app: { state: "app" } } },
         topForm: { target: { projectionId: "app-form" }, inputs: { app: { state: "app" } } },
       },
@@ -385,6 +386,15 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
               }),
             ];
           },
+        },
+        topForm: {
+          "field-owner": ({ value }) => h("div", { class: "custom-owner-field" }, [
+            h(PanelMember, {
+              instance: inst,
+              member: "fieldDetail",
+              inputs: { app: { className: APPLICATION, primaryKey: value as string } },
+            }),
+          ]),
         },
       }),
       answer(request) {
@@ -422,8 +432,9 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
         return ready({
           fields: [
             { path: "/name", label: "Name", control: { kind: "text" }, valueSchema: {}, required: true, readOnly: false },
+            { path: "/owner", label: "Owner", control: { kind: "text" }, valueSchema: {}, required: false, readOnly: true },
           ],
-          values: { name: "Orders App" },
+          values: { name: "Orders App", owner: "app-2" },
           errors: [],
           revision: 1,
           save: { method: "PUT", path: "/apps/:id", bodySchema: {} },
@@ -444,20 +455,21 @@ describe("ObjectList action column, Vue slots, batch rowOperations, and read-onl
     expandBtns[1]!.click();
     await vi.waitFor(() => {
       expect(element.querySelector(".sdk-object-list-detail-host")?.textContent).toContain("Details for app-2");
+      expect(element.querySelector(".custom-owner-field")?.textContent).toContain("Details for app-2");
     });
 
     // ObjectSummary and ObjectForm publish read-only outputs without needing writable panel state.
     await vi.waitFor(() => expect(instance.outputs.topSummary?.label).toBe("Orders App"));
     await vi.waitFor(() => expect(instance.outputs.topForm?.label).toBe("Orders App"));
     expect(instance.outputs.topForm?.dirty).toBe(false);
-    expect(instance.outputs.topForm?.draft).toEqual({ name: "Orders App" });
+    expect(instance.outputs.topForm?.draft).toEqual({ name: "Orders App", owner: "app-2" });
 
     // Editing the form updates `dirty` and `draft` read-only outputs reactively.
     const input = element.querySelector<HTMLInputElement>('[data-field="/name"] input')!;
     input.value = "Orders v2";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await vi.waitFor(() => expect(instance.outputs.topForm?.dirty).toBe(true));
-    expect(instance.outputs.topForm?.draft).toEqual({ name: "Orders v2" });
+    expect(instance.outputs.topForm?.draft).toEqual({ name: "Orders v2", owner: "app-2" });
   });
 
   it("renders table showChevron without selected state, emits choose, and keeps filteredCount null while loading", async () => {

@@ -18,6 +18,9 @@ export const panelModuleSpecifiers = {
   sdk: "@ontomato/sdk/panel",
 } as const;
 
+export const projectionSlotInputsGuidance =
+  "Use :inputs on <projection> only inside a component's scoped slot. Bind other inputs in panel.json with { state }, { state, field }, or { output }.";
+
 export type PanelModuleSpecifier = typeof panelModuleSpecifiers[keyof typeof panelModuleSpecifiers];
 
 /**
@@ -131,7 +134,8 @@ export type SdkAuthoringViolationKind =
   | "forbidden-directive"
   | "forbidden-token"
   | "forbidden-export"
-  | "forbidden-direct-api";
+  | "forbidden-direct-api"
+  | "projection-inputs-outside-slot";
 
 export interface SdkAuthoringViolation {
   readonly file: string;
@@ -163,8 +167,20 @@ interface TemplateOpeningTag {
   readonly tagName: string;
   readonly nameOffset: number;
   readonly tagStart: number;
-  readonly tagEnd: number;
-  readonly tagText: string;
+  readonly attributes: readonly TemplateAttribute[];
+  readonly insideScopedSlot: boolean;
+}
+
+const overlayTags = new Set(["sdk-dialog", "sdk-drawer", "sdk-popover", "sdk-popconfirm", "sdk-tooltip"]);
+const htmlVoidTags = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
+]);
+const templateTagNameChar = /[A-Za-z0-9_.:-]/u;
+
+function canSupplySlotProps(tag: string): boolean {
+  const lower = tag.toLowerCase();
+  if (overlayTags.has(lower) || overlayTags.has(toKebabCase(tag))) return false;
+  return lower === "projection" || lower === "component" || tag.includes("-") || /^[A-Z]/u.test(tag);
 }
 
 /** Skip a Vue `{{ ... }}` mustache interpolation while respecting string literals inside it. */
@@ -203,6 +219,7 @@ function findMustacheEnd(source: string, openIndex: number): number {
  */
 function scanTemplateOpeningTags(sanitized: string): TemplateOpeningTag[] {
   const tags: TemplateOpeningTag[] = [];
+  const ancestors: { name: string; scopedChildren: boolean }[] = [];
   const len = sanitized.length;
   let i = 0;
 
@@ -219,8 +236,16 @@ function scanTemplateOpeningTags(sanitized: string): TemplateOpeningTag[] {
     }
     // Closing tag `</name>`
     if (sanitized[i + 1] === "/" && /[A-Za-z]/u.test(sanitized[i + 2] ?? "")) {
-      let j = i + 2;
-      while (j < len && /[A-Za-z0-9-]/u.test(sanitized[j]!)) j++;
+      const nameStart = i + 2;
+      let j = nameStart;
+      while (j < len && templateTagNameChar.test(sanitized[j]!)) j++;
+      const closingName = sanitized.slice(nameStart, j).toLowerCase();
+      for (let index = ancestors.length - 1; index >= 0; index--) {
+        if (ancestors[index]!.name.toLowerCase() === closingName) {
+          ancestors.length = index;
+          break;
+        }
+      }
       while (j < len && sanitized[j] !== ">") j++;
       i = j < len ? j + 1 : len;
       continue;
@@ -233,7 +258,7 @@ function scanTemplateOpeningTags(sanitized: string): TemplateOpeningTag[] {
     const tagStart = i;
     const nameOffset = i + 1;
     let nameEnd = nameOffset;
-    while (nameEnd < len && /[A-Za-z0-9-]/u.test(sanitized[nameEnd]!)) nameEnd++;
+    while (nameEnd < len && templateTagNameChar.test(sanitized[nameEnd]!)) nameEnd++;
     const boundary = sanitized[nameEnd];
     if (boundary !== undefined && !/[\s/>]/u.test(boundary)) {
       i++;
@@ -255,7 +280,17 @@ function scanTemplateOpeningTags(sanitized: string): TemplateOpeningTag[] {
     }
     const tagEnd = j < len ? j + 1 : len;
     const tagText = sanitized.slice(tagStart, tagEnd);
-    tags.push({ tagName, nameOffset, tagStart, tagEnd, tagText });
+    const attributes = readTagAttributes(tagText);
+    const parent = ancestors.at(-1);
+    const insideScopedSlot = parent?.scopedChildren ?? false;
+    tags.push({ tagName, nameOffset, tagStart, attributes, insideScopedSlot });
+    const lowerTag = tagName.toLowerCase();
+    if (!htmlVoidTags.has(lowerTag) && !tagText.endsWith("/>")) {
+      const slotOwner = lowerTag === "template" ? parent?.name : tagName;
+      const opensScopedSlot = slotOwner !== undefined && canSupplySlotProps(slotOwner)
+        && attributes.some(attr => /^(?:#.+|v-slot(?::.+)?)$/u.test(attr.name) && attr.value?.trim());
+      ancestors.push({ name: tagName, scopedChildren: insideScopedSlot || opensScopedSlot });
+    }
     i = tagEnd;
   }
   return tags;
@@ -266,7 +301,7 @@ function readTagAttributes(tagText: string): TemplateAttribute[] {
   const attrs: TemplateAttribute[] = [];
   const len = tagText.length;
   let i = 1;
-  while (i < len && /[A-Za-z0-9-]/u.test(tagText[i]!)) i++;
+  while (i < len && templateTagNameChar.test(tagText[i]!)) i++;
   while (i < len) {
     while (i < len && /[\s/]/u.test(tagText[i]!)) i++;
     if (i >= len || tagText[i] === ">") break;
@@ -482,7 +517,7 @@ export function checkAuthoringTemplate(
   const openingTags = scanTemplateOpeningTags(sanitized);
 
   for (const tag of openingTags) {
-    const attrs = readTagAttributes(tag.tagText);
+    const attrs = tag.attributes;
     const rawTag = tag.tagName;
     const kebab = toKebabCase(rawTag);
 
@@ -536,6 +571,12 @@ export function checkAuthoringTemplate(
     // 3. Check dynamic component `is="..."` / `:is="'...'"` / `v-bind:is="'...'"` and forbidden directives.
     for (const attr of attrs) {
       const lowerAttr = attr.name.toLowerCase();
+      if (rawTag.toLowerCase() === "projection" && !tag.insideScopedSlot && /^(?:v-bind:|:)?inputs$/u.test(lowerAttr)) {
+        violations.push(makeViolation(
+          template, file, tag.tagStart + attr.nameOffset, "projection-inputs-outside-slot",
+          attr.name, null, projectionSlotInputsGuidance,
+        ));
+      }
       if ((lowerAttr === "is" || lowerAttr === ":is" || lowerAttr === "v-bind:is") && attr.value !== undefined) {
         const raw = attr.value.trim().replace(/^['"]|['"]$/gu, "");
         const isKebab = toKebabCase(raw);

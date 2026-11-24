@@ -254,6 +254,44 @@ test("checkAuthoringScript, checkAuthoringStyles, and checkAuthoringTheme report
   assert.equal(themeViolations[0]!.replacement, "--sdk-color-primary");
 });
 
+test("checkAuthoringTemplate rejects projection input attributes outside scoped component slots", () => {
+  const cases = [
+    ['<projection slot="a" :inputs="{ className: key }"/>', ":inputs"],
+    ['<section><div><PROJECTION slot="a" inputs="key"/></div></section>', "inputs"],
+    ['<two-pane-layout><template #default><projection slot="a" v-bind:inputs="{ x: key }"></projection></template></two-pane-layout>', "v-bind:inputs"],
+    ['<sdk-drawer><template #header="{ close }"><projection slot="a" :inputs="{ x: key }"></projection></template></sdk-drawer>', ":inputs"],
+    ['<SdkPopover v-slot="scope"><projection slot="a" :inputs="{ x: scope }"/></SdkPopover>', ":inputs"],
+    ['<div><template #default="scope"><projection slot="a" :inputs="{ x: scope }"/></template></div>', ":inputs"],
+    ['<my-card><template v-slot:item=" "><projection slot="a" :inputs="{ x: key }"/></template></my-card>', ":inputs"],
+    ['<my-card v-slot="scope"/><projection slot="a" :inputs="{ x: key }"/>', ":inputs"],
+    ['<my-card><input><template #item="scope"></template></my-card><projection slot="a" :inputs="{ x: key }"/>', ":inputs"],
+    ['<Projection slot="a" v-slot="scope" :inputs="{ x: key }"/>', ":inputs"],
+  ] as const;
+  for (const [html, attribute] of cases) {
+    const violations = checkAuthoringTemplate(`<!-- Panel template -->\n  ${html}`, "panel.html");
+    assert.equal(violations.length, 1, html);
+    assert.equal(violations[0]?.kind, "projection-inputs-outside-slot", html);
+    assert.equal(violations[0]?.file, "panel.html");
+    assert.equal(violations[0]?.line, 2);
+    assert.equal(violations[0]?.column, html.indexOf(`${attribute}=`) + 3);
+    assert.equal(violations[0]?.found, attribute);
+    assert.match(violations[0]!.message, /scoped slot.*panel\.json/u);
+  }
+});
+
+test("checkAuthoringTemplate accepts projection inputs in row, field, and custom scoped slots", () => {
+  const cases = [
+    '<projection slot="list"><template #row-detail="{ ref }"><projection slot="detail" :inputs="{ target: ref }"></projection></template></projection>',
+    '<projection slot="form"><template #field-owner="slotProps"><projection slot="ownerCard" :inputs="{ target: slotProps.value }"></projection></template></projection>',
+    '<my-card><template #item="{ item }"><projection slot="detail" :inputs="{ target: item }"></projection></template></my-card>',
+    '<my-card v-slot="{ item }"><projection slot="detail" :inputs="{ target: item }"></projection></my-card>',
+    '<my-card><img src="x"><widget/><template v-slot:item="scope"><div><Projection slot="detail" v-bind:inputs="{ target: scope.item }"/></div></template></my-card>',
+  ];
+  for (const html of cases) {
+    assert.deepEqual(checkAuthoringTemplate(html, "panel.html"), [], html);
+  }
+});
+
 test("checkAuthoringStyles and checkAuthoringTemplate allow CSS viewport units", () => {
   const css = ".root { height: 100vh; width: 50vw; min-height: 80dvh; }";
   assert.deepEqual(checkAuthoringStyles(css, "style.css"), []);

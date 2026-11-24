@@ -185,3 +185,80 @@ it("waits for a selected object, reads its key as className and publishes the me
   await vi.waitFor(() => expect(element.querySelector("#read-status")?.textContent).toBe("awaiting"));
   expect(reads).toEqual(["Device"]);
 });
+
+it.each([
+  {
+    placement: "the panel root",
+    template: '<section><Projection slot="reader" :inputs="{ target: selected }"/></section>',
+    scoped: false,
+  },
+  {
+    placement: "an unscoped layout slot",
+    template: '<two-pane-layout><template #default><Projection slot="reader" :inputs="{ target: selected }"/></template></two-pane-layout>',
+    scoped: false,
+  },
+  {
+    placement: "a declared component's single-instance slot",
+    template: '<my-card><template #item="{ item }"><Projection slot="reader" :inputs="{ target: item }"/></template></my-card>',
+    scoped: true,
+  },
+])("checks projection inputs placed in $placement", async ({ template, scoped }) => {
+  const selected = { className: OBJECT_TYPE, primaryKey: "Device" };
+  const cardId = "domain-component:my-card";
+  const projection: DirectProjection = {
+    id: "reader", domainId: "d", ownerId: "o", createdAt: "", updatedAt: "", editable: false,
+    visibility: "domain", name: "Reader", description: "", revision: 1, config: {},
+    componentId: "domain-component:reader",
+    inputs: { target: { kind: "object", objectType: OBJECT_TYPE } },
+    outputs: { key: { kind: "scalar", type: "string" } },
+    data: {},
+  };
+  const reader = defineComponent({
+    props: ["target"],
+    setup(props) {
+      useMemberOutput("key", () => props.target?.primaryKey ?? null);
+      return () => h("output", { id: "target" }, props.target?.primaryKey);
+    },
+  });
+  const card = defineComponent({
+    setup(_, { slots }) {
+      return () => h("div", slots.item!({ item: selected }));
+    },
+  });
+  const manifest = definePanel({
+    state: {},
+    members: { reader: { target: { projectionId: projection.id } } },
+    components: { "my-card": cardId },
+  });
+  const element = document.createElement("div");
+  document.body.append(element);
+  const { mountPanel } = panelModuleFor({
+    manifest, element, template,
+    run: directRun({ pageKey: "reader", url: () => "/reader", label: () => "Reader", initial: {} }),
+    mounted: ({ dispose: disposePanel }) => { dispose = disposePanel; },
+    install: (app) => { app.use(createI18n({ legacy: false, locale: "en", messages: { en: publicEn } })); },
+    messages: {}, locale: ref("en"), defaultLocale: "en", use: null,
+    requests: { request: async () => { throw new Error("This test sends reads through the panel read port"); } },
+    ...noOperations,
+    panelDomainComponents: {
+      [cardId]: { domainId: "d", componentId: cardId, revision: 1, source: { template: "<div/>" } },
+    },
+    readProjection: async () => ({
+      projection,
+      domainComponent: { domainId: "d", componentId: projection.componentId, revision: 1, source: { template: "<output/>" } },
+    }),
+    loadDomainComponent: async ({ componentId }) => componentId === cardId ? card : reader,
+    read: async () => ({ status: "ready", value: {} }),
+  });
+  const mounted = mountPanel({
+    setup() {
+      return { selected, published: usePanelOutput("reader", "key") };
+    },
+  });
+  if (scoped) {
+    await mounted;
+    await vi.waitFor(() => expect(element.querySelector("#target")?.textContent).toBe("Device"));
+  } else {
+    await expect(mounted).rejects.toThrow(/reader.*:inputs.*scoped slot.*panel\.json/u);
+  }
+});
