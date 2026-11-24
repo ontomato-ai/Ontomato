@@ -66,7 +66,7 @@ it("projects the list, including original step summaries, lifecycle and authoriz
     primaryKey: "wf-1", label: "Restock flow", subtitle: "Approve and restock", tones: { status: "success" },
     fields: {
       status: "Active", statusCode: "ACTIVE", hasDraft: true, hasDraftLabel: "Draft", version: "v2",
-      stepsSummary: "Review [Fixed logic · Rule (deterministic) · Alice (a) · Per-case authorization] → act-2 [Automatic · Agent (decision) · Praxis system principal]",
+      stepsSummary: "Review [Fixed logic · Rule (deterministic) · Alice (a) · Per-case authorization] → Ship [Automatic · Agent (decision) · Praxis system principal]",
       grantsSummary: "1 capabilities granted to 1 roles · 1 steps use per-case authorization",
       createdBy: "Alice", reviewedBy: "bob-login", canActivate: true, canDeactivate: true,
     },

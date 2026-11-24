@@ -71,11 +71,12 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
   });
 
   async function recordContext() {
-    const [directory, grantRows] = await Promise.all([subjects(), grants().catch(() => null), actions()]);
+    const [directory, grantRows, catalogue] = await Promise.all([subjects(), grants().catch(() => null), actions()]);
     return {
       directory,
       subjectNames: new Map(directory.map(subject => [subject.id, subjectLabel(subject)])),
       grants: grantRows,
+      catalogue,
     };
   }
 
@@ -86,14 +87,14 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
     return subject ? `${subjectLabel(subject)} (${subject.loginCode || subject.id})` : configured;
   }
 
-  function stepSummary(steps: WorkflowStep[], directory: Subject[]) {
+  function stepSummary(steps: WorkflowStep[], directory: Subject[], catalogue: z.infer<typeof actionSchema>[]) {
     if (!steps.length) return t("noSteps");
     return steps.map(step => {
       const actor = step.actorPolicy?.mode ?? "none";
       const invocation = t(`invocation.${stepInvocation(step)}`);
       const policy = actor === "none" ? "" : ` · ${t(`policy.${actor}`)} · ${policyPrincipal(step, directory)}`;
       const scoped = step.caseScoped ? ` · ${t("fields.caseScoped")}` : "";
-      return `${step.name || step.actionId || "-"} [${invocation}${policy}${scoped}]`;
+      return `${step.name || actionName(catalogue, step.actionId)} [${invocation}${policy}${scoped}]`;
     }).join(" → ");
   }
 
@@ -115,7 +116,7 @@ export function createWorkflowReadAdapter(reader: ProductOwner, viewer: Assistan
       hasDraft,
       ...(hasDraft && statusCode !== "DRAFT" && { hasDraftLabel: t("status.DRAFT") }),
       version: `v${row.version ?? 0}`,
-      stepsSummary: stepSummary(row.steps ?? [], context.directory),
+      stepsSummary: stepSummary(row.steps ?? [], context.directory, context.catalogue),
       grantsSummary: context.grants === null ? t("grantsUnavailable") : noGrants ? t("noGrants") : grantSummary,
       createdBy: context.subjectNames.get(row.createdBy ?? "") ?? t("unspecified"),
       reviewedBy: context.subjectNames.get(row.reviewedBy ?? "") ?? t("unspecified"),
