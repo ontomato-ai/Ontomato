@@ -147,6 +147,8 @@ const singleOutcomeSchema = z.discriminatedUnion("kind", [
     /** The owner's localized completion text, separate from the operation result. */
     message: z.string().min(1).optional(),
     data: runtimeJsonObjectSchema,
+    /** The identity of the object this operation created, as declared by its owner. */
+    created: panelObjectIdentitySchema.optional(),
     affected: panelOperationAffectedSchema.optional(),
   }).strict(),
   z.object({

@@ -38,6 +38,14 @@ function hostWith(answer: (path: string, init: NonNullable<Parameters<typeof fet
 const triggerTarget = { kind: "object" as const, objectType: TRIGGER, primaryKey: "tr-1" };
 
 describe("trigger panel server operations", () => {
+  it("reports the identity assigned by the owner when creating a trigger", async () => {
+    const operation = write(`${TRIGGER}.save`);
+    const { host } = hostWith(() => Response.json({ success: true, data: { id: "tr-new" } }));
+    await expect(operation.execute(host, { kind: "draft" }, { values: { name: "Nightly check" } })).resolves.toMatchObject({
+      kind: "success", created: { objectType: TRIGGER, primaryKey: "tr-new" },
+    });
+  });
+
   it("forwards complete and partial trigger form saves", async () => {
     const operation = write(`${TRIGGER}.save`);
     expect(operation.kind).toBe("form.save");

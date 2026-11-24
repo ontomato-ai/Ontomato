@@ -1339,6 +1339,17 @@ test("a dispatched success carries the owner's message alongside the result data
   assert.equal(panelOperationOutcomeSchema.safeParse({ ...reply.outcome, message: { key: "started" } }).success, false);
 });
 
+test("success receipts carry a strictly shaped created object identity", () => {
+  const created = { objectType: ATTRIBUTE, primaryKey: "Order.code" };
+  const outcome = { kind: "success", data: {}, created };
+  assert.deepEqual(panelOperationOutcomeSchema.parse(outcome), outcome);
+  const dispatch = { kind: "dispatched", intentId: "eeb5fc31-8ecf-46a9-882f-728ce4ba3fff", outcome };
+  assert.deepEqual(panelHumanOperationDispatchResponseSchema.parse(dispatch), dispatch);
+  for (const invalid of [null, { objectType: ATTRIBUTE }, { ...created, primaryKey: "" }, { ...created, objectType: "" }, { ...created, extra: true }]) {
+    assert.equal(panelOperationOutcomeSchema.safeParse({ ...outcome, created: invalid }).success, false);
+  }
+});
+
 test("legacy formField member attachments are rejected in favour of ObjectForm Vue slots", () => {
   const picker = { target: { projectionId: "skill-picker" }, formField: { slot: "definition", path: "/skills" } };
   const members = { definition: { target: { projectionId: "definition-form" } }, picker };

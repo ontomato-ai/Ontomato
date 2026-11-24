@@ -144,7 +144,7 @@ export const m6ServerOperations = [
 
     create: true,
     async execute(host: Host, target: PanelOperationTarget, input: Record<string, unknown>): Promise<SinglePanelOperationOutcome> {
-      return save(host, "/action/save", saveBody(target, input),
+      return save(host, "/action/save", target, saveBody(target, input),
         "ACTION_SAVE_FAILED", ACTION, [ACTION, FUNCTION]);
     },
   },

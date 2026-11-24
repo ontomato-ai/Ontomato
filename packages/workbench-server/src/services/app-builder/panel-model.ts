@@ -252,7 +252,11 @@ export const builderModelOperations = [{
       const data = target.kind === "draft"
         ? { ...await createBuilderAgent(owner, createBody(values), intentId), modelSelection: { modelId: null } }
         : { id: target.primaryKey, ...await saveBuilderModel(owner, target.primaryKey, modelSelectionWrite.parse(values).modelSelection) };
-      return { kind: "success", data, affected: affected(BUILDER_AGENT, data.id, [BUILDER_AGENT]) };
+      return {
+        kind: "success", data,
+        ...(target.kind === "draft" && { created: { objectType: BUILDER_AGENT, primaryKey: data.id } }),
+        affected: affected(BUILDER_AGENT, data.id, [BUILDER_AGENT]),
+      };
     } catch (error) {
       if (!(error instanceof HttpError) || error.status !== 400) throw error;
       const message = tForLocale(host.locale, "panels.simplePages.invalidModel");

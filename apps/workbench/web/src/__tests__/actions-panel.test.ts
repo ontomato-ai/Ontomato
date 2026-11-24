@@ -302,6 +302,7 @@ async function mountActionsPanel(options: MountActionsOptions | Record<string, R
               kind: "success",
               message: "Saved",
               data: { primaryKey: "created-action", className: ACTION },
+              created: { objectType: ACTION, primaryKey: "created-action" },
               affected: {
                 objects: [{ objectType: ACTION, primaryKey: "created-action" }],
                 objectTypes: [ACTION],

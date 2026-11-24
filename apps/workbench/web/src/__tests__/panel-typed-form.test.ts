@@ -165,6 +165,7 @@ function ownerForInstance() {
     valuesById.set(primaryKey, (input as PanelFormSaveInput).values);
     return {
       kind: "success", data: {},
+      ...(target?.kind === "draft" && { created: { objectType: AGENT_DEFINITION, primaryKey } }),
       affected: { objects: [{ objectType: AGENT_DEFINITION, primaryKey }], objectTypes: [AGENT_DEFINITION] },
     };
   }, { source: "input", input: "agent" }, { creates: true });

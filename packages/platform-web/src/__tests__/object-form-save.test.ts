@@ -8,6 +8,7 @@ import type { PanelOwnerOperationDescriptor } from "@ontomato/contracts/panel-op
 import type { ProductProjection } from "@ontomato/contracts/product-panels";
 import ObjectForm from "../../../apps-sdk/src/base/ObjectForm.vue";
 import { panelContextKey, projectionKey, type PanelContext } from "../../../apps-sdk/src/panel/context";
+import { resolveFormSaveAnswer } from "../../../apps-sdk/src/panel/member-forms";
 import { PanelFormAdapters } from "../../../apps-sdk/src/panel/forms";
 import type { PanelInstance, PanelWriteResult } from "../../../apps-sdk/src/panel/instance";
 import { panelMemberKey, type PanelMemberContext } from "../../../apps-sdk/src/panel/member";
@@ -29,7 +30,7 @@ function description(name: string): PanelFormDescription {
   };
 }
 
-function receipt(primaryKey: string | null = null): PanelWriteResult {
+function receipt(primaryKey: string | null = null, affectedKeys = primaryKey === null ? [] : ["existing-customer", primaryKey]): PanelWriteResult {
   return {
     decision: "confirm",
     named: [],
@@ -37,9 +38,11 @@ function receipt(primaryKey: string | null = null): PanelWriteResult {
       kind: "dispatched", intentId: "save-intent",
       outcome: {
         kind: "success", data: {}, message: "Customer created",
-        ...(primaryKey === null ? {} : {
-          affected: { objects: [{ objectType: customerType, primaryKey }], objectTypes: [customerType] },
-        }),
+        ...(primaryKey === null ? {} : { created: { objectType: customerType, primaryKey } }),
+        affected: {
+          objects: affectedKeys.map(primaryKey => ({ objectType: customerType, primaryKey })),
+          objectTypes: [customerType],
+        },
       },
     },
   };
@@ -158,6 +161,33 @@ function openForm({ platform = false, auxiliary = false, campus, actions, create
   });
   return { wrapper, state, write, selectedRead, notify, operations, form: forms.handle("form")! };
 }
+
+const affectedKeys = [[], ["existing-customer"], ["existing-customer", "another-customer"]];
+
+describe("resolveFormSaveAnswer", () => {
+  const draft = { kind: "draft" } as const;
+
+  it.each([customerType, null])("returns the declared key for form type %s even with two affected objects", type => {
+    expect(resolveFormSaveAnswer(receipt("new-customer"), draft, type))
+      .toEqual({ primaryKey: "new-customer", message: "Customer created" });
+  });
+
+  it.each(affectedKeys.map(keys => [keys.length, keys] as const))("returns no key with %i affected objects and no created identity", (_, keys) => {
+    expect(resolveFormSaveAnswer(receipt(null, keys), draft, customerType))
+      .toEqual({ primaryKey: null, message: "Customer created" });
+  });
+
+  it("ignores a created identity for a different form type", () => {
+    expect(resolveFormSaveAnswer(receipt("new-customer"), draft, platformType))
+      .toEqual({ primaryKey: null, message: "Customer created" });
+  });
+
+  it("keeps the selected object's key on edit", () => {
+    const target = { kind: "object", objectType: customerType, primaryKey: "selected-customer" } as const;
+    expect(resolveFormSaveAnswer(receipt("new-customer"), target, customerType))
+      .toEqual({ primaryKey: "selected-customer", message: "Customer created" });
+  });
+});
 
 describe("ObjectForm save", () => {
   it.each([null, "new-customer"])("keeps a newly selected row while a create returns %s", async primaryKey => {
@@ -355,14 +385,15 @@ describe("ObjectForm save", () => {
     wrapper.unmount();
   });
 
-  it("resets to the create baseline and emits success when the receipt has no key", async () => {
+  it.each(affectedKeys.map(keys => [keys.length, keys] as const))("resets to the create baseline and reports success with %i affected objects and no created identity", async (_, keys) => {
     const baseline = description("New customer");
-    const { wrapper, form, state, notify } = openForm({ createForm: baseline });
+    const { wrapper, form, state, write, notify } = openForm({ createForm: baseline });
+    write.mockResolvedValueOnce(receipt(null, keys));
     await flushPromises();
     form.set("/name", "Ada");
     expect(form.dirty.value).toBe(true);
 
-    await expect(form.submit()).resolves.toMatchObject({ primaryKey: null });
+    await expect(form.submit()).resolves.toEqual({ primaryKey: null, message: "Customer created" });
     expect(state.values.value.selected).toBeNull();
     expect(form.values.value).toEqual(baseline.values);
     expect(form.dirty.value).toBe(false);
@@ -671,11 +702,12 @@ describe("ObjectForm save", () => {
           kind: "success",
           data: {},
           message: "Knowledge created",
-          affected: { objects: [{ objectType: platformType, primaryKey: "bk-new" }], objectTypes: [platformType] },
+          created: { objectType: platformType, primaryKey: "bk-new" },
+          affected: { objects: [{ objectType: platformType, primaryKey: "bk-old" }, { objectType: platformType, primaryKey: "bk-new" }], objectTypes: [platformType] },
         },
       },
     });
-    await form.submit();
+    await expect(form.submit()).resolves.toMatchObject({ primaryKey: "bk-new" });
     expect(write).toHaveBeenCalledWith("form.persist", expect.any(Object));
     wrapper.unmount();
   });

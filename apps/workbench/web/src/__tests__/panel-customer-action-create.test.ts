@@ -210,6 +210,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
       harness.setOutcome({
         kind: "success",
         data: { result: "{\"id\":\"ord-99\"}", affects: [ORDER] },
+        created: { objectType: ORDER, primaryKey: "ord-99" },
         affected: { objects: [{ objectType: ORDER, primaryKey: "ord-99" }], objectTypes: [ORDER] },
       });
 
@@ -254,6 +255,7 @@ describe("ObjectForm create mode with targetless customer Action", () => {
       harness.setOutcome({
         kind: "success",
         data: { result: "{\"id\":\"ord-99\"}", affects: [ORDER] },
+        created: { objectType: ORDER, primaryKey: "ord-99" },
         affected: { objects: [{ objectType: ORDER, primaryKey: "ord-99" }], objectTypes: [ORDER] },
       });
 

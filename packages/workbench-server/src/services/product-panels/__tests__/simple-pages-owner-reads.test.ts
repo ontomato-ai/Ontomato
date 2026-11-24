@@ -15,17 +15,18 @@ vi.mock("../../mcp/catalog", () => ({
 }));
 vi.mock("../../app-builder/access", () => ({ assertAppBuilderAccess: vi.fn(async () => undefined) }));
 const saveBuilderModelMock = vi.fn();
+const createBuilderAgentMock = vi.fn();
 const listBuilderAgentsMock = vi.fn(async (): Promise<{ id: string; name: string; modelSelection: { modelId: string | null } }[]> => [
   { id: "11111111-1111-4111-8111-111111111111", name: "App builder", modelSelection: { modelId: null } },
   { id: "22222222-2222-4222-8222-222222222222", name: "Custom builder", modelSelection: { modelId: "deepseek-flash" } },
 ]);
-vi.mock("../../app-builder/agents", () => ({
-  builderAgentName: { parse: (v: unknown) => v, safeParse: (v: unknown) => ({ success: true, data: v }) },
+vi.mock("../../app-builder/agents", async importOriginal => ({
+  ...await importOriginal<typeof import("../../app-builder/agents")>(),
   listBuilderAgents: listBuilderAgentsMock,
   readBuilderAgent: vi.fn(async (_owner: unknown, id: string) => ({
     id, name: "App builder", modelSelection: { modelId: "deepseek-flash" },
   })),
-  createBuilderAgent: vi.fn(),
+  createBuilderAgent: createBuilderAgentMock,
   saveBuilderModel: saveBuilderModelMock,
 }));
 const readDiagnosisModelMock = vi.fn(async (): Promise<{ modelSelection: { modelId: string | null } }> => ({ modelSelection: { modelId: null } }));
@@ -80,6 +81,7 @@ const { createDiagnosisModelReads } = await import("../../ops-diagnosis/panel-mo
 afterEach(() => {
   vi.unstubAllGlobals();
   saveBuilderModelMock.mockReset();
+  createBuilderAgentMock.mockReset();
 });
 
 describe("simple pages owner reads", () => {
@@ -155,6 +157,19 @@ describe("simple pages owner reads", () => {
     readDiagnosisModelMock.mockResolvedValueOnce({ modelSelection: { modelId: "retired-model" } });
     const missingForm = await reads.form(DIAGNOSIS_AGENT_ID, {});
     expect(missingForm.fields[0]!.warning).toBe("模型“retired-model”已不存在，请重新选择；在此之前该智能体无法运行。");
+  });
+
+  it("reports the new builder agent's identity after saving a draft", async () => {
+    const primaryKey = "33333333-3333-4333-8333-333333333333";
+    const owner = { domainId: "domain", userId: "user" };
+    createBuilderAgentMock.mockResolvedValueOnce({ id: primaryKey, name: "Custom builder" });
+    const outcome = await builderModelOperations[0]!.execute(
+      { executor: { owner, credentials: {} } } as never,
+      { kind: "draft" },
+      { values: { name: "Custom builder" } },
+      "intent-1",
+    );
+    expect(outcome).toMatchObject({ kind: "success", created: { objectType: BUILDER_AGENT, primaryKey } });
   });
 
   it("localizes BuilderAgent list, exposes per-agent row form under 'all', and saves changed agents individually", async () => {

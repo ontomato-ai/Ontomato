@@ -6,6 +6,7 @@ import { beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { HttpError } from "../../../utils/errors";
 
 const applicationRecord = vi.hoisted(() => vi.fn());
+const applicationCreate = vi.hoisted(() => vi.fn());
 vi.mock("../application-catalogue", async importOriginal => {
   const actual = await importOriginal<typeof import("../application-catalogue")>();
   return {
@@ -13,6 +14,7 @@ vi.mock("../application-catalogue", async importOriginal => {
     applicationCatalogueClient: (viewer: never) => ({
       ...actual.applicationCatalogueClient(viewer),
       record: applicationRecord,
+      create: applicationCreate,
     }),
   };
 });
@@ -25,6 +27,8 @@ vi.mock("../current", async importOriginal => ({
   ...await importOriginal<typeof import("../current")>(),
   readCurrentPanelLabel: vi.fn(),
   readCurrentProjection: vi.fn(),
+  saveCurrentPanel: vi.fn(),
+  saveCurrentProjection: vi.fn(),
 }));
 
 import { fieldPatterns, productCatalogServerOperations } from "../catalog-operations";
@@ -109,6 +113,23 @@ it.each([
   expect(impact).toMatchObject({ total, objects });
   expect(impact.summary).toContain("Order table");
   if (hiddenCount) expect(impact.summary).toContain(String(hiddenCount));
+});
+
+const definition = { name: "Orders", description: "", visibility: "private" };
+it.each([
+  [PRODUCT_PANEL, { ...definition, content: { html: "<main></main>" }, manifest: { state: {}, members: {} } }],
+  [PRODUCT_PROJECTION, { ...definition, componentId: "@ontomato/sdk:ObjectList", inputs: {}, outputs: {}, config: {}, data: {} }],
+  [APPLICATION, {
+    entry: { path: "/applications/app-orders", renderer: "panels" }, panelUses: [], entryAccess: ["owner"],
+    declaration: { names: { en: "Orders" }, descriptions: {}, icon: "app", groups: [], permissions: [] },
+  }],
+] as const)("reports the created identity when saving a draft %s", async (objectType, values) => {
+  const save = productCatalogServerOperations.find(op => op.handlerRef === `${objectType}.save`)!;
+  if (save.kind !== "form.save") throw new Error("Expected a form save");
+  const primaryKey = objectType === APPLICATION ? "app-orders" : "orders";
+  const outcome = await save.execute(impactHost, { kind: "draft", id: primaryKey }, { values }, "intent-1");
+
+  expect(outcome).toMatchObject({ kind: "success", created: { objectType, primaryKey } });
 });
 
 it.each([PRODUCT_PROJECTION, PRODUCT_PANEL, APPLICATION])("describes %s save in the reader's language", async type => {
