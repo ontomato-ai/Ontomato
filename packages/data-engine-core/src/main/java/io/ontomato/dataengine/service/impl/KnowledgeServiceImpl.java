@@ -1,6 +1,5 @@
 package io.ontomato.dataengine.service.impl;
 
-import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.ontomato.dataengine.bean.AuditLog;
 import io.ontomato.dataengine.config.BusinessConfig;
@@ -12,10 +11,7 @@ import io.ontomato.dataengine.service.BusinessConfigService;
 import io.ontomato.dataengine.service.KnowledgeService;
 import io.ontomato.dataengine.service.LangService;
 import io.ontomato.dataengine.service.UntitledKnowledgeTitlePrefix;
-import io.ontomato.dataengine.service.agent.OntologyGenerationPrompts;
-import io.ontomato.dataengine.service.agent.OntologyGenerationService;
 import java.util.*;
-import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -30,15 +26,12 @@ public class KnowledgeServiceImpl implements KnowledgeService {
 
   @Autowired private AuditLogDao auditLogDao;
 
-  @Autowired private OntologyGenerationService generationService;
-
   private final UntitledKnowledgeTitlePrefix untitledKnowledgeTitlePrefix;
 
     public KnowledgeServiceImpl(UntitledKnowledgeTitlePrefix untitledKnowledgeTitlePrefix) {
         this.untitledKnowledgeTitlePrefix = untitledKnowledgeTitlePrefix;
     }
 
-  Pattern JSON_PATTERN = Pattern.compile("```json([\\s\\S]+)```");
 
   @Override
     public String findKnowledge(String question, int pMaxResult, String domainId) {
@@ -182,100 +175,5 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         }
 
         return sbBussinessKnowledge.toString();
-    }
-
-  @Override
-  public List<Map<String, String>> generateBussinessKnowledgeAI(
-      List<Map<String, String>> userTalkJson,
-      Map<String, Object> jsonRule,
-      String lang,
-      String domainId) {
-
-    Map<String, KnowledgeEntity> bussinessKnowledges = this.getBussinessKnowledge(domainId);
-    Iterator<String> itKeys = bussinessKnowledges.keySet().iterator();
-    List<KnowledgeEntity> listSystemKnowledgeToApprove = new ArrayList<>();
-    List<String> listSystemToApproveKey = new ArrayList<String>();
-    while (itKeys.hasNext()) {
-      String key = itKeys.next();
-      KnowledgeEntity knowledgeEntity = bussinessKnowledges.get(key);
-      if (knowledgeEntity.getStatus() == 0 && knowledgeEntity.getCreatorType() == 0) {
-        listSystemToApproveKey.add(key);
-        listSystemKnowledgeToApprove.add(knowledgeEntity);
-      }
-    }
-    String userMessage =
-        OntologyGenerationPrompts.getKnowledgeUserMessage(
-            userTalkJson, listSystemKnowledgeToApprove, jsonRule, lang, langService);
-    String kwSessionid = UUID.randomUUID().toString();
-
-    try (var generation =
-        generationService.generate("knowledge", kwSessionid, userMessage, lang, domainId)) {
-      JSONArray items = generation.result().getJSONArray("knowledge");
-      if (items == null) return new ArrayList<>();
-      List<Map<String, String>> listNewKnowledge = new ArrayList<>();
-      for (Object item : items) {
-        JSONObject value = JSONObject.from(item);
-        String title = value.getString("title"), knowledge = value.getString("knowledge");
-        if (title == null || title.isBlank() || knowledge == null || knowledge.isBlank())
-          throw new IllegalArgumentException("Knowledge title and content are required");
-        listNewKnowledge.add(Map.of("title", title, "knowledge", knowledge));
-      }
-      return generation.settle(
-          () -> {
-            if (!listNewKnowledge.isEmpty())
-              createSystemKnowledge(listSystemToApproveKey, listNewKnowledge, domainId);
-            return listNewKnowledge;
-          });
-    }
-  }
-
-    private void createSystemKnowledge(List<String> listSystemToApproveKey, List<Map<String,String>> listNewKnowledge, String domainId) {
-        // Delete the old knowledge pending approval
-        for(int i=0;i<listSystemToApproveKey.size();i++){
-            String key = listSystemToApproveKey.get(i);
-            this.delBussinessKnowledge(key, null);
-        }
-        // Add the new knowledge
-        for(int j=0;j<listNewKnowledge.size();j++){
-            Map<String,String> mapKnowledge = listNewKnowledge.get(j);
-
-            KnowledgeEntity knowledgeEntity = new KnowledgeEntity();
-            knowledgeEntity.setCreatorType(0); //Created by the system
-            knowledgeEntity.setStatus(0); //Pending approval
-            String knowledgeID = "knowledge_" + UUID.randomUUID().toString();
-            knowledgeEntity.setKnowledgeID(knowledgeID);
-            knowledgeEntity.setModifyTime(new Date());
-            if(mapKnowledge.containsKey("title")){
-                String title = mapKnowledge.get("title");
-                knowledgeEntity.setKnowledgeTitle(title);
-            }
-            if(mapKnowledge.containsKey("knowledge")){
-                String knowledge = mapKnowledge.get("knowledge");
-                knowledgeEntity.setKnowledgeText(knowledge);
-            }
-
-            knowledgeDao.insertKnowledge(knowledgeEntity.getKnowledgeID(),
-                    domainId,
-                    knowledgeEntity.getKnowledgeTitle(),
-                    knowledgeEntity.getKnowledgeText(),
-                    knowledgeEntity.getKnowledgeTags(),
-                    knowledgeEntity.getCreatorType(),
-                    knowledgeEntity.getStatus(),
-                    knowledgeEntity.getModifyTime());
-            
-            AuditLog auditLog = new AuditLog();
-            auditLog.setId(UUID.randomUUID().toString());
-            auditLog.setBussiness(AuditLog.BUSSINESS_BKNOWLEDGE);
-            auditLog.setByAi(true);
-            auditLog.setUserId("AI");
-            auditLog.setUserName("AI");
-            auditLog.setOperation(AuditLog.OPERATION_ADD);
-            BusinessConfig businessConfig = businessConfigService.get(domainId);
-    		String sysLang = businessConfig.getLang();
-            auditLog.setDescription(langService.get(sysLang, "AuditLog.businessKnowledge.add") + ": " + knowledgeEntity.getKnowledgeTitle());
-            auditLog.setParamter(JSONObject.toJSONString(knowledgeEntity));
-            auditLog.setOperateTime(System.currentTimeMillis());
-            auditLogDao.save(auditLog, domainId);
-        }
     }
 }

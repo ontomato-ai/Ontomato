@@ -207,8 +207,8 @@ class OntologyGenerationContractTest {
     return OntologyGenerationService.asOwner(
         user,
         () ->
-            generation.generate(
-                "function", UUID.randomUUID().toString(), "Fixture task", "en", owner.domainId()));
+            generation.generateMetricView(
+                UUID.randomUUID().toString(), "Fixture task", "en", owner.domainId()));
   }
 
   @Test
@@ -252,18 +252,18 @@ class OntologyGenerationContractTest {
 
   @Test
   void receiptBindsCodeParametersAndOperation() throws Exception {
-    var ids = generation.open("function", UUID.randomUUID().toString(), null, owner, true);
+    var ids = generation.open("metric", UUID.randomUUID().toString(), null, owner, true);
     String run = ids.getString("runId");
     operations.test(run, owner, packageBody());
-    assertDoesNotThrow(() -> operations.requirePackageTest(run, "function", bundle(source, new JSONArray())));
+    assertDoesNotThrow(() -> operations.requirePackageTest(run, "metric", bundle(source, new JSONArray())));
     assertThrows(
         AgentHttpException.class,
-        () -> operations.requirePackageTest(run, "function", bundle(source + "# changed", new JSONArray())));
+        () -> operations.requirePackageTest(run, "metric", bundle(source + "# changed", new JSONArray())));
     assertThrows(
         AgentHttpException.class,
         () ->
             operations.requirePackageTest(
-                run, "function", bundle(source, JSONArray.of(JSONObject.of("name", "different", "type", "TYPE_STRING", "value", "x")))));
+                run, "metric", bundle(source, JSONArray.of(JSONObject.of("name", "different", "type", "TYPE_STRING", "value", "x")))));
     assertThrows(
         AgentHttpException.class,
         () -> operations.requirePackageTest(run, "action", bundle(source, new JSONArray())));
@@ -284,7 +284,7 @@ class OntologyGenerationContractTest {
 
   @Test
   void numericModelDefaultsPassTestingAndAdoptionWithoutAnotherModelRound() throws Exception {
-    var ids = generation.open("function", UUID.randomUUID().toString(), null, owner, true);
+    var ids = generation.open("metric", UUID.randomUUID().toString(), null, owner, true);
     String run = ids.getString("runId");
     var raw = bundle(source, JSONArray.of(JSONObject.of("name", "limit", "type", "TYPE_NUMBER", "value", "25")));
     operations.test(run, owner, JSONObject.of("queryPackage", raw, "columnLabels", new JSONObject()));
@@ -292,13 +292,13 @@ class OntologyGenerationContractTest {
     verify(python, times(1)).execute(anyString(), anyString(), anyInt(), anyString(), any(), values.capture(), any());
     assertInstanceOf(Number.class, values.getValue().get("limit"));
     assertEquals(25, values.getValue().getIntValue("limit"));
-    assertDoesNotThrow(() -> operations.requirePackageTest(run, "function", QueryPackage.accept(raw)));
+    assertDoesNotThrow(() -> operations.requirePackageTest(run, "metric", QueryPackage.accept(raw)));
     generation.close(ids.getString("sessionId"), run, owner);
   }
 
   @Test
   void descriptionChangesDoNotInvalidateTheBusinessTestReceipt() throws Exception {
-    var ids = generation.open("function", UUID.randomUUID().toString(), null, owner, true);
+    var ids = generation.open("metric", UUID.randomUUID().toString(), null, owner, true);
     String run = ids.getString("runId");
     operations.test(
         run,
@@ -310,25 +310,25 @@ class OntologyGenerationContractTest {
         JSONObject.of(
             "name", "limit", "type", "TYPE_NUMBER", "value", 10, "description", "maximum size");
     assertDoesNotThrow(
-        () -> operations.requirePackageTest(run, "function", bundle(source, JSONArray.of(described))));
+        () -> operations.requirePackageTest(run, "metric", bundle(source, JSONArray.of(described))));
     var changedValue =
         JSONObject.of(
             "name", "limit", "type", "TYPE_NUMBER", "value", 20, "description", "size");
     assertThrows(
         AgentHttpException.class,
-        () -> operations.requirePackageTest(run, "function", bundle(source, JSONArray.of(changedValue))));
+        () -> operations.requirePackageTest(run, "metric", bundle(source, JSONArray.of(changedValue))));
     var changedType =
         JSONObject.of(
             "name", "limit", "type", "TYPE_STRING", "value", 10, "description", "size");
     assertThrows(
         AgentHttpException.class,
-        () -> operations.requirePackageTest(run, "function", bundle(source, JSONArray.of(changedType))));
+        () -> operations.requirePackageTest(run, "metric", bundle(source, JSONArray.of(changedType))));
     var missing =
         assertThrows(
             AgentHttpException.class,
             () ->
                 operations.requirePackageTest(
-                    run, "function", bundle(source + "# untested", JSONArray.of(described))));
+                    run, "metric", bundle(source + "# untested", JSONArray.of(described))));
     assertEquals(400, missing.status());
     assertTrue(missing.getMessage().contains("business test"));
     generation.close(ids.getString("sessionId"), run, owner);

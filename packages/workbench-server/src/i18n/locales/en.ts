@@ -435,7 +435,7 @@ export const en = {
   "panels.modelSettings.operations.rebuildVectors": "Rebuild vectors",
   "panels.modelSettings.operations.pauseVectorRebuild": "Pause rebuild",
   "panels.modelSettings.errors.connectionNameTaken": "Connection \"{name}\" already exists.",
-  "panels.modelSettings.errors.providerNoEmbeddings": "Anthropic does not support embedding models.",
+  "panels.modelSettings.errors.providerNoEmbeddings": "This provider does not support embedding models.",
   "panels.modelSettings.errors.headerNameRequired": "Enter a header name.",
   "panels.modelSettings.errors.headerDuplicate": "Header \"{name}\" is listed more than once.",
   "panels.modelSettings.errors.modelNameTaken": "Model \"{name}\" already exists in this domain.",

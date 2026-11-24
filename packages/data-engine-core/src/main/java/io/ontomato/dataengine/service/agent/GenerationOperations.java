@@ -235,16 +235,15 @@ public class GenerationOperations {
   }
 
   /**
-   * A receipt binds only the executed input: the parameter name (or dashboard key), type and value.
+   * A receipt binds only the executed input: the parameter name, type and value.
    * Descriptive fields such as description or sample never require another business test.
    */
   private static JSONArray executedParameters(String kind, JSONArray parameters) {
     var executed = new JSONArray();
     if (parameters == null) return executed;
-    boolean dashboard = kind.equals("dashboard");
     for (int i = 0; i < parameters.size(); i++) {
       JSONObject parameter = parameters.getJSONObject(i), kept = new JSONObject();
-      kept.put(dashboard ? "key" : "name", parameter.get(dashboard ? "key" : "name"));
+      kept.put("name", parameter.get("name"));
       kept.put("type", parameter.get("type"));
       kept.put("value", "action".equals(kind)
           ? ParameterValues.normalize(parameter.getString("type"), parameter.get("value"))
@@ -353,12 +352,12 @@ public class GenerationOperations {
   public static String packageTestDigest(String kind, JSONObject bundle) {
     var executable = QueryPackage.copy(QueryPackage.validate(bundle));
     var manifest = executable.getJSONObject("manifest");
-    manifest.put("parameterDefs", executedParameters("function", manifest.getJSONArray("parameterDefs")));
+    manifest.put("parameterDefs", executedParameters(kind, manifest.getJSONArray("parameterDefs")));
     return AgentJson.hash(JSONObject.of("kind", kind, "package", executable));
   }
 
   private Receipt testPackage(Window window, JSONObject body) throws Exception {
-    if (!Set.of("metric", "function", "dashboard").contains(window.kind()))
+    if (!window.kind().equals("metric"))
       throw AgentHttpException.invalid("This definition does not test query packages")
           .localized("Authoring.queryPackageNotTested", Map.of());
     var bundle = QueryPackage.accept(body.getJSONObject("queryPackage"));

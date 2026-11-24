@@ -7,7 +7,6 @@ import java.util.Map;
 import com.alibaba.fastjson2.*;
 import io.ontomato.dataengine.bean.abcHarness.ABCHarnessProgram;
 import io.ontomato.dataengine.service.LangService;
-import io.ontomato.dataengine.service.QuerySourceSnapshot;
 import io.ontomato.dataengine.util.DslRuleUtil;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -16,7 +15,7 @@ import org.junit.jupiter.api.Test;
 /** The checker compares against the user's own words, not the rewritten retrieval question. */
 class OntologyGenerationPromptsTest {
   @Test
-  void describerReceivesAllBlindFilesAndCandidateReceivesAllOriginalFiles() throws Exception {
+  void describerReceivesAllBlindFiles() throws Exception {
     JSONObject bundle;
     try (var in = getClass().getResourceAsStream("/ontology-contracts/examples/query-packages.json")) {
       bundle = JSON.parseObject(in.readAllBytes()).getJSONObject("pythonAggregate");
@@ -36,10 +35,6 @@ class OntologyGenerationPromptsTest {
       assertTrue(blind.contains("helper.py")); assertTrue(blind.contains("helper_value = 7"));
       assertTrue(blind.contains("queries/employees.json")); assertTrue(blind.contains("calculate.py"));
       assertFalse(blind.contains("AUTHOR_HINT")); assertFalse(blind.contains("USER_WORDS"));
-      String candidate = OntologyGenerationPrompts.getReadFunctionMakerUserMessage("USER_WORDS", QuerySourceSnapshot.input(program), "en", lang, rule);
-      assertTrue(candidate.contains("AUTHOR_HINT")); assertTrue(candidate.contains("helper_value = 7"));
-      assertTrue(candidate.contains("queries/employees.json")); assertTrue(candidate.contains("calculate.py"));
-      assertFalse(candidate.contains("{{QUERY_LOGIC}}"));
     }
   }
 
