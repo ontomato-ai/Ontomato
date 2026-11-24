@@ -45,15 +45,29 @@ COPY workspace/ /build/workspace/
 COPY inputs.json /inputs.json
 COPY tools/ /tmp/tools/
 RUN TARGETPLATFORM=${TARGETPLATFORM} node /tmp/tools/workbench/stage-app.mjs
-# Keep the frozen PI CLI and the image-resize worker's external package under
-# /usr, which is visible inside the sandbox. PI's CLI and SDK are bundled.
-RUN pi=packages/agent-runtime/node_modules/@earendil-works/pi-coding-agent \
- && photon="$(cd packages/agent-runtime && node --input-type=module -e 'import { createRequire } from "node:module"; import { dirname } from "node:path"; console.log(dirname(createRequire(import.meta.resolve("@earendil-works/pi-coding-agent")).resolve("@silvia-odwyer/photon-node")))' )" \
- && mkdir -p /pi/node_modules/@earendil-works /pi/node_modules/@silvia-odwyer \
- && cp -LR "$pi" /pi/node_modules/@earendil-works/ \
- && cp -LR "$photon" /pi/node_modules/@silvia-odwyer/ \
- && cp packages/agent-runtime/src/adapters/pi/import.mjs packages/agent-runtime/src/adapters/pi/extension.mjs /pi/ \
- && node /pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --version | grep -Fx 1.4.0
+# The bundled PI CLI resolves its extension loader and image-resize worker
+# externally. They must be in the PI tree under /usr, visible inside nsjail.
+RUN <<'EOF'
+set -eu
+cd packages/agent-runtime
+mkdir -p /pi/node_modules/@earendil-works
+cp -LR node_modules/@earendil-works/pi-coding-agent /pi/node_modules/@earendil-works/
+node --input-type=module <<'NODE'
+import { cpSync, mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+const require = createRequire(import.meta.resolve("@earendil-works/pi-coding-agent"));
+for (const name of ["jiti", "@silvia-odwyer/photon-node"]) {
+  const source = dirname(require.resolve(name + "/package.json"));
+  const target = join("/pi/node_modules", name);
+  mkdirSync(dirname(target), { recursive: true });
+  cpSync(source, target, { recursive: true, dereference: true });
+}
+NODE
+cp src/adapters/pi/import.mjs src/adapters/pi/extension.mjs /pi/
+node /pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --version | grep -Fx 1.4.0
+EOF
 RUN mkdir /codex-launcher \
  && cp packages/agent-runtime/src/adapters/codex/launch.mjs packages/agent-runtime/src/adapters/codex/config.toml \
        packages/agent-runtime/src/adapters/codex/model-template.json /codex-launcher/
