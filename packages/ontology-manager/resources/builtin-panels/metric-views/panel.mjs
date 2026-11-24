@@ -106,7 +106,48 @@ await mountPanel({
 
     const testValues = ref({});
     const testErrors = ref({});
+    let explicitParams = null;
     let pendingInputParamsJson = null;
+
+    function clearExplicitTestDraft() {
+      explicitParams = null;
+      testValues.value = {};
+      testErrors.value = {};
+      pendingInputParamsJson = null;
+    }
+
+    function defaultExplicitParams() {
+      const defaults = {};
+      for (const def of parameterDefs.value) {
+        defaults[def.name] = def.value === undefined ? null : cloneJson(def.value);
+      }
+      return defaults;
+    }
+
+    function mergeExplicitDefaults(source) {
+      const merged = { ...normalizeParams(source) };
+      for (const def of parameterDefs.value) {
+        if (!Object.hasOwn(merged, def.name)) {
+          merged[def.name] = def.value === undefined ? null : cloneJson(def.value);
+        }
+      }
+      return merged;
+    }
+
+    function buildExplicitValues(params, preserveErrors) {
+      const nextValues = {};
+      for (const def of parameterDefs.value) {
+        if (preserveErrors && Object.hasOwn(testErrors.value, def.name) && Object.hasOwn(testValues.value, def.name)) {
+          nextValues[def.name] = testValues.value[def.name];
+          continue;
+        }
+        const value = Object.hasOwn(params, def.name)
+          ? params[def.name]
+          : (def.value === undefined ? null : def.value);
+        nextValues[def.name] = JSON.stringify(value);
+      }
+      return nextValues;
+    }
 
     const testOpen = computed({
       get: () => state.value.testOpen === true,
@@ -134,6 +175,7 @@ await mountPanel({
       const patch = {};
       if (next && creating.value) patch.creating = false;
       if (prev !== next) {
+        clearExplicitTestDraft();
         if (!patched.has("testOpen")) patch.testOpen = false;
         if (!patched.has("testSource")) patch.testSource = "explicit";
         if (!patched.has("testTab")) patch.testTab = "markdown";
@@ -142,10 +184,22 @@ await mountPanel({
       if (Object.keys(patch).length > 0) instance.state.setState(patch);
     });
 
+    watch(testOpen, (open, prevOpen) => {
+      if (open || prevOpen !== true) return;
+      clearExplicitTestDraft();
+      const patched = new Set(instance.state.lastPatchedKeys);
+      const patch = {};
+      if (!patched.has("testSource") && state.value.testSource !== "explicit") patch.testSource = "explicit";
+      if (!patched.has("testTab") && state.value.testTab !== "markdown") patch.testTab = "markdown";
+      if (!patched.has("testParameters") && Object.keys(normalizeParams(state.value.testParameters)).length > 0) {
+        patch.testParameters = {};
+      }
+      if (Object.keys(patch).length > 0) instance.state.setState(patch);
+    });
+
     watch(detailVisible, (visible) => {
       if (visible) return;
-      testValues.value = {};
-      testErrors.value = {};
+      clearExplicitTestDraft();
       if (
         state.value.testOpen !== false
         || state.value.testSource !== "explicit"
@@ -161,7 +215,7 @@ await mountPanel({
       }
     });
 
-    function syncTestState() {
+    function syncTestState(next, prev) {
       if (!detailVisible.value || !testOpen.value) {
         testErrors.value = {};
         return;
@@ -169,44 +223,58 @@ await mountPanel({
 
       const bindingIndex = parseBindingIndex(testSource.value);
       if (bindingIndex !== null) {
-        testErrors.value = {};
         if (!hasFunctionDraft.value) return;
         const row = bindingRows.value[bindingIndex];
         // Copy parameters from the current draft binding row (never bindingId) so unsaved edits are tested.
         const nextParams = cloneJson(normalizeParams(row?.parameters));
-        if (JSON.stringify(nextParams) !== JSON.stringify(testParameters.value)) {
+        const nextJson = JSON.stringify(nextParams);
+        if (nextJson !== JSON.stringify(testParameters.value)) {
+          pendingInputParamsJson = nextJson;
           instance.state.set("testParameters", nextParams);
         }
         return;
       }
 
-      const current = testParameters.value;
-      let merged = current;
-      let changed = false;
-      for (const def of parameterDefs.value) {
-        if (!Object.hasOwn(current, def.name)) {
-          if (!changed) merged = { ...current };
-          merged[def.name] = def.value === undefined ? null : cloneJson(def.value);
-          changed = true;
+      const prevOpen = prev ? prev[1] : false;
+      const prevSource = prev ? prev[2] : null;
+      const sameMetric = prev !== undefined && next[7] === prev[7];
+      const paramsChanged = prev !== undefined && next[6] !== prev[6];
+      const switchedFromBinding = sameMetric && prevSource !== null && parseBindingIndex(prevSource) !== null;
+      const patchedParams = instance.state.lastPatchedKeys.has("testParameters");
+      const takeExternalParams =
+        (!prevOpen && explicitParams === null)
+        || (switchedFromBinding && patchedParams)
+        || (!switchedFromBinding && paramsChanged);
+
+      // Keep explicit edits isolated from binding values when toggling back from a binding source.
+      const base = takeExternalParams
+        ? testParameters.value
+        : (switchedFromBinding ? (explicitParams ?? {}) : (explicitParams ?? testParameters.value));
+      const merged = mergeExplicitDefaults(base);
+      explicitParams = cloneJson(merged);
+
+      const preserveErrors = !takeExternalParams;
+      if (!preserveErrors) {
+        testErrors.value = {};
+      } else {
+        const validNames = new Set(parameterDefs.value.map((def) => def.name));
+        const keptErrors = {};
+        for (const [key, msg] of Object.entries(testErrors.value)) {
+          if (validNames.has(key)) keptErrors[key] = msg;
         }
+        testErrors.value = keptErrors;
       }
-      if (changed) {
+      testValues.value = buildExplicitValues(merged, preserveErrors);
+
+      const mergedJson = JSON.stringify(merged);
+      if (mergedJson !== JSON.stringify(testParameters.value)) {
+        pendingInputParamsJson = mergedJson;
         instance.state.set("testParameters", merged);
       }
-
-      const nextValues = {};
-      for (const def of parameterDefs.value) {
-        const value = Object.hasOwn(merged, def.name)
-          ? merged[def.name]
-          : (def.value === undefined ? null : def.value);
-        nextValues[def.name] = JSON.stringify(value);
-      }
-      testValues.value = nextValues;
-      testErrors.value = {};
     }
 
     watch(
-      [detailVisible, testOpen, testSource, hasFunctionDraft, parameterDefs, bindingRows, testParameters],
+      [detailVisible, testOpen, testSource, hasFunctionDraft, parameterDefs, bindingRows, testParameters, selectedKey],
       (next, prev) => {
         const onlyParamsChanged =
           prev !== undefined
@@ -215,13 +283,14 @@ await mountPanel({
           && next[2] === prev[2]
           && next[3] === prev[3]
           && next[4] === prev[4]
-          && next[5] === prev[5];
+          && next[5] === prev[5]
+          && next[7] === prev[7];
         if (onlyParamsChanged && pendingInputParamsJson !== null && JSON.stringify(next[6]) === pendingInputParamsJson) {
           pendingInputParamsJson = null;
           return;
         }
         pendingInputParamsJson = null;
-        syncTestState();
+        syncTestState(next, prev);
       },
       { immediate: true },
     );
@@ -244,7 +313,8 @@ await mountPanel({
       }
       delete nextErrors[name];
       testErrors.value = nextErrors;
-      const nextParams = { ...testParameters.value, [name]: parsed };
+      const nextParams = { ...(explicitParams ?? testParameters.value), [name]: parsed };
+      explicitParams = cloneJson(nextParams);
       pendingInputParamsJson = JSON.stringify(nextParams);
       instance.state.set("testParameters", nextParams);
     }
@@ -266,7 +336,13 @@ await mountPanel({
     }
 
     function openTest() {
-      testOpen.value = true;
+      clearExplicitTestDraft();
+      instance.state.setState({
+        testOpen: true,
+        testSource: "explicit",
+        testTab: "markdown",
+        testParameters: defaultExplicitParams(),
+      });
     }
 
     function onMarkdownRead() {

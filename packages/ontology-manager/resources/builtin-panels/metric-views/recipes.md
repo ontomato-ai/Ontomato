@@ -32,18 +32,22 @@ definitions are prepared in this conversation, tested here, and drafted into the
    scope, filters, time semantics, denominators and null handling — before concluding two metrics are the same. When an
    existing metric already answers the question, point to it and its parameters/bindings rather than creating a
    duplicate.
-2. **When a new measure is needed, write the complete definition.** Fill `function.queryPackage` (the full `manifest`
-   with `schema`, `entry`, `queries`, `parameterDefs`, `parameterBindings`, plus every file under `files`),
-   `function.returnDef.columnLabels` (every output key labeled in the reader's language), `function.logic`,
-   `matchQuestions`, and any `bindings` rows with values for every declared parameter. Declare every parameter the query
-   package uses and no others; never copy another metric's values into `parameterDefs` as defaults.
-3. **Test on real data before saving.** Use `present` to open the metric's detail view (`selected` or
-   `{ selected: null, creating: true }`) and open the test dialog by setting `testOpen: true` (along with
+2. **Open the live form and fill the complete definition before testing.** Use `present` to open the metric's
+   `definition` form (`selected` for editing, or `{ selected: null, creating: true }` for a new metric — always passing
+   `selected: null` alongside `creating: true` when an existing metric is already selected so the form does not keep
+   pointing at the previous object). Then use `fill_form` on `definition` to write the complete draft directly on screen:
+   `function.queryPackage` (the full `manifest` with `schema`, `entry`, `queries`, `parameterDefs`, `parameterBindings`,
+   plus every file under `files`), `function.returnDef.columnLabels` (every output key labeled in the reader's language),
+   `function.logic`, `matchQuestions`, and any `bindings` rows with values for every declared parameter. Declare every
+   parameter the query package uses and no others; never copy another metric's values into `parameterDefs` as defaults.
+3. **Test the filled live draft on real data before saving.** With the draft to test already loaded or filled in
+   `definition`, use `present` to open the test dialog by setting `testOpen: true` (along with
    `testSource: "explicit"` or `"binding:<index>"`, optional `testTab: "markdown" | "json"`, and `testParameters`), then
    invoke `page_action` with `testMarkdown.test` (`metricViews.test`, Markdown output) or `testJson.testExecute`
    (`metricViews.testExecute`, raw JSON output with truncation metadata). Neither saves anything. Treat a truncated
    result as partial, never as the complete numbers.
-4. **Fill the live form and save through confirmation.** Use `present` to open the metric's `definition` form — or, for a new metric (especially when an existing metric is already selected), always pass `{ selected: null, creating: true }` so `selected` is cleared and the form does not keep pointing at the previous object — then use `fill_form` to enter the fields directly on screen and `page_action({ operation: "definition.save" })` when ready to save (confirmed in conversation by default).
+4. **Save through confirmation.** Once the tested draft is ready to persist, invoke
+   `page_action({ operation: "definition.save" })` (confirmed in conversation by default).
 
 ## Owner rules this page shows and never rejudges
 
