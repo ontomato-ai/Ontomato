@@ -265,7 +265,7 @@ export interface PanelInstanceView {
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Whether the proposed address and patch would change public state while a form is dirty. */
   blocksNavigation(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
-  /** Applies deep-link overrides before the address reaches the mounted panel. */
+  /** Applies deep-link overrides before the address reaches a panel with unsaved edits. */
   presentationAddress(address: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string;
   /** Fills explicit fields on a mounted live form through the form's own editing entry. */
   fillForm(request: FormFillRequestInput): Promise<FormFillOutcome>;
@@ -1009,7 +1009,7 @@ export function usePanelInstance(port: PanelHostPort, options: PanelInstanceOpti
   }
 
   function presentationAddress(next: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string {
-    if (!source.value) return next;
+    if (!dirty.value || !source.value) return next;
     const { manifest } = source.value.panel;
     const overrides = Object.entries(patch).filter(([name]) => manifest.state[name]?.deepLink);
     if (overrides.length === 0) return next;

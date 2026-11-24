@@ -71,7 +71,7 @@ export interface DisplayPageController {
   applyState(patch: Readonly<Record<string, RuntimeJsonValue>>): void;
   /** Returns true when navigating within the same mounted page instance would discard unsaved changes. */
   blocksNavigation?(next: { address: string; state?: Readonly<Record<string, RuntimeJsonValue>> }): boolean;
-  /** Applies deep-link overrides before a new address reaches the same mounted instance. */
+  /** Applies deep-link overrides before a new address reaches a mounted instance with unsaved edits. */
   presentationAddress?(address: string, patch: Readonly<Record<string, RuntimeJsonValue>>): string;
   fillForm?(request: FormFillRequestInput): Promise<FormFillOutcome>;
   executeAction?(request: PageActionRequestInput): Promise<PageActionOutcome>;
