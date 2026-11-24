@@ -1,7 +1,6 @@
 import { BUILD_TEST_HEADER, type AppExecutionContext } from "@ontomato/contracts/build-tests";
 import type { AppHostCredential } from "@ontomato/contracts/app-host";
 import type { DataAdaptersData } from "@ontomato/contracts/data-adapters";
-import type { ObjectViewDocument, ObjectViewState } from "@ontomato/contracts/object-views";
 import { createActionsClient } from "./clients/actions";
 import { createProductsClient } from "./clients/products";
 import type { DashboardDetail, DashboardListItem } from "@ontomato/contracts/dashboard";
@@ -309,7 +308,7 @@ export function createManagerRequest(
       assertCurrent();
       // The refusal also carries the HTTP status and the owner's parsed body (`status`, `payload`, as the workbench's
       // request layer throws them), so a client that reads its owner's error contract can tell one refusal from another.
-      throw Object.assign(new Error(response.status === 409 && path.startsWith("/objectView/") ? context.text("ovConflict") : body?.error?.message || body?.message ||
+      throw Object.assign(new Error(body?.error?.message || body?.message ||
         context.text("requestFailedStatus", { status: response.status })),
         { code: body?.error?.code ?? body?.code, status: response.status, payload: body });
     }
@@ -565,18 +564,6 @@ export function createManagerClient(
     return info as Record<string, unknown>;
   }
 
-  async function objectViewRequest(operation: "read" | "edit" | "save" | "publish", className: string, form: "full" | "panel", values: Record<string, unknown> = {}): Promise<ObjectViewState> {
-    if(form==='full'){
-      const result=await send(`/product-assets/object-views/${operation}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({className,form,...values})},'');
-      return result.data;
-    }
-    return (await post(`/objectView/${operation}`, { className, form, ...values })).data;
-  }
-
-  function saveObjectView(document: ObjectViewDocument, form: "full" | "panel", expectedRevision: number, description: string) {
-    return objectViewRequest("save", document.className, form, { document, expectedRevision, description });
-  }
-
   /** Every skill of the domain, for the capability overview. Charts are drawn from a chart file, not by a skill. */
   async function loadSkills() {
     const response = await send("/skills", { method: "GET" }, "");
@@ -677,8 +664,6 @@ export function createManagerClient(
       put: async (path: string, body: unknown): Promise<unknown> =>
         (await send(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).data,
     },
-    objectViewRequest,
-    saveObjectView,
     /** Published MetricView reads: the same client apps get from the SDK. */
     metricViews: createMetricViewsClient(transport),
     /** Action execution: the same client apps get from the SDK. */

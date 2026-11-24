@@ -1,12 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, reactive, type App } from "vue";
 import { createObjectView, createViewWidget } from "@ontomato/contracts/object-views";
-import { chartFile, chartWidget } from "./chart-fixture";
+import { chartWidget } from "./chart-fixture";
 import ObjectViewRuntime from "../object-views/ObjectViewRuntime.vue";
-import ObjectViewBuilder from "../object-views/ObjectViewBuilder.vue";
-import ObjectViewPage from "../object-views/ObjectViewPage.vue";
-import ViewBindingEditor from "../object-views/ViewBindingEditor.vue";
-import type { ViewBinding } from "@ontomato/contracts/object-views";
 import { installObjectViewHost } from "./object-view-host";
 import { managerOverlayKey } from "../overlay";
 import { provideManagerFeedback } from "../feedback";
@@ -62,15 +58,6 @@ describe("configured object view interaction", () => {
     Array.from(element.querySelectorAll('button')).find(button=>button.textContent==='Edit selected')!.click();await settle();
     expect(forms[0]).toMatchObject({parameters:{id:'order-1',name:'Capability name'}});
   });
-  it('refuses a historical direct-read view in a product entry before reading business data',async()=>{
-    const requests:string[]=[];
-    vi.stubGlobal('fetch',async(url:string)=>{requests.push(url);return answer({revision:1,publishedRevision:1,versions:[{revision:1,document:createObjectView('Order')}]});});
-    const element=mount(()=>h(ObjectViewPage,{reference:{className:'Order',primaryKey:'1'},capabilityOnly:true}));
-    await settle();
-    expect(element.querySelector('.object-view-runtime')).toBeNull();
-    expect(element.querySelector('.el-alert')).not.toBeNull();
-    expect(requests.some(url=>url.includes('queryInfoByNode'))).toBe(false);
-  });
   it('renders capability-bound properties and links without reading the object or relationships',async()=>{
     const view=createObjectView('Order');
     const details=widget('properties');details.resourceId='details';details.parameters={id:{source:'context',path:'primaryKey'}};
@@ -92,22 +79,6 @@ describe("configured object view interaction", () => {
     expect(element.querySelector('dd')?.textContent).toBe('Capability result');
     expect(element.textContent).toContain('Related result');
     expect(requests.some(url=>url.includes('queryInfoByNode')||url.includes('executeDsl'))).toBe(false);
-  });
-  it("selects a defined variable and accepts a nested variable path", async () => {
-    const binding = ref<ViewBinding>({ source: "variable", path: "" });
-    const element = mount(() => h(ViewBindingEditor, { modelValue: binding.value, variables: ["filter", "selected"], "onUpdate:modelValue": value => { binding.value = value; } }));
-    await settle();
-    const select = element.querySelectorAll(".el-select")[1];
-    (select.querySelector(".el-select__wrapper") as HTMLElement).click(); await settle();
-    Array.from(document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")).find(item => item.querySelector("span")?.textContent === "filter")!.click();
-    await settle();
-    expect(binding.value).toEqual({ source: "variable", path: "filter" });
-    (select.querySelector(".el-select__wrapper") as HTMLElement).click(); await settle();
-    const input = select.querySelector("input")!;
-    input.value = "selected.name"; input.dispatchEvent(new Event("input", { bubbles: true })); await settle();
-    Array.from(document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")).find(item => item.textContent === "selected.name")!.click();
-    await settle();
-    expect(binding.value).toEqual({ source: "variable", path: "selected.name" });
   });
   it("shows a dependent action when a previously missing row-selection variable is assigned", async () => {
     const view = createObjectView("Person");
@@ -275,98 +246,6 @@ describe("configured object view interaction", () => {
     expect(element.querySelector(".metric")?.textContent).toBe("changed");
     expect(element.textContent).toContain("Now visible");
   });
-  it("searches preview objects within the current class, displays business names and loads by primary key", async () => {
-    const searches: Record<string, unknown>[] = [];
-    const lookups: Record<string, unknown>[] = [];
-    const attrs = [{ name: "id", primaryKey: true }, { name: "name", bizzkeyBool: true }];
-    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body));
-      if (url.endsWith("getWholeClassDataByPage")) {
-        searches.push(body);
-        return new Response(JSON.stringify({ success: true, data: [{ id: "order-2", name: "Readable order" }], total_count: 1 }));
-      }
-      if (url.endsWith("queryInfoByNode")) lookups.push(body);
-      const data = url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [] }
-        : url.endsWith("getMetas") ? { classDef: [{ className: "Order", showName: "Order", attrs }] }
-        : url.endsWith("queryInfoByNode") ? { classDef: { attrs }, data: { name: body.id === "Order:order-1" ? "Initial order" : "Readable order" } } : [];
-      return new Response(JSON.stringify({ success: true, data }));
-    });
-    const element = mount(() => h(ObjectViewBuilder, { className: "Order", initialPrimaryKey: "order-1" }));
-    await settle();
-    const select = element.querySelector(".preview-object-select")!;
-    expect(select.textContent).toContain("Initial order");
-    (select.querySelector(".el-select__wrapper") as HTMLElement).click();
-    await settle();
-    expect(searches[0]).toMatchObject({ classname: "Order" });
-    const input = select.querySelector("input")!;
-    input.value = "Readable";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    await new Promise(resolve => setTimeout(resolve, 350));
-    await settle();
-    expect(searches.at(-1)).toMatchObject({ classname: "Order", search: "Readable" });
-    const option = Array.from(document.querySelectorAll<HTMLElement>(".el-select-dropdown__item")).find(item => item.textContent === "Readable order")!;
-    expect(option).toBeDefined();
-    option.click(); await settle();
-    expect(select.textContent).toContain("Readable order");
-    Array.from(element.querySelectorAll<HTMLButtonElement>(".palette button")).find(button => button.textContent?.trim() === "Load object")!.click();
-    await settle();
-    expect(lookups.at(-1)).toEqual({ id: "Order:order-2", class: "Order" });
-  });
-  it("saves and publishes the actual configured layout with optimistic revision", async () => {
-    const calls: Array<{ url: string; body: Record<string, any> }> = [];
-    const initial=createObjectView('Order');initial.tabs[0].sections[0].widgets[0].resourceId='order-details';
-    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body)); calls.push({ url, body });
-      const data = url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [{revision:0,document:initial}] }
-        : url.endsWith("getMetas") ? { classDef: [{ className: "Order", showName: "Order", attrs: [{ name: "id", primaryKey: true }] }] }
-        : url.endsWith("/save") ? { revision: 1, publishedRevision: null, versions: [{ revision: 1, document: body.document }] }
-        : url.endsWith("/publish") ? { revision: 1, publishedRevision: 1, versions: [] } : [];
-      return new Response(JSON.stringify({ success: true, data }));
-    });
-    const element = mount(() => h(ObjectViewBuilder, { className: "Order" }));
-    await settle();
-    const textButton = Array.from(element.querySelectorAll(".palette button")).find(button => button.textContent?.trim() === "Text") as HTMLButtonElement;
-    textButton.click(); await settle();
-    const publish = Array.from(element.querySelectorAll("button")).find(button => button.textContent?.trim() === "Save and publish") as HTMLButtonElement;
-    publish.click(); await settle();
-    const save = calls.find(call => call.url.endsWith("/save"));
-    expect(save?.body.expectedRevision).toBe(0);
-    expect(save?.body.document.tabs[0].sections[0].widgets.map((widget: { kind: string }) => widget.kind)).toEqual(expect.arrayContaining(["properties", "text"]));
-    expect(calls.find(call => call.url.endsWith("/publish"))?.body).toMatchObject({ revision: 1, expectedRevision: 1, form: "full" });
-    expect(element.textContent).toContain("Published 1");
-  });
-  it("creates a chart by bringing in one of the author's dashboard charts, keeping its file and MetricView", async () => {
-    const calls: Array<{ url: string; body: Record<string, any> }> = [];
-    // The view already reads the object's attributes: this case adds a chart to it.
-    const draft = createObjectView("Order");
-    draft.tabs[0].sections[0].widgets[0].resourceId = "order-details";
-    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
-      const body = init.body ? JSON.parse(String(init.body)) : {}; calls.push({ url, body });
-      const data = url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [{ revision: 0, createdAt: 0, author: "author", description: "", document: draft }] }
-        : url.endsWith("getMetas") ? { classDef: [{ className: "Order", showName: "Order", attrs: [{ name: "id", primaryKey: true }] }] }
-        : url.endsWith("/dashboards") ? [{ id: "board-1", name: "Sales", createdAt: 0, updatedAt: 0 }]
-        : url.includes("/dashboards/board-1") ? { id: "board-1", ownerId: "author", name: "Sales", createdAt: 0, updatedAt: 0, groups: [{ id: "g", title: "Sales", metrics: [], charts: [{ id: "card-1", name: "Orders by kind", query: { kind: "metric", metricId: "orders", parameters: { year: 2026 } }, chartFile: { name: "orders.chart.json", content: chartFile() } }] }] }
-        : url.endsWith("/object-views/save") ? { assetId: "view-1", revision: 1, publishedRevision: null, versions: [{ revision: 1, document: body.document }] } : [];
-      return new Response(JSON.stringify({ success: true, data }));
-    });
-    const element = mount(() => h(ObjectViewBuilder, { className: "Order" }));
-    await settle();
-    const bringIn = Array.from(element.querySelectorAll(".palette button")).find(button => button.textContent?.trim() === "Bring in a chart") as HTMLButtonElement;
-    bringIn.click();
-    await settle();
-    const dialog = document.querySelector(".el-overlay-dialog")!;
-    const choose = Array.from(dialog.querySelectorAll("button")).find(button => button.textContent?.trim() === "Bring in") as HTMLButtonElement;
-    choose.click(); await settle();
-    // Saving waits for the editor to be ready, so the draft is taken after the canvas holds the chart.
-    const saveDraft = Array.from(element.querySelectorAll(".builder-actions button"))[0] as HTMLButtonElement;
-    saveDraft.click();
-    await settle();
-    const saved = calls.find(call => call.url.endsWith("/object-views/save"))?.body.document.tabs[0].sections[0].widgets;
-    expect(saved).toHaveLength(2);
-    expect(saved[1]).toMatchObject({ kind: "chart", title: "Orders by kind", resourceId: "orders", chartFile: chartFile(), parameters: { year: { source: "literal", value: 2026 } } });
-    // The source dashboard is only read.
-    expect(calls.some(call => /\/dashboards\/[^/]+$/.test(call.url) && call.body && Object.keys(call.body).length)).toBe(false);
-  });
   it("preserves input state when the host recreates an identical object reference", async () => {
     const view = createObjectView("Order");
     const input = widget("input"); input.variable = "filter";
@@ -380,37 +259,6 @@ describe("configured object view interaction", () => {
     field.value = "changed"; field.dispatchEvent(new Event("input", { bubbles: true })); await settle();
     version.value++; await settle();
     expect(element.querySelector(".metric")?.textContent).toBe("changed");
-  });
-  it("always edits the shared full view", async () => {
-    const forms: string[] = [];
-    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body));
-      if (url.endsWith("/edit")) forms.push(body.form);
-      return new Response(JSON.stringify({ success: true, data: url.endsWith("/edit") ? { revision: 0, publishedRevision: null, versions: [] } : url.endsWith("getMetas") ? { classDef: [] } : [] }));
-    });
-    mount(() => h(ObjectViewBuilder, { className: "Order" }));
-    await settle();
-    expect(forms).toEqual(["full"]);
-  });
-  it("does not reload published configuration when runtime variables or object data change", async () => {
-    const view = createObjectView("Order");
-    const input = widget("input"); input.variable = "filter";
-    const metric = widget("metric"); metric.binding = { source: "variable", path: "filter" };
-    view.variables.filter = "initial";
-    view.tabs[0].sections[0].widgets = [input, metric];
-    let reads = 0;
-    vi.stubGlobal("fetch", async (url: string) => {
-      if (url.endsWith("/read")) reads++;
-      return new Response(JSON.stringify({ success: true, data: url.endsWith("/read") ? { revision: 1, publishedRevision: 1, versions: [{ document: view }] } : { data: { id: "1" } } }));
-    });
-    const version = ref(0);
-    const element = mount(() => { void version.value; return h(ObjectViewPage, { reference: { className: "Order", primaryKey: "1" } }); });
-    await settle();
-    const field = element.querySelector("input")!;
-    field.value = "changed"; field.dispatchEvent(new Event("input", { bubbles: true })); await settle();
-    version.value++; await settle();
-    expect(element.querySelector(".metric")?.textContent).toBe("changed");
-    expect(reads).toBe(1);
   });
   it("sends fixed text separately from typed bindings and displays execution errors", async () => {
     const view = createObjectView("Order");

@@ -14,7 +14,7 @@ describe("the platform's applications", () => {
   it("shows only the implemented workspace when an old workplace registration remains", () => {
     const catalog = catalogFixture();
     const home = catalog.find(app => app.id === "home")!;
-    const workspace = { ...home, id: "personal-workspace", entry: { path: "/workspace", renderer: "personal-workspace" } };
+    const workspace = { ...home, id: "personal-workspace", panelUses: [], entry: { path: "/workspace", renderer: "personal-workspace" } };
     const stale = { ...workspace, id: "workplace", entry: { path: "/workplace", renderer: "workplace" } };
     const partition = catalogPartition([...catalog, workspace, stale], "zh-CN");
     expect(
@@ -23,7 +23,7 @@ describe("the platform's applications", () => {
   });
   it("omits stale native entries until their renderer layout is registered", () => {
     const application = {
-      ...catalogFixture()[0]!, id: "edition-app", entry: { path: "/edition-app", renderer: "later-renderer" },
+      ...catalogFixture()[0]!, id: "edition-app", panelUses: [], entry: { path: "/edition-app", renderer: "later-renderer" },
     };
     const pending = catalogPartition([application], "en");
     expect(pending).toEqual([]);

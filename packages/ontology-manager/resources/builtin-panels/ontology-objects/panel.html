@@ -188,6 +188,40 @@
     align-items: flex-start;
     gap: var(--spacing-sm);
   }
+  .ot-presentation-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+  }
+  .ot-presentation-section-label {
+    margin: 0 0 var(--spacing-xs);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+  }
+  .ot-presentation-summary {
+    padding: var(--spacing-md);
+    border: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+    border-radius: var(--radius-md);
+    background: var(--sdk-fill-color-lighter, var(--ui-fill-quaternary));
+  }
+  .ot-presentation-form .sdk-owner-form,
+  .ot-presentation-form .sdk-owner-form-inner {
+    height: auto;
+  }
+  .ot-presentation-form .sdk-owner-form-body {
+    overflow: visible;
+  }
+  .ot-presentation-extras {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--sdk-border-color-light, var(--ui-divider));
+  }
 
   @container objects-page (max-width: 900px) {
     .ot-detail-body {
@@ -431,6 +465,36 @@
     <sdk-dialog v-model="createAttributeDialog" :title="t('ot.attributeCreator')" :width="dialogWidth" append-to-body destroy-on-close>
       <div class="ot-create-body">
         <projection v-if="createAttributeDialog" slot="attributeForm" @saved="attributeSaved" @discarded="cancelCreateAttribute" @cancel="cancelCreateAttribute"></projection>
+      </div>
+    </sdk-dialog>
+
+    <!-- Configure object presentation dialog (local UI state only, never enters URL). -->
+    <sdk-dialog
+      v-model="configureViewDialog"
+      :title="t('ot.configureViewTitle')"
+      :width="dialogWidth"
+      :before-close="handleConfigureViewClose"
+      append-to-body
+      destroy-on-close
+    >
+      <div v-if="configureViewDialog && selectedKey" class="ot-presentation-body">
+        <div class="ot-presentation-summary">
+          <p class="ot-presentation-section-label">{{ t("ot.currentDetailBinding") }}</p>
+          <projection slot="detailBinding"></projection>
+        </div>
+        <div class="ot-presentation-form">
+          <projection slot="detailPanelForm" @saved="onDetailPanelSaved">
+            <template #field-panelId>
+              <projection slot="detailPanelPicker"></projection>
+            </template>
+          </projection>
+        </div>
+        <div class="ot-presentation-extras">
+          <projection slot="clearDetailPanel" @done="onDetailPanelCleared"></projection>
+          <sdk-button text type="primary" @click="openPanelsDirectory">
+            {{ t("ot.manageDetailPanels") }}
+          </sdk-button>
+        </div>
       </div>
     </sdk-dialog>
   </section>

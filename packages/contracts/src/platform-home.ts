@@ -28,6 +28,26 @@ export const homeDashboardsSchema = z
   .strict();
 export type HomeDashboards = z.infer<typeof homeDashboardsSchema>;
 
+/** One pinned business object shown in the user's favorites, deduplicated by className + primaryKey. */
+export const homePinnedObjectSchema = z
+  .object({
+    className: z.string().min(1).max(200),
+    primaryKey: z.string().min(1).max(1000),
+    title: z.string().trim().min(1).max(200),
+  })
+  .strict();
+export type HomePinnedObject = z.infer<typeof homePinnedObjectSchema>;
+
+export const homePinnedObjectsSchema = z
+  .object({
+    items: z
+      .array(homePinnedObjectSchema)
+      .max(30)
+      .refine(distinct((item) => JSON.stringify([item.className, item.primaryKey])), "duplicate pinned object"),
+  })
+  .strict();
+export type HomePinnedObjects = z.infer<typeof homePinnedObjectsSchema>;
+
 export const homeStateSchema = z
   .object({
     favorites: homeFavoritesSchema.shape.items,

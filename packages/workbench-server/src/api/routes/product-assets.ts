@@ -28,7 +28,6 @@ import {readActiveProductBundle,captureProductRelease,productReleaseDiff} from '
 import {registeredProductGraph} from '../../services/product-assets/ontology';
 import {publishedApplication,publishedApplicationRelease} from '../../services/product-assets/published';
 import {migratePlatformProjection} from '../../services/product-assets/platform-migration';
-import {objectViewAuthoring} from '../../services/product-assets/object-view-authoring';
 import {migrateDashboardPage} from '../../services/product-assets/dashboard-migration';
 import {synchronizePlatformAssets,ensurePlatformAssets,nativeAgentAsset,nativeApplicationAsset} from '../../services/product-assets/platform-assets';
 import {assertAppBuilderAccess} from '../../services/app-builder/access';
@@ -37,13 +36,6 @@ import {assertLegacyProductWrite} from '../../services/product-assets/panel-boun
 
 const router: ReturnType<typeof Router> = Router();
 router.post('/synchronize-platform',requirePermission(['system-config']),wrap(async(req,res)=>{const c=context(req);await assertAppBuilderAccess(c.credentials);res.json(await synchronizePlatformAssets(c.owner,c.credentials));}));
-router.post('/object-views/:operation',wrap(async(req,res)=>{
-  const {owner,credentials}=context(req);
-  const operation=z.enum(['read','edit','save','publish']).parse(req.params.operation);
-  const {className,form,...values}=z.object({className:z.string().min(1).max(200),form:z.literal('full'),document:z.unknown().optional(),expectedRevision:z.number().int().positive().optional(),revision:z.number().int().positive().optional(),description:z.string().max(2000).optional()}).strict().parse(req.body);
-  void form;
-  res.json({data:await objectViewAuthoring(owner,credentials,className,operation,values)});
-}));
 router.post('/:id/create-page',wrap(async(req,res)=>{
   const {owner,credentials}=context(req);
   const source=await getProduct(owner,String(req.params.id));

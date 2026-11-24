@@ -61,7 +61,14 @@ export const workbenchApplications: BuiltinApplication[] = [
       },
       "icon": "home",
       "groups": [],
-      "permissions": []
+      "permissions": [],
+      "panelUses": [{
+        "id": "home-object-detail-body",
+        "pageKey": "home-object-detail-body",
+        "panelId": "builtin-product-object-detail-body",
+        "path": "/home/object-detail",
+        "access": { "kind": "domain-member" }
+      }]
     }
   },
   {

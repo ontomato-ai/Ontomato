@@ -24,6 +24,13 @@
     },
     "icon": "objects",
     "groups": [],
-    "permissions": []
+    "permissions": [],
+    "panelUses": [{
+      "id": "browser-object-detail",
+      "pageKey": "browser-object-detail",
+      "panelId": "builtin-product-object-detail",
+      "path": "/browser/views",
+      "access": { "permissionCode": "data-browser" }
+    }]
   }
 }

@@ -2,6 +2,8 @@ import {
   homeDashboardsSchema,
   homeFavoritesSchema,
   homePanelPreferenceSchema,
+  homePinnedObjectsSchema,
+  type HomePinnedObject,
   type HomeState,
 } from "@ontomato/contracts/platform-home";
 import {
@@ -79,6 +81,28 @@ export const platformHomeStore = {
        VALUES ($1, $2, $3::jsonb)
        ON CONFLICT (domain_id, user_id) DO UPDATE SET dashboard_ids=EXCLUDED.dashboard_ids`,
       [owner.domainId, owner.userId, JSON.stringify(dashboardIds)],
+    );
+  },
+  async pinnedObjects(
+    owner: PlatformHomeOwner,
+  ): Promise<HomePinnedObject[]> {
+    const result = await db().query<{ pinned_objects: unknown }>(
+      `SELECT pinned_objects FROM ${table("platform_home_preferences")} WHERE domain_id=$1 AND user_id=$2`,
+      [owner.domainId, owner.userId],
+    );
+    if (!result.rowCount) return [];
+    return homePinnedObjectsSchema.shape.items.parse(result.rows[0].pinned_objects ?? []);
+  },
+  async savePinnedObjects(
+    owner: PlatformHomeOwner,
+    pinnedObjects: HomePinnedObject[],
+  ): Promise<void> {
+    const validated = homePinnedObjectsSchema.shape.items.parse(pinnedObjects);
+    await db().query(
+      `INSERT INTO ${table("platform_home_preferences")} (domain_id, user_id, pinned_objects)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (domain_id, user_id) DO UPDATE SET pinned_objects=EXCLUDED.pinned_objects`,
+      [owner.domainId, owner.userId, JSON.stringify(validated)],
     );
   },
   async recentApplications(

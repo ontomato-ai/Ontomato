@@ -120,7 +120,7 @@ function validateBuiltinProjection(projection: DirectProjectionPorts, ctx: z.Ref
         : port.kind === "list" && port.items.kind === "object"
           ? port.items.objectType
           : undefined;
-      if (objectType !== undefined && !Object.hasOwn(platformObjectTypes, objectType)) reject([side, name]);
+      if (objectType !== undefined && objectType !== "@any" && !Object.hasOwn(platformObjectTypes, objectType)) reject([side, name]);
     }
   }
   for (const [name, datum] of Object.entries(projection.data)) {

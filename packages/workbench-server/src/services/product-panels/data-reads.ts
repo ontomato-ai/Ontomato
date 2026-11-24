@@ -10,7 +10,7 @@ import { matchesDirectPanelValue, panelObjectRefSchema } from "@ontomato/contrac
 import { panelReadResultSchemas } from "@ontomato/contracts/panel-operations";
 import { authoredReadParameterSource, directReadDeclaration, panelReadParameterId, panelReadParameterSchemas, readParameterUsesStateField, type DirectProjectionData } from "@ontomato/contracts/panel-projection";
 import {
-  AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, EXTERNAL_MCP_SERVICE, GENERAL_SETTINGS,
+  AUDIT_LOG, AUTOTEST_CASE_ARTIFACT, AUTOTEST_RUN, DATA_ADAPTER_CONFIG, EXTERNAL_MCP_SERVICE, FAVORITE, GENERAL_SETTINGS,
   MODEL_CONNECTION, MODEL_ENTRY, MODEL_USAGE, OPS_KNOWLEDGE, PUBLISHED_MCP_SERVICE, TURN_EVIDENCE,
   ACTION, APPLICATION, ATTRIBUTE, DASHBOARD, DASHBOARD_CARD, FUNCTION, METRIC_VIEW, OBJECT_TYPE,
   ONTOLOGY_RELATION_KIND, ONTOLOGY_TYPE, ORG_GRANT, ORG_MEMBERSHIP, ORG_POSITION, ORG_UNIT, PERMISSION_POLICY, PRODUCT_PANEL,
@@ -40,6 +40,7 @@ import { createDashboardCardOwnerReadAdapter, createDashboardReadAdapter } from 
 import { createFunctionReadAdapter, createMetricReadAdapter } from "../metric-function/panel-reads";
 import { createInstanceGraphReadAdapter } from "../ontology-model/instance-graph-reads";
 import { createObjectDetailReadAdapter } from "./object-detail-reads";
+import { createFavoriteReadAdapter } from "./favorite-panel";
 import { createCustomerOntologyReadAdapter } from "../ontology-model/customer-reads";
 import { createBusinessKnowledgeReadAdapter } from "../business-knowledge/panel-reads";
 import {
@@ -124,6 +125,7 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
   const customer = createCustomerOntologyReadAdapter(owner, viewer, callerUserName);
   const graph = createInstanceGraphReadAdapter(viewer);
   const objectDetail = createObjectDetailReadAdapter(owner, viewer);
+  const favorites = createFavoriteReadAdapter(owner, viewer);
   const actions = async () => {
     const { createActionReadAdapter } = await import("../action/panel-reads");
     return createActionReadAdapter(owner, viewer, callerUserName);
@@ -494,6 +496,10 @@ function readAdapters(owner: ProductOwner, viewer: AssistantCredentials, callerU
       detailPanelForm: (selection, params) => objectDetail.form(selection.primaryKey!, formParams(params).values),
       options: () => model.objectTypeOptions(),
       resolve: (_selection, params) => model.resolveObjectTypes(panelReadParameterSchemas.optionValues.parse(params.values)),
+    },
+    [FAVORITE]: {
+      list: () => favorites.list(),
+      record: (_selection, params) => favorites.record(readParams.graphNode.parse(params.object)),
     },
     [ATTRIBUTE]: modelReads,
     [RELATIONSHIP]: modelReads,

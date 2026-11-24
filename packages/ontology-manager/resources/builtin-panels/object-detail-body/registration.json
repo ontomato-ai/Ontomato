@@ -1,0 +1,11 @@
+{
+  "panels": [
+    {
+      "id": "builtin-product-object-detail-body",
+      "input": {
+        "name": "对象详情内容",
+        "description": "展示单个业务对象的详情内容：按对象类型解析自定义详情面板、展示不可用或无权原因，或在未配置时呈现只读属性与关联关系。"
+      }
+    }
+  ]
+}

@@ -5,12 +5,18 @@ import { catalogFixture } from "../../../../../../packages/platform-web/src/__te
 // The heavy Manager pages (graph libraries, Markdown) are doubled; the router, layout, catalogs and requests are real.
 vi.hoisted(() => { window.__APP_CONFIG__ = { API_BASE: "/custom-base/api" }; });
 
+import { useManagerClient } from "../../../../../../packages/ontology-manager/src/context";
+
 vi.mock("../../../../../../packages/ontology-manager/src/data-browser/DataBrowser.vue", () => ({
   __esModule: true,
   default: defineComponent({
     name: "DataBrowserDouble",
     props: { initialClass: String },
-    setup: (props) => () => h("p", { class: "page-double" }, `data ${props.initialClass}`),
+    setup: (props) => {
+      const client = useManagerClient();
+      void client.getMetas().catch(() => undefined);
+      return () => h("p", { class: "page-double" }, `data ${props.initialClass}`);
+    },
   }),
 }));
 
@@ -155,11 +161,11 @@ describe("open-source Ontology Service page", () => {
   });
 
   it("a 401 stops the page with its status; a 402 keeps it", async () => {
-    statusFor = (url) => (url.endsWith("/product-assets/object-views/read") ? 402 : 200);
-    await start("/#/browser/views/Order?key=1");
+    statusFor = (url) => (url.endsWith("/admin/getMetas") ? 402 : 200);
+    await start("/#/browser/data/Order");
     expect(document.querySelector(".platform-shell")).not.toBeNull();
-    statusFor = (url) => (url.endsWith("/product-assets/object-views/read") ? 401 : 200);
-    await start("/#/browser/views/Order?key=1");
+    statusFor = (url) => (url.endsWith("/admin/getMetas") ? 401 : 200);
+    await start("/#/browser/data/Order");
     expect(document.querySelector(".platform-shell")).toBeNull();
   });
 });

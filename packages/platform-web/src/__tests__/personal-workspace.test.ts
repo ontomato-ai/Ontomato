@@ -314,4 +314,99 @@ describe("personal workspace", () => {
     expect(dialog.text()).toContain(englishMessages.ontology.productHomeProductComponents);
     wrapper.unmount();
   });
+
+  it("mounts builtin-product-object-detail-body in the object drawer under /home admission, follows selected changes, and opens /browser/views full page", async () => {
+    const previous = api.request.getMockImplementation()!;
+    const pinnedObject = { className: "Order", primaryKey: "ord-1", title: "Order #1" };
+    api.request.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === "/api/product-assets/home") {
+        const asset = home();
+        return Promise.resolve(Response.json({
+          asset: {
+            ...asset,
+            document: {
+              ...asset.document,
+              workspace: { ...workspace(), objectOpening: "drawer", pinnedObjects: [pinnedObject] },
+              children: [...blocks(), productAssetSchema.parse({
+                id: "objects", name: "objects", ownerId: "alice", visibility: "private", revision: 1,
+                createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), editable: true,
+                document: { kind: "widget", widget: { kind: "platform", source: "objects" } },
+              })].map((block) => ({ assetId: block.id, column: "main" })),
+            },
+          },
+        }));
+      }
+      if (path === "/api/product-assets") {
+        return Promise.resolve(Response.json({
+          assets: [
+            ...blocks(),
+            productAssetSchema.parse({
+              id: "objects", name: "objects", ownerId: "alice", visibility: "private", revision: 1,
+              createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), editable: true,
+              document: { kind: "widget", widget: { kind: "platform", source: "objects" } },
+            }),
+          ],
+        }));
+      }
+      if (path === "/api/personal-workspace") {
+        return Promise.resolve(Response.json({
+          data: { ...workspace(), objectOpening: "drawer", pinnedObjects: [pinnedObject] },
+        }));
+      }
+      return previous(path, init);
+    });
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: "/workspace", component: Workspace },
+        { path: "/browser/views", component: { template: "<div>browser-detail</div>" } },
+      ],
+    });
+    await router.push("/workspace");
+    const wrapper = mount(Workspace, {
+      global: {
+        plugins: [
+          router,
+          ElementPlus,
+          createI18n({ legacy: false, locale: "en", messages: { en: { ontology: englishMessages.ontology } } }),
+        ],
+        stubs: {
+          PanelHost: {
+            name: "PanelHost",
+            props: ["port", "address", "initial", "historyBack"],
+            emits: ["display-state"],
+            template: '<div class="panel-host-stub" :data-address="address" :data-selected="JSON.stringify(initial?.selected)"></div>',
+          },
+        },
+        provide: { [openApplicationKey as symbol]: vi.fn() },
+      },
+    });
+    await flushPromises();
+
+    const objectButton = wrapper.findAll("button.resource-link").find((btn) => btn.text().includes("Order #1"));
+    expect(objectButton).toBeTruthy();
+    await objectButton!.trigger("click");
+    await flushPromises();
+
+    const host = wrapper.findComponent({ name: "PanelHost" });
+    expect(host.exists()).toBe(true);
+    expect(host.props("address")).toBe("/home/object-detail");
+    expect(host.props("port")?.use).toEqual({ applicationId: "home", useId: "home-object-detail-body" });
+    expect(host.props("initial")).toEqual({ selected: { className: "Order", primaryKey: "ord-1" } });
+
+    // Clicking a related object inside object-detail-body updates the drawer's active object.
+    host.vm.$emit("display-state", { selected: { className: "Customer", primaryKey: "cust-9" } });
+    await flushPromises();
+    expect(host.props("initial")).toEqual({ selected: { className: "Customer", primaryKey: "cust-9" } });
+
+    // Clicking "Open full page" navigates to /browser/views with the updated selected object.
+    const openPageBtn = wrapper.findAll(".workspace-object-drawer .resource-toolbar button")
+      .find((btn) => btn.text().includes(englishMessages.ontology.productHomeOpenFullPage));
+    expect(openPageBtn).toBeTruthy();
+    await openPageBtn!.trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe("/browser/views?selected=Customer~cust-9&returnTo=workspace");
+    wrapper.unmount();
+  });
 });

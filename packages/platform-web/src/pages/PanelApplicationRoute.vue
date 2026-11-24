@@ -20,7 +20,7 @@ import type { DisplayLoad, DisplayPageAddressInput } from "@ontomato/contracts/a
 import { PageComposer, type DisplayObjectRefresh, type DisplayPageController, type DisplayStateUpdate } from "@ontomato/agent-shell-ui";
 import type { PageContext } from "@ontomato/contracts/page-context";
 import type { PageSkillContext } from "@ontomato/contracts/page-skills";
-import { APPLICATION } from "@ontomato/contracts/platform-object-types";
+import { APPLICATION, FAVORITE } from "@ontomato/contracts/platform-object-types";
 import { HOME_PREFERENCES_CHANGED } from "../features/home/api";
 import { onPanelReadDenied, platformPanelHost, readApplicationFrameManifest, resolveApplicationEntry, type PanelObjectChange } from "../panel-host";
 import {
@@ -167,7 +167,8 @@ function changed(change: PanelObjectChange) {
   outerFrame?.refreshFrame(change);
   if (
     change.affected?.objectTypes?.includes(APPLICATION)
-    || change.affected?.objects?.some((item) => item.objectType === APPLICATION)
+    || change.affected?.objectTypes?.includes(FAVORITE)
+    || change.affected?.objects?.some((item) => item.objectType === APPLICATION || item.objectType === FAVORITE)
   ) {
     window.dispatchEvent(new Event(HOME_PREFERENCES_CHANGED));
   }

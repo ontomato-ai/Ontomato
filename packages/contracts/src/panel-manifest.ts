@@ -111,7 +111,9 @@ export const ontologyParameterTypeSchema = z.union([
 export type OntologyParameterType = z.infer<typeof ontologyParameterTypeSchema>;
 
 export function matchesObjectType(field: OntologyObjectUnionType | z.infer<typeof ontologyObjectTypeSchema>, className: string): boolean {
-  return field.kind === "object" ? field.objectType === className : objectUnionTypes(field).includes(className);
+  return field.kind === "object"
+    ? field.objectType === "@any" || field.objectType === className
+    : objectUnionTypes(field).includes(className);
 }
 
 /** Values that can cross the address and deep-link state boundary. */
@@ -406,7 +408,7 @@ const FLAT_OBJECT_REF_SEPARATOR = "~";
 
 function decodeFlatObjectRef(raw: string, expectedObjectType?: string): PanelObjectRef | null {
   if (!raw.trim()) return null;
-  if (expectedObjectType !== undefined) {
+  if (expectedObjectType !== undefined && expectedObjectType !== "@any") {
     const prefix = `${expectedObjectType}${FLAT_OBJECT_REF_SEPARATOR}`;
     if (raw.startsWith(prefix)) {
       const primaryKey = raw.slice(prefix.length);

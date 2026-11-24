@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const DASHBOARD = "platform:Dashboard";
 export const DASHBOARD_CARD = "platform:DashboardCard";
+export const FAVORITE = "platform:Favorite";
 export const EXECUTE_OBJECT_ACTION = "actions.execute";
 export const SCHEDULED_TASK = "platform:ScheduledTask";
 export const CREATE_SCHEDULED_TASK = `${SCHEDULED_TASK}.create`;
@@ -110,6 +111,8 @@ export const FAVORITE_AGENT = "agents.favorite";
 export const UNFAVORITE_AGENT = "agents.unfavorite";
 export const FAVORITE_APPLICATION = "applications.favorite";
 export const UNFAVORITE_APPLICATION = "applications.unfavorite";
+export const ADD_FAVORITE = "favorites.add";
+export const REMOVE_FAVORITE = "favorites.remove";
 export const SET_ACTION_STATUS = "actions.setStatus";
 export const DELETE_ACTION = "actions.delete";
 export const SET_TRIGGER_STATUS = "triggers.setStatus";
@@ -949,6 +952,26 @@ export const platformObjectTypes: Readonly<Record<string, PlatformObjectTypeDecl
       form: modelReads.form,
     },
     operations: [`${DATA_ADAPTER_CONFIG}.save`, TEST_DATA_ADAPTER_CONNECTION],
+  },
+  [FAVORITE]: {
+    ...describeType("favorite"),
+    reads: {
+      list: { source: "type", parameterMode: "fixed", params: {}, result: "panelRecordList" },
+      record: {
+        source: "type",
+        parameterMode: "fixed",
+        params: { object: "graphNode" },
+        requiredParams: ["object"],
+        result: "panelRecord",
+        outputs: {
+          favorited: { kind: "scalar", type: "boolean" },
+          className: { kind: "scalar", type: "string" },
+          primaryKey: { kind: "scalar", type: "string" },
+          title: { kind: "scalar", type: "string" },
+        },
+      },
+    },
+    operations: [ADD_FAVORITE, REMOVE_FAVORITE],
   },
 };
 

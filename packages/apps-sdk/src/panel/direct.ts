@@ -2,7 +2,7 @@ import { computed, effectScope, onScopeDispose, shallowReactive, shallowRef, wat
 import { ElMessage } from "element-plus/es/components/message/index";
 import type { RuntimeJsonValue } from "@ontomato/contracts/agent-runtime-values";
 import type { PanelManifest, PanelMemberPath } from "@ontomato/contracts/panel-manifest";
-import { PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
+import { OBJECT_TYPE, PRODUCT_PANEL, PRODUCT_PROJECTION } from "@ontomato/contracts/platform-object-types";
 import type { AppMenuGroup, DirectPanelRun } from "@ontomato/platform-shell";
 import type { PanelConversationEntry } from "@ontomato/contracts/panel-conversation-entry";
 import { panelOperationAffectedSchema, panelReadResultSchemas, type PanelCompletedOperation } from "@ontomato/contracts/panel-operations";
@@ -650,7 +650,7 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
       if (isAsyncPlacement) pendingPlacings += 1;
       const placing: Promise<MemberPlacing> = chosen === null
         ? Promise.resolve({ kind: "awaiting" })
-        : chosen === "objectDetail" || (chosen !== undefined && "panelId" in chosen)
+        : "panelId" in target || chosen === "objectDetail" || (chosen !== undefined && "panelId" in chosen)
           ? placePanel(member, scope)
           : placeProjection(member, scope);
       const tracked = placing.catch((reason: unknown) => {
@@ -869,6 +869,20 @@ export function createDirectPanelInstance(direct: PanelManifest, options: Direct
           if (shouldRereadOperations(entry.projection, entry.inputs(), affectedTypes)) {
             entry.reread();
           }
+        }
+      }
+      if (affectedTypes.has(OBJECT_TYPE)) {
+        const affectedClasses = new Set(
+          affected.objects.filter((item) => item.objectType === OBJECT_TYPE).map((item) => item.primaryKey),
+        );
+        for (const [member, declaration] of Object.entries(direct.members)) {
+          const { target } = declaration;
+          if (!("fromState" in target) || !("rule" in target.candidates) || target.candidates.rule !== "objectDetail") continue;
+          const selectedRef = stateObject(instance.state.values.value[target.fromState] ?? null);
+          if (!selectedRef || (affectedClasses.size > 0 && !affectedClasses.has(selectedRef.className))) continue;
+          const held = members.has(member);
+          release(member);
+          if (held) void directInstance.placing(member).catch(() => undefined);
         }
       }
       for (const object of affected.objects) instance.objectChanged(object);

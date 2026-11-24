@@ -4,6 +4,7 @@ import {useRouter} from 'vue-router';
 import {ElButton,ElDropdown,ElDropdownItem,ElDropdownMenu,ElMessage,ElMessageBox,ElTooltip,vLoading} from 'element-plus';
 import { actionTooltipProps } from '@ontomato/foundation-ui/overlay';
 import {platformRoutes} from '@ontomato/platform-shell/routes';
+import {panelAddress} from '@ontomato/contracts/panel-host';
 import {inject,ref,computed} from 'vue';
 import {ArrowRight,ArrowUpRight,Bookmark,ChevronRight,Ellipsis,History,MessageSquare} from 'lucide-vue-next';
 import {appIcon} from '@ontomato/platform-shell';
@@ -54,7 +55,7 @@ async function pin(row:Record<string,unknown>,action:'toggle'|'rename'|'up'){
 }
 function open(row:Record<string,unknown>){
   if(props.objectType==='platform:Conversation')void router.push({path:'/agents/chat',query:{agentId:String(row.agentId),sessionId:String(row.id)}});
-  else if(props.objectType==='platform:Favorite')void router.push({name:platformRoutes.objectView.name,params:{className:String(row.className)},query:{key:String(row.primaryKey)}});
+  else if(props.objectType==='platform:Favorite')void router.push(panelAddress('/browser/views',{selected:{className:String(row.className),primaryKey:String(row.primaryKey)}}));
   else if(props.objectType==='platform:RecentVisit'&&typeof row.path==='string'&&row.path.startsWith('/')&&!row.path.startsWith('//'))void router.push(row.path);
   else if(props.objectType==='platform:Task')void router.push({path:'/schedules',query:{taskId:String(row.id)}});
   else if(props.objectType==='platform:Dashboard')void router.push({path:platformRoutes.dashboards.path,query:{dashboardId:String(row.id)}});

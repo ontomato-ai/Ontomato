@@ -344,6 +344,61 @@
           ]
         },
         "id": "builtin-product-f3b27777-738b-4413-a40f-d80fb86c9ba1"
+      },
+      "detailBinding": {
+        "component": "ObjectSummary",
+        "name": "Current detail panel binding",
+        "description": "Displays the currently configured detail panel status and name for this object type.",
+        "target": "selected",
+        "data": {
+          "record": "detailPanel"
+        },
+        "config": {
+          "showTitle": false,
+          "fields": [
+            "status",
+            "panelName",
+            "unavailableReason"
+          ]
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a03-000000000001"
+      },
+      "detailPanelForm": {
+        "component": "ObjectForm",
+        "name": "Configure detail panel form",
+        "description": "Selects or clears the custom detail panel bound to this object type.",
+        "type": "platform:ObjectType",
+        "target": "selected",
+        "data": {
+          "form": "detailPanelForm"
+        },
+        "operation": "platform:ObjectType.saveDetailPanel",
+        "config": {
+          "actions": "footer"
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a03-000000000002"
+      },
+      "detailPanelPicker": {
+        "component": "ReferencePicker",
+        "name": "Detail panel picker",
+        "description": "Searches and picks a usable panel to bind as this object type's detail panel.",
+        "type": "platform:ProductPanel",
+        "data": {
+          "options": "options"
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a03-000000000003"
+      },
+      "clearDetailPanel": {
+        "component": "OperationButton",
+        "name": "Restore default detail",
+        "description": "Clears the custom detail panel binding so the object type falls back to the built-in read-only detail.",
+        "operation": "objectTypes.clearDetailPanel",
+        "target": "selected",
+        "config": {
+          "plain": true,
+          "labelKey": "ot.restoreDefaultDetail"
+        },
+        "id": "builtin-product-8e2d0b41-7c3a-4b1e-9a03-000000000004"
       }
     }
   },
@@ -368,7 +423,13 @@
         "ot.loading": "正在读取…",
         "ot.forbidden": "当前账号无权查看对象类型。",
         "ot.back": "返回对象类型",
-        "ot.configureView": "配置对象视图",
+        "ot.configureView": "配置呈现",
+        "ot.configureViewTitle": "配置对象呈现",
+        "ot.currentDetailBinding": "当前呈现配置",
+        "ot.restoreDefaultDetail": "恢复默认详情",
+        "ot.manageDetailPanels": "新建 / 管理详情面板",
+        "ot.detailPanelSaved": "对象呈现配置已保存。",
+        "ot.detailPanelCleared": "已恢复默认只读详情。",
         "ot.delete": "删除",
         "ot.browseData": "浏览数据",
         "ot.save": "保存",
@@ -423,7 +484,13 @@
         "ot.loading": "Loading…",
         "ot.forbidden": "You cannot view this content.",
         "ot.back": "Back to object types",
-        "ot.configureView": "Configure object view",
+        "ot.configureView": "Configure presentation",
+        "ot.configureViewTitle": "Configure object presentation",
+        "ot.currentDetailBinding": "Current presentation",
+        "ot.restoreDefaultDetail": "Restore default detail",
+        "ot.manageDetailPanels": "Manage detail panels",
+        "ot.detailPanelSaved": "Object presentation updated.",
+        "ot.detailPanelCleared": "Restored default read-only detail.",
         "ot.delete": "Delete",
         "ot.browseData": "Browse data",
         "ot.save": "Save",

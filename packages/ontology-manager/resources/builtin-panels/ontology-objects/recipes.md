@@ -30,6 +30,6 @@
 
 ## 跳转
 
-- 配置对象视图：`/ontology/objects/<API 名>/view`
+- 配置对象呈现：页头点击「配置呈现」在页内打开配置弹窗（本地状态，不写地址），通过 `detailBinding` 展示当前详情面板绑定状态，通过 `detailPanelForm`（搭配 `detailPanelPicker`）绑定 `platform:ObjectType.detailPanelForm` 与 `platform:ObjectType.saveDetailPanel` 更换或清空自定义详情面板，通过 `clearDetailPanel`（`objectTypes.clearDetailPanel`）一键恢复默认只读详情，并提供前往 `/ontology/panels` 新建或管理详情面板的入口。
 - 浏览数据：`/browser/data/<API 名>`
 - 某条关系：关系类型详情页 `/ontology/relations/detail?selected=<关系名>`（点击关系列表中的任意一行即可跳转）

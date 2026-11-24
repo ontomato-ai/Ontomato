@@ -1,0 +1,107 @@
+<style>
+  .odb-root {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 100%;
+    container: object-detail-body / inline-size;
+  }
+
+  .odb-empty {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-2xl) var(--page-gutter);
+  }
+
+  .odb-status {
+    margin: 0;
+    padding: var(--spacing-xl) var(--page-gutter);
+    color: var(--sdk-text-color-secondary);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+
+  .odb-binding-host {
+    padding: var(--page-content-gap) var(--page-gutter);
+  }
+
+  .odb-binding-hidden {
+    display: none;
+  }
+
+  .odb-custom-host {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .odb-default-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.15fr);
+    gap: var(--page-content-gap);
+    padding: var(--page-content-gap) var(--page-gutter) calc(var(--page-content-gap) + 56px);
+    align-items: start;
+  }
+
+  .odb-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-width: 0;
+    padding: var(--page-section-padding, var(--spacing-lg));
+    border: 1px solid var(--sdk-border-color, var(--ui-border));
+    border-radius: var(--radius-md);
+    background: var(--sdk-bg-color);
+  }
+
+  .odb-card-title {
+    margin: 0;
+    color: var(--sdk-text-color-primary);
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+  }
+
+  @container object-detail-body (max-width: 820px) {
+    .odb-default-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
+<div id="app">
+  <section class="odb-root">
+    <div v-if="!hasSelected" class="odb-empty">
+      <sdk-empty :description="t('odb.empty')"></sdk-empty>
+    </div>
+
+    <template v-else>
+      <!-- Always mounted while selected so platform:ObjectType.detailPanel keeps publishing outputs; renders in place on unavailable/forbidden. -->
+      <div
+        v-if="selectedClassKey"
+        :class="isBlocked ? 'odb-binding-host' : 'odb-binding-hidden'"
+      >
+        <projection slot="detailBinding"></projection>
+      </div>
+
+      <p v-if="!panelStatus" class="odb-status" role="status">{{ t("odb.loading") }}</p>
+
+      <div v-else-if="panelStatus === 'configured'" class="odb-custom-host">
+        <projection :key="customDetailKey" slot="customDetail"></projection>
+      </div>
+
+      <div v-else-if="panelStatus === 'unconfigured'" class="odb-default-grid">
+        <section class="odb-card">
+          <h2 class="odb-card-title">{{ t("odb.attributes") }}</h2>
+          <projection slot="defaultSummary"></projection>
+        </section>
+        <section class="odb-card">
+          <h2 class="odb-card-title">{{ t("odb.relations") }}</h2>
+          <projection slot="defaultRelations"></projection>
+        </section>
+      </div>
+    </template>
+  </section>
+</div>

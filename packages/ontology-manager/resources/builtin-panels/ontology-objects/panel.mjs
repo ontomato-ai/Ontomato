@@ -24,7 +24,7 @@ function attributeClass(reference) {
 
 await mountPanel({
   setup() {
-    const { instance, t, navigate } = usePanelContext();
+    const { instance, t, navigate, notify } = usePanelContext();
     const rootRef = ref(null);
     const narrow = usePanelNarrow(rootRef);
     const drawerSize = computed(() => (narrow.value ? "100%" : "520px"));
@@ -265,8 +265,46 @@ await mountPanel({
       closeAttribute();
     }
 
-    const configureView = () =>
-      void navigate(`/ontology/objects/${encodeURIComponent(selectedKey.value)}/view`).catch(() => undefined);
+    // Local UI toggle for the in-page presentation configuration dialog (never enters URL).
+    const configureViewDialog = ref(false);
+    watch(selectedKey, () => {
+      configureViewDialog.value = false;
+    });
+
+    const configureViewBack = usePanelBack(
+      () => configureViewDialog.value,
+      () => {
+        configureViewDialog.value = false;
+      },
+      { pushHistory: false, forms: "detailPanelForm" },
+    );
+
+    async function handleConfigureViewClose(done) {
+      if (await configureViewBack.back()) done();
+    }
+
+    const configureView = () => {
+      if (!selectedKey.value) return;
+      configureViewDialog.value = true;
+    };
+
+    function onDetailPanelSaved() {
+      configureViewDialog.value = false;
+      notify({ kind: "success", text: t("ot.detailPanelSaved") });
+      instance.refreshObjects();
+    }
+
+    function onDetailPanelCleared(outcome) {
+      if (outcome?.kind !== "success") return;
+      configureViewDialog.value = false;
+      notify({ kind: "success", text: t("ot.detailPanelCleared") });
+      instance.refreshObjects();
+    }
+
+    const openPanelsDirectory = () => {
+      configureViewDialog.value = false;
+      void navigate("/ontology/panels").catch(() => undefined);
+    };
     const browseData = () =>
       void navigate(`/browser/data/${encodeURIComponent(selectedKey.value)}`).catch(() => undefined);
     const openRelation = reference => {
@@ -301,6 +339,7 @@ await mountPanel({
       editAttributeDrawer,
       createObjectDialog,
       createAttributeDialog,
+      configureViewDialog,
       objectDraft,
       attributeDraft,
       refresh: () => instance.refreshObjects(),
@@ -314,10 +353,14 @@ await mountPanel({
       cancelCreateAttribute,
       closeAttribute,
       handleAttributeDrawerClose,
+      handleConfigureViewClose,
       attributeSaved,
       onDeleteObjectDone,
       onDeleteAttributeDone,
+      onDetailPanelSaved,
+      onDetailPanelCleared,
       configureView,
+      openPanelsDirectory,
       browseData,
       openRelation,
     };
